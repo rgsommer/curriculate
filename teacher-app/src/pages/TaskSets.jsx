@@ -353,6 +353,9 @@ export default function TaskSets() {
     toastTimerRef.current = window.setTimeout(() => setToast(""), ms);
   }, []);
   const [regeneratingId, setRegeneratingId] = useState(null);
+  // Live progress for the Regenerate button so the teacher can see it's alive.
+  // { done, total, phase } — updated from the generation SSE stream.
+  const [regenProgress, setRegenProgress] = useState(null);
 
   // Regenerate confirm modal — shows the reconstructed constraints (editable)
   // plus a "new copy" vs "replace original" choice before generating.
@@ -692,6 +695,7 @@ export default function TaskSets() {
     // the original mix. We still pass the count so the set stays the same size.
     const reselect = !!form.reselectTypes;
     setRegeneratingId(id);
+    setRegenProgress(null);
     // Close the modal immediately — generation runs in the background and the
     // toast reports progress / completion.
     setRegenOpen(false);
@@ -747,7 +751,13 @@ export default function TaskSets() {
           if (!dataLine) continue;
           try {
             const msg = JSON.parse(dataLine.slice(5).trim());
-            if (msg.type === "complete" && (msg.taskset || msg.ok)) finalData = msg;
+            if (msg.type === "start") {
+              setRegenProgress({ done: 0, total: Number(msg.total) || 0, phase: "generating" });
+            } else if (msg.type === "progress") {
+              setRegenProgress({ done: Number(msg.done) || 0, total: Number(msg.total) || 0, phase: "generating" });
+            } else if (msg.type === "phase") {
+              setRegenProgress((p) => ({ ...(p || { done: 0, total: 0 }), phase: msg.phase || "" }));
+            } else if (msg.type === "complete" && (msg.taskset || msg.ok)) finalData = msg;
             else if (msg.type === "error") streamErr = msg.error || "Generation error";
             else if (msg.taskset && !finalData) finalData = msg; // tolerate non-streaming JSON
           } catch { /* partial / non-JSON line */ }
@@ -787,6 +797,7 @@ export default function TaskSets() {
       showToast(`Regenerate failed: ${e?.message || "error"}`, 4000);
     } finally {
       setRegeneratingId(null);
+      setRegenProgress(null);
     }
   };
 
@@ -1139,6 +1150,7 @@ export default function TaskSets() {
 
   return (
     <div style={page}>
+      <style>{`@keyframes regenShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
       {toast && (
         <div
           style={{
@@ -1774,15 +1786,42 @@ export default function TaskSets() {
                       >
                         🧪 Test run
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => openRegenerateModal(ts)}
-                        disabled={regeneratingId === id}
-                        style={btn("secondary")}
-                        title="Regenerate this taskset with the same constraints — review and tweak before generating"
-                      >
-                        {regeneratingId === id ? "♻️ Regenerating…" : "♻️ Regenerate"}
-                      </button>
+                      {(() => {
+                        const isRegen = regeneratingId === id;
+                        const rp = isRegen ? regenProgress : null;
+                        const pct = rp && rp.total ? Math.min(100, Math.round((rp.done / rp.total) * 100)) : null;
+                        const style = { ...btn("secondary") };
+                        if (isRegen) {
+                          style.cursor = "wait";
+                          style.borderColor = "#a5b4fc";
+                          style.color = "#3730a3";
+                          if (pct != null && pct < 100) {
+                            // Determinate fill showing real task progress.
+                            style.backgroundImage = `linear-gradient(90deg, #c7d2fe 0%, #c7d2fe ${pct}%, #eef2ff ${pct}%, #eef2ff 100%)`;
+                          } else {
+                            // Indeterminate shimmer (start / post-generation phases) — proves it's alive.
+                            style.backgroundImage = "linear-gradient(90deg, #eef2ff 25%, #c7d2fe 50%, #eef2ff 75%)";
+                            style.backgroundSize = "200% 100%";
+                            style.animation = "regenShimmer 1.1s linear infinite";
+                          }
+                        }
+                        const label = !isRegen
+                          ? "♻️ Regenerate"
+                          : pct != null
+                            ? `♻️ ${rp.done}/${rp.total}`
+                            : "♻️ Regenerating…";
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => openRegenerateModal(ts)}
+                            disabled={isRegen}
+                            style={style}
+                            title="Regenerate this taskset with the same constraints — review and tweak before generating"
+                          >
+                            {label}
+                          </button>
+                        );
+                      })()}
                       <button type="button" onClick={() => launchNow(ts)} style={btn("primary")}>
                         Launch
                       </button>
