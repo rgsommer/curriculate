@@ -1722,10 +1722,10 @@ export default function TaskSets() {
                             )}
                             {ts?.atDeskOnly && (
                               <span
-                                title="At-desk only \u2014 students stay seated; no QR-code scans"
+                                title={"At-desk only: students stay seated; no QR-code scans"}
                                 style={{ cursor: "default", fontSize: "0.8rem" }}
                               >
-                                \uD83E\uDE91
+                                {"\uD83E\uDE91"}
                               </span>
                             )}
                           </span>
@@ -1743,7 +1743,7 @@ export default function TaskSets() {
                         if (v.state === "verified") {
                           return (
                             <span
-                              title="Sanitized & playability-tested \u2014 safe to run with a class"
+                              title={"Sanitized & playability-tested \u2014 safe to run with a class"}
                               style={{
                                 flexShrink: 0, alignSelf: "center",
                                 display: "inline-flex", alignItems: "center", gap: 4,
