@@ -1482,17 +1482,28 @@ function EchoChainInline({ task, onSubmit, disabled, readOnly = false, memberNam
    Multi-part renderer for MC / TF / Short Answer
    ───────────────────────────────────────────── */
 
-function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitting, disabled }) {
+function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitting, disabled, memberNames = [] }) {
   const isChoice = mode === "choice";
   const isReview = !!readOnly;
   const [validationMsg, setValidationMsg] = useState(null);
 
-  const rawItems =
+  const rawItemsAll =
     (Array.isArray(task.items) && task.items.length > 0 && task.items) ||
     (Array.isArray(task.questions) && task.questions.length > 0 && task.questions) ||
     (Array.isArray(task.subItems) && task.subItems.length > 0 && task.subItems) ||
     (Array.isArray(task.multiQuestions) && task.multiQuestions.length > 0 && task.multiQuestions) ||
     [];
+
+  // Short answer: the generator can produce many questions (testers saw 20+),
+  // but a short-answer task is meant to be split ~2 per team member. Present
+  // only (players × perPlayer) and label each with whose turn it is. Choice/MC
+  // keeps all of its questions.
+  const roster = (Array.isArray(memberNames) ? memberNames.map((n) => String(n || "").trim()).filter(Boolean) : []);
+  const players = roster.length ? roster : ["You"];
+  const perPlayer = Math.max(1, Number(task?.config?.questionsPerPlayer) || 2);
+  const rawItems = (mode === "short" && rawItemsAll.length > 0)
+    ? rawItemsAll.slice(0, Math.min(rawItemsAll.length, players.length * perPlayer) || rawItemsAll.length)
+    : rawItemsAll;
 
   const items =
     rawItems.length > 0
@@ -1693,6 +1704,11 @@ function MultiPartTask({ mode, task, review, readOnly = false, onSubmit, submitt
                   }}
                 >
                   <span style={{ marginRight: 4 }}>{idx + 1}.</span>
+                  {!isChoice && (
+                    <span style={{ fontWeight: 800, color: "#0369a1" }}>
+                      {players[idx % players.length]},{" "}
+                    </span>
+                  )}
                   {label}
                 </div>
               )}
@@ -2288,6 +2304,7 @@ export default function TaskRunner({
             onSubmit={isReview ? () => {} : handleTaskSubmit}
             submitting={submitting}
             disabled={effectiveDisabled || isReview}
+            memberNames={memberNames}
           />
         </div>
     );
