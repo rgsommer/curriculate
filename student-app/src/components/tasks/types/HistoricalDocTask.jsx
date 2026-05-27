@@ -226,6 +226,14 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
     return () => clearInterval(interval);
   }, [phase, responseSec]);
 
+  // Let a reader move on as soon as they're done (tester: "make it a click
+  // button to next instead of just a timer"). The timer stays as a fallback.
+  const finishReadingEarly = useCallback(() => {
+    if (phase !== PHASE.READING) return;
+    setPhase(PHASE.ANALYSIS);
+    setSecondsLeft(responseSec);
+  }, [phase, responseSec]);
+
   // Auto-focus first input on analysis phase
   useEffect(() => {
     if (phase === PHASE.ANALYSIS && firstInputRef.current) {
@@ -412,6 +420,21 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
             onClick={() => setZoom((z) => Math.min(4, +(z + 0.25).toFixed(2)))}
             style={{ ...zoomBtnStyle, opacity: zoom >= 4 ? 0.4 : 1, cursor: zoom >= 4 ? "default" : "pointer" }} aria-label="Zoom in">+</button>
         </div>
+
+        {/* Done-reading button — let readers move on when ready instead of
+            waiting out the timer (tester: "make it a click button to next"). */}
+        <button
+          type="button"
+          onClick={finishReadingEarly}
+          style={{
+            position: "absolute", bottom: 16, left: 20, zIndex: 12,
+            padding: "10px 18px", borderRadius: 999, border: "none",
+            background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: "0.9rem",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)", cursor: "pointer",
+          }}
+        >
+          ✓ Done reading — continue
+        </button>
 
         {/* Instruction + document info overlay (collapsible on small screens) */}
         <div style={{

@@ -223,8 +223,16 @@ export default function PreviewPage() {
           style={navBtn(index === 0)}>← Prev</button>
         <button type="button" onClick={() => { setRunKey((k) => k + 1); }}
           style={navBtn(false)}>↻ Replay</button>
-        <button type="button" onClick={() => goTo(index + 1)} disabled={index >= total - 1}
-          style={navBtn(index >= total - 1)}>Next →</button>
+        {index >= total - 1 ? (
+          // On the last task, "Next" becomes "Finish" so the teacher can end the
+          // run from ANY task type — including ones that don't auto-submit
+          // (role-play, body-break, etc.) where there's no other end trigger.
+          <button type="button" onClick={() => setFinished(true)}
+            style={{ ...navBtn(false), background: "#7c3aed", borderColor: "#7c3aed" }}>✓ Finish</button>
+        ) : (
+          <button type="button" onClick={() => goTo(index + 1)}
+            style={navBtn(false)}>Next →</button>
+        )}
       </div>
 
       {/* Playability warning — this task is missing required content */}

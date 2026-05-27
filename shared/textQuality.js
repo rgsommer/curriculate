@@ -8,7 +8,10 @@
 // Because dictation writes recognized speech into the same text box, this one
 // text-based score covers both typed and spoken input.
 
-const FILLER_PHRASES = ["you know", "i mean", "kind of", "sort of", "you see"];
+// "you see" / "kind of" / "sort of" removed — they're frequently legitimate in
+// written sentences ("an example is when you see steam…", "a kind of energy"),
+// which produced false positives (tester). Keep only clear vocalized hedges.
+const FILLER_PHRASES = ["you know", "i mean"];
 // Only UNAMBIGUOUS vocalized fillers — words like "so", "like", "just",
 // "really", "actually", "well", "right" are frequently legitimate (transitions,
 // comparisons, emphasis) and were producing false positives (tester: "thinks
