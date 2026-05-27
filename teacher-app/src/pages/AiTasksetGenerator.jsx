@@ -249,6 +249,7 @@ export default function AiTasksetGenerator() {
       durationMinutes: 45,
       isFixedStation: false,
       atDeskOnly: false,
+      questMode: false,
     };
   });
 
@@ -598,6 +599,10 @@ export default function AiTasksetGenerator() {
         // At-desk-only: filter generator pool to exclude movement-required task types
         // and persist so LiveSession defaults the "On-screen only" checkbox to true.
         atDeskOnly: !!form.atDeskOnly,
+
+        // Quest mode is content-based: it weaves in a quest task + a hidden
+        // early-finisher task, so it must be chosen at generation time.
+        questMode: !!form.questMode,
 
       };
 
@@ -1926,6 +1931,33 @@ export default function AiTasksetGenerator() {
               </div>
             </div>
           )}
+        </div>
+
+        {/* QUEST MODE — content-based: weaves a quest + hidden task into the set */}
+        <div
+          style={{
+            marginBottom: 16,
+            padding: 12,
+            borderRadius: 10,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+          }}
+        >
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.questMode}
+              onChange={(e) => handleChange("questMode", e.target.checked)}
+              style={{ marginTop: 3 }}
+            />
+            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
+              🗺️ Quest mode (story-driven, resource-trading overlay)
+              <div style={{ fontSize: "0.78rem", fontWeight: 400, color: "#6b7280", marginTop: 2 }}>
+                Weaves a Quest task and a hidden early-finisher task into the set. Because it adds
+                tasks, it must be chosen now (it can’t be turned on at launch).
+              </div>
+            </span>
+          </label>
         </div>
 
         {/* AT-DESK ONLY */}

@@ -2228,13 +2228,12 @@ export default function TaskSets() {
 
                 {/* Flags */}
                 <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                  {/* Quest + At-desk are content-based (they change what's generated),
+                      so they belong here. Duels is a runtime/launch flag (not content),
+                      so it's not a generation toggle — the original value is preserved. */}
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                     <input type="checkbox" checked={!!regenForm.questMode} onChange={(e) => setRegenForm((f) => ({ ...f, questMode: e.target.checked }))} />
                     Quest mode
-                  </label>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                    <input type="checkbox" checked={!!regenForm.duelsEnabled} onChange={(e) => setRegenForm((f) => ({ ...f, duelsEnabled: e.target.checked }))} />
-                    Duels
                   </label>
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
                     <input type="checkbox" checked={!!regenForm.atDeskOnly} onChange={(e) => setRegenForm((f) => ({ ...f, atDeskOnly: e.target.checked }))} />
