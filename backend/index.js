@@ -8532,6 +8532,10 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
         // (musical-chairs, mad-dash, mad-dash-sequence,
         // physical-multiple-choice, hidenseek, treasure-runner).
         onScreenOnly,
+        // Per-session duels toggle (LiveSession checkbox). Duels are a runtime
+        // trigger (not content), so the teacher decides at launch. When a
+        // boolean is provided it overrides the stored taskset flag.
+        duelsEnabled,
       } = payload || {};
     const code = (roomCode || "").toUpperCase();
 
@@ -8758,6 +8762,12 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
         ...tasksetDoc,
         tasks,
       };
+      // Launch-time duels override: duels is a per-session runtime choice, not
+      // baked-in content, so the LiveSession checkbox governs it regardless of
+      // the stored taskset flag.
+      if (typeof duelsEnabled === "boolean") {
+        room.taskset.duelsEnabled = duelsEnabled;
+      }
       room.taskIndex = -1;
       room.isActive = false;
       room.startedAt = null;

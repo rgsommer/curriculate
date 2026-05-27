@@ -346,6 +346,10 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   // particular lesson without losing the rest of the catalogue.
   const [onScreenOnly, setOnScreenOnly] = useState(false);
 
+  // Per-session duels toggle. Duels are a runtime trigger (not baked-in
+  // content), so the teacher opts in per session here at launch.
+  const [duelsEnabled, setDuelsEnabled] = useState(false);
+
   // Plan tier — read once from /api/profile/me so we can hide PLUS-only UI
   // (class linking) and PRO-only UI from FREE-tier teachers without making
   // them hit a 403 from the server.
@@ -2978,6 +2982,7 @@ if (
         // out movement-required tasks from the loaded taskset.
         // (Auto-defaulted to true when the taskset was built atDeskOnly.)
         onScreenOnly: effectiveOnScreenOnly,
+        duelsEnabled, // per-session duels toggle (runtime trigger, not content)
         reportOwnerId,
         reportOwnerName,
         reportOwnerEmail,
@@ -4319,6 +4324,43 @@ if (
                       seat (Musical Chairs, Mad Dash, Mad Dash Sequence,
                       Station Dash Quiz, Hide &amp; Seek, Treasure
                       Runner).  Everything else runs as normal.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Duels toggle (per-session). Duels are a runtime trigger, not
+                  baked-in content, so the teacher opts in here at launch. */}
+              {activeTasksetMeta && !taskFlowActive && (
+                <div
+                  style={{
+                    marginBottom: 6,
+                    padding: "6px 8px",
+                    background: duelsEnabled ? "#fef2f2" : "transparent",
+                    borderRadius: 8,
+                    border: duelsEnabled ? "1px solid #fca5a5" : "1px solid transparent",
+                  }}
+                >
+                  <label
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: "0.82rem",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={duelsEnabled}
+                      onChange={(e) => setDuelsEnabled(e.target.checked)}
+                    />
+                    ⚔️ Enable duels (spontaneous head-to-head challenges)
+                  </label>
+                  {duelsEnabled && (
+                    <div style={{ marginTop: 4, fontSize: "0.72rem", color: "#991b1b", lineHeight: 1.4 }}>
+                      The system will occasionally pit two teams head-to-head during the
+                      session for bonus points. Turn off for a calmer run.
                     </div>
                   )}
                 </div>
@@ -5979,6 +6021,7 @@ Precipitation — rain, snow, hail`}
                     // Per-session at-desk mode — honor the checkbox AND any
                     // atDeskOnly flag persisted on the taskset itself.
                     onScreenOnly: onScreenOnly || data?.atDeskOnly === true,
+                    duelsEnabled, // per-session duels toggle (runtime trigger, not content)
                     reportOwnerId,
                     reportOwnerName,
                     reportOwnerEmail,
@@ -6278,6 +6321,7 @@ Precipitation — rain, snow, hail`}
                           onScreenOnly ||
                           data?.atDeskOnly === true ||
                           tasksetDoc?.atDeskOnly === true,
+                        duelsEnabled, // per-session duels toggle (runtime trigger, not content)
                         reportOwnerId,
                         reportOwnerName,
                         reportOwnerEmail,
