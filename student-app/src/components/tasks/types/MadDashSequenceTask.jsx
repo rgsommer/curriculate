@@ -90,7 +90,10 @@ function shuffle(arr, seed = Math.random()) {
   return a;
 }
 
-export default function MadDashSequenceTask({ task, onSubmit, disabled, presenter }) {
+export default function MadDashSequenceTask({ task, onSubmit, disabled, presenter, practiceMode = false, requireRealScans = false }) {
+  // Practice/preview path: no real station QRs, so show tappable colour buttons
+  // that fire the same scan handler. Hidden at the conference booth (real scans).
+  const showScanSimulator = practiceMode && !requireRealScans;
   const palette = useMemo(() => {
     const p =
       (Array.isArray(task?.availableColors) && task.availableColors) ||
@@ -394,9 +397,46 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
             <div className={`mt-4 p-4 rounded-xl border ${errorFlash ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"}`}>
               <div className="text-slate-600">Progress: {scanIdx}/{scanSeq.length}</div>
               <div className="mt-2 text-xs text-slate-500">
-                Use the on-screen scanner — this task listens to it.
+                {showScanSimulator
+                  ? "Practice mode — tap a colour below to simulate scanning that station."
+                  : "Use the on-screen scanner — this task listens to it."}
               </div>
             </div>
+
+            {/* Practice/preview scan simulator — tappable colour buttons that
+                fire the same scan handler as a real station QR. */}
+            {showScanSimulator && (
+              <div className="mt-4">
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(90px, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  {(palette && palette.length ? palette : DEFAULT_COLORS).map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => handleScanValue(c)}
+                      aria-label={`Tap to simulate scanning ${c}`}
+                      className="font-black"
+                      style={{
+                        ...colorPillStyle(c),
+                        borderRadius: 14,
+                        height: 52,
+                        cursor: "pointer",
+                        border: "3px solid rgba(255,255,255,0.85)",
+                        boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+                        letterSpacing: 0.5,
+                      }}
+                    >
+                      {String(c).toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

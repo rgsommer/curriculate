@@ -3045,6 +3045,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
       onSubmit={handleTaskSubmit}
       disabled={effectiveDisabled}
       socket={socket}
+      practiceMode={practiceMode}
       requireRealScans={requireRealScans}
     />
   );
