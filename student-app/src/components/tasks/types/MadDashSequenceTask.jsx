@@ -13,6 +13,27 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 const DEFAULT_COLORS = ["Red", "Blue", "Green", "Yellow", "Purple", "Orange", "Teal", "Pink"];
 
+// Render the station tags in their ACTUAL color so they match the physical
+// station signs, instead of a generic dark pill with a color word.
+const COLOR_SWATCH = {
+  Red:    { bg: "#ef4444", fg: "#ffffff" },
+  Blue:   { bg: "#3b82f6", fg: "#ffffff" },
+  Green:  { bg: "#22c55e", fg: "#ffffff" },
+  Yellow: { bg: "#eab308", fg: "#1a1a1a" },
+  Purple: { bg: "#a855f7", fg: "#ffffff" },
+  Orange: { bg: "#f97316", fg: "#ffffff" },
+  Teal:   { bg: "#14b8a6", fg: "#ffffff" },
+  Pink:   { bg: "#ec4899", fg: "#ffffff" },
+};
+function colorPillStyle(name) {
+  const sw = COLOR_SWATCH[name] || { bg: "#0f172a", fg: "#ffffff" };
+  return {
+    background: sw.bg,
+    color: sw.fg,
+    border: `1px solid rgba(0,0,0,0.15)`,
+  };
+}
+
 function normalizeColorName(s) {
   if (!s) return null;
   const t = String(s).trim();
@@ -170,32 +191,25 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
     };
   }, [phase, disabled]);
 
-  useEffect(() => {
-    if (phase !== "reveal" || disabled) return;
-
-    if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current);
-    revealTimerRef.current = window.setTimeout(async () => {
-      // 1-2-3-GO! countdown before scanning begins
-      if (presenter?.showCountdown) {
-        try {
-          await presenter.showCountdown({
-            title: "Mad Dash Sequence",
-            seconds: 3,
-            subtext: "1–2–3… GO!",
-          });
-        } catch {}
-      }
-      setScanIdx(0);
-      setTimerMs(0);
-      startAtRef.current = performance.now();
-      setPhase("scan");
-    }, Math.max(0, revealMs));
-
-    return () => {
-      if (revealTimerRef.current) window.clearTimeout(revealTimerRef.current);
-      revealTimerRef.current = null;
-    };
-  }, [phase, disabled, revealMs]);
+  // Start scanning straight from the puzzle. We deliberately do NOT reveal the
+  // correct order first — students must reason out the sequence from the
+  // statements themselves (a reveal just gets copied without reading).
+  const startScan = async () => {
+    if (disabled) return;
+    if (presenter?.showCountdown) {
+      try {
+        await presenter.showCountdown({
+          title: "Mad Dash Sequence",
+          seconds: 3,
+          subtext: "1–2–3… GO!",
+        });
+      } catch {}
+    }
+    setScanIdx(0);
+    setTimerMs(0);
+    startAtRef.current = performance.now();
+    setPhase("scan");
+  };
 
   const handleScanValue = (value) => {
     if (phase !== "scan" || disabled) return false;
@@ -328,6 +342,9 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
         {phase === "puzzle" && (
           <div className="mt-6">
             <div className="font-extrabold text-xl">Items (shuffled):</div>
+            <div className="mt-1 text-slate-500 font-semibold">
+              Work out the correct order, then scan the stations in that order.
+            </div>
             <div className="mt-3 grid gap-2">
               {mapping.map((m) => (
                 <div
@@ -335,7 +352,7 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
                   className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between"
                 >
                   <div className="font-bold">{m.text}</div>
-                  <div className="px-3 py-1 rounded-full bg-slate-900 text-white font-black">
+                  <div className="px-3 py-1 rounded-full font-black" style={colorPillStyle(m.color)}>
                     {m.color}
                   </div>
                 </div>
@@ -346,49 +363,17 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
               <button
                 className="px-5 py-3 rounded-full bg-indigo-600 text-white font-black disabled:opacity-50"
                 disabled={disabled}
-                onClick={() => setPhase("reveal")}
+                onClick={startScan}
               >
-                Ready (reveal order)
+                Ready to scan
               </button>
-              <div className="text-slate-500 self-center">You'll see the correct scan order briefly.</div>
+              <div className="text-slate-500 self-center">Scan the station colors in the order you think is correct.</div>
             </div>
           </div>
         )}
 
-        {phase === "reveal" && (
-          <div className="mt-6">
-            <div className="font-extrabold text-xl">Memorize the correct order, then scan the matching colors:</div>
-            <div className="mt-3 grid gap-2">
-              {correctMapping.map((m, i) => (
-                <div
-                  key={`${m.idx}-${i}`}
-                  className="p-3 rounded-xl border border-emerald-200 bg-emerald-50 flex items-center justify-between"
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center font-black text-sm">
-                      {i + 1}
-                    </span>
-                    <span className="font-bold">{m.text}</span>
-                  </div>
-                  <div className="px-3 py-1 rounded-full bg-slate-900 text-white font-black">
-                    {m.color}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <span className="text-slate-500 font-semibold">Scan order:</span>
-              {scanSeq.map((c, i) => (
-                <span key={i} className="px-3 py-1 rounded-full bg-slate-100 border border-slate-200 font-bold text-sm">
-                  {i + 1}. {c}
-                </span>
-              ))}
-            </div>
-            <div className="mt-4 text-slate-600 font-semibold">Starting in {Math.round(revealMs / 1000)}s…</div>
-          </div>
-        )}
-
-        {/* "go" phase removed — countdown is handled by presenter overlay before transitioning to "scan" */}
+        {/* No "reveal" phase — students must reason the order themselves.
+            "go" countdown is handled by the presenter overlay in startScan(). */}
 
         {phase === "scan" && (
           <div className="mt-6">
@@ -396,7 +381,14 @@ export default function MadDashSequenceTask({ task, onSubmit, disabled, presente
               Time: <span className="text-amber-600">{fmt(timerMs)}</span>
             </div>
             <div className="mt-3 font-extrabold">
-              Scan next: <span className="text-emerald-700">{scanSeq[scanIdx] || "—"}</span>
+              Scan next:{" "}
+              {scanSeq[scanIdx] ? (
+                <span className="px-3 py-1 rounded-full font-black" style={colorPillStyle(scanSeq[scanIdx])}>
+                  {scanSeq[scanIdx]}
+                </span>
+              ) : (
+                <span className="text-emerald-700">—</span>
+              )}
             </div>
 
             <div className={`mt-4 p-4 rounded-xl border ${errorFlash ? "border-red-400 bg-red-50" : "border-slate-200 bg-slate-50"}`}>

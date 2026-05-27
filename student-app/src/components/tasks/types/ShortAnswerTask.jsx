@@ -945,35 +945,18 @@ export default function ShortAnswerTask({
                     >
                       {displayIdx + 1}
                     </div>
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                    <div
+                      style={{
+                        flex: 1,
+                        fontSize: "1rem",
+                        fontWeight: 600,
+                        color: "#1a202c",
+                      }}
+                    >
                       {pItem.player && (
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            alignSelf: "flex-start",
-                            fontSize: "0.72rem",
-                            fontWeight: 800,
-                            color: "#0369a1",
-                            background: "rgba(14,165,233,0.12)",
-                            border: "1px solid rgba(14,165,233,0.35)",
-                            borderRadius: 999,
-                            padding: "2px 8px",
-                          }}
-                        >
-                          👤 {pItem.player}’s turn
-                        </div>
+                        <span style={{ color: "#0369a1", fontWeight: 800 }}>{pItem.player}, </span>
                       )}
-                      <div
-                        style={{
-                          fontSize: "1rem",
-                          fontWeight: 600,
-                          color: "#1a202c",
-                        }}
-                      >
-                        {pItem.prompt}
-                      </div>
+                      {pItem.prompt}
                     </div>
                     {hasContent && (
                       <div style={{ fontSize: "1.2rem", animation: "pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)" }}>
