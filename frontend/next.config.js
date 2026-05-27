@@ -12,6 +12,15 @@ const nextConfig = {
         source: "/grading/capture/:path*",
         destination: "https://api.curriculate.net/grading/capture/:path*",
       },
+      // Oak Hill Academy microsite — static files in public/oakhill/.
+      // Without these rewrites Next.js returns 404 for the bare /oakhill path
+      // (it only serves /oakhill/index.html). These map clean URLs to the
+      // underlying .html files so curriculate.net/oakhill/about works.
+      { source: "/oakhill",            destination: "/oakhill/index.html" },
+      { source: "/oakhill/about",      destination: "/oakhill/about.html" },
+      { source: "/oakhill/academics",  destination: "/oakhill/academics.html" },
+      { source: "/oakhill/admissions", destination: "/oakhill/admissions.html" },
+      { source: "/oakhill/contact",    destination: "/oakhill/contact.html" },
     ];
   },
   async redirects() {
