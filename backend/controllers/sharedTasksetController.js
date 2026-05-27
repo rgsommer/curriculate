@@ -299,9 +299,9 @@ function validatePlayabilityByType(type, task) {
   // ── Flashcards Race answer length check ──
   if (type === TASK_TYPES.FLASHCARDS_RACE) {
     const items = Array.isArray(task?.items) ? task.items : Array.isArray(cfg?.items) ? cfg.items : [];
-    const longAnswers = items.filter((it) => String(it?.answer || "").trim().length > 30);
+    const longAnswers = items.filter((it) => String(it?.answer || "").trim().length > 50);
     if (longAnswers.length >= 2) {
-      errors.push(`${longAnswers.length} flashcard-race answers exceed 30 characters — race answers must be short terms students can type quickly`);
+      errors.push(`${longAnswers.length} flashcard-race answers exceed 50 characters — race answers must be short terms students can type quickly`);
     }
   }
 
