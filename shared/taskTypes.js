@@ -670,11 +670,16 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    1. Choose 4–6 steps/events that form ONE genuine ordered process or chronology.
-       Do NOT dump a list of loosely-related vocabulary terms as "steps" — they must
-       have a real, single correct order (process steps, life cycle, cause→effect,
-       or historical chronology). 4–6 is the sweet spot; never more than 7.
-    2. Each item should be specific and datable -- include dates in parentheses for historical topics.
+    1. The items MUST have ONE objective correct order. Two valid kinds:
+       (a) the ordered STEPS of a single procedure (each step depends on the prior), or
+       (b) distinct items with a real ordering (chronological events, smallest→largest).
+       THE TEST: if the items could be reordered and still make sense, they are NOT a
+       sequence — that's a list of parallel facts/methods (tester: "these are all true
+       statements and are not related as a sequence"). Reject and pick a real ordered set.
+       WRONG: ["Convert improper fractions", "Identify the variable", "Use fraction strips"].
+       RIGHT (procedure): ["Find a common denominator", "Rewrite each fraction", "Add the
+       numerators", "Simplify to lowest terms"].
+    2. Use 4–6 items (never more than 7). For historical topics include dates in parentheses.
     3. Provide items in the correct order; the student sees them shuffled.
 
     Common failure prevention:
@@ -1818,12 +1823,21 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
       }
     }
 
-    CRITICAL -- Items MUST form a clear logical sequence:
-    - Items MUST share an obvious ordering relationship (chronological, size, steps in a process, cause-and-effect chain, etc.).
-    - The "prompt" field MUST explicitly state what ordering criterion to use (e.g. "Put these historical events in chronological order", "Arrange these fractions from smallest to largest", "Order these steps of the water cycle").
-    - Do NOT use unrelated or random items. A student should be able to figure out the correct order from general knowledge of the subject.
-    - Good examples: steps of cell division, planets by distance from sun, stages of a butterfly lifecycle, presidents in chronological order.
-    - Bad examples: random vocabulary words, unrelated facts, items with no natural ordering.
+    CRITICAL -- Items MUST be the steps of ONE single procedure, in order:
+    - Pick ONE procedure/process from the topic and break it into the 4 steps you do
+      IN ORDER. Each step should depend on the previous one.
+    - THE TEST: if the items could be done in any order and still make sense, they are
+      NOT a sequence — you have written a list of independent facts/methods. Reject that
+      and pick a real step-by-step procedure instead.
+    - WRONG (independent methods, no real order): ["Convert improper fractions to mixed
+      numbers", "Identify the variable", "Solve 9+w=14", "Use fraction strips to model"].
+    - RIGHT (one procedure, forced order) e.g. "Steps to add fractions with different
+      denominators": ["Find a common denominator", "Rewrite each fraction with that
+      denominator", "Add the numerators", "Simplify the result to lowest terms"].
+    - The "prompt" MUST name the procedure + criterion (e.g. "Put the steps to solve a
+      one-variable equation in the order you do them").
+    - Bad examples: random vocabulary words, unrelated facts, parallel techniques with no
+      single correct order.
 
     Content guidance:
     - Grade 3+ wording.

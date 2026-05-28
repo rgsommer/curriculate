@@ -1205,7 +1205,7 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.TIMELINE]: 6,
   [TASK_TYPES.SHORT_ANSWER]: 6,
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]: 6,
-  [TASK_TYPES.MAD_DASH_SEQUENCE]: 4,    // 4 ordered steps — 1 concept each, not crammed run-ons
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: 1,    // ONE procedure broken into 4 ordered steps — not 4 independent concepts
   [TASK_TYPES.ECHO_CHAIN]: 6,
   [TASK_TYPES.COLLABORATION]: 6,
   [TASK_TYPES.BRAINSTORM_BATTLE]: 6,
