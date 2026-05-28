@@ -462,3 +462,6 @@ if (totalFailed === 0) {
   console.log(`\n  ${failures.length} type(s) had failures.`);
 }
 console.log("════════════════════════════════════════════════════════════════");
+
+// Exit non-zero on any failure so this can gate a build/deploy.
+process.exit(totalFailed > 0 ? 1 : 0);

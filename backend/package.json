@@ -4,6 +4,8 @@
   "type": "module",
   "description": "Curriculate cloud backend (Express + MongoDB + Socket.io)",
   "scripts": {
+    "test:gen": "node tests/test-cap-limits.mjs && node tests/test-all-shells.mjs",
+    "prebuild": "npm run test:gen",
     "build": "npm run build-all",
     "build-all": "cd ../student-app && npm install && npm run build && cd ../teacher-app && npm install && npm run build",
     "start": "node index.js",

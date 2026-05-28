@@ -3217,10 +3217,10 @@ export function validateTaskByType(taskType, task) {
       // bank in (e.g. "Draw and label diagrams: 1. … 2. … 8. …"). Hard-reject so
       // it regenerates focused — or gets dropped — rather than shipping.
       if (
-        type === TASK_TYPES.DRAW ||
-        type === TASK_TYPES.MIME ||
-        type === TASK_TYPES.MOTION_MISSION ||
-        type === TASK_TYPES.BODY_BREAK
+        taskType === TASK_TYPES.DRAW ||
+        taskType === TASK_TYPES.MIME ||
+        taskType === TASK_TYPES.MOTION_MISSION ||
+        taskType === TASK_TYPES.BODY_BREAK
       ) {
         const p = String(task.prompt || "");
         const numbered = (p.match(/(?:^|\s)\d+\.\s/g) || []).length; // "1. ", "2. ", …
