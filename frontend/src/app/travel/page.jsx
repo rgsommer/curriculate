@@ -13,7 +13,7 @@
  * search (no dedicated flight API). Searches take ~15-40s.
  */
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 const BACKEND_URL =
   (typeof process !== "undefined" && process.env?.NEXT_PUBLIC_BACKEND_URL) ||
@@ -109,6 +109,52 @@ function loadPrefs() {
 function savePrefs(prefs) {
   if (typeof window === "undefined") return;
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch {}
+}
+
+// Encode the current search as URL query params for a shareable "saved search"
+// link (used in the email so months later it re-opens pre-filled).
+function buildShareQuery(s) {
+  const p = new URLSearchParams();
+  p.set("o", s.origin.trim());
+  p.set("d", s.destination.trim());
+  if (s.includeNearbyOrigin) p.set("no", "1");
+  if (s.includeNearbyDestination) p.set("nd", "1");
+  p.set("tt", s.tripType);
+  p.set("dd", s.departureDate);
+  if (s.tripType === "return") p.set("rd", s.returnDate);
+  p.set("df", s.departureFlex);
+  if (s.tripType === "return") p.set("rf", s.returnFlex);
+  p.set("ms", String(s.maxStops));
+  p.set("ad", String(s.adults));
+  if (s.includeCarRental) p.set("cr", "1");
+  p.set("op", s.outboundTimePref);
+  if (s.tripType === "return") p.set("rp", s.returnTimePref);
+  p.set("cur", s.currency);
+  return p.toString();
+}
+// Read a saved-search link's params back into a prefs-shaped object.
+function parseQueryPrefs() {
+  if (typeof window === "undefined") return null;
+  const q = new URLSearchParams(window.location.search);
+  if (!q.get("o")) return null;
+  return {
+    origin: q.get("o") || "",
+    destination: q.get("d") || "",
+    includeNearbyOrigin: q.get("no") === "1",
+    includeNearbyDestination: q.get("nd") === "1",
+    tripType: q.get("tt") === "oneway" ? "oneway" : "return",
+    departureDate: q.get("dd") || "",
+    returnDate: q.get("rd") || "",
+    departureFlex: q.get("df") || "0",
+    returnFlex: q.get("rf") || "0",
+    maxStops: parseInt(q.get("ms"), 10),
+    adults: parseInt(q.get("ad"), 10),
+    includeCarRental: q.get("cr") === "1",
+    outboundTimePref: q.get("op") || "any",
+    returnTimePref: q.get("rp") || "any",
+    currency: q.get("cur") || "",
+    _fromUrl: true,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -260,8 +306,12 @@ export default function TravelPage() {
   // flag (not a ref) so the save effect can't run in the same commit as
   // hydration and clobber storage with the pre-hydration defaults.
   const [isHydrated, setIsHydrated] = useState(false);
+  const [pendingAutoSearch, setPendingAutoSearch] = useState(false);
   useEffect(() => {
-    const p = loadPrefs();
+    // A saved-search link (?o=...&d=...) takes precedence over saved prefs and
+    // triggers an automatic search so the user sees fresh prices on open.
+    const urlPrefs = parseQueryPrefs();
+    const p = urlPrefs || loadPrefs();
     const today = todayPlus(0);
     if (p) {
       if (typeof p.origin === "string") setOrigin(p.origin);
@@ -284,6 +334,7 @@ export default function TravelPage() {
     } else {
       setCurrency(detectCurrency());
     }
+    if (p && p._fromUrl && p.origin && p.destination) setPendingAutoSearch(true);
     setIsHydrated(true);
   }, []);
 
@@ -345,6 +396,24 @@ export default function TravelPage() {
     }
   }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, outboundTimePref, returnTimePref, prioritizeShortStops, currency]);
 
+  // Fire the search once after a saved-search link has populated the form.
+  useEffect(() => {
+    if (isHydrated && pendingAutoSearch && origin.trim() && destination.trim()) {
+      setPendingAutoSearch(false);
+      search();
+    }
+  }, [isHydrated, pendingAutoSearch, origin, destination, search]);
+
+  // Shareable "saved search" link reflecting the current form state.
+  const shareUrl = useMemo(() => {
+    if (typeof window === "undefined" || !origin.trim() || !destination.trim()) return "";
+    return `${window.location.origin}/travel?${buildShareQuery({
+      origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType,
+      departureDate, returnDate, departureFlex, returnFlex, maxStops, adults,
+      includeCarRental, outboundTimePref, returnTimePref, currency,
+    })}`;
+  }, [origin, destination, includeNearbyOrigin, includeNearbyDestination, tripType, departureDate, returnDate, departureFlex, returnFlex, maxStops, adults, includeCarRental, outboundTimePref, returnTimePref, currency]);
+
   const emailResults = useCallback(async () => {
     if (!result) return;
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTo.trim())) {
@@ -366,6 +435,7 @@ export default function TravelPage() {
           carRental: result.carRental || null,
           selectedDepartureDate: departureDate,
           selectedReturnDate: tripType === "return" ? returnDate : null,
+          searchUrl: shareUrl,
           offers: result.offers,
         }),
       });
@@ -375,7 +445,7 @@ export default function TravelPage() {
     } catch (e) {
       setEmailState({ status: "error", msg: e.message || "Failed to send." });
     }
-  }, [result, emailTo, departureDate, returnDate, tripType]);
+  }, [result, emailTo, departureDate, returnDate, tripType, shareUrl]);
 
   // Badges across the result set: cheapest, fewest stops, shortest trip time.
   const offers = result?.offers || [];

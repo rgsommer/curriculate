@@ -433,6 +433,17 @@ router.post("/email", async (req, res) => {
   const adults = Math.min(9, Math.max(1, parseInt(b.adults, 10) || 1));
   const selDep = isValidDate(b.selectedDepartureDate) ? b.selectedDepartureDate : null;
   const selRet = isValidDate(b.selectedReturnDate) ? b.selectedReturnDate : null;
+  // Only embed a saved-search link if it points at our own /travel page
+  // (prevents the public endpoint from being abused to mail arbitrary links).
+  const isOwnTravelUrl = (u) => {
+    try {
+      const x = new URL(u);
+      return (x.protocol === "https:" || x.protocol === "http:")
+        && /(^|\.)curriculate\.net$/.test(x.hostname)
+        && x.pathname === "/travel";
+    } catch { return false; }
+  };
+  const searchUrl = (typeof b.searchUrl === "string" && isOwnTravelUrl(b.searchUrl)) ? b.searchUrl : null;
   const route = `${esc(b.originResolved || "")} → ${esc(b.destinationResolved || "")}`.trim();
   const fmtMoney = (amt, cur) => {
     try { return new Intl.NumberFormat("en-CA", { style: "currency", currency: cur || currency, maximumFractionDigits: 0 }).format(amt); }
@@ -494,6 +505,11 @@ router.post("/email", async (req, res) => {
     ? `<p style="background:#f5f3ff;color:#5b21b6;border-radius:8px;padding:10px 12px;margin:0 0 14px;font-size:13px;">🚗 <strong>Car rental:</strong> ${esc(b.carRental.note)}${b.carRental.bookingUrl ? ` <a href="${esc(b.carRental.bookingUrl)}" style="color:#7c3aed;">Compare cars ↗</a>` : ""} <span style="color:#a78bfa;font-size:11px;">(indicative)</span></p>`
     : "";
 
+  const rerunHtml = searchUrl
+    ? `<p style="margin:14px 0;"><a href="${esc(searchUrl)}" style="display:inline-block;background:#0284c7;color:#fff;text-decoration:none;padding:9px 16px;border-radius:8px;font-weight:600;font-size:14px;">🔄 Re-run this search for updated prices ↗</a></p>
+    <p style="color:#94a3b8;font-size:12px;margin:-6px 0 6px;">Bookmark this email — open the link any time to check the latest fares for this exact trip.</p>`
+    : "";
+
   const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5;color:#0f172a;max-width:680px;margin:24px auto;padding:8px;">
     <h2 style="margin:0 0 4px;font-size:20px;">Flight results${route ? `: ${route}` : ""}</h2>
     ${b.summary ? `<p style="color:#475569;margin:6px 0 14px;">${esc(b.summary)}</p>` : ""}
@@ -504,6 +520,7 @@ router.post("/email", async (req, res) => {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>
+    ${rerunHtml}
     <p style="color:#94a3b8;font-size:12px;margin-top:18px;">Fares are AI-estimated from web search (${perLabel}) and may be out of date — confirm the final price on the booking site. ⚠ marks dates that differ from the one you selected. Searched at <a href="https://curriculate.net/travel" style="color:#0284c7;">curriculate.net/travel</a>.</p>
   </div>`;
 
@@ -522,6 +539,7 @@ router.post("/email", async (req, res) => {
       const total = adults > 1 ? ` (${fmtMoney(Number(o.price) * adults, o.currency)} for ${adults})` : "";
       return `${fmtMoney(Number(o.price), o.currency)} ${perLabel}${total}${badgeText(o)} — ${o.airline} — ${o.departureDate}${depMark}${o.returnDate ? ` to ${o.returnDate}${retMark}` : " (one-way)"} — ${stopsLabel(o.outboundStops)}${o.seatWarning ? `\n  ! ${o.seatWarning}` : ""}${o.bookingUrl ? `\n  ${o.bookingUrl}` : ""}`;
     }).join("\n\n") +
+    (searchUrl ? `\n\nRe-run this search for updated prices:\n${searchUrl}` : "") +
     `\n\nFares are AI-estimated (${perLabel}); (!) marks non-exact dates — confirm on the booking site. curriculate.net/travel`;
 
   try {
