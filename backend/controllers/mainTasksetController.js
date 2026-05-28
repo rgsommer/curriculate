@@ -1822,12 +1822,10 @@ export async function createAiTaskset(req, res) {
       console.warn("[AI] Timing stats lookup failed (non-blocking):", e?.message || e);
     }
 
-    // ── Per-task sequential generation ──
-    // Each task is generated individually via regenerateSingleTask to avoid
-    // cross-type schema contamination that occurs in batch generation.
-    // This is slower (one API call per task) but far more accurate.
-
-    sendSSE({ type: "phase", phase: "generating", message: "Generating tasks one-by-one…" });
+    // ── Per-task generation (parallel, concurrency-capped) ──
+    // Each task is generated individually via regenerateSingleTask (one
+    // single-type AI call each) to avoid cross-type schema contamination, but
+    // several run at once (see worker pool below) so it's fast for the teacher.
 
     if (hasFixedStations) {
       console.log(`[AI] Fixed station mode: ${displays.length} display(s) assigned across ${safeCount} tasks`);
@@ -1840,16 +1838,15 @@ export async function createAiTaskset(req, res) {
 
     const deferredHangmanSlots = []; // indices where Hangman will be built from leftover words
 
-    for (let i = 0; i < safeCount; i++) {
+    // Build ONE slot. Returns a result object and does NOT mutate the shared
+    // arrays, so slots can run concurrently; the assembly pass below stitches
+    // results back in slot order to preserve the original semantics.
+    const generateOneSlot = async (i) => {
       const expectedType = pool[i % pool.length];
 
-      // ── Defer Hangman: skip in main loop, build from unused words later ──
+      // ── Defer Hangman: build from unused words after the main pass ──
       if (expectedType === TASK_TYPES.HANGMAN_DUEL && aiWordBank) {
-        deferredHangmanSlots.push(i);
-        finalized.push(null); // placeholder
-        attemptsByTask.push(0);
-        sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
-        continue;
+        return { i, expectedType, hangman: true, errors: [] };
       }
 
       const mustHave = retryMustHave[expectedType] || "";
@@ -1861,7 +1858,6 @@ export async function createAiTaskset(req, res) {
       const scopedLines = buildVocabularyLinesFromConcepts(assignedTerms);
 
       // ── Fixed station context for this task ──
-      // Round-robin assign displays to tasks so each station gets roughly equal coverage.
       let displayContext = "";
       let assignedDisplayKey = null;
       if (hasFixedStations && displays.length > 0) {
@@ -1894,46 +1890,32 @@ export async function createAiTaskset(req, res) {
         .filter(Boolean)
         .join("\n\n");
 
+      const slotErrors = [];
       let lastErr = null;
       let success = false;
       let usedAttempts = 0;
+      let finTask = null;
 
-      // Generate the first attempt. Wrapped in try/catch so a first-try schema
-      // failure (regenerateSingleTask throws assertValidAiTask) doesn't escape
-      // and abort the WHOLE set — the retry loop + final drop handle it.
+      // First attempt (wrapped so a schema throw doesn't escape).
       let attemptTask = null;
       try {
         attemptTask = await regenerateSingleTask({
-          allowedType: expectedType,
-          mustHave,
-          subject,
-          gradeLevel,
-          difficulty,
-          learningGoal,
-          topicLabel,
-          vocabularyLines: scopedLines,
-          specialConsiderations: scopedConsiderations,
-          previousTask: null,
+          allowedType: expectedType, mustHave, subject, gradeLevel, difficulty,
+          learningGoal, topicLabel, vocabularyLines: scopedLines,
+          specialConsiderations: scopedConsiderations, previousTask: null,
         });
       } catch (e) {
-        lastErr = e; // first loop iteration sees attemptTask=null → retries with the error hint
+        lastErr = e;
       }
 
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         usedAttempts = attempt;
         try {
           if (!attemptTask) throw new Error("Missing or invalid task object.");
-
           const fin = finalizeTask(expectedType, attemptTask);
-
-          // ✅ Check assigned concepts per-task.
-          // For content-rich types (cap > 2), retry if concepts are missing (first 2 attempts).
-          // For simple types (draw, mime, photo — cap ≤ 2), warn but don't block.
           const isSimpleType = getConceptCapForType(expectedType) <= 2;
           const warnOnly = isSimpleType || attempt > 2;
           taskMustIncludeTermsOrThrow(fin, assignedTerms, { warnOnly });
-
-          // ── Stamp fixed-station metadata onto finalized task ──
           if (hasFixedStations && assignedDisplayKey) {
             fin.displayKey = assignedDisplayKey;
             const display = displays[i % displays.length];
@@ -1944,36 +1926,18 @@ export async function createAiTaskset(req, res) {
               }
             }
           }
-
-          finalized.push(fin);
+          finTask = fin;
           success = true;
           break;
         } catch (e) {
           lastErr = e;
-          errors.push({
-            index: i,
-            taskType: expectedType,
-            attempt,
-            error: String(e?.message || e),
-            assignedTerms,
-          });
-
-          // Wrapped: if THIS regeneration also throws its schema error, don't
-          // let it escape the loop and abort the whole set — null it so the
-          // next iteration retries, and the final !success branch drops it.
+          slotErrors.push({ index: i, taskType: expectedType, attempt, error: String(e?.message || e), assignedTerms });
           try {
             attemptTask = await regenerateSingleTask({
-              allowedType: expectedType,
-              mustHave,
-              subject,
-              gradeLevel,
-              difficulty,
-              learningGoal,
-              topicLabel,
-              vocabularyLines: scopedLines,
+              allowedType: expectedType, mustHave, subject, gradeLevel, difficulty,
+              learningGoal, topicLabel, vocabularyLines: scopedLines,
               specialConsiderations: scopedConsiderations,
-              previousTask: attemptTask,
-              previousError: String(e?.message || e),
+              previousTask: attemptTask, previousError: String(e?.message || e),
             });
           } catch (regenErr) {
             lastErr = regenErr;
@@ -1983,26 +1947,55 @@ export async function createAiTaskset(req, res) {
       }
 
       if (!success) {
-        // Don't abort the WHOLE set because one task type kept failing its
-        // schema (e.g. flashcards-race answers too long for a math topic).
-        // Drop this slot and carry on — the drop-insurance buffer keeps the
-        // final count, and coverage auto-fix backfills any concepts it covered.
         console.warn(`[AI] dropping ungeneratable slot ${i} (${expectedType}): ${lastErr?.message || lastErr}`);
-        errors.push({
-          index: i,
-          taskType: expectedType,
-          dropped: true,
-          error: String(lastErr?.message || lastErr),
-        });
-        sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
-        continue; // skip the finalized.push / attemptsByTask.push for this slot
+        slotErrors.push({ index: i, taskType: expectedType, dropped: true, error: String(lastErr?.message || lastErr) });
+        return { i, expectedType, fin: null, errors: slotErrors };
       }
+      return { i, expectedType, fin: finTask, attempts: Math.max(1, usedAttempts || 1), errors: slotErrors };
+    };
 
-      // record how many attempts this slot used (1 = first-pass success)
-      attemptsByTask.push(Math.max(1, usedAttempts || 1));
+    // ── Parallel generation with a concurrency cap ──
+    // Each task is an independent single-type AI call (no batch contamination),
+    // so we run several at once instead of strictly one-by-one — much faster
+    // wall-clock for the teacher without changing the per-task accuracy.
+    sendSSE({ type: "phase", phase: "generating", message: "Generating tasks…" });
+    const slotResults = new Array(safeCount).fill(null);
+    {
+      const CONCURRENCY = 5;
+      let cursor = 0;
+      let doneCount = 0;
+      const worker = async () => {
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const i = cursor++;
+          if (i >= safeCount) break;
+          slotResults[i] = await generateOneSlot(i);
+          doneCount += 1;
+          sendSSE({ type: "progress", done: doneCount, total: safeCount, taskType: slotResults[i]?.expectedType });
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(CONCURRENCY, Math.max(1, safeCount)) }, () => worker())
+      );
+    }
 
-      // 🔴 Progress event: tell the client one more task is done
-      sendSSE({ type: "progress", done: finalized.length, total: safeCount, taskType: expectedType });
+    // ── Assemble in slot order (reproduces the original push semantics) ──
+    //   hangman → null placeholder (filled later); success → push; drop → skip.
+    for (let i = 0; i < safeCount; i++) {
+      const r = slotResults[i];
+      if (!r) continue;
+      if (Array.isArray(r.errors) && r.errors.length) errors.push(...r.errors);
+      if (r.hangman) {
+        deferredHangmanSlots.push(finalized.length); // index of the null we push
+        finalized.push(null);
+        attemptsByTask.push(0);
+        continue;
+      }
+      if (r.fin) {
+        finalized.push(r.fin);
+        attemptsByTask.push(r.attempts);
+      }
+      // dropped (r.fin === null) → omit the slot, just like the old `continue`
     }
 
     // If EVERY slot failed, don't save an empty set — surface a clear error.
