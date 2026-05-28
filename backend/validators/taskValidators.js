@@ -800,6 +800,15 @@ export function normalizeTaskByType(taskType, rawTask) {
         }
       }
 
+      // Cap step/event count — too many overwhelms the ordering UI and usually
+      // means the AI dumped the whole concept list as "steps" (tester: "look how
+      // many items there are"). A clean sequence/timeline is 4-7; keep the first
+      // 7 (earliest, since timelines are already chronologically sorted above).
+      const SEQ_MAX_ITEMS = 7;
+      if (items.length > SEQ_MAX_ITEMS) {
+        items = items.slice(0, SEQ_MAX_ITEMS);
+      }
+
       cfg.items = items;
       cfg.sequence = items;
       task.sequence = items;

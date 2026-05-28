@@ -670,7 +670,10 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    1. Pick 6–10 events/steps from the vocabulary list that have a clear chronological or logical order.
+    1. Choose 4–6 steps/events that form ONE genuine ordered process or chronology.
+       Do NOT dump a list of loosely-related vocabulary terms as "steps" — they must
+       have a real, single correct order (process steps, life cycle, cause→effect,
+       or historical chronology). 4–6 is the sweet spot; never more than 7.
     2. Each item should be specific and datable -- include dates in parentheses for historical topics.
     3. Provide items in the correct order; the student sees them shuffled.
 
