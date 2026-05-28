@@ -3159,6 +3159,25 @@ export function validateTaskByType(taskType, task) {
       if (cfg.statements || cfg.wordsByStation || cfg.rounds || cfg.secretAnswers || cfg.seedTerm || cfg.goodFoods) {
         errors.push(`${taskType} has config fields from another task type — wrong taskType assignment`);
       }
+      // --- OVERSTUFFED-PROMPT GUARD (deterministic) ---
+      // Draw / Mime / Motion Mission / Body Break are "do ONE simple thing"
+      // tasks. A long, multi-numbered prompt means the AI crammed the whole word
+      // bank in (e.g. "Draw and label diagrams: 1. … 2. … 8. …"). Hard-reject so
+      // it regenerates focused — or gets dropped — rather than shipping.
+      if (
+        type === TASK_TYPES.DRAW ||
+        type === TASK_TYPES.MIME ||
+        type === TASK_TYPES.MOTION_MISSION ||
+        type === TASK_TYPES.BODY_BREAK
+      ) {
+        const p = String(task.prompt || "");
+        const numbered = (p.match(/(?:^|\s)\d+\.\s/g) || []).length; // "1. ", "2. ", …
+        if (p.length > 320) {
+          errors.push(`${taskType} prompt is too long (${p.length} chars) — this is a single-focus task: give ONE clear thing to do, not a list of concepts.`);
+        } else if (numbered >= 3) {
+          errors.push(`${taskType} prompt crams ${numbered} numbered parts — pick ONE concept; a single-focus task must not list many sub-tasks.`);
+        }
+      }
       // --- PHOTO time heuristic: complex drawing/build prompts need more time ---
       // WARN (don't block); the sanitizer bumps timeLimitSeconds so this only fires
       // if something downstream cleared it.

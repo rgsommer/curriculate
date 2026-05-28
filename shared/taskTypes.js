@@ -3899,11 +3899,17 @@ IMPORTANT:
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 8–12 draw-only prompts tied to the topic. Include one required label or annotation per prompt.
-    
+    - A Draw task asks students to draw ONE thing. Do NOT write a long, multi-part
+      prompt that lists many concepts (e.g. "Draw and label diagrams: 1. … 2. … 8. …").
+      That is wrong — students can only draw one subject.
+    - "prompt": a SHORT one-line instruction (e.g. "Draw and label this concept.").
+    - "clues": a top-level array of 3–6 SHORT single subjects to draw, each tied to the
+      ONE assigned concept (e.g. ["a proper fraction as a shaded circle", "1/2 + 1/4 on a
+      number line", "equivalent fractions with fraction strips"]). One thing per clue.
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
+    - The prompt must be ONE short instruction (under ~120 characters), never a numbered list.
+    - Provide the "clues" array; do not bury subjects inside the prompt text.
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },

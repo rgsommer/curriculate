@@ -1220,12 +1220,12 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.LIVE_DEBATE]: 5,
   [TASK_TYPES.OPEN_TEXT]: 6,              // vocabulary-paragraph variant benefits from more words
   [TASK_TYPES.RECORD_AUDIO]: 5,
-  [TASK_TYPES.DRAW]: 4,
-  [TASK_TYPES.DRAW_MIME]: 4,
-  [TASK_TYPES.MIME]: 4,
-  [TASK_TYPES.PHOTO]: 4,
-  [TASK_TYPES.PHOTO_JOURNAL]: 4,
-  [TASK_TYPES.MAKE_AND_SNAP]: 4,
+  [TASK_TYPES.DRAW]: 1,                  // draw ONE subject — never a list of concepts
+  [TASK_TYPES.DRAW_MIME]: 2,             // a few short subjects to draw/act, not a paragraph
+  [TASK_TYPES.MIME]: 1,                  // act out ONE thing
+  [TASK_TYPES.PHOTO]: 2,
+  [TASK_TYPES.PHOTO_JOURNAL]: 3,
+  [TASK_TYPES.MAKE_AND_SNAP]: 2,
   [TASK_TYPES.BODY_BREAK]: 3,
   [TASK_TYPES.MOTION_MISSION]: 1,        // ONE concept, acted out simply — never cram the word bank into a run-on
 };
