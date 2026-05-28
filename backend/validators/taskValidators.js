@@ -375,6 +375,10 @@ export function normalizeTaskByType(taskType, rawTask) {
         };
       });
 
+      // --- CAP: a single MC station should be a quick check, not a 20-question quiz ---
+      const MC_MAX_ITEMS = 6;
+      if (items.length > MC_MAX_ITEMS) items = items.slice(0, MC_MAX_ITEMS);
+
       task.items = items;
 
       // --- GUARDRAIL: Flag likely-wrong MC answers using absolute language ---
@@ -433,6 +437,9 @@ export function normalizeTaskByType(taskType, rawTask) {
           };
         })
         .filter((x) => x.prompt && !isPlaceholderStatement(x.prompt));
+
+      // Cap — the renderer shows every statement; 8 is plenty for one round.
+      if (items.length > 8) items = items.slice(0, 8);
 
       task.items = items;
 
@@ -568,6 +575,9 @@ export function normalizeTaskByType(taskType, rawTask) {
         return { id, prompt, options, correctAnswer };
       });
 
+      // --- CAP: musical-chairs canonical round count is 7 ---
+      if (items.length > 7) items = items.slice(0, 7);
+
       task.items = items;
 
       cfg.rounds = toInt(cfg.rounds, items.length);
@@ -587,8 +597,8 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.config = normalized.config;
 
       // Cap item count — too many terms overwhelm the drag UI (testers saw ~30
-      // when the whole word bank got dumped in). A good sort is 8-14 terms.
-      const SORT_MAX_ITEMS = 14;
+      // when the whole word bank got dumped in). A good sort is 6-10 terms.
+      const SORT_MAX_ITEMS = 10;
       if (Array.isArray(task.items) && task.items.length > SORT_MAX_ITEMS) {
         task.items = task.items.slice(0, SORT_MAX_ITEMS);
       }
@@ -1133,6 +1143,20 @@ export function normalizeTaskByType(taskType, rawTask) {
         if (l && r && task.correctMatches[l.id] == null) task.correctMatches[l.id] = r.id;
       }
 
+      // --- CAP: matching past ~8 pairs is too long to play; trim both columns and drop orphaned matches ---
+      const MATCHING_MAX_PAIRS = 8;
+      if (task.leftItems.length > MATCHING_MAX_PAIRS) task.leftItems = task.leftItems.slice(0, MATCHING_MAX_PAIRS);
+      if (task.rightItems.length > MATCHING_MAX_PAIRS) task.rightItems = task.rightItems.slice(0, MATCHING_MAX_PAIRS);
+      if (isObject(task.correctMatches)) {
+        const keptLeft = new Set(task.leftItems.map((x) => x.id));
+        const keptRight = new Set(task.rightItems.map((x) => x.id));
+        const trimmedCm = {};
+        for (const [k, v] of Object.entries(task.correctMatches)) {
+          if (keptLeft.has(k) && keptRight.has(v)) trimmedCm[k] = v;
+        }
+        task.correctMatches = trimmedCm;
+      }
+
       // --- GUARDRAIL: Reject matching tasks with empty content ---
       if (!task.leftItems.length || !task.rightItems.length || !Object.keys(task.correctMatches).length) {
         task._validationError = `Matching task has no content: ${task.leftItems.length} left items, ${task.rightItems.length} right items, ${Object.keys(task.correctMatches).length} matches — must have at least 4 pairs`;
@@ -1574,6 +1598,12 @@ export function normalizeTaskByType(taskType, rawTask) {
 
       task.items = task.items.map((it) => asNonEmptyString(it.text, "")).map((s) => String(s).trim()).filter(Boolean);
 
+      // --- CAP: a mind map past ~7 branches is unreadable / too much to fill in ---
+      const MIND_MAPPER_MAX_ITEMS = 7;
+      if (task.items.length > MIND_MAPPER_MAX_ITEMS) {
+        task.items = task.items.slice(0, MIND_MAPPER_MAX_ITEMS);
+      }
+
       if (!isObject(task.structure)) {
         task.structure = { center: "Main Idea", branches: task.items.map((t) => `${t}: _____`) };
       } else {
@@ -1583,6 +1613,11 @@ export function normalizeTaskByType(taskType, rawTask) {
             ? task.structure.branches.map((b) => `${b} _____`)
             : task.items.map((t) => `${t}: _____`);
         }
+      }
+
+      // Keep branch count in step with the item cap
+      if (isObject(task.structure) && Array.isArray(task.structure.branches) && task.structure.branches.length > MIND_MAPPER_MAX_ITEMS) {
+        task.structure.branches = task.structure.branches.slice(0, MIND_MAPPER_MAX_ITEMS);
       }
 
       task.title = asNonEmptyString(task.title, "Mind Mapper");
@@ -2266,6 +2301,10 @@ export function normalizeTaskByType(taskType, rawTask) {
         delete task.config.seedTerm;
         delete task.config.goodFoods;
       }
+      // --- CAP: draw/mime should focus on ONE concept; a handful of clues max ---
+      if (Array.isArray(task.clues) && task.clues.length > 6) {
+        task.clues = task.clues.slice(0, 6);
+      }
       break;
     }
     case TASK_TYPES.PHOTO:
@@ -2289,6 +2328,15 @@ export function normalizeTaskByType(taskType, rawTask) {
       // Normalize correctAnswer / answerKey
       if (!vCfg.correctAnswer && !vCfg.answerKey) {
         vCfg.correctAnswer = task.correctAnswer || task.answerKey || null;
+      }
+
+      // --- CAP: vennsort gets unplayable past ~10 items (too much sorting) ---
+      const VENNSORT_MAX_ITEMS = 10;
+      if (Array.isArray(vCfg.items) && vCfg.items.length > VENNSORT_MAX_ITEMS) {
+        vCfg.items = vCfg.items.slice(0, VENNSORT_MAX_ITEMS);
+      }
+      if (Array.isArray(task.items) && task.items.length > VENNSORT_MAX_ITEMS) {
+        task.items = task.items.slice(0, VENNSORT_MAX_ITEMS);
       }
 
       // --- GUARDRAIL: Reject vennsort items with empty categories (unplaceable) ---
@@ -2381,6 +2429,10 @@ export function normalizeTaskByType(taskType, rawTask) {
             .filter(Boolean);
         }
       }
+
+      // Cap each list at 8 — the prompt asks 6–8 each; more just drags out the game.
+      if (Array.isArray(task.goodFoods) && task.goodFoods.length > 8) task.goodFoods = task.goodFoods.slice(0, 8);
+      if (Array.isArray(task.badFoods) && task.badFoods.length > 8) task.badFoods = task.badFoods.slice(0, 8);
       break;
     }
 

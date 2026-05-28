@@ -1178,20 +1178,20 @@ const CONCEPT_CAPS_BY_TYPE = {
   // High-capacity: these task types naturally incorporate many terms — max them out
   [TASK_TYPES.FLASHCARDS]: 8,
   [TASK_TYPES.FLASHCARDS_RACE]: 8,
-  [TASK_TYPES.MATCHING]: 8,
+  [TASK_TYPES.MATCHING]: 5,
   [TASK_TYPES.TRUE_FALSE_CONNECT_FOUR]: 8, // 20-30 T/F statements — more concepts = richer content
-  [TASK_TYPES.SORT]: 8,
-  [TASK_TYPES.VENNSORT]: 8,
+  [TASK_TYPES.SORT]: 5,
+  [TASK_TYPES.VENNSORT]: 5,
   [TASK_TYPES.TRUE_FALSE]: 8,
   [TASK_TYPES.READING_COMP]: 7,
-  [TASK_TYPES.PET_FEEDING]: 7,
+  [TASK_TYPES.PET_FEEDING]: 4,
   [TASK_TYPES.JEOPARDY]: 7,              // Brain Blitz (enum key is JEOPARDY)
   [TASK_TYPES.GUESS_WHO]: 7,
   [TASK_TYPES.NARRATION_SYNTHESIZE]: 7,
   [TASK_TYPES.TOWER_BUILDER]: 7,         // MC questions per layer — more concepts = more layers
   [TASK_TYPES.MUSICAL_CHAIRS]: 7,        // MC rounds — more concepts = more variety
   [TASK_TYPES.FAKE_OUT]: 7,
-  [TASK_TYPES.MIND_MAPPER]: 7,
+  [TASK_TYPES.MIND_MAPPER]: 4,
   [TASK_TYPES.WORD_WEAVER_DUEL]: 8,      // Vocabulary-heavy by design
 
   // Rich writing tasks: students weave concepts into extended prose

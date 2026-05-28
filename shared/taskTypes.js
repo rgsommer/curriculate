@@ -628,7 +628,7 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    1. Pick 8–14 terms from the vocabulary list. Create 2–4 categories that group them.
+    1. Pick 6–10 terms from the vocabulary list (MIN 6, MAX 10). Create 2–4 categories that group them.
     2. Items must be specific terms/names/events (e.g. "Jonathan Edwards", "Clergy Reserve") -- NOT descriptions (e.g. "Missionary work", "Social services").
     3. Categories should be thematic groupings (e.g. "Religious Figures" vs "Government Policies") -- not a person vs an abstract concept.
 
@@ -657,7 +657,7 @@ export const TASK_TYPE_META = {
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
-      "Drag 4–8 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and 'big picture' structure.",
+      "Drag 4–7 steps/events into the correct order (process steps, life cycles, cause→effect chains, or historical chronology). Reinforces procedural understanding and 'big picture' structure.",
   
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "sequence".
@@ -720,7 +720,7 @@ export const TASK_TYPE_META = {
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    1. Pick 6–10 events from the vocabulary list that can be placed chronologically.
+    1. Pick 5–7 events from the vocabulary list that can be placed chronologically (MIN 5, MAX 7).
     2. Every event must include a date or date range in parentheses -- e.g. "Stamp Act (1765)".
     3. Provide events in correct chronological order; the student sees them shuffled.
 
@@ -1688,7 +1688,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
       taskType must be exactly "musical-chairs"
 
-      items.length MUST be exactly 8
+      items.length MUST be exactly 7
 
       include a mix of question types:
 
@@ -1704,7 +1704,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
       vary the position of the correct option across items (do not always place it first)
 
-      config.rounds must equal 8
+      config.rounds must equal 7
 
       config.items must be identical to items (deep copy)
 
@@ -2379,8 +2379,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     Task-specific guidance:
     - This is a Connect Four game powered by true/false statements. Students pick a statement, then drop a piece into a column. TRUE statements → Blue piece, FALSE statements → Red piece. First to get 4-in-a-row wins.
     - Generate a pool of true/false statements so students can play multiple rounds in 5 minutes.
-    - Create ONE true/false statement for EVERY term, concept, or vocabulary word from the topic.
-    - REQUIRED: 8–12 statements (MINIMUM 6 — fewer will be REJECTED). 20–30 is even better if the topic supports it.
+    - Write one true/false statement for each term or concept you are given, covering the most important ones first.
+    - REQUIRED: 8–12 statements (MINIMUM 6 — fewer will be REJECTED). Up to 30 is fine if the topic supports it, but never exceed 30.
     - Mix of TRUE and FALSE, roughly 50/50 — at least 2 TRUE and at least 2 FALSE.
     - Each statement must be a clear, factual claim that is unambiguously true or false.
 
@@ -3941,13 +3941,14 @@ IMPORTANT:
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create 8–12 mime-only prompts tied to the topic. Prompts must be actable without props and be classroom-appropriate.
-    - Put the prompts in a top-level "clues" array of strings. Example: "clues": ["photosynthesis", "mitosis", "gravity"]
+    - Focus on the ONE concept you are given. Create 3–6 short mime clues (single words or 1–5 word phrases) that all relate to that concept. Each must be actable without props and classroom-appropriate.
+    - Put the clues in a top-level "clues" array of strings. Example: "clues": ["photosynthesis", "sunlight", "leaf", "growing plant"]
     - Do NOT use config.rounds, config.statements, or config.items -- use "clues" at the root level.
+    - Do NOT cram in unrelated vocabulary — a mime station is for acting out ONE idea from a few angles, not a whole word list.
 
     Common failure prevention:
     - Do not omit the "clues" array -- it is required.
-    - Ensure prompts are student-facing (single words or short phrases to act out).
+    - Keep it to 3–6 clues. Each clue must be a single word or short phrase to act out (not a sentence or instruction).
     `,
 },
 
