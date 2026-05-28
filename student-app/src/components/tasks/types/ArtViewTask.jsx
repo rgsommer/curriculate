@@ -171,6 +171,15 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
     return () => clearInterval(interval);
   }, [phase, responseSec]);
 
+  // Let viewers move on when they're done studying the artwork instead of
+  // waiting out the timer (tester: "there should be a done button"). Timer
+  // stays as a fallback.
+  const finishViewingEarly = useCallback(() => {
+    if (phase !== PHASE.VIEWING) return;
+    setPhase(PHASE.RESPONDING);
+    setSecondsLeft(responseSec);
+  }, [phase, responseSec]);
+
   // Auto-focus input when entering response phase
   useEffect(() => {
     if (phase === PHASE.RESPONDING && inputRef.current) {
@@ -350,6 +359,21 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
         }}>
           ⏳ {formatTime(secondsLeft)}
         </div>
+
+        {/* Done-viewing button — move on when finished studying instead of
+            waiting out the timer (tester: "there should be a done button"). */}
+        <button
+          type="button"
+          onClick={finishViewingEarly}
+          style={{
+            position: "absolute", top: 14, right: 16, zIndex: 12,
+            padding: "10px 16px", borderRadius: 999, border: "none",
+            background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: "0.85rem",
+            boxShadow: "0 4px 16px rgba(0,0,0,0.4)", cursor: "pointer",
+          }}
+        >
+          ✓ Done — continue
+        </button>
 
         {/* Instruction + artwork info bar */}
         <div style={{
