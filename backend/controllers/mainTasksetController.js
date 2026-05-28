@@ -1205,7 +1205,7 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.TIMELINE]: 6,
   [TASK_TYPES.SHORT_ANSWER]: 6,
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]: 6,
-  [TASK_TYPES.MAD_DASH_SEQUENCE]: 6,
+  [TASK_TYPES.MAD_DASH_SEQUENCE]: 4,    // 4 ordered steps — 1 concept each, not crammed run-ons
   [TASK_TYPES.ECHO_CHAIN]: 6,
   [TASK_TYPES.COLLABORATION]: 6,
   [TASK_TYPES.BRAINSTORM_BATTLE]: 6,
@@ -1227,7 +1227,7 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.PHOTO_JOURNAL]: 4,
   [TASK_TYPES.MAKE_AND_SNAP]: 4,
   [TASK_TYPES.BODY_BREAK]: 3,
-  [TASK_TYPES.MOTION_MISSION]: 3,
+  [TASK_TYPES.MOTION_MISSION]: 2,        // 2-3 short actable moves — don't cram the word bank into one run-on
 };
 
 function getConceptCapForType(taskType) {

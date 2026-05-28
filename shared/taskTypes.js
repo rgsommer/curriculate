@@ -1797,7 +1797,9 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Provide config.items (3–5 strings) and config.correctOrder (array of indices).
+    - Provide config.items (EXACTLY 4 strings) and config.correctOrder (array of indices).
+    - Each item is ONE short, single step (≤10 words). Do NOT cram several concepts
+      into one item or write run-on steps — one clear action per step.
     - correctOrder must be a valid permutation of [0..items.length-1].
     - Do NOT include colors -- colors are assigned at runtime.
 
@@ -1822,7 +1824,8 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
     Content guidance:
     - Grade 3+ wording.
-    - Items should be short (3–8 words each).
+    - Items MUST be short — 3–8 words each. A long run-on item that lists several
+      ideas is WRONG; split the idea into one clean step or drop it.
     - Use simple sequences for easy; academic sequences for harder (process steps, timeline events, procedure order).
     `.trim(),
     },

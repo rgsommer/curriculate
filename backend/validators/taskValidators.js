@@ -1294,7 +1294,6 @@ export function normalizeTaskByType(taskType, rawTask) {
         .filter(Boolean);
 
       while (items.length < 3) items.push(`Item ${items.length + 1}`);
-      if (items.length > 8) items = items.slice(0, 8);
 
       let order =
         cfg.correctOrder ?? task.correctOrder ??
@@ -1302,8 +1301,18 @@ export function normalizeTaskByType(taskType, rawTask) {
         cfg.correctAnswer ?? task.correctAnswer ??
         null;
 
-      const n = items.length;
-      if (!Array.isArray(order) || order.length !== n) order = Array.from({ length: n }, (_, i) => i);
+      // Reorder items into their correct sequence first, then CAP to 4 steps.
+      // Testers: 5 was too many, and the steps must have a clear single order.
+      // Capping after reordering keeps the kept subset a valid ordered sequence.
+      const isValidPerm =
+        Array.isArray(order) &&
+        order.length === items.length &&
+        order.every((o) => Number.isInteger(o) && o >= 0 && o < items.length) &&
+        new Set(order).size === items.length;
+      if (isValidPerm) items = order.map((o) => items[o]);
+      if (items.length > 4) items = items.slice(0, 4);
+      // Items are now in correct order → identity ordering.
+      order = items.map((_, i) => i);
 
       cfg.items = items;
       cfg.correctOrder = order;
