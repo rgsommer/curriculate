@@ -1617,13 +1617,16 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
 
       Task-specific guidance:
       - This is a MOVEMENT MISSION -- no quiz, no answer options, no scoring.
-      - Tie the movement to the TOPIC (this is what makes it different from Body Break,
-        which is content-free): the gesture/movement should represent or reinforce a concept
+      - PICK ONE concept (two at the very most) and build the whole movement around
+        THAT. Do NOT try to touch every concept in the list — a movement that name-drops
+        many ideas is wrong and impossible to act out (tester: "too complex for this task,
+        pick one or two ideas max"). One clear idea, acted out simply.
+      - Tie the movement to that ONE concept (this is what makes it different from Body
+        Break, which is content-free): the gesture should represent or reinforce it
         (e.g. "make a right angle with your arms", "step LEFT for a proper fraction, RIGHT for
         improper", "trace a number line in the air").
-      - Keep it SHORT and EASY TO ACT: 2–3 simple, physically-doable steps. Do NOT list many
-        actions, and avoid anything abstract or hard to perform standing at a desk (testers:
-        "way too many actions", "many would be difficult to act out").
+      - Keep it SHORT and EASY TO ACT: 2–3 simple, physically-doable steps total. Avoid
+        anything abstract or hard to perform standing at a desk.
       - The "prompt" field is displayed on screen to students. Write the 2–3 steps addressed
         directly to the student (second-person).
       - IMPORTANT: Do NOT reference a teacher giving verbal cues. The student reads the prompt and taps DONE when finished.

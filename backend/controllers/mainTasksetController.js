@@ -1227,7 +1227,7 @@ const CONCEPT_CAPS_BY_TYPE = {
   [TASK_TYPES.PHOTO_JOURNAL]: 4,
   [TASK_TYPES.MAKE_AND_SNAP]: 4,
   [TASK_TYPES.BODY_BREAK]: 3,
-  [TASK_TYPES.MOTION_MISSION]: 2,        // 2-3 short actable moves — don't cram the word bank into one run-on
+  [TASK_TYPES.MOTION_MISSION]: 1,        // ONE concept, acted out simply — never cram the word bank into a run-on
 };
 
 function getConceptCapForType(taskType) {
