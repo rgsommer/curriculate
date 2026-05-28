@@ -1772,6 +1772,25 @@ export default function TaskSets() {
 
                       {/* Verification badge from the auto playability test */}
                       {(() => {
+                        // While THIS set is regenerating, the old "Verified" is
+                        // stale (it's being rebuilt) — show a neutral
+                        // "Re-checking…" until the fresh playability test runs.
+                        if (regeneratingId === id) {
+                          return (
+                            <span
+                              title="Regenerating — will re-run the playability test"
+                              style={{
+                                flexShrink: 0, alignSelf: "center",
+                                display: "inline-flex", alignItems: "center", gap: 4,
+                                padding: "2px 9px", borderRadius: 999,
+                                fontSize: "0.7rem", fontWeight: 800,
+                                background: "#eef2ff", color: "#3730a3", border: "1px solid #a5b4fc",
+                              }}
+                            >
+                              ⏳ Re-checking…
+                            </span>
+                          );
+                        }
                         const v = getVerification(ts);
                         if (!v) return null;
                         if (v.state === "verified") {
