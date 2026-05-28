@@ -2205,8 +2205,13 @@ export async function createAiTaskset(req, res) {
       errors,
     });
 
-    // ✅ POST-GENERATION AI REVIEW: one final holistic pass
-    if (!process.env.AI_SKIP_POST_REVIEW) {
+    // POST-GENERATION AI REVIEW: one final holistic pass. OFF BY DEFAULT now —
+    // it re-emitted every task and kept silently dropping structured fields it
+    // didn't understand (peer-editing errors[], interview candidates[], …),
+    // shipping "missing required content" tasks. The per-type validators,
+    // sanitizers, and the playability auto-repair pass cover its checklist, and
+    // skipping it also speeds generation. Opt back in with AI_ENABLE_POST_REVIEW.
+    if (process.env.AI_ENABLE_POST_REVIEW) {
       try {
         const reviewed = await postGenerationReview(finalized, { subject, gradeLevel, sendSSE });
         if (reviewed && reviewed.length === finalized.length) {
