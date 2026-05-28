@@ -102,7 +102,12 @@ export function computePoints({ cluesRevealed = 0, totalClues = 0, scoring = {},
   const curve = Array.isArray(scoring?.perClueCurve) && scoring.perClueCurve.length > 0
     ? scoring.perClueCurve
     : defaultCurve(totalClues);
-  let pts = curve[Math.min(Math.max(0, cluesRevealed), curve.length - 1)] ?? 1;
+  // The FIRST clue is free: players need at least one clue to have a fair chance,
+  // so the ceiling stays at max for clue 1 and only starts dropping from clue 2.
+  // (Otherwise the top score is only reachable by guessing blind with 0 clues —
+  // impossible for a real concept — tester: "how could anyone ever get 10?")
+  const effective = Math.max(0, cluesRevealed - 1);
+  let pts = curve[Math.min(effective, curve.length - 1)] ?? 1;
 
   if (cluesRevealed === 0 && Number(scoring?.noClueBonus) > 0) {
     pts += Number(scoring.noClueBonus);

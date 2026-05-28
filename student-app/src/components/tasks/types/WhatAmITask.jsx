@@ -68,13 +68,18 @@ function isAcceptable(submission, config) {
 
 /* ──────────────── Point computation ──────────────── */
 function pointsForReveal(revealedCount, totalClues, perClueCurve) {
+  // The FIRST clue is free — students need at least one clue to have a fair
+  // chance, so seeing clue 1 keeps the full ceiling; decay starts at clue 2.
+  // (Matches backend computePoints; without this the top score was only
+  // reachable by guessing blind with 0 clues — tester: "how could anyone get 10?")
+  const effective = Math.max(0, (Number(revealedCount) || 0) - 1);
   if (Array.isArray(perClueCurve) && perClueCurve.length > 0) {
-    return perClueCurve[Math.min(revealedCount, perClueCurve.length - 1)] ?? 1;
+    return perClueCurve[Math.min(effective, perClueCurve.length - 1)] ?? 1;
   }
   // Fallback default curve
   const def = [10, 8, 6, 4, 2];
   while (def.length < totalClues + 1) def.push(Math.max(1, def[def.length - 1] - 1));
-  return def[Math.min(revealedCount, def.length - 1)];
+  return def[Math.min(effective, def.length - 1)];
 }
 
 // Bonus points for spelling the answer exactly (vs. an accepted fuzzy match).
