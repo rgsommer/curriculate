@@ -66,6 +66,11 @@ export default function FlashcardsRaceTask(props) {
   // We reveal the answer and let the group tap "Next Card".
   const [timedOut, setTimedOut] = useState(false);
 
+  // Result of the just-submitted answer, shown on the reveal screen until the
+  // group taps "Next Card". Tester: "leave the correct answer up longer to be
+  // able to see it. Have a continue button BEFORE showing the next card."
+  const [lastResult, setLastResult] = useState(null); // { correct, otherStole } | null
+
   const tickRef = useRef(null);
 
   const youName = playerTeam?.teamName || "Your Team";
@@ -215,6 +220,7 @@ export default function FlashcardsRaceTask(props) {
       setBuzzedBy(null);
       setAnswer("");
       setTimedOut(false);
+      setLastResult(null);
       setWinner(null);
       setScores({ you: 0, other: 0 });
       setPhase(clean.length ? "show" : "waiting");
@@ -234,6 +240,7 @@ export default function FlashcardsRaceTask(props) {
       setBuzzedBy(null);
       setAnswer("");
       setTimedOut(false);
+      setLastResult(null);
       setPhase("show");
       setSecondsLeft(20);
       sfx.shuffle();
@@ -297,6 +304,7 @@ export default function FlashcardsRaceTask(props) {
     setBuzzedByName("");
     setAnswer("");
     setTimedOut(false);
+    setLastResult(null);
     setWinner(null);
     setScores({ you: 0, other: 0 });
     setPhase(deck.length ? "show" : "waiting");
@@ -366,6 +374,7 @@ export default function FlashcardsRaceTask(props) {
     setBuzzedByName("");
     setAnswer("");
     setTimedOut(false);
+    setLastResult(null);
     setSecondsLeft(20);
     setPhase("show");
     sfx.shuffle();
@@ -408,29 +417,21 @@ export default function FlashcardsRaceTask(props) {
     const base = pointsPerCard;
     const bonus = firstBuzzBonus;
 
+    // Resolve scoring immediately, then REVEAL and wait for the group to tap
+    // "Next Card" — do NOT auto-advance, so the answer stays on screen.
     if (ok) {
       sfx.correct();
       celebrate();
-      const nextScores = {
-        ...scores,
-        you: (scores.you || 0) + base + bonus,
-      };
-      setScores(nextScores);
-      setPhase("reveal");
-      window.setTimeout(() => nextCardOrFinish(nextScores), 900);
+      setScores((s) => ({ ...s, you: (s.you || 0) + base + bonus }));
+      setLastResult({ correct: true, otherStole: false });
     } else {
       sfx.wrong();
       // pass to other team (quick AI-ish attempt)
-      setPhase("reveal");
-      window.setTimeout(() => {
-        const otherGetsIt = Math.random() < 0.6;
-        const nextScores = otherGetsIt
-          ? { ...scores, other: (scores.other || 0) + base }
-          : scores;
-        setScores(nextScores);
-        window.setTimeout(() => nextCardOrFinish(nextScores), 600);
-      }, 750);
+      const otherGetsIt = Math.random() < 0.6;
+      if (otherGetsIt) setScores((s) => ({ ...s, other: (s.other || 0) + base }));
+      setLastResult({ correct: false, otherStole: otherGetsIt });
     }
+    setPhase("reveal");
   }
 
   // ------------- styles -------------
@@ -763,6 +764,28 @@ export default function FlashcardsRaceTask(props) {
 
             {phase === "reveal" && (
               <div style={{ marginTop: 16 }}>
+                {lastResult && (
+                  <div
+                    style={{
+                      display: "inline-block",
+                      marginBottom: 10,
+                      padding: "6px 12px",
+                      borderRadius: 999,
+                      fontWeight: 1000,
+                      fontSize: 14,
+                      color: "#fff",
+                      background: lastResult.correct
+                        ? "rgba(34,197,94,0.85)"
+                        : "rgba(239,68,68,0.85)",
+                    }}
+                  >
+                    {lastResult.correct
+                      ? "✓ Correct!"
+                      : lastResult.otherStole
+                      ? "✗ Not quite — another team picked it up."
+                      : "✗ Not quite."}
+                  </div>
+                )}
                 <div style={{ fontWeight: 900, opacity: 0.9 }}>Answer:</div>
                 <div
                   style={{

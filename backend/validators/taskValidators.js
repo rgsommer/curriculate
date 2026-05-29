@@ -3216,18 +3216,34 @@ export function validateTaskByType(taskType, task) {
       // tasks. A long, multi-numbered prompt means the AI crammed the whole word
       // bank in (e.g. "Draw and label diagrams: 1. … 2. … 8. …"). Hard-reject so
       // it regenerates focused — or gets dropped — rather than shipping.
-      if (
-        taskType === TASK_TYPES.DRAW ||
-        taskType === TASK_TYPES.MIME ||
-        taskType === TASK_TYPES.MOTION_MISSION ||
-        taskType === TASK_TYPES.BODY_BREAK
-      ) {
+      // Photo / Make-and-Snap / Photo-Journal are "capture ONE artifact" tasks —
+      // they get a more generous budget but still must not be a multi-part brief
+      // (tester: "Way too complex: … using fraction strips, counters, number
+      // lines, grids, and pattern blocks … 1) … 2) …").
+      {
         const p = String(task.prompt || "");
-        const numbered = (p.match(/(?:^|\s)\d+\.\s/g) || []).length; // "1. ", "2. ", …
-        if (p.length > 320) {
-          errors.push(`${taskType} prompt is too long (${p.length} chars) — this is a single-focus task: give ONE clear thing to do, not a list of concepts.`);
-        } else if (numbered >= 3) {
-          errors.push(`${taskType} prompt crams ${numbered} numbered parts — pick ONE concept; a single-focus task must not list many sub-tasks.`);
+        const numbered = (p.match(/(?:^|\s)\d+[.)]\s/g) || []).length; // "1. ", "2) ", …
+        const isSingleFocus =
+          taskType === TASK_TYPES.DRAW ||
+          taskType === TASK_TYPES.MIME ||
+          taskType === TASK_TYPES.MOTION_MISSION ||
+          taskType === TASK_TYPES.BODY_BREAK;
+        const isPhotoFamily =
+          taskType === TASK_TYPES.PHOTO ||
+          taskType === TASK_TYPES.MAKE_AND_SNAP ||
+          taskType === TASK_TYPES.PHOTO_JOURNAL;
+        if (isSingleFocus) {
+          if (p.length > 320) {
+            errors.push(`${taskType} prompt is too long (${p.length} chars) — this is a single-focus task: give ONE clear thing to do, not a list of concepts.`);
+          } else if (numbered >= 3) {
+            errors.push(`${taskType} prompt crams ${numbered} numbered parts — pick ONE concept; a single-focus task must not list many sub-tasks.`);
+          }
+        } else if (isPhotoFamily) {
+          if (p.length > 450) {
+            errors.push(`${taskType} prompt is too long/complex (${p.length} chars) — ask students to photograph ONE artifact, not a multi-part display of every concept.`);
+          } else if (numbered >= 3) {
+            errors.push(`${taskType} prompt crams ${numbered} numbered parts — a photo task should capture ONE thing, not a checklist of concepts.`);
+          }
         }
       }
       // --- PHOTO time heuristic: complex drawing/build prompts need more time ---
@@ -3345,7 +3361,19 @@ export function validateTaskByType(taskType, task) {
     case TASK_TYPES.COLLABORATION: {
       // Collaboration only needs taskType, title, and a prompt.
       // No config.roles required — the frontend doesn't use them.
-      if (!String(task.prompt || "").trim()) errors.push("collaboration requires a non-empty prompt");
+      const cp = String(task.prompt || "").trim();
+      if (!cp) errors.push("collaboration requires a non-empty prompt");
+      // --- OVERSTUFFED-PROMPT GUARD ---
+      // A team task should be ONE clear, grade-appropriate challenge — not a
+      // multi-concept brief (tester: "too complicated for grade 7: … Team 1 will
+      // explore adding/subtracting fractions … Team 2 …"). Reject walls of text
+      // so it regenerates focused.
+      const cNumbered = (cp.match(/(?:^|\s)\d+[.)]\s/g) || []).length;
+      if (cp.length > 700) {
+        errors.push(`collaboration prompt is too long/complex (${cp.length} chars) — give the teams ONE clear, focused challenge, not a brief covering many concepts.`);
+      } else if (cNumbered >= 4) {
+        errors.push(`collaboration prompt crams ${cNumbered} numbered parts — narrow it to one focused team challenge.`);
+      }
       break;
     }
 

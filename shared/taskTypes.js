@@ -1470,10 +1470,12 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - This is a BUILD AND PHOTOGRAPH task. Students physically make or arrange something, then submit a photo of it.
-    - The "prompt" should describe WHAT to build/make and list 2–4 required features that must appear in the photo.
+    - This is a BUILD AND PHOTOGRAPH task. Students physically make or arrange ONE thing, then submit a photo of it.
+    - Pick ONE clear, grade-appropriate artifact tied to a SINGLE concept. The "prompt" names what to build/make plus AT MOST 2–3 required features to show.
+    - Keep the prompt SHORT (1–2 sentences, under ~300 characters). Do NOT use numbered/multi-part checklists ("1) … 2) …") and do NOT list many concepts, materials, or sub-tasks in one prompt — that overwhelms students. ONE build, ONE photo.
     - Use classroom-safe materials (paper, pencils, desks, classroom objects).
-    - Good examples: "Draw a diagram of the water cycle labelling evaporation, condensation, and precipitation. Take a photo of your diagram."
+    - Good example (focused): "Draw and label a diagram of the water cycle showing evaporation, condensation, and precipitation. Take a photo of your diagram."
+    - BAD example (over-stuffed, reject this pattern): "Create a comprehensive display using fraction strips, counters, number lines, grids, and pattern blocks to show: 1) adding fractions … 2) equivalent fractions … 3) …"
     - Prompt students to tap the camera icon to submit when done.
 
     SCHEMA RESTRICTION -- NEVER include these fields:
@@ -3052,12 +3054,15 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Create a collaboration task requiring teams to combine partial info. Provide 3–5 roles with unique clues; success requires sharing and synthesizing into one final response.
-    
+    - This is a PAIR-AND-RESPOND task: one team writes an initial response to the prompt, then sees another team's response and writes a thoughtful reply. The frontend does NOT use roles or clue cards — it only shows the prompt.
+    - Write ONE clear, focused, open-ended prompt about a SINGLE concept that two teams can answer and then build on each other's answers.
+    - Keep the prompt SHORT (1–2 sentences, under ~400 characters) and grade-appropriate. Do NOT split it into per-team instructions, numbered parts, or multiple concepts. Do NOT divide the class into teams with different sub-topics — that's too complex.
+    - Good example (focused): "In your team, explain one real-world situation where adding fractions with different denominators is useful. Then read another team's example and add one improvement or question."
+    - BAD example (over-complex, reject this pattern): "Your class is divided into two teams. Team 1 will explore adding/subtracting fractions with same and different denominators using fraction strips … Team 2 will …"
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - This task only needs taskType, title, and a single focused prompt. Do NOT add roles, clues, items, or answer keys.
+    - Ensure the prompt is a student-facing instruction (what to do).
     `,
 },
 
