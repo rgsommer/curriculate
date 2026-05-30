@@ -5,6 +5,7 @@ import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { fetchMyProfile } from "../api/profile";
 import { API_BASE_URL, STUDENT_APP_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
+import { Modal, Button, Field, TextInput, TextArea, Select } from "../components/ui";
 
 const _API_BASE = API_BASE_URL || "";
 
@@ -2093,97 +2094,80 @@ export default function TaskSets() {
         </div>
       )}
 
-      {/* Regenerate Confirm Modal */}
-      {regenOpen && (
-        <div
-          style={modalOverlay}
-          onMouseDown={(e) => { if (e.target === e.currentTarget) closeRegenModal(); }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div style={{ ...modalCard, width: "min(560px, 100%)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-              <div>
-                <div style={{ fontWeight: 1000, fontSize: "1.1rem" }}>♻️ Regenerate task set</div>
-                <div style={{ marginTop: 4, color: "#6b7280", fontWeight: 800, fontSize: "0.9rem" }}>
-                  {regenSource ? getTitle(regenSource) : ""}
-                </div>
-              </div>
-              <button type="button" style={btn("ghost")} onClick={closeRegenModal} disabled={!!regeneratingId}>
-                Close
-              </button>
-            </div>
+      {/* Regenerate Confirm Modal — migrated to shared <Modal> + <Field>/
+          <TextInput>/<TextArea>/<Select> + <Button> primitives (Wave 2).
+          The Close × is built into <Modal>; Cancel + Generate use
+          <Modal.Footer> + <Button>. The task-type-mix section and the
+          New-copy/Replace-original toggle stay custom (semantic pill UI). */}
+      <Modal
+        open={regenOpen}
+        onClose={closeRegenModal}
+        title="♻️ Regenerate task set"
+        size="md"
+        closeOnBackdrop={!regeneratingId}
+        closeOnEsc={!regeneratingId}
+      >
+        <div style={{ color: "#6b7280", fontWeight: 700, fontSize: "0.9rem", marginBottom: 4 }}>
+          {regenSource ? getTitle(regenSource) : ""}
+        </div>
+        <p style={{ marginTop: 6, color: "#6b7280", fontSize: 13, lineHeight: 1.5 }}>
+          Generates <strong>fresh AI content</strong> (new questions &amp; prompts) using these constraints.
+          Tweak anything below before generating.
+        </p>
 
-            <p style={{ marginTop: 10, color: "#6b7280", fontSize: 13, lineHeight: 1.5 }}>
-              Generates <strong>fresh AI content</strong> (new questions &amp; prompts) using these constraints.
-              Tweak anything below before generating.
-            </p>
-
-            {regenPreparing || !regenForm ? (
-              <div style={{ marginTop: 12, color: "#6b7280", fontWeight: 800 }}>Loading constraints…</div>
-            ) : (
-              <div style={{ marginTop: 8, display: "grid", gap: 12 }}>
-                {/* Subject + Grade */}
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <label style={regenFieldStyle}>
-                    <span style={regenLabelStyle}>Subject</span>
-                    <input
-                      type="text"
-                      value={regenForm.subject}
-                      onChange={(e) => setRegenForm((f) => ({ ...f, subject: e.target.value }))}
-                      style={regenInputStyle}
-                    />
-                  </label>
-                  <label style={{ ...regenFieldStyle, maxWidth: 130 }}>
-                    <span style={regenLabelStyle}>Grade</span>
-                    <input
-                      type="text"
-                      value={regenForm.gradeLevel}
-                      onChange={(e) => setRegenForm((f) => ({ ...f, gradeLevel: e.target.value }))}
-                      style={regenInputStyle}
-                    />
-                  </label>
-                </div>
-
-                {/* Topic */}
-                <label style={regenFieldStyle}>
-                  <span style={regenLabelStyle}>Topic</span>
-                  <input
-                    type="text"
-                    value={regenForm.topicLabel}
-                    onChange={(e) => setRegenForm((f) => ({ ...f, topicLabel: e.target.value }))}
-                    style={regenInputStyle}
+        {regenPreparing || !regenForm ? (
+          <div style={{ marginTop: 12, color: "#6b7280", fontWeight: 800 }}>Loading constraints…</div>
+        ) : (
+          <>
+            <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+              {/* Subject + Grade */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Field label="Subject" style={{ flex: 1, minWidth: 160 }}>
+                  <TextInput
+                    value={regenForm.subject}
+                    onChange={(e) => setRegenForm((f) => ({ ...f, subject: e.target.value }))}
                   />
-                </label>
+                </Field>
+                <Field label="Grade" style={{ flex: 1, minWidth: 100, maxWidth: 130 }}>
+                  <TextInput
+                    value={regenForm.gradeLevel}
+                    onChange={(e) => setRegenForm((f) => ({ ...f, gradeLevel: e.target.value }))}
+                  />
+                </Field>
+              </div>
 
-                {/* Difficulty + Count */}
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <label style={regenFieldStyle}>
-                    <span style={regenLabelStyle}>Difficulty</span>
-                    <select
-                      value={regenForm.difficulty}
-                      onChange={(e) => setRegenForm((f) => ({ ...f, difficulty: e.target.value }))}
-                      style={regenInputStyle}
-                    >
-                      <option value="EASY">Easy</option>
-                      <option value="MEDIUM">Medium</option>
-                      <option value="HARD">Hard</option>
-                    </select>
-                  </label>
-                  <label style={{ ...regenFieldStyle, maxWidth: 130 }}>
-                    <span style={regenLabelStyle}># of tasks</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={40}
-                      value={regenForm.numberOfTasks}
-                      onChange={(e) => setRegenForm((f) => ({ ...f, numberOfTasks: e.target.value }))}
-                      style={regenInputStyle}
-                    />
-                  </label>
-                </div>
+              {/* Topic */}
+              <Field label="Topic">
+                <TextInput
+                  value={regenForm.topicLabel}
+                  onChange={(e) => setRegenForm((f) => ({ ...f, topicLabel: e.target.value }))}
+                />
+              </Field>
 
-                {/* Task-type mix */}
+              {/* Difficulty + Count */}
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <Field label="Difficulty" style={{ flex: 1, minWidth: 160 }}>
+                  <Select
+                    value={regenForm.difficulty}
+                    onChange={(e) => setRegenForm((f) => ({ ...f, difficulty: e.target.value }))}
+                  >
+                    <option value="EASY">Easy</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HARD">Hard</option>
+                  </Select>
+                </Field>
+                <Field label="# of tasks" style={{ flex: 1, minWidth: 100, maxWidth: 130 }}>
+                  <TextInput
+                    type="number"
+                    min={1}
+                    max={40}
+                    value={regenForm.numberOfTasks}
+                    onChange={(e) => setRegenForm((f) => ({ ...f, numberOfTasks: e.target.value }))}
+                  />
+                </Field>
+              </div>
+
+              {/* Task-type mix */}
                 <div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
                     <span style={regenLabelStyle}>
@@ -2234,81 +2218,75 @@ export default function TaskSets() {
                   )}
                 </div>
 
-                {/* Vocabulary / word bank */}
-                <label style={regenFieldStyle}>
-                  <span style={regenLabelStyle}>Vocabulary / word bank (comma-separated)</span>
-                  <textarea
-                    rows={2}
-                    value={regenForm.aiWordBank}
-                    onChange={(e) => setRegenForm((f) => ({ ...f, aiWordBank: e.target.value }))}
-                    style={{ ...regenInputStyle, resize: "vertical", fontFamily: "inherit" }}
-                  />
+              {/* Vocabulary / word bank */}
+              <Field label="Vocabulary / word bank (comma-separated)">
+                <TextArea
+                  rows={2}
+                  value={regenForm.aiWordBank}
+                  onChange={(e) => setRegenForm((f) => ({ ...f, aiWordBank: e.target.value }))}
+                />
+              </Field>
+
+              {/* Flags */}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "#374151" }}>
+                {/* Quest + At-desk are content-based (they change what's generated),
+                    so they belong here. Duels is a runtime/launch flag (not content),
+                    so it's not a generation toggle — the original value is preserved. */}
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!regenForm.questMode} onChange={(e) => setRegenForm((f) => ({ ...f, questMode: e.target.checked }))} />
+                  Quest mode
                 </label>
-
-                {/* Flags */}
-                <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "#374151" }}>
-                  {/* Quest + At-desk are content-based (they change what's generated),
-                      so they belong here. Duels is a runtime/launch flag (not content),
-                      so it's not a generation toggle — the original value is preserved. */}
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                    <input type="checkbox" checked={!!regenForm.questMode} onChange={(e) => setRegenForm((f) => ({ ...f, questMode: e.target.checked }))} />
-                    Quest mode
-                  </label>
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                    <input type="checkbox" checked={!!regenForm.atDeskOnly} onChange={(e) => setRegenForm((f) => ({ ...f, atDeskOnly: e.target.checked }))} />
-                    At-desk only
-                  </label>
-                </div>
-
-                {/* New copy vs Replace original */}
-                <div style={{ marginTop: 4 }}>
-                  <span style={regenLabelStyle}>Output</span>
-                  <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    {[
-                      { v: "new", label: "📄 New copy", tip: "Keeps the original; saves a fresh “(regenerated)” copy." },
-                      { v: "replace", label: "♻️ Replace original", tip: "Overwrites this task set's tasks in place." },
-                    ].map((opt) => (
-                      <button
-                        key={opt.v}
-                        type="button"
-                        title={opt.tip}
-                        onClick={() => setRegenMode(opt.v)}
-                        style={{
-                          ...btn(regenMode === opt.v ? "primary" : "secondary"),
-                          opacity: regeneratingId ? 0.6 : 1,
-                        }}
-                        disabled={!!regeneratingId}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
-                  </div>
-                  {regenMode === "replace" && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: "#b45309", fontWeight: 700 }}>
-                      ⚠️ This overwrites the current tasks. There's no undo.
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions */}
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 6 }}>
-                  <button type="button" style={btn("ghost")} onClick={closeRegenModal} disabled={!!regeneratingId}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    style={{ ...btn("primary"), opacity: regeneratingId ? 0.7 : 1, cursor: regeneratingId ? "wait" : "pointer" }}
-                    onClick={runRegenerate}
-                    disabled={!!regeneratingId}
-                  >
-                    {regeneratingId ? "♻️ Generating…" : "Generate"}
-                  </button>
-                </div>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+                  <input type="checkbox" checked={!!regenForm.atDeskOnly} onChange={(e) => setRegenForm((f) => ({ ...f, atDeskOnly: e.target.checked }))} />
+                  At-desk only
+                </label>
               </div>
-            )}
-          </div>
-        </div>
-      )}
+
+              {/* New copy vs Replace original — kept as toggle pills; semantic
+                  pair (not a generic primary/ghost CTA pair), so a direct
+                  swap to <Button> would lose the "selected" affordance. */}
+              <div style={{ marginTop: 4 }}>
+                <span style={regenLabelStyle}>Output</span>
+                <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {[
+                    { v: "new", label: "📄 New copy", tip: "Keeps the original; saves a fresh “(regenerated)” copy." },
+                    { v: "replace", label: "♻️ Replace original", tip: "Overwrites this task set's tasks in place." },
+                  ].map((opt) => (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      title={opt.tip}
+                      onClick={() => setRegenMode(opt.v)}
+                      style={{
+                        ...btn(regenMode === opt.v ? "primary" : "secondary"),
+                        opacity: regeneratingId ? 0.6 : 1,
+                      }}
+                      disabled={!!regeneratingId}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                {regenMode === "replace" && (
+                  <div style={{ marginTop: 8, fontSize: 12, color: "#b45309", fontWeight: 700 }}>
+                    ⚠️ This overwrites the current tasks. There's no undo.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions — shared Modal.Footer + Button primitives */}
+            <Modal.Footer>
+              <Button variant="ghost" onClick={closeRegenModal} disabled={!!regeneratingId}>
+                Cancel
+              </Button>
+              <Button onClick={runRegenerate} disabled={!!regeneratingId}>
+                {regeneratingId ? "♻️ Generating…" : "Generate"}
+              </Button>
+            </Modal.Footer>
+          </>
+        )}
+      </Modal>
 
       {/* Fix / Diagnose Dialog */}
       {fixDialogId && (
