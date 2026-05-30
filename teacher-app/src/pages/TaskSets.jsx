@@ -1131,40 +1131,11 @@ export default function TaskSets() {
     userSelect: "none",
   });
 
-  const modalOverlay = {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.45)",
-    zIndex: 9999,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-  };
-
-  const modalCard = {
-    width: "min(920px, 100%)",
-    maxHeight: "min(84vh, 820px)",
-    overflow: "auto",
-    background: "#fff",
-    borderRadius: 18,
-    border: "1px solid rgba(15,23,42,0.12)",
-    boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-    padding: 16,
-  };
-
-  const regenFieldStyle = { display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 160 };
+  // modalOverlay, modalCard, regenFieldStyle, regenInputStyle removed —
+  // their use sites migrated to <Modal> + <Field>/<TextInput>/<TextArea>
+  // in Wave 2. regenLabelStyle kept for the two remaining sites that use it
+  // (task-type mix heading + Output section heading).
   const regenLabelStyle = { fontSize: 12, fontWeight: 900, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.02em" };
-  const regenInputStyle = {
-    padding: "8px 10px",
-    borderRadius: 10,
-    border: "1.5px solid #d1d5db",
-    fontSize: "0.9rem",
-    background: "#fff",
-    color: "#111827",
-    width: "100%",
-    boxSizing: "border-box",
-  };
 
   const table = {
     width: "100%",
@@ -1216,60 +1187,50 @@ export default function TaskSets() {
         </div>
       )}
 
-      {reportOpen && (
+      {/* Generation Report Modal — migrated to shared <Modal> + <Button>
+          (Wave 2 step 3). Title moves to Modal's title prop; the taskset
+          name is the subtitle. "Close" is replaced by the built-in × ;
+          "Open set" stays as an inline action above the content. */}
+      <Modal
+        open={reportOpen}
+        onClose={closeReport}
+        title="Generation Report"
+        size="lg"
+      >
         <div
-          style={modalOverlay}
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closeReport();
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: 12,
+            alignItems: "flex-start",
+            marginBottom: 14,
           }}
-          role="dialog"
-          aria-modal="true"
         >
-          <div style={modalCard}>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "flex-start",
-              }}
+          <div
+            style={{
+              minWidth: 0,
+              color: "#6b7280",
+              fontWeight: 700,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+            title={reportTasksetMeta?.title || ""}
+          >
+            {reportTasksetMeta?.title || "Task Set"}
+          </div>
+          {reportTasksetMeta?.id && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                navigate(`/tasksets/${encodeURIComponent(reportTasksetMeta.id)}`)
+              }
             >
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontWeight: 1000, fontSize: "1.1rem" }}>
-                  Generation Report
-                </div>
-                <div
-                  style={{
-                    marginTop: 4,
-                    color: "#6b7280",
-                    fontWeight: 800,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                  }}
-                  title={reportTasksetMeta?.title || ""}
-                >
-                  {reportTasksetMeta?.title || "Task Set"}
-                </div>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {reportTasksetMeta?.id && (
-                  <button
-                    type="button"
-                    style={btn("secondary")}
-                    onClick={() =>
-                      navigate(`/tasksets/${encodeURIComponent(reportTasksetMeta.id)}`)
-                    }
-                  >
-                    Open set
-                  </button>
-                )}
-                <button type="button" style={btn("ghost")} onClick={closeReport}>
-                  Close
-                </button>
-              </div>
-            </div>
+              Open set
+            </Button>
+          )}
+        </div>
 
             {reportError && (
               <div
@@ -1542,9 +1503,7 @@ export default function TaskSets() {
                 )}
               </div>
             )}
-          </div>
-        </div>
-      )}
+      </Modal>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
         <div>
@@ -2289,57 +2248,41 @@ export default function TaskSets() {
       </Modal>
 
       {/* Fix / Diagnose Dialog */}
-      {fixDialogId && (
-        <div style={{
-          position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
-          background: "rgba(0,0,0,0.5)", display: "flex",
-          alignItems: "center", justifyContent: "center", zIndex: 9999,
-          padding: 16,
-        }}>
-          <div style={{
-            background: "#fff", borderRadius: 16, padding: 24,
-            maxWidth: 560, width: "100%", boxShadow: "0 16px 50px rgba(0,0,0,0.2)",
-            maxHeight: "85vh", overflowY: "auto",
-          }}>
-            <h2 style={{ marginTop: 0, marginBottom: 4, fontSize: 18 }}>🔧 Diagnose & Fix</h2>
-            <p style={{ color: "#6b7280", marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
-              This will validate every task, auto-fix structural issues, and use AI to regenerate any tasks that can't be fixed mechanically. Everything gets logged for developer review.
-            </p>
+      {/* Diagnose & Fix Dialog — migrated to shared <Modal> + <Field> +
+          <TextArea> + <Modal.Footer> + <Button> (Wave 2 step 2). */}
+      <Modal
+        open={!!fixDialogId}
+        onClose={closeFixDialog}
+        title="🔧 Diagnose & Fix"
+        size="md"
+        closeOnBackdrop={!fixRunning}
+        closeOnEsc={!fixRunning}
+      >
+        <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 16, fontSize: 13, lineHeight: 1.5 }}>
+          This will validate every task, auto-fix structural issues, and use AI to regenerate any tasks that can't be fixed mechanically. Everything gets logged for developer review.
+        </p>
 
-            {!fixResult && (
-              <>
-                <label style={{ fontWeight: 600, fontSize: 13, display: "block", marginBottom: 6 }}>
-                  What's wrong? (optional — helps track the issue)
-                </label>
-                <textarea
-                  value={fixNote}
-                  onChange={(e) => setFixNote(e.target.value)}
-                  placeholder='e.g. "Brain Spark Notes shows [object Object]" or "Sort task has only 2 items"'
-                  maxLength={1000}
-                  rows={3}
-                  style={{
-                    width: "100%", padding: 10, borderRadius: 10,
-                    border: "1.5px solid #d1d5db", fontSize: 13,
-                    fontFamily: "inherit", resize: "vertical",
-                  }}
-                />
-                <div style={{ display: "flex", gap: 10, marginTop: 14, justifyContent: "flex-end" }}>
-                  <button onClick={closeFixDialog} style={{
-                    padding: "8px 18px", borderRadius: 10, border: "1px solid #d1d5db",
-                    background: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer",
-                  }}>
-                    Cancel
-                  </button>
-                  <button onClick={runFix} disabled={fixRunning} style={{
-                    padding: "8px 18px", borderRadius: 10, border: "none",
-                    background: fixRunning ? "#94a3b8" : "#2563eb", color: "#fff",
-                    fontWeight: 700, fontSize: 13, cursor: fixRunning ? "wait" : "pointer",
-                  }}>
-                    {fixRunning ? (fixPhase || "Fixing…") : "🔧 Diagnose & Fix"}
-                  </button>
-                </div>
-              </>
-            )}
+        {!fixResult && (
+          <>
+            <Field label="What's wrong? (optional — helps track the issue)">
+              <TextArea
+                value={fixNote}
+                onChange={(e) => setFixNote(e.target.value)}
+                placeholder='e.g. "Brain Spark Notes shows [object Object]" or "Sort task has only 2 items"'
+                maxLength={1000}
+                rows={3}
+              />
+            </Field>
+            <Modal.Footer>
+              <Button variant="ghost" onClick={closeFixDialog} disabled={fixRunning}>
+                Cancel
+              </Button>
+              <Button onClick={runFix} disabled={fixRunning}>
+                {fixRunning ? (fixPhase || "Fixing…") : "🔧 Diagnose & Fix"}
+              </Button>
+            </Modal.Footer>
+          </>
+        )}
 
             {fixResult && (() => {
               const failed = fixResult.failed === true || fixResult.ok === false || typeof fixResult.issuesFound !== "number";
@@ -2394,31 +2337,19 @@ export default function TaskSets() {
                   </div>
                 )}
 
-                {/* Action buttons */}
-                <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                {/* Action buttons — shared Modal.Footer + Button. */}
+                <Modal.Footer>
                   {fixResult.diagnostics?.length > 0 && (
-                    <button onClick={copyDiagnosticReport} style={{
-                      padding: "8px 18px", borderRadius: 10, border: "1.5px solid #2563eb",
-                      background: "#eff6ff", color: "#2563eb",
-                      fontWeight: 700, fontSize: 13, cursor: "pointer",
-                    }}>
+                    <Button variant="ghost" onClick={copyDiagnosticReport}>
                       📋 Copy Report
-                    </button>
+                    </Button>
                   )}
-                  <button onClick={closeFixDialog} style={{
-                    padding: "8px 18px", borderRadius: 10, border: "none",
-                    background: "#2563eb", color: "#fff",
-                    fontWeight: 700, fontSize: 13, cursor: "pointer",
-                  }}>
-                    Done
-                  </button>
-                </div>
+                  <Button onClick={closeFixDialog}>Done</Button>
+                </Modal.Footer>
               </div>
               );
             })()}
-          </div>
-        </div>
-      )}
+      </Modal>
     </div>
   );
 }
