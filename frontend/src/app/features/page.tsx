@@ -564,6 +564,26 @@ export default function FeaturesPage() {
                   "Per-room dedupe + worldview-aware prompts (secular / faith / general) + safe-classroom mode (no movement, no noise)",
                 ]}
               />
+              <FeatureCard
+                title="🗺 Map It"
+                body="Match-on-a-map for any geography-flavoured unit. Students see a real cartographic image with 3–5 numbered coloured markers and match each marker to the correct location, event, or person from a shuffled choice list — the same two-tap interaction as Matching, but anchored to a place."
+                bullets={[
+                  "AI generator detects geographic vocab automatically and refuses to ship a Map It task for non-geographic topics (math operations, grammar rules, abstract concepts)",
+                  "Heavy subject affinity for history, religion, and physical geography — appears naturally in those subjects' tasksets, stays out of math/arts",
+                  "Reuses the Matching grading + review flow, so it inherits all the per-student strictness adjustment and answer-overlay polish",
+                  "Bloom mapping: APPLY (primary) + ANALYZE (secondary) — students don't just recall a place, they reason about where it fits",
+                ]}
+              />
+              <FeatureCard
+                title="🏷 Label Me"
+                body="Matching, but on a diagram. The AI generates a clean, high-contrast educational illustration — a heart, a cell, a watershed, a Roman forum, a Bible-times map — overlays markers A–E, and students match each marker to the correct term from a shuffled list."
+                bullets={[
+                  "Image generation happens at taskset creation time so students see the diagram instantly — no in-session image latency",
+                  "Markers are overlaid on top of the rendered image so the prompt never contains baked-in text labels (no cheating from caption-reading)",
+                  "Highest subject affinity for science, history, and health — anatomy, ecosystems, historical maps, civics diagrams",
+                  "Bloom mapping: REMEMBER (primary) + UNDERSTAND (secondary) — the visual anchor makes recall stickier than text-only Matching",
+                ]}
+              />
             </div>
             <div className="mt-6">
               <Link
