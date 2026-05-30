@@ -597,6 +597,67 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         )}
       </div>
 
+      {/* Document reference strip — keeps the analysis anchored to the
+          primary source after the image disappears. Tester (2026-05-29):
+          "It was just questions" — without this strip the analysis phase
+          looks like a plain Q&A with no document context. We deliberately
+          do NOT show the image here (the original design hides it so
+          students write from memory), but we DO surface the doc's title,
+          author, year, type, and 1-line historical context. */}
+      {(config.docTitle || config.docAuthor || config.docYear || historicalContext) && (
+        <div style={{
+          display: "flex",
+          gap: 12,
+          alignItems: "flex-start",
+          padding: "10px 14px",
+          marginBottom: 16,
+          borderRadius: 12,
+          background: "linear-gradient(180deg, #faf5ec, #f3e9d2)",
+          border: "1px solid #d4a574",
+          borderLeft: "4px solid #8b5e3c",
+        }}>
+          <div style={{ fontSize: "1.4rem", lineHeight: 1, marginTop: 2 }}>📜</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{
+              fontSize: "0.7rem",
+              fontWeight: 800,
+              color: "#8b5e3c",
+              textTransform: "uppercase",
+              letterSpacing: 0.6,
+              marginBottom: 2,
+            }}>
+              You are analyzing
+            </div>
+            {(config.docTitle || config.docAuthor || config.docYear) && (
+              <div style={{
+                fontSize: "0.95rem",
+                fontWeight: 800,
+                color: "#3f2a1a",
+                lineHeight: 1.2,
+              }}>
+                {[config.docTitle, config.docAuthor, config.docYear].filter(Boolean).join(" — ")}
+                {config.docType && (
+                  <span style={{ fontWeight: 600, color: "#6b5638", marginLeft: 6 }}>
+                    ({config.docType})
+                  </span>
+                )}
+              </div>
+            )}
+            {historicalContext && (
+              <div style={{
+                fontSize: "0.8rem",
+                color: "#6b5638",
+                fontStyle: "italic",
+                marginTop: 4,
+                lineHeight: 1.35,
+              }}>
+                {historicalContext}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Paper mode: exemplar + per-player photo capture */}
       {paperMode && (
         <div style={{ marginBottom: 20 }}>
