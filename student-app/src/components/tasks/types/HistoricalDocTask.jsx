@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/HistoricalDocTask.jsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
@@ -132,6 +132,57 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
   const [submitted, setSubmitted] = useState(false);
+
+  // ── Spot-check ("I noticed the…") panel for the reading phase ──
+  // Teacher: same pattern as art-view — 3 real document details + 1 plausible
+  // decoy. Reshuffled on mount so re-attempts get a fresh order. Layers on top
+  // of the existing 60s minimum read time.
+  const spotItems = useMemo(() => {
+    const raw = Array.isArray(config?.spotItems) ? config.spotItems : [];
+    return raw
+      .map((it) => {
+        if (typeof it === "string") return { text: it.trim(), isBogus: false };
+        if (it && typeof it === "object") {
+          const text = String(it.text || it.label || it.observation || "").trim();
+          const isBogus = it.isBogus === true || it.bogus === true || it.decoy === true || it.fake === true;
+          return text ? { text, isBogus } : null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [config?.spotItems]);
+  const shuffledSpot = useMemo(() => {
+    if (spotItems.length === 0) return [];
+    const arr = spotItems.map((it, i) => ({ ...it, _i: i }));
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [spotItems]);
+  const [spotChecked, setSpotChecked] = useState(() => new Set());
+  const toggleSpot = useCallback((origIdx) => {
+    setSpotChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(origIdx)) next.delete(origIdx); else next.add(origIdx);
+      return next;
+    });
+  }, []);
+  const spotComplete = useMemo(() => {
+    if (spotItems.length === 0) return true; // legacy task: no panel
+    for (let i = 0; i < spotItems.length; i++) {
+      const it = spotItems[i];
+      const checked = spotChecked.has(i);
+      if (it.isBogus && checked) return false;
+      if (!it.isBogus && !checked) return false;
+    }
+    return true;
+  }, [spotItems, spotChecked]);
+  const bogusChecked = useMemo(
+    () => spotItems.some((it, i) => it.isBogus && spotChecked.has(i)),
+    [spotItems, spotChecked]
+  );
+
   // Paper vs screen: practice is always on-screen. In a real session, honor the
   // teacher's "prefer paper" setting (minimizeOnScreen) — paper mode shows a
   // worked example + a photo-snap submit. Default (unset) is on-screen.
@@ -434,13 +485,29 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           const minRead = Math.min(MIN_READ_SECONDS, Math.max(0, viewingSec - 1));
           const elapsed = Math.max(0, viewingSec - (typeof secondsLeft === "number" ? secondsLeft : viewingSec));
           const unlockIn = Math.max(0, minRead - elapsed);
-          const canSkip = unlockIn === 0;
+          const timeOK = unlockIn === 0;
+          const canSkip = timeOK && spotComplete;
+          let label;
+          if (!timeOK) {
+            label = (
+              <>
+                <span aria-hidden="true">📖</span>
+                Keep reading — unlocks in <span style={{ fontVariantNumeric: "tabular-nums" }}>{unlockIn}s</span>
+              </>
+            );
+          } else if (bogusChecked) {
+            label = <>👀 Look again — one of these isn't there</>;
+          } else if (!spotComplete) {
+            label = <>👀 Check what you noticed</>;
+          } else {
+            label = <>✓ Done reading — continue</>;
+          }
           return (
             <button
               type="button"
               onClick={canSkip ? finishReadingEarly : undefined}
               disabled={!canSkip}
-              title={canSkip ? "Move on to the analysis questions" : `Keep reading the document — unlocks in ${unlockIn}s`}
+              title={canSkip ? "Move on to the analysis questions" : (timeOK ? "Check the items you noticed in the document" : `Keep reading the document — unlocks in ${unlockIn}s`)}
               style={{
                 position: "absolute", bottom: 16, left: 20, zIndex: 12,
                 padding: "10px 18px", borderRadius: 999, border: "none",
@@ -454,19 +521,92 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 8,
+                maxWidth: "60vw",
               }}
             >
-              {canSkip ? (
-                <>✓ Done reading — continue</>
-              ) : (
-                <>
-                  <span aria-hidden="true">📖</span>
-                  Keep reading — unlocks in <span style={{ fontVariantNumeric: "tabular-nums" }}>{unlockIn}s</span>
-                </>
-              )}
+              {label}
             </button>
           );
         })()}
+
+        {/* "I noticed the…" spot-check panel — only when spotItems are
+            provided. Sits at the bottom-center of the reading screen above
+            the Done button, with pill checkboxes for 3 real document details
+            + 1 plausible decoy. Done stays locked until every real item is
+            checked AND the decoy is left unchecked. */}
+        {shuffledSpot.length > 0 && (
+          <div style={{
+            position: "absolute",
+            left: 32, right: 16, bottom: 78,
+            zIndex: 12,
+            background: "rgba(20,16,10,0.92)",
+            border: "1px solid rgba(212,165,116,0.4)",
+            borderRadius: 14,
+            padding: "10px 14px",
+            color: "#f5f0e8",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            maxHeight: "38vh",
+            overflowY: "auto",
+          }}>
+            <div style={{
+              fontSize: "0.78rem",
+              fontWeight: 800,
+              letterSpacing: 0.4,
+              color: "#fcd34d",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}>
+              I noticed the…
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {shuffledSpot.map((it) => {
+                const isChecked = spotChecked.has(it._i);
+                return (
+                  <button
+                    key={it._i}
+                    type="button"
+                    onClick={() => toggleSpot(it._i)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 12px",
+                      borderRadius: 999,
+                      border: `1px solid ${isChecked ? "rgba(34,197,94,0.7)" : "rgba(255,255,255,0.25)"}`,
+                      background: isChecked ? "rgba(34,197,94,0.25)" : "rgba(255,255,255,0.08)",
+                      color: "#fff",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      lineHeight: 1.2,
+                      textAlign: "left",
+                    }}
+                    aria-pressed={isChecked}
+                  >
+                    <span style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 18, height: 18,
+                      borderRadius: 4,
+                      border: "1.5px solid rgba(255,255,255,0.55)",
+                      background: isChecked ? "#22c55e" : "transparent",
+                      color: "#fff",
+                      fontSize: "0.75rem",
+                      fontWeight: 900,
+                    }} aria-hidden="true">
+                      {isChecked ? "✓" : ""}
+                    </span>
+                    {it.text}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 6, fontSize: "0.72rem", color: "#9ca3af" }}>
+              Check only what is actually in the document — one of these isn't really there.
+            </div>
+          </div>
+        )}
 
         {/* Instruction + document info overlay (collapsible on small screens) */}
         <div style={{

@@ -1956,6 +1956,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - config.viewingSeconds: default 90 (documents need more reading time than art).
     - config.responseSeconds: default 150.
     - config.analysisPrompts: array of 2-4 targeted analysis questions that push students beyond description into evaluation of relevance and impact. At least one should ask about the document's impact AT THE TIME it was created, and at least one should connect to the broader lesson topic.
+    - config.spotItems: REQUIRED reading-check used during the viewing phase to force actual engagement with the document (not click-through). An array of EXACTLY 4 objects, each { "text": "short phrase", "isBogus": true|false }. Provide 3 REAL details that ARE genuinely in or about this specific document (isBogus:false) and 1 BOGUS decoy that sounds plausible for this kind of document but is NOT actually in it (isBogus:true). Examples for the Emancipation Proclamation: { text: "the date January 1, 1863", isBogus: false }, { text: "the phrase 'forever free'", isBogus: false }, { text: "Lincoln's signature at the bottom", isBogus: false }, { text: "a list of Confederate generals to be tried", isBogus: true }. The decoy must be plausible for this type of document, not absurd. Keep each text under 70 characters.
     - The prompt should tell students: "Read this historical document carefully. When it disappears, you will answer analysis questions about its significance and impact."
 
     Common failure prevention:
@@ -1963,6 +1964,7 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - viewingSeconds and responseSeconds must be positive integers.
     - The document must be a real, well-known historical primary source directly connected to the lesson topic.
     - analysisPrompts should ask about relevance and impact, not just description.
+    - config.spotItems MUST contain EXACTLY 3 real (isBogus:false) and 1 bogus (isBogus:true) entries — otherwise the task will be rejected.
     `,
   },
 
