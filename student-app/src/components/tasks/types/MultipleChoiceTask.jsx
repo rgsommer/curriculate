@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import TaskChrome from "../TaskChrome";
 import { CHROME_THEME } from "../taskChrome.theme";
 import DesignatedWriter from "../DesignatedWriter";
+import { Pill, PrimaryButton, GhostButton } from "../taskStyles";
 
 /**
  * MultipleChoiceTask
@@ -157,19 +158,9 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
           <div style={{ fontWeight: 900, fontSize: 20, letterSpacing: 0.2 }}>
             Multiple Choice
           </div>
-          <div
-            style={{
-              fontSize: 12,
-              fontWeight: 800,
-              padding: "6px 10px",
-              borderRadius: 999,
-              background: "rgba(255,255,255,0.10)",
-              border: "1px solid rgba(255,255,255,0.14)",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <Pill theme="dark" subtle style={{ whiteSpace: "nowrap" }}>
             Q {qIndex + 1} / {total} • {progressPct}%
-          </div>
+          </Pill>
         </div>
 
         {/* Progress bar */}
@@ -242,7 +233,7 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
                 style={{
                   textAlign: "left",
                   padding: "14px 14px",
-                  borderRadius: 16,
+                  borderRadius: 18,
                   cursor: submitLocked ? "not-allowed" : "pointer",
                   background: bg,
                   border,
@@ -296,7 +287,11 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
           </div>
         )}
 
-        {/* Controls */}
+        {/* Controls — migrated to shared PrimaryButton / GhostButton from
+            taskStyles.jsx. theme="dark" matches MC's surrounding dark visuals
+            (translucent dark cards on the page bg). Submit uses the canonical
+            indigo→sky PrimaryButton gradient; Back/Next use the dark-theme
+            GhostButton. The flex sizing is preserved via the style override. */}
         <div
           style={{
             display: "flex",
@@ -306,61 +301,31 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
             marginTop: 14,
           }}
         >
-          <button
-            type="button"
+          <GhostButton
+            theme="dark"
             onClick={goPrev}
             disabled={qIndex === 0}
-            style={{
-              flex: "1 1 140px",
-              padding: "12px 14px",
-              borderRadius: 14,
-              fontWeight: 900,
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(255,255,255,0.08)",
-              color: "rgba(255,255,255,0.92)",
-              cursor: qIndex === 0 ? "not-allowed" : "pointer",
-            }}
+            style={{ flex: "1 1 140px" }}
           >
             ◀ Back
-          </button>
+          </GhostButton>
 
-          <button
-            type="button"
+          <PrimaryButton
             onClick={handleSubmit}
             disabled={!canSubmit}
-            style={{
-              flex: "2 1 240px",
-              padding: "12px 14px",
-              borderRadius: 14,
-              fontWeight: 950,
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: canSubmit
-                ? "linear-gradient(90deg, rgba(34,197,94,0.95), rgba(59,130,246,0.95))"
-                : "rgba(255,255,255,0.08)",
-              color: "rgba(255,255,255,0.98)",
-              cursor: canSubmit ? "pointer" : "not-allowed",
-            }}
+            style={{ flex: "2 1 240px" }}
           >
             Submit
-          </button>
+          </PrimaryButton>
 
-          <button
-            type="button"
+          <GhostButton
+            theme="dark"
             onClick={goNext}
             disabled={qIndex === items.length - 1}
-            style={{
-              flex: "1 1 140px",
-              padding: "12px 14px",
-              borderRadius: 14,
-              fontWeight: 900,
-              border: "1px solid rgba(255,255,255,0.16)",
-              background: "rgba(255,255,255,0.08)",
-              color: "rgba(255,255,255,0.92)",
-              cursor: qIndex === items.length - 1 ? "not-allowed" : "pointer",
-            }}
+            style={{ flex: "1 1 140px" }}
           >
             Next ▶
-          </button>
+          </GhostButton>
         </div>
       </div>
     </TaskChrome>
