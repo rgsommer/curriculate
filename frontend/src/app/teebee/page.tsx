@@ -39,7 +39,7 @@ const C = {
 
 const SERVICES = [
   { num: "01", icon: <ClipboardCheck size={22} />, title: "Audit & Assurance",
-    text: "Independent audits for companies of all sizes — bringing stakeholders confidence in financial statements and full IFRS compliance." },
+    text: "Independent IFRS-compliant audits via Tee Bee Audit — our new AI-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete." },
   { num: "02", icon: <Calculator size={22} />, title: "Taxation Services",
     text: "Strategic tax planning, compliance, and advisory services to optimise your tax position while staying fully aligned with IRC requirements." },
   { num: "03", icon: <FileText size={22} />, title: "Accounting Services",
@@ -70,6 +70,7 @@ export default function TeeBeeAccountantsLanding() {
       <Stats />
       <WhyChoose />
       <Services />
+      <AuditPlug />
       <PayrollPlug />
       <Testimonials />
       <Contact />
@@ -100,7 +101,8 @@ function SeoLd() {
     email: "info@teebeeaccountants.com.pg",
     openingHours: "Mo-Fr 08:00-17:00",
     priceRange: "$$",
-    knowsAbout: ["Audit", "Taxation", "Accounting", "Business Advisory", "Statutory Compliance", "Payroll"],
+    knowsAbout: ["Audit", "AI-assisted audit", "Audit readiness", "IFRS compliance", "Taxation", "Accounting",
+                  "Business Advisory", "Statutory Compliance", "Payroll", "IRC SWT", "NASFund"],
   };
   const breadcrumb = {
     "@context": "https://schema.org", "@type": "BreadcrumbList",
@@ -148,6 +150,7 @@ function TopBar() {
           <a href="#services" style={navLink}>Services</a>
           <a href="#about" style={navLink}>About</a>
           <a href="#testimonials" style={navLink}>Testimonials</a>
+          <Link href="/audit" style={navLink}>Audit</Link>
           <Link href="/teebeepay" style={navLink}>TeebeePay</Link>
           <a href="#contact" style={navCta}>Get consultation</a>
         </div>
@@ -353,6 +356,58 @@ function Services() {
               </div>
               <h3 style={{ fontSize: 19, fontWeight: 700, margin: "0 0 10px" }}>{s.title}</h3>
               <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6, margin: 0 }}>{s.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────── Tee Bee Audit plug ────── */
+function AuditPlug() {
+  return (
+    <section style={{ padding: "60px 24px 24px", background: "#fff" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto",
+        background: `linear-gradient(135deg, ${C.cream} 0%, ${C.goldSoft} 100%)`,
+        borderRadius: 20, padding: "48px 40px", color: C.ink,
+        display: "grid", gridTemplateColumns: "1fr 1.2fr", gap: 36, alignItems: "center",
+        border: `1px solid ${C.gold}`,
+      }} className="tba-hero-grid">
+        <div>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12,
+            fontWeight: 700, color: C.navy, background: "rgba(15,44,82,.08)", padding: "6px 12px",
+            borderRadius: 999, marginBottom: 18, letterSpacing: 0.05, textTransform: "uppercase" }}>
+            <ClipboardCheck size={13} /> New · AI-assisted audit
+          </div>
+          <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: -0.6, margin: 0, fontFamily: "Georgia, serif", color: C.ink }}>
+            Tee Bee Audit — faster audits, signed by your CPA.
+          </h2>
+          <p style={{ fontSize: 16, color: C.inkSoft, lineHeight: 1.6, margin: "14px 0 22px", maxWidth: 540 }}>
+            Upload your trial balance, GL and supporting files. Our software runs reconciliations,
+            anomaly checks and compliance scans. A registered CPA reviews every finding before
+            the opinion goes out. Statutory audits, audit-readiness reviews, IRC compliance — all in one place.
+          </p>
+          <Link href="/audit" style={{
+            display: "inline-flex", alignItems: "center", padding: "12px 22px",
+            background: C.navy, color: "#fff", borderRadius: 10, fontWeight: 700,
+            textDecoration: "none", fontSize: 15,
+          }}>
+            Explore Tee Bee Audit <ArrowRight size={16} style={{ marginLeft: 8 }} />
+          </Link>
+        </div>
+        <div style={{ display: "grid", gap: 10 }}>
+          {[
+            "Statutory audits · IFRS / IFRS-SME compliant",
+            "Audit-readiness reviews before next year's audit",
+            "Tax / IRC due diligence audits",
+            "Landowner-company and donor-fund audits",
+            "AI-assisted analysis · CPA-signed opinion",
+            "Indicative pricing in 2 business days",
+          ].map((line, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 14, color: C.inkSoft }}>
+              <CheckCircle2 size={18} color={C.navy} style={{ flexShrink: 0 }} />
+              {line}
             </div>
           ))}
         </div>
