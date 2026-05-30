@@ -1324,7 +1324,7 @@ const DEMO_TASKS = [
   // VISUAL ANALYSIS TASKS
   // =========================================================================
 
-  // 60. Art View (uses config.imageUrl + config.focusHints)
+  // 60. Art View (uses config.imageUrl + config.focusHints + spotItems)
   {
     taskType: "art-view",
     title: "Art View",
@@ -1340,10 +1340,17 @@ const DEMO_TASKS = [
       responseSeconds: 90,
       minObservations: 3,
       focusHints: ["Look at the wave's shape", "Notice Mount Fuji in the background", "Observe the colors and movement"],
+      // "I noticed the…" spot-check (3 real + 1 plausible decoy).
+      spotItems: [
+        { text: "a giant wave with claw-like foam", isBogus: false },
+        { text: "Mount Fuji in the background", isBogus: false },
+        { text: "small fishing boats riding the swell", isBogus: false },
+        { text: "a red sun rising on the horizon", isBogus: true },
+      ],
     },
   },
 
-  // 61. Historical Document (uses config.imageUrl + config.analysisPrompts)
+  // 61. Historical Document (uses config.imageUrl + config.analysisPrompts + spotItems)
   {
     taskType: "historical-doc",
     title: "Historical Document",
@@ -1362,6 +1369,13 @@ const DEMO_TASKS = [
         "What is the main action this document declares, and who does it affect?",
         "Why might Lincoln have issued this proclamation during the Civil War?",
         "What does this document reveal about American values at the time?",
+      ],
+      // "I noticed the…" spot-check (3 real + 1 plausible decoy).
+      spotItems: [
+        { text: "the date January 1, 1863", isBogus: false },
+        { text: "the phrase 'forever free'", isBogus: false },
+        { text: "Lincoln's signature at the bottom", isBogus: false },
+        { text: "a list of Confederate generals to be tried", isBogus: true },
       ],
     },
   },
