@@ -322,6 +322,16 @@ export function naturalBalance(account: any, totals?: { debit: number; credit: n
   return account.normal_balance === "debit" ? round2(d - c) : round2(c - d);
 }
 
+// A contra account (Accumulated Depreciation, Owner's Drawings, Sales Returns…)
+// sits on the opposite side of its parent section, so its contribution to a
+// section subtotal — and its displayed amount — is negated. Reports must use
+// this, NOT naturalBalance(), when rolling accounts into assets/liabilities/
+// equity/revenue/expense totals, or the balance sheet won't balance.
+export function signedBalance(account: any, totals?: { debit: number; credit: number }): number {
+  const nb = naturalBalance(account, totals);
+  return account.contra ? round2(-nb) : nb;
+}
+
 // Trial balance: every account with activity, in debit-column / credit-column form.
 export async function trialBalance(db: Db, companyId: string | ObjectId, asOf: string | null = null) {
   const cid = oid(companyId);
@@ -352,7 +362,7 @@ export async function incomeStatement(db: Db, companyId: string | ObjectId, from
   const revenue: any[] = [], cogs: any[] = [], expenses: any[] = [];
   let totalRevenue = 0, totalCogs = 0, totalExpense = 0;
   for (const a of accounts as any[]) {
-    const bal = naturalBalance(a, totals.get(a._id.toString()));
+    const bal = signedBalance(a, totals.get(a._id.toString()));
     if (bal === 0) continue;
     const row = { code: a.code, name: a.name, amount: bal };
     if (a.type === "revenue") { revenue.push(row); totalRevenue = round2(totalRevenue + bal); }
@@ -377,7 +387,7 @@ export async function balanceSheet(db: Db, companyId: string | ObjectId, asOf: s
   let earnings = 0;
 
   for (const a of accounts as any[]) {
-    const bal = naturalBalance(a, totals.get(a._id.toString()));
+    const bal = signedBalance(a, totals.get(a._id.toString()));
     if (a.type === "asset") { if (bal !== 0) { assets.push({ code: a.code, name: a.name, amount: bal }); totalAssets = round2(totalAssets + bal); } }
     else if (a.type === "liability") { if (bal !== 0) { liabilities.push({ code: a.code, name: a.name, amount: bal }); totalLiabilities = round2(totalLiabilities + bal); } }
     else if (a.type === "equity") { if (bal !== 0) { equity.push({ code: a.code, name: a.name, amount: bal }); totalEquity = round2(totalEquity + bal); } }
