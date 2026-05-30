@@ -1027,7 +1027,7 @@ export default function TrueFalseTask({
         >
           {safePrompt || "Is this statement true or false?"}
         </div>
-        <div style={{ fontSize: "0.85rem", color: "#9ca3af", textAlign: "center", fontStyle: "italic" }}>
+        <div style={{ fontSize: "0.85rem", color: "#6b7280", textAlign: "center", fontStyle: "italic" }}>
           {instructions}
         </div>
       </div>

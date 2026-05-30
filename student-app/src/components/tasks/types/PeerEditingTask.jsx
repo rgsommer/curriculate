@@ -219,7 +219,7 @@ function AnnotationPopup({ word, wordIdx, currentMark, onSelect, onClear, onClos
             }}>
               "{word}"
             </span>
-            <span style={{ fontSize: 11, color: "rgba(226,232,240,0.5)", fontWeight: 700 }}>
+            <span style={{ fontSize: 11, color: "rgba(226,232,240,0.85)", fontWeight: 700 }}>
               word {wordIdx + 1}
             </span>
           </div>
@@ -991,7 +991,7 @@ export default function PeerEditingTask({ task, onSubmit, disabled }) {
                     <span style={{ color: "rgba(255,255,255,0.7)", fontWeight: 700 }}>
                       "{words[idx]}"
                     </span>
-                    <span style={{ color: "rgba(226,232,240,0.45)", fontWeight: 600 }}>
+                    <span style={{ color: "rgba(226,232,240,0.85)", fontWeight: 600 }}>
                       — {m?.full || code}
                     </span>
                   </div>

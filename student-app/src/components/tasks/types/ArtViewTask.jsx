@@ -836,7 +836,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                   borderRadius: 12,
                   border: "none",
                   background: inputValue.trim() ? "#3b82f6" : "#e5e7eb",
-                  color: inputValue.trim() ? "#fff" : "#9ca3af",
+                  color: inputValue.trim() ? "#fff" : "#6b7280",
                   fontWeight: 800,
                   fontSize: "1rem",
                   cursor: inputValue.trim() ? "pointer" : "default",
@@ -871,7 +871,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                       style={{
                         border: "none",
                         background: "transparent",
-                        color: "#9ca3af",
+                        color: "#6b7280",
                         cursor: "pointer",
                         fontSize: "1.1rem",
                         padding: 4,
@@ -883,7 +883,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                 </div>
               ))}
               {observations.length === 0 && phase === PHASE.RESPONDING && (
-                <div style={{ textAlign: "center", color: "#9ca3af", padding: 20, fontSize: "0.9rem" }}>
+                <div style={{ textAlign: "center", color: "#6b7280", padding: 20, fontSize: "0.9rem" }}>
                   No observations yet. Start typing above!
                 </div>
               )}

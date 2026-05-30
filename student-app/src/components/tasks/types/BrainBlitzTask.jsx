@@ -985,7 +985,7 @@ export default function BrainBlitzTask({ task, onSubmit, disabled, socket, mode 
               <div style={{ fontWeight: 950, fontSize: 15, color: "#dc2626" }}>
                 LISTENING — Shout your answer!
               </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "#9ca3af", marginTop: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", marginTop: 1 }}>
                 Tap to stop mic
               </div>
               {interimTranscript && (
