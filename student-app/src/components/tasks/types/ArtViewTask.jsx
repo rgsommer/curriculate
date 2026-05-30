@@ -1,5 +1,5 @@
 // student-app/src/components/tasks/types/ArtViewTask.jsx
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { API_BASE_URL } from "../../../config.js";
 import StepCircle from "../StepCircle";
@@ -119,6 +119,66 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   // Writing on paper + snapping a photo is always available and earns a bonus.
   const PAPER_BONUS_POINTS = 5;
   const inputRef = useRef(null);
+
+  // ── Spot-check ("Found the…" panel) ──
+  // Teacher: "we could even have a series of 'Found the...' with 2-3 things to
+  // notice, with one of them being bogus so they can't just click through".
+  // 3 real items + 1 plausible decoy. Student must check all real items and
+  // leave the decoy unchecked before the Done button unlocks. Minimum 30s of
+  // viewing is also enforced. Optional config — older tasks without spotItems
+  // just get the 30s minimum.
+  const MIN_VIEW_SECONDS = 30;
+  const spotItems = useMemo(() => {
+    const raw = Array.isArray(config?.spotItems) ? config.spotItems : [];
+    return raw
+      .map((it) => {
+        if (typeof it === "string") return { text: it.trim(), isBogus: false };
+        if (it && typeof it === "object") {
+          const text = String(it.text || it.label || it.observation || "").trim();
+          const isBogus = it.isBogus === true || it.bogus === true || it.decoy === true || it.fake === true;
+          return text ? { text, isBogus } : null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }, [config?.spotItems]);
+  // Shuffle on mount with Math.random() so re-attempts get a fresh order
+  // (teacher: "those buttons should be shuffled on render"). Stored in a ref
+  // and held stable through React re-renders so the pills don't jump around
+  // every timer tick. Reshuffles only when the source spotItems array
+  // identity changes (i.e., a new task instance).
+  const shuffledSpot = useMemo(() => {
+    if (spotItems.length === 0) return [];
+    const arr = spotItems.map((it, i) => ({ ...it, _i: i }));
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [spotItems]);
+  const [spotChecked, setSpotChecked] = useState(() => new Set());
+  const toggleSpot = useCallback((origIdx) => {
+    setSpotChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(origIdx)) next.delete(origIdx); else next.add(origIdx);
+      return next;
+    });
+  }, []);
+  // Spot-check completion = every real item checked AND the decoy is NOT checked.
+  const spotComplete = useMemo(() => {
+    if (spotItems.length === 0) return true; // legacy task: skip the check
+    for (let i = 0; i < spotItems.length; i++) {
+      const it = spotItems[i];
+      const checked = spotChecked.has(i);
+      if (it.isBogus && checked) return false; // they fell for the decoy
+      if (!it.isBogus && !checked) return false; // missed a real one
+    }
+    return true;
+  }, [spotItems, spotChecked]);
+  const bogusChecked = useMemo(
+    () => spotItems.some((it, i) => it.isBogus && spotChecked.has(i)),
+    [spotItems, spotChecked]
+  );
 
   // (Preload + LOADING-phase validation removed — see state init above.
   //  The viewing phase now starts immediately with the original URL,
@@ -360,20 +420,133 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
           ⏳ {formatTime(secondsLeft)}
         </div>
 
-        {/* Done-viewing button — move on when finished studying instead of
-            waiting out the timer (tester: "there should be a done button"). */}
-        <button
-          type="button"
-          onClick={finishViewingEarly}
-          style={{
-            position: "absolute", top: 14, right: 16, zIndex: 12,
-            padding: "10px 16px", borderRadius: 999, border: "none",
-            background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: "0.85rem",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.4)", cursor: "pointer",
-          }}
-        >
-          ✓ Done — continue
-        </button>
+        {/* Done-viewing button — gated by (a) 30s minimum view time and
+            (b) the spot-check ("I noticed the…") panel when spotItems are
+            provided. Teacher: "they should not be able to tap through before
+            1 minute" + "we could even have a series of 'I noticed the...'
+            with 2-3 things to notice, with one of them being bogus so they
+            can't just click through". */}
+        {(() => {
+          const minView = Math.min(MIN_VIEW_SECONDS, Math.max(0, viewingSec - 1));
+          const elapsed = Math.max(0, viewingSec - (typeof secondsLeft === "number" ? secondsLeft : viewingSec));
+          const unlockIn = Math.max(0, minView - elapsed);
+          const timeOK = unlockIn === 0;
+          const canSkip = timeOK && spotComplete;
+          let label, locked = !canSkip, hint = "";
+          if (!timeOK) {
+            label = <>📖 Keep looking — unlocks in <span style={{ fontVariantNumeric: "tabular-nums" }}>{unlockIn}s</span></>;
+          } else if (bogusChecked) {
+            label = <>👀 Look again — one of these isn't there</>;
+          } else if (!spotComplete) {
+            label = <>👀 Check what you noticed</>;
+          } else {
+            label = <>✓ Done — continue</>;
+            hint = "Move on to your observations";
+          }
+          return (
+            <button
+              type="button"
+              onClick={canSkip ? finishViewingEarly : undefined}
+              disabled={locked}
+              title={hint || (typeof label === "string" ? label : "")}
+              style={{
+                position: "absolute", top: 14, right: 16, zIndex: 12,
+                padding: "10px 16px", borderRadius: 999, border: "none",
+                background: canSkip ? "#16a34a" : "rgba(75,85,99,0.9)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: "0.85rem",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                cursor: canSkip ? "pointer" : "not-allowed",
+                opacity: canSkip ? 1 : 0.95,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                maxWidth: "60vw",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })()}
+
+        {/* "I noticed the…" spot-check panel. Pill checkboxes overlaid at
+            the bottom of the viewing screen. Forces the student to actually
+            look at the artwork: they must check the real items AND leave the
+            plausible decoy unchecked before the Done button unlocks. */}
+        {shuffledSpot.length > 0 && (
+          <div style={{
+            position: "absolute",
+            left: 32, right: 16, bottom: 78,
+            zIndex: 12,
+            background: "rgba(15,15,25,0.92)",
+            border: "1px solid rgba(212,165,116,0.35)",
+            borderRadius: 14,
+            padding: "10px 14px",
+            color: "#f5f0e8",
+            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
+            maxHeight: "38vh",
+            overflowY: "auto",
+          }}>
+            <div style={{
+              fontSize: "0.78rem",
+              fontWeight: 800,
+              letterSpacing: 0.4,
+              color: "#fcd34d",
+              textTransform: "uppercase",
+              marginBottom: 6,
+            }}>
+              I noticed the…
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+              {shuffledSpot.map((it) => {
+                const isChecked = spotChecked.has(it._i);
+                return (
+                  <button
+                    key={it._i}
+                    type="button"
+                    onClick={() => toggleSpot(it._i)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "7px 12px",
+                      borderRadius: 999,
+                      border: `1px solid ${isChecked ? "rgba(34,197,94,0.7)" : "rgba(255,255,255,0.25)"}`,
+                      background: isChecked ? "rgba(34,197,94,0.25)" : "rgba(255,255,255,0.08)",
+                      color: "#fff",
+                      fontSize: "0.85rem",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      lineHeight: 1.2,
+                      textAlign: "left",
+                    }}
+                    aria-pressed={isChecked}
+                  >
+                    <span style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      width: 18, height: 18,
+                      borderRadius: 4,
+                      border: "1.5px solid rgba(255,255,255,0.55)",
+                      background: isChecked ? "#22c55e" : "transparent",
+                      color: "#fff",
+                      fontSize: "0.75rem",
+                      fontWeight: 900,
+                    }} aria-hidden="true">
+                      {isChecked ? "✓" : ""}
+                    </span>
+                    {it.text}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ marginTop: 6, fontSize: "0.72rem", color: "#9ca3af" }}>
+              Check only what you actually see — one of these isn't really there.
+            </div>
+          </div>
+        )}
 
         {/* Instruction + artwork info bar */}
         <div style={{

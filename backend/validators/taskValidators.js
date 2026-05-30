@@ -3284,6 +3284,23 @@ export function validateTaskByType(taskType, task) {
       if (rs && (rs < 30 || rs > 600)) {
         errors.push("config.responseSeconds must be between 30 and 600");
       }
+      // --- SPOT-CHECK: gate the viewing-phase Done button so students must
+      // actually look at the artwork (3 real + 1 plausible decoy). Optional
+      // field for backward compatibility with older saved tasks. ---
+      if (Array.isArray(avCfg.spotItems)) {
+        const items = avCfg.spotItems.filter((it) => it && typeof it === "object" && typeof it.text === "string" && it.text.trim());
+        const realCount = items.filter((it) => it.isBogus !== true).length;
+        const bogusCount = items.filter((it) => it.isBogus === true).length;
+        if (items.length < 3) {
+          errors.push(`config.spotItems must have at least 3 entries with non-empty text (got ${items.length})`);
+        }
+        if (bogusCount < 1) {
+          errors.push("config.spotItems must include at least one decoy entry with isBogus:true");
+        }
+        if (realCount < 2) {
+          errors.push("config.spotItems must include at least 2 real entries (isBogus:false)");
+        }
+      }
       break;
     }
 

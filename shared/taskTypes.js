@@ -1897,12 +1897,14 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - config.responseSeconds: default 120.
     - config.minObservations: default 5.
     - config.focusHints: array of 2-4 observation prompts tied to the curriculum topic (e.g., "What does this tell us about life in that period?", "Notice the use of light and shadow").
+    - config.spotItems: REQUIRED spot-check used during the viewing phase to force actual engagement (not click-through). An array of EXACTLY 4 objects, each { "text": "short phrase", "isBogus": true|false }. Provide 3 REAL details that ARE clearly visible in the artwork (isBogus:false) and 1 BOGUS decoy that sounds plausible for this kind of artwork but is NOT actually shown (isBogus:true). Examples for Van Gogh's "Starry Night": { text: "a swirling night sky", isBogus: false }, { text: "a village with a tall church steeple", isBogus: false }, { text: "a dark cypress tree in the foreground", isBogus: false }, { text: "a horse-drawn carriage on the road", isBogus: true }. The decoy must be plausible (something that could conceivably appear in this kind of artwork), not absurd. Keep each text under 70 characters.
     - The prompt should tell students: "Study this artwork carefully. When it disappears, write down as many observations as you can."
 
     Common failure prevention:
     - ALWAYS include BOTH imageUrl AND imageDescription.
     - viewingSeconds and responseSeconds must be positive integers.
     - The image must be historically significant and clearly connected to the lesson topic.
+    - config.spotItems MUST contain EXACTLY 3 real (isBogus:false) and 1 bogus (isBogus:true) entries — otherwise the task will be rejected.
     `,
   },
 
