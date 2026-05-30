@@ -126,6 +126,27 @@ const DEMO_TASKS = [
     explanation: "The pistil (center) is the female part; the stamens around it produce pollen.",
   },
 
+  // 6c. Map It (match-on-a-map — uses an OSM static map, no asset bundled)
+  {
+    taskType: "mapit",
+    title: "Key Places in the War of 1812",
+    prompt: "Tap a numbered marker on the map, then tap the matching War of 1812 place.",
+    map: {
+      regionHint: "Great Lakes region, eastern North America",
+      centerLat: 43.5,
+      centerLng: -78.5,
+      zoom: 6,
+    },
+    markers: [
+      { number: 1, lat: 42.33, lng: -83.05, correctAnswer: "Detroit",            clue: "Brock and Tecumseh captured this American post." },
+      { number: 2, lat: 43.16, lng: -79.05, correctAnswer: "Queenston Heights",  clue: "Brock died leading a charge up these heights." },
+      { number: 3, lat: 43.65, lng: -79.38, correctAnswer: "York",               clue: "Capital of Upper Canada — burned by U.S. forces." },
+      { number: 4, lat: 43.10, lng: -79.07, correctAnswer: "Niagara",            clue: "Frontier region with several major engagements." },
+    ],
+    choices: ["Niagara", "Detroit", "York", "Queenston Heights", "Plains of Abraham"],
+    explanation: "These four sites along the Detroit–Niagara frontier were the centre of the early War of 1812 campaigns.",
+  },
+
   // 7. Flashcards (uses task.cards with question + answer)
   {
     taskType: "flashcards",

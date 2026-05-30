@@ -178,6 +178,57 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.MAPIT: {
+      // Renderer needs 3–5 markers with real coords + ≥3 choices that
+      // cover every marker's correctAnswer + a viewport. Anything missing
+      // makes the map unrenderable; the auto-repair pass uses this to
+      // decide whether to regenerate or drop+replace.
+      const markers = Array.isArray(t.markers) ? t.markers
+        : Array.isArray(t.config?.markers) ? t.config.markers : [];
+      const choices = Array.isArray(t.choices) ? t.choices
+        : Array.isArray(t.config?.choices) ? t.config.choices : [];
+      const map = (t.map && typeof t.map === "object" ? t.map : t.config?.map) || {};
+
+      if (markers.length < 3) {
+        issues.push(`markers must have at least 3 entries (got ${markers.length})`);
+      } else if (markers.length > 5) {
+        issues.push(`markers must have at most 5 entries (got ${markers.length})`);
+      } else {
+        markers.forEach((m, i) => {
+          if (!m || typeof m !== "object") {
+            issues.push(`markers[${i}] is not an object`); return;
+          }
+          const lat = Number(m.lat ?? m.latitude);
+          const lng = Number(m.lng ?? m.lon ?? m.longitude);
+          if (!Number.isFinite(lat) || lat < -90 || lat > 90) issues.push(`markers[${i}].lat must be a number between -90 and 90`);
+          if (!Number.isFinite(lng) || lng < -180 || lng > 180) issues.push(`markers[${i}].lng must be a number between -180 and 180`);
+          const ans = String(m.correctAnswer ?? m.label ?? m.answer ?? "").trim();
+          if (!ans) issues.push(`markers[${i}] needs a correctAnswer`);
+        });
+      }
+
+      if (choices.length < 3) {
+        issues.push(`choices must have at least 3 entries (got ${choices.length})`);
+      }
+      // Every marker's correctAnswer must appear in choices.
+      if (markers.length && choices.length) {
+        const lowerChoices = new Set(
+          choices.map((c) => String(typeof c === "string" ? c : (c?.text || c?.label || "")).trim().toLowerCase())
+        );
+        const missing = markers
+          .map((m) => String(m?.correctAnswer ?? m?.label ?? "").trim())
+          .filter((a) => a && !lowerChoices.has(a.toLowerCase()));
+        if (missing.length) issues.push(`choices[] is missing ${missing.length} marker correctAnswer(s)`);
+      }
+
+      const centerLat = Number(map.centerLat ?? map.center?.lat);
+      const centerLng = Number(map.centerLng ?? map.center?.lng);
+      if (!Number.isFinite(centerLat) || !Number.isFinite(centerLng)) {
+        issues.push("map.centerLat and map.centerLng are required (decimal degrees)");
+      }
+      break;
+    }
+
     case TASK_TYPES.VENNSORT: {
       hasAtLeast(2, "categories", () => t.categories, () => t.config?.categories);
       hasAtLeast(5, "items", () => t.items, () => t.config?.items);

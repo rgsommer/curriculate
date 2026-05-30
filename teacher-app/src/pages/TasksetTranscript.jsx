@@ -1043,6 +1043,59 @@ function summarizeMatchingTask(sub, task) {
   return lines.length ? { matches: lines } : null;
 }
 
+// MapIt has the same matches-shape as Matching but uses marker numbers as
+// keys (M1 → "Detroit") and a flat choices[] list — there are no leftItems/
+// rightItems to look up. Render "Marker N (term) → choice" with the
+// expected answer alongside when wrong.
+function summarizeMapItTask(sub, task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  const matches =
+    (ap.matches && typeof ap.matches === "object" ? ap.matches : null) ||
+    (data.matches && typeof data.matches === "object" ? data.matches : null) ||
+    null;
+  if (!matches) return null;
+
+  const markers =
+    (Array.isArray(task?.markers) ? task.markers : null) ||
+    (Array.isArray(cfg.markers) ? cfg.markers : null) ||
+    [];
+  const correct =
+    (task?.correctMatches && typeof task.correctMatches === "object" ? task.correctMatches : null) ||
+    (cfg.correctMatches && typeof cfg.correctMatches === "object" ? cfg.correctMatches : null) ||
+    Object.fromEntries(markers.map((m, i) => [m?.id || `M${m?.number || i + 1}`, m?.correctAnswer || ""]));
+
+  const markerById = {};
+  markers.forEach((m, i) => {
+    const id = String(m?.id || `M${m?.number || i + 1}`);
+    markerById[id] = m;
+  });
+
+  let correctCount = 0;
+  const lines = [];
+  for (const [mid, picked] of Object.entries(matches)) {
+    const m = markerById[mid] || {};
+    const expected = String(correct[mid] || "");
+    const isRight = String(picked || "").trim().toLowerCase() === expected.trim().toLowerCase();
+    if (isRight) correctCount += 1;
+    const numberLabel = m.number != null ? `${m.number}` : mid;
+    lines.push({
+      marker: numberLabel,
+      picked: String(picked || ""),
+      expected,
+      isRight,
+    });
+  }
+
+  return {
+    lines,
+    correct: correctCount,
+    total: markers.length || Object.keys(matches).length,
+  };
+}
+
 function extractAnswerText(sub, task) {
   // Prefer canonical flattened field if present
   if (sub?.answerText) return String(sub.answerText);
@@ -2588,13 +2641,49 @@ export default function TasksetTranscript({ transcript }) {
                           </div>
                         );
                       })()}
-/* Objective task summaries (matching / sequence / sort / timeline) */}
+/* Objective task summaries (matching / mapit / sequence / sort / timeline) */}
                       {(() => {
                         const tt = String(task.taskType || task.type || "").toLowerCase();
                         const isMatching = tt === "matching" || tt === "match" || tt.includes("matching");
+                        const isMapIt = tt === "mapit" || tt === "map-it";
                         const isSequence = tt === "sequence" || tt.includes("sequence");
                         const isTimeline = tt === "timeline" || tt.includes("timeline");
                         const isSort = tt === "sort" || tt.includes("sort");
+
+                        if (isMapIt) {
+                          const summary = summarizeMapItTask(sub, task);
+                          if (!summary) return null;
+                          return (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                padding: 10,
+                                borderRadius: 12,
+                                border: "1px solid rgba(220,38,38,0.25)",
+                                background: "rgba(220,38,38,0.06)",
+                              }}
+                            >
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#991b1b", marginBottom: 6 }}>
+                                🗺️ Map It — {summary.correct}/{summary.total} markers correct
+                              </div>
+                              <div style={{ display: "grid", gap: 4, fontSize: "0.82rem", color: "#111827" }}>
+                                {summary.lines.map((row, i) => (
+                                  <div key={i}>
+                                    <strong style={{ marginRight: 6 }}>#{row.marker}</strong>
+                                    <span style={{ color: row.isRight ? "#15803d" : "#b91c1c", fontWeight: 600 }}>
+                                      {row.picked || "—"}
+                                    </span>
+                                    {!row.isRight && row.expected && (
+                                      <span style={{ marginLeft: 8, color: "#15803d", fontSize: "0.78rem" }}>
+                                        (correct: {row.expected})
+                                      </span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        }
 
                         if (isMatching) {
                           const summary = summarizeMatchingTask(sub, task);
