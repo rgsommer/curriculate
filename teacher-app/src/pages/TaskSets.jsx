@@ -5,7 +5,7 @@ import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { fetchMyProfile } from "../api/profile";
 import { API_BASE_URL, STUDENT_APP_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
-import { Modal, Button, Field, TextInput, TextArea, Select } from "../components/ui";
+import { Modal, Button, Field, TextInput, TextArea, Select, PageHeader, PageShell } from "../components/ui";
 
 const _API_BASE = API_BASE_URL || "";
 
@@ -1062,14 +1062,7 @@ export default function TaskSets() {
     });
   };
 
-  const page = {
-    padding: 24,
-    maxWidth: 1180,
-    margin: "0 auto",
-    fontFamily:
-      'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    color: "#111827",
-  };
+  // `page` style removed — wrapper migrated to <PageShell> (Wave 3).
 
   const card = {
     borderRadius: 16,
@@ -1166,7 +1159,7 @@ export default function TaskSets() {
   };
 
   return (
-    <div style={page}>
+    <PageShell>
       <style>{`@keyframes regenShimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }`}</style>
       {toast && (
         <div
@@ -1505,23 +1498,16 @@ export default function TaskSets() {
             )}
       </Modal>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
-        <div>
-          <h1 style={{ margin: 0 }}>Task Sets</h1>
-          <div style={{ marginTop: 4, color: "#6b7280", fontSize: "0.95rem" }}>
-            Your saved task sets.
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button type="button" onClick={loadSets} style={btn("secondary")}>
-            Refresh
-          </button>
-          <button type="button" onClick={() => navigate("/teacher/ai-tasksets")} style={btn("primary")}>
-            Create AI task set
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Task Sets"
+        subtitle="Your saved task sets."
+        actions={
+          <>
+            <Button variant="ghost" onClick={loadSets}>Refresh</Button>
+            <Button onClick={() => navigate("/teacher/ai-tasksets")}>Create AI task set</Button>
+          </>
+        }
+      />
 
       {error && (
         <div
@@ -2350,6 +2336,6 @@ export default function TaskSets() {
               );
             })()}
       </Modal>
-    </div>
+    </PageShell>
   );
 }

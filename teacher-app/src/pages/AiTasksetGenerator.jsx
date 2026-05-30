@@ -5,7 +5,7 @@ import { fetchMyProfile } from "../api/profile";
 import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
-import { Field, TextInput, TextArea, Select } from "../components/ui";
+import { Field, TextInput, TextArea, Select, PageHeader, PageShell } from "../components/ui";
 
 // Category → color mapping for task type badges
 const CATEGORY_COLORS = {
@@ -1092,18 +1092,17 @@ export default function AiTasksetGenerator() {
   ];
 
   return (
-    <div style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-        <h1 style={{ margin: 0 }}>AI Task Set Generator</h1>
-        <TourHelpButton
-          tourId="generator-v1"
-          onClick={() => setShowTour((v) => !v)}
-        />
-      </div>
-      <p style={{ marginTop: 4, color: "#4b5563", fontSize: "0.95rem" }}>
-        Give the AI your topic, vocabulary list, and any special considerations.
-        It will build a station-based task set that stays on that exact content.
-      </p>
+    <PageShell maxWidth={960}>
+      <PageHeader
+        title="AI Task Set Generator"
+        subtitle="Give the AI your topic, vocabulary list, and any special considerations. It will build a station-based task set that stays on that exact content."
+        actions={
+          <TourHelpButton
+            tourId="generator-v1"
+            onClick={() => setShowTour((v) => !v)}
+          />
+        }
+      />
 
       {/* Spotlight tour overlay */}
       <SpotlightTour
@@ -2297,6 +2296,6 @@ export default function AiTasksetGenerator() {
           {renderCoveragePanel()}
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

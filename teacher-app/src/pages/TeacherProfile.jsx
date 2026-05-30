@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { fetchMyProfile, updateMyProfile } from "../api/profile";
 import MatchSession from "./MatchSession";
 import ClassRostersAdmin from "./ClassRostersAdmin";
+import { PageHeader, PageShell } from "../components/ui";
 
 // Options for perspectives (can grow later)
 const PERSPECTIVE_OPTIONS = [
@@ -275,30 +276,21 @@ export default function TeacherProfile() {
   // ─────────────────────────────────────────────
   if (loading) {
     return (
-      <div style={{ padding: 16 }}>
-        <h1>Presenter Profile</h1>
+      <PageShell maxWidth={900}>
+        <PageHeader title="Presenter Profile" />
         <p>Loading your profile…</p>
-      </div>
+      </PageShell>
     );
   }
 
   const treatsValue = Number(profile.treatsPerSession ?? 2);
 
   return (
-    <div
-      style={{
-        maxWidth: 900,
-        margin: "0 auto",
-        padding: 16,
-        fontFamily:
-          "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-      }}
-    >
-      <h1 style={{ marginBottom: 8 }}>Presenter Profile</h1>
-      <p style={{ marginTop: 0, color: "#4b5563", fontSize: "0.9rem" }}>
-        These settings personalize how Curriculate generates tasks, runs
-        live sessions, and prepares reports.
-      </p>
+    <PageShell maxWidth={900}>
+      <PageHeader
+        title="Presenter Profile"
+        subtitle="These settings personalize how Curriculate generates tasks, runs live sessions, and prepares reports."
+      />
 
       {/* Class linking admin (PLUS+). Two collapsible sections:
             • Class Rosters — review students, fill in student/parent emails
@@ -1077,6 +1069,6 @@ export default function TeacherProfile() {
           )}
         </div>
       </form>
-    </div>
+    </PageShell>
   );
 }
