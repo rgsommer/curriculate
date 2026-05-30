@@ -1,5 +1,6 @@
 import React from "react";
 import DesignatedWriter from "../DesignatedWriter";
+import { PrimaryButton, GhostButton } from "../taskStyles";
 
 // Confetti particle component
 function Confetti() {
@@ -609,25 +610,7 @@ export default function ShortAnswerTask({
 
         {!review.accepted ? (
           <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              style={{
-                background: "linear-gradient(135deg, #0ea5e9, #06b6d4)",
-                color: "#fff",
-                fontWeight: 700,
-                padding: "10px 20px",
-                borderRadius: 8,
-                border: "none",
-                cursor: "pointer",
-                fontSize: "0.95rem",
-                transition: "transform 0.2s",
-              }}
-              onMouseDown={(e) => (e.target.style.transform = "scale(0.95)")}
-              onMouseUp={(e) => (e.target.style.transform = "scale(1)")}
-              onClick={() => setReview(null)}
-            >
-              ⚡ Try again
-            </button>
+            <GhostButton onClick={() => setReview(null)}>⚡ Try again</GhostButton>
           </div>
         ) : null}
       </div>
@@ -731,25 +714,7 @@ export default function ShortAnswerTask({
 
         {!review.allCorrect ? (
           <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end" }}>
-            <button
-              type="button"
-              style={{
-                background: "linear-gradient(135deg, #0ea5e9, #06b6d4)",
-                color: "#fff",
-                fontWeight: 700,
-                padding: "10px 20px",
-                borderRadius: 8,
-                border: "none",
-                cursor: "pointer",
-                fontSize: "0.95rem",
-                transition: "transform 0.2s",
-              }}
-              onMouseDown={(e) => (e.target.style.transform = "scale(0.95)")}
-              onMouseUp={(e) => (e.target.style.transform = "scale(1)")}
-              onClick={() => setReview(null)}
-            >
-              ⚡ Revise and retry
-            </button>
+            <GhostButton onClick={() => setReview(null)}>⚡ Revise and retry</GhostButton>
           </div>
         ) : null}
       </div>
@@ -1021,45 +986,22 @@ export default function ShortAnswerTask({
 
           {roundSubmitted && !checking ? (
             // Round scored — choose a bonus round or finish.
+            // Migrated to shared GhostButton + PrimaryButton.
             <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
               {questionsLeftAfterCurrent > 0 && (
-                <button
-                  type="button"
+                <GhostButton
                   onClick={startNextRound}
                   disabled={disabled}
-                  style={{
-                    padding: "14px 22px",
-                    fontSize: "1rem",
-                    fontWeight: 800,
-                    borderRadius: "10px",
-                    border: "2px solid #0ea5e9",
-                    cursor: "pointer",
-                    background: "rgba(14,165,233,0.12)",
-                    color: "#0369a1",
-                  }}
-                  title="Deal 1 more question per player for bonus points"
                 >
                   ▶ Another round (+bonus) · {questionsLeftAfterCurrent} left
-                </button>
+                </GhostButton>
               )}
-              <button
-                type="button"
+              <PrimaryButton
                 onClick={finishTask}
                 disabled={disabled}
-                style={{
-                  padding: "14px 28px",
-                  fontSize: "1rem",
-                  fontWeight: 800,
-                  borderRadius: "10px",
-                  border: "none",
-                  cursor: "pointer",
-                  background: "linear-gradient(135deg, #22c55e, #16a34a)",
-                  color: "#fff",
-                  boxShadow: "0 8px 16px rgba(34,197,94,0.3)",
-                }}
               >
                 ✓ Finish
-              </button>
+              </PrimaryButton>
             </div>
           ) : (
             <button

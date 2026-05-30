@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/TrueFalseTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import DesignatedWriter from "../DesignatedWriter";
+import { PrimaryButton } from "../taskStyles";
 
 // Inline animation styles
 const animationStyles = `
@@ -817,25 +818,11 @@ export default function TrueFalseTask({
           })}
         </div>
 
-        {/* Submit / Continue button */}
+        {/* Submit / Continue button — post-reveal uses the shared
+            PrimaryButton (canonical indigo→sky), pre-submit keeps its
+            semantic green/gray "ready vs not ready" state-coloring. */}
         {revealed ? (
-          <button
-            type="button"
-            onClick={fireSubmit}
-            style={{
-              padding: "16px 24px",
-              borderRadius: "16px",
-              border: "none",
-              fontWeight: 700,
-              fontSize: "1rem",
-              cursor: "pointer",
-              background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-              color: "#fff",
-              boxShadow: "0 8px 16px rgba(99, 102, 241, 0.3)",
-              textTransform: "uppercase",
-              letterSpacing: "0.5px",
-            }}
-          >
+          <PrimaryButton onClick={fireSubmit}>
             {(() => {
               const correctCount = presentedItems.reduce((n, p, i) => {
                 const cv = correctValForCanonical(p.canonicalIndex);
@@ -846,7 +833,7 @@ export default function TrueFalseTask({
               ).length;
               return `Continue ▶  (${correctCount}/${gradable} correct)`;
             })()}
-          </button>
+          </PrimaryButton>
         ) : (
           <button
             type="button"
@@ -1138,27 +1125,9 @@ export default function TrueFalseTask({
         </div>
       )}
 
-      {/* Submit / Continue button */}
+      {/* Submit / Continue button — post-reveal uses shared PrimaryButton. */}
       {revealed ? (
-        <button
-          type="button"
-          onClick={fireSubmit}
-          style={{
-            padding: "16px 24px",
-            borderRadius: "16px",
-            border: "none",
-            fontWeight: 700,
-            fontSize: "1rem",
-            cursor: "pointer",
-            background: "linear-gradient(135deg, #6366f1, #4f46e5)",
-            color: "#fff",
-            boxShadow: "0 8px 16px rgba(99, 102, 241, 0.3)",
-            textTransform: "uppercase",
-            letterSpacing: "0.5px",
-          }}
-        >
-          Continue ▶
-        </button>
+        <PrimaryButton onClick={fireSubmit}>Continue ▶</PrimaryButton>
       ) : singleSelected ? (
         <button
           type="button"
