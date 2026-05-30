@@ -22,6 +22,8 @@ import {
   MapPin,
   Clock,
   Loader2,
+  BookOpen,
+  Landmark,
 } from "lucide-react";
 
 /* ─────────── Brand palette (navy + gold, professional services) ────── */
@@ -39,16 +41,25 @@ const C = {
 
 const SERVICES = [
   { num: "01", icon: <ClipboardCheck size={22} />, title: "Audit & Assurance",
-    text: "Independent IFRS-compliant audits via Tee Bee Audit — our new AI-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete." },
+    text: "Independent IFRS-compliant audits via Tee Bee Audit — our new AI-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete.",
+    href: "/audit", hrefLabel: "Explore Tee Bee Audit", badge: "Platform live" },
   { num: "02", icon: <Calculator size={22} />, title: "Taxation Services",
-    text: "Strategic tax planning, compliance, and advisory services to optimise your tax position while staying fully aligned with IRC requirements." },
+    text: "Strategic tax planning, return preparation and lodgement, and IRC compliance — keeping your tax position optimised and fully aligned with IRC requirements. A dedicated taxation platform is in development.",
+    badge: "Platform coming soon" },
   { num: "03", icon: <FileText size={22} />, title: "Accounting Services",
-    text: "Professional bookkeeping, financial reporting, and management accounting tailored to your business — including payroll via TeebeePay." },
-  { num: "04", icon: <TrendingUp size={22} />, title: "Business Advisory",
+    text: "Cloud bookkeeping, a full double-entry General Ledger, financial reporting and management accounting — plus fortnightly payroll. Run your books and your pay run in one place with TeebeePay.",
+    href: "/teebeepay", hrefLabel: "Explore TeebeePay", badge: "Platform live" },
+  { num: "04", icon: <BookOpen size={22} />, title: "General Ledger & Reporting",
+    text: "A real double-entry ledger behind your books: chart of accounts, journal entries, trial balance, income statement and balance sheet — always reconciled to your payroll. Built into TeebeePay.",
+    href: "/teebeepay", hrefLabel: "Explore TeebeePay", badge: "Platform live" },
+  { num: "05", icon: <TrendingUp size={22} />, title: "Business Advisory",
     text: "Strategic guidance on growth, financial planning, risk management, and operational efficiency improvements." },
-  { num: "05", icon: <Receipt size={22} />, title: "Statutory Compliance",
+  { num: "06", icon: <Landmark size={22} />, title: "Loan Preparation",
+    text: "Lender-ready financial packs assembled straight from your books — statements, projections and supporting schedules — so your bank or development-finance application lands complete.",
+    badge: "Platform coming soon" },
+  { num: "07", icon: <Receipt size={22} />, title: "Statutory Compliance",
     text: "Company secretarial services, IPA annual returns, and full regulatory compliance support to keep your business in good standing." },
-  { num: "06", icon: <Briefcase size={22} />, title: "Financial Consulting",
+  { num: "08", icon: <Briefcase size={22} />, title: "Financial Consulting",
     text: "Expert financial analysis, feasibility studies, and due-diligence services for informed decision-making and investment readiness." },
 ];
 
@@ -346,8 +357,10 @@ function Services() {
           </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 22 }}>
-          {SERVICES.map((s, i) => (
-            <div key={i} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 14, padding: 28, position: "relative" }}>
+          {SERVICES.map((s, i) => {
+            const live = s.badge === "Platform live";
+            return (
+            <div key={i} style={{ background: "#fff", border: "1px solid #eee", borderRadius: 14, padding: 28, position: "relative", display: "flex", flexDirection: "column" }}>
               <div style={{ position: "absolute", top: 20, right: 24, fontSize: 24, fontWeight: 700,
                 color: C.goldSoft, fontFamily: "Georgia, serif" }}>{s.num}</div>
               <div style={{ width: 44, height: 44, borderRadius: 10, background: C.navy, color: C.gold,
@@ -355,9 +368,23 @@ function Services() {
                 {s.icon}
               </div>
               <h3 style={{ fontSize: 19, fontWeight: 700, margin: "0 0 10px" }}>{s.title}</h3>
-              <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6, margin: 0 }}>{s.text}</p>
+              <p style={{ color: C.inkSoft, fontSize: 14, lineHeight: 1.6, margin: 0, flex: 1 }}>{s.text}</p>
+              {s.badge && (
+                <span style={{ marginTop: 14, alignSelf: "flex-start", fontSize: 11, fontWeight: 700,
+                  textTransform: "uppercase", letterSpacing: 0.05, padding: "4px 10px", borderRadius: 999,
+                  color: live ? "#166534" : C.muted, background: live ? "#dcfce7" : "#eef0f3" }}>
+                  {s.badge}
+                </span>
+              )}
+              {s.href && (
+                <Link href={s.href} style={{ marginTop: 14, display: "inline-flex", alignItems: "center",
+                  gap: 6, fontSize: 14, fontWeight: 700, color: C.navy, textDecoration: "none" }}>
+                  {s.hrefLabel} <ArrowRight size={15} />
+                </Link>
+              )}
             </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </section>

@@ -74,6 +74,35 @@ const PLATFORMS: Platform[] = [
   },
 ];
 
+type Walk = { name: string; status: "live" | "soon"; href?: string; steps: string };
+
+const WALKTHROUGH: Walk[] = [
+  {
+    name: "TeebeePay",
+    status: "live",
+    href: "/teebeepay",
+    steps:
+      "Sign in with the 6-digit PIN emailed to you, pick a company, then use the tabs along the top: " +
+      "Pay periods, Employees, Divisions, Reports — and the new General Ledger (chart of accounts, " +
+      "journal entries, trial balance, income statement, balance sheet).",
+  },
+  {
+    name: "Tee Bee Audit",
+    status: "live",
+    href: "/audit",
+    steps:
+      "Open the landing page for the pitch, then the working console at /audit/app to run an " +
+      "engagement. Manage engagements and review findings at /audit/admin.",
+  },
+  {
+    name: "Taxation · Loan Preparation",
+    status: "soon",
+    steps:
+      "In design — not yet clickable. The accounting data that feeds them already lives in the " +
+      "General Ledger, so these slot on top once their workflows are built.",
+  },
+];
+
 const SETUP_FEES = [
   { size: "Small", note: "sole trader · simple books", fee: "K500" },
   { size: "Medium", note: "multi-staff · several accounts", fee: "K1,000" },
@@ -125,6 +154,15 @@ export default function PrincipalOverview() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }} className="grid-2">
             {PLATFORMS.map((p) => (
               <PlatformCard key={p.name} p={p} />
+            ))}
+          </div>
+
+          {/* See it for yourself */}
+          <SectionTitle>See it for yourself</SectionTitle>
+          <p style={subtle}>Open these on any browser — sign in is by emailed PIN, nothing to install.</p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {WALKTHROUGH.map((w) => (
+              <WalkRow key={w.name} w={w} />
             ))}
           </div>
 
@@ -201,6 +239,24 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
     <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: C.gold, textTransform: "uppercase", letterSpacing: 0.06, minWidth: 44, flexShrink: 0, paddingTop: 1 }}>{label}</span>
       <span style={{ fontSize: 12.5, color: C.inkSoft, lineHeight: 1.45 }}>{children}</span>
+    </div>
+  );
+}
+
+function WalkRow({ w }: { w: Walk }) {
+  return (
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-start", border: `1px solid ${C.line}`, borderRadius: 10, padding: "10px 14px", background: w.status === "soon" ? C.cream : C.paper }}>
+      <span style={{ fontSize: 12, fontWeight: 800, color: w.status === "soon" ? C.muted : "#fff", background: w.status === "soon" ? "#eef0f3" : C.navy, borderRadius: 7, padding: "4px 10px", minWidth: 110, textAlign: "center", flexShrink: 0 }}>
+        {w.name}
+      </span>
+      <span style={{ fontSize: 12.5, color: C.inkSoft, lineHeight: 1.5 }}>
+        {w.href && (
+          <Link href={w.href} style={{ fontWeight: 700, color: C.navy, textDecoration: "none", marginRight: 6 }}>
+            curriculate.net{w.href}
+          </Link>
+        )}
+        {w.steps}
+      </span>
     </div>
   );
 }
