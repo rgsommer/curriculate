@@ -32,6 +32,7 @@ export const TASK_TYPES = {
   SEQUENCE: "sequence",
   MATCHING: "matching",
   LABELME: "labelme",
+  MAPIT: "mapit",
   TIMELINE: "timeline",
   VENNSORT: "vennsort",
 
@@ -203,6 +204,7 @@ export const TASK_BLOOMS_MAP = {
   "sequence":                   ["APPLY", "ANALYZE"],
   "matching":                   ["APPLY", "REMEMBER"],
   "labelme":                    ["REMEMBER", "UNDERSTAND"],
+  "mapit":                      ["APPLY", "ANALYZE"],
   "timeline":                   ["APPLY", "ANALYZE"],
   "vennsort":                   ["APPLY", "ANALYZE"],
   "mad-dash":                   ["APPLY", "REMEMBER"],
@@ -798,6 +800,104 @@ NOTE: Do NOT use "items", "options", "pairs", or "config" wrappers.
     }
 
     Rules for correctMatches: L1 matches R1, L2 matches R2, etc. Each left item matches exactly one right item.
+    `,
+},
+
+  [TASK_TYPES.MAPIT]: {
+    label: "Map It",
+    category: CATEGORY.ORDERING,
+    implemented: true,
+    demoEligible: true,
+    generatorEligible: true,
+    objectiveKeyed: true,
+    aiScoringDefaultOn: false,
+    scoringMode: "objective",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 180,
+    estimatedMinutes: 5,
+    correctAnswerShape: "marker-to-choice-map",
+    interTeamEnabled: false,
+    intraTeamEnabled: false,
+    description: `
+Map It (match-on-a-map). Students see a real map with 3–5 numbered coloured
+markers; they match each marker number to the correct location/event/person
+from a shuffled list of choices, using the same two-tap interaction as
+Matching. ONLY generate this task type when the vocabulary list has a clear
+geographic component (places, battles, voyages, settlements, exploration,
+empires, missions, Bible geography, physical geography). For non-geographic
+vocab (math operations, grammar rules, abstract concepts), pick a different
+task type instead.
+
+AI generation / schema hints:
+taskType: "mapit"
+title: short (3–7 words)
+prompt: concise student instruction
+markers: array of 3–5 objects { number, lat, lng, correctAnswer, clue?, note? }
+choices: array of strings (the labels that get shuffled — must include every
+         correctAnswer, plus 0–2 plausible distractors)
+map: { regionHint, centerLat, centerLng, zoom (1–10) }
+`,
+
+    aiPrompt: `
+    Generate ONE Curriculate task object with taskType "mapit".
+
+    GEOGRAPHIC RELEVANCE GATE (read this first):
+    Only output a "mapit" task if the vocabulary list has REAL geographic
+    content — places, battles, voyages, exploration, settlements, missions,
+    empires, wars, Bible lands, physical geography (rivers, mountains,
+    regions), or historical figures strongly tied to specific places.
+    If the vocab is mostly abstract (math operations, grammar, science
+    processes without a place focus), do NOT generate a mapit task — return
+    a clear error JSON: {"taskType":"mapit","_skipReason":"not geographic"}
+    and the system will pick a different task type. Forcing this task
+    type on non-geographic vocab produces a bad student experience.
+
+    Hard requirements (when geographic content IS present):
+    - Output ONLY a single JSON object (no markdown, no commentary).
+    - 3 to 5 markers — choose specific, named places students can actually
+      study, not vague regions like "Asia". Prefer cities, forts, battle
+      sites, rivers, specific routes.
+    - Each marker MUST have: number (1..N), lat (decimal degrees,
+      -90..90), lng (-180..180), correctAnswer (string from the vocab list
+      or closely tied to it).
+    - Lat/lng must be approximately right (within a few hundred km is
+      fine for an introductory student map). DO NOT invent coordinates
+      for fictional places.
+    - "choices" is the shuffled list of label strings the student picks
+      from — it MUST contain every marker's correctAnswer plus 0–2 plausible
+      distractors. No duplicates. Keep each ≤ 60 characters.
+    - "map" sets the viewport: regionHint (e.g. "Eastern North America"),
+      centerLat / centerLng / zoom (1=world, 4=continent, 6=country, 8=region).
+    - Optional per-marker "clue" (8–14 words) and "note" (historical context
+      shown after submission) — both help students learn.
+
+    Required output format:
+    {
+      "taskType": "mapit",
+      "title": "Key Places in the War of 1812",
+      "prompt": "Match each numbered marker on the map to the correct War of 1812 place.",
+      "map": {
+        "regionHint": "Great Lakes region, Eastern North America",
+        "centerLat": 43.5,
+        "centerLng": -78.5,
+        "zoom": 6
+      },
+      "markers": [
+        { "number": 1, "lat": 42.33, "lng": -83.05, "correctAnswer": "Detroit", "clue": "British captured it under Brock + Tecumseh." },
+        { "number": 2, "lat": 43.16, "lng": -79.05, "correctAnswer": "Queenston Heights", "clue": "Brock died leading a charge here." },
+        { "number": 3, "lat": 43.65, "lng": -79.38, "correctAnswer": "York", "clue": "Capital of Upper Canada — burned by U.S. forces." },
+        { "number": 4, "lat": 43.10, "lng": -79.07, "correctAnswer": "Niagara", "clue": "Frontier region with several major engagements." }
+      ],
+      "choices": ["Niagara", "Detroit", "York", "Queenston Heights", "Plains of Abraham"]
+    }
+
+    Common failure prevention:
+    - Do NOT include any marker without lat/lng.
+    - Do NOT add a correctAnswer to choices more than once.
+    - Do NOT exceed 5 markers — students get overwhelmed.
+    - Do NOT generate this task when the vocab list isn't geographic.
     `,
 },
 
@@ -5313,6 +5413,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.JEOPARDY]:               { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.9, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 }, // Brain Blitz
   [TASK_TYPES.MATCHING]:               { math: 0.9, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.8, business: 0.9, religion: 0.9, general: 0.9 },
   [TASK_TYPES.LABELME]:                { math: 0.8, science: 1.0, history: 1.0, language: 0.7, arts: 0.9, health: 1.0, business: 0.7, religion: 0.9, general: 0.9 },
+  [TASK_TYPES.MAPIT]:                  { math: 0.1, science: 0.5, history: 1.0, language: 0.4, arts: 0.3, health: 0.2, business: 0.6, religion: 1.0, general: 0.4 }, // heavy history/religion/geo bias — gated by aiPrompt to refuse non-geographic vocab
   [TASK_TYPES.SORT]:                   { math: 0.9, science: 1.0, history: 0.9, language: 0.8, arts: 0.6, health: 0.7, business: 0.8, religion: 0.7, general: 0.8 },
   [TASK_TYPES.SEQUENCE]:               { math: 1.0, science: 0.9, history: 1.0, language: 0.7, arts: 0.5, health: 0.6, business: 0.7, religion: 0.7, general: 0.8 },
   [TASK_TYPES.TIMELINE]:               { math: 0.4, science: 0.7, history: 1.0, language: 0.5, arts: 0.6, health: 0.3, business: 0.6, religion: 0.8, general: 0.6 },

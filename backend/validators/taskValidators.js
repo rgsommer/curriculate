@@ -1064,6 +1064,94 @@ export function normalizeTaskByType(taskType, rawTask) {
       break;
     }
 
+    case TASK_TYPES.MAPIT: {
+      // Canonical: markers[{number, lat, lng, correctAnswer, clue?, note?}] +
+      // choices[] + map{centerLat, centerLng, zoom, regionHint?} + correctMatches
+      // (markerId → correctAnswer, reusing Matching's scoring shape).
+      const cfg = isObject(task.config) ? task.config : {};
+
+      const rawMarkers = Array.isArray(task.markers)
+        ? task.markers
+        : Array.isArray(cfg.markers)
+        ? cfg.markers
+        : [];
+
+      const markers = rawMarkers
+        .map((m, i) => {
+          const obj = isObject(m) ? m : {};
+          const number = Number(obj.number ?? obj.markerNumber ?? i + 1);
+          const lat = Number(obj.lat ?? obj.latitude);
+          const lng = Number(obj.lng ?? obj.lon ?? obj.longitude);
+          const correctAnswer = asNonEmptyString(
+            obj.correctAnswer,
+            asNonEmptyString(obj.label, asNonEmptyString(obj.answer, asNonEmptyString(obj.text, "")))
+          );
+          const clue = asNonEmptyString(obj.clue, asNonEmptyString(obj.hint, ""));
+          const note = asNonEmptyString(obj.note, asNonEmptyString(obj.context, ""));
+          return {
+            id: `M${Number.isFinite(number) ? number : i + 1}`,
+            number: Number.isFinite(number) ? number : i + 1,
+            lat: Number.isFinite(lat) ? Math.max(-90, Math.min(90, lat)) : null,
+            lng: Number.isFinite(lng) ? Math.max(-180, Math.min(180, lng)) : null,
+            correctAnswer,
+            ...(clue ? { clue } : {}),
+            ...(note ? { note } : {}),
+          };
+        })
+        .filter((m) => m.correctAnswer && m.lat !== null && m.lng !== null)
+        // CAP: 3–5 markers is the playable range. Beyond 5 overwhelms the
+        // student; force-trim. (Below 3 is caught by the validator.)
+        .slice(0, 5);
+
+      // Renumber sequentially in case the AI omitted/duplicated numbers.
+      markers.forEach((m, i) => {
+        m.number = i + 1;
+        m.id = `M${i + 1}`;
+      });
+
+      // Choices: every correctAnswer is in the list, plus any user-provided
+      // distractors. Dedup case-insensitively. Final count capped at 8 so
+      // the picker doesn't get crowded.
+      const providedChoices = Array.isArray(task.choices)
+        ? task.choices
+        : Array.isArray(cfg.choices)
+        ? cfg.choices
+        : [];
+      const choiceTexts = [
+        ...markers.map((m) => m.correctAnswer),
+        ...providedChoices.map((c) => (typeof c === "string" ? c : (c?.text || c?.label || ""))).filter(Boolean),
+      ];
+      const seen = new Set();
+      const choices = [];
+      for (const c of choiceTexts) {
+        const trimmed = String(c).trim().slice(0, 80);
+        const key = trimmed.toLowerCase();
+        if (trimmed && !seen.has(key)) { seen.add(key); choices.push(trimmed); }
+        if (choices.length >= 8) break;
+      }
+
+      // Map viewport — default to North-American view if AI omitted it.
+      const rawMap = isObject(task.map) ? task.map : isObject(cfg.map) ? cfg.map : {};
+      const centerLat = Number(rawMap.centerLat ?? rawMap.center?.lat);
+      const centerLng = Number(rawMap.centerLng ?? rawMap.center?.lng);
+      const zoom = Number(rawMap.zoom);
+      const map = {
+        regionHint: asNonEmptyString(rawMap.regionHint, ""),
+        centerLat: Number.isFinite(centerLat) ? centerLat : (markers.length ? markers.reduce((s, m) => s + m.lat, 0) / markers.length : 45),
+        centerLng: Number.isFinite(centerLng) ? centerLng : (markers.length ? markers.reduce((s, m) => s + m.lng, 0) / markers.length : -90),
+        zoom: Number.isFinite(zoom) ? Math.max(1, Math.min(10, zoom)) : 5,
+      };
+
+      task.markers = markers;
+      task.choices = choices;
+      task.map = map;
+      // Mirror Matching's scoring shape so existing analytics + partial-credit
+      // logic apply for free: markerId → correctAnswer.
+      task.correctMatches = Object.fromEntries(markers.map((m) => [m.id, m.correctAnswer]));
+      if (!isObject(task.grading)) task.grading = { exactMatch: true, partialCredit: true };
+      break;
+    }
+
     case TASK_TYPES.MATCHING: {
       const cfg = isObject(task.config) ? task.config : (task.config = {});
 
@@ -3055,6 +3143,43 @@ export function validateTaskByType(taskType, task) {
       if (!Array.isArray(task.leftItems) || task.leftItems.length < 5) errors.push("leftItems[] must have at least 5 items");
       if (!Array.isArray(task.rightItems) || task.rightItems.length < 5) errors.push("rightItems[] must have at least 5 items");
       if (!isObject(task.correctMatches) || Object.keys(task.correctMatches).length < 5) errors.push("correctMatches map must include at least 5 pairs");
+      break;
+    }
+
+    case TASK_TYPES.MAPIT: {
+      if (!Array.isArray(task.markers) || task.markers.length < 3) {
+        errors.push(`mapit needs at least 3 markers (got ${task.markers?.length || 0})`);
+      } else if (task.markers.length > 5) {
+        errors.push(`mapit must have at most 5 markers (got ${task.markers.length}) — students get overwhelmed`);
+      } else {
+        task.markers.forEach((m, i) => {
+          if (!m || !asNonEmptyString(m.correctAnswer, "")) errors.push(`markers[${i}] needs a correctAnswer`);
+          if (!Number.isFinite(m?.lat) || m.lat < -90 || m.lat > 90) errors.push(`markers[${i}].lat must be a decimal between -90 and 90`);
+          if (!Number.isFinite(m?.lng) || m.lng < -180 || m.lng > 180) errors.push(`markers[${i}].lng must be a decimal between -180 and 180`);
+        });
+      }
+      if (!Array.isArray(task.choices) || task.choices.length < 3) {
+        errors.push(`mapit needs at least 3 choices (got ${task.choices?.length || 0})`);
+      }
+      // Every marker's correctAnswer must appear in choices (case-insensitive).
+      if (Array.isArray(task.markers) && Array.isArray(task.choices)) {
+        const lowerChoices = new Set(task.choices.map((c) => String(c).trim().toLowerCase()));
+        const missing = task.markers
+          .filter((m) => m?.correctAnswer && !lowerChoices.has(String(m.correctAnswer).trim().toLowerCase()))
+          .map((m) => m.correctAnswer);
+        if (missing.length) {
+          errors.push(`mapit choices[] is missing ${missing.length} correctAnswer(s): ${missing.slice(0, 3).join(", ")}`);
+        }
+      }
+      // Map viewport must be valid (the normalizer fills defaults, but warn
+      // if numbers are extreme — usually means the AI used wrong sign).
+      const m = isObject(task.map) ? task.map : {};
+      if (!Number.isFinite(m.centerLat) || !Number.isFinite(m.centerLng)) {
+        errors.push("mapit needs map.centerLat and map.centerLng (decimal degrees)");
+      }
+      if (Number.isFinite(m.zoom) && (m.zoom < 1 || m.zoom > 10)) {
+        errors.push(`map.zoom must be between 1 and 10 (got ${m.zoom})`);
+      }
       break;
     }
 

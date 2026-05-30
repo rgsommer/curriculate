@@ -195,6 +195,37 @@ const CASES = [
       { name: "items", n: len(t.items), max: 4 },
     ],
   },
+  {
+    type: TASK_TYPES.MAPIT,
+    label: "mapit markers capped to 5 + every correctAnswer in choices",
+    build: () => ({
+      title: "Map It test",
+      prompt: "Match each marker to a place.",
+      // Feed 12 markers — should clamp to 5.
+      markers: Array.from({ length: 12 }, (_, i) => ({
+        number: i + 1,
+        lat: 40 + i * 0.5,
+        lng: -80 + i * 0.5,
+        correctAnswer: `Place ${i + 1}`,
+      })),
+      // Choices includes every correctAnswer plus extras — normalizer dedups.
+      choices: Array.from({ length: 12 }, (_, i) => `Place ${i + 1}`).concat([
+        "Distractor A",
+        "Distractor B",
+      ]),
+      map: { centerLat: 43, centerLng: -78, zoom: 6 },
+    }),
+    checks: (t) => {
+      const markerAnswers = new Set((t.markers || []).map((m) => String(m.correctAnswer).toLowerCase()));
+      const choiceSet = new Set((t.choices || []).map((c) => String(c).toLowerCase()));
+      const missing = [...markerAnswers].filter((a) => !choiceSet.has(a));
+      return [
+        { name: "markers", n: len(t.markers), max: 5 },
+        { name: "choices", n: len(t.choices), max: 8 },
+        { name: "missing correctAnswers", n: missing.length, max: 0 },
+      ];
+    },
+  },
 ];
 
 // ── run ──

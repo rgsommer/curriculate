@@ -45,6 +45,7 @@ import BrainBlitzTask from "./types/BrainBlitzTask";
 import PhotoJournalTask from "./types/PhotoJournalTask";
 import HangmanDuelTask from "./types/HangmanDuelTask";
 import MatchingTask from "./types/MatchingTask";
+import MapItTask from "./types/MapItTask";
 import LabelMeTask from "./types/LabelMeTask";
 import WordWeaverDuelTask from "./types/WordWeaverDuelTask";
 import MoodCheckInTask from "./types/MoodCheckInTask"; // ✅ NEW
@@ -2592,6 +2593,20 @@ case "multi_player_feedback":
           review={isReview ? review : null}
           onAnswerChange={onAnswerChange}
           answerDraft={answerDraft}
+        />
+      );
+      break;
+
+    case TASK_TYPES.MAPIT:
+    case "mapit":
+      content = (
+        <MapItTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled || isReview}
+          mode={isReview ? "review" : "play"}
+          review={isReview ? review : null}
+          onAnswerChange={onAnswerChange}
         />
       );
       break;
