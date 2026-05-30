@@ -20,6 +20,7 @@
 
 import cron from "node-cron";
 import StocksPortfolio from "../models/StocksPortfolio.js";
+import { writeDailySnapshot } from "../routes/stocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
@@ -1342,6 +1343,35 @@ export async function runDiscoveryOutcomeTracker(opts = {}) {
 
   console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}, conviction ${convictionUpdated}`);
   return { checked: cands.length, updated, convictionUpdated };
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Daily portfolio-value snapshot — captures total value (+ per-account)
+// every weekday after the US close, regardless of whether the user saved
+// the portfolio that day. Without this the Performance chart is flat at the
+// most recent PUT (snapshots are otherwise only written on PUT).
+// ─────────────────────────────────────────────────────────────────────
+export async function runDailyPortfolioSnapshotJob(opts = {}) {
+  const query = opts.onlyEmail ? { email: opts.onlyEmail.toLowerCase() } : {};
+  const docs = await StocksPortfolio.find(query);
+  let ok = 0, fail = 0;
+  for (const doc of docs) {
+    try { await writeDailySnapshot(doc); ok++; } catch (e) { fail++; console.warn("[stocks-portfolio-snapshot] fail:", doc.email, e?.message); }
+  }
+  console.log(`[stocks-portfolio-snapshot] wrote ${ok}, failed ${fail}`);
+  return { ok, fail };
+}
+
+export function scheduleDailyPortfolioSnapshot() {
+  if (process.env.STOCKS_BRIEFING_ENABLED !== "1") return null;
+  // ~4:30 PM ET on weekdays — just after the US market close.
+  const expr = process.env.STOCKS_PORTFOLIO_SNAPSHOT_CRON || "30 16 * * 1-5";
+  const tz = process.env.STOCKS_BRIEFING_TZ || "America/New_York";
+  console.log(`[stocks-portfolio-snapshot] scheduled: "${expr}" ${tz}`);
+  return cron.schedule(expr, async () => {
+    console.log(`[stocks-portfolio-snapshot] tick: ${new Date().toISOString()}`);
+    try { await runDailyPortfolioSnapshotJob(); } catch (e) { console.error("[stocks-portfolio-snapshot] tick error:", e); }
+  }, { timezone: tz });
 }
 
 export function scheduleDiscoveryOutcomeTracker() {

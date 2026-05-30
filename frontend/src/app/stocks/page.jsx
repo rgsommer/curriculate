@@ -5628,6 +5628,7 @@ function PerformanceView({ sessionToken }) {
   const [scorecardDays, setScorecardDays] = useState(30);
   const [discoveryScorecard, setDiscoveryScorecard] = useState(null);
   const [dataStatus, setDataStatus] = useState(null);
+  const [tradesActivity, setTradesActivity] = useState(null);
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState(null);
 
@@ -5652,6 +5653,24 @@ function PerformanceView({ sessionToken }) {
 
   // Pull Discovery scorecard once on mount (decoupled from advice scorecard
   // since it has its own data shape and time-window logic).
+  // Fetch trade history once on mount — feeds the trades-activity tile.
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-trade?days=365`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setTradesActivity(j.trades || []);
+      } catch {}
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
   useEffect(() => {
     if (!sessionToken) return;
     let cancelled = false;
@@ -5723,6 +5742,7 @@ function PerformanceView({ sessionToken }) {
       />
 
       {/* ── DISCOVERY SCORECARD: did the Discover engine actually find winners? ── */}
+      <TradesActivityCard trades={tradesActivity} />
       <DiscoveryScorecardCard data={discoveryScorecard} />
 
       {/* ── Advisor scorecard ── */}
@@ -6732,6 +6752,79 @@ function DataStatusPanel({ data }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Trades-activity summary — works off the existing trade journal so it
+// surfaces real performance data even before any AI rec is tracked.
+function TradesActivityCard({ trades }) {
+  if (trades == null) {
+    return (
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <h3>Trades activity</h3>
+        <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>
+      </div>
+    );
+  }
+  if (!trades.length) {
+    return (
+      <div className="sa-card" style={{ marginBottom: 18 }}>
+        <h3>Trades activity</h3>
+        <div className="sa-muted" style={{ padding: 14, fontSize: 13 }}>No trades recorded yet. Record one on the Dashboard or Trades tab.</div>
+      </div>
+    );
+  }
+  const now = Date.now();
+  const windows = [["7d", 7], ["30d", 30], ["90d", 90], ["1y", 365]];
+  const fmt = (n) => (n >= 0 ? "+" : "−") + "$" + Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const tickerCounts = {};
+  let mostRecent = null;
+  for (const t of trades) {
+    const ts = new Date(t.executedAt).getTime();
+    if (!mostRecent || ts > mostRecent) mostRecent = ts;
+    for (const l of t.legs || []) {
+      if (!l.ticker) continue;
+      tickerCounts[l.ticker] = (tickerCounts[l.ticker] || 0) + 1;
+    }
+  }
+  const stats = windows.map(([label, days]) => {
+    const since = now - days * 86400 * 1000;
+    const inW = trades.filter((t) => new Date(t.executedAt).getTime() >= since);
+    let net = 0, gross = 0;
+    for (const t of inW) {
+      net += Number(t.netCashCad) || 0;
+      for (const l of t.legs || []) {
+        const g = Number(l.grossValue) || 0;
+        const fx = (l.currency === "USD" ? (t.fxUsdCadAtTrade || 1.37) : 1);
+        gross += g * fx;
+      }
+    }
+    return { label, count: inW.length, net, gross };
+  });
+  const top = Object.entries(tickerCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const last = new Date(mostRecent).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+  const color = (n) => n == null ? "var(--sa-muted)" : (n >= 0 ? "var(--sa-green)" : "var(--sa-red)");
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <h3 style={{ margin: 0 }}>Trades activity</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginTop: 4, marginBottom: 12 }}>
+        {trades.length} trade{trades.length === 1 ? "" : "s"} on file · most recent {last}. Net cash flow is the sum of journaled SELL/DEPOSIT minus BUY/WITHDRAW per window (CAD-normalised).
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 10, marginBottom: 12 }}>
+        {stats.map((s) => (
+          <div key={s.label} className="sa-stat">
+            <div className="label">{s.label}</div>
+            <div className="value" style={{ color: color(s.net) }}><span className="sa-amount">{s.count > 0 ? fmt(s.net) : "—"}</span></div>
+            <div className="delta muted">{s.count} trade{s.count === 1 ? "" : "s"} · gross <span className="sa-amount">${Math.round(s.gross).toLocaleString()}</span></div>
+          </div>
+        ))}
+      </div>
+      {top.length > 0 && (
+        <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>
+          Most-traded (1y): {top.map(([t, n]) => <span key={t} style={{ marginRight: 12 }}><b style={{ color: "var(--sa-text-2)" }}>{t}</b> ×{n}</span>)}
+        </div>
+      )}
     </div>
   );
 }

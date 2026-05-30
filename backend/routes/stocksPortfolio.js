@@ -111,7 +111,7 @@ function totalCad(positions, fx) {
   return (positions || []).reduce((s, p) => s + valueOfPosition(p, fx).cad, 0);
 }
 
-async function writeDailySnapshot(doc) {
+export async function writeDailySnapshot(doc) {
   const fx = doc.fxUsdCad || 1.37;
   const date = new Date().toISOString().slice(0, 10);
   const accounts = doc.accounts || [];
