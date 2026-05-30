@@ -8,6 +8,7 @@ import Link from "next/link";
 import {
   Loader2, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft, KeyRound, LogOut,
   Upload, FileText, ClipboardList, Trash2, Sparkles,
+  Target, ShieldAlert, ClipboardCheck, Plus, Check, ChevronRight,
 } from "lucide-react";
 
 const C = {
@@ -326,6 +327,9 @@ function EngagementView({ engagementId, me, onBack }) {
         </div>
       )}
 
+      {/* Planning (firm-internal: materiality, risk register, working papers) */}
+      {isAdmin && <AuditPlanningPanel engagementId={engagementId} />}
+
       {/* Findings (after analysis) */}
       {findings.length > 0 && (
         <div style={{
@@ -424,6 +428,346 @@ function sevColor(sev) {
   if (sev === "high")   return { bg: "#fee2e2", bd: "#fecaca", ink: "#7f1d1d" };
   if (sev === "medium") return { bg: "#fef3c7", bd: "#fde68a", ink: "#7c2d12" };
   return                       { bg: "#dcfce7", bd: "#bbf7d0", ink: "#14532d" };
+}
+function rateColor(rating) {
+  if (rating === "high")   return { bg: "#fee2e2", ink: "#7f1d1d" };
+  if (rating === "medium") return { bg: "#fef3c7", ink: "#7c2d12" };
+  return                          { bg: "#dcfce7", ink: "#14532d" };
+}
+const pgk = (n) => "PGK " + Number(n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+
+/* ───────────── Audit planning: materiality + risks + working papers ──────────── */
+function AuditPlanningPanel({ engagementId }) {
+  const [sub, setSub] = useState("materiality");
+  const tabs = [
+    { k: "materiality", label: "Materiality", Icon: Target },
+    { k: "risks", label: "Risk register", Icon: ShieldAlert },
+    { k: "workpapers", label: "Working papers", Icon: ClipboardCheck },
+  ];
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 18, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <strong style={{ fontSize: 14 }}>Audit planning</strong>
+        <span style={{ fontSize: 11, color: C.muted }}>· firm-internal</span>
+      </div>
+      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+        {tabs.map(({ k, label, Icon }) => (
+          <button key={k} onClick={() => setSub(k)} style={{
+            ...btnGhostSm, gap: 6,
+            background: sub === k ? C.navy : "#fff", color: sub === k ? "#fff" : C.ink,
+            borderColor: sub === k ? C.navy : "#d1d5db",
+          }}><Icon size={13} /> {label}</button>
+        ))}
+      </div>
+      {sub === "materiality" && <MaterialityForm engagementId={engagementId} />}
+      {sub === "risks" && <RiskRegister engagementId={engagementId} />}
+      {sub === "workpapers" && <WorkpaperList engagementId={engagementId} />}
+    </div>
+  );
+}
+
+function MaterialityForm({ engagementId }) {
+  const [benchmarks, setBenchmarks] = useState([]);
+  const [m, setM] = useState(null);          // computed result from server
+  const [form, setForm] = useState({ benchmark: "pbt", benchmark_amount: "", pct: "", performance_pct: 75, trivial_pct: 5, basis_note: "" });
+  const [err, setErr] = useState(""); const [busy, setBusy] = useState(false); const [loaded, setLoaded] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const j = await api(`/api/audit/engagements/${engagementId}/planning`);
+      setBenchmarks(j.benchmarks || []);
+      if (j.materiality) {
+        setM(j.materiality);
+        setForm((f) => ({ ...f, benchmark: j.materiality.benchmark, benchmark_amount: j.materiality.benchmark_amount,
+          pct: j.materiality.pct, performance_pct: j.materiality.performance_pct, trivial_pct: j.materiality.trivial_pct,
+          basis_note: j.materiality_meta?.basis_note || "" }));
+      }
+    } catch (e) { setErr(e.message); } finally { setLoaded(true); }
+  }, [engagementId]);
+  useEffect(() => { load(); }, [load]);
+
+  const band = benchmarks.find((b) => b.key === form.benchmark);
+  async function save() {
+    setBusy(true); setErr("");
+    try {
+      const j = await api(`/api/audit/engagements/${engagementId}/planning`, {
+        method: "PUT",
+        body: JSON.stringify({
+          benchmark: form.benchmark, benchmark_amount: Number(form.benchmark_amount), pct: Number(form.pct),
+          performance_pct: Number(form.performance_pct), trivial_pct: Number(form.trivial_pct), basis_note: form.basis_note,
+        }),
+      });
+      setM(j.materiality);
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  }
+  if (!loaded) return <Loader2 size={18} className="spin" color={C.gold} />;
+
+  return (
+    <div>
+      {err && <Flash type="error">{err}</Flash>}
+      <p style={{ ...lead, fontSize: 13, marginTop: 0 }}>
+        Set planning materiality from a benchmark (ISA 320). Performance materiality and the clearly-trivial threshold are derived.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+        <Field label="Benchmark">
+          <select style={input} value={form.benchmark} onChange={(e) => setForm({ ...form, benchmark: e.target.value })}>
+            {benchmarks.map((b) => <option key={b.key} value={b.key}>{b.label} ({b.pctLow}–{b.pctHigh}%)</option>)}
+          </select>
+        </Field>
+        <Field label="Benchmark amount (PGK)">
+          <input style={input} type="number" value={form.benchmark_amount}
+            onChange={(e) => setForm({ ...form, benchmark_amount: e.target.value })} placeholder="e.g. 4200000" />
+        </Field>
+        <Field label={`Materiality %${band ? ` (suggested ${band.pctLow}–${band.pctHigh})` : ""}`}>
+          <input style={input} type="number" step="0.1" value={form.pct}
+            onChange={(e) => setForm({ ...form, pct: e.target.value })} placeholder={band ? String(band.pctHigh) : "1"} />
+        </Field>
+        <Field label="Performance materiality (% of planning)">
+          <input style={input} type="number" value={form.performance_pct}
+            onChange={(e) => setForm({ ...form, performance_pct: e.target.value })} />
+        </Field>
+      </div>
+      {band && <p style={{ fontSize: 12, color: C.muted, margin: "0 0 12px" }}>{band.note}</p>}
+      <Field label="Basis note (why this benchmark)">
+        <textarea style={{ ...input, minHeight: 54 }} value={form.basis_note}
+          onChange={(e) => setForm({ ...form, basis_note: e.target.value })} />
+      </Field>
+      <button onClick={save} disabled={busy} style={btnPrimaryInline}>
+        {busy ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Saving…</> : "Compute & save materiality"}
+      </button>
+
+      {m && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 18 }}>
+          {[
+            { label: "Planning materiality", val: m.planning_materiality, hint: `${m.pct}% of ${pgk(m.benchmark_amount)}` },
+            { label: "Performance materiality", val: m.performance_materiality, hint: `${m.performance_pct}% of planning` },
+            { label: "Clearly trivial", val: m.clearly_trivial, hint: `${m.trivial_pct}% of planning` },
+          ].map((c) => (
+            <div key={c.label} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, background: C.cream }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.04 }}>{c.label}</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: C.navy, marginTop: 4 }}>{pgk(c.val)}</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{c.hint}</div>
+            </div>
+          ))}
+          {!m.in_range && (
+            <div style={{ gridColumn: "1 / -1", fontSize: 12, color: "#7c2d12", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 8, padding: "8px 12px" }}>
+              Note: {m.pct}% is outside the conventional band for this benchmark — document the rationale in the basis note.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RiskRegister({ engagementId }) {
+  const [risks, setRisks] = useState(null);
+  const [err, setErr] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [nr, setNr] = useState({ area: "", assertion: "", description: "", likelihood: 2, impact: 2, response: "" });
+
+  const load = useCallback(async () => {
+    try { const j = await api(`/api/audit/engagements/${engagementId}/risks`); setRisks(j.risks || []); }
+    catch (e) { setErr(e.message); }
+  }, [engagementId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function patch(risk_id, body) {
+    setErr("");
+    try { await api(`/api/audit/engagements/${engagementId}/risks`, { method: "PATCH", body: JSON.stringify({ risk_id, ...body }) }); load(); }
+    catch (e) { setErr(e.message); }
+  }
+  async function add() {
+    setErr("");
+    try {
+      await api(`/api/audit/engagements/${engagementId}/risks`, { method: "POST", body: JSON.stringify(nr) });
+      setNr({ area: "", assertion: "", description: "", likelihood: 2, impact: 2, response: "" }); setAdding(false); load();
+    } catch (e) { setErr(e.message); }
+  }
+  if (!risks) return <Loader2 size={18} className="spin" color={C.gold} />;
+
+  return (
+    <div>
+      {err && <Flash type="error">{err}</Flash>}
+      <p style={{ ...lead, fontSize: 13, marginTop: 0 }}>
+        Seeded with the presumed risks for this engagement type. Adjust likelihood × impact; the rating updates automatically.
+      </p>
+      <div style={{ display: "grid", gap: 10 }}>
+        {risks.map((r) => {
+          const rc = rateColor(r.rating);
+          return (
+            <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div>
+                  <strong style={{ fontSize: 13 }}>{r.area}</strong>
+                  <span style={{ fontSize: 11, color: C.muted }}> · {r.assertion}</span>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.04,
+                  background: rc.bg, color: rc.ink, padding: "3px 8px", borderRadius: 999 }}>{r.rating} risk</span>
+              </div>
+              <div style={{ fontSize: 12.5, color: C.inkSoft, margin: "6px 0" }}>{r.description}</div>
+              <div style={{ display: "flex", gap: 14, alignItems: "center", flexWrap: "wrap", margin: "8px 0" }}>
+                {["likelihood", "impact"].map((k) => (
+                  <label key={k} style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 6 }}>
+                    {k}
+                    <select value={r[k]} onChange={(e) => patch(r.id, { [k]: Number(e.target.value) })}
+                      style={{ ...input, width: "auto", padding: "5px 8px" }}>
+                      <option value={1}>1 · low</option><option value={2}>2 · med</option><option value={3}>3 · high</option>
+                    </select>
+                  </label>
+                ))}
+                <button onClick={() => patch(r.id, { status: r.status === "addressed" ? "identified" : "addressed" })}
+                  style={{ ...btnGhostSm, color: r.status === "addressed" ? "#14532d" : C.ink, borderColor: r.status === "addressed" ? "#bbf7d0" : "#d1d5db" }}>
+                  {r.status === "addressed" ? <><Check size={12} /> Addressed</> : "Mark addressed"}
+                </button>
+              </div>
+              <ResponseEditor value={r.response} onSave={(v) => patch(r.id, { response: v })} />
+            </div>
+          );
+        })}
+      </div>
+
+      {adding ? (
+        <div style={{ border: "1px dashed #cbd5e1", borderRadius: 10, padding: 14, marginTop: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Field label="Area"><input style={input} value={nr.area} onChange={(e) => setNr({ ...nr, area: e.target.value })} /></Field>
+            <Field label="Assertion"><input style={input} value={nr.assertion} onChange={(e) => setNr({ ...nr, assertion: e.target.value })} /></Field>
+          </div>
+          <Field label="Description"><textarea style={{ ...input, minHeight: 48 }} value={nr.description} onChange={(e) => setNr({ ...nr, description: e.target.value })} /></Field>
+          <Field label="Planned response"><textarea style={{ ...input, minHeight: 48 }} value={nr.response} onChange={(e) => setNr({ ...nr, response: e.target.value })} /></Field>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={add} style={btnPrimaryInline}>Add risk</button>
+            <button onClick={() => setAdding(false)} style={btnGhostSm}>Cancel</button>
+          </div>
+        </div>
+      ) : (
+        <button onClick={() => setAdding(true)} style={{ ...btnGhostSm, marginTop: 12 }}><Plus size={12} /> Add a risk</button>
+      )}
+    </div>
+  );
+}
+
+function ResponseEditor({ value, onSave }) {
+  const [v, setV] = useState(value || "");
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { setV(value || ""); setDirty(false); }, [value]);
+  return (
+    <div>
+      <textarea value={v} onChange={(e) => { setV(e.target.value); setDirty(true); }}
+        placeholder="Planned audit response…" style={{ ...input, minHeight: 44, fontSize: 12.5 }} />
+      {dirty && <button onClick={() => onSave(v)} style={{ ...btnGhostSm, marginTop: 6 }}><Check size={12} /> Save response</button>}
+    </div>
+  );
+}
+
+function WorkpaperList({ engagementId }) {
+  const [wps, setWps] = useState(null);
+  const [err, setErr] = useState("");
+  const [openRef, setOpenRef] = useState(null);
+
+  const load = useCallback(async () => {
+    try { const j = await api(`/api/audit/engagements/${engagementId}/workpapers`); setWps(j.workpapers || []); }
+    catch (e) { setErr(e.message); }
+  }, [engagementId]);
+  useEffect(() => { load(); }, [load]);
+
+  async function act(wp_id, action, extra) {
+    setErr("");
+    try { await api(`/api/audit/engagements/${engagementId}/workpapers`, { method: "PATCH", body: JSON.stringify({ wp_id, action, ...extra }) }); load(); }
+    catch (e) { setErr(e.message); }
+  }
+  if (!wps) return <Loader2 size={18} className="spin" color={C.gold} />;
+
+  const wpStatusColor = (s) =>
+    s === "signed_off" ? { bg: "#dcfce7", ink: "#14532d" } :
+    s === "reviewed"   ? { bg: "#dbeafe", ink: "#1e40af" } :
+    s === "prepared"   ? { bg: "#fef3c7", ink: "#7c2d12" } :
+    s === "in_progress"? { bg: "#f1f5f9", ink: "#334155" } :
+                         { bg: "#f8fafc", ink: "#94a3b8" };
+  const signedCount = wps.filter((w) => w.status === "signed_off").length;
+
+  return (
+    <div>
+      {err && <Flash type="error">{err}</Flash>}
+      <p style={{ ...lead, fontSize: 13, marginTop: 0 }}>
+        The audit file index. {signedCount}/{wps.length} signed off. Tick procedures, then move each paper through
+        <strong> prepare → review → partner sign-off</strong>.
+      </p>
+      <div style={{ display: "grid", gap: 8 }}>
+        {wps.map((w) => {
+          const sc = wpStatusColor(w.status);
+          const open = openRef === w.ref;
+          return (
+            <div key={w.id} style={{ border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+              <button onClick={() => setOpenRef(open ? null : w.ref)} style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
+                background: "#fff", border: "none", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+              }}>
+                <ChevronRight size={14} color={C.muted} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                <span style={{ fontWeight: 800, color: C.navy, width: 24 }}>{w.ref}</span>
+                <span style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{w.title}<span style={{ color: C.muted, fontWeight: 400 }}> · {w.section}</span></span>
+                <span style={{ fontSize: 11, color: C.muted }}>{w.progress}%</span>
+                <span style={{ fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 0.04,
+                  background: sc.bg, color: sc.ink, padding: "3px 8px", borderRadius: 999 }}>{w.status.replace("_", " ")}</span>
+              </button>
+              {open && (
+                <div style={{ padding: "0 14px 14px 48px", borderTop: "1px solid #f1f5f9" }}>
+                  <div style={{ display: "grid", gap: 4, margin: "12px 0" }}>
+                    {w.procedures.map((p, i) => (
+                      <label key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.inkSoft, cursor: "pointer" }}>
+                        <input type="checkbox" checked={p.done} onChange={() => {
+                          const done = w.procedures.map((x) => x.done); done[i] = !done[i];
+                          act(w.id, "set_procedures", { done });
+                        }} />
+                        <span style={{ textDecoration: p.done ? "line-through" : "none", color: p.done ? C.muted : C.inkSoft }}>{p.text}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+                    {w.status !== "signed_off" && w.status !== "reviewed" && (
+                      <button onClick={() => act(w.id, "prepare")} style={btnGhostSm}>Mark prepared</button>)}
+                    {w.status === "prepared" && (
+                      <button onClick={() => act(w.id, "review")} style={btnGhostSm}>Mark reviewed</button>)}
+                    {w.status === "reviewed" && (
+                      <button onClick={() => act(w.id, "sign_off")} style={{ ...btnGhostSm, background: C.navy, color: "#fff", borderColor: C.navy }}><Check size={12} /> Partner sign-off</button>)}
+                    {(w.status === "prepared" || w.status === "reviewed" || w.status === "signed_off") && (
+                      <button onClick={() => act(w.id, "reopen")} style={{ ...btnGhostSm, color: C.red, borderColor: "#fecaca" }}>Reopen</button>)}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>
+                    {w.prepared_by && <>Prepared by {w.prepared_by} · </>}
+                    {w.reviewed_by && <>Reviewed by {w.reviewed_by} · </>}
+                    {w.signed_off_by && <>Signed off by {w.signed_off_by}</>}
+                  </div>
+                  <NoteAdder onAdd={(note) => act(w.id, "add_note", { note })} notes={w.review_notes} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function NoteAdder({ onAdd, notes }) {
+  const [v, setV] = useState("");
+  return (
+    <div>
+      {notes.length > 0 && (
+        <div style={{ display: "grid", gap: 4, marginBottom: 8 }}>
+          {notes.map((n, i) => (
+            <div key={i} style={{ fontSize: 12, background: "#fffaf0", border: "1px solid #fde68a", borderRadius: 6, padding: "6px 10px" }}>
+              <strong style={{ color: C.ink }}>{n.by}</strong>: {n.note}
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <input value={v} onChange={(e) => setV(e.target.value)} placeholder="Add a review note…" style={{ ...input, fontSize: 12.5 }} />
+        <button onClick={() => { if (v.trim()) { onAdd(v.trim()); setV(""); } }} style={btnGhostSm}>Add note</button>
+      </div>
+    </div>
+  );
 }
 
 /* Mirror of api/audit/_checklist.ts — kept in sync manually for the client side */
