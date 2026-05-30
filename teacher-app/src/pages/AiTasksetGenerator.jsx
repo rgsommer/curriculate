@@ -1043,7 +1043,7 @@ export default function AiTasksetGenerator() {
                     })()}
                   </div>
                   <div style={{ color: "#374151" }}>
-                    {row.terms && row.terms.length ? row.terms.join(", ") : <span style={{ color: "#9ca3af" }}>—</span>}
+                    {row.terms && row.terms.length ? row.terms.join(", ") : <span style={{ color: "#6b7280" }}>—</span>}
                   </div>
                 </div>
               ))}
@@ -1205,7 +1205,7 @@ export default function AiTasksetGenerator() {
         </div>
 
         {/* VOCABULARY (essential) */}
-        <div id="gen-vocab-field" style={{ marginBottom: 16, opacity: (isPartyMode || isEventMode) ? 0.4 : 1, pointerEvents: (isPartyMode || isEventMode) ? "none" : "auto" }}>
+        <div id="gen-vocab-field" style={{ marginBottom: 16, opacity: (isPartyMode || isEventMode) ? 0.6 : 1, pointerEvents: (isPartyMode || isEventMode) ? "none" : "auto" }}>
           <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
             Vocabulary / key terms {!(isPartyMode || isEventMode) && <span style={{ color: "#b91c1c" }}>*</span>}
           </label>
@@ -1270,7 +1270,7 @@ export default function AiTasksetGenerator() {
               ▶
             </span>
             {showAdvanced ? "Hide options" : "More options"}
-            <span style={{ fontSize: "0.78rem", fontWeight: 400, color: "#9ca3af" }}>
+            <span style={{ fontSize: "0.78rem", fontWeight: 400, color: "#6b7280" }}>
               — difficulty, duration, task types, stations, party/event mode
             </span>
           </button>
@@ -2097,7 +2097,7 @@ export default function AiTasksetGenerator() {
                         />
                       );
                     })}
-                    <span style={{ fontSize: "0.75rem", color: "#9ca3af", marginLeft: 4 }}>
+                    <span style={{ fontSize: "0.75rem", color: "#6b7280", marginLeft: 4 }}>
                       {d.stationColor || "pick a color"}
                     </span>
                   </div>
@@ -2215,7 +2215,7 @@ export default function AiTasksetGenerator() {
               <style>{`@keyframes indeterminate { 0% { margin-left: 0%; } 50% { margin-left: 60%; } 100% { margin-left: 0%; } }`}</style>
             </div>
             {genProgress.lastType && (
-              <div style={{ fontSize: "0.75rem", color: "#9ca3af", marginTop: 3 }}>
+              <div style={{ fontSize: "0.75rem", color: "#6b7280", marginTop: 3 }}>
                 Last: {genProgress.lastType.replace(/-/g, " ")}
               </div>
             )}

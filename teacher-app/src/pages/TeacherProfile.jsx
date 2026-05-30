@@ -846,7 +846,7 @@ export default function TeacherProfile() {
               PRO
             </span>
           </label>
-          <p style={{ fontSize: "0.8rem", color: "#9ca3af", marginTop: 2 }}>
+          <p style={{ fontSize: "0.8rem", color: "#6b7280", marginTop: 2 }}>
             One-page printable reports per student are included in the session PDF when this is enabled and your plan supports it.
           </p>
         </section>

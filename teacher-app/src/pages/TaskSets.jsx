@@ -1764,7 +1764,7 @@ export default function TaskSets() {
                             )}
                           </span>
                         )}
-                        <span style={{ marginRight: 6, fontSize: "0.8rem", color: "#9ca3af" }}>
+                        <span style={{ marginRight: 6, fontSize: "0.8rem", color: "#6b7280" }}>
                           {isExpanded ? "\u25BC" : "\u25B6"}
                         </span>
                         {title}
@@ -2218,7 +2218,7 @@ export default function TaskSets() {
                               type="button"
                               title="Remove this type"
                               onClick={() => setRegenForm((f) => ({ ...f, types: (f.types || []).filter((x) => x !== t) }))}
-                              style={{ border: "none", background: "transparent", cursor: "pointer", color: "#9ca3af", fontWeight: 900, padding: 0, lineHeight: 1 }}
+                              style={{ border: "none", background: "transparent", cursor: "pointer", color: "#6b7280", fontWeight: 900, padding: 0, lineHeight: 1 }}
                             >
                               ×
                             </button>
@@ -2226,7 +2226,7 @@ export default function TaskSets() {
                         );
                       })}
                       {(regenForm.types || []).length === 0 && (
-                        <span style={{ fontSize: 12, color: "#9ca3af", fontWeight: 700 }}>
+                        <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>
                           Any types (AI picks)
                         </span>
                       )}

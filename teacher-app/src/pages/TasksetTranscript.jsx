@@ -1324,7 +1324,7 @@ export default function TasksetTranscript({ transcript }) {
                   );
                 }
 
-                return <p style={{ color: "#9ca3af", margin: 0 }}>No submissions for this task.</p>;
+                return <p style={{ color: "#6b7280", margin: 0 }}>No submissions for this task.</p>;
               })()
             ) : (
               <div

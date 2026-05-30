@@ -4068,7 +4068,7 @@ if (
                     <strong>{activeTasksetName}</strong>
                   </span>
                 ) : (
-                  <span style={{ color: "#9ca3af" }}>
+                  <span style={{ color: "#6b7280" }}>
                     No active taskset selected.
                   </span>
                 )}

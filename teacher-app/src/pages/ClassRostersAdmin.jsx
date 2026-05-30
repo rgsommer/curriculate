@@ -257,7 +257,7 @@ export default function ClassRostersAdmin({ teacherEmail }) {
                               {s.firstName} {s.lastName}
                             </div>
                             {s.studentId && (
-                              <div style={{ fontSize: "0.72rem", color: "#9ca3af" }}>
+                              <div style={{ fontSize: "0.72rem", color: "#6b7280" }}>
                                 ID {s.studentId}
                               </div>
                             )}
@@ -296,7 +296,7 @@ export default function ClassRostersAdmin({ teacherEmail }) {
                               }}
                             />
                             {original.parentEmailDeclined && !s.parentEmail && (
-                              <div style={{ marginTop: 4, fontSize: "0.7rem", color: "#9ca3af" }}>
+                              <div style={{ marginTop: 4, fontSize: "0.7rem", color: "#6b7280" }}>
                                 Student declined the prompt.
                               </div>
                             )}
