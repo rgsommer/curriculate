@@ -78,13 +78,24 @@ export default function TaskInstructions({
   const { palette } = useResolvedTheme(theme);
 
   // Normalize the input into a uniform shape: array of { text, icon?, seconds? }.
+  // `text` may be a string OR a React node (so callers can pass <b>bold</b> inline,
+  // matching the patterns the old hand-rolled lists used).
   let items = [];
   if (Array.isArray(steps)) {
     items = steps
       .map((s) => {
+        if (React.isValidElement(s)) return { text: s };
         if (typeof s === "string") return { text: s.trim() };
         if (s && typeof s === "object") {
-          const itemText = String(s.text || s.instruction || s.label || "").trim();
+          const rawText = s.text ?? s.instruction ?? s.label;
+          if (React.isValidElement(rawText)) {
+            return {
+              text: rawText,
+              icon: s.icon || s.emoji || null,
+              seconds: Number.isFinite(s.seconds) ? s.seconds : null,
+            };
+          }
+          const itemText = String(rawText || "").trim();
           if (!itemText) return null;
           return {
             text: itemText,

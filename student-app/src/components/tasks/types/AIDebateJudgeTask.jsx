@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/AIDebateJudgeTask.jsx
 import React, { useState, useEffect } from "react";
-import StepCircle from "../StepCircle";
+import TaskInstructions from "../TaskInstructions";
 
 export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, onSubmit, presenter }) {
   const config = task?.config || {};
@@ -191,17 +191,15 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
 
         {!started ? (
           <>
-            <div
-              className="mx-auto mb-6 text-left"
-              style={{ maxWidth: 900, borderRadius: 16, padding: 16, background: "rgba(255,255,255,0.85)", border: "1px solid rgba(15,23,42,0.12)" }}
-            >
-              <div className="text-xl font-bold mb-2">How this works</div>
-              <div className="text-lg leading-relaxed text-gray-700">
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Each side makes its case with evidence and clear structure.</div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> You have <b>{fmtTime(goalSeconds)}</b> to debate — watch the timer.</div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}><StepCircle n={3} /> When time's up, summon the AI Judge for a verdict.</div>
-              </div>
-            </div>
+            <TaskInstructions
+              label="How this works"
+              style={{ maxWidth: 900, margin: "0 auto 24px" }}
+              steps={[
+                "Each side makes its case with evidence and clear structure.",
+                <>You have <b>{fmtTime(goalSeconds)}</b> to debate — watch the timer.</>,
+                "When time's up, summon the AI Judge for a verdict.",
+              ]}
+            />
             <button
               onClick={startDebate}
               disabled={disabled}
@@ -270,14 +268,17 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
           boxShadow: "0 12px 40px rgba(15,23,42,0.08)",
         }}
       >
-        <div className="text-2xl font-bold mb-3">How this works</div>
-        <div className="text-xl leading-relaxed text-gray-700">
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Finish your debate first.</div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> Tap <b>SUMMON AI JUDGE</b>.</div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> The AI gives scores and picks a winner.</div>
-          <div style={{ marginTop: 8, opacity: 0.85 }}>
-            Tip: once you summon the judge, the decision is final.
-          </div>
+        <TaskInstructions
+          label="How this works"
+          style={{ background: "transparent", border: "none", padding: 0 }}
+          steps={[
+            "Finish your debate first.",
+            <>Tap <b>SUMMON AI JUDGE</b>.</>,
+            "The AI gives scores and picks a winner.",
+          ]}
+        />
+        <div style={{ marginTop: 8, opacity: 0.85 }}>
+          Tip: once you summon the judge, the decision is final.
         </div>
       </div>
 

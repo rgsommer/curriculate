@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import StepCircle from "../StepCircle";
+import TaskInstructions from "../TaskInstructions";
 import { getPlayerName } from "../../../utils/playerName";
 import {
   DndContext,
@@ -1443,17 +1443,17 @@ export default function HangmanDuelTask({ task, onSubmit, presenter, socket, roo
         </div>
       </div>
 
-      {/* Instructions */}
-      <div style={{ marginTop: 14, fontWeight: 900 }}>
-        How to play (easy drops):
-      </div>
-      <div style={{ marginTop: 6, fontSize: 14, opacity: 0.85, maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> Look at the <b>Shared Letter Pool</b>.</div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> When it is your turn, drag any letter into the big tray (you can drop anywhere).</div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> If the letter is in the word, it fills the right blank(s) and you score.</div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={4} /> If it is not in the word, one part is added.</div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={5} /> Bonus: if you drop a letter on the exact correct blank, you get an extra point.</div>
-      </div>
+      <TaskInstructions
+        label="How to play (easy drops)"
+        style={{ marginTop: 14, maxWidth: 900, marginLeft: "auto", marginRight: "auto" }}
+        steps={[
+          <>Look at the <b>Shared Letter Pool</b>.</>,
+          "When it is your turn, drag any letter into the big tray (you can drop anywhere).",
+          "If the letter is in the word, it fills the right blank(s) and you score.",
+          "If it is not in the word, one part is added.",
+          "Bonus: if you drop a letter on the exact correct blank, you get an extra point.",
+        ]}
+      />
 
       <DndContext
         sensors={sensors}

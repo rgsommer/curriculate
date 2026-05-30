@@ -1,7 +1,7 @@
 // student-app/src/components/tasks/types/BrainstormBattleTask.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { TaskCardFrame, Pill, PrimaryButton, GhostButton, TextInput } from "../taskStyles";
-import StepCircle from "../StepCircle";
+import TaskInstructions from "../TaskInstructions";
 
 export default function BrainstormBattleTask({ task, onSubmit, disabled, socket }) {
   const [ideaInput, setIdeaInput] = useState("");
@@ -118,22 +118,15 @@ export default function BrainstormBattleTask({ task, onSubmit, disabled, socket 
         @keyframes bbPulse { 0%,100%{opacity:1} 50%{opacity:.65} }
       `}</style>
 
-      <div
-        style={{
-          borderRadius: 18,
-          border: "1px solid rgba(255,255,255,0.12)",
-          background: "rgba(255,255,255,0.06)",
-          padding: 12,
-          marginBottom: 12,
-        }}
-      >
-        <div style={{ fontWeight: 1100, marginBottom: 6 }}>How to play</div>
-        <div style={{ color: "rgba(226,232,240,0.86)", fontWeight: 850, lineHeight: 1.35 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> As a team, <b>shout ideas</b>. One person types them.</div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> Add <b>one idea at a time</b> (short + clear).</div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> No repeats—build on each other and keep going until time is up.</div>
-        </div>
-      </div>
+      <TaskInstructions
+        theme="dark"
+        style={{ marginBottom: 12 }}
+        steps={[
+          <>As a team, <b>shout ideas</b>. One person types them.</>,
+          <>Add <b>one idea at a time</b> (short + clear).</>,
+          "No repeats—build on each other and keep going until time is up.",
+        ]}
+      />
 
       {socketWarn ? (
         <div

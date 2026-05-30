@@ -1,6 +1,6 @@
 // student-app/src/components/tasks/types/NarrationSynthesizeTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import StepCircle from "../StepCircle";
+import TaskInstructions from "../TaskInstructions";
 
 /**
  * NarrationSynthesizeTask
@@ -495,27 +495,17 @@ export default function NarrationSynthesizeTask({
 
           {/* Enhanced instructions */}
           {phase !== "done" && (
-            <div
-              style={{
-                marginTop: 14,
-                borderRadius: 14,
-                padding: "12px 14px",
-                border: "1.5px solid rgba(203,213,225,0.8)",
-                background: "linear-gradient(135deg, rgba(248,250,252,0.9), rgba(241,245,249,0.95))",
-                color: "#0f172a",
-                fontSize: 13,
-                lineHeight: 1.45,
-                animation: "slideUp 0.5s ease",
-              }}
-            >
-              <div style={{ fontWeight: 950, marginBottom: 5 }}>⚡ How this works</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> <b>{currentName}</b> speaks out loud</div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> Everyone listens closely</div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> Group rates it</div>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={4} /> Next player</div>
-              </div>
-            </div>
+            <TaskInstructions
+              label="⚡ How this works"
+              compact
+              style={{ marginTop: 14, animation: "slideUp 0.5s ease" }}
+              steps={[
+                <><b>{currentName}</b> speaks out loud</>,
+                "Everyone listens closely",
+                "Group rates it",
+                "Next player",
+              ]}
+            />
           )}
         </div>
 

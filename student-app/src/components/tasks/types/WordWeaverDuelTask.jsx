@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useThemeMode } from "../../../utils/ThemeModeContext.js";
 import { isDarkTheme } from "../../../utils/themeHelpers.js";
-import StepCircle from "../StepCircle";
+import TaskInstructions from "../TaskInstructions";
 
 /**
  * WordWeaverDuelTask (WORD_WEAVER_DUEL)
@@ -958,16 +958,8 @@ export default function WordWeaverDuelTask({
 
         <div style={s.prompt}>{prompt}</div>
 
-        <div style={s.howBox}>
-          <div style={s.sectionTitle}>How to play</div>
-          <div>
-            {howToPlay.map((line, i) => (
-              <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
-                <StepCircle n={i + 1} /> <span style={{ fontSize: 13, color: s.howList?.color }}>{line}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <TaskInstructions theme="dark" compact steps={howToPlay} />
+
 
         <div style={s.scrabbleTop}>
           <div style={s.scoreBox}>
@@ -1393,15 +1385,16 @@ export default function WordWeaverDuelTask({
 
       <div style={s.prompt}>{phrasePrompt}</div>
 
-      <div style={s.howBox}>
-        <div style={s.sectionTitle}>How to play</div>
-        <div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={1} /> <span style={{ fontSize: 13 }}>Tap a word in the Word Bank to select it.</span></div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={2} /> <span style={{ fontSize: 13 }}>Tap an empty blank slot to place the selected word.</span></div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={3} /> <span style={{ fontSize: 13 }}>Tap a filled slot to remove that word and put it back in the bank.</span></div>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 6 }}><StepCircle n={4} /> <span style={{ fontSize: 13 }}>When all blanks are filled, press Submit.</span></div>
-        </div>
-      </div>
+      <TaskInstructions
+        theme="dark"
+        compact
+        steps={[
+          "Tap a word in the Word Bank to select it.",
+          "Tap an empty blank slot to place the selected word.",
+          "Tap a filled slot to remove that word and put it back in the bank.",
+          "When all blanks are filled, press Submit.",
+        ]}
+      />
 
       {(opponent.teamId || opponent.filled > 0 || opponent.submitted) && (
         <div style={s.duelBox}>

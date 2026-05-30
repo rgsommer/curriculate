@@ -20,7 +20,7 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { getPlayerName } from "../../../utils/playerName";
-import StepCircle from "../StepCircle";
+import TaskInstructions from "../TaskInstructions";
 
 const PHASE = {
   PICK_DRAWER: "pick-drawer",
@@ -127,18 +127,18 @@ export default function SpeedDrawTask({
       <h1 className="text-5xl md:text-7xl font-black mb-4 drop-shadow-2xl">SPEED DRAW!</h1>
 
       {/* Concise rules — different per phase. */}
-      <div className="w-full max-w-2xl mb-6">
-        <div className="rounded-2xl border border-white/30 bg-white/10 backdrop-blur px-4 py-3 text-left">
-          <div className="font-extrabold text-lg mb-2">How this works</div>
-          <ol className="space-y-1 text-base">
-            <li className="flex items-start gap-2"><StepCircle n={1} /> Pick the drawer.</li>
-            <li className="flex items-start gap-2"><StepCircle n={2} /> Drawer presses & holds to peek at the word — privately.</li>
-            <li className="flex items-start gap-2"><StepCircle n={3} /> When ready, drawer taps "Start drawing".</li>
-            <li className="flex items-start gap-2"><StepCircle n={4} /> Team guesses out loud while the drawer draws on paper.</li>
-            <li className="flex items-start gap-2"><StepCircle n={5} /> When time's up, the word is revealed and the team taps who guessed.</li>
-          </ol>
-        </div>
-      </div>
+      <TaskInstructions
+        theme="dark"
+        label="How this works"
+        style={{ width: "100%", maxWidth: "42rem", marginBottom: 24 }}
+        steps={[
+          "Pick the drawer.",
+          "Drawer presses & holds to peek at the word — privately.",
+          'When ready, drawer taps "Start drawing".',
+          "Team guesses out loud while the drawer draws on paper.",
+          "When time's up, the word is revealed and the team taps who guessed.",
+        ]}
+      />
 
       {/* ─── Pick drawer ─── */}
       {phase === PHASE.PICK_DRAWER && (
