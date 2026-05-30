@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, Loader2, AlertCircle, CheckCircle2, Mail, Phone, Building2,
-  Edit2, RefreshCw, Filter, Search,
+  Edit2, RefreshCw, Filter, Search, Send, FileText, Sparkles, Database, Trash2, Download,
 } from "lucide-react";
 
 const C = {
@@ -95,8 +95,21 @@ export default function AuditAdminPage() {
           }}>TBA</div>
           <strong style={{ fontSize: 16 }}>Tee Bee Audit — Admin queue</strong>
         </div>
-        <button onClick={refresh} style={{
+        <button onClick={async () => {
+          try {
+            const r = await api("/api/audit/seed-test-data", { method: "POST" });
+            alert(`Seeded ${r.inserted} test engagement(s) (${r.skipped} skipped).`);
+            refresh();
+          } catch (e) { alert(e.message); }
+        }} style={{
           marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "6px 12px", background: "transparent", color: "#cbd5e1",
+          border: "1px solid #3a526b", borderRadius: 8, fontSize: 13, cursor: "pointer",
+        }}>
+          <Database size={13} /> Seed test data
+        </button>
+        <button onClick={refresh} style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
           padding: "6px 12px", background: "transparent", color: "#cbd5e1",
           border: "1px solid #3a526b", borderRadius: 8, fontSize: 13, cursor: "pointer",
         }}>
@@ -249,7 +262,46 @@ function EngagementDialog({ engagement, onClose, onSaved }) {
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [files, setFiles] = useState([]);
+  const [findings, setFindings] = useState([]);
+  const [inviting, setInviting] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  const refreshAttachments = async () => {
+    try {
+      const [fileList, findList] = await Promise.all([
+        api(`/api/audit/engagements/${engagement.id}/files`),
+        api(`/api/audit/engagements/${engagement.id}/findings`),
+      ]);
+      setFiles(fileList.files || []);
+      setFindings(findList.findings || []);
+    } catch { /* non-fatal */ }
+  };
+  useEffect(() => { refreshAttachments(); }, [engagement.id]);
+
+  async function inviteClient() {
+    if (!confirm(`Send ${engagement.contact_email} a sign-in link to upload audit files?`)) return;
+    setInviting(true); setError(""); setInfo("");
+    try {
+      const j = await api(`/api/audit/engagements/${engagement.id}/invite-client`, { method: "POST" });
+      setInfo(j.email_sent
+        ? `Invitation sent to ${engagement.contact_email}.`
+        : "Client added but email failed to send — check Resend config.");
+      onSaved();
+    } catch (e) { setError(e.message); }
+    finally { setInviting(false); }
+  }
+  async function runAnalysis() {
+    setAnalyzing(true); setError(""); setInfo("");
+    try {
+      const j = await api(`/api/audit/engagements/${engagement.id}/analyze`, { method: "POST" });
+      setInfo(`Analysis complete — ${j.findings_count} finding${j.findings_count === 1 ? "" : "s"}.`);
+      refreshAttachments();
+    } catch (e) { setError(e.message); }
+    finally { setAnalyzing(false); }
+  }
   async function save() {
     setSubmitting(true); setError("");
     try {
@@ -311,6 +363,85 @@ function EngagementDialog({ engagement, onClose, onSaved }) {
               </div>
             )}
           </div>
+
+          {info && (
+            <div style={{
+              background: "#dcfce7", border: "1px solid #bbf7d0", color: "#14532d",
+              padding: "10px 14px", borderRadius: 8, marginBottom: 12, fontSize: 13,
+            }}>{info}</div>
+          )}
+
+          {/* Action buttons */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            <button onClick={inviteClient} disabled={inviting} style={btnGhostLg}>
+              {inviting
+                ? <><Loader2 size={12} className="spin" /> Sending…</>
+                : <><Send size={12} /> Invite client to upload</>}
+            </button>
+            <button onClick={runAnalysis} disabled={analyzing || files.length === 0} style={{
+              ...btnPrimary, padding: "9px 16px", opacity: (analyzing || files.length === 0) ? 0.6 : 1,
+            }}>
+              {analyzing
+                ? <><Loader2 size={12} className="spin" /> Analyzing…</>
+                : <><Sparkles size={12} /> Run analysis ({files.length} file{files.length === 1 ? "" : "s"})</>}
+            </button>
+          </div>
+
+          {/* Files uploaded */}
+          {files.length > 0 && (
+            <div style={{ background: "#fafbfc", border: "1px solid #e5e7eb",
+                          borderRadius: 8, padding: 12, marginBottom: 14 }}>
+              <strong style={{ fontSize: 12, color: C.muted, textTransform: "uppercase",
+                                letterSpacing: 0.04 }}>Uploaded files ({files.length})</strong>
+              <div style={{ marginTop: 8, display: "grid", gap: 4, fontSize: 12 }}>
+                {files.map((f) => (
+                  <div key={f.id} style={{ display: "flex", justifyContent: "space-between",
+                                            alignItems: "center", padding: "5px 0" }}>
+                    <span>
+                      <FileText size={11} color={C.muted} style={{ verticalAlign: -1, marginRight: 6 }} />
+                      <a href={`/api/audit/engagements/${engagement.id}/files/${f.id}`}
+                         target="_blank" rel="noreferrer" style={{ color: C.navy, textDecoration: "none" }}>
+                        {f.filename}
+                      </a>
+                      <span style={{ color: C.muted, marginLeft: 6 }}>· {f.slot} · {(f.size / 1024).toFixed(0)} KB</span>
+                    </span>
+                    <span style={{ color: C.muted, fontSize: 11 }}>{f.uploaded_by}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Findings */}
+          {findings.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <strong style={{ fontSize: 12, color: C.muted, textTransform: "uppercase",
+                                letterSpacing: 0.04 }}>Findings ({findings.length})</strong>
+              <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                {findings.map((fnd) => {
+                  const palette = fnd.severity === "high"   ? { bg: "#fee2e2", bd: "#fecaca", ink: "#7f1d1d" } :
+                                  fnd.severity === "medium" ? { bg: "#fef3c7", bd: "#fde68a", ink: "#7c2d12" } :
+                                                              { bg: "#dcfce7", bd: "#bbf7d0", ink: "#14532d" };
+                  return (
+                    <div key={fnd.id} style={{
+                      padding: 10, borderRadius: 8, fontSize: 12,
+                      border: `1px solid ${palette.bd}`, background: palette.bg,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                        <strong style={{ color: palette.ink, fontSize: 12 }}>{fnd.title}</strong>
+                        <span style={{ fontSize: 9, fontWeight: 800, color: palette.ink,
+                                        textTransform: "uppercase", letterSpacing: 0.04 }}>{fnd.severity}</span>
+                      </div>
+                      <div style={{ color: C.inkSoft, fontSize: 11 }}>{fnd.detail}</div>
+                      {fnd.source_file && (
+                        <div style={{ marginTop: 3, fontSize: 10, color: C.muted }}>Source: {fnd.source_file}</div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <Field label="Status">
             <select style={input} value={f.status} onChange={(e) => set("status", e.target.value)}>

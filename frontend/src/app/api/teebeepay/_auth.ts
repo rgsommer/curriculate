@@ -10,6 +10,7 @@ import { MongoClient, ObjectId } from "mongodb";
 
 export const ROLE_CLEARANCE: Record<string, number> = {
   system_owner: 4, principal: 3, bookkeeper: 2, site_payroll: 1, employee: 0,
+  audit_client: 0,                          // external audit client — sees only their own engagement
   // Legacy aliases from earlier in the project
   super_admin: 4, company_admin: 3, payroll_admin: 1,
 };
