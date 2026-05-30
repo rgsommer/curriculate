@@ -6,7 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import TaskSet from "../models/TaskSet.js";
 import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
-import { validateAiTask, regenerateSingleTask, buildPeerEditingErrors } from "../controllers/sharedTasksetController.js";
+import { validateAiTask, regenerateSingleTask, buildPeerEditingErrors, buildSpotItems } from "../controllers/sharedTasksetController.js";
 import TaskDiagnosticLog from "../models/TaskDiagnosticLog.js";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
 import { assessTaskPlayability } from "../../shared/taskPlayability.js";
@@ -366,6 +366,37 @@ router.post("/:id/sanitize", auth, async (req, res) => {
             }
           } catch (peErr) {
             console.warn(`[sanitize] peer-editing key build failed for task ${idx}:`, peErr?.message);
+          }
+        }
+
+        // Focused spotItems backfill for legacy art-view / historical-doc
+        // tasks that predate the "I noticed the…" spot-check requirement.
+        // Image, description, and analysisPrompts/focusHints are all fine —
+        // just generate the 4 spot-check pills from the existing description
+        // instead of regenerating the whole task (which would change the
+        // image/title/questions teachers are familiar with).
+        const cfg = (task && typeof task.config === "object") ? task.config : {};
+        const hasSpot = Array.isArray(cfg.spotItems) && cfg.spotItems.length >= 3;
+        const onlyMissingSpot = !hasSpot && postErrors.length > 0 && postErrors.every((e) => /spotItems/i.test(String(e)));
+        if (!repaired && onlyMissingSpot && (type === TASK_TYPES.ART_VIEW || type === TASK_TYPES.HISTORICAL_DOC)) {
+          const isDoc = type === TASK_TYPES.HISTORICAL_DOC;
+          try {
+            const items = await buildSpotItems(isDoc ? "document" : "art", {
+              title: isDoc ? cfg.docTitle : cfg.imageTitle,
+              author: isDoc ? cfg.docAuthor : cfg.imageArtist,
+              year: isDoc ? cfg.docYear : cfg.imageYear,
+              type: isDoc ? cfg.docType : undefined,
+              imageDescription: cfg.imageDescription,
+              historicalContext: cfg.historicalContext,
+            });
+            if (Array.isArray(items) && items.length >= 3) {
+              repaired = sanitizeTaskShapeByType(type, {
+                ...task,
+                config: { ...cfg, spotItems: items },
+              });
+            }
+          } catch (siErr) {
+            console.warn(`[sanitize] spotItems build failed for task ${idx} (${type}):`, siErr?.message);
           }
         }
 

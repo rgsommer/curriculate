@@ -1487,6 +1487,83 @@ ${numbered}
 }
 
 /* ============================================================
+   SPOT-ITEMS BACKFILL (art-view + historical-doc legacy upgrade)
+   ============================================================ */
+
+/**
+ * Build the "I noticed the…" spotItems checklist for art-view or
+ * historical-doc tasks that predate the spotItems requirement.
+ *
+ * Mirrors the buildPeerEditingErrors pattern: focused AI call from the
+ * existing imageDescription / context fields, no whole-task regeneration.
+ *
+ * @param {"art"|"document"} kind
+ * @param {object} ctx — { title, author, year, type, imageDescription,
+ *                          historicalContext, regionHint }
+ * @returns {Promise<Array<{text:string,isBogus:boolean}>>}
+ */
+export async function buildSpotItems(kind, ctx = {}) {
+  const desc = String(ctx.imageDescription || "").trim();
+  if (!desc) return [];
+
+  const client = getClient();
+  const isDoc = kind === "document";
+  const subjectName = String(ctx.title || (isDoc ? "this historical document" : "this artwork")).trim();
+  const author = String(ctx.author || "").trim();
+  const year = String(ctx.year || "").trim();
+  const typeLine = String(ctx.type || "").trim();
+  const histContext = String(ctx.historicalContext || "").trim();
+
+  const system =
+    "You build a quick visual spot-check used during the viewing phase of a classroom art/document task. Return ONLY JSON.";
+  const user = `
+For ${isDoc ? "the historical document" : "the artwork"} described below, produce EXACTLY 4 short "I noticed the…" items as a JSON array under the key "spotItems".
+
+Three of the items MUST be REAL details that are clearly ${isDoc ? "stated or visible in" : "depicted in"} this specific ${isDoc ? "document" : "artwork"} (isBogus:false).
+ONE item MUST be a BOGUS plausible decoy — something that sounds like it could ${isDoc ? "belong to a document of this kind" : "appear in art of this period or subject"} but is NOT actually in THIS specific piece (isBogus:true).
+
+Rules:
+- Return JSON exactly as: { "spotItems": [ { "text": "<short phrase, < 70 chars>", "isBogus": <true|false> }, ... ] }
+- Each text must be a SHORT noun phrase a student can scan for (no sentences, no questions).
+- The decoy must be plausible — not absurd. A student who didn't actually look at the ${isDoc ? "document" : "artwork"} might check it; a student who did would not.
+- Do not reference the title or author in the items (the title is shown separately).
+- Age-appropriate, classroom-safe, factual.
+
+Subject: ${subjectName}${author ? ` — ${author}` : ""}${year ? ` (${year})` : ""}${typeLine ? ` [${typeLine}]` : ""}
+
+Description:
+${desc}
+${histContext ? `\nContext:\n${histContext}` : ""}
+`.trim();
+
+  const request = {
+    model: process.env.AI_MODEL || "gpt-4.1-mini",
+    temperature: 0.4,
+    max_completion_tokens: 512,
+    messages: [
+      { role: "system", content: system },
+      { role: "user", content: user },
+    ],
+  };
+  if (!process.env.AI_DISABLE_JSON_RESPONSE_FORMAT) request.response_format = { type: "json_object" };
+
+  const completion = await client.chat.completions.create(request);
+  const raw = completion.choices?.[0]?.message?.content?.trim() || "{}";
+  const parsed = extractJsonFromText(raw);
+  const arr = Array.isArray(parsed?.spotItems) ? parsed.spotItems : (Array.isArray(parsed) ? parsed : []);
+
+  // Coerce + filter to the canonical shape; reject if we don't have ≥3 real + ≥1 bogus.
+  const items = arr
+    .filter((it) => it && typeof it === "object" && typeof it.text === "string" && it.text.trim())
+    .map((it) => ({ text: String(it.text).trim().slice(0, 80), isBogus: it.isBogus === true || it.bogus === true }));
+
+  const realCount = items.filter((it) => !it.isBogus).length;
+  const bogusCount = items.filter((it) => it.isBogus).length;
+  if (items.length < 3 || realCount < 2 || bogusCount < 1) return [];
+  return items;
+}
+
+/* ============================================================
    SINGLE TASK REGENERATION (one task, one type)
    ============================================================ */
 
