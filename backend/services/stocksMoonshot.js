@@ -55,11 +55,16 @@ export async function assessMoonshot(candidates, market = "both", horizon = "lon
     const ms = c.moonshot || {};
     const mq = c.raw?.fundamentals || {};
     const mosaicEdge = c.mosaic?.edgeScore;
+    const altBits = [];
+    if (c.altData?.insider?.ok) altBits.push(c.altData.insider.summary);
+    if (c.altData?.transcript?.ok) altBits.push(c.altData.transcript.summary);
+    if (c.altData?.patents?.ok) altBits.push(c.altData.patents.summary);
+    const altLine = altBits.length ? `\n   ALT-DATA (authoritative, prefer over web_search):\n     - ${altBits.join("\n     - ")}` : "";
     return `[#${i + 1}] ${c.ticker} — ${c.name || "?"} (${c.sector || "?"}), ~$${c.marketCap ? (c.marketCap / 1e9).toFixed(2) + "B" : "?"} cap, $${c.price ?? "?"} ${c.currency}
    deterministic: fundamentals=${s.fundamentals?.score ?? "n/a"}, momentum=${s.momentum?.score ?? "n/a"}, technical=${s.technical?.score ?? "n/a"}, risk=${s.riskControl?.score ?? "n/a"}
    moonshot signals: pre-parabolic=${ms.preParabolic?.score ?? "n/a"}, reality-lag=${ms.realityLag?.score ?? "n/a"}, synthetic-insider=${c.syntheticInsider ?? "n/a"}, mosaic-edge=${mosaicEdge ?? "n/a"}
    rev growth ${mq.revenueGrowthPct?.toFixed?.(0) ?? "?"}%, gross margin ${mq.grossMarginPct?.toFixed?.(0) ?? "?"}%, FCF yield ${mq.freeCashFlowYieldPct?.toFixed?.(1) ?? "?"}%, D/E ${mq.netDebtToEquity?.toFixed?.(2) ?? "?"}
-   12/6/3mo return ${c.raw?.returns?.r12m?.toFixed?.(0) ?? "?"}/${c.raw?.returns?.r6m?.toFixed?.(0) ?? "?"}/${c.raw?.returns?.r3m?.toFixed?.(0) ?? "?"}%`;
+   12/6/3mo return ${c.raw?.returns?.r12m?.toFixed?.(0) ?? "?"}/${c.raw?.returns?.r6m?.toFixed?.(0) ?? "?"}/${c.raw?.returns?.r3m?.toFixed?.(0) ?? "?"}%${altLine}`;
   }).join("\n\n");
 
   const shortTermAddendum = `
@@ -240,6 +245,26 @@ export function buildMoonshotResult(aiItem, candidate, horizon = "long") {
       syntheticInsider: candidate.syntheticInsider ?? null,
       mosaicEdge: candidate.mosaic?.edgeScore ?? null,
     },
+    // Authoritative public-data alt feeds (EDGAR Form 4, FMP transcript QoQ,
+    // USPTO PatentsView). Only the summaries + scores are persisted — the raw
+    // payloads stay in service caches.
+    altData: candidate.altData ? {
+      insider: candidate.altData.insider?.ok ? {
+        score: candidate.altData.insider.score,
+        summary: candidate.altData.insider.summary,
+        details: candidate.altData.insider.details,
+      } : null,
+      transcript: candidate.altData.transcript?.ok ? {
+        score: candidate.altData.transcript.score,
+        summary: candidate.altData.transcript.summary,
+        details: candidate.altData.transcript.details,
+      } : null,
+      patents: candidate.altData.patents?.ok ? {
+        score: candidate.altData.patents.score,
+        summary: candidate.altData.patents.summary,
+        details: candidate.altData.patents.details,
+      } : null,
+    } : null,
     marketUnderestimation: str(aiItem.marketUnderestimation),
     keyCatalysts: arr(aiItem.keyCatalysts),
     coreRisks: arr(aiItem.coreRisks),

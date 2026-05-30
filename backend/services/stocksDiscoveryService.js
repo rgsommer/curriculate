@@ -42,6 +42,9 @@ import {
 } from "./stocksDiscoveryScore.js";
 import { runMosaicBatch, mosaicMode as getMosaicMode, MOSAIC_DISCLAIMER } from "./stocksMosaic.js";
 import { assessMoonshot, buildMoonshotResult, syntheticInsiderScore, MOONSHOT_DISCLAIMER } from "./stocksMoonshot.js";
+import { getInsiderEdgarSignal } from "./stocksInsiderEdgar.js";
+import { compareTranscriptsQoQ } from "./stocksEarningsTranscripts.js";
+import { getPatentsSignal } from "./stocksPatentsUspto.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -1171,6 +1174,19 @@ export async function runMoonshotScan({ email, market = "both", sectors = null, 
     c.mosaic = mosaicByTicker[c.ticker] || null;
     c.syntheticInsider = syntheticInsiderScore(c.mosaic);
   }
+
+  // ── Authoritative alt-data pulls (free public sources) ─────────────
+  // EDGAR Form 4, FMP earnings-transcript QoQ NLP, USPTO PatentsView.
+  // Each is cached + has graceful failure; passed to assessMoonshot as
+  // hard-evidence the model should prefer over web_search guesses.
+  await Promise.all(withFactors.map(async (c) => {
+    const [insider, transcript, patents] = await Promise.all([
+      getInsiderEdgarSignal(c.ticker).catch(() => null),
+      compareTranscriptsQoQ(c.ticker).catch(() => null),
+      getPatentsSignal(c.ticker, c.name).catch(() => null),
+    ]);
+    c.altData = { insider, transcript, patents };
+  }));
 
   const ai = await assessMoonshot(withFactors, mkt, hz);
   const byNorm = new Map(withFactors.map((c) => [normTicker(c.ticker), c]));

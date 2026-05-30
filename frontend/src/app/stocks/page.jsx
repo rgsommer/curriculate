@@ -4970,6 +4970,45 @@ function MoonshotCard({ pick, rank }) {
           {Array.isArray(sig.preParabolicWhy) && sig.preParabolicWhy.length > 0 && (
             <div style={{ fontSize: 11, marginTop: 6, color: "var(--sa-muted)" }}>Pre-parabolic: {sig.preParabolicWhy.join(" · ")}</div>
           )}
+
+          {/* Authoritative alt-data: EDGAR Form 4, FMP transcript QoQ, USPTO patents */}
+          {m.altData && (m.altData.insider || m.altData.transcript || m.altData.patents) && (
+            <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 8, border: "1px solid var(--sa-border)", background: "var(--sa-panel-2)" }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, color: "var(--sa-text-2)", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 4 }}>📡 Alt-data (authoritative public sources)</div>
+              {m.altData.insider && (
+                <div style={{ fontSize: 12, marginTop: 4 }}>
+                  <b>Insider (EDGAR Form 4)</b> <span style={{ color: "var(--sa-muted)" }}>score {m.altData.insider.score ?? "—"}</span>
+                  <div style={{ fontSize: 11, color: "var(--sa-text-2)" }}>{m.altData.insider.summary}</div>
+                  {Array.isArray(m.altData.insider.details?.recentBuys) && m.altData.insider.details.recentBuys.length > 0 && (
+                    <div style={{ fontSize: 10.5, color: "var(--sa-muted)", marginTop: 2 }}>
+                      Recent buys: {m.altData.insider.details.recentBuys.slice(0, 3).map((b, i) =>
+                        `${b.filer} (${b.title}) ${b.shares?.toLocaleString()} sh${b.dollars ? ` ≈ $${Math.round(b.dollars).toLocaleString()}` : ""} on ${b.date}`
+                      ).join(" · ")}
+                    </div>
+                  )}
+                </div>
+              )}
+              {m.altData.transcript && (
+                <div style={{ fontSize: 12, marginTop: 6 }}>
+                  <b>Transcript QoQ NLP</b> <span style={{ color: "var(--sa-muted)" }}>score {m.altData.transcript.score ?? "—"} · {m.altData.transcript.details?.direction || "—"}</span>
+                  <div style={{ fontSize: 11, color: "var(--sa-text-2)" }}>{m.altData.transcript.summary}</div>
+                  {Array.isArray(m.altData.transcript.details?.newlyPresent) && m.altData.transcript.details.newlyPresent.length > 0 && (
+                    <div style={{ fontSize: 10.5, color: "var(--sa-green)", marginTop: 2 }}>New bullish terms: {m.altData.transcript.details.newlyPresent.join(", ")}</div>
+                  )}
+                  {Array.isArray(m.altData.transcript.details?.newRedFlags) && m.altData.transcript.details.newRedFlags.length > 0 && (
+                    <div style={{ fontSize: 10.5, color: "var(--sa-red)", marginTop: 2 }}>New cautionary terms: {m.altData.transcript.details.newRedFlags.join(", ")}</div>
+                  )}
+                </div>
+              )}
+              {m.altData.patents && (
+                <div style={{ fontSize: 12, marginTop: 6 }}>
+                  <b>USPTO patent filings</b> <span style={{ color: "var(--sa-muted)" }}>score {m.altData.patents.score ?? "—"}</span>
+                  <div style={{ fontSize: 11, color: "var(--sa-text-2)" }}>{m.altData.patents.summary}</div>
+                </div>
+              )}
+            </div>
+          )}
+
           {Array.isArray(m.sources) && m.sources.length > 0 && (
             <div style={{ fontSize: 11, marginTop: 6 }}>
               Sources: {m.sources.map((s, i) => (
