@@ -5,7 +5,7 @@ import { fetchMyProfile } from "../api/profile";
 import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
-import { Field, TextInput, TextArea, Select, Checkbox, PageHeader, PageShell } from "../components/ui";
+import { Field, TextInput, TextArea, Select, Checkbox, ToggleGroup, PageHeader, PageShell } from "../components/ui";
 
 // Category → color mapping for task type badges
 const CATEGORY_COLORS = {
@@ -1307,47 +1307,25 @@ export default function AiTasksetGenerator() {
               >
                 Pick a theme:
               </label>
-              <div
-                style={{
-                  display: "flex",
-                  flexWrap: "wrap",
-                  gap: 8,
-                  marginBottom: 12,
+              {/* Party themes — shared <ToggleGroup>, pink accent (Wave 5). */}
+              <ToggleGroup
+                value={partyTheme}
+                onChange={(v) => {
+                  setPartyTheme(v);
+                  if (v && v !== "custom" && !form.name.includes("Party")) {
+                    const themeLabel = PARTY_THEMES.find((t) => t.id === v)?.label;
+                    if (themeLabel) handleChange("name", `${themeLabel} Birthday Party`);
+                  }
                 }}
-              >
-                {PARTY_THEMES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setPartyTheme(t.id);
-                      if (t.id !== "custom" && !form.name.includes("Party")) {
-                        handleChange("name", `${t.label} Birthday Party`);
-                      }
-                    }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 6,
-                      padding: "8px 14px",
-                      borderRadius: 999,
-                      border:
-                        partyTheme === t.id
-                          ? "2px solid #db2777"
-                          : "1px solid #d1d5db",
-                      background:
-                        partyTheme === t.id ? "#fdf2f8" : "#ffffff",
-                      cursor: "pointer",
-                      fontWeight: partyTheme === t.id ? 700 : 500,
-                      fontSize: "0.88rem",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    <span>{t.emoji}</span>
-                    <span>{t.label}</span>
-                  </button>
-                ))}
-              </div>
+                accent="#db2777"
+                ariaLabel="Pick a party theme"
+                style={{ marginBottom: 12 }}
+                options={PARTY_THEMES.map((t) => ({
+                  value: t.id,
+                  label: t.label,
+                  icon: t.emoji,
+                }))}
+              />
 
               {/* Theme vocab preview */}
               {partyTheme && partyTheme !== "custom" && (
@@ -1487,66 +1465,44 @@ export default function AiTasksetGenerator() {
               <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 6 }}>
                 Industry:
               </label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
-                {EVENT_INDUSTRY_THEMES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => {
-                      setEventIndustry(t.id);
-                      if (!form.name.includes("Event") && !form.name.includes("Kickoff")) {
-                        handleChange("name", `${t.label} Team Event`);
-                      }
-                    }}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                      padding: "6px 12px",
-                      borderRadius: 999,
-                      border: eventIndustry === t.id ? "2px solid #4f46e5" : "1px solid #d1d5db",
-                      background: eventIndustry === t.id ? "#eef2ff" : "#fff",
-                      cursor: "pointer",
-                      fontWeight: eventIndustry === t.id ? 700 : 500,
-                      fontSize: "0.84rem",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    <span>{t.emoji}</span>
-                    <span>{t.label}</span>
-                  </button>
-                ))}
-              </div>
+              {/* Industry + Event type — shared <ToggleGroup> indigo accent (Wave 5). */}
+              <ToggleGroup
+                value={eventIndustry}
+                onChange={(v) => {
+                  setEventIndustry(v);
+                  if (v && !form.name.includes("Event") && !form.name.includes("Kickoff")) {
+                    const ind = EVENT_INDUSTRY_THEMES.find((t) => t.id === v);
+                    if (ind) handleChange("name", `${ind.label} Team Event`);
+                  }
+                }}
+                size="sm"
+                accent="#4f46e5"
+                ariaLabel="Industry"
+                style={{ marginBottom: 14 }}
+                options={EVENT_INDUSTRY_THEMES.map((t) => ({
+                  value: t.id,
+                  label: t.label,
+                  icon: t.emoji,
+                }))}
+              />
 
               {/* Event type axis */}
               <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 6 }}>
                 Event type:
               </label>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
-                {EVENT_TYPE_THEMES.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setEventType(t.id)}
-                    style={{
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: 5,
-                      padding: "6px 12px",
-                      borderRadius: 999,
-                      border: eventType === t.id ? "2px solid #4f46e5" : "1px solid #d1d5db",
-                      background: eventType === t.id ? "#eef2ff" : "#fff",
-                      cursor: "pointer",
-                      fontWeight: eventType === t.id ? 700 : 500,
-                      fontSize: "0.84rem",
-                      transition: "all 0.15s",
-                    }}
-                  >
-                    <span>{t.emoji}</span>
-                    <span>{t.label}</span>
-                  </button>
-                ))}
-              </div>
+              <ToggleGroup
+                value={eventType}
+                onChange={setEventType}
+                size="sm"
+                accent="#4f46e5"
+                ariaLabel="Event type"
+                style={{ marginBottom: 12 }}
+                options={EVENT_TYPE_THEMES.map((t) => ({
+                  value: t.id,
+                  label: t.label,
+                  icon: t.emoji,
+                }))}
+              />
 
               {/* Vocab preview */}
               {(eventIndustry || eventType) && (

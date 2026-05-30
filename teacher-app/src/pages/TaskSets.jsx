@@ -5,7 +5,7 @@ import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { fetchMyProfile } from "../api/profile";
 import { API_BASE_URL, STUDENT_APP_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
-import { Modal, Button, Field, TextInput, TextArea, Select, Checkbox, PageHeader, PageShell } from "../components/ui";
+import { Modal, Button, Field, TextInput, TextArea, Select, Checkbox, ToggleGroup, PageHeader, PageShell } from "../components/ui";
 
 const _API_BASE = API_BASE_URL || "";
 
@@ -2182,31 +2182,21 @@ export default function TaskSets() {
                 </Checkbox>
               </div>
 
-              {/* New copy vs Replace original — kept as toggle pills; semantic
-                  pair (not a generic primary/ghost CTA pair), so a direct
-                  swap to <Button> would lose the "selected" affordance. */}
+              {/* New copy vs Replace original — migrated to shared
+                  <ToggleGroup> single-select (Wave 5). */}
               <div style={{ marginTop: 4 }}>
                 <span style={regenLabelStyle}>Output</span>
-                <div style={{ marginTop: 6, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {[
-                    { v: "new", label: "📄 New copy", tip: "Keeps the original; saves a fresh “(regenerated)” copy." },
-                    { v: "replace", label: "♻️ Replace original", tip: "Overwrites this task set's tasks in place." },
-                  ].map((opt) => (
-                    <button
-                      key={opt.v}
-                      type="button"
-                      title={opt.tip}
-                      onClick={() => setRegenMode(opt.v)}
-                      style={{
-                        ...btn(regenMode === opt.v ? "primary" : "secondary"),
-                        opacity: regeneratingId ? 0.6 : 1,
-                      }}
-                      disabled={!!regeneratingId}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
+                <ToggleGroup
+                  value={regenMode}
+                  onChange={setRegenMode}
+                  disabled={!!regeneratingId}
+                  ariaLabel="Output mode"
+                  style={{ marginTop: 6 }}
+                  options={[
+                    { value: "new", label: "📄 New copy", tip: "Keeps the original; saves a fresh “(regenerated)” copy." },
+                    { value: "replace", label: "♻️ Replace original", tip: "Overwrites this task set's tasks in place." },
+                  ]}
+                />
                 {regenMode === "replace" && (
                   <div style={{ marginTop: 8, fontSize: 12, color: "#b45309", fontWeight: 700 }}>
                     ⚠️ This overwrites the current tasks. There's no undo.

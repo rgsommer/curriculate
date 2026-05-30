@@ -11,7 +11,7 @@ import {
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../auth/useAuth";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
-import { Modal, Button, TextInput } from "../components/ui";
+import { Modal, Button, Field, TextInput, TextArea, Select, ToggleGroup } from "../components/ui";
 
 const API_BASE = API_BASE_URL || "";
 
@@ -5223,7 +5223,7 @@ Precipitation — rain, snow, hail`}
                   <>
                     {treatsConfig.given} of {treatsConfig.total} treats used
                     {treatedTeamIds.size > 0 && (
-                      <span style={{ display: "block", fontSize: "0.75rem", color: "#9ca3af", marginTop: 2 }}>
+                      <span style={{ display: "block", fontSize: "0.75rem", color: "#6b7280", marginTop: 2 }}>
                         {treatedTeamIds.size} team{treatedTeamIds.size !== 1 ? "s" : ""} already treated
                       </span>
                     )}
@@ -5595,7 +5595,7 @@ Precipitation — rain, snow, hail`}
                 style={{
                   margin: 0,
                   fontSize: "0.8rem",
-                  color: "#9ca3af",
+                  color: "#6b7280",
                   fontStyle: "italic",
                 }}
               >
@@ -5777,7 +5777,7 @@ Precipitation — rain, snow, hail`}
               >
                 {scanEvents.length === 0 ? (
                   <div
-                    style={{ fontStyle: "italic", color: "#9ca3af" }}
+                    style={{ fontStyle: "italic", color: "#6b7280" }}
                   >
                     No scans yet.
                   </div>
@@ -6312,117 +6312,72 @@ Precipitation — rain, snow, hail`}
                 gap: 12,
               }}
             >
-              {/* Task type selection */}
-              <select
-                value={taskType}
-                onChange={(e) => setTaskType(e.target.value)}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                }}
-              >
-                {QUICK_TASK_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type.replace(/_/g, " ")}
-                  </option>
-                ))}
-              </select>
-
-              <input
-                placeholder="Grade / Year level (e.g. Grade 6)"
-                value={aiGrade}
-                onChange={(e) => setAiGrade(e.target.value)}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                }}
-              />
-
-              <select
-                value={aiDifficulty}
-                onChange={(e) => setAiDifficulty(e.target.value)}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                }}
-              >
-                <option value="easy">Easy</option>
-                <option value="medium">Medium</option>
-                <option value="hard">Hard</option>
-              </select>
-
-              <div>
-                <div
-                  style={{
-                    fontSize: "0.8rem",
-                    marginBottom: 4,
-                    color: "#4b5563",
-                    fontWeight: 500,
-                  }}
+              {/* AI Gen modal interior — migrated to shared <Field> + <Select>
+                  / <TextInput> / <TextArea> + <ToggleGroup> for the purpose
+                  pills (Wave 5 — completes the step 4 wrapper migration). */}
+              <Field label="Task type">
+                <Select
+                  value={taskType}
+                  onChange={(e) => setTaskType(e.target.value)}
                 >
-                  Learning objective / purpose
-                </div>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: 8,
-                  }}
+                  {QUICK_TASK_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {type.replace(/_/g, " ")}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+
+              <Field label="Grade / year level">
+                <TextInput
+                  placeholder="e.g. Grade 6"
+                  value={aiGrade}
+                  onChange={(e) => setAiGrade(e.target.value)}
+                />
+              </Field>
+
+              <Field label="Difficulty">
+                <Select
+                  value={aiDifficulty}
+                  onChange={(e) => setAiDifficulty(e.target.value)}
                 >
-                  {PURPOSE_OPTIONS.map((option) => {
-                    const selected = aiPurpose === option;
-                    return (
-                      <button
-                        key={option}
-                        type="button"
-                        onClick={() =>
-                          setAiPurpose(selected ? "" : option)
-                        }
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: 999,
-                          border: "1px solid",
-                          borderColor: selected ? "#6366f1" : "#cbd5e1",
-                          background: selected ? "#eef2ff" : "#ffffff",
-                          fontSize: "0.8rem",
-                          color: selected ? "#111827" : "#4b5563",
-                          cursor: "pointer",
-                          transition: "all 0.15s",
-                        }}
-                      >
-                        {option}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                  <option value="easy">Easy</option>
+                  <option value="medium">Medium</option>
+                  <option value="hard">Hard</option>
+                </Select>
+              </Field>
 
-              <input
-                placeholder="Subject (e.g. Science, History)"
-                value={aiSubject}
-                onChange={(e) => setAiSubject(e.target.value)}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                }}
-              />
+              <Field
+                label="Learning objective / purpose"
+                hint="Tap to toggle; pick one or leave blank."
+              >
+                <ToggleGroup
+                  value={aiPurpose}
+                  onChange={(v) => setAiPurpose(v === aiPurpose ? "" : v)}
+                  ariaLabel="Learning purpose"
+                  options={PURPOSE_OPTIONS.map((p) => ({ value: p, label: p }))}
+                />
+              </Field>
 
-              <textarea
-                rows={3}
-                placeholder="Word list or key terms (comma-separated, optional)"
-                value={aiWordList}
-                onChange={(e) => setAiWordList(e.target.value)}
-                style={{
-                  padding: 10,
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  resize: "vertical",
-                }}
-              />
+              <Field label="Subject">
+                <TextInput
+                  placeholder="e.g. Science, History"
+                  value={aiSubject}
+                  onChange={(e) => setAiSubject(e.target.value)}
+                />
+              </Field>
+
+              <Field
+                label="Word list or key terms"
+                hint="Comma-separated, optional."
+              >
+                <TextArea
+                  rows={3}
+                  placeholder="Vocabulary words, key concepts…"
+                  value={aiWordList}
+                  onChange={(e) => setAiWordList(e.target.value)}
+                />
+              </Field>
             </div>
 
             {/* RolePlay Deck quick-entry (no JSON) */}
