@@ -41,7 +41,11 @@ async function parseFile(bucket: GridFSBucket, fileDoc: any): Promise<Row[]> {
   const filename = String(fileDoc.filename || "").toLowerCase();
   if (filename.endsWith(".xlsx") || filename.endsWith(".xls")) {
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buf);
+    // Pass the underlying ArrayBuffer slice — ExcelJS accepts ArrayBuffer | Buffer,
+    // and this dodges the Node 22 / @types/node Buffer<ArrayBuffer> vs Buffer
+    // generic-typing mismatch that fails the Next.js production type-check.
+    const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+    await wb.xlsx.load(ab);
     const ws = wb.worksheets[0];
     if (!ws) return [];
     const header: string[] = [];

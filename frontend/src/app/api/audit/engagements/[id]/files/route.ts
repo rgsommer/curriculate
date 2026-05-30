@@ -52,7 +52,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
     const buf = Buffer.from(await file.arrayBuffer());
     await new Promise<void>((resolve, reject) => {
-      stream.end(buf, (err: any) => (err ? reject(err) : resolve()));
+      // GridFSBucketWriteStream.end(chunk, cb) only accepts cb: () => void in
+      // the current @types/mongodb signature, so route errors through the
+      // stream's 'error' event instead of the callback.
+      stream.once("error", reject);
+      stream.once("finish", () => resolve());
+      stream.end(buf);
     });
 
     await dbi.collection("audit_engagements").updateOne({ _id: eng._id }, {
