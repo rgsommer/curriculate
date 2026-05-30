@@ -11,6 +11,7 @@ import {
 import { API_BASE_URL } from "../config";
 import { useAuth } from "../auth/useAuth";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
+import { Modal, Button, TextInput } from "../components/ui";
 
 const API_BASE = API_BASE_URL || "";
 
@@ -5804,121 +5805,78 @@ Precipitation — rain, snow, hail`}
         </div>
       </div>
 
-      {/* Hide & Seek modal */}
-      {/* ── Behavior Ding Popup ── */}
-      {dingPopup && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 9998,
-          background: "rgba(0,0,0,0.35)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={() => { setDingPopup(null); setDingReason(""); }}>
-          <div
-            onClick={(e) => e.stopPropagation()}
+      {/* ── Behavior Ding Popup — migrated to shared <Modal> + <TextInput>
+          + <Button> (Wave 2 step 4). The +/- buttons keep their red/green
+          semantic gradients — those colors ARE the action signal. */}
+      <Modal
+        open={!!dingPopup}
+        onClose={() => { setDingPopup(null); setDingReason(""); }}
+        title="Behavior Ding"
+        size="sm"
+      >
+        <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16, textAlign: "center" }}>
+          {dingPopup?.teamName}
+        </div>
+        <TextInput
+          placeholder="Reason (optional)"
+          value={dingReason}
+          onChange={(e) => setDingReason(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") sendBehaviorDing(true); }}
+          autoFocus
+          style={{ marginBottom: 16 }}
+        />
+        <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
+          <button
+            onClick={() => sendBehaviorDing(false)}
             style={{
-              background: "#fff", borderRadius: 16, padding: 24, width: 320,
-              boxShadow: "0 20px 60px rgba(0,0,0,0.25)", textAlign: "center",
+              padding: "10px 20px", borderRadius: 10, border: "none",
+              background: "linear-gradient(135deg, #ef4444, #dc2626)",
+              color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
+              minWidth: 100,
             }}
           >
-            <div style={{ fontSize: "1.1rem", fontWeight: 700, marginBottom: 4 }}>
-              Behavior Ding
-            </div>
-            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
-              {dingPopup.teamName}
-            </div>
-            <input
-              type="text"
-              placeholder="Reason (optional)"
-              value={dingReason}
-              onChange={(e) => setDingReason(e.target.value)}
-              style={{
-                width: "100%", padding: "8px 12px", borderRadius: 10,
-                border: "1px solid #d1d5db", fontSize: "0.85rem", marginBottom: 16,
-                boxSizing: "border-box",
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") sendBehaviorDing(true);
-              }}
-              autoFocus
-            />
-            <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
-              <button
-                onClick={() => sendBehaviorDing(false)}
-                style={{
-                  padding: "10px 20px", borderRadius: 10, border: "none",
-                  background: "linear-gradient(135deg, #ef4444, #dc2626)",
-                  color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
-                  minWidth: 100,
-                }}
-              >
-                -{DING_AMOUNT}
-              </button>
-              <button
-                onClick={() => sendBehaviorDing(true)}
-                style={{
-                  padding: "10px 20px", borderRadius: 10, border: "none",
-                  background: "linear-gradient(135deg, #10b981, #059669)",
-                  color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
-                  minWidth: 100,
-                }}
-              >
-                +{DING_AMOUNT}
-              </button>
-            </div>
-            <button
-              onClick={handleBumpTeam}
-              style={{
-                marginTop: 14, padding: "8px 16px", borderRadius: 10,
-                border: "1px solid #fca5a5", background: "#fff",
-                color: "#b91c1c", fontWeight: 700, fontSize: "0.8rem",
-                cursor: "pointer", width: "100%",
-              }}
-            >
-              Bump from session
-            </button>
-          </div>
+            -{DING_AMOUNT}
+          </button>
+          <button
+            onClick={() => sendBehaviorDing(true)}
+            style={{
+              padding: "10px 20px", borderRadius: 10, border: "none",
+              background: "linear-gradient(135deg, #10b981, #059669)",
+              color: "#fff", fontWeight: 700, fontSize: "1rem", cursor: "pointer",
+              minWidth: 100,
+            }}
+          >
+            +{DING_AMOUNT}
+          </button>
         </div>
-      )}
+        <Button
+          variant="danger"
+          onClick={handleBumpTeam}
+          style={{ marginTop: 14, width: "100%" }}
+        >
+          Bump from session
+        </Button>
+      </Modal>
 
-      {/* ── Fixed-Station Setup Checklist Modal ── */}
-      {showStationChecklist && pendingStationTaskset && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 60,
-          }}
-          onClick={() => {
+      {/* ── Fixed-Station Setup Checklist Modal — migrated to shared
+          <Modal> + <Button> (Wave 2 step 4). The Launch button keeps its
+          semantic green-vs-amber state-coloring (signals "all set" vs
+          "launch anyway"). ── */}
+      {pendingStationTaskset && (
+        <Modal
+          open={showStationChecklist}
+          onClose={() => {
             setShowStationChecklist(false);
             setStationChecklistDisplays([]);
             setStationChecklistChecked({});
             setPendingStationTaskset(null);
           }}
+          title="Station Setup Checklist"
+          size="md"
         >
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: 16,
-              padding: 20,
-              maxWidth: 520,
-              width: "90%",
-              maxHeight: "80vh",
-              boxShadow: "0 20px 40px rgba(15,23,42,0.35)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700 }}>
-              Station Setup Checklist
-            </h2>
-            <p style={{ margin: 0, fontSize: "0.85rem", color: "#4b5563" }}>
-              This taskset uses fixed stations. Please place these items at the correct CurricQR stations before launching.
-            </p>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#4b5563" }}>
+            This taskset uses fixed stations. Please place these items at the correct CurricQR stations before launching.
+          </p>
 
             <div style={{ marginTop: 4, overflowY: "auto", maxHeight: 320, display: "flex", flexDirection: "column", gap: 8 }}>
               {stationChecklistDisplays.map((d, i) => {
@@ -5973,147 +5931,107 @@ Precipitation — rain, snow, hail`}
               })}
             </div>
 
-            <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowStationChecklist(false);
-                  setStationChecklistDisplays([]);
-                  setStationChecklistChecked({});
-                  setPendingStationTaskset(null);
-                }}
-                style={{
-                  padding: "6px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                }}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const { data, roomCode: code } = pendingStationTaskset;
-                  setShowStationChecklist(false);
-                  setStationChecklistDisplays([]);
-                  setStationChecklistChecked({});
-                  setPendingStationTaskset(null);
+          <Modal.Footer>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowStationChecklist(false);
+                setStationChecklistDisplays([]);
+                setStationChecklistChecked({});
+                setPendingStationTaskset(null);
+              }}
+            >
+              Cancel
+            </Button>
+            {/* Launch button keeps its semantic green/amber state-coloring —
+                green when all stations are confirmed, amber for "launch anyway". */}
+            <button
+              type="button"
+              onClick={() => {
+                const { data, roomCode: code } = pendingStationTaskset;
+                setShowStationChecklist(false);
+                setStationChecklistDisplays([]);
+                setStationChecklistChecked({});
+                setPendingStationTaskset(null);
 
-                  // Resume the launch flow (respect auto-start mode)
-                  const isPreArmed = autoStartMode !== "immediate";
-                  if (isPreArmed) {
-                    setStatus("Taskset armed — waiting for students…");
-                    setTasksetArmed(true);
-                    setLaunchAfterLoad(false);
-                  } else {
-                    setStatus("Loading taskset…");
-                    setLaunchAfterLoad(true);
-                  }
-                  setTasksetLaunchProgress(70);
+                // Resume the launch flow (respect auto-start mode)
+                const isPreArmed = autoStartMode !== "immediate";
+                if (isPreArmed) {
+                  setStatus("Taskset armed — waiting for students…");
+                  setTasksetArmed(true);
+                  setLaunchAfterLoad(false);
+                } else {
+                  setStatus("Loading taskset…");
+                  setLaunchAfterLoad(true);
+                }
+                setTasksetLaunchProgress(70);
 
-                  socket.emit("teacher:loadTaskset", {
-                    roomCode: code,
-                    tasksetId: data._id || activeTasksetMeta?._id,
-                    selectedRooms,
-                    classRosterId: selectedClassRosterId || undefined,
-                    // Per-session at-desk mode — honor the checkbox AND any
-                    // atDeskOnly flag persisted on the taskset itself.
-                    onScreenOnly: onScreenOnly || data?.atDeskOnly === true,
-                    duelsEnabled, // per-session duels toggle (runtime trigger, not content)
-                    reportOwnerId,
-                    reportOwnerName,
-                    reportOwnerEmail,
-                    runByPresenterId: user?.userId || user?.id || user?._id,
-                    runByPresenterName: runByName,
-                    runByPresenterEmail: user?.email,
-                    sharedToken,
-                    ...(isPreArmed && {
-                      autoStartMode,
-                      autoStartTimerSeconds: autoStartMode === "timer" ? autoStartTimerMinutes * 60 : undefined,
-                      autoStartMinTeams: autoStartMode === "all_ready" ? autoStartMinTeams : undefined,
-                    }),
-                  });
-                }}
-                style={{
-                  padding: "6px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: Object.keys(stationChecklistChecked).length === stationChecklistDisplays.length
-                    && stationChecklistDisplays.every((_, i) => stationChecklistChecked[i])
-                    ? "#10b981"
-                    : "#f59e0b",
-                  color: "#fff",
-                  fontSize: "0.85rem",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
-              >
-                {Object.keys(stationChecklistChecked).length === stationChecklistDisplays.length
+                socket.emit("teacher:loadTaskset", {
+                  roomCode: code,
+                  tasksetId: data._id || activeTasksetMeta?._id,
+                  selectedRooms,
+                  classRosterId: selectedClassRosterId || undefined,
+                  // Per-session at-desk mode — honor the checkbox AND any
+                  // atDeskOnly flag persisted on the taskset itself.
+                  onScreenOnly: onScreenOnly || data?.atDeskOnly === true,
+                  duelsEnabled, // per-session duels toggle (runtime trigger, not content)
+                  reportOwnerId,
+                  reportOwnerName,
+                  reportOwnerEmail,
+                  runByPresenterId: user?.userId || user?.id || user?._id,
+                  runByPresenterName: runByName,
+                  runByPresenterEmail: user?.email,
+                  sharedToken,
+                  ...(isPreArmed && {
+                    autoStartMode,
+                    autoStartTimerSeconds: autoStartMode === "timer" ? autoStartTimerMinutes * 60 : undefined,
+                    autoStartMinTeams: autoStartMode === "all_ready" ? autoStartMinTeams : undefined,
+                  }),
+                });
+              }}
+              style={{
+                padding: "10px 16px",
+                borderRadius: 10,
+                border: "none",
+                background: Object.keys(stationChecklistChecked).length === stationChecklistDisplays.length
                   && stationChecklistDisplays.every((_, i) => stationChecklistChecked[i])
-                  ? "All set — Launch!"
-                  : "Launch anyway"}
-              </button>
-            </div>
-          </div>
-        </div>
+                  ? "#10b981"
+                  : "#f59e0b",
+                color: "#fff",
+                fontSize: "0.95rem",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {Object.keys(stationChecklistChecked).length === stationChecklistDisplays.length
+                && stationChecklistDisplays.every((_, i) => stationChecklistChecked[i])
+                ? "All set — Launch!"
+                : "Launch anyway"}
+            </button>
+          </Modal.Footer>
+        </Modal>
       )}
 
-      {showHideNSeekModal && pendingHideTaskset && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.45)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 60,
-          }}
-          onClick={() => {
+      {/* Hide & Seek setup modal — migrated to shared <Modal> + <Button>
+          (Wave 2 step 4). Inner per-task textareas kept as-is (domain
+          detail inside small cards). */}
+      {pendingHideTaskset && (
+        <Modal
+          open={showHideNSeekModal}
+          onClose={() => {
             setShowHideNSeekModal(false);
             setHideNSeekTasks([]);
             setHideNSeekClues({});
             setPendingHideTaskset(null);
           }}
+          title="Hide & Seek set-up: page references"
+          size="md"
         >
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: 16,
-              padding: 16,
-              maxWidth: 520,
-              width: "90%",
-              maxHeight: "80vh",
-              boxShadow: "0 20px 40px rgba(15,23,42,0.35)",
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2
-              style={{
-                margin: 0,
-                fontSize: "1.1rem",
-                fontWeight: 600,
-              }}
-            >
-              Hide &amp; Seek set-up: page references
-            </h2>
-            <p
-              style={{
-                margin: 0,
-                fontSize: "0.85rem",
-                color: "#4b5563",
-              }}
-            >
-              For each Hide &amp; Seek task in this set, enter the page
-              reference or description of what students must find. This becomes
-              the clue shown on their screens.
-            </p>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#4b5563" }}>
+            For each Hide &amp; Seek task in this set, enter the page
+            reference or description of what students must find. This becomes
+            the clue shown on their screens.
+          </p>
 
             <div
               style={{
@@ -6179,33 +6097,18 @@ Precipitation — rain, snow, hail`}
               ))}
             </div>
 
-            <div
-              style={{
-                marginTop: 10,
-                display: "flex",
-                justifyContent: "flex-end",
-                gap: 8,
-              }}
-            >
-              <button
-                type="button"
+          <Modal.Footer>
+              <Button
+                variant="ghost"
                 onClick={() => {
                   setShowHideNSeekModal(false);
                   setHideNSeekTasks([]);
                   setHideNSeekClues({});
                   setPendingHideTaskset(null);
                 }}
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: 999,
-                  border: "1px solid #d1d5db",
-                  background: "#f9fafb",
-                  fontSize: "0.8rem",
-                  cursor: "pointer",
-                }}
               >
                 Cancel
-              </button>
+              </Button>
               <button
                 type="button"
                 disabled={hideNSeekTasks.some(
@@ -6369,46 +6272,28 @@ Precipitation — rain, snow, hail`}
               >
                 Start set
               </button>
-            </div>
-          </div>
-        </div>
+          </Modal.Footer>
+        </Modal>
       )}
 
       {/* AI GENERATOR MODAL */}
-      {showAiGen && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0, 0, 0, 0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-          }}
-          onClick={() => {
-            setShowAiGen(false);
-            setAiGrade("");
-            setAiDifficulty("medium");
-            setAiPurpose("");
-            setAiSubject("");
-            setAiWordList("");
-          }}
-        >
-          <div
-            style={{
-              background: "white",
-              borderRadius: 16,
-              padding: 24,
-              width: "90%",
-              maxWidth: 520,
-              boxShadow: "0 25px 50px rgba(0,0,0,0.25)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 style={{ margin: "0 0 12px 0", fontSize: "1.25rem" }}>
-              Generate Task with AI
-            </h3>
+      {/* Generate Task with AI modal — outer wrapper migrated to shared
+          <Modal> (Wave 2 step 4). The internal form (selects, inputs,
+          RolePlay quick-setup, Generate button) is kept as-is in this
+          batch — a focused fields-migration is its own subsequent step. */}
+      <Modal
+        open={showAiGen}
+        onClose={() => {
+          setShowAiGen(false);
+          setAiGrade("");
+          setAiDifficulty("medium");
+          setAiPurpose("");
+          setAiSubject("");
+          setAiWordList("");
+        }}
+        title="Generate Task with AI"
+        size="md"
+      >
             <p
               style={{
                 margin: "0 0 16px 0",
@@ -6706,9 +6591,7 @@ Thomas | Soldier | loyal, brave, disciplined`}
                 {isGenerating ? "Generating…" : "Generate Task"}
               </button>
             </div>
-          </div>
-        </div>
-      )}
+      </Modal>
 
       {/* Whodunnit teacher console — only renders when the taskset opts in
           (mysteryEnabled flag) OR the teacher has already enabled mystery
