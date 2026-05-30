@@ -5,7 +5,7 @@ import { fetchMyProfile } from "../api/profile";
 import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
-import { Field, TextInput, TextArea, Select, PageHeader, PageShell } from "../components/ui";
+import { Field, TextInput, TextArea, Select, Checkbox, PageHeader, PageShell } from "../components/ui";
 
 // Category → color mapping for task type badges
 const CATEGORY_COLORS = {
@@ -1687,12 +1687,13 @@ export default function AiTasksetGenerator() {
             background: "#f9fafb",
           }}
         >
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
-            <input type="checkbox" checked={limitTasks} onChange={(e) => setLimitTasks(e.target.checked)} />
-            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
-              Limit which task types to include
-            </span>
-          </label>
+          <Checkbox
+            checked={limitTasks}
+            onChange={(e) => setLimitTasks(e.target.checked)}
+            style={{ marginBottom: 8 }}
+          >
+            Limit which task types to include
+          </Checkbox>
 
           {limitTasks && (
             <div>
@@ -1727,15 +1728,19 @@ export default function AiTasksetGenerator() {
                   </select>
                 </div>
 
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
-                  <input type="checkbox" checked={onlyIntraTeam} onChange={(e) => setOnlyIntraTeam(e.target.checked)} />
+                <Checkbox
+                  checked={onlyIntraTeam}
+                  onChange={(e) => setOnlyIntraTeam(e.target.checked)}
+                >
                   Only intra-team
-                </label>
+                </Checkbox>
 
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.85rem", color: "#374151", cursor: "pointer" }}>
-                  <input type="checkbox" checked={onlyInterTeam} onChange={(e) => setOnlyInterTeam(e.target.checked)} />
+                <Checkbox
+                  checked={onlyInterTeam}
+                  onChange={(e) => setOnlyInterTeam(e.target.checked)}
+                >
                   Only inter-team
-                </label>
+                </Checkbox>
 
                 <button
                   type="button"
@@ -1774,15 +1779,14 @@ export default function AiTasksetGenerator() {
             background: guaranteeTypes ? "#f0fdf4" : "#f9fafb",
           }}
         >
-          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 8 }}>
-            <input type="checkbox" checked={guaranteeTypes} onChange={(e) => setGuaranteeTypes(e.target.checked)} />
-            <span style={{ fontSize: "0.9rem", fontWeight: 500 }}>
-              Guarantee these task types appear
-            </span>
-          </label>
-          <p style={{ fontSize: "0.8rem", color: "#6b7280", marginBottom: 8 }}>
-            Selected types will definitely be included. The rest of the set fills with a normal diverse mix.
-          </p>
+          <Checkbox
+            checked={guaranteeTypes}
+            onChange={(e) => setGuaranteeTypes(e.target.checked)}
+            description="Selected types will definitely be included. The rest of the set fills with a normal diverse mix."
+            style={{ marginBottom: 8 }}
+          >
+            Guarantee these task types appear
+          </Checkbox>
 
           {guaranteeTypes && (
             <div>

@@ -5,7 +5,7 @@ import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { fetchMyProfile } from "../api/profile";
 import { API_BASE_URL, STUDENT_APP_URL } from "../config";
 import { TASK_TYPE_META } from "../../../shared/taskTypes.js";
-import { Modal, Button, Field, TextInput, TextArea, Select, PageHeader, PageShell } from "../components/ui";
+import { Modal, Button, Field, TextInput, TextArea, Select, Checkbox, PageHeader, PageShell } from "../components/ui";
 
 const _API_BASE = API_BASE_URL || "";
 
@@ -1554,15 +1554,15 @@ export default function TaskSets() {
 
         <div style={{ flex: 1 }} />
 
-        <button type="button" onClick={() => setAllSelected(true)} style={btn("secondary")} disabled={allIds.length === 0}>
+        <Button variant="ghost" size="sm" onClick={() => setAllSelected(true)} disabled={allIds.length === 0}>
           Select all
-        </button>
-        <button type="button" onClick={() => setAllSelected(false)} style={btn("secondary")} disabled={selectedIds.size === 0}>
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => setAllSelected(false)} disabled={selectedIds.size === 0}>
           Clear
-        </button>
-        <button type="button" onClick={deleteSelected} style={btn("danger")} disabled={selectedIds.size === 0}>
+        </Button>
+        <Button variant="danger" size="sm" onClick={deleteSelected} disabled={selectedIds.size === 0}>
           Delete selected ({selectedIds.size})
-        </button>
+        </Button>
       </div>
 
       {loading ? (
@@ -1781,14 +1781,14 @@ export default function TaskSets() {
                         alignItems: "center",
                       }}
                     >
-                      <button
-                        type="button"
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => testRun(ts)}
-                        style={{ ...btn("secondary"), padding: "5px 10px", fontSize: "0.78rem", whiteSpace: "nowrap" }}
                         title="Step through the tasks as a student would — no QR scans"
                       >
                         🧪 Test run
-                      </button>
+                      </Button>
                       {(() => {
                         const isRegen = regeneratingId === id;
                         const rp = isRegen ? regenProgress : null;
@@ -1825,13 +1825,12 @@ export default function TaskSets() {
                           </button>
                         );
                       })()}
-                      <button
-                        type="button"
+                      <Button
+                        size="sm"
                         onClick={() => launchNow(ts)}
-                        style={{ ...btn("primary"), padding: "5px 12px", fontSize: "0.78rem", whiteSpace: "nowrap" }}
                       >
                         Launch
-                      </button>
+                      </Button>
                     </div>
 
                     <div style={{ marginTop: 6, color: "#6b7280", fontSize: "0.9rem" }}>
@@ -1868,26 +1867,18 @@ export default function TaskSets() {
                       )}
 
                       <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button type="button" onClick={() => openReport(ts)} style={btn("secondary")}>
-                          Report
-                        </button>
-                        <button type="button" onClick={() => copyShareLink(ts)} style={btn("secondary")}>
-                          Share
-                        </button>
-                        <button type="button" onClick={() => navigate(`/tasksets/${encodeURIComponent(id)}`)} style={btn("secondary")}>
-                          Edit
-                        </button>
-                        <button
-                          type="button"
+                        <Button variant="ghost" size="sm" onClick={() => openReport(ts)}>Report</Button>
+                        <Button variant="ghost" size="sm" onClick={() => copyShareLink(ts)}>Share</Button>
+                        <Button variant="ghost" size="sm" onClick={() => navigate(`/tasksets/${encodeURIComponent(id)}`)}>Edit</Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => openFixDialog(id)}
                           title="Diagnose and fix AI-generated task issues"
-                          style={btn("secondary")}
                         >
                           🔧 Fix
-                        </button>
-                        <button type="button" onClick={() => deleteOne(id)} style={btn("danger")}>
-                          Delete
-                        </button>
+                        </Button>
+                        <Button variant="danger" size="sm" onClick={() => deleteOne(id)}>Delete</Button>
                       </div>
                     </>
                   )}
@@ -2172,19 +2163,23 @@ export default function TaskSets() {
                 />
               </Field>
 
-              {/* Flags */}
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, fontWeight: 700, color: "#374151" }}>
-                {/* Quest + At-desk are content-based (they change what's generated),
-                    so they belong here. Duels is a runtime/launch flag (not content),
-                    so it's not a generation toggle — the original value is preserved. */}
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                  <input type="checkbox" checked={!!regenForm.questMode} onChange={(e) => setRegenForm((f) => ({ ...f, questMode: e.target.checked }))} />
+              {/* Flags — migrated to shared <Checkbox> (Wave 4). Quest +
+                  At-desk are content-based (they change what's generated),
+                  so they belong here. Duels is a runtime/launch flag (not
+                  content), so it's not a generation toggle. */}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+                <Checkbox
+                  checked={!!regenForm.questMode}
+                  onChange={(e) => setRegenForm((f) => ({ ...f, questMode: e.target.checked }))}
+                >
                   Quest mode
-                </label>
-                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-                  <input type="checkbox" checked={!!regenForm.atDeskOnly} onChange={(e) => setRegenForm((f) => ({ ...f, atDeskOnly: e.target.checked }))} />
+                </Checkbox>
+                <Checkbox
+                  checked={!!regenForm.atDeskOnly}
+                  onChange={(e) => setRegenForm((f) => ({ ...f, atDeskOnly: e.target.checked }))}
+                >
                   At-desk only
-                </label>
+                </Checkbox>
               </div>
 
               {/* New copy vs Replace original — kept as toggle pills; semantic
