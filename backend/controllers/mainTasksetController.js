@@ -14,6 +14,7 @@ import {
   buildVocabularyLines,
   regenerateSingleTask,
   buildPeerEditingErrors,
+  buildSpotItems,
 } from "./sharedTasksetController.js";
 import { buildTasksetPrompt } from "./sharedTasksetController.js";
 import { getTimingStatsForGenerator } from "../services/taskTypeTimingAggregator.js";
@@ -2360,6 +2361,45 @@ export async function createAiTaskset(req, res) {
             }
           } catch (e) {
             console.warn(`[AI] peer-editing key build failed for #${idx + 1}:`, e?.message || e);
+          }
+        }
+
+        // Focused spotItems backfill for art-view + historical-doc: image,
+        // description, and analysisPrompts/focusHints are typically fine —
+        // just generate the 4 spot-check pills from the existing context
+        // before falling back to a whole-task regen that would change the
+        // image/title/questions. Mirrors the on-demand Diagnose & Fix
+        // fast-path in routes/tasksets.js for the same cost (~1 cheap AI
+        // call vs ~1 full regen with retries).
+        if (!fixed && (type === TASK_TYPES.ART_VIEW || type === TASK_TYPES.HISTORICAL_DOC)) {
+          const ofg = (original && typeof original.config === "object") ? original.config : {};
+          const onlyMissingSpot = curIssues.length > 0 && curIssues.every((e) => /spotItems/i.test(String(e)));
+          if (onlyMissingSpot) {
+            try {
+              const isDoc = type === TASK_TYPES.HISTORICAL_DOC;
+              const items = await buildSpotItems(isDoc ? "document" : "art", {
+                title: isDoc ? ofg.docTitle : ofg.imageTitle,
+                author: isDoc ? ofg.docAuthor : ofg.imageArtist,
+                year: isDoc ? ofg.docYear : ofg.imageYear,
+                type: isDoc ? ofg.docType : undefined,
+                imageDescription: ofg.imageDescription,
+                historicalContext: ofg.historicalContext,
+              });
+              if (Array.isArray(items) && items.length >= 3) {
+                let si = sanitizeTaskShapeByType(type, {
+                  ...original,
+                  config: { ...ofg, spotItems: items },
+                });
+                for (const k of PRESERVE) { if (original[k] !== undefined) si[k] = original[k]; }
+                if (assessTaskPlayability(si).playable !== false) {
+                  finalized[idx] = si;
+                  playabilityRepaired += 1;
+                  fixed = true;
+                }
+              }
+            } catch (e) {
+              console.warn(`[AI] spotItems backfill failed for #${idx + 1} (${type}):`, e?.message || e);
+            }
           }
         }
 
