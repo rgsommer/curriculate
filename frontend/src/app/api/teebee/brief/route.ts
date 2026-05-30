@@ -71,9 +71,9 @@ export async function GET(req: Request) {
 
   // Services grid (2 cols × 3 rows)
   const services = [
-    ["01", "Audit & Assurance",     "Independent audits for companies of all sizes — IFRS compliant."],
+    ["01", "Audit & Assurance",     "IFRS-compliant audits via Tee Bee Audit — AI-assisted, CPA-signed."],
     ["02", "Taxation Services",     "Strategic tax planning and full IRC compliance."],
-    ["03", "Accounting Services",   "Bookkeeping, financial reporting, payroll (via TeebeePay)."],
+    ["03", "Accounting Services",   "Bookkeeping, financial reporting, payroll via TeebeePay."],
     ["04", "Business Advisory",     "Growth, financial planning, risk and efficiency."],
     ["05", "Statutory Compliance",  "Company secretarial, IPA annual returns, regulatory upkeep."],
     ["06", "Financial Consulting",  "Feasibility studies, due diligence, investment advisory."],
@@ -93,12 +93,28 @@ export async function GET(req: Request) {
 
   // Why us strip
   const stripY = startY - 3 * 92 - 14;
-  p1.drawRectangle({ x: 48, y: stripY - 78, width: W - 96, height: 78, color: NAVY });
+  p1.drawRectangle({ x: 48, y: stripY - 66, width: W - 96, height: 66, color: NAVY });
   p1.drawText("Why TBA", { x: 64, y: stripY - 22, size: 11, font: bold, color: GOLD });
   drawWrapped(p1, reg, 10, WHITE,
     "CPA-certified team · IFRS-compliant reporting · Registered tax agents with the PNG " +
     "IRC · Deep local expertise · 500+ clients served over 10+ years · Dedicated client relationships.",
     64, stripY - 40, W - 128, 13);
+
+  // New in 2026 platforms strip
+  const newY = stripY - 78;
+  p1.drawRectangle({ x: 48, y: newY - 70, width: W - 96, height: 70, color: GOLD_SOFT,
+    borderColor: rgb(0.93, 0.85, 0.55), borderWidth: 0.6 });
+  p1.drawText("New in 2026 — our platforms", { x: 64, y: newY - 20, size: 11, font: bold, color: NAVY });
+  // Two columns inside the strip
+  const halfW = (W - 96 - 32) / 2;
+  p1.drawText("Tee Bee Audit", { x: 64, y: newY - 38, size: 10.5, font: bold, color: NAVY_DEEP });
+  drawWrapped(p1, reg, 9, INK,
+    "AI-assisted audit platform · upload files, software runs reconciliations and anomaly checks, CPA signs the opinion. www.curriculate.net/audit",
+    64, newY - 50, halfW, 11);
+  p1.drawText("TeebeePay", { x: 64 + halfW + 32, y: newY - 38, size: 10.5, font: bold, color: NAVY_DEEP });
+  drawWrapped(p1, reg, 9, INK,
+    "Fortnightly payroll · pay stubs, BSP batch, NASFund, IRC SWT. Self-service from K9/employee, managed from K14. www.curriculate.net/teebeepay",
+    64 + halfW + 32, newY - 50, halfW, 11);
 
   // Footer
   p1.drawText("Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
