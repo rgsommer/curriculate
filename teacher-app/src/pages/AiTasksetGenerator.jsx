@@ -5,6 +5,7 @@ import { fetchMyProfile } from "../api/profile";
 import { apiFetch, apiFetchJson } from "../api/apiFetch";
 import { TASK_TYPES, TASK_TYPE_META } from "../../../shared/taskTypes.js";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
+import { Field, TextInput, TextArea, Select } from "../components/ui";
 
 // Category → color mapping for task type badges
 const CATEGORY_COLORS = {
@@ -1133,28 +1134,18 @@ export default function AiTasksetGenerator() {
         {/* ESSENTIALS — always visible                                */}
         {/* ═══════════════════════════════════════════════════════════ */}
 
-        {/* TITLE */}
+        {/* TITLE — migrated to shared <Field> + <TextInput> (Wave 2 step 5). */}
         <div id="gen-title-field" style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-            Task set title (topic)
-          </label>
-          <input
-            type="text"
-            value={form.name}
-            onChange={(e) => handleChange("name", e.target.value)}
-            placeholder="Hist7 Ch3: The Seven Years' War and the Conquest of New France"
-            style={{
-              width: "100%",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              padding: 10,
-              fontSize: "1rem",
-              boxSizing: "border-box",
-            }}
-          />
+          <Field label="Task set title (topic)">
+            <TextInput
+              value={form.name}
+              onChange={(e) => handleChange("name", e.target.value)}
+              placeholder="Hist7 Ch3: The Seven Years' War and the Conquest of New France"
+            />
+          </Field>
         </div>
 
-        {/* GRADE + SUBJECT (essential row) */}
+        {/* GRADE + SUBJECT (essential row) — migrated. */}
         <div
           id="gen-essentials-row"
           style={{
@@ -1164,77 +1155,49 @@ export default function AiTasksetGenerator() {
             marginBottom: 16,
           }}
         >
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Grade level
-            </label>
-            <input
-              type="text"
+          <Field label="Grade level">
+            <TextInput
               value={form.gradeLevel}
               onChange={(e) => handleChange("gradeLevel", e.target.value)}
               placeholder="7, 8, 7/8 split..."
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-                boxSizing: "border-box",
-              }}
             />
-          </div>
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Subject
-            </label>
-            <input
-              type="text"
+          </Field>
+          <Field label="Subject">
+            <TextInput
               value={form.subject}
               onChange={(e) => handleChange("subject", e.target.value)}
               placeholder="History, Geography, Bible..."
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-                boxSizing: "border-box",
-              }}
             />
-          </div>
+          </Field>
         </div>
 
-        {/* VOCABULARY (essential) */}
+        {/* VOCABULARY (essential) — migrated to <Field hint>+<TextArea>. */}
         <div id="gen-vocab-field" style={{ marginBottom: 16, opacity: (isPartyMode || isEventMode) ? 0.6 : 1, pointerEvents: (isPartyMode || isEventMode) ? "none" : "auto" }}>
-          <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-            Vocabulary / key terms {!(isPartyMode || isEventMode) && <span style={{ color: "#b91c1c" }}>*</span>}
-          </label>
-          <textarea
-            value={wordListText}
-            onChange={(e) => setWordListText(e.target.value)}
-            rows={6}
-            disabled={isPartyMode || isEventMode}
-            placeholder={
-              (isPartyMode || isEventMode)
-                ? "Not needed — vocabulary is provided by the theme above."
-                : "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
+          <Field
+            label={
+              <>
+                Vocabulary / key terms
+                {!(isPartyMode || isEventMode) && <span style={{ color: "#b91c1c", marginLeft: 4 }}>*</span>}
+              </>
             }
-            style={{
-              width: "100%",
-              borderRadius: 8,
-              border: "1px solid #d1d5db",
-              padding: 8,
-              fontSize: "0.9rem",
-              resize: "vertical",
-              boxSizing: "border-box",
-              background: (isPartyMode || isEventMode) ? "#f3f4f6" : undefined,
-            }}
-          />
-          <p style={{ marginTop: 4, fontSize: "0.8rem", color: "#6b7280" }}>
-            {(isPartyMode || isEventMode)
-              ? "Vocabulary is supplied by the theme/event settings above."
-              : "These words define the topic. After generation, you'll see which concepts were covered vs missing."}
-          </p>
+            hint={
+              (isPartyMode || isEventMode)
+                ? "Vocabulary is supplied by the theme/event settings above."
+                : "These words define the topic. After generation, you'll see which concepts were covered vs missing."
+            }
+          >
+            <TextArea
+              value={wordListText}
+              onChange={(e) => setWordListText(e.target.value)}
+              rows={6}
+              disabled={isPartyMode || isEventMode}
+              placeholder={
+                (isPartyMode || isEventMode)
+                  ? "Not needed — vocabulary is provided by the theme above."
+                  : "One term per line or separated by commas, e.g.\nLouisbourg\nPlains of Abraham\nTreaty of Paris\nSeven Years' War"
+              }
+            />
+          </Field>
         </div>
 
         {/* ═══════════════════════════════════════════════════════════ */}
@@ -1661,84 +1624,58 @@ export default function AiTasksetGenerator() {
             marginBottom: 16,
           }}
         >
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Default room / location
-            </label>
-            <input
-              type="text"
+          {/* 4-column advanced row — all migrated to <Field> + primitives. */}
+          <Field label="Default room / location">
+            <TextInput
               value={form.roomLocation}
               onChange={(e) => handleChange("roomLocation", e.target.value)}
               placeholder="Classroom, Gym..."
-              style={{
-                width: "100%",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                padding: 8,
-                fontSize: "0.9rem",
-                boxSizing: "border-box",
-              }}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Difficulty
-            </label>
-            <select
+          <Field label="Difficulty">
+            <Select
               value={form.difficulty}
               onChange={(e) => handleChange("difficulty", e.target.value)}
-              style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", boxSizing: "border-box" }}
             >
               {DIFFICULTIES.map((d) => (
                 <option key={d} value={d}>{d.charAt(0) + d.slice(1).toLowerCase()}</option>
               ))}
-            </select>
-          </div>
+            </Select>
+          </Field>
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Learning goal
-            </label>
-            <select
+          <Field label="Learning goal">
+            <Select
               value={form.learningGoal}
               onChange={(e) => handleChange("learningGoal", e.target.value)}
-              style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", boxSizing: "border-box" }}
             >
               {LEARNING_GOALS.map((g) => (
                 <option key={g} value={g}>{g.charAt(0) + g.slice(1).toLowerCase()}</option>
               ))}
-            </select>
-          </div>
+            </Select>
+          </Field>
 
-          <div>
-            <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-              Duration (min)
-            </label>
-            <input
+          <Field label="Duration (min)">
+            <TextInput
               type="number"
               min={5}
               max={120}
               value={form.durationMinutes}
               onChange={(e) => handleChange("durationMinutes", Number(e.target.value))}
-              style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", boxSizing: "border-box" }}
             />
-          </div>
+          </Field>
         </div>
 
-        {/* SPECIAL CONSIDERATIONS + MULTI-ROOM ROOMS */}
+        {/* SPECIAL CONSIDERATIONS — migrated. */}
         <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", fontSize: "0.85rem", marginBottom: 4 }}>
-            Special considerations (optional)
-          </label>
-          <textarea
-            value={form.topicDescription}
-            onChange={(e) => handleChange("topicDescription", e.target.value)}
-            rows={3}
-            placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
-            style={{ width: "100%", borderRadius: 8, border: "1px solid #d1d5db", padding: 8, fontSize: "0.9rem", resize: "vertical", boxSizing: "border-box" }}
-          />
-
+          <Field label="Special considerations (optional)">
+            <TextArea
+              value={form.topicDescription}
+              onChange={(e) => handleChange("topicDescription", e.target.value)}
+              rows={3}
+              placeholder="e.g., 'Reviewing for a test', 'Keep it low-noise', 'They just did a quiz—keep it lighter'..."
+            />
+          </Field>
         </div>
 
         {/* LIMIT TASK TYPES */}
