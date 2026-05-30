@@ -15,7 +15,7 @@ import {
   BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
   ShieldCheck, NotebookPen, AlertTriangle, Layers, Network,
   GraduationCap, HelpCircle, ChevronRight, ChevronLeft,
-  FileSpreadsheet,
+  FileSpreadsheet, BookOpen,
 } from "lucide-react";
 
 const C = {
@@ -555,6 +555,11 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
           </Tab>
         )}
         {me?.clearance >= 2 && (
+          <Tab active={tab === "gl"} onClick={() => setTab("gl")}>
+            <BookOpen size={15} style={{ marginRight: 6 }} /> General Ledger
+          </Tab>
+        )}
+        {me?.clearance >= 2 && (
           <Tab active={tab === "tax_rules"} onClick={() => setTab("tax_rules")}>
             <Settings size={15} style={{ marginRight: 6 }} /> Tax rules
           </Tab>
@@ -611,6 +616,10 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
 
       {tab === "reports" && (
         <ReportsPanel companyId={companyId} />
+      )}
+
+      {tab === "gl" && (
+        <GeneralLedgerPanel companyId={companyId} canEdit={me?.clearance >= 2} />
       )}
 
       {tab === "settings" && (
@@ -1776,6 +1785,445 @@ function ReportsPanel({ companyId }) {
         </div>
       </div>
     </div>
+  );
+}
+
+/* ─────────── General Ledger panel ─────────── */
+
+function glFmt(n) {
+  return Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+const GL_TYPE_LABEL = { asset: "Asset", liability: "Liability", equity: "Equity", revenue: "Revenue", expense: "Expense" };
+
+function GeneralLedgerPanel({ companyId, canEdit }) {
+  const [view, setView] = useState("accounts");
+  const [accounts, setAccounts] = useState(null);
+  const [entries, setEntries] = useState(null);
+  const [error, setError] = useState("");
+  const [showEntry, setShowEntry] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+
+  const loadAccounts = useCallback(async () => {
+    try { setAccounts((await api(`/api/teebeepay/companies/${companyId}/gl/accounts`)).accounts); }
+    catch (e) { setError(e.message); }
+  }, [companyId]);
+  const loadEntries = useCallback(async () => {
+    try { setEntries((await api(`/api/teebeepay/companies/${companyId}/gl/journal`)).entries); }
+    catch (e) { setError(e.message); }
+  }, [companyId]);
+  useEffect(() => { loadAccounts(); loadEntries(); }, [loadAccounts, loadEntries]);
+
+  async function reverse(entry) {
+    if (!confirm(`Reverse ${entry.entry_ref}? This posts an offsetting entry — the original stays on record.`)) return;
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/gl/journal/${entry.id}/reverse`, { method: "POST", body: "{}" });
+      await Promise.all([loadEntries(), loadAccounts()]);
+    } catch (e) { setError(e.message); }
+  }
+
+  const views = [
+    { k: "accounts", label: "Chart of accounts" },
+    { k: "journal", label: "Journal" },
+    { k: "tb", label: "Trial balance" },
+    { k: "is", label: "Income statement" },
+    { k: "bs", label: "Balance sheet" },
+  ];
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        {views.map((v) => (
+          <button key={v.k} onClick={() => setView(v.k)} style={{
+            padding: "7px 14px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 600,
+            border: view === v.k ? `1px solid ${C.red}` : "1px solid #e5e7eb",
+            background: view === v.k ? C.red : "#fff", color: view === v.k ? "#fff" : C.inkSoft,
+          }}>{v.label}</button>
+        ))}
+        {canEdit && view === "accounts" && (
+          <button onClick={() => setShowAccount(true)} style={{ ...btnPrimaryInline, marginLeft: "auto" }}>
+            <Plus size={16} /> Add account
+          </button>
+        )}
+        {canEdit && view === "journal" && (
+          <button onClick={() => setShowEntry(true)} style={{ ...btnPrimaryInline, marginLeft: "auto" }}>
+            <Plus size={16} /> New journal entry
+          </button>
+        )}
+      </div>
+
+      {view === "accounts" && (accounts == null
+        ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+        : <GlAccountsTable accounts={accounts} />)}
+
+      {view === "journal" && (entries == null
+        ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+        : <GlJournalList entries={entries} canEdit={canEdit} onReverse={reverse} />)}
+
+      {view === "tb" && <GlReportView companyId={companyId} type="trial_balance" />}
+      {view === "is" && <GlReportView companyId={companyId} type="income_statement" />}
+      {view === "bs" && <GlReportView companyId={companyId} type="balance_sheet" />}
+
+      {showAccount && (
+        <GlAccountModal companyId={companyId}
+          onClose={() => setShowAccount(false)}
+          onSaved={() => { setShowAccount(false); loadAccounts(); }} />
+      )}
+      {showEntry && (
+        <GlJournalEntryModal companyId={companyId} accounts={accounts || []}
+          onClose={() => setShowEntry(false)}
+          onSaved={() => { setShowEntry(false); loadEntries(); loadAccounts(); }} />
+      )}
+    </div>
+  );
+}
+
+function GlAccountsTable({ accounts }) {
+  if (!accounts.length) return <Empty>No accounts yet.</Empty>;
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={th}>Code</th>
+              <th style={th}>Account</th>
+              <th style={th}>Type</th>
+              <th style={{ ...th, textAlign: "right" }}>Debit</th>
+              <th style={{ ...th, textAlign: "right" }}>Credit</th>
+              <th style={{ ...th, textAlign: "right" }}>Balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((a) => (
+              <tr key={a.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                <td style={{ ...td, fontVariantNumeric: "tabular-nums", color: C.muted }}>{a.code}</td>
+                <td style={td}>
+                  <strong>{a.name}</strong>
+                  {a.is_system && <span style={{ marginLeft: 6, fontSize: 10, color: C.muted, textTransform: "uppercase", letterSpacing: 0.05 }}>system</span>}
+                </td>
+                <td style={{ ...td, color: C.inkSoft }}>{GL_TYPE_LABEL[a.type] || a.type}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", color: a.debit ? C.ink : C.muted }}>{a.debit ? glFmt(a.debit) : "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", color: a.credit ? C.ink : C.muted }}>{a.credit ? glFmt(a.credit) : "—"}</td>
+                <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{glFmt(a.balance)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function GlJournalList({ entries, canEdit, onReverse }) {
+  if (!entries.length) return <Empty>No journal entries yet. Post one to start the ledger.</Empty>;
+  return (
+    <div style={{ display: "grid", gap: 12 }}>
+      {entries.map((e) => {
+        const reversed = e.status === "reversed";
+        const isReversal = !!e.reverses;
+        return (
+          <div key={e.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden", opacity: reversed ? 0.7 : 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#fafbfc", borderBottom: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+              <strong style={{ fontSize: 13, fontVariantNumeric: "tabular-nums" }}>{e.entry_ref}</strong>
+              <span style={{ fontSize: 12, color: C.muted }}>{e.date}</span>
+              {e.memo && <span style={{ fontSize: 13, color: C.inkSoft }}>· {e.memo}</span>}
+              <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.05, padding: "2px 8px", borderRadius: 999,
+                background: reversed ? "#fee2e2" : (isReversal ? "#e0e7ff" : "#dcfce7"),
+                color: reversed ? "#991b1b" : (isReversal ? "#3730a3" : "#166534") }}>
+                {reversed ? "reversed" : (isReversal ? "reversal" : e.source)}
+              </span>
+              {canEdit && !reversed && !isReversal && (
+                <button onClick={() => onReverse(e)} style={{ ...btnGhostSmall, marginLeft: "auto" }}>Reverse</button>
+              )}
+            </div>
+            <table style={{ ...tableStyle, fontSize: 13 }}>
+              <tbody>
+                {e.lines.map((l, i) => (
+                  <tr key={i} style={{ borderTop: i ? "1px solid #f8fafc" : "none" }}>
+                    <td style={{ ...td, color: C.muted, width: 70, fontVariantNumeric: "tabular-nums" }}>{l.account_code}</td>
+                    <td style={td}>{l.account_name}{l.description && <span style={{ color: C.muted }}> — {l.description}</span>}</td>
+                    <td style={{ ...td, textAlign: "right", width: 120, fontVariantNumeric: "tabular-nums" }}>{l.debit ? glFmt(l.debit) : ""}</td>
+                    <td style={{ ...td, textAlign: "right", width: 120, fontVariantNumeric: "tabular-nums" }}>{l.credit ? glFmt(l.credit) : ""}</td>
+                  </tr>
+                ))}
+                <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 700 }}>
+                  <td style={td} colSpan={2}></td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(e.total_debit)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(e.total_credit)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GlReportView({ companyId, type }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [asOf, setAsOf] = useState(today);
+  const [from, setFrom] = useState(`${today.slice(0, 4)}-01-01`);
+  const [to, setTo] = useState(today);
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setError(""); setReport(null);
+    const qs = type === "income_statement"
+      ? `type=income_statement&from=${from}&to=${to}`
+      : `type=${type}&asOf=${asOf}`;
+    try { setReport((await api(`/api/teebeepay/companies/${companyId}/gl/reports?${qs}`)).report); }
+    catch (e) { setError(e.message); }
+  }, [companyId, type, asOf, from, to]);
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+        {type === "income_statement" ? (
+          <>
+            <label style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft }}>From
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ ...input, maxWidth: 180, marginTop: 4 }} />
+            </label>
+            <label style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft }}>To
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ ...input, maxWidth: 180, marginTop: 4 }} />
+            </label>
+          </>
+        ) : (
+          <label style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft }}>As of
+            <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ ...input, maxWidth: 180, marginTop: 4 }} />
+          </label>
+        )}
+      </div>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {report == null ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+        : type === "trial_balance" ? <GlTrialBalance report={report} />
+        : type === "income_statement" ? <GlIncomeStatement report={report} />
+        : <GlBalanceSheet report={report} />}
+    </div>
+  );
+}
+
+function GlReportShell({ title, balanced, children }) {
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ padding: "12px 16px", borderBottom: "1px solid #f1f5f9", display: "flex", alignItems: "center", gap: 10 }}>
+        <strong style={{ fontSize: 14 }}>{title}</strong>
+        {balanced != null && (
+          <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 999,
+            background: balanced ? "#dcfce7" : "#fee2e2", color: balanced ? "#166534" : "#991b1b" }}>
+            {balanced ? "Balanced" : "Out of balance"}
+          </span>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function GlTrialBalance({ report }) {
+  if (!report.rows.length) return <Empty>No posted activity yet.</Empty>;
+  return (
+    <GlReportShell title="Trial balance" balanced={report.balanced}>
+      <table style={tableStyle}>
+        <thead><tr>
+          <th style={th}>Code</th><th style={th}>Account</th>
+          <th style={{ ...th, textAlign: "right" }}>Debit</th>
+          <th style={{ ...th, textAlign: "right" }}>Credit</th>
+        </tr></thead>
+        <tbody>
+          {report.rows.map((r) => (
+            <tr key={r.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+              <td style={{ ...td, color: C.muted, fontVariantNumeric: "tabular-nums" }}>{r.code}</td>
+              <td style={td}>{r.name}</td>
+              <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.debit ? glFmt(r.debit) : ""}</td>
+              <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.credit ? glFmt(r.credit) : ""}</td>
+            </tr>
+          ))}
+          <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 700 }}>
+            <td style={td} colSpan={2}>Totals</td>
+            <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(report.total_debit)}</td>
+            <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(report.total_credit)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </GlReportShell>
+  );
+}
+
+function GlSection({ rows, label, total }) {
+  return (
+    <>
+      <tr style={{ background: "#fafbfc" }}>
+        <td style={{ ...td, fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: 0.05, color: C.muted }} colSpan={2}>{label}</td>
+      </tr>
+      {rows.length === 0 && <tr><td style={{ ...td, color: C.muted }} colSpan={2}>None</td></tr>}
+      {rows.map((r, i) => (
+        <tr key={i} style={{ borderTop: "1px solid #f8fafc" }}>
+          <td style={{ ...td, paddingLeft: 24 }}>{r.code ? <span style={{ color: C.muted, marginRight: 8, fontVariantNumeric: "tabular-nums" }}>{r.code}</span> : null}{r.name}</td>
+          <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(r.amount)}</td>
+        </tr>
+      ))}
+      {total != null && (
+        <tr style={{ borderTop: "1px solid #e5e7eb", fontWeight: 700 }}>
+          <td style={td}>Total {label.toLowerCase()}</td>
+          <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(total)}</td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+function GlIncomeStatement({ report }) {
+  return (
+    <GlReportShell title="Income statement">
+      <table style={tableStyle}>
+        <tbody>
+          <GlSection label="Revenue" rows={report.revenue} total={report.totalRevenue} />
+          <GlSection label="Cost of goods sold" rows={report.cogs} total={report.totalCogs} />
+          <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 700 }}>
+            <td style={td}>Gross profit</td>
+            <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(report.grossProfit)}</td>
+          </tr>
+          <GlSection label="Expenses" rows={report.expenses} total={report.totalExpense} />
+          <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 800, fontSize: 15 }}>
+            <td style={td}>Net income</td>
+            <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", color: report.netIncome >= 0 ? "#166534" : "#991b1b" }}>{glFmt(report.netIncome)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </GlReportShell>
+  );
+}
+
+function GlBalanceSheet({ report }) {
+  return (
+    <GlReportShell title="Balance sheet" balanced={report.balanced}>
+      <table style={tableStyle}>
+        <tbody>
+          <GlSection label="Assets" rows={report.assets} total={report.totalAssets} />
+          <GlSection label="Liabilities" rows={report.liabilities} total={report.totalLiabilities} />
+          <GlSection label="Equity" rows={report.equity} total={report.totalEquity} />
+          <tr style={{ borderTop: "2px solid #e5e7eb", fontWeight: 800, fontSize: 15 }}>
+            <td style={td}>Liabilities + equity</td>
+            <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(report.totalLiabEquity)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </GlReportShell>
+  );
+}
+
+function GlAccountModal({ companyId, onClose, onSaved }) {
+  const [form, setForm] = useState({ code: "", name: "", type: "expense", subtype: "", contra: false });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/gl/accounts`, { method: "POST", body: JSON.stringify(form) });
+      onSaved();
+    } catch (e) { setError(e.message); setSubmitting(false); }
+  }
+  return (
+    <Modal title="Add account" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Row>
+        <Field label="Code"><input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} placeholder="e.g. 6700" style={input} /></Field>
+        <Field label="Type">
+          <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} style={input}>
+            {Object.entries(GL_TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </Row>
+      <Field label="Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Account name" style={input} /></Field>
+      <Field label="Subtype (optional)"><input value={form.subtype} onChange={(e) => setForm({ ...form, subtype: e.target.value })} style={input} /></Field>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: C.inkSoft, marginBottom: 16 }}>
+        <input type="checkbox" checked={form.contra} onChange={(e) => setForm({ ...form, contra: e.target.checked })} />
+        Contra account (balance sits on the opposite side of its type)
+      </label>
+      <button onClick={save} disabled={submitting} style={btnPrimary}>
+        {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Add account"}
+      </button>
+    </Modal>
+  );
+}
+
+function GlJournalEntryModal({ companyId, accounts, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const blank = () => ({ account_id: "", description: "", debit: "", credit: "" });
+  const [date, setDate] = useState(today);
+  const [memo, setMemo] = useState("");
+  const [reference, setReference] = useState("");
+  const [lines, setLines] = useState([blank(), blank()]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  function setLine(i, patch) { setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l))); }
+  function addLine() { setLines((ls) => [...ls, blank()]); }
+  function removeLine(i) { setLines((ls) => ls.length > 2 ? ls.filter((_, j) => j !== i) : ls); }
+
+  const totalDebit = lines.reduce((s, l) => s + (Number(l.debit) || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + (Number(l.credit) || 0), 0);
+  const balanced = Math.round((totalDebit - totalCredit) * 100) === 0 && totalDebit > 0;
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      const payload = {
+        date, memo, reference,
+        lines: lines
+          .filter((l) => l.account_id && (Number(l.debit) || Number(l.credit)))
+          .map((l) => ({ account_id: l.account_id, description: l.description, debit: Number(l.debit) || 0, credit: Number(l.credit) || 0 })),
+      };
+      await api(`/api/teebeepay/companies/${companyId}/gl/journal`, { method: "POST", body: JSON.stringify(payload) });
+      onSaved();
+    } catch (e) { setError(e.message); setSubmitting(false); }
+  }
+
+  return (
+    <Modal title="New journal entry" wide onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Row>
+        <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={input} /></Field>
+        <Field label="Reference (optional)"><input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Invoice #, cheque #…" style={input} /></Field>
+      </Row>
+      <Field label="Memo"><input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="What is this entry for?" style={input} /></Field>
+
+      <div style={{ marginTop: 6, marginBottom: 8, fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06 }}>Lines</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {lines.map((l, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "1.6fr 1.4fr 0.9fr 0.9fr auto", gap: 8, alignItems: "center" }}>
+            <select value={l.account_id} onChange={(e) => setLine(i, { account_id: e.target.value })} style={{ ...input, padding: "8px 10px" }}>
+              <option value="">Account…</option>
+              {accounts.map((a) => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
+            </select>
+            <input value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} placeholder="Description" style={{ ...input, padding: "8px 10px" }} />
+            <input type="number" min="0" step="0.01" value={l.debit} onChange={(e) => setLine(i, { debit: e.target.value, credit: e.target.value ? "" : l.credit })} placeholder="Debit" style={{ ...input, padding: "8px 10px", textAlign: "right" }} />
+            <input type="number" min="0" step="0.01" value={l.credit} onChange={(e) => setLine(i, { credit: e.target.value, debit: e.target.value ? "" : l.debit })} placeholder="Credit" style={{ ...input, padding: "8px 10px", textAlign: "right" }} />
+            <button onClick={() => removeLine(i)} disabled={lines.length <= 2} style={{ ...btnGhostSmall, padding: "6px 8px", opacity: lines.length <= 2 ? 0.4 : 1 }}><X size={14} /></button>
+          </div>
+        ))}
+      </div>
+      <button onClick={addLine} style={{ ...btnGhostSmall, marginTop: 8 }}><Plus size={14} /> Add line</button>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 16, padding: "10px 14px", borderRadius: 8, background: "#fafbfc", border: "1px solid #f0f1f4" }}>
+        <span style={{ fontSize: 13 }}>Debits <strong style={{ fontVariantNumeric: "tabular-nums" }}>{glFmt(totalDebit)}</strong></span>
+        <span style={{ fontSize: 13 }}>Credits <strong style={{ fontVariantNumeric: "tabular-nums" }}>{glFmt(totalCredit)}</strong></span>
+        <span style={{ marginLeft: "auto", fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 999,
+          background: balanced ? "#dcfce7" : "#fef3c7", color: balanced ? "#166534" : "#92400e" }}>
+          {balanced ? "Balanced" : `Out by ${glFmt(Math.abs(totalDebit - totalCredit))}`}
+        </span>
+      </div>
+
+      <button onClick={save} disabled={submitting || !balanced} style={{ ...btnPrimary, marginTop: 16, opacity: !balanced ? 0.6 : 1 }}>
+        {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Posting…</> : "Post entry"}
+      </button>
+    </Modal>
   );
 }
 
