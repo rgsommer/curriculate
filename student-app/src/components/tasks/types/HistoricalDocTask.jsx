@@ -422,19 +422,51 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
         </div>
 
         {/* Done-reading button — let readers move on when ready instead of
-            waiting out the timer (tester: "make it a click button to next"). */}
-        <button
-          type="button"
-          onClick={finishReadingEarly}
-          style={{
-            position: "absolute", bottom: 16, left: 20, zIndex: 12,
-            padding: "10px 18px", borderRadius: 999, border: "none",
-            background: "#16a34a", color: "#fff", fontWeight: 800, fontSize: "0.9rem",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.4)", cursor: "pointer",
-          }}
-        >
-          ✓ Done reading — continue
-        </button>
+            waiting out the timer (tester: "make it a click button to next").
+            BUT lock it for the first MIN_READ_SECONDS so students can't tap
+            straight past the document — they need to actually read it
+            (teacher: "should not be able to tap through before 1 minute;
+            something to encourage the actual reading of the article"). */}
+        {(() => {
+          const MIN_READ_SECONDS = 60;
+          // Cap the minimum at the actual viewing budget so a very short
+          // viewingSec doesn't trap the student past the timer's expiry.
+          const minRead = Math.min(MIN_READ_SECONDS, Math.max(0, viewingSec - 1));
+          const elapsed = Math.max(0, viewingSec - (typeof secondsLeft === "number" ? secondsLeft : viewingSec));
+          const unlockIn = Math.max(0, minRead - elapsed);
+          const canSkip = unlockIn === 0;
+          return (
+            <button
+              type="button"
+              onClick={canSkip ? finishReadingEarly : undefined}
+              disabled={!canSkip}
+              title={canSkip ? "Move on to the analysis questions" : `Keep reading the document — unlocks in ${unlockIn}s`}
+              style={{
+                position: "absolute", bottom: 16, left: 20, zIndex: 12,
+                padding: "10px 18px", borderRadius: 999, border: "none",
+                background: canSkip ? "#16a34a" : "rgba(75,85,99,0.85)",
+                color: "#fff",
+                fontWeight: 800,
+                fontSize: "0.9rem",
+                boxShadow: "0 4px 16px rgba(0,0,0,0.4)",
+                cursor: canSkip ? "pointer" : "not-allowed",
+                opacity: canSkip ? 1 : 0.95,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+              }}
+            >
+              {canSkip ? (
+                <>✓ Done reading — continue</>
+              ) : (
+                <>
+                  <span aria-hidden="true">📖</span>
+                  Keep reading — unlocks in <span style={{ fontVariantNumeric: "tabular-nums" }}>{unlockIn}s</span>
+                </>
+              )}
+            </button>
+          );
+        })()}
 
         {/* Instruction + document info overlay (collapsible on small screens) */}
         <div style={{
