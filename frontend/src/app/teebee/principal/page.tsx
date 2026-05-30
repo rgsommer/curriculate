@@ -31,7 +31,7 @@ const C = {
 
 type Platform = {
   name: string;
-  status: "live" | "soon";
+  status: "live" | "soon" | "demo";
   desc: string;
   target: string;
   fees: string;
@@ -52,29 +52,33 @@ const PLATFORMS: Platform[] = [
   {
     name: "Tee Bee Audit",
     status: "live",
-    desc: "AI-assisted audit — reconciliations and anomaly checks, CPA reviews and signs the opinion.",
+    desc: "AI-assisted audit — reconciliations and anomaly checks, plus planning (materiality, risk register, working papers) and CPA sign-off.",
     target: "Companies needing statutory audits, audit-readiness, or IRC due diligence.",
     fees: "From K5,000 per engagement, scaled to size and complexity.",
     href: "/audit",
     hrefLabel: "audit",
   },
   {
-    name: "Taxation",
-    status: "soon",
-    desc: "Return preparation and lodgement, tax planning, and IRC compliance workflow.",
+    name: "Tee Bee Tax",
+    status: "demo",
+    desc: "Company income tax, individual income tax and GST — prepare, review and file with IRC rates built in.",
     target: "Businesses and individuals needing IRC returns and planning.",
     fees: "Pricing to be confirmed.",
+    href: "/teebee-tax/app",
+    hrefLabel: "teebee-tax/app",
   },
   {
-    name: "Loan Preparation",
-    status: "soon",
-    desc: "Assemble lender-ready financial packs from a client's books.",
+    name: "Tee Bee Loans",
+    status: "demo",
+    desc: "Score a client's books against lender benchmarks (DSCR, gearing, liquidity), close the gaps, assemble the financing pack.",
     target: "SMEs applying for bank or development finance.",
     fees: "Pricing to be confirmed.",
+    href: "/teebee-loans/app",
+    hrefLabel: "teebee-loans/app",
   },
 ];
 
-type Walk = { name: string; status: "live" | "soon"; href?: string; steps: string };
+type Walk = { name: string; status: "live" | "soon" | "demo"; href?: string; steps: string };
 
 const WALKTHROUGH: Walk[] = [
   {
@@ -89,17 +93,28 @@ const WALKTHROUGH: Walk[] = [
   {
     name: "Tee Bee Audit",
     status: "live",
-    href: "/audit",
+    href: "/audit/app",
     steps:
-      "Open the landing page for the pitch, then the working console at /audit/app to run an " +
-      "engagement. Manage engagements and review findings at /audit/admin.",
+      "Open /audit for the pitch, then the working console at /audit/app to run an engagement — " +
+      "set materiality, work the risk register, and sign off the working papers. Manage the queue " +
+      "and review findings at /audit/admin.",
   },
   {
-    name: "Taxation · Loan Preparation",
-    status: "soon",
+    name: "Tee Bee Tax",
+    status: "demo",
+    href: "/teebee-tax/app",
     steps:
-      "In design — not yet clickable. The accounting data that feeds them already lives in the " +
-      "General Ledger, so these slot on top once their workflows are built.",
+      "Sign in, then New return — pick company income tax, individual, or GST. Enter the figures and " +
+      "the computation scores live; move it draft → prepared → reviewed → filed.",
+  },
+  {
+    name: "Tee Bee Loans",
+    status: "demo",
+    href: "/teebee-loans/app",
+    steps:
+      "Sign in, then New application — enter the facility and the client's financials. You get a " +
+      "0–100 loan-readiness score with strengths and gaps, a package checklist, and an " +
+      "intake → assessed → package-ready → submitted pipeline.",
   },
 ];
 
@@ -216,11 +231,7 @@ function PlatformCard({ p }: { p: Platform }) {
     <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: "14px 16px", background: p.status === "soon" ? C.cream : C.paper, opacity: p.status === "soon" ? 0.92 : 1 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <span style={{ fontWeight: 800, fontSize: 16, fontFamily: "Georgia, serif" }}>{p.name}</span>
-        {p.status === "soon" ? (
-          <span style={{ fontSize: 10, fontWeight: 700, color: C.muted, background: "#eef0f3", padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: 0.06 }}>Coming soon</span>
-        ) : (
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#166534", background: "#dcfce7", padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: 0.06 }}>Live</span>
-        )}
+        <StatusBadge status={p.status} />
       </div>
       <div style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.5 }}>{p.desc}</div>
       <Row label="Client">{p.target}</Row>
@@ -231,6 +242,20 @@ function PlatformCard({ p }: { p: Platform }) {
         </Link>
       )}
     </div>
+  );
+}
+
+function StatusBadge({ status }: { status: "live" | "soon" | "demo" }) {
+  const map = {
+    live: { label: "Live", color: "#166534", bg: "#dcfce7" },
+    demo: { label: "Demo", color: "#92400e", bg: C.goldSoft },
+    soon: { label: "Coming soon", color: C.muted, bg: "#eef0f3" },
+  } as const;
+  const s = map[status];
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, color: s.color, background: s.bg, padding: "3px 8px", borderRadius: 999, textTransform: "uppercase", letterSpacing: 0.06 }}>
+      {s.label}
+    </span>
   );
 }
 
