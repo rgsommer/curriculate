@@ -1,0 +1,45 @@
+<svg viewBox="0 0 800 640" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Modern mixed-use development">
+  <defs>
+    <linearGradient id="t-sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#16273a"/><stop offset="1" stop-color="#0a141f"/>
+    </linearGradient>
+    <linearGradient id="t-glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#21364d"/><stop offset="1" stop-color="#16273a"/>
+    </linearGradient>
+    <linearGradient id="t-glass2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#27405a"/><stop offset="1" stop-color="#1a2d42"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="640" fill="url(#t-sky)"/>
+  <circle cx="640" cy="130" r="150" fill="#c79a4b" opacity="0.16"/>
+  <circle cx="640" cy="130" r="58" fill="#d9b977" opacity="0.55"/>
+  <!-- back towers -->
+  <rect x="70"  y="250" width="110" height="390" fill="url(#t-glass)"/>
+  <rect x="600" y="210" width="130" height="430" fill="url(#t-glass)"/>
+  <!-- main tower -->
+  <rect x="300" y="120" width="190" height="520" fill="url(#t-glass2)"/>
+  <rect x="300" y="120" width="190" height="14" fill="#c79a4b"/>
+  <!-- mid tower -->
+  <rect x="200" y="300" width="120" height="340" fill="url(#t-glass)"/>
+  <rect x="470" y="280" width="140" height="360" fill="url(#t-glass)"/>
+  <!-- window grids -->
+  <g fill="#3a587a" opacity="0.6">
+    <g>
+      <rect x="318" y="150" width="26" height="34"/><rect x="356" y="150" width="26" height="34"/><rect x="394" y="150" width="26" height="34"/><rect x="432" y="150" width="26" height="34"/>
+      <rect x="318" y="200" width="26" height="34"/><rect x="356" y="200" width="26" height="34"/><rect x="394" y="200" width="26" height="34"/><rect x="432" y="200" width="26" height="34"/>
+      <rect x="318" y="250" width="26" height="34"/><rect x="356" y="250" width="26" height="34"/><rect x="394" y="250" width="26" height="34"/><rect x="432" y="250" width="26" height="34"/>
+      <rect x="318" y="300" width="26" height="34"/><rect x="356" y="300" width="26" height="34"/><rect x="394" y="300" width="26" height="34"/><rect x="432" y="300" width="26" height="34"/>
+      <rect x="318" y="350" width="26" height="34"/><rect x="356" y="350" width="26" height="34"/><rect x="394" y="350" width="26" height="34"/><rect x="432" y="350" width="26" height="34"/>
+      <rect x="318" y="400" width="26" height="34"/><rect x="356" y="400" width="26" height="34"/><rect x="394" y="400" width="26" height="34"/><rect x="432" y="400" width="26" height="34"/>
+    </g>
+  </g>
+  <!-- lit windows accent -->
+  <g fill="#d9b977" opacity="0.85">
+    <rect x="356" y="200" width="26" height="34"/><rect x="432" y="300" width="26" height="34"/>
+    <rect x="318" y="350" width="26" height="34"/><rect x="394" y="400" width="26" height="34"/>
+  </g>
+  <g fill="#2d4a68" opacity="0.7">
+    <rect x="86"  y="280" width="78" height="14"/><rect x="86" y="320" width="78" height="14"/><rect x="86" y="360" width="78" height="14"/><rect x="86" y="400" width="78" height="14"/><rect x="86" y="440" width="78" height="14"/>
+    <rect x="616" y="240" width="98" height="16"/><rect x="616" y="286" width="98" height="16"/><rect x="616" y="332" width="98" height="16"/><rect x="616" y="378" width="98" height="16"/><rect x="616" y="424" width="98" height="16"/>
+  </g>
+</svg>

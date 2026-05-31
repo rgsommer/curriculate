@@ -21,6 +21,13 @@ const nextConfig = {
       { source: "/oakhill/academics",  destination: "/oakhill/academics.html" },
       { source: "/oakhill/admissions", destination: "/oakhill/admissions.html" },
       { source: "/oakhill/contact",    destination: "/oakhill/contact.html" },
+      // Street Properties microsite — static files in public/streetproperties/.
+      // Map clean URLs to the underlying .html files.
+      { source: "/streetproperties",           destination: "/streetproperties/index.html" },
+      { source: "/streetproperties/about",     destination: "/streetproperties/about.html" },
+      { source: "/streetproperties/services",  destination: "/streetproperties/services.html" },
+      { source: "/streetproperties/portfolio", destination: "/streetproperties/portfolio.html" },
+      { source: "/streetproperties/contact",   destination: "/streetproperties/contact.html" },
     ];
   },
   async redirects() {
