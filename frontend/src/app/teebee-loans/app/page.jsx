@@ -201,7 +201,17 @@ function Dashboard({ apps, meta, onReload, onPick }) {
       )}
 
       {apps.length === 0 ? (
-        <div style={{ ...card, textAlign: "center", color: C.muted, padding: 40 }}>No applications yet. Start one from client intake.</div>
+        <div style={{ ...card, textAlign: "center", color: C.muted, padding: 40 }}>
+          No applications yet. Start one from client intake.
+          <div style={{ marginTop: 14 }}>
+            <button
+              onClick={async () => { try { await api("/api/loans/seed-test-data", { method: "POST" }); await onReload(); } catch (e) { alert(e.message); } }}
+              style={{ ...btnPrimaryInline, background: "#fff", color: C.navy, border: "1px solid " + C.line }}
+            >
+              Load sample data
+            </button>
+          </div>
+        </div>
       ) : (
         <div style={{ ...card, padding: 0, overflow: "hidden" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13.5 }}>

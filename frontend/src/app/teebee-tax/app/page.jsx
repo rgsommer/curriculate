@@ -221,6 +221,14 @@ function Dashboard({ me, returns, onReload, onPick }) {
       {returns.length === 0 ? (
         <div style={{ ...card, textAlign: "center", color: C.muted, padding: 40 }}>
           No returns yet. Create one to start a computation.
+          <div style={{ marginTop: 14 }}>
+            <button
+              onClick={async () => { try { await api("/api/tax/seed-test-data", { method: "POST" }); await onReload(); } catch (e) { alert(e.message); } }}
+              style={{ ...btnPrimaryInline, background: "#fff", color: C.navy, border: "1px solid " + C.line }}
+            >
+              Load sample data
+            </button>
+          </div>
         </div>
       ) : (
         <div style={{ ...card, padding: 0, overflow: "hidden" }}>
