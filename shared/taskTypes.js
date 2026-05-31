@@ -2988,26 +2988,43 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    - Create two short text passages — Version A ("original") and Version B
-      ("modified") — that are nearly identical except for 6–10 deliberate,
-      unambiguous changes (rewording, swapped facts, changed dates/numbers,
-      altered names). Each change must be a real spotting target a student
-      can call out.
-    - Provide "differences": an array of strings, each describing one of the
-      changes ("Henry was changed to William", "1812 was changed to 1813").
-    - Optional: "mode": "text" (default).
+    - PRIMARY output (text mode — always required):
+        Create two short text passages — Version A ("original") and Version B
+        ("modified") — that are nearly identical except for 6–10 deliberate,
+        unambiguous changes (rewording, swapped facts, changed dates/numbers,
+        altered names). Each change must be a real spotting target a student
+        can call out.
+        Provide "differences": an array of strings, each describing one of
+        the changes ("Henry was changed to William", "1812 was changed to
+        1813").
+        Optional: "mode": "text" (default).
 
-    NOTE — the legacy image (labeled-tile-grid) mode is NOT what teachers
-    want here; the right experience is true image-to-image spot-the-
-    difference, which requires curated/generated images and is out of
-    scope for text-based generation. Do NOT emit "mode": "image" or a
-    "labels" array unless explicitly asked.
+    - SECONDARY (optional) — "imageScenePrompt" for true image-to-image
+      spot-the-difference. Tester (2026-05-31): "wanted it to be a image
+      difference detection". If the topic has a visually depictable scene,
+      include:
+        "imageScenePrompt": "<1–2 sentence vivid description of a single
+                              scene tied to the topic, suitable for an AI
+                              image model. Brightly lit, plain background,
+                              several distinct objects, NO text/numbers in
+                              the picture. e.g. 'A pioneer cabin clearing at
+                              dusk with a stone fireplace, a wagon, an axe
+                              leaning on a stump, and a horse tied to a
+                              tree.'>"
+      The server will try to generate two near-identical images (Image A +
+      Image B with 5 controlled changes) from this prompt at taskset-creation
+      time. On success the student plays the real image-pair spot-the-
+      difference; on failure (no image-gen keys, etc.) the text passages
+      above are the safe fallback. NEVER emit "mode":"image" or a "labels"
+      array yourself — those legacy paths are deprecated.
 
     Common failure prevention:
     - Keep "original" and "modified" similar length and similar phrasing
       except for the deliberate differences.
     - Each difference must be objectively verifiable.
     - Ensure prompts are student-facing instructions (what to do).
+    - Only include "imageScenePrompt" when the topic is visually concrete;
+      skip it for abstract topics where a single scene wouldn't make sense.
     `,
 },
 

@@ -291,45 +291,65 @@ export async function pregenerateTaskImages(task, { allowAi = true } = {}) {
   const cfg = task.config || {};
 
   try {
-    // diff-detective "scene" mode: TRUE spot-the-difference via 2-call image-
-    // to-image (generate base → introduce N identifiable changes). Produces a
-    // realistic same-scene A/B pair + a model-authored answer key. Honors the
-    // AI toggle; on ANY failure we leave the deterministic SVG scene (already
-    // baked by normalizeTaskByType, with its exact answer key) untouched.
-    if (
-      type === "diff-detective" &&
-      allowAi &&
-      !task.subjectA &&
-      (task.mode === "scene" || task.mode === "image" || task.sceneItems)
-    ) {
+    // diff-detective TRUE spot-the-difference: 2-call image-to-image
+    // (generate base → introduce N identifiable changes). Produces a realistic
+    // same-scene A/B pair + a model-authored answer key. Honors the AI toggle.
+    //
+    // Trigger sources, in priority:
+    //   1. task.imageScenePrompt   — new aiPrompt path (text-mode task with
+    //                                an optional scene description that the
+    //                                AI thinks is depictable).
+    //   2. task.mode === "scene"|"image" with sceneItems — legacy path used
+    //                                by the static demo's labeled-tile-grid;
+    //                                here we try to UPGRADE that to a real
+    //                                image pair instead of just rendering
+    //                                the tile-grid SVG.
+    //
+    // On image-gen success: the task is mode:"image" with real S3-hosted
+    // imageA/imageB and a Gemini-authored differences[] answer key.
+    // On failure: the task is left in its existing state (text mode falls
+    // through to its own renderer; legacy scene-mode falls back to the SVG
+    // that normalizeTaskByType already baked). NEVER worse off.
+    if (type === "diff-detective" && allowAi && !task.subjectA) {
+      const scenePrompt = String(task.imageScenePrompt || "").trim();
       const items = Array.isArray(task.sceneItems)
         ? task.sceneItems
         : typeof task.sceneItems === "string"
         ? task.sceneItems.split(/\s*\|\s*|\s*,\s*/)
         : [];
       const itemList = items.map((s) => String(s || "").trim()).filter(Boolean);
-      const basePrompt =
-        (itemList.length ? `a scene containing: ${itemList.join(", ")}` : "") ||
-        String(task.title || task.prompt || "a simple classroom scene").slice(0, 200);
-      const diffCount = Number(task.totalDifferences) || 5;
+      const hasModeImage = task.mode === "scene" || task.mode === "image";
+      const shouldUpgrade = scenePrompt || hasModeImage || itemList.length >= 3;
 
-      const pair = await genDiffDetectivePair({ basePrompt, diffCount });
-      if (pair) {
-        const [a, b] = await Promise.all([
-          uploadImage(pair.a.buffer, pair.a.contentType, "diff-a"),
-          uploadImage(pair.b.buffer, pair.b.contentType, "diff-b"),
-        ]);
-        if (a && b) {
-          task.mode = "image";
-          task.imageA = a.url; task.imageAKey = a.key;
-          task.imageB = b.url; task.imageBKey = b.key;
-          task.labelA = "Image A";
-          task.labelB = "Image B";
-          task.differences = pair.differences;
-          task.totalDifferences = pair.differences.length;
+      if (shouldUpgrade) {
+        const basePrompt =
+          scenePrompt ||
+          (itemList.length ? `a scene containing: ${itemList.join(", ")}` : "") ||
+          String(task.title || task.prompt || "a simple classroom scene").slice(0, 200);
+        const diffCount = Number(task.totalDifferences) || 5;
+
+        const pair = await genDiffDetectivePair({ basePrompt, diffCount });
+        if (pair) {
+          const [a, b] = await Promise.all([
+            uploadImage(pair.a.buffer, pair.a.contentType, "diff-a"),
+            uploadImage(pair.b.buffer, pair.b.contentType, "diff-b"),
+          ]);
+          if (a && b) {
+            task.mode = "image";
+            task.imageA = a.url; task.imageAKey = a.key;
+            task.imageB = b.url; task.imageBKey = b.key;
+            task.labelA = "Image A";
+            task.labelB = "Image B";
+            task.differences = pair.differences;
+            task.totalDifferences = pair.differences.length;
+            return task;
+          }
         }
+        // else: fall through. For legacy scene-mode tasks the deterministic
+        // SVG from normalizeTaskByType still renders. For new text-mode
+        // tasks with imageScenePrompt, the original/modified text fields
+        // still render the safe text-diff experience.
       }
-      // else: keep the deterministic SVG scene from normalizeTaskByType.
       return task;
     }
 
