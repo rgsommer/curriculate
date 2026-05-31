@@ -2999,24 +2999,45 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         1813").
         Optional: "mode": "text" (default).
 
-    - SECONDARY (optional) — "imageScenePrompt" for true image-to-image
-      spot-the-difference. Tester (2026-05-31): "wanted it to be a image
-      difference detection". If the topic has a visually depictable scene,
-      include:
-        "imageScenePrompt": "<1–2 sentence vivid description of a single
-                              scene tied to the topic, suitable for an AI
-                              image model. Brightly lit, plain background,
-                              several distinct objects, NO text/numbers in
-                              the picture. e.g. 'A pioneer cabin clearing at
-                              dusk with a stone fireplace, a wagon, an axe
-                              leaning on a stump, and a horse tied to a
-                              tree.'>"
-      The server will try to generate two near-identical images (Image A +
-      Image B with 5 controlled changes) from this prompt at taskset-creation
-      time. On success the student plays the real image-pair spot-the-
-      difference; on failure (no image-gen keys, etc.) the text passages
-      above are the safe fallback. NEVER emit "mode":"image" or a "labels"
-      array yourself — those legacy paths are deprecated.
+    - SECONDARY (strongly preferred) — "imageScenePrompt" for true image-
+      to-image spot-the-difference. Tester (2026-05-31): "wanted it to be
+      a image difference detection… these should be topic-relevant images,
+      of course".
+
+      "imageScenePrompt": "<1–2 sentence vivid description of a single
+                            scene that DEPICTS the lesson topic and weaves
+                            in at least 2–3 SPECIFIC vocabulary terms / named
+                            entities / places from the vocab list. Brightly
+                            lit, plain background, several distinct objects,
+                            NO text/numbers/labels in the picture itself.
+                            Use concrete nouns the image model can draw.>"
+
+      Examples — note how each names real vocab terms from its lesson:
+        War of 1812:
+          "British soldiers in red coats and a Canadian militiaman firing
+           muskets from the rocky cliff at Queenston Heights, with a stone
+           fort and a small wooden cannon in the foreground."
+        Cell biology:
+          "A cross-section diagram of a plant cell showing a large central
+           vacuole, several oval chloroplasts, a round nucleus, and the
+           thick cell wall, in flat textbook-style illustration."
+        Acadian Expulsion:
+          "An Acadian family with a wooden cart loaded with belongings
+           standing on a Nova Scotia beach as a British ship waits offshore
+           under a grey sky."
+
+      Anti-examples — do NOT emit generic scenes that could be from any
+      topic ("a busy classroom", "children playing outside"). The whole
+      point is topic-relevance — if you can't name specific lesson terms in
+      the scene, OMIT imageScenePrompt entirely and stay with text mode.
+
+      The server will then generate two near-identical images (Image A +
+      Image B with 2–3 controlled changes) from this prompt at taskset-
+      creation time. On success the student plays the real image-pair
+      spot-the-difference; on failure (no image-gen keys, abstract topic,
+      etc.) the text passages above are the safe fallback. NEVER emit
+      "mode":"image" or a "labels" array yourself — those legacy paths are
+      deprecated.
 
     Common failure prevention:
     - Keep "original" and "modified" similar length and similar phrasing
