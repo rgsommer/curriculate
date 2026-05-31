@@ -117,9 +117,6 @@ export async function GET(req: Request) {
     64 + halfW + 32, newY - 50, halfW, 11);
 
   // Footer
-  p1.drawText("Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
-    { x: 0, y: 30, size: 9, font: reg, color: MUTED, maxWidth: W,
-      lineHeight: 12 });
   centerText(p1, reg, 9, MUTED,
     "Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
     30, W);
