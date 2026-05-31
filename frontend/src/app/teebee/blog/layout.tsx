@@ -3,8 +3,8 @@ import type { Metadata } from "next";
 import Script from "next/script";
 
 export const metadata: Metadata = {
-  title: { template: "%s · Tee Bee Accountants Blog", default: "TBA Blog · PNG accounting & payroll" },
-  description: "Tee Bee Accountants Ltd blog — practical guides to PNG IRC compliance, NASFund filings, payroll, and SME finance.",
+  title: { template: "%s · TeeBee Accountants Blog", default: "TBA Blog · PNG accounting & payroll" },
+  description: "TeeBee Accountants Ltd blog — practical guides to PNG IRC compliance, NASFund filings, payroll, and SME finance.",
   alternates: { canonical: "https://www.curriculate.net/teebee/blog" },
   robots: { index: true, follow: true },
 };

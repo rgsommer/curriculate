@@ -41,11 +41,11 @@ const C = {
 
 const SERVICES = [
   { num: "01", icon: <ClipboardCheck size={22} />, title: "Audit & Assurance",
-    text: "Independent IFRS-compliant audits via Tee Bee Audit — our new AI-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete.",
-    href: "/audit", hrefLabel: "Explore Tee Bee Audit", badge: "Platform live" },
+    text: "Independent IFRS-compliant audits via TeeBee Audit — our new AI-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete.",
+    href: "/audit", hrefLabel: "Explore TeeBee Audit", badge: "Platform live" },
   { num: "02", icon: <Calculator size={22} />, title: "Taxation Services",
-    text: "Strategic tax planning, return preparation and lodgement, and IRC compliance — keeping your tax position optimised and fully aligned with IRC requirements. Explore it on Tee Bee Tax.",
-    href: "/teebee-tax", hrefLabel: "Explore Tee Bee Tax", badge: "Platform live" },
+    text: "Strategic tax planning, return preparation and lodgement, and IRC compliance — keeping your tax position optimised and fully aligned with IRC requirements. Explore it on TeeBee Tax.",
+    href: "/teebee-tax", hrefLabel: "Explore TeeBee Tax", badge: "Platform live" },
   { num: "03", icon: <FileText size={22} />, title: "Accounting Services",
     text: "Cloud bookkeeping, a full double-entry General Ledger, financial reporting and management accounting — plus fortnightly payroll. Run your books and your pay run in one place with TeebeePay.",
     href: "/teebeepay", hrefLabel: "Explore TeebeePay", badge: "Platform live" },
@@ -55,8 +55,8 @@ const SERVICES = [
   { num: "05", icon: <TrendingUp size={22} />, title: "Business Advisory",
     text: "Strategic guidance on growth, financial planning, risk management, and operational efficiency improvements." },
   { num: "06", icon: <Landmark size={22} />, title: "Loan Preparation",
-    text: "Lender-ready financial packs assembled straight from your books — statements, projections and supporting schedules — so your bank or development-finance application lands complete. Explore it on Tee Bee Loans.",
-    href: "/teebee-loans", hrefLabel: "Explore Tee Bee Loans", badge: "Platform live" },
+    text: "Lender-ready financial packs assembled straight from your books — statements, projections and supporting schedules — so your bank or development-finance application lands complete. Explore it on TeeBee Loans.",
+    href: "/teebee-loans", hrefLabel: "Explore TeeBee Loans", badge: "Platform live" },
   { num: "07", icon: <Receipt size={22} />, title: "Statutory Compliance",
     text: "Company secretarial services, IPA annual returns, and full regulatory compliance support to keep your business in good standing." },
   { num: "08", icon: <Briefcase size={22} />, title: "Financial Consulting",
@@ -66,7 +66,7 @@ const SERVICES = [
 const TESTIMONIALS = [
   { initials: "JM", quote: "TBA has been instrumental in streamlining our financial operations. Their expertise in PNG taxation has saved us significant costs while ensuring full compliance.",
     name: "John Maino", role: "Managing Director, Trade PNG Ltd" },
-  { initials: "SK", quote: "Professional, reliable, and always available when we need them. The team at Tee Bee Accountants truly understands the needs of businesses operating in PNG.",
+  { initials: "SK", quote: "Professional, reliable, and always available when we need them. The team at TeeBee Accountants truly understands the needs of businesses operating in PNG.",
     name: "Sarah Kuri", role: "CFO, Pacific Resources" },
   { initials: "PT", quote: "Their audit services are thorough and their advisory insights have helped us make better business decisions. Highly recommended for any company in PNG.",
     name: "Peter Temu", role: "Owner, Highlands Construction" },
@@ -95,7 +95,7 @@ function SeoLd() {
   const org = {
     "@context": "https://schema.org",
     "@type": "AccountingService",
-    name: "Tee Bee Accountants Ltd",
+    name: "TeeBee Accountants Ltd",
     alternateName: "TBA",
     url: "https://www.curriculate.net/teebee",
     sameAs: ["https://www.teebeeaccountants.com.pg"],
@@ -119,14 +119,14 @@ function SeoLd() {
     "@context": "https://schema.org", "@type": "BreadcrumbList",
     itemListElement: [
       { "@type": "ListItem", position: 1, name: "Home", item: "https://www.curriculate.net" },
-      { "@type": "ListItem", position: 2, name: "Tee Bee Accountants", item: "https://www.curriculate.net/teebee" },
+      { "@type": "ListItem", position: 2, name: "TeeBee Accountants", item: "https://www.curriculate.net/teebee" },
     ],
   };
   const services = {
     "@context": "https://schema.org", "@type": "ItemList",
     itemListElement: SERVICES.map((s, i) => ({
       "@type": "ListItem", position: i + 1,
-      item: { "@type": "Service", name: s.title, description: s.text, provider: { "@type": "AccountingService", name: "Tee Bee Accountants Ltd" } },
+      item: { "@type": "Service", name: s.title, description: s.text, provider: { "@type": "AccountingService", name: "TeeBee Accountants Ltd" } },
     })),
   };
   return (
@@ -153,7 +153,7 @@ function TopBar() {
         <a href="#home" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", color: C.ink }}>
           <TbaLogo />
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: -0.3, lineHeight: 1.1 }}>Tee Bee Accountants</div>
+            <div style={{ fontSize: 17, fontWeight: 700, letterSpacing: -0.3, lineHeight: 1.1 }}>TeeBee Accountants</div>
             <div style={{ fontSize: 11, color: C.gold, fontWeight: 600, letterSpacing: 0.04, textTransform: "uppercase" }}>Professional services</div>
           </div>
         </a>
@@ -391,7 +391,7 @@ function Services() {
   );
 }
 
-/* ────────── Tee Bee Audit plug ────── */
+/* ────────── TeeBee Audit plug ────── */
 function AuditPlug() {
   return (
     <section style={{ padding: "60px 24px 24px", background: "#fff" }}>
@@ -408,7 +408,7 @@ function AuditPlug() {
             <ClipboardCheck size={13} /> New · AI-assisted audit
           </div>
           <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: -0.6, margin: 0, fontFamily: "Georgia, serif", color: C.ink }}>
-            Tee Bee Audit — faster audits, signed by your CPA.
+            TeeBee Audit — faster audits, signed by your CPA.
           </h2>
           <p style={{ fontSize: 16, color: C.inkSoft, lineHeight: 1.6, margin: "14px 0 22px", maxWidth: 540 }}>
             Upload your trial balance, GL and supporting files. Our software runs reconciliations,
@@ -420,7 +420,7 @@ function AuditPlug() {
             background: C.navy, color: "#fff", borderRadius: 10, fontWeight: 700,
             textDecoration: "none", fontSize: 15,
           }}>
-            Explore Tee Bee Audit <ArrowRight size={16} style={{ marginLeft: 8 }} />
+            Explore TeeBee Audit <ArrowRight size={16} style={{ marginLeft: 8 }} />
           </Link>
         </div>
         <div style={{ display: "grid", gap: 10 }}>
@@ -668,7 +668,7 @@ function Footer() {
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
               <TbaLogo />
-              <strong style={{ color: "#fff", fontSize: 17 }}>Tee Bee Accountants</strong>
+              <strong style={{ color: "#fff", fontSize: 17 }}>TeeBee Accountants</strong>
             </div>
             <p style={{ fontSize: 13, lineHeight: 1.6, margin: 0, maxWidth: 360 }}>
               Your trusted partner for professional accounting, audit, and business advisory services in Papua New Guinea.
@@ -679,7 +679,7 @@ function Footer() {
           <FooterCol heading="Products" items={[<Link key="tp" href="/teebeepay" style={{ color: "rgba(255,255,255,.7)", textDecoration: "none" }}>TeebeePay (payroll)</Link>]} />
         </div>
         <div style={{ borderTop: "1px solid rgba(255,255,255,.1)", marginTop: 36, paddingTop: 20, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12, fontSize: 12 }}>
-          <span>© {new Date().getFullYear()} Tee Bee Accountants Ltd. All rights reserved.</span>
+          <span>© {new Date().getFullYear()} TeeBee Accountants Ltd. All rights reserved.</span>
           <span>Registered with the PNG Accountants Registration Board</span>
         </div>
       </div>

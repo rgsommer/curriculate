@@ -51,7 +51,7 @@ export default function BlogIndex() {
               <circle cx="24" cy="24" r="23" fill={C.navy} />
               <text x="24" y="30" textAnchor="middle" fontFamily="Georgia, serif" fontSize="20" fontWeight="700" fill={C.gold}>TBA</text>
             </svg>
-            <strong style={{ fontSize: 16 }}>Tee Bee Accountants</strong>
+            <strong style={{ fontSize: 16 }}>TeeBee Accountants</strong>
           </Link>
           <div style={{ marginLeft: "auto", display: "flex", gap: 22 }}>
             <Link href="/teebee#services" style={{ color: C.inkSoft, fontSize: 14, textDecoration: "none", fontWeight: 500 }}>Services</Link>

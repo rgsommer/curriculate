@@ -93,7 +93,7 @@ export default function AuditAdminPage() {
             width: 32, height: 32, borderRadius: 8, background: C.gold, color: C.navy,
             display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800,
           }}>TBA</div>
-          <strong style={{ fontSize: 16 }}>Tee Bee Audit — Admin queue</strong>
+          <strong style={{ fontSize: 16 }}>TeeBee Audit — Admin queue</strong>
         </div>
         <button onClick={async () => {
           try {

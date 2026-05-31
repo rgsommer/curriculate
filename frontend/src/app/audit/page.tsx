@@ -1,4 +1,4 @@
-// /audit — Tee Bee Accountants audit-readiness platform landing + intake form.
+// /audit — TeeBee Accountants audit-readiness platform landing + intake form.
 "use client";
 import React, { useState } from "react";
 import Link from "next/link";
@@ -48,8 +48,8 @@ function TopBar() {
           display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, letterSpacing: -0.5,
         }}>TBA</div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>Tee Bee Audit</div>
-          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1, marginTop: 3 }}>Tee Bee Accountants Ltd</div>
+          <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>TeeBee Audit</div>
+          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1, marginTop: 3 }}>TeeBee Accountants Ltd</div>
         </div>
       </Link>
       <nav style={{ marginLeft: "auto", display: "flex", gap: 22, fontSize: 14, color: C.inkSoft }}>
@@ -131,7 +131,7 @@ function ValueBand() {
   return (
     <section style={{ padding: "72px 28px", background: "#fff" }}>
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-        <SectionEyebrow>Why Tee Bee Audit</SectionEyebrow>
+        <SectionEyebrow>Why TeeBee Audit</SectionEyebrow>
         <h2 style={h2}>An audit, but you spend a tenth of the time on it.</h2>
         <div style={{
           display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
@@ -375,11 +375,11 @@ function IntakeForm() {
             }}>
               {submitting
                 ? <><Loader2 size={16} className="tp-spin" style={{ marginRight: 6 }} /> Sending inquiry…</>
-                : <>Send inquiry to Tee Bee Accountants <ArrowRight size={16} /></>}
+                : <>Send inquiry to TeeBee Accountants <ArrowRight size={16} /></>}
             </button>
             <style>{`@keyframes tp-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } } .tp-spin { animation: tp-spin .9s linear infinite; }`}</style>
             <p style={{ fontSize: 11, color: C.muted, margin: "16px 0 0", lineHeight: 1.5 }}>
-              By submitting this form you consent to Tee Bee Accountants Ltd contacting you to discuss your audit.
+              By submitting this form you consent to TeeBee Accountants Ltd contacting you to discuss your audit.
               Your information is held confidentially under our professional obligations as a registered CPA firm.
             </p>
           </div>
@@ -394,7 +394,7 @@ function Trust() {
     <section style={{ padding: "60px 28px", background: "#fff" }}>
       <div style={{ maxWidth: 920, margin: "0 auto", textAlign: "center" }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, letterSpacing: 0.08, textTransform: "uppercase", marginBottom: 14 }}>
-          Tee Bee Accountants Ltd · CPA · 10+ years · 500+ clients
+          TeeBee Accountants Ltd · CPA · 10+ years · 500+ clients
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: 36, flexWrap: "wrap", fontSize: 14, color: C.inkSoft }}>
           <span><Building2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} /> Port Moresby, NCD, PNG</span>
@@ -413,7 +413,7 @@ function Footer() {
       fontSize: 13, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 14,
     }}>
       <div>
-        Tee Bee Accountants Ltd · Registered with the PNG Accountants Registration Board ·
+        TeeBee Accountants Ltd · Registered with the PNG Accountants Registration Board ·
         IRC-registered Tax Agent
       </div>
       <div>
@@ -460,13 +460,13 @@ function SeoStructuredData() {
   const ld = {
     "@context": "https://schema.org",
     "@type": "ProfessionalService",
-    name: "Tee Bee Audit — Tee Bee Accountants Ltd",
+    name: "TeeBee Audit — TeeBee Accountants Ltd",
     description:
-      "AI-assisted audit-readiness platform from Tee Bee Accountants. Statutory audits, tax due diligence, audit-readiness reviews, NGO/donor-fund audits, landowner company audits. CPA-signed opinion every time. PNG IRC and ARB compliant.",
+      "AI-assisted audit-readiness platform from TeeBee Accountants. Statutory audits, tax due diligence, audit-readiness reviews, NGO/donor-fund audits, landowner company audits. CPA-signed opinion every time. PNG IRC and ARB compliant.",
     address: { "@type": "PostalAddress", addressLocality: "Port Moresby", addressRegion: "NCD", addressCountry: "PG" },
     areaServed: "PG",
     url: "https://www.curriculate.net/audit",
-    provider: { "@type": "Organization", name: "Tee Bee Accountants Ltd" },
+    provider: { "@type": "Organization", name: "TeeBee Accountants Ltd" },
     serviceType: ["Audit and assurance", "IFRS compliance audit", "Tax compliance audit", "Audit-readiness review"],
   };
   return (

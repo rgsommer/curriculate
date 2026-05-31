@@ -11,7 +11,7 @@ import Link from "next/link";
 
 export const metadata: Metadata = {
   title: "Principal overview",
-  description: "Internal platform and pricing overview for Tee Bee Accountants. Unlisted.",
+  description: "Internal platform and pricing overview for TeeBee Accountants. Unlisted.",
   robots: { index: false, follow: false, nocache: true },
   alternates: {},
 };
@@ -50,7 +50,7 @@ const PLATFORMS: Platform[] = [
     hrefLabel: "teebeepay",
   },
   {
-    name: "Tee Bee Audit",
+    name: "TeeBee Audit",
     status: "live",
     desc: "AI-assisted audit — reconciliations and anomaly checks, plus planning (materiality, risk register, working papers) and CPA sign-off.",
     target: "Companies needing statutory audits, audit-readiness, or IRC due diligence.",
@@ -59,7 +59,7 @@ const PLATFORMS: Platform[] = [
     hrefLabel: "audit",
   },
   {
-    name: "Tee Bee Tax",
+    name: "TeeBee Tax",
     status: "demo",
     desc: "Company income tax, individual income tax and GST — prepare, review and file with IRC rates built in.",
     target: "Businesses and individuals needing IRC returns and planning.",
@@ -68,7 +68,7 @@ const PLATFORMS: Platform[] = [
     hrefLabel: "teebee-tax/app",
   },
   {
-    name: "Tee Bee Loans",
+    name: "TeeBee Loans",
     status: "demo",
     desc: "Score a client's books against lender benchmarks (DSCR, gearing, liquidity), close the gaps, assemble the financing pack.",
     target: "SMEs applying for bank or development finance.",
@@ -91,7 +91,7 @@ const WALKTHROUGH: Walk[] = [
       "journal entries, trial balance, income statement, balance sheet).",
   },
   {
-    name: "Tee Bee Audit",
+    name: "TeeBee Audit",
     status: "live",
     href: "/audit/app",
     steps:
@@ -100,7 +100,7 @@ const WALKTHROUGH: Walk[] = [
       "and review findings at /audit/admin.",
   },
   {
-    name: "Tee Bee Tax",
+    name: "TeeBee Tax",
     status: "demo",
     href: "/teebee-tax/app",
     steps:
@@ -108,7 +108,7 @@ const WALKTHROUGH: Walk[] = [
       "the computation scores live; move it draft → prepared → reviewed → filed.",
   },
   {
-    name: "Tee Bee Loans",
+    name: "TeeBee Loans",
     status: "demo",
     href: "/teebee-loans/app",
     steps:
@@ -151,7 +151,7 @@ export default function PrincipalOverview() {
             <Logo />
             <div>
               <div style={{ fontSize: 22, fontWeight: 800, fontFamily: "Georgia, serif", letterSpacing: -0.3, lineHeight: 1.1 }}>
-                Tee Bee — Principal overview
+                TeeBee — Principal overview
               </div>
               <div style={{ fontSize: 12, color: C.gold, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.08, marginTop: 2 }}>
                 Platforms · pricing · strategy
@@ -216,7 +216,7 @@ export default function PrincipalOverview() {
         {/* Footer */}
         <footer style={{ borderTop: `1px solid ${C.line}`, background: C.cream, padding: "16px 28px 20px" }}>
           <div style={{ fontWeight: 700, fontSize: 14 }}>Theresia Bob</div>
-          <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Principal (CPA) · Tee Bee Accountants Ltd</div>
+          <div style={{ fontSize: 12, color: C.muted, marginBottom: 8 }}>Principal (CPA) · TeeBee Accountants Ltd</div>
           <div style={{ fontSize: 12, color: C.navy, background: C.goldSoft, border: `1px solid ${C.gold}`, borderRadius: 8, padding: "8px 12px", display: "inline-block" }}>
             This page is unlisted. Share the URL only with people you trust.
           </div>

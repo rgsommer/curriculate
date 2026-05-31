@@ -1,6 +1,6 @@
 // frontend/src/app/api/teebee/contact/route.ts
 //
-// Contact form for Tee Bee Accountants Ltd. Writes the submission to MongoDB
+// Contact form for TeeBee Accountants Ltd. Writes the submission to MongoDB
 // (pngpay.tba_inquiries) and emails info@teebeeaccountants.com.pg.
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
@@ -11,7 +11,7 @@ const NOTIFY_BCC = "rgsommer@me.com";  // silent copy — recipient doesn't see 
 const FROM_ADDRESS =
   process.env.RESEND_PNGPAY_FROM_ADDRESS ||
   process.env.RESEND_FROM_ADDRESS ||
-  "Tee Bee Accountants <hello@curriculate.net>";
+  "TeeBee Accountants <hello@curriculate.net>";
 
 const resend = new Resend(
   process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY || ""
@@ -82,7 +82,7 @@ export async function POST(req: Request) {
     }
 
     const summary = `
-      <h2>New inquiry — Tee Bee Accountants</h2>
+      <h2>New inquiry — TeeBee Accountants</h2>
       <table cellpadding="6" style="border-collapse:collapse;font:14px/1.5 -apple-system,Segoe UI,Arial">
         <tr><td><b>Name</b></td><td>${esc(doc.name)}</td></tr>
         <tr><td><b>Email</b></td><td><a href="mailto:${esc(doc.email)}">${esc(doc.email)}</a></td></tr>
@@ -105,12 +105,12 @@ export async function POST(req: Request) {
         await resend.emails.send({
           from: FROM_ADDRESS,
           to: doc.email,
-          subject: "Thank you — Tee Bee Accountants Ltd",
+          subject: "Thank you — TeeBee Accountants Ltd",
           html: `
             <p>Hi ${esc(doc.name.split(" ")[0])},</p>
-            <p>Thank you for reaching out to Tee Bee Accountants Ltd. We'll respond within one business day.</p>
+            <p>Thank you for reaching out to TeeBee Accountants Ltd. We'll respond within one business day.</p>
             <p>If your matter is urgent, please call us on <a href="tel:+6753000000">+675 300 0000</a>.</p>
-            <p>Regards,<br>Tee Bee Accountants Ltd</p>
+            <p>Regards,<br>TeeBee Accountants Ltd</p>
             <p style="color:#888;font-size:12px;border-top:1px solid #eee;padding-top:8px;margin-top:16px">
               Port Moresby, National Capital District, Papua New Guinea<br>
               info@teebeeaccountants.com.pg

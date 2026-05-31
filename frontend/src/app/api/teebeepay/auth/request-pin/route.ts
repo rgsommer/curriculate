@@ -88,7 +88,7 @@ export async function POST(req: Request) {
             <p style="font:bold 26px/1 -apple-system,Segoe UI,Arial;letter-spacing:6px;background:#fef6dc;color:#0f2c52;padding:14px 20px;border-radius:10px;display:inline-block">${pin}</p>
             <p style="color:#555;font-size:13px">This code expires in 10 minutes. Didn't request it? Ignore this email.</p>
             <p style="color:#888;font-size:12px;margin-top:24px;border-top:1px solid #eee;padding-top:12px">
-              TeebeePay — payroll for PNG, by <a href="https://www.curriculate.net/teebee">Tee Bee Accountants</a>.
+              TeebeePay — payroll for PNG, by <a href="https://www.curriculate.net/teebee">TeeBee Accountants</a>.
             </p>
           `,
         });

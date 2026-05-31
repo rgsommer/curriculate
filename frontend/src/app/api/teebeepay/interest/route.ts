@@ -7,7 +7,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { MongoClient } from "mongodb";
 
-// TeebeePay leads go to Theresia at Tee Bee Accountants;
+// TeebeePay leads go to Theresia at TeeBee Accountants;
 // Richard is BCC'd (silent copy — recipient doesn't see him on the email).
 const NOTIFY_TO = "info@teebeeaccountants.com.pg";
 const NOTIFY_BCC = "rgsommer@me.com";

@@ -1,4 +1,4 @@
-// Tee Bee Audit — single-page A4 handout, drawn with pdf-lib.
+// TeeBee Audit — single-page A4 handout, drawn with pdf-lib.
 // Designed for in-person meetings: Theresia hands it across a coffee table.
 // Bigger type than the brief, more breathable layout.
 //
@@ -37,7 +37,7 @@ export async function GET(req: Request) {
 
   // ── Header band ──
   page.drawRectangle({ x: 0, y: H - 120, width: W, height: 120, color: NAVY });
-  page.drawText("Tee Bee Audit", {
+  page.drawText("TeeBee Audit", {
     x: 50, y: H - 72, size: 38, font: bold, color: GOLD,
   });
   page.drawText("CPA-led, AI-assisted audit · Papua New Guinea",
@@ -129,7 +129,7 @@ export async function GET(req: Request) {
   const footerY = 70;
   page.drawLine({ start: { x: 50, y: footerY + 30 }, end: { x: W - 50, y: footerY + 30 },
     thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-  page.drawText("Tee Bee Accountants Ltd", { x: 50, y: footerY + 12, size: 10.5, font: bold, color: INK });
+  page.drawText("TeeBee Accountants Ltd", { x: 50, y: footerY + 12, size: 10.5, font: bold, color: INK });
   page.drawText("Theresia Bob, CPA · Principal · Registered Tax Agent, IRC · Registered with PNG ARB",
     { x: 50, y: footerY - 2, size: 9, font: reg, color: SOFT });
   page.drawText("info@teebeeaccountants.com.pg · +675 300 0000 · Port Moresby, NCD",

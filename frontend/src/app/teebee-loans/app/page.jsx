@@ -77,7 +77,7 @@ export default function LoanAppPage() {
       <header style={{ background: C.navy, color: "#fff", padding: "12px 24px", display: "flex", alignItems: "center", gap: 16 }}>
         <Link href="/teebee" style={{ display: "flex", alignItems: "center", gap: 10, textDecoration: "none", color: "#fff" }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: C.gold, color: C.navy, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800 }}>TBA</div>
-          <strong style={{ fontSize: 15 }}>Tee Bee Loans</strong>
+          <strong style={{ fontSize: 15 }}>TeeBee Loans</strong>
         </Link>
         {me && <span style={{ fontSize: 12, color: "#9fb3cc" }}>{me.email}</span>}
         {me && (
@@ -138,7 +138,7 @@ function LoginCard({ onSignedIn }) {
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
           <div style={{ width: 38, height: 38, borderRadius: 9, background: C.navy, color: C.gold, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800 }}>TBA</div>
           <div>
-            <strong style={{ fontSize: 18 }}>Sign in to Tee Bee Loans</strong>
+            <strong style={{ fontSize: 18 }}>Sign in to TeeBee Loans</strong>
             <div style={{ fontSize: 12, color: C.muted }}>Email and a 6-digit code — no password.</div>
           </div>
         </div>

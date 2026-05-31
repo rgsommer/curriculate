@@ -1,4 +1,4 @@
-// Tee Bee Audit — personalised 2-page brief PDF, drawn with pdf-lib.
+// TeeBee Audit — personalised 2-page brief PDF, drawn with pdf-lib.
 // Mirrors the structure of /api/teebee/brief but tailored to the audit product.
 //
 //   GET /api/audit/brief?co=Acme%20Ltd&fy=2026-06-30&service=Statutory
@@ -34,14 +34,14 @@ export async function GET(req: Request) {
   const reg  = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
 
-  /* ───── PAGE 1 — Who we are + What Tee Bee Audit is ───── */
+  /* ───── PAGE 1 — Who we are + What TeeBee Audit is ───── */
   const p1 = pdf.addPage(PageSizes.A4);
   const W = p1.getWidth(), H = p1.getHeight();
 
   // Header band
   p1.drawRectangle({ x: 0, y: H - 100, width: W, height: 100, color: NAVY });
-  p1.drawText("Tee Bee Audit", { x: 48, y: H - 60, size: 28, font: bold, color: GOLD });
-  p1.drawText("From Tee Bee Accountants Ltd · CPA-certified · Registered with PNG ARB · 10+ years",
+  p1.drawText("TeeBee Audit", { x: 48, y: H - 60, size: 28, font: bold, color: GOLD });
+  p1.drawText("From TeeBee Accountants Ltd · CPA-certified · Registered with PNG ARB · 10+ years",
     { x: 48, y: H - 84, size: 10.5, font: reg, color: rgb(0.6, 0.7, 0.83) });
 
   // Personalisation line
@@ -58,7 +58,7 @@ export async function GET(req: Request) {
     x: 48, y: H - 195, size: 22, font: bold, color: INK,
   });
   drawWrapped(p1, reg, 11.5, SOFT,
-    "Tee Bee Audit is an AI-assisted audit-readiness platform from Tee Bee Accountants Ltd. " +
+    "TeeBee Audit is an AI-assisted audit-readiness platform from TeeBee Accountants Ltd. " +
     "You upload your trial balance, general ledger, bank statements and supporting files. " +
     "Our software runs reconciliations, anomaly checks, and compliance scans. A registered " +
     "CPA — Theresia Bob — reviews every finding, runs the substantive tests, and personally " +
@@ -88,7 +88,7 @@ export async function GET(req: Request) {
   // "Why TBA" strip
   const stripY = valY - 2 * 92 - 14;
   p1.drawRectangle({ x: 48, y: stripY - 80, width: W - 96, height: 80, color: NAVY });
-  p1.drawText("Why Tee Bee Accountants Ltd", { x: 64, y: stripY - 22, size: 11, font: bold, color: GOLD });
+  p1.drawText("Why TeeBee Accountants Ltd", { x: 64, y: stripY - 22, size: 11, font: bold, color: GOLD });
   drawWrapped(p1, reg, 10, WHITE,
     "CPA-certified team led by Theresia Bob · Registered with the PNG Accountants Registration Board · " +
     "Registered Tax Agents with IRC · IFRS-compliant reporting · 500+ clients served over 10+ years · " +
@@ -97,7 +97,7 @@ export async function GET(req: Request) {
 
   // Footer
   centerText(p1, reg, 9, MUTED,
-    "Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
+    "TeeBee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
     30, W);
 
   /* ───── PAGE 2 — How an engagement runs + pricing + next step ───── */
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
   p2.drawText("Your audit — end to end", {
     x: 48, y: H2 - 60, size: 22, font: bold, color: GOLD,
   });
-  p2.drawText(`How a Tee Bee Audit engagement runs for ${co}`,
+  p2.drawText(`How a TeeBee Audit engagement runs for ${co}`,
     { x: 48, y: H2 - 84, size: 10.5, font: reg, color: rgb(0.6, 0.7, 0.83) });
 
   // Six-step list
@@ -153,7 +153,7 @@ export async function GET(req: Request) {
     48, nY - 18, W2 - 96, 14);
 
   centerText(p2, reg, 9, MUTED,
-    "Tee Bee Accountants Ltd · Tee Bee Audit · www.curriculate.net/audit",
+    "TeeBee Accountants Ltd · TeeBee Audit · www.curriculate.net/audit",
     30, W2);
 
   const bytes = await pdf.save();

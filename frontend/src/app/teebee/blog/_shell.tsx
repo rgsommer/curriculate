@@ -83,7 +83,7 @@ function BlogTopBar() {
           <svg width="32" height="32" viewBox="0 0 48 48"><circle cx="24" cy="24" r="23" fill={C.navy} />
             <text x="24" y="30" textAnchor="middle" fontFamily="Georgia, serif" fontSize="20" fontWeight="700" fill={C.gold}>TBA</text>
           </svg>
-          <strong style={{ fontSize: 16 }}>Tee Bee Accountants</strong>
+          <strong style={{ fontSize: 16 }}>TeeBee Accountants</strong>
         </Link>
         <div style={{ marginLeft: "auto", display: "flex", gap: 22 }}>
           <Link href="/teebee#services" style={{ color: C.inkSoft, fontSize: 14, textDecoration: "none", fontWeight: 500 }}>Services</Link>
@@ -108,7 +108,7 @@ function CtaCard() {
         Help with this?
       </div>
       <h3 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 700, color: "#fff", fontFamily: "Georgia, serif" }}>
-        Tee Bee Accountants does this every fortnight for SMEs across PNG.
+        TeeBee Accountants does this every fortnight for SMEs across PNG.
       </h3>
       <p style={{ fontSize: 14, color: "rgba(255,255,255,.85)", lineHeight: 1.55, margin: "0 0 16px" }}>
         We are CPA-certified and registered tax agents with the IRC. Payroll, NASFund returns, audit, year-end —

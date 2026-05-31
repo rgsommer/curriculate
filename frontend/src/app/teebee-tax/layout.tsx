@@ -1,4 +1,4 @@
-// /teebee-tax — Tee Bee Accountants taxation workspace.
+// /teebee-tax — TeeBee Accountants taxation workspace.
 // Standalone shell, mirrors /audit.
 import type { Metadata } from "next";
 import Script from "next/script";
@@ -6,19 +6,19 @@ import Script from "next/script";
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.curriculate.net"),
   title: {
-    template: "%s · Tee Bee Tax",
-    default: "Tee Bee Tax — PNG tax compliance workspace",
+    template: "%s · TeeBee Tax",
+    default: "TeeBee Tax — PNG tax compliance workspace",
   },
   description:
     "Prepare, review and file PNG tax returns from one workspace. Company income tax, individual income tax and GST computations with a preparer → reviewer → filing workflow. IRC rates built in.",
   keywords: [
     "PNG tax", "Papua New Guinea tax return", "company income tax PNG",
-    "GST return PNG", "IRC PNG", "SWT PNG", "Tee Bee Accountants tax",
+    "GST return PNG", "IRC PNG", "SWT PNG", "TeeBee Accountants tax",
     "tax computation PNG", "tax software PNG", "Port Moresby tax agent",
   ],
-  authors: [{ name: "Tee Bee Accountants Ltd", url: "https://www.curriculate.net/teebee" }],
-  creator: "Tee Bee Accountants Ltd",
-  publisher: "Tee Bee Accountants Ltd",
+  authors: [{ name: "TeeBee Accountants Ltd", url: "https://www.curriculate.net/teebee" }],
+  creator: "TeeBee Accountants Ltd",
+  publisher: "TeeBee Accountants Ltd",
   alternates: { canonical: "https://www.curriculate.net/teebee-tax" },
   robots: { index: true, follow: true },
   category: "Business Software",

@@ -160,7 +160,7 @@ function VideoPlaceholder() {
 
 const TESTIMONIAL_QUOTES = [
   { quote: "Switching to TeebeePay cut our fortnightly payroll from half a day to fifteen minutes. The BSP batch upload just works.",
-    name: "Theresia Bob", role: "Principal, Tee Bee Accountants Ltd" },
+    name: "Theresia Bob", role: "Principal, TeeBee Accountants Ltd" },
   { quote: "NASFund returns used to be a monthly headache. Now it's a download and an upload — five minutes, no spreadsheet wrangling.",
     name: "Sarah K.",     role: "CFO, PNG SME (10+ staff)" },
   { quote: "Our field manager submits hours from a phone, the office approves from town, and pay stubs land in workers' inboxes the same day.",

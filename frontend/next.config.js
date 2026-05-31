@@ -1,6 +1,6 @@
 /** @type {import('next').NextConfig} */
 //
-// Note: TeebeePay (payroll product) and Tee Bee Accountants (firm site)
+// Note: TeebeePay (payroll product) and TeeBee Accountants (firm site)
 // live as native Next.js pages under /teebeepay and /teebee — no external
 // service to proxy to. The earlier /pngpay → Render rewrite was removed.
 // /pngpay still works as a friendly URL via the redirect below.

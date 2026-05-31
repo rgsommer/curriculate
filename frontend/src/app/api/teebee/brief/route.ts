@@ -43,7 +43,7 @@ export async function GET(req: Request) {
 
   // Header band
   p1.drawRectangle({ x: 0, y: H - 100, width: W, height: 100, color: NAVY });
-  p1.drawText("Tee Bee Accountants Ltd", {
+  p1.drawText("TeeBee Accountants Ltd", {
     x: 48, y: H - 60, size: 26, font: bold, color: GOLD,
   });
   p1.drawText("CPA-certified · Registered Tax Agents · Port Moresby · 10+ years", {
@@ -62,7 +62,7 @@ export async function GET(req: Request) {
     x: 48, y: H - 195, size: 20, font: bold, color: INK,
   });
   drawWrapped(p1, reg, 11, SOFT,
-    "Tee Bee Accountants Ltd (TBA) is a full-service accounting and audit firm in Papua " +
+    "TeeBee Accountants Ltd (TBA) is a full-service accounting and audit firm in Papua " +
     "New Guinea. We work with SMEs, landowner companies, and project SPVs across audit and " +
     "assurance, taxation, accounting, business advisory, statutory compliance, and financial " +
     "consulting. We are registered with the PNG Accountants Registration Board and the IRC. " +
@@ -71,7 +71,7 @@ export async function GET(req: Request) {
 
   // Services grid (2 cols × 3 rows)
   const services = [
-    ["01", "Audit & Assurance",     "IFRS-compliant audits via Tee Bee Audit — AI-assisted, CPA-signed."],
+    ["01", "Audit & Assurance",     "IFRS-compliant audits via TeeBee Audit — AI-assisted, CPA-signed."],
     ["02", "Taxation Services",     "Strategic tax planning and full IRC compliance."],
     ["03", "Accounting Services",   "Bookkeeping, financial reporting, payroll via TeebeePay."],
     ["04", "Business Advisory",     "Growth, financial planning, risk and efficiency."],
@@ -107,7 +107,7 @@ export async function GET(req: Request) {
   p1.drawText("New in 2026 — our platforms", { x: 64, y: newY - 20, size: 11, font: bold, color: NAVY });
   // Two columns inside the strip
   const halfW = (W - 96 - 32) / 2;
-  p1.drawText("Tee Bee Audit", { x: 64, y: newY - 38, size: 10.5, font: bold, color: NAVY_DEEP });
+  p1.drawText("TeeBee Audit", { x: 64, y: newY - 38, size: 10.5, font: bold, color: NAVY_DEEP });
   drawWrapped(p1, reg, 9, INK,
     "AI-assisted audit platform · upload files, software runs reconciliations and anomaly checks, CPA signs the opinion. www.curriculate.net/audit",
     64, newY - 50, halfW, 11);
@@ -118,7 +118,7 @@ export async function GET(req: Request) {
 
   // Footer
   centerText(p1, reg, 9, MUTED,
-    "Tee Bee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
+    "TeeBee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg · +675 300 0000",
     30, W);
 
   /* ───── PAGE 2 — TeebeePay output ───── */
@@ -236,7 +236,7 @@ export async function GET(req: Request) {
     48, nextTop - 18, W2 - 96, 14);
 
   centerText(p2, reg, 9, MUTED,
-    "Tee Bee Accountants Ltd · TeebeePay · www.teebeeaccountants.com.pg",
+    "TeeBee Accountants Ltd · TeebeePay · www.teebeeaccountants.com.pg",
     30, W2);
 
   const bytes = await pdf.save();

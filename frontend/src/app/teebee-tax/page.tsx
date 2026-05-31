@@ -1,4 +1,4 @@
-// /teebee-tax — Tee Bee Tax landing. PNG tax-compliance service overview with a
+// /teebee-tax — TeeBee Tax landing. PNG tax-compliance service overview with a
 // CTA into the internal workspace (/teebee-tax/app, PIN-gated for the firm).
 "use client";
 import React from "react";
@@ -47,8 +47,8 @@ function TopBar() {
           display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, letterSpacing: -0.5,
         }}>TBA</div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>Tee Bee Tax</div>
-          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1, marginTop: 3 }}>Tee Bee Accountants Ltd</div>
+          <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>TeeBee Tax</div>
+          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1, marginTop: 3 }}>TeeBee Accountants Ltd</div>
         </div>
       </Link>
       <nav style={{ marginLeft: "auto", display: "flex", gap: 22, fontSize: 14, color: C.inkSoft, alignItems: "center" }}>
@@ -180,7 +180,7 @@ function Trust() {
     <section style={{ padding: "60px 28px", background: "#fff" }}>
       <div style={{ maxWidth: 920, margin: "0 auto", textAlign: "center" }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, letterSpacing: 0.08, textTransform: "uppercase", marginBottom: 14 }}>
-          Tee Bee Accountants Ltd · CPA · IRC Tax Agent · 10+ years
+          TeeBee Accountants Ltd · CPA · IRC Tax Agent · 10+ years
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: 36, flexWrap: "wrap", fontSize: 14, color: C.inkSoft }}>
           <span><Building2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} /> Port Moresby, NCD, PNG</span>
@@ -199,7 +199,7 @@ function Footer() {
       fontSize: 13, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 14,
     }}>
       <div>
-        Tee Bee Accountants Ltd · Registered with the PNG Accountants Registration Board · IRC-registered Tax Agent
+        TeeBee Accountants Ltd · Registered with the PNG Accountants Registration Board · IRC-registered Tax Agent
       </div>
       <div>
         <Link href="/teebee" style={{ color: C.gold, textDecoration: "none" }}>Main site</Link>
@@ -226,13 +226,13 @@ function SeoStructuredData() {
   const ld = {
     "@context": "https://schema.org",
     "@type": "ProfessionalService",
-    name: "Tee Bee Tax — Tee Bee Accountants Ltd",
+    name: "TeeBee Tax — TeeBee Accountants Ltd",
     description:
-      "PNG tax compliance from Tee Bee Accountants. Company income tax, individual income tax and GST returns computed on current IRC rates, reviewed and filed by a registered tax agent.",
+      "PNG tax compliance from TeeBee Accountants. Company income tax, individual income tax and GST returns computed on current IRC rates, reviewed and filed by a registered tax agent.",
     address: { "@type": "PostalAddress", addressLocality: "Port Moresby", addressRegion: "NCD", addressCountry: "PG" },
     areaServed: "PG",
     url: "https://www.curriculate.net/teebee-tax",
-    provider: { "@type": "Organization", name: "Tee Bee Accountants Ltd" },
+    provider: { "@type": "Organization", name: "TeeBee Accountants Ltd" },
     serviceType: ["Company income tax", "Individual income tax", "GST returns", "Tax compliance"],
   };
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />;

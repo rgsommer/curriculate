@@ -1,4 +1,4 @@
-// /teebee-loans — Tee Bee Loans landing. Loan-readiness & financing-package prep
+// /teebee-loans — TeeBee Loans landing. Loan-readiness & financing-package prep
 // overview with a CTA into the internal workspace (/teebee-loans/app, PIN-gated).
 "use client";
 import React from "react";
@@ -48,8 +48,8 @@ function TopBar() {
           display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, letterSpacing: -0.5,
         }}>TBA</div>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>Tee Bee Loans</div>
-          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1, marginTop: 3 }}>Tee Bee Accountants Ltd</div>
+          <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1 }}>TeeBee Loans</div>
+          <div style={{ fontSize: 11, color: C.muted, lineHeight: 1, marginTop: 3 }}>TeeBee Accountants Ltd</div>
         </div>
       </Link>
       <nav style={{ marginLeft: "auto", display: "flex", gap: 22, fontSize: 14, color: C.inkSoft, alignItems: "center" }}>
@@ -125,7 +125,7 @@ function ValueBand() {
   return (
     <section style={{ padding: "72px 28px", background: "#fff" }}>
       <div style={{ maxWidth: 1080, margin: "0 auto" }}>
-        <SectionEyebrow>Why Tee Bee Loans</SectionEyebrow>
+        <SectionEyebrow>Why TeeBee Loans</SectionEyebrow>
         <h2 style={h2}>See your application the way the bank will.</h2>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 18, marginTop: 36 }}>
           {items.map((it, i) => (
@@ -200,7 +200,7 @@ function Trust() {
     <section style={{ padding: "60px 28px", background: C.cream }}>
       <div style={{ maxWidth: 920, margin: "0 auto", textAlign: "center" }}>
         <div style={{ fontSize: 11, fontWeight: 800, color: C.muted, letterSpacing: 0.08, textTransform: "uppercase", marginBottom: 14 }}>
-          Tee Bee Accountants Ltd · CPA · 10+ years · 500+ clients
+          TeeBee Accountants Ltd · CPA · 10+ years · 500+ clients
         </div>
         <div style={{ display: "flex", justifyContent: "center", gap: 36, flexWrap: "wrap", fontSize: 14, color: C.inkSoft }}>
           <span><Building2 size={14} style={{ verticalAlign: -2, marginRight: 6 }} /> Port Moresby, NCD, PNG</span>
@@ -219,7 +219,7 @@ function Footer() {
       fontSize: 13, display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 14,
     }}>
       <div>
-        Tee Bee Accountants Ltd · Registered with the PNG Accountants Registration Board · IRC-registered Tax Agent
+        TeeBee Accountants Ltd · Registered with the PNG Accountants Registration Board · IRC-registered Tax Agent
       </div>
       <div>
         <Link href="/teebee" style={{ color: C.gold, textDecoration: "none" }}>Main site</Link>
@@ -246,13 +246,13 @@ function SeoStructuredData() {
   const ld = {
     "@context": "https://schema.org",
     "@type": "ProfessionalService",
-    name: "Tee Bee Loans — Tee Bee Accountants Ltd",
+    name: "TeeBee Loans — TeeBee Accountants Ltd",
     description:
       "Loan-readiness scoring and financing-package preparation for PNG SMEs. Score financials against lender benchmarks (liquidity, leverage, DSCR, loan-to-value), close the gaps, and assemble a complete package for BSP, Kina, Westpac and microfinance lenders.",
     address: { "@type": "PostalAddress", addressLocality: "Port Moresby", addressRegion: "NCD", addressCountry: "PG" },
     areaServed: "PG",
     url: "https://www.curriculate.net/teebee-loans",
-    provider: { "@type": "Organization", name: "Tee Bee Accountants Ltd" },
+    provider: { "@type": "Organization", name: "TeeBee Accountants Ltd" },
     serviceType: ["Loan readiness", "Financing package preparation", "SME finance advisory"],
   };
   return <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld) }} />;

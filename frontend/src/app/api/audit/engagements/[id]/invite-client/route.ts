@@ -6,7 +6,7 @@ import { Resend } from "resend";
 import { readAuth, db, ObjectId } from "../../../../teebeepay/_auth";
 import { logAudit } from "../../../../teebeepay/_audit";
 
-const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "Tee Bee Audit <noreply@curriculate.net>";
+const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeeBee Audit <noreply@curriculate.net>";
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 const resend = new Resend(process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY || "");
 
@@ -69,18 +69,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     let sent = false;
     if (process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY) {
       const link = `${PUBLIC_URL}/audit/app`;
-      const subject = `Tee Bee Audit — your engagement is ready to begin`;
+      const subject = `TeeBee Audit — your engagement is ready to begin`;
       const html = `
         <div style="font:14px/1.55 -apple-system,Segoe UI,Arial;color:#0f172a;max-width:560px">
-          <h2 style="margin:0 0 12px;color:#0f2c52">Welcome to Tee Bee Audit</h2>
+          <h2 style="margin:0 0 12px;color:#0f2c52">Welcome to TeeBee Audit</h2>
           <p>Hi ${esc(eng.contact_name || "there")},</p>
-          <p>Theresia at Tee Bee Accountants has set up your audit engagement on our secure platform:
+          <p>Theresia at TeeBee Accountants has set up your audit engagement on our secure platform:
             <strong>${esc(eng.company_name)}</strong>.</p>
           <p>Sign in below to see a personalised checklist of documents we need, and upload them
             securely. Your accountant reviews everything before any finding is finalised.</p>
           <p style="margin:18px 0">
             <a href="${link}" style="display:inline-block;padding:11px 22px;background:#0f2c52;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">
-              Sign in to Tee Bee Audit →
+              Sign in to TeeBee Audit →
             </a>
           </p>
           <p style="color:#475569;font-size:13px">
@@ -88,7 +88,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
             6-digit code each time — no password to remember.
           </p>
           <p style="color:#94a3b8;font-size:12px;margin-top:24px">
-            Tee Bee Accountants Ltd · CPA · Registered with the PNG Accountants Registration Board ·
+            TeeBee Accountants Ltd · CPA · Registered with the PNG Accountants Registration Board ·
             info@teebeeaccountants.com.pg
           </p>
         </div>

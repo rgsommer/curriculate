@@ -8,7 +8,7 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { MongoClient } from "mongodb";
 
-const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "Tee Bee Audit <noreply@curriculate.net>";
+const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeeBee Audit <noreply@curriculate.net>";
 const NOTIFY_TO = process.env.AUDIT_NOTIFY_TO
   || process.env.TEEBEE_NOTIFY_TO
   || "info@teebeeaccountants.com.pg";

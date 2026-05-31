@@ -48,7 +48,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${baseUrl}/campfire`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
     { url: `${baseUrl}/campfirelive`, lastModified: now, changeFrequency: "daily", priority: 0.8 },
 
-    // ── Tee Bee Accountants & TeebeePay (separate product surfaces) ──
+    // ── TeeBee Accountants & TeebeePay (separate product surfaces) ──
     { url: `${baseUrl}/teebee`,                                          lastModified: now, changeFrequency: "weekly",  priority: 0.9 },
     { url: `${baseUrl}/teebeepay`,                                       lastModified: now, changeFrequency: "daily",   priority: 1.0 },
     { url: `${baseUrl}/audit`,                                           lastModified: now, changeFrequency: "weekly",  priority: 0.9 },

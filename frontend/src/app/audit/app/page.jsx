@@ -73,7 +73,7 @@ export default function AuditAppPage() {
             width: 32, height: 32, borderRadius: 8, background: C.gold, color: C.navy,
             display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, fontWeight: 800,
           }}>TBA</div>
-          <strong style={{ fontSize: 15 }}>Tee Bee Audit</strong>
+          <strong style={{ fontSize: 15 }}>TeeBee Audit</strong>
         </Link>
         {me && me.clearance >= 3 && (
           <Link href="/audit/admin" style={{ ...miniNav, marginLeft: 16 }}>Admin queue →</Link>
@@ -153,7 +153,7 @@ function LoginCard({ onSignedIn }) {
             display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 800,
           }}>TBA</div>
           <div>
-            <strong style={{ fontSize: 18 }}>Sign in to Tee Bee Audit</strong>
+            <strong style={{ fontSize: 18 }}>Sign in to TeeBee Audit</strong>
             <div style={{ fontSize: 12, color: C.muted }}>Email and a 6-digit code — no password.</div>
           </div>
         </div>
