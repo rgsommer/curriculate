@@ -136,7 +136,7 @@ export async function GET(req: Request) {
   p2.drawText("Pay stub (sample, per employee)", {
     x: 48, y: H2 - 130, size: 13, font: bold, color: INK,
   });
-  const stubX = 48, stubY = H2 - 350, stubW = W2 - 96, stubH = 200;
+  const stubX = 48, stubY = H2 - 330, stubW = W2 - 96, stubH = 190;
   p2.drawRectangle({ x: stubX, y: stubY, width: stubW, height: stubH, color: WHITE,
     borderColor: rgb(0.92, 0.92, 0.92), borderWidth: 1 });
   p2.drawText(co, { x: stubX + 16, y: stubY + stubH - 22, size: 12, font: bold, color: INK });
@@ -178,7 +178,7 @@ export async function GET(req: Request) {
 
   // "Plus you also receive" list
   p2.drawText("Plus, every fortnight, you also receive:", {
-    x: 48, y: H2 - 380, size: 13, font: bold, color: INK,
+    x: 48, y: stubY - 24, size: 13, font: bold, color: INK,
   });
   const outputs = [
     ["BSP batch CSV",     "Bank-spec 12-column file. Upload directly to BSP Batch Manager."],
@@ -190,16 +190,19 @@ export async function GET(req: Request) {
     ["Period archive",    "One ZIP with BSP + NASFund + IIF + every pay-slip PDF. Hand-off ready."],
     ["Audit log",         "Every approval / edit / re-send recorded with actor and timestamp."],
   ];
+  const outputsTop = stubY - 46;
   outputs.forEach((o, i) => {
-    const y = H2 - 405 - i * 20;
+    const y = outputsTop - i * 18;
     p2.drawText("·", { x: 54, y, size: 12, font: bold, color: GOLD });
     p2.drawText(o[0], { x: 66, y, size: 10.5, font: bold, color: INK });
     p2.drawText(o[1], { x: 200, y, size: 10, font: reg, color: SOFT });
   });
+  const outputsBottom = outputsTop - (outputs.length - 1) * 18;
 
   // "What's new" strip — three short callouts so the brief stays fresh meeting after meeting
-  const nY = H2 - 405 - outputs.length * 20 - 18;
-  p2.drawRectangle({ x: 48, y: nY - 56, width: W2 - 96, height: 56, color: GOLD_SOFT,
+  const newH = 66;
+  const nY = outputsBottom - 22;                 // box top
+  p2.drawRectangle({ x: 48, y: nY - newH, width: W2 - 96, height: newH, color: GOLD_SOFT,
     borderColor: rgb(0.86, 0.78, 0.50), borderWidth: 0.6 });
   p2.drawText("New this quarter", { x: 64, y: nY - 18, size: 10.5, font: bold, color: NAVY_DEEP });
   const news = [
@@ -208,12 +211,13 @@ export async function GET(req: Request) {
     "TOTP two-factor auth + full audit log for compliance",
   ];
   news.forEach((n, i) => {
-    p2.drawText("· " + n, { x: 64, y: nY - 34 - i * 12, size: 9, font: reg, color: INK });
+    p2.drawText("· " + n, { x: 64, y: nY - 36 - i * 13, size: 9, font: reg, color: INK });
   });
 
   // Pricing band — two tiers + time-savings (single dense paragraph for layout fit)
-  const pY = 190;
-  p2.drawRectangle({ x: 48, y: pY - 80, width: W2 - 96, height: 80, color: GOLD });
+  const priceH = 104;
+  const pY = nY - newH - 20;                      // box top
+  p2.drawRectangle({ x: 48, y: pY - priceH, width: W2 - 96, height: priceH, color: GOLD });
   p2.drawText("Pricing — two tiers · save weeks every year", { x: 64, y: pY - 22, size: 13, font: bold, color: NAVY });
   drawWrapped(p2, reg, 9.5, NAVY_DEEP,
     "Self-service from PGK 9 / employee / fortnight — TeebeePay generates everything; you file with BSP and IRC. " +
@@ -222,13 +226,14 @@ export async function GET(req: Request) {
     "(~250–300 hours/year); Self-service drops that to 1–2 hours, Managed to 15–30 minutes. ~6–7 weeks of FTE time back every year.",
     64, pY - 40, W2 - 128, 11);
 
-  // CTA — moved below the now-taller pricing band
-  p2.drawText("Next step", { x: 48, y: pY - 100, size: 13, font: bold, color: INK });
+  // CTA — below the pricing band
+  const nextTop = pY - priceH - 24;
+  p2.drawText("Next step", { x: 48, y: nextTop, size: 13, font: bold, color: INK });
   drawWrapped(p2, reg, 10.5, SOFT,
     "Send us a CSV of your current employee list and we'll show you the actual TeebeePay " +
     "output for one fortnight — pay stubs, BSP batch, NASFund return — at no charge. Email " +
     "info@teebeeaccountants.com.pg or call +675 300 0000.",
-    48, pY - 110, W2 - 96, 14);
+    48, nextTop - 18, W2 - 96, 14);
 
   centerText(p2, reg, 9, MUTED,
     "Tee Bee Accountants Ltd · TeebeePay · www.teebeeaccountants.com.pg",
