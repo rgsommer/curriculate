@@ -1043,6 +1043,57 @@ function summarizeMatchingTask(sub, task) {
   return lines.length ? { matches: lines } : null;
 }
 
+// Diff-detective stores { answer, correct, total, perDiff:[{text,isHit}],
+// aiFeedback } once the new payload shape lands (legacy submissions still
+// have just the raw answer string). Returns the per-row hit list + the
+// score so the teacher transcript can show a coloured breakdown.
+function summarizeDiffDetective(sub, task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
+
+  // Pull whichever shape is present (object payload OR legacy plain text).
+  const answer =
+    String(ap.answer || data.answer || ap.text || data.text || sub?.answerText || sub?.answer || "").trim();
+  const perDiff =
+    (Array.isArray(ap.perDiff) ? ap.perDiff : null) ||
+    (Array.isArray(data.perDiff) ? data.perDiff : null) ||
+    null;
+
+  // Differences from the task itself (fallback when perDiff isn't on the payload).
+  const taskDiffs =
+    (Array.isArray(task?.differences) ? task.differences : null) ||
+    (Array.isArray(cfg.differences) ? cfg.differences : null) ||
+    [];
+
+  let rows = [];
+  if (perDiff && perDiff.length) {
+    rows = perDiff.map((p) => ({
+      text: String(p?.text || ""),
+      isHit: p?.isHit === true,
+    })).filter((r) => r.text);
+  } else if (taskDiffs.length) {
+    // No per-diff scoring on the payload — show the answer-key list with no
+    // hit/miss colouring. Better than nothing.
+    rows = taskDiffs.map((d) => {
+      const text = typeof d === "string" ? d : String(d?.text || d?.expected || d?.diff || d?.label || "");
+      return { text, isHit: null };
+    }).filter((r) => r.text);
+  }
+
+  if (!answer && rows.length === 0) return null;
+
+  const correct = (typeof ap.correct === "number" ? ap.correct
+                  : typeof data.correct === "number" ? data.correct
+                  : rows.filter((r) => r.isHit).length) || 0;
+  const total = (typeof ap.total === "number" ? ap.total
+                : typeof data.total === "number" ? data.total
+                : rows.length) || rows.length;
+  const aiFeedback = String(ap.aiFeedback || data.aiFeedback || "").trim();
+
+  return { answer, rows, correct, total, aiFeedback };
+}
+
 // MapIt has the same matches-shape as Matching but uses marker numbers as
 // keys (M1 → "Detroit") and a flat choices[] list — there are no leftItems/
 // rightItems to look up. Render "Marker N (term) → choice" with the
@@ -2641,14 +2692,74 @@ export default function TasksetTranscript({ transcript }) {
                           </div>
                         );
                       })()}
-/* Objective task summaries (matching / mapit / sequence / sort / timeline) */}
+/* Objective task summaries (matching / mapit / diff-detective / sequence / sort / timeline) */}
                       {(() => {
                         const tt = String(task.taskType || task.type || "").toLowerCase();
                         const isMatching = tt === "matching" || tt === "match" || tt.includes("matching");
                         const isMapIt = tt === "mapit" || tt === "map-it";
+                        const isDiffDetective = tt === "diff-detective" || tt === "diffdetective";
                         const isSequence = tt === "sequence" || tt.includes("sequence");
                         const isTimeline = tt === "timeline" || tt.includes("timeline");
                         const isSort = tt === "sort" || tt.includes("sort");
+
+                        if (isDiffDetective) {
+                          const summary = summarizeDiffDetective(sub, task);
+                          if (!summary) return null;
+                          return (
+                            <div
+                              style={{
+                                marginTop: 6,
+                                padding: 10,
+                                borderRadius: 12,
+                                border: "1px solid rgba(14,116,144,0.25)",
+                                background: "rgba(14,116,144,0.06)",
+                              }}
+                            >
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#0e7490", marginBottom: 6 }}>
+                                🔍 Spot the difference — {summary.correct}/{summary.total} spotted
+                              </div>
+                              {summary.answer && (
+                                <div style={{ fontSize: "0.82rem", color: "#111827", marginBottom: 8 }}>
+                                  <strong>Student wrote:</strong> {summary.answer}
+                                </div>
+                              )}
+                              {summary.rows.length > 0 && (
+                                <div style={{ display: "grid", gap: 3, fontSize: "0.82rem" }}>
+                                  {summary.rows.map((r, i) => (
+                                    <div
+                                      key={i}
+                                      style={{
+                                        color: r.isHit === true ? "#15803d" : r.isHit === false ? "#b91c1c" : "#374151",
+                                        fontWeight: r.isHit === true ? 700 : 500,
+                                      }}
+                                    >
+                                      {r.isHit === true ? "✓" : r.isHit === false ? "✗" : "•"} {r.text}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {summary.aiFeedback && (
+                                <div
+                                  style={{
+                                    marginTop: 8,
+                                    padding: "8px 10px",
+                                    borderRadius: 10,
+                                    background: "#fff",
+                                    border: "1px solid rgba(14,116,144,0.20)",
+                                    fontSize: "0.8rem",
+                                    color: "#0f172a",
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#0e7490", marginBottom: 2 }}>
+                                    🤖 Coach feedback
+                                  </div>
+                                  {summary.aiFeedback}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
 
                         if (isMapIt) {
                           const summary = summarizeMapItTask(sub, task);

@@ -3172,6 +3172,7 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           raceStatus={diffRaceStatus}
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
+          memberNames={memberNames}
         />
       );
       break;

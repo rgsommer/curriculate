@@ -13,6 +13,7 @@ export default function DiffDetectiveTask({
   answerDraft,
   isMultiplayer = false, // Race mode banner only – logic comes from TaskRunner
   raceStatus, // { leader, timeLeft, players }
+  memberNames = [],
 }) {
   const [answer, setAnswer] = useState("");
   const [showHint, setShowHint] = useState(false);
@@ -22,6 +23,13 @@ export default function DiffDetectiveTask({
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [dictationError, setDictationError] = useState("");
   const [imgError, setImgError] = useState(false); // a side image failed to load (S3/AI URL dead)
+  // AI coach feedback (parallels art-view / historical-doc). After submit
+  // we score locally, then fetch a short coach note from /api/text-feedback,
+  // then show a panel with a nominated reader (in team mode) and a
+  // Continue button that fires the real onSubmit.
+  const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
+  const [aiFeedback, setAiFeedback] = useState("");
+  const pendingSubmitRef = useRef(null);
   // Record-then-transcribe via Whisper (the Web Speech API was unreliable in the
   // practice iframe — tester: "speak answer does not work … should listen, then
   // add text to input box"). MediaRecorder + /api/speech/transcribe is robust.
@@ -31,6 +39,57 @@ export default function DiffDetectiveTask({
 
   const differences = task?.differences || [];
   const numExpected = differences.length;
+
+  // ── Objective scoring (fuzzy match the student's free-text answer against
+  // each item in differences[]). For each expected difference, extract its
+  // content tokens (4+ letter non-stopwords), check how many appear in the
+  // student's normalized text. A 50% overlap counts as a hit. This is a
+  // lenient classroom heuristic — students who DID spot the difference
+  // typically use one of the key nouns from the answer key. ──
+  const STOPWORDS = new Set([
+    "the", "and", "for", "with", "from", "this", "that", "into", "have", "has",
+    "was", "were", "are", "but", "any", "one", "two", "three", "now", "then",
+    "they", "them", "their", "there", "here", "what", "when", "where", "which",
+    "been", "being", "your", "you", "had", "did", "does", "all", "some",
+    "more", "less", "than", "also", "just", "very", "much", "many", "could",
+    "would", "should", "will", "shall", "may", "might", "must", "image",
+    "scene", "picture", "version", "different", "changed", "change",
+  ]);
+  function _tokens(s) {
+    return String(s || "").toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length >= 4 && !STOPWORDS.has(w));
+  }
+  const objectiveScore = useMemo(() => {
+    if (!isSubmitted || numExpected === 0) return null;
+    const studentTokens = new Set(_tokens(answer));
+    if (studentTokens.size === 0) return { correct: 0, total: numExpected, perDiff: [] };
+    const perDiff = differences.map((d) => {
+      const text = String(d?.text || d?.expected || d?.diff || d?.label || "");
+      const diffTokens = _tokens(text);
+      if (diffTokens.length === 0) return { text, isHit: false, hitTokens: [] };
+      const hits = diffTokens.filter((t) => studentTokens.has(t));
+      const ratio = hits.length / diffTokens.length;
+      // Hit if at least 50% of the content tokens overlap, OR ≥2 distinct
+      // content words match (works for short 1-word diffs like "1812").
+      const isHit = ratio >= 0.5 || hits.length >= 2;
+      return { text, isHit, hitTokens: hits };
+    });
+    return { correct: perDiff.filter((p) => p.isHit).length, total: numExpected, perDiff };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSubmitted, answer, numExpected]);
+
+  // Nominated reader for the coach feedback panel (team mode only — mirror
+  // of historical-doc / art-view). Picked once when the feedback text
+  // arrives so the name stays stable through re-renders.
+  const nominatedReader = useMemo(() => {
+    if (!Array.isArray(memberNames) || memberNames.length < 2) return null;
+    const clean = memberNames.map((n) => String(n || "").trim()).filter(Boolean);
+    if (clean.length < 2) return null;
+    return clean[Math.floor(Math.random() * clean.length)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiFeedback]);
 
   // Image (visual) comparison mode — tester ask: "Could this be between two art
   // pics, two documents, two historical figures, two specimens, two scenes, two
@@ -134,11 +193,67 @@ export default function DiffDetectiveTask({
     } catch {}
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!answer.trim() || disabled || isSubmitted) return;
     setAttempts((a) => a + 1);
     setIsSubmitted(true);
-    onSubmit?.(answer.trim());
+
+    // Stash the eventual onSubmit payload — fire it from the Continue button
+    // in the coach-feedback panel below. Mirror of art-view / historical-doc.
+    pendingSubmitRef.current = {
+      answer: answer.trim(),
+      // Objective score is computed by the same useMemo above; recompute
+      // inline here so the persisted payload reflects what the student sees.
+      // (useMemo result isn't available synchronously inside this handler.)
+    };
+
+    setFeedbackPhase("scoring");
+
+    let coach = "";
+    try {
+      const diffList = differences
+        .map((d, i) => `${i + 1}. ${String(d?.text || d?.expected || d?.diff || d?.label || "")}`)
+        .filter((s) => s.length > 3)
+        .join("\n");
+      const r = await fetch(`${API_BASE_URL}/api/text-feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          mode: "diff-detective",
+          prompt:
+            "A student played spot-the-difference and wrote which changes they noticed between two scenes/passages. " +
+            "Praise one difference they got RIGHT (or describe one they came close to), then point out ONE specific change " +
+            "from the expected list that they missed and EXPLAIN it concretely in one sentence. Keep it under 70 words.",
+          context: `Expected differences:\n${diffList}`,
+          response: answer.trim(),
+        }),
+      });
+      const j = await r.json().catch(() => null);
+      if (j?.feedback) coach = String(j.feedback);
+    } catch { /* fall through to default */ }
+    if (!coach) {
+      coach =
+        objectiveScore && objectiveScore.correct === objectiveScore.total
+          ? "Sharp eye — you spotted them all! Strong difference-spotting means looking at each part of the scene methodically; you did."
+          : "Good effort. Next time, scan one section at a time (top-left → top-right → bottom-left → bottom-right) — most spotters find more by sweeping deliberately than by glancing.";
+    }
+    setAiFeedback(coach);
+    setFeedbackPhase("feedback");
+  };
+
+  const handleFeedbackContinue = () => {
+    const p = pendingSubmitRef.current;
+    pendingSubmitRef.current = null;
+    // Include the objective score breakdown + the coach note on the
+    // payload so the teacher transcript renderer can show both.
+    const payload = {
+      answer: p?.answer ?? answer.trim(),
+      correct: objectiveScore?.correct ?? null,
+      total: objectiveScore?.total ?? numExpected,
+      perDiff: objectiveScore?.perDiff ?? [],
+      aiFeedback,
+    };
+    onSubmit?.(payload);
   };
 
   // --- Highlight helpers ---
@@ -356,13 +471,15 @@ export default function DiffDetectiveTask({
         </PrimaryButton>
       </div>
 
-      {isSubmitted && (
-        <div style={{ textAlign: "center", marginTop: 12, fontSize: "0.95rem", color: "rgba(22,163,74,1)", fontWeight: 900 }}>
-          {showDiffList ? "Answer locked! Here are the differences:" : "Answer locked! Highlights shown above."}
+      {isSubmitted && objectiveScore && (
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: "1.05rem", color: "rgba(22,163,74,1)", fontWeight: 900 }}>
+          🔍 Spotted {objectiveScore.correct}/{objectiveScore.total} difference{objectiveScore.total === 1 ? "" : "s"}
         </div>
       )}
 
-      {/* Image/compare modes can't highlight in place, so reveal the answer key as a list. */}
+      {/* Image/compare modes can't highlight in place, so reveal the answer
+          key as a list — colour each row green (hit) or red (missed) based
+          on the fuzzy match against the student's answer. */}
       {isSubmitted && showDiffList && differences.length > 0 && (
         <div
           style={{
@@ -375,12 +492,63 @@ export default function DiffDetectiveTask({
             color: "rgba(15,23,42,0.92)",
           }}
         >
-          {differences.map((d, i) => (
-            <div key={i} style={{ marginBottom: 4 }}>
-              ✓ {typeof d === "string" ? d : d?.expected || d?.text || d?.description || JSON.stringify(d)}
-            </div>
-          ))}
+          {differences.map((d, i) => {
+            const text = typeof d === "string" ? d : d?.expected || d?.text || d?.description || JSON.stringify(d);
+            const isHit = objectiveScore?.perDiff?.[i]?.isHit ?? false;
+            return (
+              <div key={i} style={{ marginBottom: 4, color: isHit ? "#15803d" : "#b91c1c" }}>
+                {isHit ? "✓" : "✗"} {text}
+              </div>
+            );
+          })}
         </div>
+      )}
+
+      {/* AI coach feedback panel (mirror of art-view / historical-doc).
+          Scoring while fetching, then the coach note + nominated-reader
+          pill (team mode) + Continue button that fires the real onSubmit. */}
+      {feedbackPhase === "scoring" && (
+        <div style={{ marginTop: 14, color: "#0e7490", fontWeight: 700, textAlign: "center" }}>
+          🤖 Coach is reading your answers…
+        </div>
+      )}
+      {feedbackPhase === "feedback" && (
+        <>
+          <div style={{
+            marginTop: 14,
+            textAlign: "left",
+            background: "#fff",
+            border: "1px solid #99f6e4",
+            borderRadius: 12,
+            padding: 14,
+            color: "#0f172a",
+          }}>
+            <div style={{ fontWeight: 900, fontSize: "0.85rem", color: "#0e7490", marginBottom: 6 }}>
+              🤖 Coach feedback
+            </div>
+            {nominatedReader && (
+              <div style={{
+                marginBottom: 10,
+                padding: "6px 10px",
+                borderRadius: 999,
+                background: "rgba(14,116,144,0.08)",
+                border: "1px solid rgba(14,116,144,0.25)",
+                color: "#0e7490",
+                fontWeight: 800,
+                fontSize: "0.85rem",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+              }}>
+                🎤 <strong>{nominatedReader}</strong>, read this to the team.
+              </div>
+            )}
+            <div style={{ fontSize: "0.95rem", lineHeight: 1.5 }}>{aiFeedback}</div>
+          </div>
+          <PrimaryButton onClick={handleFeedbackContinue} style={{ marginTop: 14, width: "100%" }}>
+            {nominatedReader ? "Done reading — Continue ▶" : "Continue ▶"}
+          </PrimaryButton>
+        </>
       )}
     </TaskCardFrame>
   );
