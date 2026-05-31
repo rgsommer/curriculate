@@ -1,0 +1,25 @@
+// POST → void an invoice (reverses its sale entry if it was issued). Bookkeeper+.
+import { NextResponse } from "next/server";
+import { readAuth, db } from "../../../../../../_auth";
+import { voidInvoice } from "../../../../../../_ar";
+
+function gate(u: any, id: string) {
+  if (!u) return { error: "Unauthorized", status: 401 };
+  if (u.clearance < 3 && u.company_id !== id) return { error: "Forbidden", status: 403 };
+  if (u.clearance < 2) return { error: "Forbidden", status: 403 };
+  return null;
+}
+
+export async function POST(req: Request, { params }: { params: Promise<{ id: string; invId: string }> }) {
+  const u = readAuth(req);
+  const { id, invId } = await params;
+  const g = gate(u, id);
+  if (g) return NextResponse.json({ error: g.error }, { status: g.status });
+  try {
+    const dbi = await db();
+    const r = await voidInvoice(dbi, id, invId, u!.uid);
+    return NextResponse.json({ ok: true, status: "void", reversal_ref: r.reversed?.entry_ref || null });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Server error" }, { status: 400 });
+  }
+}

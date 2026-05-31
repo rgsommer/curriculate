@@ -68,6 +68,14 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
         total_gross: r2(totalGross), service_fees: serviceFees },
     });
 
+    // Book the run into the General Ledger (idempotent; never blocks approval).
+    let glRef: string | null = null;
+    try {
+      const { postPayrollPeriod } = await import("../../../_payroll_gl");
+      const je = await postPayrollPeriod(dbi, period.company_id, { ...period, gl_entry_id: period.gl_entry_id }, entries, { created_by: u.uid });
+      glRef = je?.entry_ref || null;
+    } catch (e) { console.warn("[approve] GL posting failed:", e); }
+
     // Send the post-approval Principal summary (bank-funding total + upload instructions).
     try {
       const { sendApprovalSummary } = await import("../../../_post_approval");
@@ -98,10 +106,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
       action: "payroll.approve",
       resource_type: "pay_period", resource_id: period._id.toString(),
       company_id: period.company_id.toString(),
-      details: { entries: entries.length, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, via: "app" },
+      details: { entries: entries.length, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, glRef, via: "app" },
     });
 
-    return NextResponse.json({ ok: true, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, serviceFees });
+    return NextResponse.json({ ok: true, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, serviceFees, glRef });
   } catch (e: any) {
     console.error("[teebeepay/approve] error:", e);
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
