@@ -470,23 +470,41 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
           );
         })()}
 
-        {/* "I noticed the…" spot-check panel. Pill checkboxes overlaid at
-            the bottom of the viewing screen. Forces the student to actually
-            look at the artwork: they must check the real items AND leave the
-            plausible decoy unchecked before the Done button unlocks. */}
+        {/* Instruction + artwork info bar — renders FIRST so the title is at
+            the very top of the viewing screen, then the spot-check panel
+            below it, then the image area. Tester: "the I noticed the... box
+            covers the art title" — fixed by making the panel a flex item
+            below the title instead of an absolute overlay. */}
+        <div style={{
+          padding: "10px 16px",
+          paddingRight: 100,
+          background: "rgba(0,0,0,0.8)",
+          color: "#fff",
+          fontSize: "0.85rem",
+          zIndex: 10,
+          flexShrink: 0,
+        }}>
+          <div style={{ marginBottom: 4 }}>
+            Study this image carefully. Pinch to zoom, scroll to explore.
+          </div>
+          {(config.imageTitle || config.imageArtist) && (
+            <div style={{ fontSize: "0.78rem", color: "#d1d5db", fontStyle: "italic" }}>
+              {[config.imageTitle, config.imageArtist, config.imageYear].filter(Boolean).join(" — ")}
+            </div>
+          )}
+        </div>
+
+        {/* "I noticed the…" spot-check panel — flex item below the info bar. */}
         {shuffledSpot.length > 0 && (
           <div style={{
-            position: "absolute",
-            left: 32, right: 16, bottom: 78,
-            zIndex: 12,
+            flexShrink: 0,
+            padding: "8px 32px 10px 32px",
             background: "rgba(15,15,25,0.92)",
-            border: "1px solid rgba(212,165,116,0.35)",
-            borderRadius: 14,
-            padding: "10px 14px",
+            borderBottom: "1px solid rgba(212,165,116,0.35)",
             color: "#f5f0e8",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-            maxHeight: "38vh",
+            maxHeight: "30vh",
             overflowY: "auto",
+            zIndex: 9,
           }}>
             <div style={{
               fontSize: "0.78rem",
@@ -547,26 +565,6 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
             </div>
           </div>
         )}
-
-        {/* Instruction + artwork info bar */}
-        <div style={{
-          padding: "10px 16px",
-          paddingRight: 100,
-          background: "rgba(0,0,0,0.8)",
-          color: "#fff",
-          fontSize: "0.85rem",
-          zIndex: 10,
-          flexShrink: 0,
-        }}>
-          <div style={{ marginBottom: 4 }}>
-            Study this image carefully. Pinch to zoom, scroll to explore.
-          </div>
-          {(config.imageTitle || config.imageArtist) && (
-            <div style={{ fontSize: "0.78rem", color: "#d1d5db", fontStyle: "italic" }}>
-              {[config.imageTitle, config.imageArtist, config.imageYear].filter(Boolean).join(" — ")}
-            </div>
-          )}
-        </div>
 
         {/* Scrollable + zoomable image area */}
         <div

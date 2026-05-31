@@ -529,24 +529,21 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
           );
         })()}
 
-        {/* "I noticed the…" spot-check panel — only when spotItems are
-            provided. Sits at the bottom-center of the reading screen above
-            the Done button, with pill checkboxes for 3 real document details
-            + 1 plausible decoy. Done stays locked until every real item is
-            checked AND the decoy is left unchecked. */}
+        {/* "I noticed the…" spot-check panel — flex item between the info
+            bar and the document area (mirror of the art-view fix). Was
+            absolute-positioned over the bottom; that risked covering the
+            doc title overlay on short screens. Now stacks cleanly. */}
         {shuffledSpot.length > 0 && (
           <div style={{
-            position: "absolute",
-            left: 32, right: 16, bottom: 78,
-            zIndex: 12,
+            flexShrink: 0,
+            padding: "8px 32px 10px 32px",
             background: "rgba(20,16,10,0.92)",
-            border: "1px solid rgba(212,165,116,0.4)",
-            borderRadius: 14,
-            padding: "10px 14px",
+            borderBottom: "1px solid rgba(212,165,116,0.4)",
             color: "#f5f0e8",
-            boxShadow: "0 8px 24px rgba(0,0,0,0.5)",
-            maxHeight: "38vh",
+            maxHeight: "30vh",
             overflowY: "auto",
+            order: 1,
+            zIndex: 9,
           }}>
             <div style={{
               fontSize: "0.78rem",

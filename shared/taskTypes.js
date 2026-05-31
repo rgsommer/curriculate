@@ -2980,20 +2980,39 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "diff-detective".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
-    - Avoid copyrighted passages; write original content.
-    
-    Task-specific guidance:
-    - Create 6–10 pairs of very similar statements/images-descriptions where students must spot the difference. Provide the "difference" answer key.
-    
+
+    PRIMARY (image) mode — preferred:
+      Tester (2026-05-31): "Basic shapes. Actual task should involve two
+      topic-relevant pictures with minor differences." → use image mode with
+      the lesson vocab terms so the picture grid is topic-relevant.
+
+      Required fields for image mode:
+      - "mode": "image"
+      - "labels": array of 5–8 SHORT topic-relevant terms (1–2 words each)
+        drawn from the vocabulary list. The server deterministically renders
+        these as a tile-grid into Scene A and Scene B; do NOT include imageA/
+        imageB/differences — those are generated.
+
+      Choose labels that are concrete and matter to the lesson (e.g. for
+      Renaissance: "Cathedral", "Madonna", "Halo", "Cherub", "Banner", "Crown").
+      Avoid abstract concepts that can't be pictured by a tile ("Hope",
+      "Belief"). NEVER use generic kindergarten objects like "Apple", "Cat".
+
+    FALLBACK (text) mode — only when no list of concrete tile-able terms
+    fits the topic:
+      - "mode": "text"
+      - "original": string  (Version A)
+      - "modified": string  (Version B, 6–10 deliberate differences)
+      - "differences": array of strings — each a specific difference
+
     Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
+    - For image mode, the labels MUST be from the supplied vocabulary list;
+      do not invent unrelated terms.
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },
