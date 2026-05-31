@@ -203,9 +203,11 @@ function _parseChangeList(text) {
  *   { a:{buffer,contentType}, b:{buffer,contentType}, differences:[{text,hint}] }
  * or null. Always best-effort.
  */
-async function genDiffDetectivePair({ basePrompt, diffCount = 5 }) {
+async function genDiffDetectivePair({ basePrompt, diffCount = 3 }) {
   if (!GEMINI_KEY) return null;
   const sceneText = String(basePrompt || "").trim() || "a simple, colorful classroom scene";
+
+  // STEP 1 — generate image A from the text scene description.
   const genPrompt =
     `Clear, classroom-appropriate, brightly-lit, flat illustration with a plain background. ` +
     `A single cohesive scene: ${sceneText}. Several distinct, clearly-separated objects. ` +
@@ -214,24 +216,31 @@ async function genDiffDetectivePair({ basePrompt, diffCount = 5 }) {
   try { a = await genGeminiImage(genPrompt); } catch { a = null; }
   if (!a?.buffer) return null;
 
+  // STEP 2 — feed image A back to the model and ask for image B with a small
+  // number of clearly spottable changes. Tester (2026-05-31): "generate one,
+  // then present that one and say generate another one based on this image
+  // but with 2-3 differences added." A small N (default 3) keeps the changes
+  // unmistakable and stops the model from drifting the whole composition.
+  const n = Math.max(2, Math.min(4, Number(diffCount) || 3));
   const editInstruction =
-    `This is image A for a classroom "spot the difference" game. ` +
-    `Produce image B: an edited copy of THIS image with EXACTLY ${diffCount} clearly identifiable changes a student could spot ` +
-    `(for example: change an object's color, add or remove an object, change a shape or size, or move something). ` +
-    `Keep the overall scene, composition, and art style otherwise IDENTICAL — only the ${diffCount} intended changes should differ. ` +
+    `Here is image A for a classroom "spot the difference" game. ` +
+    `Make image B: the SAME scene, same composition, same art style, same lighting, same background — ` +
+    `but with exactly ${n} small, clearly identifiable changes a student could spot ` +
+    `(e.g. change one object's colour, add or remove a small object, resize one object, swap a small detail). ` +
+    `Do NOT redraw the scene; keep every other element in the same place and the same colour. ` +
     `Do not add any text, letters, or numbers to the image. ` +
-    `In your text response, return ONLY a JSON array of exactly ${diffCount} short strings, each describing one change you made ` +
-    `(e.g. ["The red apple is now green", "A bird was added in the top-left", "The tree is taller"]).`;
+    `In your text response, return ONLY a JSON array of exactly ${n} short strings, ` +
+    `each describing one change you made (e.g. ["The red apple is now green", "A bird was added top-left", "The tree is taller"]).`;
 
   let edit;
   try { edit = await genGeminiImageEdit(a.buffer, a.contentType, editInstruction); } catch { edit = null; }
   if (!edit?.buffer) return null;
 
   const changeStrings = _parseChangeList(edit.text);
-  // No usable answer key → bail so the caller can use the deterministic SVG.
-  if (changeStrings.length < Math.min(3, diffCount)) return null;
+  // Need at least 2 usable changes to make a playable spot-the-difference.
+  if (changeStrings.length < 2) return null;
 
-  const differences = changeStrings.slice(0, diffCount).map((text) => ({ text }));
+  const differences = changeStrings.slice(0, n).map((text) => ({ text }));
   return {
     a: { buffer: a.buffer, contentType: a.contentType },
     b: { buffer: edit.buffer, contentType: edit.contentType },
@@ -326,7 +335,10 @@ export async function pregenerateTaskImages(task, { allowAi = true } = {}) {
           scenePrompt ||
           (itemList.length ? `a scene containing: ${itemList.join(", ")}` : "") ||
           String(task.title || task.prompt || "a simple classroom scene").slice(0, 200);
-        const diffCount = Number(task.totalDifferences) || 5;
+        // Default to 3 — easier to spot, less likely the model drifts the
+        // whole scene. Honor a higher totalDifferences if the task spec
+        // explicitly asked for more (legacy demo SVG path).
+        const diffCount = Number(task.totalDifferences) || 3;
 
         const pair = await genDiffDetectivePair({ basePrompt, diffCount });
         if (pair) {
