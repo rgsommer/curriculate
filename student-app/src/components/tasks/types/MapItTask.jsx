@@ -343,7 +343,10 @@ export default function MapItTask({
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, color: palette.text }}>
+    // paddingBottom keeps the Submit button clear of TaskRunner's global
+    // Skip Task button (position:absolute, bottom:10, right:10) — tester
+    // (2026-05-31): "Skip Task button is on top of the Submit button".
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, color: palette.text, paddingBottom: 56 }}>
       {/* Prompt — region hint is now a chip on the map itself, so don't
           duplicate it here. */}
       <div style={{ fontSize: "0.95rem", fontWeight: 600, color: palette.subtext, lineHeight: 1.45 }}>

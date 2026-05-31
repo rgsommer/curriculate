@@ -128,6 +128,17 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
   const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
   const [aiFeedback, setAiFeedback] = useState("");
   const pendingSubmitRef = useRef(null);
+  // Nominated reader for the feedback panel (tester 2026-05-31:
+  // "Nominate one of the players to read the feedback, then continue").
+  // Picked once when the feedback text arrives so the name stays stable
+  // through re-renders; null in solo practice (memberNames < 2).
+  const nominatedReader = useMemo(() => {
+    if (!Array.isArray(memberNames) || memberNames.length < 2) return null;
+    const clean = memberNames.map((n) => String(n || "").trim()).filter(Boolean);
+    if (clean.length < 2) return null;
+    return clean[Math.floor(Math.random() * clean.length)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiFeedback]);
   const [responses, setResponses] = useState(() =>
     analysisPrompts.map((prompt) => ({ prompt, response: "" }))
   );
@@ -1077,6 +1088,25 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                     <div style={{ fontWeight: 900, fontSize: "0.85rem", color: "#8b5e3c", marginBottom: 6 }}>
                       🤖 Coach feedback
                     </div>
+                    {/* Nominated reader (team mode only) — gives the feedback a
+                        group beat instead of one quiet person tapping Continue. */}
+                    {nominatedReader && (
+                      <div style={{
+                        marginBottom: 10,
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        background: "rgba(180,83,9,0.08)",
+                        border: "1px solid rgba(180,83,9,0.25)",
+                        color: "#92400e",
+                        fontWeight: 800,
+                        fontSize: "0.85rem",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}>
+                        🎤 <strong>{nominatedReader}</strong>, read this to the team.
+                      </div>
+                    )}
                     <div style={{ fontSize: "0.95rem", lineHeight: 1.5 }}>{aiFeedback}</div>
                   </div>
                   <button
@@ -1095,7 +1125,7 @@ export default function HistoricalDocTask({ task, onSubmit, disabled, memberName
                       cursor: "pointer",
                     }}
                   >
-                    Continue ▶
+                    {nominatedReader ? "Done reading — Continue ▶" : "Continue ▶"}
                   </button>
                 </>
               )}

@@ -110,6 +110,16 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
   // student taps Continue. Falls back to a friendly rubric note on any failure.
   const [feedbackPhase, setFeedbackPhase] = useState("idle"); // idle | scoring | feedback
   const [aiFeedback, setAiFeedback] = useState("");
+  // Nominated reader for the feedback panel (mirror of historical-doc; same
+  // tester ask "Nominate one of the players to read the feedback, then
+  // continue"). Picked once when the feedback text arrives.
+  const nominatedReader = useMemo(() => {
+    if (!Array.isArray(memberNames) || memberNames.length < 2) return null;
+    const clean = memberNames.map((n) => String(n || "").trim()).filter(Boolean);
+    if (clean.length < 2) return null;
+    return clean[Math.floor(Math.random() * clean.length)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aiFeedback]);
   const pendingSubmitRef = useRef(null);
   // Paper vs screen: practice is always on-screen. In a real session, honor the
   // teacher's "prefer paper" setting (minimizeOnScreen) — paper mode shows a
@@ -975,6 +985,23 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                     <div style={{ fontWeight: 900, fontSize: "0.85rem", color: "#0e7490", marginBottom: 6 }}>
                       🤖 Coach feedback
                     </div>
+                    {nominatedReader && (
+                      <div style={{
+                        marginBottom: 10,
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        background: "rgba(14,116,144,0.08)",
+                        border: "1px solid rgba(14,116,144,0.25)",
+                        color: "#0e7490",
+                        fontWeight: 800,
+                        fontSize: "0.85rem",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}>
+                        🎤 <strong>{nominatedReader}</strong>, read this to the team.
+                      </div>
+                    )}
                     <div style={{ fontSize: "0.95rem", lineHeight: 1.5 }}>{aiFeedback}</div>
                   </div>
                   <button
@@ -993,7 +1020,7 @@ export default function ArtViewTask({ task, onSubmit, disabled, memberNames = []
                       cursor: "pointer",
                     }}
                   >
-                    Continue ▶
+                    {nominatedReader ? "Done reading — Continue ▶" : "Continue ▶"}
                   </button>
                 </>
               )}
