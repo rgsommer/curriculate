@@ -2985,34 +2985,28 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
     - Keep language age-appropriate and classroom-safe.
+    - Avoid copyrighted passages; write original content.
 
-    PRIMARY (image) mode — preferred:
-      Tester (2026-05-31): "Basic shapes. Actual task should involve two
-      topic-relevant pictures with minor differences." → use image mode with
-      the lesson vocab terms so the picture grid is topic-relevant.
+    Task-specific guidance:
+    - Create two short text passages — Version A ("original") and Version B
+      ("modified") — that are nearly identical except for 6–10 deliberate,
+      unambiguous changes (rewording, swapped facts, changed dates/numbers,
+      altered names). Each change must be a real spotting target a student
+      can call out.
+    - Provide "differences": an array of strings, each describing one of the
+      changes ("Henry was changed to William", "1812 was changed to 1813").
+    - Optional: "mode": "text" (default).
 
-      Required fields for image mode:
-      - "mode": "image"
-      - "labels": array of 5–8 SHORT topic-relevant terms (1–2 words each)
-        drawn from the vocabulary list. The server deterministically renders
-        these as a tile-grid into Scene A and Scene B; do NOT include imageA/
-        imageB/differences — those are generated.
-
-      Choose labels that are concrete and matter to the lesson (e.g. for
-      Renaissance: "Cathedral", "Madonna", "Halo", "Cherub", "Banner", "Crown").
-      Avoid abstract concepts that can't be pictured by a tile ("Hope",
-      "Belief"). NEVER use generic kindergarten objects like "Apple", "Cat".
-
-    FALLBACK (text) mode — only when no list of concrete tile-able terms
-    fits the topic:
-      - "mode": "text"
-      - "original": string  (Version A)
-      - "modified": string  (Version B, 6–10 deliberate differences)
-      - "differences": array of strings — each a specific difference
+    NOTE — the legacy image (labeled-tile-grid) mode is NOT what teachers
+    want here; the right experience is true image-to-image spot-the-
+    difference, which requires curated/generated images and is out of
+    scope for text-based generation. Do NOT emit "mode": "image" or a
+    "labels" array unless explicitly asked.
 
     Common failure prevention:
-    - For image mode, the labels MUST be from the supplied vocabulary list;
-      do not invent unrelated terms.
+    - Keep "original" and "modified" similar length and similar phrasing
+      except for the deliberate differences.
+    - Each difference must be objectively verifiable.
     - Ensure prompts are student-facing instructions (what to do).
     `,
 },

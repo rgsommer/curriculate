@@ -176,7 +176,14 @@ function shuffleArray(arr) {
  */
 // Task types changed recently — prioritize them in practice so fixes get
 // re-verified in the field. Keep this list fresh as fixes land.
+// Tester (2026-05-31): "practice mode was supposed to prioritize less-
+// practiced/new tasks. I was surprised MapIt did not come up" → mapit
+// added; also pulled in the other recently-shipped types that needed
+// field-verification in the latest waves.
 const RECENTLY_UPDATED_TASK_TYPES = new Set([
+  "mapit",                    // new task type (just shipped)
+  "make-and-snap",            // over-stuffing guard
+  "collaboration",            // over-stuffing guard
   "true-false", "legends", "diff-detective", "historical-doc", "art-view",
   "echo-chain", "what-am-i", "narration-synthesize", "ai-debate-judge",
   "word-weaver-duel", "mystery-clues", "body-break", "open-text", "teach-back",

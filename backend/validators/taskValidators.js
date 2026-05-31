@@ -306,26 +306,19 @@ export function normalizeTaskByType(taskType, rawTask) {
 
   switch (taskType) {
     case TASK_TYPES.DIFF_DETECTIVE: {
-      // Visual scene mode: the generator supplied only a scene spec (a list of
-      // labels). Deterministically bake TWO SVG images + the exact answer key
-      // so the task is fully generated and ready-to-play. (See shell + scene
-      // module.) Falls through harmlessly for the text/compare variants.
-      // Accepts the label list under any of: task.labels (preferred, what the
-      // new aiPrompt asks for), task.sceneItems (legacy), or comma-separated
-      // string. Tester (2026-05-31): "Basic shapes. Actual task should
-      // involve two topic-relevant pictures" — the rendered SVG pair now
-      // uses the actual vocab terms instead of the demo's generic words.
+      // Visual scene mode: only fires when the generator EXPLICITLY sets
+      // mode:"image"|"scene" AND supplies a label list. The labeled-tile-grid
+      // renderer is NOT a stand-in for real image-to-image spot-the-difference
+      // (tester 2026-05-31: "wanted it to be a image difference detection")
+      // and so should not be promoted automatically — it only runs when a
+      // caller explicitly opts in (e.g. the static demo). Text/compare
+      // variants fall through harmlessly.
       let items = [];
       if (Array.isArray(task.labels)) items = task.labels;
       else if (Array.isArray(task.sceneItems)) items = task.sceneItems;
       else if (typeof task.labels === "string") items = task.labels.split(/\s*\|\s*|\s*,\s*/);
       else if (typeof task.sceneItems === "string") items = task.sceneItems.split(/\s*\|\s*|\s*,\s*/);
       items = items.map((s) => String(s || "").trim()).filter(Boolean);
-
-      // If the AI gave us labels at all (even without setting mode), prefer
-      // image mode — that's what the aiPrompt now asks for and it always
-      // beats two paragraphs of slightly-different text.
-      if (!task.mode && items.length >= 3) task.mode = "image";
 
       if ((task.mode === "scene" || task.mode === "image") && items.length >= 3) {
         const scene = buildDiffScene(items, task.title || task.prompt || "diff-detective");
