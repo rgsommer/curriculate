@@ -246,35 +246,82 @@ export default function MapItTask({
     return () => ro.disconnect();
   }, []);
 
-  // Compute map URL + per-marker pixel positions. We use the StaticMapLite
-  // pattern: a single OSM tile-server URL doesn't return a composed image,
-  // so we instead use the `staticmap.openstreetmap.de` legacy service via
-  // the staticmap rendering hosted at osm-staticmap (free, no key). If that
-  // host is blocked, we fall back to a plain "no image — markers only over
-  // a grey canvas with a region label" mode so the task is still playable.
-  const staticMapUrl = useMemo(() => {
+  // Compose the map background from OpenStreetMap's CANONICAL tile server
+  // (tile.openstreetmap.org). The previous implementation used staticmap.
+  // openstreetmap.de, a known-flaky third-party static composer — it was
+  // intermittently down, which triggered the empty-grey fallback (tester
+  // 2026-05-31 screenshot: grey background, no map).
+  // The canonical tile URL is reliable, free, no key required, and only
+  // costs a handful of tile requests per task (≈ 6–12 per map view).
+  const TILE_SIZE = 256;
+  const tileGrid = useMemo(() => {
+    if (!mapPx.w || !mapPx.h) return [];
     const z = map.zoom;
-    const lat = map.centerLat;
-    const lng = map.centerLng;
-    const size = `${mapPx.w}x${mapPx.h}`;
-    // staticmap.openstreetmap.de — free, no key, returns a PNG.
-    // Markers are drawn by the student app overlay (not by the URL) so we
-    // get our coloured numbered badges instead of generic pushpins.
-    return `https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=${z}&size=${size}&maptype=mapnik`;
+    const cxFloat = lonToTileX(map.centerLng, z);
+    const cyFloat = latToTileY(map.centerLat, z);
+    // Render one tile beyond the viewport on every side so panning artefacts
+    // are absent and tiny rounding gaps disappear.
+    const halfWTiles = Math.ceil(mapPx.w / TILE_SIZE / 2) + 1;
+    const halfHTiles = Math.ceil(mapPx.h / TILE_SIZE / 2) + 1;
+    const maxTile = Math.pow(2, z) - 1;
+    const tiles = [];
+    for (let dx = -halfWTiles; dx <= halfWTiles; dx++) {
+      for (let dy = -halfHTiles; dy <= halfHTiles; dy++) {
+        const tx = Math.floor(cxFloat) + dx;
+        const ty = Math.floor(cyFloat) + dy;
+        if (tx < 0 || ty < 0 || tx > maxTile || ty > maxTile) continue;
+        const left = (tx - cxFloat) * TILE_SIZE + mapPx.w / 2;
+        const top = (ty - cyFloat) * TILE_SIZE + mapPx.h / 2;
+        tiles.push({ tx, ty, z, left, top });
+      }
+    }
+    return tiles;
   }, [map.centerLat, map.centerLng, map.zoom, mapPx.w, mapPx.h]);
 
-  // Project (lat,lng) → (px,py) relative to the static map's centre.
+  // Project (lat,lng) → (px,py) relative to the tile composite centre.
   function project(latVal, lngVal) {
     const z = map.zoom;
-    const tileSize = 256;
-    const cx = lonToTileX(map.centerLng, z) * tileSize;
-    const cy = latToTileY(map.centerLat, z) * tileSize;
-    const x = lonToTileX(lngVal, z) * tileSize - cx + mapPx.w / 2;
-    const y = latToTileY(latVal, z) * tileSize - cy + mapPx.h / 2;
+    const cx = lonToTileX(map.centerLng, z) * TILE_SIZE;
+    const cy = latToTileY(map.centerLat, z) * TILE_SIZE;
+    const x = lonToTileX(lngVal, z) * TILE_SIZE - cx + mapPx.w / 2;
+    const y = latToTileY(latVal, z) * TILE_SIZE - cy + mapPx.h / 2;
     return { x, y };
   }
 
-  const [mapErrored, setMapErrored] = useState(false);
+  // De-overlap projected marker positions so nothing stacks on top of
+  // anything else (tester 2026-05-31 screenshot: markers 3 and 4 sitting
+  // on top of each other; marker 2 hidden behind one of them). Walk the
+  // markers in order, nudging any whose projected centre is within MIN_GAP
+  // of an already-placed marker outward along the bearing between them.
+  const MIN_GAP = 42; // px — slightly larger than the 36px badge diameter
+  const positionedMarkers = useMemo(() => {
+    if (!mapPx.w || !mapPx.h) return [];
+    const placed = [];
+    return markers.map((m) => {
+      let { x, y } = project(m.lat, m.lng);
+      // Iterate until the marker is at least MIN_GAP away from every other.
+      for (let pass = 0; pass < 8; pass++) {
+        let collided = false;
+        for (const p of placed) {
+          const dx = x - p.x, dy = y - p.y;
+          const d = Math.hypot(dx, dy);
+          if (d < MIN_GAP) {
+            const ang = d < 0.5 ? Math.random() * Math.PI * 2 : Math.atan2(dy, dx);
+            x = p.x + Math.cos(ang) * MIN_GAP;
+            y = p.y + Math.sin(ang) * MIN_GAP;
+            collided = true;
+          }
+        }
+        if (!collided) break;
+      }
+      // Clamp inside the visible map area.
+      const px = Math.max(20, Math.min(mapPx.w - 20, x));
+      const py = Math.max(20, Math.min(mapPx.h - 20, y));
+      placed.push({ x: px, y: py });
+      return { ...m, _px: px, _py: py };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markers, mapPx.w, mapPx.h, map.centerLat, map.centerLng, map.zoom]);
 
   // ── Render ──────────────────────────────────────────────────────────
   const palette = {
@@ -297,17 +344,13 @@ export default function MapItTask({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, color: palette.text }}>
-      {/* Prompt */}
+      {/* Prompt — region hint is now a chip on the map itself, so don't
+          duplicate it here. */}
       <div style={{ fontSize: "0.95rem", fontWeight: 600, color: palette.subtext, lineHeight: 1.45 }}>
         {task?.prompt || "Tap a numbered marker on the map, then tap the matching choice."}
-        {map.regionHint && (
-          <span style={{ marginLeft: 8, color: palette.subtext, fontWeight: 500 }}>
-            ({map.regionHint})
-          </span>
-        )}
       </div>
 
-      {/* Map area */}
+      {/* Map area — OSM tile composite + de-overlapped marker overlay. */}
       <div
         ref={mapWrapRef}
         style={{
@@ -317,39 +360,69 @@ export default function MapItTask({
           borderRadius: 14,
           overflow: "hidden",
           border: palette.border,
-          background: mapErrored ? "#e5e7eb" : "#dbeafe",
+          background: "#dbeafe",
         }}
       >
-        {!mapErrored && (
+        {/* Tile grid — each tile is an absolutely-positioned <img> over the
+            blue water background. Tile load failures (rare) leave a small
+            transparent gap that the blue bg fills, so the task stays usable. */}
+        {tileGrid.map((t) => (
           <img
-            src={staticMapUrl}
-            alt={`Map of ${map.regionHint || "the region"}`}
+            key={`${t.z}-${t.tx}-${t.ty}`}
+            src={`https://tile.openstreetmap.org/${t.z}/${t.tx}/${t.ty}.png`}
+            alt=""
+            loading="lazy"
             referrerPolicy="no-referrer"
-            onError={() => setMapErrored(true)}
-            style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }}
+            onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
+            style={{
+              position: "absolute",
+              left: t.left,
+              top: t.top,
+              width: TILE_SIZE,
+              height: TILE_SIZE,
+              pointerEvents: "none",
+              userSelect: "none",
+            }}
           />
-        )}
+        ))}
 
-        {/* Fallback when the static map service is blocked — the markers
-            still position correctly relative to each other thanks to the
-            Mercator math, so the task is playable as a "spatial diagram". */}
-        {mapErrored && (
+        {/* Region hint chip — small, top-left, never overlapping the markers. */}
+        {map.regionHint && (
           <div style={{
-            position: "absolute", inset: 0, display: "flex",
-            alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 6,
-            color: palette.subtext, fontSize: "0.85rem", fontWeight: 600, textAlign: "center", padding: 16,
+            position: "absolute",
+            top: 10, left: 10, zIndex: 2,
+            padding: "4px 10px",
+            borderRadius: 999,
+            background: "rgba(255,255,255,0.92)",
+            border: "1px solid rgba(15,23,42,0.12)",
+            color: palette.text,
+            fontSize: "0.75rem", fontWeight: 700,
+            boxShadow: "0 2px 6px rgba(15,23,42,0.10)",
+            maxWidth: "70%",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
           }}>
-            <div>🗺️ {map.regionHint || "Map unavailable — positions still shown to scale"}</div>
+            🗺️ {map.regionHint}
           </div>
         )}
 
-        {/* Marker overlay */}
-        {markers.map((m) => {
-          const { x, y } = project(m.lat, m.lng);
-          // Clamp so markers always render inside the visible area even
-          // if the AI's coords drift slightly outside the static viewport.
-          const px = Math.max(18, Math.min(mapPx.w - 18, x));
-          const py = Math.max(18, Math.min(mapPx.h - 18, y));
+        {/* OSM attribution — required by the OSM tile usage policy. */}
+        <div style={{
+          position: "absolute",
+          bottom: 4, right: 6, zIndex: 2,
+          padding: "1px 6px",
+          borderRadius: 4,
+          background: "rgba(255,255,255,0.78)",
+          color: "#374151",
+          fontSize: "0.62rem",
+          fontWeight: 500,
+        }}>
+          © OpenStreetMap contributors
+        </div>
+
+        {/* Marker overlay — uses the de-overlapped pre-computed positions. */}
+        {positionedMarkers.map((m) => {
           const color = markerColor(m);
           const isActive = activeMarker === m.id;
           const picked = matches[m.id];
@@ -362,8 +435,8 @@ export default function MapItTask({
               title={picked ? `${m.number}: ${picked} — tap to unset` : `Marker ${m.number}`}
               style={{
                 position: "absolute",
-                left: px,
-                top: py,
+                left: m._px,
+                top: m._py,
                 transform: "translate(-50%, -50%)",
                 width: 36,
                 height: 36,
@@ -380,6 +453,7 @@ export default function MapItTask({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
+                zIndex: 3,
               }}
               aria-label={`Marker ${m.number}${picked ? `, currently set to ${picked}` : ""}`}
               aria-pressed={isActive}
