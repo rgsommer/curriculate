@@ -103,7 +103,10 @@ export function mongoPromise() {
 export async function db() {
   const c = await mongoPromise();
   if (!c) throw new Error("MONGO_URI not configured");
-  return c.db(process.env.MONGO_DB || process.env.MONGODB_DB || "pngpay");
+  const database = c.db(process.env.MONGO_DB || process.env.MONGODB_DB || "pngpay");
+  // Fire-and-forget; guarded so it runs at most once per warm process.
+  import("./_indexes").then((m) => m.ensureIndexes(database)).catch(() => {});
+  return database;
 }
 export { ObjectId };
 

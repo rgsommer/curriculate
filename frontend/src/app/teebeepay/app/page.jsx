@@ -15,7 +15,7 @@ import {
   BarChart3, Percent, Upload, Image as ImageIcon, ClipboardList, Activity,
   ShieldCheck, NotebookPen, AlertTriangle, Layers, Network,
   GraduationCap, HelpCircle, ChevronRight, ChevronLeft,
-  FileSpreadsheet, BookOpen,
+  FileSpreadsheet, BookOpen, Receipt,
 } from "lucide-react";
 
 const C = {
@@ -560,6 +560,11 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
           </Tab>
         )}
         {me?.clearance >= 2 && (
+          <Tab active={tab === "ar"} onClick={() => setTab("ar")}>
+            <Receipt size={15} style={{ marginRight: 6 }} /> Receivables
+          </Tab>
+        )}
+        {me?.clearance >= 2 && (
           <Tab active={tab === "tax_rules"} onClick={() => setTab("tax_rules")}>
             <Settings size={15} style={{ marginRight: 6 }} /> Tax rules
           </Tab>
@@ -620,6 +625,10 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
 
       {tab === "gl" && (
         <GeneralLedgerPanel companyId={companyId} canEdit={me?.clearance >= 2} />
+      )}
+
+      {tab === "ar" && (
+        <ReceivablesPanel companyId={companyId} canEdit={me?.clearance >= 2} />
       )}
 
       {tab === "settings" && (
@@ -2222,6 +2231,434 @@ function GlJournalEntryModal({ companyId, accounts, onClose, onSaved }) {
 
       <button onClick={save} disabled={submitting || !balanced} style={{ ...btnPrimary, marginTop: 16, opacity: !balanced ? 0.6 : 1 }}>
         {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Posting…</> : "Post entry"}
+      </button>
+    </Modal>
+  );
+}
+
+/* ─────────── Accounts Receivable panel ─────────── */
+
+const AR_GST_RATE = 0.1;
+const AR_STATUS = {
+  draft:  { label: "Draft",  bg: "#f1f5f9", fg: "#475569" },
+  issued: { label: "Issued", bg: "#dbeafe", fg: "#1e40af" },
+  paid:   { label: "Paid",   bg: "#dcfce7", fg: "#166534" },
+  void:   { label: "Void",   bg: "#fee2e2", fg: "#991b1b" },
+};
+
+function ReceivablesPanel({ companyId, canEdit }) {
+  const [view, setView] = useState("invoices");
+  const [invoices, setInvoices] = useState(null);
+  const [customers, setCustomers] = useState(null);
+  const [error, setError] = useState("");
+  const [showInvoice, setShowInvoice] = useState(false);
+  const [showCustomer, setShowCustomer] = useState(false);
+  const [payInvoice, setPayInvoice] = useState(null);
+
+  const base = `/api/teebeepay/companies/${companyId}/ar`;
+  const loadInvoices = useCallback(async () => {
+    try { setInvoices((await api(`${base}/invoices`)).invoices); }
+    catch (e) { setError(e.message); }
+  }, [base]);
+  const loadCustomers = useCallback(async () => {
+    try { setCustomers((await api(`${base}/customers`)).customers); }
+    catch (e) { setError(e.message); }
+  }, [base]);
+  useEffect(() => { loadInvoices(); loadCustomers(); }, [loadInvoices, loadCustomers]);
+
+  async function act(path, label) {
+    setError("");
+    try {
+      await api(`${base}/${path}`, { method: "POST", body: "{}" });
+      await loadInvoices();
+    } catch (e) { setError(`${label}: ${e.message}`); }
+  }
+  function issue(inv) { act(`invoices/${inv.id}/issue`, "Issue"); }
+  function voidInv(inv) {
+    if (!confirm(`Void ${inv.invoice_ref}? ${inv.status === "issued" ? "Its sale entry will be reversed in the ledger." : ""}`)) return;
+    act(`invoices/${inv.id}/void`, "Void");
+  }
+
+  const views = [
+    { k: "invoices", label: "Invoices" },
+    { k: "customers", label: "Customers" },
+    { k: "aging", label: "Aging" },
+  ];
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        {views.map((v) => (
+          <button key={v.k} onClick={() => setView(v.k)} style={{
+            padding: "7px 14px", borderRadius: 999, cursor: "pointer", fontSize: 13, fontWeight: 600,
+            border: view === v.k ? `1px solid ${C.red}` : "1px solid #e5e7eb",
+            background: view === v.k ? C.red : "#fff", color: view === v.k ? "#fff" : C.inkSoft,
+          }}>{v.label}</button>
+        ))}
+        {canEdit && view === "invoices" && (
+          <button onClick={() => setShowInvoice(true)} disabled={!customers?.length}
+            title={!customers?.length ? "Add a customer first" : ""}
+            style={{ ...btnPrimaryInline, marginLeft: "auto", opacity: customers?.length ? 1 : 0.5 }}>
+            <Plus size={16} /> New invoice
+          </button>
+        )}
+        {canEdit && view === "customers" && (
+          <button onClick={() => setShowCustomer(true)} style={{ ...btnPrimaryInline, marginLeft: "auto" }}>
+            <Plus size={16} /> Add customer
+          </button>
+        )}
+      </div>
+
+      {view === "invoices" && (invoices == null
+        ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+        : <ArInvoiceList invoices={invoices} canEdit={canEdit}
+            onIssue={issue} onPay={setPayInvoice} onVoid={voidInv} />)}
+
+      {view === "customers" && (customers == null
+        ? <Loader2 className="tbp-spin" size={20} color={C.red} />
+        : <ArCustomerList customers={customers} />)}
+
+      {view === "aging" && <ArAgingView companyId={companyId} />}
+
+      {showInvoice && (
+        <ArInvoiceModal companyId={companyId} customers={customers || []}
+          onClose={() => setShowInvoice(false)}
+          onSaved={() => { setShowInvoice(false); loadInvoices(); }} />
+      )}
+      {showCustomer && (
+        <ArCustomerModal companyId={companyId}
+          onClose={() => setShowCustomer(false)}
+          onSaved={() => { setShowCustomer(false); loadCustomers(); }} />
+      )}
+      {payInvoice && (
+        <ArPayModal companyId={companyId} invoice={payInvoice}
+          onClose={() => setPayInvoice(null)}
+          onSaved={() => { setPayInvoice(null); loadInvoices(); }} />
+      )}
+    </div>
+  );
+}
+
+function ArStatusBadge({ status }) {
+  const s = AR_STATUS[status] || AR_STATUS.draft;
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.05,
+      padding: "2px 8px", borderRadius: 999, background: s.bg, color: s.fg }}>{s.label}</span>
+  );
+}
+
+function ArInvoiceList({ invoices, canEdit, onIssue, onPay, onVoid }) {
+  if (!invoices.length) return <Empty>No invoices yet. Create one to bill a customer.</Empty>;
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={th}>Invoice</th>
+            <th style={th}>Customer</th>
+            <th style={th}>Date</th>
+            <th style={{ ...th, textAlign: "right" }}>Total</th>
+            <th style={{ ...th, textAlign: "right" }}>Outstanding</th>
+            <th style={th}>Status</th>
+            {canEdit && <th style={{ ...th, textAlign: "right" }}>Actions</th>}
+          </tr></thead>
+          <tbody>
+            {invoices.map((inv) => {
+              const outstanding = Math.round((inv.total - (inv.amount_paid || 0)) * 100) / 100;
+              return (
+                <tr key={inv.id} style={{ borderTop: "1px solid #f1f5f9", opacity: inv.status === "void" ? 0.6 : 1 }}>
+                  <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}>
+                    <strong>{inv.invoice_ref}</strong>
+                    {inv.gl_entry_ref && <span style={{ display: "block", fontSize: 11, color: C.muted }}>{inv.gl_entry_ref}</span>}
+                  </td>
+                  <td style={td}>{inv.customer_name}</td>
+                  <td style={{ ...td, color: C.inkSoft, whiteSpace: "nowrap" }}>
+                    {inv.date}
+                    {inv.due_date && <span style={{ display: "block", fontSize: 11, color: C.muted }}>due {inv.due_date}</span>}
+                  </td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{glFmt(inv.total)}</td>
+                  <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums",
+                    color: outstanding > 0 ? C.ink : C.muted, fontWeight: outstanding > 0 ? 700 : 400 }}>
+                    {inv.status === "void" ? "—" : glFmt(outstanding)}
+                  </td>
+                  <td style={td}><ArStatusBadge status={inv.status} /></td>
+                  {canEdit && (
+                    <td style={{ ...td, textAlign: "right", whiteSpace: "nowrap" }}>
+                      {inv.status === "draft" && (
+                        <>
+                          <button onClick={() => onIssue(inv)} style={{ ...btnGhostSmall, marginRight: 6 }}>
+                            <Send size={13} /> Issue
+                          </button>
+                          <button onClick={() => onVoid(inv)} style={{ ...btnGhostSmall, color: "#991b1b", borderColor: "#fecaca" }}>Void</button>
+                        </>
+                      )}
+                      {inv.status === "issued" && (
+                        <>
+                          <button onClick={() => onPay(inv)} style={{ ...btnGhostSmall, marginRight: 6 }}>
+                            <CheckCircle2 size={13} /> Record payment
+                          </button>
+                          <button onClick={() => onVoid(inv)} style={{ ...btnGhostSmall, color: "#991b1b", borderColor: "#fecaca" }}>Void</button>
+                        </>
+                      )}
+                      {(inv.status === "paid" || inv.status === "void") && <span style={{ color: C.muted, fontSize: 12 }}>—</span>}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ArCustomerList({ customers }) {
+  if (!customers.length) return <Empty>No customers yet. Add one to start invoicing.</Empty>;
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={tableStyle}>
+          <thead><tr>
+            <th style={th}>Name</th>
+            <th style={th}>Email</th>
+            <th style={th}>Phone</th>
+            <th style={th}>Address</th>
+          </tr></thead>
+          <tbody>
+            {customers.map((c) => (
+              <tr key={c.id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                <td style={td}><strong>{c.name}</strong></td>
+                <td style={{ ...td, color: C.inkSoft }}>{c.email || "—"}</td>
+                <td style={{ ...td, color: C.inkSoft }}>{c.phone || "—"}</td>
+                <td style={{ ...td, color: C.inkSoft }}>{c.address || "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function ArAgingView({ companyId }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [asOf, setAsOf] = useState(today);
+  const [aging, setAging] = useState(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(async () => {
+    setError(""); setAging(null);
+    try { setAging(await api(`/api/teebeepay/companies/${companyId}/ar/aging?asOf=${asOf}`)); }
+    catch (e) { setError(e.message); }
+  }, [companyId, asOf]);
+  useEffect(() => { load(); }, [load]);
+
+  const BUCKETS = [
+    { k: "current", label: "Current" },
+    { k: "d1_30", label: "1–30 days" },
+    { k: "d31_60", label: "31–60 days" },
+    { k: "d61_90", label: "61–90 days" },
+    { k: "d90_plus", label: "90+ days" },
+  ];
+
+  return (
+    <div style={{ display: "grid", gap: 14 }}>
+      <label style={{ fontSize: 12, fontWeight: 600, color: C.inkSoft }}>As of
+        <input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} style={{ ...input, maxWidth: 180, marginTop: 4 }} />
+      </label>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {aging == null ? <Loader2 className="tbp-spin" size={20} color={C.red} /> : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 10 }}>
+            {BUCKETS.map((b) => (
+              <div key={b.k} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14 }}>
+                <div style={{ fontSize: 11, color: C.muted, textTransform: "uppercase", letterSpacing: 0.04 }}>{b.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, fontVariantNumeric: "tabular-nums",
+                  color: b.k === "current" ? C.ink : (aging.buckets[b.k] > 0 ? "#991b1b" : C.muted) }}>
+                  {glFmt(aging.buckets[b.k] || 0)}
+                </div>
+              </div>
+            ))}
+            <div style={{ background: C.red, color: "#fff", borderRadius: 10, padding: 14 }}>
+              <div style={{ fontSize: 11, opacity: 0.85, textTransform: "uppercase", letterSpacing: 0.04 }}>Total outstanding</div>
+              <div style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: "tabular-nums" }}>{glFmt(aging.total)}</div>
+            </div>
+          </div>
+          {!aging.rows.length ? <Empty>Nothing outstanding as of {aging.asOf}.</Empty> : (
+            <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
+              <table style={tableStyle}>
+                <thead><tr>
+                  <th style={th}>Invoice</th>
+                  <th style={th}>Customer</th>
+                  <th style={th}>Due</th>
+                  <th style={{ ...th, textAlign: "right" }}>Overdue (days)</th>
+                  <th style={{ ...th, textAlign: "right" }}>Outstanding</th>
+                </tr></thead>
+                <tbody>
+                  {aging.rows.map((r, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ ...td, fontVariantNumeric: "tabular-nums" }}><strong>{r.invoice_ref}</strong></td>
+                      <td style={td}>{r.customer_name}</td>
+                      <td style={{ ...td, color: C.inkSoft }}>{r.due_date || r.date}</td>
+                      <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums",
+                        color: r.overdueDays > 0 ? "#991b1b" : C.muted }}>{r.overdueDays > 0 ? r.overdueDays : "—"}</td>
+                      <td style={{ ...td, textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{glFmt(r.outstanding)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+function ArCustomerModal({ companyId, onClose, onSaved }) {
+  const [form, setForm] = useState({ name: "", email: "", phone: "", address: "" });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/ar/customers`, { method: "POST", body: JSON.stringify(form) });
+      onSaved();
+    } catch (e) { setError(e.message); setSubmitting(false); }
+  }
+  return (
+    <Modal title="Add customer" onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Field label="Name"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Customer name" style={input} /></Field>
+      <Row>
+        <Field label="Email (optional)"><input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={input} /></Field>
+        <Field label="Phone (optional)"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} style={input} /></Field>
+      </Row>
+      <Field label="Address (optional)"><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} style={input} /></Field>
+      <button onClick={save} disabled={submitting || !form.name.trim()} style={{ ...btnPrimary, opacity: form.name.trim() ? 1 : 0.6 }}>
+        {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Add customer"}
+      </button>
+    </Modal>
+  );
+}
+
+function ArInvoiceModal({ companyId, customers, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const blank = () => ({ description: "", quantity: "1", unit_price: "", taxable: true });
+  const [customerId, setCustomerId] = useState(customers[0]?.id || "");
+  const [date, setDate] = useState(today);
+  const [dueDate, setDueDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const [lines, setLines] = useState([blank()]);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  function setLine(i, patch) { setLines((ls) => ls.map((l, j) => (j === i ? { ...l, ...patch } : l))); }
+  function addLine() { setLines((ls) => [...ls, blank()]); }
+  function removeLine(i) { setLines((ls) => ls.length > 1 ? ls.filter((_, j) => j !== i) : ls); }
+
+  const calc = lines.map((l) => Math.round((Number(l.quantity) || 0) * (Number(l.unit_price) || 0) * 100) / 100);
+  const subtotal = Math.round(calc.reduce((s, v) => s + v, 0) * 100) / 100;
+  const taxableBase = Math.round(lines.reduce((s, l, i) => s + (l.taxable ? calc[i] : 0), 0) * 100) / 100;
+  const gst = Math.round(taxableBase * AR_GST_RATE * 100) / 100;
+  const total = Math.round((subtotal + gst) * 100) / 100;
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      const payload = {
+        customer_id: customerId, date, due_date: dueDate || null, notes,
+        lines: lines
+          .filter((l) => Number(l.unit_price) || l.description.trim())
+          .map((l) => ({ description: l.description, quantity: Number(l.quantity) || 0, unit_price: Number(l.unit_price) || 0, taxable: l.taxable })),
+      };
+      await api(`/api/teebeepay/companies/${companyId}/ar/invoices`, { method: "POST", body: JSON.stringify(payload) });
+      onSaved();
+    } catch (e) { setError(e.message); setSubmitting(false); }
+  }
+
+  const canSave = customerId && total > 0;
+  return (
+    <Modal title="New invoice" wide onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <Row>
+        <Field label="Customer">
+          <select value={customerId} onChange={(e) => setCustomerId(e.target.value)} style={input}>
+            {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Invoice date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={input} /></Field>
+        <Field label="Due date (optional)"><input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} style={input} /></Field>
+      </Row>
+
+      <div style={{ marginTop: 6, marginBottom: 8, fontSize: 12, fontWeight: 700, color: C.muted, textTransform: "uppercase", letterSpacing: 0.06 }}>Line items</div>
+      <div style={{ display: "grid", gap: 8 }}>
+        {lines.map((l, i) => (
+          <div key={i} style={{ display: "grid", gridTemplateColumns: "2fr 0.7fr 1fr auto auto", gap: 8, alignItems: "center" }}>
+            <input value={l.description} onChange={(e) => setLine(i, { description: e.target.value })} placeholder="Description" style={{ ...input, padding: "8px 10px" }} />
+            <input type="number" min="0" step="1" value={l.quantity} onChange={(e) => setLine(i, { quantity: e.target.value })} placeholder="Qty" style={{ ...input, padding: "8px 10px", textAlign: "right" }} />
+            <input type="number" min="0" step="0.01" value={l.unit_price} onChange={(e) => setLine(i, { unit_price: e.target.value })} placeholder="Unit price" style={{ ...input, padding: "8px 10px", textAlign: "right" }} />
+            <label title="GST applies to this line" style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12, color: C.inkSoft, whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={l.taxable} onChange={(e) => setLine(i, { taxable: e.target.checked })} /> GST
+            </label>
+            <button onClick={() => removeLine(i)} disabled={lines.length <= 1} style={{ ...btnGhostSmall, padding: "6px 8px", opacity: lines.length <= 1 ? 0.4 : 1 }}><X size={14} /></button>
+          </div>
+        ))}
+      </div>
+      <button onClick={addLine} style={{ ...btnGhostSmall, marginTop: 8 }}><Plus size={14} /> Add line</button>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 16, padding: "12px 14px", borderRadius: 8, background: "#fafbfc", border: "1px solid #f0f1f4", fontVariantNumeric: "tabular-nums" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span>Subtotal</span><span>{glFmt(subtotal)}</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: C.inkSoft }}><span>GST (10%)</span><span>{glFmt(gst)}</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 15, fontWeight: 800, borderTop: "1px solid #e5e7eb", paddingTop: 4, marginTop: 2 }}><span>Total</span><span>{glFmt(total)}</span></div>
+      </div>
+
+      <Field label="Notes (optional)"><input value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shown on the invoice" style={{ ...input, marginTop: 16 }} /></Field>
+      <button onClick={save} disabled={submitting || !canSave} style={{ ...btnPrimary, opacity: canSave ? 1 : 0.6 }}>
+        {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Saving…</> : "Create draft invoice"}
+      </button>
+    </Modal>
+  );
+}
+
+function ArPayModal({ companyId, invoice, onClose, onSaved }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const outstanding = Math.round((invoice.total - (invoice.amount_paid || 0)) * 100) / 100;
+  const [amount, setAmount] = useState(String(outstanding));
+  const [date, setDate] = useState(today);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function save() {
+    setError(""); setSubmitting(true);
+    try {
+      await api(`/api/teebeepay/companies/${companyId}/ar/invoices/${invoice.id}/pay`, {
+        method: "POST", body: JSON.stringify({ amount: Number(amount), date }),
+      });
+      onSaved();
+    } catch (e) { setError(e.message); setSubmitting(false); }
+  }
+
+  const amt = Number(amount) || 0;
+  const valid = amt > 0 && amt <= outstanding;
+  return (
+    <Modal title={`Record payment — ${invoice.invoice_ref}`} onClose={onClose}>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      <div style={{ marginBottom: 14, padding: "10px 14px", borderRadius: 8, background: "#fafbfc", border: "1px solid #f0f1f4", fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
+        <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: C.inkSoft }}>{invoice.customer_name}</span><span>Total {glFmt(invoice.total)}</span></div>
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, marginTop: 2 }}><span>Outstanding</span><span>{glFmt(outstanding)}</span></div>
+      </div>
+      <Row>
+        <Field label="Amount"><input type="number" min="0" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ ...input, textAlign: "right" }} /></Field>
+        <Field label="Date"><input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={input} /></Field>
+      </Row>
+      {!valid && amt > outstanding && <p style={{ fontSize: 12, color: "#991b1b", margin: "0 0 12px" }}>Amount can't exceed the outstanding {glFmt(outstanding)}.</p>}
+      <button onClick={save} disabled={submitting || !valid} style={{ ...btnPrimary, opacity: valid ? 1 : 0.6 }}>
+        {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Recording…</> : `Record ${glFmt(amt)}`}
       </button>
     </Modal>
   );
