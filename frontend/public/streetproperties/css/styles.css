@@ -246,6 +246,31 @@ section.tight { padding: clamp(3rem, 6vw, 5rem) 0; }
 }
 .tenant-chip:hover { color: var(--brass-lite); border-color: rgba(199,154,75,.5); background: rgba(199,154,75,.06); }
 
+/* Real brand logos */
+.tenant-logos {
+  display: grid; grid-template-columns: repeat(6, 1fr);
+  gap: 1.8rem 2.2rem; align-items: center; justify-items: center;
+  max-width: 1000px; margin: 0 auto;
+}
+.tenant-logos img {
+  height: 30px; width: auto; max-width: 100%; object-fit: contain;
+  transition: opacity .25s var(--ease), transform .25s var(--ease), box-shadow .25s var(--ease);
+}
+/* On the dark band — present the natural grey logos on clean light cards so
+   each brand's full detail (e.g. the RBC shield) reads correctly */
+.tenants .tenant-logos { gap: 1.1rem; }
+.tenants .tenant-logos img {
+  height: 60px; width: 100%; object-fit: contain;
+  background: var(--paper); border-radius: 11px; padding: 15px 20px;
+  opacity: .94;
+}
+.tenants .tenant-logos img:hover { opacity: 1; transform: translateY(-3px); box-shadow: 0 12px 26px rgba(0,0,0,.28); }
+/* On a light background — keep the natural monochrome grey */
+.tenant-logos.on-light img { opacity: .62; }
+.tenant-logos.on-light img:hover { opacity: 1; transform: translateY(-2px); }
+@media (max-width: 860px) { .tenant-logos { grid-template-columns: repeat(4, 1fr); gap: 1.6rem 2rem; } }
+@media (max-width: 520px) { .tenant-logos { grid-template-columns: repeat(3, 1fr); gap: 1.4rem 1.4rem; } .tenant-logos img { height: 26px; } }
+
 /* ==========================================================================
    Feature split blocks
    ========================================================================== */
