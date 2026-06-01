@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetch } from "../api/apiFetch";
 import { DISALLOWED_ROOM_CODES } from "../disallowedRoomCodes.js";
+import { PageShell, PageHeader } from "../components/ui";
 
 function generateRoomCode(length = 4) {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -90,11 +91,8 @@ export default function SharedPresenterLaunch() {
   }, [token, navigate, roomCode]);
 
   return (
-    <div style={{ padding: 24, maxWidth: 860, margin: "0 auto" }}>
-      <h1 style={{ margin: 0, fontSize: "1.4rem" }}>Shared task set</h1>
-      <p style={{ marginTop: 8, color: "#6b7280" }}>
-        {status}
-      </p>
+    <PageShell maxWidth={860}>
+      <PageHeader title="Shared task set" subtitle={status} />
 
       {error && (
         <div
@@ -132,6 +130,6 @@ export default function SharedPresenterLaunch() {
           </div>
         </div>
       )}
-    </div>
+    </PageShell>
   );
 }

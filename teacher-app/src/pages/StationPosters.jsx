@@ -2,6 +2,7 @@
 import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { COPY } from "@shared/config/copy";
+import { PageHeader, Field, TextInput, Select, Button } from "../components/ui";
 
 const COLORS = [
   "red",
@@ -125,74 +126,27 @@ export default function StationPosters() {
           margin: "0 auto",
         }}
       >
-        <h1
-          style={{
-            margin: "0 0 1.5rem",
-            fontSize: "2.5rem",
-            fontWeight: 800,
-          }}
-        >
-          Station Posters
-        </h1>
-        <p style={{ color: "#555", marginBottom: "2rem" }}>
-          Clean 1&quot; margins • Perfect for letter paper • Ready to print
-        </p>
+        <PageHeader
+          title="Station Posters"
+          subtitle="Clean 1&quot; margins • Perfect for letter paper • Ready to print"
+        />
 
-        <div
-          style={{
-            display: "flex",
-            gap: "1rem",
-            flexWrap: "wrap",
-            marginBottom: "3rem",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: "300px" }}>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontWeight: 600,
-              }}
-            >
-              Location(s)
-            </label>
-            <input
+        <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "3rem" }}>
+          <Field label="Location(s)" style={{ flex: 1, minWidth: "300px" }}>
+            <TextInput
               value={locationInput}
               onChange={(e) => setLocationInput(e.target.value)}
               onBlur={updateUrl}
               placeholder="e.g. Gym, Library, Room 201"
-              style={{
-                width: "100%",
-                padding: "0.9rem 1rem",
-                fontSize: "1.1rem",
-                borderRadius: "12px",
-                border: "2px solid #e2e8f0",
-              }}
             />
-          </div>
+          </Field>
 
-          <div>
-            <label
-              style={{
-                display: "block",
-                marginBottom: "0.5rem",
-                fontWeight: 600,
-              }}
-            >
-              Number of colors
-            </label>
-            <select
+          <Field label="Number of colors" style={{ minWidth: "180px" }}>
+            <Select
               value={stationCount}
               onChange={(e) => {
                 setStationCount(Number(e.target.value));
                 updateUrl();
-              }}
-              style={{
-                padding: "0.9rem 1rem",
-                fontSize: "1.1rem",
-                borderRadius: "12px",
-                border: "2px solid #e2e8f0",
-                minWidth: "180px",
               }}
             >
               {[4, 5, 6, 7, 8, 9, 10, 11, 12].map((n) => (
@@ -200,27 +154,24 @@ export default function StationPosters() {
                   {n} colors
                 </option>
               ))}
-            </select>
-          </div>
+            </Select>
+          </Field>
         </div>
 
         <div style={{ textAlign: "center" }}>
-          <button
+          {/* Large print CTA — keep the dominant visual; <Button> with an
+              explicit style override preserves the original prominence. */}
+          <Button
             onClick={handlePrint}
             style={{
               padding: "1.2rem 3rem",
-              fontSize: "1.8rem",
-              fontWeight: 800,
-              background: "#0ea5e9",
-              color: "white",
-              border: "none",
+              fontSize: "1.5rem",
               borderRadius: "16px",
-              cursor: "pointer",
               boxShadow: "0 10px 30px rgba(14,165,233,0.3)",
             }}
           >
             Print All {posters.length} Posters
-          </button>
+          </Button>
         </div>
       </div>
 

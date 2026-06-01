@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import api from "../api/client";
 import { useAuth } from "../auth/useAuth";
 import { socket } from "../socket";
+import { Button } from "../components/ui";
 
 
 function formatNoiseSummary(ns) {
@@ -112,13 +113,7 @@ export default function AnalyticsOverview() {
       {/* Header row with Back button */}
       <header className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-3">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={handleBack}
-            className="border rounded-lg px-3 py-1 text-xs sm:text-sm hover:bg-gray-100"
-          >
-            ← Back
-          </button>
+          <Button variant="ghost" size="sm" onClick={handleBack}>← Back</Button>
           <div>
             <p className="text-xs sm:text-sm text-gray-600">
               Session-level summaries for your recent classes.

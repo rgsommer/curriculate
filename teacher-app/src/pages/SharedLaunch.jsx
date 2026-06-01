@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetchJson } from "../api/apiFetch";
+import { PageShell } from "../components/ui";
 
 function setTokenEverywhere(token) {
   try { localStorage.setItem("token", token); } catch {}
@@ -79,11 +80,11 @@ export default function SharedLaunch() {
   }, [token, nav]);
 
   return (
-    <div style={{ padding: 24, fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif" }}>
+    <PageShell maxWidth={720}>
       <div style={{ fontWeight: 900, fontSize: "1.1rem" }}>{msg}</div>
       <div style={{ marginTop: 10, color: "#6b7280" }}>
         If this link expired, ask the sender to generate a new one.
       </div>
-    </div>
+    </PageShell>
   );
 }
