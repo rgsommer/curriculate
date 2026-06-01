@@ -5,6 +5,18 @@ import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { readAuth, db, ObjectId } from "../../../../teebeepay/_auth";
 import { logAudit } from "../../../../teebeepay/_audit";
+import { checklistForAuditType } from "../../../_checklist";
+
+// Lowercase, mid-sentence labels for the engagement type ("…your audit-readiness review…").
+const AUDIT_TYPE_LABELS: Record<string, string> = {
+  statutory:  "external statutory audit",
+  readiness:  "audit-readiness review",
+  tax:        "tax / IRC due-diligence audit",
+  compliance: "compliance audit",
+  donor_fund: "donor-funded audit",
+  landowner:  "landowner company audit",
+  other:      "audit",
+};
 
 const FROM = process.env.RESEND_PNGPAY_FROM_ADDRESS || process.env.RESEND_FROM_ADDRESS || "TeeBee Audit <noreply@curriculate.net>";
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://www.curriculate.net").replace(/\/+$/, "");
@@ -69,23 +81,50 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     let sent = false;
     if (process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY) {
       const link = `${PUBLIC_URL}/audit/app`;
-      const subject = `TeeBee Audit — your engagement is ready to begin`;
+      const typeLabel = AUDIT_TYPE_LABELS[eng.audit_type] || "audit";
+
+      // Build the document list from the same source of truth as the portal,
+      // so the email always matches the checklist the client will see.
+      const items = checklistForAuditType(String(eng.audit_type || "other"));
+      const requiredItems = items.filter((i) => i.required);
+      const optionalItems = items.filter((i) => !i.required);
+      const reqList = requiredItems
+        .map((i) => `<li style="margin:5px 0"><strong>${esc(i.label)}</strong></li>`)
+        .join("");
+      const optLabels = optionalItems.slice(0, 4).map((i) => esc(i.label)).join(", ");
+
+      const subject = `TeeBee Audit — getting started with your ${typeLabel}`;
       const html = `
-        <div style="font:14px/1.55 -apple-system,Segoe UI,Arial;color:#0f172a;max-width:560px">
+        <div style="font:14px/1.6 -apple-system,Segoe UI,Arial;color:#0f172a;max-width:580px">
           <h2 style="margin:0 0 12px;color:#0f2c52">Welcome to TeeBee Audit</h2>
           <p>Hi ${esc(eng.contact_name || "there")},</p>
-          <p>Theresia at TeeBee Accountants has set up your audit engagement on our secure platform:
-            <strong>${esc(eng.company_name)}</strong>.</p>
-          <p>Sign in below to see a personalised checklist of documents we need, and upload them
-            securely. Your accountant reviews everything before any finding is finalised.</p>
+          <p>Theresia at TeeBee Accountants has set up your ${esc(typeLabel)} for
+            <strong>${esc(eng.company_name)}</strong> on our secure platform. Here's all you need to do:</p>
+          <ol style="padding-left:18px;margin:14px 0">
+            <li style="margin:8px 0"><strong>Open the portal</strong> using the button below (or go to curriculate.net/audit/app).</li>
+            <li style="margin:8px 0"><strong>Sign in — no password.</strong> Enter this email address
+              (<strong>${esc(email)}</strong>); we'll send you a 6-digit code, type it in. That's it.</li>
+            <li style="margin:8px 0">A quick <strong>walkthrough</strong> pops up the first time — you can replay it
+              any time from the <strong>Tips</strong> button, top-right.</li>
+            <li style="margin:8px 0"><strong>Upload your documents.</strong> You'll see a short checklist.${
+              reqList ? ` The items we need to start:` : ""}
+              ${reqList ? `<ul style="padding-left:18px;margin:6px 0">${reqList}</ul>` : ""}
+              ${optLabels ? `<div style="color:#475569;font-size:13px">Optional extras that help us move faster: ${optLabels}.</div>` : ""}
+            </li>
+            <li style="margin:8px 0">On each item click <strong>"Add file"</strong> and upload — Excel, CSV, PDF or Word,
+              up to 200 MB each. You can add several files per item; a <strong>green tick</strong> shows once an item has a file.</li>
+            <li style="margin:8px 0"><strong>That's all — nothing to "submit".</strong> Once your files are in, your CPA
+              reviews everything and runs the checks. Any findings or questions appear on that page, and we'll email you.</li>
+          </ol>
           <p style="margin:18px 0">
             <a href="${link}" style="display:inline-block;padding:11px 22px;background:#0f2c52;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">
               Sign in to TeeBee Audit →
             </a>
           </p>
           <p style="color:#475569;font-size:13px">
-            Use this email address (<strong>${esc(email)}</strong>) when signing in. We'll send you a
-            6-digit code each time — no password to remember.
+            <strong>Tip:</strong> wherever you can, export straight from your accounting software
+            (MYOB, Xero, QuickBooks, or a spreadsheet) rather than scanning — it's faster for everyone.
+            If all you have is PDFs, send those to start. Any trouble signing in, just reply to this email.
           </p>
           <p style="color:#94a3b8;font-size:12px;margin-top:24px">
             TeeBee Accountants Ltd · CPA · Registered with the PNG Accountants Registration Board ·
