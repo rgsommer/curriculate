@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Loader2, AlertCircle, CheckCircle2, Mail, Phone, Building2,
   Edit2, RefreshCw, Filter, Search, Send, FileText, Sparkles, Database, Trash2, Download,
-  HelpCircle, ChevronDown, ChevronRight,
+  HelpCircle, ChevronDown, ChevronRight, UserPlus,
 } from "lucide-react";
 
 const GUIDE_KEY = "teebee.audit.admin.guide";
@@ -108,6 +108,7 @@ export default function AuditAdminPage() {
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
 
   // Open the how-to guide by default the first time; remember the choice after.
@@ -169,6 +170,13 @@ export default function AuditAdminPage() {
           }}>TBA</div>
           <strong style={{ fontSize: 16 }}>TeeBee Audit — Admin queue</strong>
         </div>
+        <button onClick={() => setCreating(true)} style={{
+          marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "6px 12px", background: C.gold, color: C.navy,
+          border: "1px solid " + C.gold, borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer",
+        }}>
+          <UserPlus size={14} /> New client
+        </button>
         <button onClick={async () => {
           try {
             const r = await api("/api/audit/seed-test-data", { method: "POST" });
@@ -176,7 +184,7 @@ export default function AuditAdminPage() {
             refresh();
           } catch (e) { alert(e.message); }
         }} style={{
-          marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+          display: "inline-flex", alignItems: "center", gap: 6,
           padding: "6px 12px", background: "transparent", color: "#cbd5e1",
           border: "1px solid #3a526b", borderRadius: 8, fontSize: 13, cursor: "pointer",
         }}>
@@ -310,6 +318,10 @@ export default function AuditAdminPage() {
       {editing && <EngagementDialog engagement={editing}
         onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); refresh(); }} />}
+
+      {creating && <NewEngagementDialog
+        onClose={() => setCreating(false)}
+        onCreated={() => { setCreating(false); refresh(); }} />}
 
       <style>{`@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } } .spin { animation: spin .9s linear infinite; }`}</style>
     </main>
@@ -542,6 +554,108 @@ function EngagementDialog({ engagement, onClose, onSaved }) {
             {submitting
               ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Saving…</>
               : <><CheckCircle2 size={14} style={{ marginRight: 6 }} /> Save</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ───────────── Create a new engagement (auditor-initiated) ──────────── */
+function NewEngagementDialog({ onClose, onCreated }) {
+  const [f, setF] = useState({
+    company_name: "", audit_type: "readiness", fy_end: "",
+    contact_name: "", contact_email: "", contact_phone: "",
+    agreed_fee: "", status: "engaged", notes: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
+
+  async function create() {
+    if (!f.company_name.trim()) { setError("Client / company name is required."); return; }
+    setSubmitting(true); setError("");
+    try {
+      const j = await api("/api/audit/engagements", { method: "POST", body: JSON.stringify(f) });
+      onCreated(j.id);
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: "#fff", borderRadius: 14, maxWidth: 640, width: "100%",
+        maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+      }}>
+        <div style={{ background: "linear-gradient(135deg, #fffaf0 0%, #fef6d8 100%)",
+                       padding: "18px 22px", borderBottom: "1px solid #fde68a" }}>
+          <div style={{ fontSize: 11, color: "#9c6c00", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.06 }}>
+            New audit engagement
+          </div>
+          <h3 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: C.ink }}>Add a client</h3>
+        </div>
+        <div style={{ padding: "20px 22px" }}>
+          {error && (
+            <div style={{ background: "#fee2e2", border: "1px solid #fecaca", color: "#7f1d1d",
+                           padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{error}</div>
+          )}
+          <Field label="Client / company name">
+            <input style={input} value={f.company_name} onChange={(e) => set("company_name", e.target.value)}
+              placeholder="e.g. Infinite Wood Builders Limited 2025" autoFocus />
+          </Field>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Audit type">
+              <select style={input} value={f.audit_type} onChange={(e) => set("audit_type", e.target.value)}>
+                {Object.entries(AUDIT_TYPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+            <Field label="Financial year end">
+              <input style={input} value={f.fy_end} onChange={(e) => set("fy_end", e.target.value)}
+                placeholder="e.g. 31 Dec 2025" />
+            </Field>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Status">
+              <select style={input} value={f.status} onChange={(e) => set("status", e.target.value)}>
+                {STATUSES.filter((s) => s.v !== "lost").map((s) => <option key={s.v} value={s.v}>{s.l}</option>)}
+              </select>
+            </Field>
+            <Field label="Agreed fee (PGK) — optional">
+              <input style={input} type="number" step="100" min="0" value={f.agreed_fee}
+                onChange={(e) => set("agreed_fee", e.target.value)} placeholder="leave blank for now" />
+            </Field>
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, margin: "2px 0 12px" }}>
+            Client contact is optional — only needed if you'll use “Invite client to upload”.
+            Leave blank to upload the files yourself.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <Field label="Contact name (optional)">
+              <input style={input} value={f.contact_name} onChange={(e) => set("contact_name", e.target.value)} />
+            </Field>
+            <Field label="Contact email (optional)">
+              <input style={input} type="email" value={f.contact_email} onChange={(e) => set("contact_email", e.target.value)} />
+            </Field>
+          </div>
+          <Field label="Notes (internal) — optional">
+            <textarea style={{ ...input, minHeight: 70 }} value={f.notes} onChange={(e) => set("notes", e.target.value)} />
+          </Field>
+          <div style={{ fontSize: 12, color: C.muted }}>
+            Once created, open the engagement in <strong>/audit/app</strong> to upload the trial balance,
+            financials and bank recs, then run the analysis.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end",
+                       padding: "14px 22px", borderTop: "1px solid #f1f5f9" }}>
+          <button onClick={onClose} style={btnGhostLg}>Cancel</button>
+          <button onClick={create} disabled={submitting} style={btnPrimary}>
+            {submitting
+              ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Creating…</>
+              : <><UserPlus size={14} style={{ marginRight: 6 }} /> Create engagement</>}
           </button>
         </div>
       </div>
