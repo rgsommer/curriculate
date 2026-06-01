@@ -6,6 +6,8 @@
 import { NextResponse } from "next/server";
 import { GridFSBucket } from "mongodb";
 import { readAuth, db, ObjectId } from "../../../../teebeepay/_auth";
+import { classifyDocumentSlot } from "../../../_classify";
+import { checklistForAuditType } from "../../../_checklist";
 
 const MAX_BYTES = 200 * 1024 * 1024; // 200 MB ceiling per file
 
@@ -31,8 +33,20 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     const form = await req.formData();
     const file = form.get("file") as File | null;
-    const slot = String(form.get("slot") || "other");
+    const requestedSlot = String(form.get("slot") || "");
     if (!file) return NextResponse.json({ error: "Missing file field." }, { status: 400 });
+
+    // Auto-file by filename when no explicit slot is given (or "auto" is sent).
+    // Restricted to this engagement's checklist so a file only lands in a slot
+    // that's actually relevant to the audit type.
+    let slot = requestedSlot;
+    let autoClassified = false;
+    if (!slot || slot === "auto") {
+      const allowed = checklistForAuditType(String(eng.audit_type || "other")).map((i) => i.slot);
+      const guess = classifyDocumentSlot(file.name, allowed);
+      slot = guess.score > 0 ? guess.slot : "other";
+      autoClassified = true;
+    }
     if (file.size > MAX_BYTES) {
       return NextResponse.json({
         error: `File exceeds the ${Math.round(MAX_BYTES / 1024 / 1024)} MB limit. Split large GL exports by quarter.`,
@@ -73,6 +87,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         size: file.size,
         mime: file.type,
         slot,
+        auto_classified: autoClassified,
       },
     });
   } catch (e: any) {

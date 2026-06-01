@@ -345,6 +345,8 @@ function EngagementView({ engagementId, me, onBack }) {
   const [info, setInfo] = useState("");
   const [busySlot, setBusySlot] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkResults, setBulkResults] = useState([]);
 
   const refresh = useCallback(async () => {
     setError("");
@@ -393,11 +395,45 @@ function EngagementView({ engagementId, me, onBack }) {
     finally { setAnalyzing(false); }
   }
 
+  // Bulk upload: send every file with slot="auto" so the server files each into
+  // the right checklist slot by name, then auto-run analysis once the trial
+  // balance and ledger are both present (admins only — analysis is firm-side).
+  async function bulkUpload(fileArr) {
+    if (!fileArr || !fileArr.length) return;
+    setBulkBusy(true); setError(""); setInfo(""); setBulkResults([]);
+    const results = [];
+    for (const file of fileArr) {
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("slot", "auto");
+        const j = await api(`/api/audit/engagements/${engagementId}/files`, { method: "POST", body: fd });
+        results.push({ filename: file.name, slot: j.file?.slot || "other" });
+      } catch (e) {
+        results.push({ filename: file.name, slot: null, error: e.message });
+      }
+    }
+    setBulkResults(results);
+    setBulkBusy(false);
+    await refresh();
+    const sorted = results.filter((r) => r.slot && r.slot !== "other").length;
+    setInfo(`Filed ${sorted} of ${results.length} document${results.length === 1 ? "" : "s"} automatically.`);
+    try {
+      const fl = await api(`/api/audit/engagements/${engagementId}/files`);
+      const present = new Set((fl.files || []).map((f) => f.slot));
+      if (me?.clearance >= 3 && present.has("trial_balance") && present.has("general_ledger")) {
+        runAnalysis();
+      }
+    } catch { /* non-fatal */ }
+  }
+
   if (!eng) return <Centered><Loader2 size={22} className="spin" color={C.gold} /></Centered>;
   const isAdmin = me?.clearance >= 3;
   const filesBySlot = files.reduce((m, f) => {
     (m[f.slot] = m[f.slot] || []).push(f); return m;
   }, {});
+  const slotLabelMap = checklist.reduce((m, it) => { m[it.slot] = it.label; return m; }, {});
+  const slotLabel = (s) => (!s || s === "other") ? "Unsorted — assign below" : (slotLabelMap[s] || s);
 
   return (
     <div style={{ maxWidth: 980, margin: "32px auto", padding: 24 }}>
@@ -462,7 +498,46 @@ function EngagementView({ engagementId, me, onBack }) {
       {/* Checklist */}
       <h2 style={{ ...h2, marginTop: 8 }}>Document checklist</h2>
       <p style={{ ...lead, fontSize: 14 }}>
-        Upload each item below. Multiple files per slot are fine. Supported: XLSX, CSV, PDF, DOCX. Max 200 MB per file.
+        Supported: XLSX, CSV, PDF, DOCX. Max 200 MB per file.
+      </p>
+
+      {/* Bulk auto-filing uploader — the fast path */}
+      <div style={{ background: C.goldSoft, border: "1px dashed #e3c976", borderRadius: 10, padding: 16, marginTop: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Sparkles size={16} color={C.gold} />
+          <strong style={{ fontSize: 14 }}>Upload documents — we&rsquo;ll file them automatically</strong>
+        </div>
+        <p style={{ fontSize: 12.5, color: C.muted, margin: "6px 0 10px" }}>
+          Add everything at once — trial balance, ledger, financials, bank statements and recs. We sort each file into the
+          checklist below by its name{isAdmin ? ", then run the analysis as soon as the trial balance and ledger are in" : ""}.
+        </p>
+        <label style={{ ...btnPrimaryInline, cursor: bulkBusy ? "default" : "pointer", opacity: bulkBusy ? 0.6 : 1 }}>
+          {bulkBusy
+            ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Filing…</>
+            : <><Upload size={14} style={{ marginRight: 6 }} /> Choose files</>}
+          <input type="file" hidden multiple disabled={bulkBusy}
+            onChange={(e) => { bulkUpload(Array.from(e.target.files || [])); e.target.value = ""; }} />
+        </label>
+        {bulkResults.length > 0 && (
+          <div style={{ marginTop: 12, display: "grid", gap: 5 }}>
+            {bulkResults.map((r, i) => (
+              <div key={i} style={{ fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+                {r.slot && r.slot !== "other"
+                  ? <CheckCircle2 size={13} color="#16a34a" />
+                  : <AlertCircle size={13} color={r.slot ? C.muted : C.red} />}
+                <span style={{ color: C.inkSoft }}>{r.filename}</span>
+                <ChevronRight size={11} color={C.muted} />
+                <span style={{ color: (r.slot && r.slot !== "other") ? C.navy : C.muted, fontWeight: 600 }}>
+                  {r.error ? r.error : slotLabel(r.slot)}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <p style={{ ...lead, fontSize: 12.5, color: C.muted, marginTop: 14 }}>
+        Or add files to a specific item below.
       </p>
       <div style={{ display: "grid", gap: 12, marginTop: 12 }}>
         {checklist.map((item) => {
