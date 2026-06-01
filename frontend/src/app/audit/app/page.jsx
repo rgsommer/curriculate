@@ -9,6 +9,7 @@ import {
   Loader2, AlertCircle, CheckCircle2, ArrowRight, ArrowLeft, KeyRound, LogOut,
   Upload, FileText, ClipboardList, Trash2, Sparkles,
   Target, ShieldAlert, ClipboardCheck, Plus, Check, ChevronRight,
+  HelpCircle, ShieldCheck, X,
 } from "lucide-react";
 
 const C = {
@@ -22,6 +23,12 @@ const TOKEN_KEY = "teebeepay.authToken";
 
 function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }
 function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
+
+// First-run tour: shown once per browser to new audit clients. Bump the
+// version suffix to re-show it after a material workflow change.
+const TOUR_KEY = "teebee.audit.tour.v1";
+function tourSeen() { try { return localStorage.getItem(TOUR_KEY) === "1"; } catch { return false; } }
+function markTourSeen() { try { localStorage.setItem(TOUR_KEY, "1"); } catch {} }
 
 async function api(path, opts = {}) {
   const tok = getToken();
@@ -40,6 +47,7 @@ export default function AuditAppPage() {
   const [me, setMe] = useState(null);
   const [engagements, setEngagements] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [showTour, setShowTour] = useState(false);
 
   const loadMe = useCallback(async () => {
     if (!getToken()) { setView("login"); return; }
@@ -57,7 +65,16 @@ export default function AuditAppPage() {
   }, []);
   useEffect(() => { loadMe(); }, [loadMe]);
 
+  // Auto-open the first-run tour once for new clients (not firm staff) the
+  // first time they land on their workspace.
+  useEffect(() => {
+    if (me && me.clearance < 3 && (view === "dashboard" || view === "engagement") && !tourSeen()) {
+      setShowTour(true);
+    }
+  }, [me, view]);
+
   function signOut() { setToken(null); setMe(null); setView("login"); }
+  function closeTour() { markTourSeen(); setShowTour(false); }
 
   return (
     <main style={{
@@ -79,7 +96,14 @@ export default function AuditAppPage() {
           <Link href="/audit/admin" style={{ ...miniNav, marginLeft: 16 }}>Admin queue →</Link>
         )}
         {me && (
-          <button onClick={signOut} style={{ ...miniNav, marginLeft: "auto", cursor: "pointer", background: "transparent", border: "1px solid #3a526b" }}>
+          <button onClick={() => setShowTour(true)} title="Show tips"
+            style={{ ...miniNav, marginLeft: "auto", cursor: "pointer", background: "transparent",
+                     border: "1px solid #3a526b", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <HelpCircle size={13} /> Tips
+          </button>
+        )}
+        {me && (
+          <button onClick={signOut} style={{ ...miniNav, marginLeft: 8, cursor: "pointer", background: "transparent", border: "1px solid #3a526b" }}>
             <LogOut size={13} style={{ verticalAlign: -2, marginRight: 6 }} /> Sign out
           </button>
         )}
@@ -96,8 +120,81 @@ export default function AuditAppPage() {
           onBack={() => { setSelectedId(null); setView("dashboard"); }} />
       )}
 
+      {showTour && <FirstRunTour onClose={closeTour} isAdmin={me?.clearance >= 3} />}
+
       <style>{`@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } } .spin { animation: spin .9s linear infinite; }`}</style>
     </main>
+  );
+}
+
+/* ──────────────── First-run tour ──────────────── */
+
+function FirstRunTour({ onClose, isAdmin }) {
+  const steps = [
+    {
+      icon: <ShieldCheck size={18} />,
+      title: "Welcome to TeeBee Audit",
+      body: "This is your secure audit workspace. Everything your accountant needs lives here — and nothing is ever finalised without a CPA reviewing it first. Here's how it works in three quick steps.",
+    },
+    {
+      icon: <ClipboardList size={18} />,
+      title: "1 · Your document checklist",
+      body: "We've prepared a checklist of exactly what we need for your audit. Items marked Required are the must-haves — for a readiness review that's mainly your year-end trial balance and general ledger. The list is tailored to your engagement, so you'll never hunt for what to send.",
+    },
+    {
+      icon: <Upload size={18} />,
+      title: "2 · Upload securely",
+      body: "Click “Add file” on any item to upload. XLSX, CSV, PDF or DOCX, up to 200 MB each. You can add several files per item, and remove anything before we begin. A green tick shows once an item has a file.",
+    },
+    {
+      icon: <Sparkles size={18} />,
+      title: "3 · What happens next",
+      body: isAdmin
+        ? "Once files are in, run the software analysis to surface reconciliation gaps, anomalies and compliance flags. Every finding is a starting point for your review — confirm, dismiss or annotate before it reaches the client."
+        : "Once your files are in, your CPA at TeeBee reviews everything and runs the checks. Any findings appear right here on this page. We'll be in touch — you can come back any time to add documents or see progress.",
+    },
+  ];
+  const [i, setI] = useState(0);
+  const step = steps[i];
+  const last = i === steps.length - 1;
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Getting started"
+      style={{ position: "fixed", inset: 0, background: "rgba(8,16,28,0.55)", zIndex: 1000,
+               display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div style={{ position: "relative", background: "#fff", borderRadius: 14, maxWidth: 440, width: "100%",
+                    boxShadow: "0 24px 64px rgba(0,0,0,0.4)", overflow: "hidden" }}>
+        <button onClick={onClose} aria-label="Close" title="Skip"
+          style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28, borderRadius: 7,
+                   border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", cursor: "pointer",
+                   display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <X size={15} />
+        </button>
+        <div style={{ background: C.navy, color: "#fff", padding: "20px 22px", display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 36, height: 36, borderRadius: 9, background: C.gold, color: C.navy,
+                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {step.icon}
+          </div>
+          <strong style={{ fontSize: 16 }}>{step.title}</strong>
+        </div>
+        <div style={{ padding: "20px 22px" }}>
+          <p style={{ margin: 0, fontSize: 14, lineHeight: 1.62, color: C.inkSoft }}>{step.body}</p>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "14px 22px", borderTop: "1px solid #eef1f4" }}>
+          <div style={{ display: "flex", gap: 6, marginRight: "auto" }}>
+            {steps.map((_, k) => (
+              <span key={k} style={{ width: 7, height: 7, borderRadius: 99,
+                background: k === i ? C.gold : "#d6dbe2", transition: "background .2s" }} />
+            ))}
+          </div>
+          {i > 0 && <button onClick={() => setI(i - 1)} style={btnGhostSm}>Back</button>}
+          {!last && <button onClick={onClose} style={{ ...btnGhostSm, border: "none" }}>Skip</button>}
+          <button onClick={() => (last ? onClose() : setI(i + 1))} style={btnPrimaryInline}>
+            {last ? "Got it" : "Next"} {!last && <ChevronRight size={14} style={{ marginLeft: 4 }} />}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
