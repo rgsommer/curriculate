@@ -7,7 +7,10 @@ import Link from "next/link";
 import {
   ArrowLeft, Loader2, AlertCircle, CheckCircle2, Mail, Phone, Building2,
   Edit2, RefreshCw, Filter, Search, Send, FileText, Sparkles, Database, Trash2, Download,
+  HelpCircle, ChevronDown, ChevronRight,
 } from "lucide-react";
+
+const GUIDE_KEY = "teebee.audit.admin.guide";
 
 const C = {
   ink: "#0f172a", inkSoft: "#334155", muted: "#64748b",
@@ -44,12 +47,83 @@ async function api(path, opts = {}) {
   return j;
 }
 
+/* ───────────── How-to guide (collapsible, for the auditor) ──────────── */
+function AuditHowToPanel({ open, onToggle }) {
+  const steps = [
+    { n: "1", t: "Open the engagement",
+      d: "Click the engagement's row below. Set Status to Engaged or Active, enter the agreed fee, and Save." },
+    { n: "2", t: "Get the documents in",
+      d: 'Click "Invite client to upload" to email the client a sign-in link and a tailored checklist — or upload their files yourself in the engagement\'s Document checklist. For a readiness review you mainly need the trial balance and general ledger.' },
+    { n: "3", t: "Plan the audit",
+      d: "Open the engagement and use the firm-internal Audit planning panel: set Materiality (base it on total expenditure for a not-for-profit), build the Risk register, and track Working papers." },
+    { n: "4", t: "Run the checks",
+      d: 'Hit "Run software analysis". The platform runs reconciliations, anomaly and compliance scans and lists findings by severity — your starting point, not the conclusion.' },
+    { n: "5", t: "Review & finalise",
+      d: "Work through each finding (confirm, annotate or dismiss) — nothing is final until you've reviewed it. Then move Status to Review → Delivered and issue your opinion." },
+  ];
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, marginBottom: 22, overflow: "hidden" }}>
+      <button onClick={onToggle} style={{
+        width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "14px 18px",
+        background: open ? C.cream : "#fff", border: "none", cursor: "pointer", textAlign: "left",
+      }}>
+        <div style={{ width: 30, height: 30, borderRadius: 8, background: C.gold, color: C.navy,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+          <HelpCircle size={16} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <strong style={{ fontSize: 14 }}>How to run an audit</strong>
+          <div style={{ fontSize: 12, color: C.muted }}>A 5-step walkthrough of an engagement, start to finish.</div>
+        </div>
+        {open ? <ChevronDown size={18} color={C.muted} /> : <ChevronRight size={18} color={C.muted} />}
+      </button>
+      {open && (
+        <div style={{ padding: "4px 18px 18px", borderTop: "1px solid #f1f3f5" }}>
+          <div style={{ display: "grid", gap: 12, marginTop: 14 }}>
+            {steps.map((s) => (
+              <div key={s.n} style={{ display: "flex", gap: 12 }}>
+                <div style={{ width: 24, height: 24, borderRadius: 99, background: C.navy, color: "#fff",
+                  fontSize: 12, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  {s.n}
+                </div>
+                <div>
+                  <strong style={{ fontSize: 13.5 }}>{s.t}</strong>
+                  <div style={{ fontSize: 13, color: C.inkSoft, lineHeight: 1.55, marginTop: 2 }}>{s.d}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 14, fontSize: 12, color: C.muted }}>
+            Tip: use “Seed test data” (top right) to create a sample engagement and practise the whole flow first.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AuditAdminPage() {
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState(null);
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  // Open the how-to guide by default the first time; remember the choice after.
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem(GUIDE_KEY);
+      setGuideOpen(v === null ? true : v === "1");
+    } catch {}
+  }, []);
+  function toggleGuide() {
+    setGuideOpen((o) => {
+      const next = !o;
+      try { localStorage.setItem(GUIDE_KEY, next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }
 
   const refresh = useCallback(async () => {
     setError("");
@@ -127,6 +201,9 @@ export default function AuditAdminPage() {
             <AlertCircle size={16} /> {error}
           </div>
         )}
+
+        {/* How to run an audit */}
+        <AuditHowToPanel open={guideOpen} onToggle={toggleGuide} />
 
         {/* Status tiles */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
