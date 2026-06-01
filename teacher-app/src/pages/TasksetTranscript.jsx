@@ -593,54 +593,11 @@ function summarizeWordWeaver(sub, task) {
 
 
 
-function summarizeDiffDetective(sub, task) {
-  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
-  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
-  const cfg = task?.config && typeof task.config === "object" ? task.config : {};
-
-  const diffs =
-    (Array.isArray(ap.differences) ? ap.differences : null) ||
-    (Array.isArray(ap.diffs) ? ap.diffs : null) ||
-    (Array.isArray(ap.items) ? ap.items : null) ||
-    (Array.isArray(data.differences) ? data.differences : null) ||
-    (Array.isArray(data.diffs) ? data.diffs : null) ||
-    (Array.isArray(data.items) ? data.items : null) ||
-    null;
-
-  const mode =
-    (cfg.mode ? String(cfg.mode) : null) ||
-    (ap.mode ? String(ap.mode) : null) ||
-    (data.mode ? String(data.mode) : null) ||
-    null;
-
-  const count =
-    (Number.isFinite(Number(ap.countFound)) ? Number(ap.countFound) : null) ??
-    (Number.isFinite(Number(data.countFound)) ? Number(data.countFound) : null) ??
-    (Array.isArray(diffs) ? diffs.length : null) ??
-    null;
-
-  const max =
-    (Number.isFinite(Number(cfg.expectedCount)) ? Number(cfg.expectedCount) : null) ??
-    (Number.isFinite(Number(cfg.maxDifferences)) ? Number(cfg.maxDifferences) : null) ??
-    null;
-
-  const lines = Array.isArray(diffs)
-    ? diffs
-        .map((d) => {
-          if (typeof d === "string") return d;
-          if (!d || typeof d !== "object") return null;
-          return d.text || d.description || d.diff || d.change || null;
-        })
-        .filter(Boolean)
-        .slice(0, 10)
-        .map((s) => String(s))
-    : [];
-
-  const hasAny = Boolean(lines.length || count != null || max != null || mode);
-  if (!hasAny) return null;
-
-  return { mode, count, max, lines };
-}
+// (The earlier summarizeDiffDetective that returned {mode,count,max,lines}
+// was superseded by the structured-payload version below — see line ~1050.
+// Removed here to drop the duplicate declaration and the now-dead render
+// block that consumed this shape; the new version handles both legacy and
+// structured payloads.)
 
 function summarizeVennSort(sub, task) {
   const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
@@ -1094,6 +1051,85 @@ function summarizeDiffDetective(sub, task) {
   return { answer, rows, correct, total, aiFeedback };
 }
 
+// ── What Am I? — student deduces an answer from progressively-revealed clues.
+// Payload: { answer, correct, gaveUp, cluesRevealed, totalClues, pointsEarned,
+//            strategy, exactBonus, autoComplete }
+function summarizeWhatAmI(sub, _task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const a = (k) => ap[k] ?? data[k];
+  const answer = String(a("answer") || "").trim();
+  if (!answer && a("correct") == null && a("gaveUp") == null) return null;
+  return {
+    answer,
+    correct: a("correct") === true,
+    gaveUp: a("gaveUp") === true,
+    cluesRevealed: Number.isFinite(Number(a("cluesRevealed"))) ? Number(a("cluesRevealed")) : null,
+    totalClues: Number.isFinite(Number(a("totalClues"))) ? Number(a("totalClues")) : null,
+    pointsEarned: Number.isFinite(Number(a("pointsEarned"))) ? Number(a("pointsEarned")) : null,
+  };
+}
+
+// ── Truth or Dare — students play rounds; we capture how many they finished.
+// Payload: { points, completedRounds, practiceMode }
+function summarizeTruthOrDare(sub, _task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const points = Number(ap.points ?? data.points);
+  const rounds = Number(ap.completedRounds ?? data.completedRounds);
+  if (!Number.isFinite(points) && !Number.isFinite(rounds)) return null;
+  return {
+    points: Number.isFinite(points) ? points : null,
+    rounds: Number.isFinite(rounds) ? rounds : null,
+    practiceMode: ap.practiceMode === true || data.practiceMode === true,
+  };
+}
+
+// ── Careers — student picks a best-fit option and writes a justification.
+// Payload: { type:"careers", mode, pick, justification, responses[], autoComplete }
+function summarizeCareers(sub, _task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const pick = String(ap.pick ?? data.pick ?? "").trim();
+  const justification = String(ap.justification ?? data.justification ?? "").trim();
+  if (!pick && !justification) return null;
+  return { pick, justification, mode: String(ap.mode ?? data.mode ?? "") };
+}
+
+// ── Mind Mapper — student fills in branches of a graphic organizer.
+// Payload: { completed, organizerType, difficulty, ideas:[string], photoDataUrl }
+function summarizeMindMapper(sub, _task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const ideas = Array.isArray(ap.ideas) ? ap.ideas
+              : Array.isArray(data.ideas) ? data.ideas : [];
+  const ideasClean = ideas.map((s) => String(s || "").trim()).filter(Boolean);
+  if (!ideasClean.length && !ap.photoDataUrl && !data.photoDataUrl) return null;
+  return {
+    organizerType: String(ap.organizerType ?? data.organizerType ?? ""),
+    difficulty: String(ap.difficulty ?? data.difficulty ?? ""),
+    ideas: ideasClean,
+    hasPhoto: !!(ap.photoDataUrl || data.photoDataUrl),
+  };
+}
+
+// ── Interview — student chats with a historical figure for a few turns.
+// Payload: { candidate, turns, totalScore, avgScore, transcript }
+function summarizeInterview(sub, _task) {
+  const ap = sub?.answerPayload && typeof sub.answerPayload === "object" ? sub.answerPayload : {};
+  const data = sub?.data && typeof sub.data === "object" ? sub.data : {};
+  const candidate = String(ap.candidate ?? data.candidate ?? "").trim();
+  const turns = Number(ap.turns ?? data.turns);
+  const transcript = String(ap.transcript ?? data.transcript ?? "").trim();
+  if (!candidate && !Number.isFinite(turns) && !transcript) return null;
+  return {
+    candidate,
+    turns: Number.isFinite(turns) ? turns : null,
+    avgScore: Number.isFinite(Number(ap.avgScore ?? data.avgScore)) ? Number(ap.avgScore ?? data.avgScore) : null,
+    transcript,
+  };
+}
+
 // MapIt has the same matches-shape as Matching but uses marker numbers as
 // keys (M1 → "Detroit") and a flat choices[] list — there are no leftItems/
 // rightItems to look up. Render "Marker N (term) → choice" with the
@@ -1516,66 +1552,9 @@ export default function TasksetTranscript({ transcript }) {
                         </div>
                       )}
 
-                      {/* Diff Detective summary */}
-                      {(() => {
-                        const tt = String(task.taskType || task.type || "").toLowerCase();
-                        const isDiff =
-                          tt === "diff-detective" || tt === "diff_detective" || tt === "diffdetective";
-                        if (!isDiff) return null;
-
-                        const summary = summarizeDiffDetective(sub, task);
-                        if (!summary) return null;
-
-                        return (
-                          <div
-                            style={{
-                              marginTop: 6,
-                              padding: 10,
-                              borderRadius: 12,
-                              border: "1px solid rgba(59,130,246,0.22)",
-                              background: "rgba(59,130,246,0.07)",
-                            }}
-                          >
-                            <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#1e3a8a", marginBottom: 6 }}>
-                              🔍 Diff Detective
-                            </div>
-
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: "0.82rem", color: "#111827" }}>
-                              {summary.mode && (
-                                <div>
-                                  <strong>Mode:</strong> {summary.mode}
-                                </div>
-                              )}
-                              {summary.count != null && (
-                                <div>
-                                  <strong>Found:</strong> {summary.count}
-                                  {summary.max != null ? ` / ${summary.max}` : ""}
-                                </div>
-                              )}
-                            </div>
-
-                            {Array.isArray(summary.lines) && summary.lines.length > 0 && (
-                              <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                                {summary.lines.slice(0, 10).map((line, i) => (
-                                  <div
-                                    key={i}
-                                    style={{
-                                      padding: "6px 8px",
-                                      borderRadius: 10,
-                                      border: "1px solid rgba(0,0,0,0.08)",
-                                      background: "rgba(255,255,255,0.85)",
-                                      fontSize: "0.82rem",
-                                      color: "#111827",
-                                    }}
-                                  >
-                                    {line}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })()}
+                      {/* Diff Detective summary is rendered in the objective-task
+                          summaries block lower down (the new one with
+                          🔍 Spot the difference — X/Y spotted). */}
 
                       {/* Venn Sort summary */}
                       {(() => {
@@ -2868,6 +2847,136 @@ export default function TasksetTranscript({ transcript }) {
                                   <div key={i}>{ln}</div>
                                 ))}
                               </div>
+                            </div>
+                          );
+                        }
+
+                        return null;
+                      })()}
+
+                      {/* Structured-result task summaries (what-am-i / truth-or-dare /
+                          careers / mind-mapper / interview) — types that already
+                          captured rich payloads on submit but never had a polished
+                          per-type transcript card. Same recipe as the objective-task
+                          block above. */}
+                      {(() => {
+                        const tt = String(task.taskType || task.type || "").toLowerCase();
+
+                        if (tt === "what-am-i" || tt === "whatami") {
+                          const s = summarizeWhatAmI(sub, task);
+                          if (!s) return null;
+                          const tone = s.correct ? "#15803d" : s.gaveUp ? "#b45309" : "#b91c1c";
+                          const verdict = s.correct ? "Solved" : s.gaveUp ? "Gave up" : "Didn't solve";
+                          return (
+                            <div style={{ marginTop: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(99,102,241,0.25)", background: "rgba(99,102,241,0.06)" }}>
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#3730a3", marginBottom: 6 }}>
+                                🔮 What Am I? — <span style={{ color: tone }}>{verdict}</span>
+                                {s.cluesRevealed != null && s.totalClues != null && (
+                                  <> on clue {s.cluesRevealed}/{s.totalClues}</>
+                                )}
+                                {s.pointsEarned != null && <> · {s.pointsEarned} pts</>}
+                              </div>
+                              {s.answer && (
+                                <div style={{ fontSize: "0.85rem", color: "#111827" }}>
+                                  <strong>Final answer:</strong> {s.answer}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (tt === "truth-or-dare" || tt === "truthordare") {
+                          const s = summarizeTruthOrDare(sub, task);
+                          if (!s) return null;
+                          return (
+                            <div style={{ marginTop: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(217,70,239,0.25)", background: "rgba(217,70,239,0.06)" }}>
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#a21caf" }}>
+                                🎲 Truth or Dare
+                                {s.rounds != null && <> — {s.rounds} round{s.rounds === 1 ? "" : "s"} completed</>}
+                                {s.points != null && <> · {s.points} pts</>}
+                                {s.practiceMode && <span style={{ marginLeft: 8, fontWeight: 600, opacity: 0.7 }}>(practice)</span>}
+                              </div>
+                            </div>
+                          );
+                        }
+
+                        if (tt === "careers") {
+                          const s = summarizeCareers(sub, task);
+                          if (!s) return null;
+                          return (
+                            <div style={{ marginTop: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(217,119,6,0.25)", background: "rgba(217,119,6,0.06)" }}>
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#92400e", marginBottom: 6 }}>
+                                💼 Careers
+                                {s.mode && <span style={{ marginLeft: 6, fontWeight: 600, opacity: 0.75 }}>({s.mode})</span>}
+                              </div>
+                              {s.pick && (
+                                <div style={{ fontSize: "0.85rem", color: "#111827", marginBottom: 4 }}>
+                                  <strong>Picked:</strong> {s.pick}
+                                </div>
+                              )}
+                              {s.justification && (
+                                <div style={{ fontSize: "0.82rem", color: "#374151", lineHeight: 1.45 }}>
+                                  <strong>Why:</strong> {s.justification}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (tt === "mind-mapper" || tt === "mindmapper") {
+                          const s = summarizeMindMapper(sub, task);
+                          if (!s) return null;
+                          return (
+                            <div style={{ marginTop: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(20,184,166,0.25)", background: "rgba(20,184,166,0.06)" }}>
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#0f766e", marginBottom: 6 }}>
+                                🧠 Mind Mapper
+                                {s.organizerType && <span style={{ marginLeft: 6, fontWeight: 600, opacity: 0.75 }}>· {s.organizerType}</span>}
+                                {s.difficulty && <span style={{ marginLeft: 6, fontWeight: 600, opacity: 0.75 }}>· {s.difficulty}</span>}
+                                {s.hasPhoto && <span style={{ marginLeft: 8, fontSize: "0.7rem", fontWeight: 700, color: "#0f766e" }}>📷 photo submitted</span>}
+                              </div>
+                              {s.ideas.length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4, fontSize: "0.78rem" }}>
+                                  {s.ideas.map((idea, i) => (
+                                    <span key={i} style={{ padding: "3px 8px", borderRadius: 999, background: "#fff", border: "1px solid rgba(20,184,166,0.3)", color: "#0f766e", fontWeight: 600 }}>
+                                      {idea}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        }
+
+                        if (tt === "interview") {
+                          const s = summarizeInterview(sub, task);
+                          if (!s) return null;
+                          // Show first 4 transcript lines as a preview; "View more" details for the rest.
+                          const lines = s.transcript ? s.transcript.split("\n").filter(Boolean) : [];
+                          const preview = lines.slice(0, 4);
+                          const rest = lines.slice(4);
+                          return (
+                            <div style={{ marginTop: 6, padding: 10, borderRadius: 12, border: "1px solid rgba(14,165,233,0.25)", background: "rgba(14,165,233,0.06)" }}>
+                              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: "#0369a1", marginBottom: 6 }}>
+                                🎤 Interview
+                                {s.candidate && <> — {s.candidate}</>}
+                                {s.turns != null && <> · {s.turns} turn{s.turns === 1 ? "" : "s"}</>}
+                                {s.avgScore != null && <> · avg score {s.avgScore.toFixed(1)}</>}
+                              </div>
+                              {preview.length > 0 && (
+                                <div style={{ display: "grid", gap: 3, fontSize: "0.8rem", color: "#111827" }}>
+                                  {preview.map((ln, i) => <div key={i}>{ln}</div>)}
+                                </div>
+                              )}
+                              {rest.length > 0 && (
+                                <details style={{ marginTop: 6, fontSize: "0.78rem" }}>
+                                  <summary style={{ cursor: "pointer", color: "#0369a1", fontWeight: 700 }}>
+                                    View {rest.length} more line{rest.length === 1 ? "" : "s"}
+                                  </summary>
+                                  <div style={{ display: "grid", gap: 3, marginTop: 4 }}>
+                                    {rest.map((ln, i) => <div key={i}>{ln}</div>)}
+                                  </div>
+                                </details>
+                              )}
                             </div>
                           );
                         }
