@@ -81,8 +81,8 @@ function Hero() {
           margin: "0 0 18px", fontSize: 56, fontWeight: 800, lineHeight: 1.05,
           letterSpacing: -1.5, maxWidth: 880, marginInline: "auto",
         }}>
-          Faster, cheaper, cleaner audits for{" "}
-          <span style={{ color: C.gold }}>Papua New Guinea businesses</span>.
+          Cheaper, Cleaner Audits for{" "}
+          <span style={{ color: C.gold }}>PNG Business</span>
         </h1>
         <p style={{
           margin: "0 auto 30px", fontSize: 18, lineHeight: 1.55, color: C.inkSoft,
