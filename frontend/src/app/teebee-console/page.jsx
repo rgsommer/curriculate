@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Loader2, AlertCircle, RefreshCw, ArrowLeft, Send, CheckCircle2, Clock,
-  ClipboardCheck, Calculator, Landmark, FileText, X,
+  ClipboardCheck, Calculator, Landmark, FileText, X, MessageSquarePlus, PencilLine,
 } from "lucide-react";
 
 const C = {
@@ -47,7 +47,8 @@ export default function TeeBeeConsole() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const [reqFor, setReqFor] = useState(null);   // entity for request-info modal
+  const [reqFor, setReqFor] = useState(null);    // entity for request-info modal
+  const [progFor, setProgFor] = useState(null);  // entity for progress-update modal
 
   const refresh = useCallback(async () => {
     setError("");
@@ -102,7 +103,7 @@ export default function TeeBeeConsole() {
         )}
 
         {data?.apps?.map((app) => (
-          <AppSection key={app.key} app={app} onRequestInfo={setReqFor} />
+          <AppSection key={app.key} app={app} onRequestInfo={setReqFor} onUpdate={setProgFor} />
         ))}
       </div>
 
@@ -110,13 +111,17 @@ export default function TeeBeeConsole() {
         <RequestInfoModal entity={reqFor} onClose={() => setReqFor(null)}
           onDone={(msg) => { setReqFor(null); setInfo(msg); refresh(); }} />
       )}
+      {progFor && (
+        <ProgressModal entity={progFor} onClose={() => setProgFor(null)}
+          onDone={(msg) => { setProgFor(null); setInfo(msg); refresh(); }} />
+      )}
 
       <style>{`@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } } .spin { animation: spin .9s linear infinite; }`}</style>
     </main>
   );
 }
 
-function AppSection({ app, onRequestInfo }) {
+function AppSection({ app, onRequestInfo, onUpdate }) {
   const Icon = APP_ICON[app.key] || FileText;
   return (
     <section style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, marginBottom: 20, overflow: "hidden" }}>
@@ -137,7 +142,8 @@ function AppSection({ app, onRequestInfo }) {
       ) : (
         <div>
           {app.entities.map((e) => (
-            <EntityRow key={e.id} entity={e} stepLabels={app.stepLabels} onRequestInfo={onRequestInfo} />
+            <EntityRow key={e.id} entity={e} stepLabels={app.stepLabels}
+              onRequestInfo={onRequestInfo} onUpdate={onUpdate} />
           ))}
         </div>
       )}
@@ -145,39 +151,46 @@ function AppSection({ app, onRequestInfo }) {
   );
 }
 
-function EntityRow({ entity, stepLabels, onRequestInfo }) {
+function EntityRow({ entity, stepLabels, onRequestInfo, onUpdate }) {
   const need = entity.outstanding?.need || [];
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 18px", borderTop: "1px solid #f6f7f9", flexWrap: "wrap" }}>
       <div style={{ minWidth: 220, flex: "1 1 240px" }}>
         <div style={{ fontWeight: 700, fontSize: 14 }}>{entity.name}</div>
         {entity.subtitle && <div style={{ fontSize: 12, color: C.muted }}>{entity.subtitle}</div>}
+        {entity.lastUpdate?.note && (
+          <div style={{ fontSize: 11.5, color: C.navy, marginTop: 4, display: "flex", gap: 5, alignItems: "flex-start" }}>
+            <PencilLine size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>{entity.lastUpdate.note}</span>
+          </div>
+        )}
       </div>
 
-      <div style={{ flex: "2 1 320px", minWidth: 260 }}>
+      <div style={{ flex: "2 1 300px", minWidth: 240 }}>
         <Stepper steps={entity.steps} />
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 5 }}>
           {entity.stageLabel} · step {entity.stageIndex}/{entity.total}
         </div>
       </div>
 
-      <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 5, minWidth: 84 }}>
+      <div style={{ fontSize: 12, color: C.muted, display: "flex", alignItems: "center", gap: 5, minWidth: 76 }}>
         <Clock size={12} /> {relTime(entity.lastActivity)}
       </div>
 
-      <div style={{ minWidth: 150, textAlign: "right" }}>
-        {entity.canRequestInfo ? (
+      <div style={{ minWidth: 200, display: "flex", gap: 6, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <button onClick={() => onUpdate(entity)} style={ghostSm} title="Post a progress update">
+          <MessageSquarePlus size={12} /> Update
+        </button>
+        {entity.canRequestInfo && (
           need.length > 0 ? (
             <button onClick={() => onRequestInfo(entity)} style={reqBtn}>
               <Send size={12} /> Request {need.length} doc{need.length === 1 ? "" : "s"}
             </button>
           ) : (
-            <button onClick={() => onRequestInfo(entity)} style={{ ...reqBtn, background: "#fff", color: C.navy }}>
-              <CheckCircle2 size={12} color={C.green} /> All in · update
+            <button onClick={() => onRequestInfo(entity)} style={ghostSm}>
+              <Send size={12} /> Request info
             </button>
           )
-        ) : (
-          <span style={{ fontSize: 11.5, color: C.muted, textTransform: "capitalize" }}>{entity.status}</span>
         )}
       </div>
     </div>
@@ -206,11 +219,12 @@ function RequestInfoModal({ entity, onClose, onDone }) {
     setBusy(true); setError("");
     try {
       const body = {
+        app: entity.app, id: entity.id, kind: "request_info",
         have: have.split("\n").map((s) => s.trim()).filter(Boolean),
         need: need.split("\n").map((s) => s.trim()).filter(Boolean),
         note, email,
       };
-      const j = await api(`/api/audit/engagements/${entity.id}/request-info`, { method: "POST", body: JSON.stringify(body) });
+      const j = await api(`/api/teebee/process-update`, { method: "POST", body: JSON.stringify(body) });
       onDone(email
         ? (j.email_sent ? `Outstanding list emailed to the client for ${entity.name}.` : `Recorded for ${entity.name} (no email — client has no contact address on file).`)
         : `Recorded outstanding items for ${entity.name}.`);
@@ -257,6 +271,59 @@ function RequestInfoModal({ entity, onClose, onDone }) {
   );
 }
 
+function ProgressModal({ entity, onClose, onDone }) {
+  const [note, setNote] = useState(entity.lastUpdate?.note || "");
+  const [stage, setStage] = useState(entity.lastUpdate?.stage || entity.stageLabel || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const stepLabels = (entity.steps || []).map((s) => s.label);
+
+  async function submit() {
+    if (!note.trim()) { setError("Add a short note."); return; }
+    setBusy(true); setError("");
+    try {
+      await api(`/api/teebee/process-update`, { method: "POST",
+        body: JSON.stringify({ app: entity.app, id: entity.id, kind: "progress", note, stage }) });
+      onDone(`Progress updated for ${entity.name}.`);
+    } catch (e) { setError(e.message); setBusy(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", background: "#fff", borderRadius: 14,
+        maxWidth: 520, width: "100%", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+        <button onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28,
+          borderRadius: 7, border: "none", background: "#f1f3f5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <X size={15} color={C.muted} />
+        </button>
+        <div style={{ background: "linear-gradient(135deg, #fffaf0 0%, #fef6d8 100%)", padding: "18px 22px", borderBottom: "1px solid #fde68a" }}>
+          <div style={{ fontSize: 11, color: "#9c6c00", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.06 }}>Progress update</div>
+          <h3 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: C.ink }}>{entity.name}</h3>
+        </div>
+        <div style={{ padding: "20px 22px" }}>
+          {error && <div style={{ background: "#fee2e2", border: "1px solid #fecaca", color: "#7f1d1d", padding: "10px 14px", borderRadius: 8, marginBottom: 14, fontSize: 13 }}>{error}</div>}
+          <Field label="Current stage">
+            <select style={sel} value={stage} onChange={(e) => setStage(e.target.value)}>
+              {stepLabels.map((l) => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </Field>
+          <Field label="Progress note (shown on the dashboard)">
+            <textarea style={ta} value={note} onChange={(e) => setNote(e.target.value)}
+              placeholder="e.g. Fieldwork complete; awaiting bank confirmations before sign-off." autoFocus />
+          </Field>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", padding: "14px 22px", borderTop: "1px solid #f1f5f9" }}>
+          <button onClick={onClose} style={btnGhost}>Cancel</button>
+          <button onClick={submit} disabled={busy} style={btnPrimary}>
+            {busy ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Saving…</> : <><MessageSquarePlus size={14} style={{ marginRight: 6 }} /> Save update</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return (
     <label style={{ display: "block", marginBottom: 12 }}>
@@ -268,6 +335,10 @@ function Field({ label, children }) {
 
 const ta = { display: "block", width: "100%", padding: "9px 11px", borderRadius: 8, border: "1px solid #d1d5db",
   fontSize: 14, background: "#fff", color: C.ink, outline: "none", minHeight: 84, resize: "vertical", fontFamily: "inherit" };
+const sel = { display: "block", width: "100%", padding: "9px 11px", borderRadius: 8, border: "1px solid #d1d5db",
+  fontSize: 14, background: "#fff", color: C.ink, outline: "none", fontFamily: "inherit" };
+const ghostSm = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 7,
+  fontSize: 12, fontWeight: 700, background: "#fff", color: C.navy, border: "1px solid #d1d5db", cursor: "pointer" };
 const reqBtn = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 7,
   fontSize: 12, fontWeight: 700, background: C.navy, color: "#fff", border: "1px solid " + C.navy, cursor: "pointer" };
 const btnGhost = { display: "inline-flex", alignItems: "center", padding: "9px 16px", borderRadius: 8,

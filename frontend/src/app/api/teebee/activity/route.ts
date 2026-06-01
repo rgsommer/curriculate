@@ -153,6 +153,29 @@ export async function GET(req: Request) {
       entities: payEntities,
     });
 
+    // Decorate every entity with the latest Principal progress note and the
+    // latest recorded outstanding list (request-info), across all products.
+    const activity: any[] = await dbi.collection("process_activity")
+      .find({}).sort({ created_at: -1 }).limit(2000).toArray();
+    const latestProgress = new Map<string, any>();
+    const latestRequest = new Map<string, any>();
+    for (const a of activity) {
+      const k = `${a.app}|${a.entity_id}`;
+      if (a.kind === "progress" && !latestProgress.has(k)) latestProgress.set(k, a);
+      if (a.kind === "request_info" && !latestRequest.has(k)) latestRequest.set(k, a);
+    }
+    for (const ap of apps) {
+      for (const e of ap.entities) {
+        const k = `${e.app}|${e.id}`;
+        const p = latestProgress.get(k);
+        if (p) e.lastUpdate = { note: p.note, stage: p.stage, by: p.actor_email, at: p.created_at };
+        const r = latestRequest.get(k);
+        if (r) e.outstanding = { have: r.have || [], need: r.need || [] };
+        e.canUpdate = true;                       // every process takes a progress note
+        e.canRequestInfo = ap.key !== "payroll";  // chase docs on client work, not internal payroll
+      }
+    }
+
     return NextResponse.json({ scope: isSuper ? "all" : "company", generated_at: new Date(), apps });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
