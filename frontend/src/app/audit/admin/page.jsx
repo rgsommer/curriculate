@@ -7,7 +7,7 @@ import Link from "next/link";
 import {
   ArrowLeft, Loader2, AlertCircle, CheckCircle2, Mail, Phone, Building2,
   Edit2, RefreshCw, Filter, Search, Send, FileText, Sparkles, Database, Trash2, Download,
-  HelpCircle, ChevronDown, ChevronRight, UserPlus,
+  HelpCircle, ChevronDown, ChevronRight, UserPlus, LayoutDashboard,
 } from "lucide-react";
 
 const GUIDE_KEY = "teebee.audit.admin.guide";
@@ -170,6 +170,11 @@ export default function AuditAdminPage() {
           }}>TBA</div>
           <strong style={{ fontSize: 16 }}>TeeBee Audit — Admin queue</strong>
         </div>
+        <Link href="/teebee-console" style={{ marginLeft: 12, display: "inline-flex", alignItems: "center", gap: 6,
+          color: "#cbd5e1", textDecoration: "none", fontSize: 13, padding: "5px 10px",
+          border: "1px solid #3a526b", borderRadius: 8 }}>
+          <LayoutDashboard size={13} /> Console
+        </Link>
         <button onClick={() => setCreating(true)} style={{
           marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
           padding: "6px 12px", background: C.gold, color: C.navy,
