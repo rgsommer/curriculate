@@ -1,6 +1,7 @@
 // teacher-app/src/pages/MyPlan.jsx
 import React, { useEffect, useState } from "react";
 import axios from "axios";
+import { PageShell, PageHeader } from "../components/ui";
 
 import { API_BASE_URL } from "../config";
 const API_BASE = API_BASE_URL;
@@ -71,22 +72,14 @@ export default function MyPlanPage() {
   const isPaid = tier !== "FREE";
 
   return (
-    <div
-      style={{
-        padding: 16,
-        fontFamily: "system-ui, -apple-system, 'Segoe UI'",
-        maxWidth: 900,
-        margin: "0 auto",
-      }}
-    >
-      <h1 style={{ marginTop: 0, marginBottom: 4 }}>My Plan</h1>
-      <p style={{ fontSize: "0.85rem", color: "#555", marginTop: 0 }}>
-        See what's included in your current plan and what unlocks at the next
-        levels.
-      </p>
+    <PageShell maxWidth={900}>
+      <PageHeader
+        title="My Plan"
+        subtitle="See what's included in your current plan and what unlocks at the next levels."
+      />
 
       {error && (
-        <p style={{ color: "red", fontSize: "0.85rem", marginTop: 8 }}>
+        <p style={{ color: "#b91c1c", fontSize: "0.85rem", marginTop: 8 }}>
           {error}
         </p>
       )}
@@ -315,7 +308,7 @@ export default function MyPlanPage() {
           </table>
         </div>
       </section>
-    </div>
+    </PageShell>
   );
 }
 

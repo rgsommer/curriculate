@@ -2,6 +2,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { apiFetchJson } from "../api/apiFetch";
+import { PageShell, PageHeader, Modal, Button, Field, TextInput, TextArea } from "../components/ui";
 
 /* -------------------- helpers -------------------- */
 
@@ -250,14 +251,14 @@ export default function TaskSetEditor() {
   } catch {}
 
   return (
-    <div style={{ padding: 24, maxWidth: 1050, margin: "0 auto" }}>
+    <PageShell maxWidth={1050}>
       {toast && (
         <div style={{ position: "fixed", right: 18, bottom: 18, background: "#111827", color: "#fff", padding: "10px 14px", borderRadius: 12, fontWeight: 900 }}>
           {toast}
         </div>
       )}
 
-      <h1>{id ? "Edit Task Set" : "New Task Set"}</h1>
+      <PageHeader title={id ? "Edit Task Set" : "New Task Set"} />
 
       {error && (
         <div style={{ background: "#fef2f2", border: "1px solid #fecaca", padding: 10, borderRadius: 12, color: "#b91c1c", fontWeight: 800 }}>
@@ -292,9 +293,9 @@ export default function TaskSetEditor() {
               ))}
             </div>
 
-            <div style={{ marginTop: 8 }}>
-              <input
-                placeholder="Add vocabulary word"
+            <div style={{ marginTop: 8, maxWidth: 280 }}>
+              <TextInput
+                placeholder="Add vocabulary word (Enter to add)"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && e.target.value.trim()) {
                     const word = e.target.value.trim();
@@ -308,7 +309,6 @@ export default function TaskSetEditor() {
                     e.target.value = "";
                   }
                 }}
-                style={{ padding: "8px 10px", borderRadius: 10, border: "1px solid #d1d5db" }}
               />
             </div>
           </div>
@@ -334,123 +334,96 @@ export default function TaskSetEditor() {
       </div>
 
       <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-        <button onClick={() => navigate("/tasksets")}>Back</button>
-        <button onClick={save} disabled={saving}>
+        <Button variant="ghost" onClick={() => navigate("/tasksets")}>Back</Button>
+        <Button onClick={save} disabled={saving}>
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
         {id && (
-          <button onClick={handleShareClick} disabled={shareLoading} style={{ marginLeft: "auto" }}>
+          <Button
+            variant="ghost"
+            onClick={handleShareClick}
+            disabled={shareLoading}
+            style={{ marginLeft: "auto" }}
+          >
             {shareLoading ? "Creating link…" : "Share with Substitute"}
-          </button>
+          </Button>
         )}
       </div>
 
-      {/* Share Link Modal */}
-      {shareModalOpen && (
+      {/* Share Link Modal — migrated to shared <Modal> + <Field> +
+          <TextInput>/<TextArea> + <Button>. */}
+      <Modal
+        open={shareModalOpen}
+        onClose={() => { setShareModalOpen(false); setInviteEmail(""); setInviteMessage(""); setInviteSent(false); }}
+        title="Share Task Set"
+        size="sm"
+      >
+        <p style={{ color: "#6b7280", marginTop: 0, marginBottom: 16 }}>
+          Share this link with a substitute teacher. It expires in 7 days.
+        </p>
         <div style={{
-          position: "fixed",
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: "rgba(0,0,0,0.5)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          zIndex: 9999,
+          background: "#f3f4f6",
+          padding: 12,
+          borderRadius: 8,
+          marginBottom: 12,
+          fontFamily: "monospace",
+          wordBreak: "break-all",
+          fontSize: "0.9rem",
         }}>
-          <div style={{
-            background: "#fff",
-            borderRadius: 16,
-            padding: 24,
-            maxWidth: 500,
-            boxShadow: "0 10px 40px rgba(0,0,0,0.1)",
-          }}>
-            <h2 style={{ marginTop: 0, marginBottom: 12 }}>Share Task Set</h2>
-            <p style={{ color: "#6b7280", marginBottom: 16 }}>
-              Share this link with a substitute teacher. It expires in 7 days.
-            </p>
-            <div style={{
-              background: "#f3f4f6",
-              padding: 12,
-              borderRadius: 8,
-              marginBottom: 12,
-              fontFamily: "monospace",
-              wordBreak: "break-all",
-              fontSize: "0.9rem",
-            }}>
-              {shareLink}
-            </div>
-            <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
-              Expires: {shareExpiresAt ? new Date(shareExpiresAt).toLocaleDateString() : ""}
-            </div>
-
-            {/* ---- Send Invite ---- */}
-            <div style={{
-              borderTop: "1px solid #e5e7eb",
-              paddingTop: 16,
-              marginBottom: 16,
-            }}>
-              <label style={{ fontWeight: 600, fontSize: "0.9rem", display: "block", marginBottom: 6 }}>
-                Send Invite by Email
-              </label>
-              <input
-                type="email"
-                placeholder="substitute@school.edu"
-                value={inviteEmail}
-                onChange={(e) => { setInviteEmail(e.target.value); setInviteSent(false); }}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  marginBottom: 8,
-                  boxSizing: "border-box",
-                  fontSize: "0.9rem",
-                }}
-              />
-              <textarea
-                placeholder="Add a personal message (optional)"
-                value={inviteMessage}
-                onChange={(e) => setInviteMessage(e.target.value)}
-                rows={2}
-                style={{
-                  width: "100%",
-                  padding: "8px 12px",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  marginBottom: 8,
-                  boxSizing: "border-box",
-                  fontSize: "0.9rem",
-                  resize: "vertical",
-                }}
-              />
-              <button
-                onClick={handleSendInvite}
-                disabled={inviteSending || !inviteEmail.trim()}
-                style={{
-                  width: "100%",
-                  background: inviteSent ? "#10b981" : undefined,
-                }}
-              >
-                {inviteSending ? "Sending…" : inviteSent ? "Sent!" : "Send Invite"}
-              </button>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => { setShareModalOpen(false); setInviteEmail(""); setInviteMessage(""); setInviteSent(false); }}
-                style={{ background: "#e5e7eb", color: "#000" }}
-              >
-                Close
-              </button>
-              <button onClick={handleCopyLink}>
-                Copy Link
-              </button>
-            </div>
-          </div>
+          {shareLink}
         </div>
-      )}
-    </div>
+        <div style={{ fontSize: "0.85rem", color: "#6b7280", marginBottom: 16 }}>
+          Expires: {shareExpiresAt ? new Date(shareExpiresAt).toLocaleDateString() : ""}
+        </div>
+
+        {/* ---- Send Invite ---- */}
+        <div style={{
+          borderTop: "1px solid #e5e7eb",
+          paddingTop: 16,
+          marginBottom: 16,
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}>
+          <Field label="Send invite by email">
+            <TextInput
+              type="email"
+              placeholder="substitute@school.edu"
+              value={inviteEmail}
+              onChange={(e) => { setInviteEmail(e.target.value); setInviteSent(false); }}
+            />
+          </Field>
+          <Field>
+            <TextArea
+              placeholder="Add a personal message (optional)"
+              value={inviteMessage}
+              onChange={(e) => setInviteMessage(e.target.value)}
+              rows={2}
+            />
+          </Field>
+          <Button
+            onClick={handleSendInvite}
+            disabled={inviteSending || !inviteEmail.trim()}
+            style={{
+              width: "100%",
+              background: inviteSent ? "#10b981" : undefined,
+              border: inviteSent ? "1px solid #10b981" : undefined,
+            }}
+          >
+            {inviteSending ? "Sending…" : inviteSent ? "Sent!" : "Send Invite"}
+          </Button>
+        </div>
+
+        <Modal.Footer>
+          <Button
+            variant="ghost"
+            onClick={() => { setShareModalOpen(false); setInviteEmail(""); setInviteMessage(""); setInviteSent(false); }}
+          >
+            Close
+          </Button>
+          <Button onClick={handleCopyLink}>Copy Link</Button>
+        </Modal.Footer>
+      </Modal>
+    </PageShell>
   );
 }
