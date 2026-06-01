@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Loader2, AlertCircle, RefreshCw, ArrowLeft, Send, CheckCircle2, Clock,
-  ClipboardCheck, Calculator, Landmark, FileText, X, MessageSquarePlus, PencilLine,
+  ClipboardCheck, Calculator, Landmark, FileText, X, MessageSquarePlus, PencilLine, Upload,
 } from "lucide-react";
 
 const C = {
@@ -31,6 +31,15 @@ async function api(path, opts = {}) {
   return j;
 }
 
+// Multipart upload — must NOT set Content-Type (browser adds the boundary).
+async function apiUpload(path, formData) {
+  const tok = (typeof window !== "undefined") ? localStorage.getItem(TOKEN_KEY) : null;
+  const r = await fetch(path, { method: "POST", headers: { Authorization: "Bearer " + tok }, body: formData });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j;
+}
+
 function relTime(d) {
   if (!d) return "—";
   const t = new Date(d).getTime();
@@ -47,7 +56,8 @@ export default function TeeBeeConsole() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const [reqFor, setReqFor] = useState(null);    // entity for request-info modal
+  const [reqFor, setReqFor] = useState(null);    // entity for request-info modal (tax/loans)
+  const [docsFor, setDocsFor] = useState(null);  // entity for audit documents modal
   const [progFor, setProgFor] = useState(null);  // entity for progress-update modal
 
   const refresh = useCallback(async () => {
@@ -103,13 +113,20 @@ export default function TeeBeeConsole() {
         )}
 
         {data?.apps?.map((app) => (
-          <AppSection key={app.key} app={app} onRequestInfo={setReqFor} onUpdate={setProgFor} />
+          <AppSection key={app.key} app={app}
+            onRequestInfo={(e) => (e.app === "audit" ? setDocsFor(e) : setReqFor(e))}
+            onUpdate={setProgFor} />
         ))}
       </div>
 
       {reqFor && (
         <RequestInfoModal entity={reqFor} onClose={() => setReqFor(null)}
           onDone={(msg) => { setReqFor(null); setInfo(msg); refresh(); }} />
+      )}
+      {docsFor && (
+        <DocsModal entity={docsFor} onClose={() => setDocsFor(null)}
+          onChanged={refresh}
+          onDone={(msg) => { setDocsFor(null); setInfo(msg); refresh(); }} />
       )}
       {progFor && (
         <ProgressModal entity={progFor} onClose={() => setProgFor(null)}
@@ -181,17 +198,18 @@ function EntityRow({ entity, stepLabels, onRequestInfo, onUpdate }) {
         <button onClick={() => onUpdate(entity)} style={ghostSm} title="Post a progress update">
           <MessageSquarePlus size={12} /> Update
         </button>
-        {entity.canRequestInfo && (
-          need.length > 0 ? (
-            <button onClick={() => onRequestInfo(entity)} style={reqBtn}>
-              <Send size={12} /> Request {need.length} doc{need.length === 1 ? "" : "s"}
+        {entity.canRequestInfo && (() => {
+          const isAudit = entity.app === "audit";
+          const Icon = isAudit ? Upload : Send;
+          const label = isAudit
+            ? (need.length > 0 ? `Upload (${need.length} missing)` : "Documents")
+            : (need.length > 0 ? `Request ${need.length} doc${need.length === 1 ? "" : "s"}` : "Request info");
+          return (
+            <button onClick={() => onRequestInfo(entity)} style={need.length > 0 ? reqBtn : ghostSm}>
+              <Icon size={12} /> {label}
             </button>
-          ) : (
-            <button onClick={() => onRequestInfo(entity)} style={ghostSm}>
-              <Send size={12} /> Request info
-            </button>
-          )
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -271,6 +289,102 @@ function RequestInfoModal({ entity, onClose, onDone }) {
   );
 }
 
+function DocsModal({ entity, onClose, onChanged, onDone }) {
+  const [items, setItems] = useState(entity.requirements || []);
+  const [busySlot, setBusySlot] = useState(null);
+  const [error, setError] = useState("");
+  const [emailing, setEmailing] = useState(false);
+  const received = items.filter((i) => i.received).length;
+  const missing = items.filter((i) => !i.received);
+
+  async function upload(slot, file) {
+    if (!file) return;
+    setBusySlot(slot); setError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("slot", slot);   // exact slot → marks this requirement met
+      await apiUpload(`/api/audit/engagements/${entity.id}/files`, fd);
+      setItems((prev) => prev.map((it) => it.slot === slot ? { ...it, received: true } : it));
+      onChanged && onChanged();
+    } catch (e) { setError(e.message); }
+    finally { setBusySlot(null); }
+  }
+
+  async function chase() {
+    setEmailing(true); setError("");
+    try {
+      await api(`/api/teebee/process-update`, { method: "POST", body: JSON.stringify({
+        app: "audit", id: entity.id, kind: "request_info",
+        have: items.filter((i) => i.received).map((i) => i.label),
+        need: missing.map((i) => i.label), email: true,
+      })});
+      onDone(`Emailed the client the ${missing.length} outstanding document${missing.length === 1 ? "" : "s"} for ${entity.name}.`);
+    } catch (e) { setError(e.message); setEmailing(false); }
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 1000,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ position: "relative", background: "#fff", borderRadius: 14,
+        maxWidth: 600, width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+        <button onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 12, right: 12, width: 28, height: 28,
+          borderRadius: 7, border: "none", background: "#f1f3f5", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <X size={15} color={C.muted} />
+        </button>
+        <div style={{ background: "linear-gradient(135deg, #fffaf0 0%, #fef6d8 100%)", padding: "18px 22px", borderBottom: "1px solid #fde68a" }}>
+          <div style={{ fontSize: 11, color: "#9c6c00", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.06 }}>Required documents</div>
+          <h3 style={{ margin: "2px 0 0", fontSize: 20, fontWeight: 800, color: C.ink }}>{entity.name}</h3>
+          <div style={{ fontSize: 12.5, color: C.inkSoft, marginTop: 4 }}>{received}/{items.length} received — upload beside any item to tick it off.</div>
+        </div>
+        <div style={{ padding: "16px 22px" }}>
+          {error && <div style={{ background: "#fee2e2", border: "1px solid #fecaca", color: "#7f1d1d", padding: "10px 14px", borderRadius: 8, marginBottom: 12, fontSize: 13 }}>{error}</div>}
+          <div style={{ display: "grid", gap: 8 }}>
+            {items.map((it) => (
+              <div key={it.slot} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px",
+                border: `1px solid ${it.received ? "#bbf7d0" : "#e5e7eb"}`, borderRadius: 9,
+                background: it.received ? "#f0fdf4" : "#fff" }}>
+                {it.received
+                  ? <CheckCircle2 size={16} color={C.green} style={{ flexShrink: 0 }} />
+                  : <span style={{ width: 16, height: 16, borderRadius: 99, border: `2px solid ${it.required ? C.red : "#cbd5e1"}`, flexShrink: 0 }} />}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{it.label}</span>
+                  {it.required && !it.received && <span style={{ fontSize: 10, color: C.red, marginLeft: 8, textTransform: "uppercase", letterSpacing: 0.05 }}>Required</span>}
+                </div>
+                {it.received ? (
+                  <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>Received</span>
+                ) : (
+                  <label style={{ ...uploadBtn, opacity: busySlot === it.slot ? 0.6 : 1, cursor: busySlot === it.slot ? "default" : "pointer" }}>
+                    {busySlot === it.slot
+                      ? <><Loader2 size={12} className="spin" /> Uploading…</>
+                      : <><Upload size={12} /> Upload</>}
+                    <input type="file" hidden disabled={busySlot === it.slot}
+                      onChange={(e) => { upload(it.slot, e.target.files?.[0]); e.target.value = ""; }} />
+                  </label>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "space-between", alignItems: "center",
+          padding: "14px 22px", borderTop: "1px solid #f1f5f9", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, color: missing.length ? C.muted : C.green, fontWeight: 600 }}>
+            {missing.length ? `${missing.length} still outstanding` : "All documents in ✓"}
+          </span>
+          <div style={{ display: "flex", gap: 10 }}>
+            {missing.length > 0 && (
+              <button onClick={chase} disabled={emailing} style={btnGhost}>
+                {emailing ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Emailing…</> : <><Send size={14} style={{ marginRight: 6 }} /> Email client the {missing.length} missing</>}
+              </button>
+            )}
+            <button onClick={onClose} style={btnPrimary}>Done</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ProgressModal({ entity, onClose, onDone }) {
   const [note, setNote] = useState(entity.lastUpdate?.note || "");
   const [stage, setStage] = useState(entity.lastUpdate?.stage || entity.stageLabel || "");
@@ -339,6 +453,8 @@ const sel = { display: "block", width: "100%", padding: "9px 11px", borderRadius
   fontSize: 14, background: "#fff", color: C.ink, outline: "none", fontFamily: "inherit" };
 const ghostSm = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 7,
   fontSize: 12, fontWeight: 700, background: "#fff", color: C.navy, border: "1px solid #d1d5db", cursor: "pointer" };
+const uploadBtn = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 7,
+  fontSize: 12, fontWeight: 700, background: C.navy, color: "#fff", border: "1px solid " + C.navy, flexShrink: 0 };
 const reqBtn = { display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 11px", borderRadius: 7,
   fontSize: 12, fontWeight: 700, background: C.navy, color: "#fff", border: "1px solid " + C.navy, cursor: "pointer" };
 const btnGhost = { display: "inline-flex", alignItems: "center", padding: "9px 16px", borderRadius: 8,

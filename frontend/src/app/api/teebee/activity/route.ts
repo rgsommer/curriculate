@@ -51,7 +51,9 @@ export async function GET(req: Request) {
     const auditEntities = engs.map((e) => {
       const id = e._id.toString();
       const slots = slotsByEng.get(id) || new Set<string>();
-      const required = checklistForAuditType(String(e.audit_type || "other")).filter((i) => i.required);
+      const allItems = checklistForAuditType(String(e.audit_type || "other"));
+      const requirements = allItems.map((i) => ({ slot: i.slot, label: i.label, required: i.required, received: slots.has(i.slot) }));
+      const required = allItems.filter((i) => i.required);
       const have = required.filter((i) => slots.has(i.slot)).map((i) => i.label);
       const need = required.filter((i) => !slots.has(i.slot)).map((i) => i.label);
       const st = steps([
@@ -63,7 +65,7 @@ export async function GET(req: Request) {
       ]);
       return {
         id, app: "audit", name: e.company_name, subtitle: e.fy_end ? `FY ${e.fy_end}` : (e.audit_type || ""),
-        status: e.status, ...st,
+        status: e.status, ...st, requirements,
         lastActivity: lastOf(e.updated_at, e.last_upload_at, e.last_analysis_at, e.created_at),
         outstanding: e.outstanding_items || { have, need },   // recorded list wins over the auto one
         canRequestInfo: true,
