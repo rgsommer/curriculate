@@ -8,6 +8,7 @@ export default function MakeAndSnapTask({
   disabled,
   onAnswerChange,
   answerDraft,
+  practiceMode = false,
 }) {
   const [note, setNote] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
@@ -189,7 +190,11 @@ export default function MakeAndSnapTask({
   const handleSubmit = async () => {
     if (uiDisabled) return;
 
-    if (!imagePreview) {
+    // In practice mode, students aren't actually building anything — they're
+    // previewing the flow. The photo-required gate then makes the task feel
+    // broken ("it was just typing…" — tester 2026-06-01). Allow submit
+    // without a photo in practice; real sessions still require one.
+    if (!imagePreview && !practiceMode) {
       alert("Please take a photo of what you made before submitting.");
       return;
     }
@@ -289,6 +294,32 @@ export default function MakeAndSnapTask({
           pointerEvents: "none",
         }}
       />
+
+      {/* Practice-mode hint — tester (2026-06-01): "it was just typing…".
+          In real classroom use this task is a build-and-photograph activity;
+          in solo practice the photo gate makes it feel pointless. Set the
+          expectation up-front. */}
+      {practiceMode && (
+        <div
+          style={{
+            position: "relative",
+            zIndex: 1,
+            marginBottom: 10,
+            padding: "8px 12px",
+            borderRadius: 12,
+            background: "rgba(250,204,21,0.12)",
+            border: "1px solid rgba(250,204,21,0.35)",
+            color: "#fde68a",
+            fontSize: "0.82rem",
+            fontWeight: 700,
+            lineHeight: 1.4,
+          }}
+        >
+          🏫 Real-classroom activity preview. Students would build something
+          first, then photograph it. In practice you can skip the photo and
+          just submit notes to see the flow.
+        </div>
+      )}
       <div style={{ position: "relative" }}>
         <h2
           style={{

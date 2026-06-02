@@ -1118,7 +1118,22 @@ const DEMO_TASKS = [
     title: "Mystery Clue!",
     prompt: "Memorize these clues — you'll need them later!",
     config: {
-      clues: ["🚀", "🧠", "🌟"],
+      // Tester (2026-06-01): "always the same one for me" — the demo task
+      // was a single hardcoded clue set. Rotate among a small pool at
+      // module-load time so each fresh practice session sees a different
+      // set of clues. (Pool intentionally diverse — different "vibes" so
+      // it doesn't feel like the same emoji round-robin.)
+      clues: (() => {
+        const POOLS = [
+          ["🚀", "🧠", "🌟"],
+          ["🐉", "🔑", "🏰"],
+          ["⚡", "🌊", "🔮"],
+          ["🧩", "🎯", "🌙"],
+          ["🦊", "🌲", "🏹"],
+          ["📜", "🕯️", "🗝️"],
+        ];
+        return POOLS[Math.floor(Math.random() * POOLS.length)];
+      })(),
       revealMs: 8000,
       isFinal: false,
     },
