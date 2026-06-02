@@ -229,8 +229,25 @@ function sanitizePortfolioInput(body, email) {
     const sanitizeBeneficiaryAgreement = (ba) => {
       if (!ba || typeof ba !== "object") return { enabled: false };
       const inflowsRaw = Array.isArray(ba.inflows) ? ba.inflows : [];
+      const loansRaw = Array.isArray(ba.loans) ? ba.loans : [];
       return {
         enabled: !!ba.enabled,
+        loans: loansRaw
+          .filter((l) => l && typeof l.id === "string"
+            && typeof l.loanAmountCad === "number" && l.loanAmountCad >= 0
+            && typeof l.termMonths === "number" && l.termMonths >= 1
+            && l.startDate)
+          .slice(0, 10)
+          .map((l) => ({
+            id: String(l.id).slice(0, 64),
+            description: String(l.description || "Car loan").slice(0, 100),
+            loanAmountCad: Number(l.loanAmountCad) || 0,
+            interestRatePct: typeof l.interestRatePct === "number" && l.interestRatePct >= 0 && l.interestRatePct <= 100
+              ? l.interestRatePct : 0,
+            startDate: new Date(l.startDate),
+            termMonths: Math.round(Number(l.termMonths)),
+            notes: String(l.notes || "").slice(0, 500),
+          })),
         name: String(ba.name || "").slice(0, 80),
         principalCad: typeof ba.principalCad === "number" && ba.principalCad >= 0 ? ba.principalCad : 0,
         interestRatePct: typeof ba.interestRatePct === "number" && ba.interestRatePct >= 0 && ba.interestRatePct <= 100

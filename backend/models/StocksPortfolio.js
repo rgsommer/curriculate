@@ -43,9 +43,32 @@ const BeneficiaryInflowSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// A car loan extended to the beneficiary by the account holder, tracked
+// alongside the beneficiary agreement. Standard amortization math:
+// monthly payment computed from amount + rate + term; outstanding balance
+// and accumulated interest derived from months-elapsed since start.
+// Surfaces in the monthly report so the beneficiary sees principal paid
+// down + interest accrued + balance remaining.
+const BeneficiaryLoanSchema = new mongoose.Schema(
+  {
+    id: { type: String, required: true },
+    description: { type: String, default: "Car loan", maxlength: 100 },
+    loanAmountCad: { type: Number, required: true, min: 0 },
+    interestRatePct: { type: Number, default: 0, min: 0, max: 100 },
+    startDate: { type: Date, required: true },
+    // Term in months — 60 = 5 years, 84 = 7 years, etc.
+    termMonths: { type: Number, required: true, min: 1, max: 600 },
+    notes: { type: String, default: "", maxlength: 500 },
+  },
+  { _id: false }
+);
+
 const BeneficiaryAgreementSchema = new mongoose.Schema(
   {
     enabled: { type: Boolean, default: false },
+    // Loans extended to the beneficiary (e.g. car loan). Each one tracks
+    // its own amortization and surfaces in the monthly report.
+    loans: { type: [BeneficiaryLoanSchema], default: [] },
     name: { type: String, default: "", maxlength: 80 },
     principalCad: { type: Number, default: 0, min: 0 },
     interestRatePct: { type: Number, default: 0, min: 0, max: 100 },

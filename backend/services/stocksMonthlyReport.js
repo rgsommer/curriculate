@@ -228,6 +228,68 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
       ytd,
     });
   }
+  // ── Loans extended to the beneficiary ─────────────────────────────────
+  // For each loan, run standard amortization: compute the fixed monthly
+  // payment from amount + rate + term, then walk months elapsed to derive
+  // (a) cumulative interest paid, (b) cumulative principal paid, and
+  // (c) outstanding balance. All in CAD.
+  const loans = (ba.loans || []).map(loan => {
+    const P = Number(loan.loanAmountCad) || 0;
+    const annualRate = (Number(loan.interestRatePct) || 0) / 100;
+    const N = Math.max(1, Math.round(Number(loan.termMonths) || 0));
+    const start = loan.startDate ? new Date(loan.startDate) : null;
+    const r = annualRate / 12; // monthly rate
+    // Monthly payment (standard amortization). When rate = 0, simple division.
+    const monthlyPayment = r > 0
+      ? P * (r * Math.pow(1 + r, N)) / (Math.pow(1 + r, N) - 1)
+      : P / N;
+    // Months elapsed since start, capped at the loan term.
+    let monthsElapsed = 0;
+    if (start && asOf >= start) {
+      const ms = asOf.getTime() - start.getTime();
+      monthsElapsed = Math.min(N, Math.max(0, ms / (30.4375 * 86400 * 1000)));
+    }
+    // Walk through monthsElapsed months to accumulate interest + principal.
+    // For accuracy across partial months, use the closed-form remaining-balance
+    // formula: balance_n = P × (1+r)^n − M × ((1+r)^n − 1)/r
+    let balance, interestPaid, principalPaid;
+    if (r > 0) {
+      const growth = Math.pow(1 + r, monthsElapsed);
+      balance = Math.max(0, P * growth - monthlyPayment * (growth - 1) / r);
+      principalPaid = P - balance;
+      interestPaid = monthlyPayment * monthsElapsed - principalPaid;
+    } else {
+      principalPaid = Math.min(P, monthlyPayment * monthsElapsed);
+      balance = Math.max(0, P - principalPaid);
+      interestPaid = 0;
+    }
+    const totalCost = monthlyPayment * N;
+    const totalInterest = totalCost - P;
+    const monthsRemaining = Math.max(0, N - monthsElapsed);
+    const isPaidOff = monthsRemaining <= 0;
+    return {
+      id: loan.id,
+      description: loan.description || "Loan",
+      loanAmountCad: P,
+      interestRatePct: Number(loan.interestRatePct) || 0,
+      startDate: start,
+      termMonths: N,
+      monthlyPayment,
+      monthsElapsed,
+      monthsRemaining,
+      isPaidOff,
+      balanceCad: balance,
+      principalPaidCad: principalPaid,
+      interestPaidCad: interestPaid,
+      totalCost,
+      totalInterest,
+      notes: loan.notes || "",
+    };
+  });
+  const loansTotalBalance = loans.reduce((s, l) => s + l.balanceCad, 0);
+  const loansTotalMonthly = loans.reduce((s, l) => s + (l.isPaidOff ? 0 : l.monthlyPayment), 0);
+  const loansTotalInterestPaid = loans.reduce((s, l) => s + l.interestPaidCad, 0);
+
   const netCarryCad = inflowsCad - interestOwed; // positive = beneficiary owes user net
   // Interest YTD: from MAX(year-start, principalStart) up to asOf
   const interestYtdAnchor = principalStart && principalActive
@@ -286,6 +348,11 @@ export function computeBeneficiaryPayout(ba, currentValueCad, asOf = new Date(),
     perInstallment: ((ba.payoutInstallments || 1) > 1)
       ? (grossPayoutIfNow - (isEarly && penaltyAmount > 0 ? penaltyAmount : 0)) / (ba.payoutInstallments || 1)
       : null,
+    // Loans extended to the beneficiary
+    loans,
+    loansTotalBalance,
+    loansTotalMonthly,
+    loansTotalInterestPaid,
   };
 }
 
@@ -479,6 +546,30 @@ export function formatAccountReportMarkdown(report) {
       // penalty) rather than re-deriving principal+interest, so the prose
       // matches the "payout if cashed out today" figure in the table above.
       parts.push(`> ⚠️ Account is in **loss** of ${fmtMoney(ba.profit)}. The account holder absorbs this; beneficiary still receives principal + interest${penaltyNote} (${fmtMoney(ba.payoutIfNow)}).`);
+    }
+
+    // Loans extended to the beneficiary — one row per loan with full
+    // amortization snapshot. Shown when the agreement has at least one loan.
+    if (ba.loans && ba.loans.length > 0) {
+      const monthYear = (d) => d
+        ? new Date(d).toLocaleDateString("en-US", { month: "short", year: "numeric" })
+        : "—";
+      parts.push("");
+      parts.push(`**Loans extended to beneficiary:**`);
+      parts.push("");
+      parts.push(`| Loan | Original | Rate | Term | Started | Monthly | Paid (principal / interest) | Balance | Months left |`);
+      parts.push(`|---|---|---|---|---|---|---|---|---|`);
+      for (const l of ba.loans) {
+        const monthsLeftLabel = l.isPaidOff
+          ? "✓ paid off"
+          : `${l.monthsRemaining.toFixed(0)} / ${l.termMonths}`;
+        parts.push(
+          `| ${l.description} | ${fmtMoney(l.loanAmountCad)} | ${l.interestRatePct}% | ${l.termMonths}mo | ${monthYear(l.startDate)} | ${fmtMoney(l.monthlyPayment)} | ${fmtMoney(l.principalPaidCad)} / ${fmtMoney(l.interestPaidCad)} | **${fmtMoney(l.balanceCad)}** | ${monthsLeftLabel} |`
+        );
+      }
+      if (ba.loans.length > 1) {
+        parts.push(`| **Total** | — | — | — | — | **${fmtMoney(ba.loansTotalMonthly)}/mo** | **— / ${fmtMoney(ba.loansTotalInterestPaid)}** | **${fmtMoney(ba.loansTotalBalance)}** | — |`);
+      }
     }
 
     // Structural protections summary — only render if any are configured

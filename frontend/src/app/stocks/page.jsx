@@ -2572,6 +2572,44 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
   const updateInflow = (i, patch) => setInflows(inflows.map((row, idx) => idx === i ? { ...row, ...patch } : row));
   const removeInflow = (i) => setInflows(inflows.filter((_, idx) => idx !== i));
 
+  // Loans extended to the beneficiary (car loan, etc.) — separate from
+  // inflows. Each loan tracks amortization (computed server-side for the
+  // monthly report).
+  const [loans, setLoans] = useState(
+    Array.isArray(ba.loans) && ba.loans.length > 0
+      ? ba.loans.map(l => ({
+          id: l.id || (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `loan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`),
+          description: l.description || "Car loan",
+          loanAmountCad: l.loanAmountCad || 0,
+          interestRatePct: l.interestRatePct ?? 0,
+          startDate: l.startDate ? new Date(l.startDate).toISOString().slice(0, 10) : "",
+          termMonths: l.termMonths || 60,
+          notes: l.notes || "",
+        }))
+      : []
+  );
+  const addLoan = () => setLoans([...loans, {
+    id: typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `loan-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+    description: "Car loan",
+    loanAmountCad: 0,
+    interestRatePct: 0,
+    startDate: new Date().toISOString().slice(0, 10),
+    termMonths: 60,
+    notes: "",
+  }]);
+  const updateLoan = (i, patch) => setLoans(loans.map((row, idx) => idx === i ? { ...row, ...patch } : row));
+  const removeLoan = (i) => setLoans(loans.filter((_, idx) => idx !== i));
+
+  // Quick monthly-payment preview using standard amortization
+  const previewPayment = (amount, rate, term) => {
+    const P = parseFloat(amount) || 0;
+    const r = (parseFloat(rate) || 0) / 100 / 12;
+    const N = parseInt(term) || 0;
+    if (P <= 0 || N <= 0) return null;
+    if (r === 0) return P / N;
+    return P * (r * Math.pow(1 + r, N)) / (Math.pow(1 + r, N) - 1);
+  };
+
   const save = () => {
     onSaveAgreement({
       enabled,
@@ -2601,6 +2639,17 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
       payoutInstallmentFrequency: installmentFrequency,
       accountHolderBuyoutRight: !!buyoutRight,
       cpiAdjustmentPct: parseFloat(cpiPct) || 0,
+      loans: loans
+        .filter(l => (parseFloat(l.loanAmountCad) || 0) > 0 && l.startDate && (parseInt(l.termMonths) || 0) > 0)
+        .map(l => ({
+          id: l.id,
+          description: (l.description || "Loan").trim().slice(0, 100),
+          loanAmountCad: parseFloat(l.loanAmountCad) || 0,
+          interestRatePct: parseFloat(l.interestRatePct) || 0,
+          startDate: new Date(l.startDate + "T12:00:00").toISOString(),
+          termMonths: parseInt(l.termMonths) || 0,
+          notes: (l.notes || "").trim().slice(0, 500),
+        })),
     });
   };
 
@@ -2808,6 +2857,95 @@ function AccountReportRow({ account, onToggleMonthly, onChangeCcEmail, onSaveAgr
                 Total expected inflow: ≈ <b>${annualInflows.toLocaleString()}</b>/year
               </div>
             )}
+          </div>
+
+          {/* Loans extended to beneficiary — amortizing car loan, etc. */}
+          <div style={{ marginTop: 14, paddingTop: 10, borderTop: "1px dashed var(--sa-border)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <label style={{ margin: 0 }}>Loans extended to beneficiary</label>
+              <button className="sa-btn ghost" onClick={addLoan} style={{ fontSize: 12 }}>+ Add loan</button>
+            </div>
+            <div className="sa-muted" style={{ fontSize: 11, marginBottom: 8 }}>
+              Track loans (car, etc.) you've given the beneficiary. Monthly payment is auto-computed; the report shows balance, interest paid, and months remaining.
+            </div>
+            {loans.length === 0 && (
+              <div className="sa-muted" style={{ fontSize: 12 }}>No loans tracked.</div>
+            )}
+            {loans.map((l, idx) => {
+              const monthly = previewPayment(l.loanAmountCad, l.interestRatePct, l.termMonths);
+              return (
+                <div key={l.id} style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 0.8fr 0.8fr 1fr auto", gap: 8, marginBottom: 8, alignItems: "end" }}>
+                  <div>
+                    <label style={{ fontSize: 11 }}>Description</label>
+                    <input
+                      type="text"
+                      value={l.description}
+                      onChange={(e) => updateLoan(idx, { description: e.target.value })}
+                      placeholder="Car loan"
+                      style={{ width: "100%", fontSize: 13 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11 }}>Loan amount (CAD)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={l.loanAmountCad}
+                      onChange={(e) => updateLoan(idx, { loanAmountCad: e.target.value })}
+                      placeholder="e.g. 25000"
+                      style={{ width: "100%", fontSize: 13 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11 }}>Rate %/yr</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.01"
+                      value={l.interestRatePct}
+                      onChange={(e) => updateLoan(idx, { interestRatePct: e.target.value })}
+                      placeholder="e.g. 5.5"
+                      style={{ width: "100%", fontSize: 13 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11 }}>Term (months)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="600"
+                      step="1"
+                      value={l.termMonths}
+                      onChange={(e) => updateLoan(idx, { termMonths: e.target.value })}
+                      placeholder="60"
+                      style={{ width: "100%", fontSize: 13 }}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11 }}>Start date</label>
+                    <input
+                      type="date"
+                      value={l.startDate || ""}
+                      onChange={(e) => updateLoan(idx, { startDate: e.target.value })}
+                      style={{ width: "100%", fontSize: 13 }}
+                    />
+                  </div>
+                  <button
+                    className="sa-btn ghost"
+                    onClick={() => removeLoan(idx)}
+                    style={{ fontSize: 12 }}
+                    title="Remove this loan"
+                  >✕</button>
+                  {monthly && (
+                    <div className="sa-muted" style={{ gridColumn: "1 / -1", fontSize: 11, marginTop: -4 }}>
+                      → Monthly payment ≈ <b>${monthly.toLocaleString(undefined, { maximumFractionDigits: 2 })}</b> over {l.termMonths || 0} months · total interest ≈ <b>${((monthly * (parseInt(l.termMonths) || 0)) - (parseFloat(l.loanAmountCad) || 0)).toLocaleString(undefined, { maximumFractionDigits: 0 })}</b>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div style={{ marginTop: 10 }}>

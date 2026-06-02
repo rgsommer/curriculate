@@ -295,7 +295,27 @@
       "Bash(node --check services/stocksEarningsTranscripts.js)",
       "Bash(node --check services/stocksPatentsUspto.js)",
       "Bash(grep -n \"moonshot signals\\\\|deterministic:\\\\|return \\\\`\\\\\\\\\\\\[#\\\\|isShort\\\\|export function buildMoonshotResult\\\\|const prompt =\\\\|return {\" services/stocksMoonshot.js)",
-      "Bash(node tests/test-cap-limits.mjs)"
+      "Bash(node tests/test-cap-limits.mjs)",
+      "Bash(grep -nB1 -A20 \"text-feedback\" student-app/src/components/tasks/types/ArtViewTask.jsx)",
+      "Bash(awk -F: '$2+0>3160 && $2+0<3200')",
+      "WebFetch(domain:www.streetproperties.ca)",
+      "Bash(curl -sk -o /dev/null -w \"%{http_code} %{content_type}\\\\n\" \"https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?auto=format&fit=crop&w=400&q=60\")",
+      "Bash(curl -sk -A \"Mozilla/5.0\" https://www.streetproperties.ca/ -o /tmp/sp.html -w \"HTTP %{http_code} size=%{size_download}\\\\n\")",
+      "Bash(grep -oiE 'data-[a-z]+=\"[0-9,]+\"|class=\"[^\"]*count[^\"]*\"|>[0-9]{2,}[^<]*<' /tmp/sp.html)",
+      "mcp__Claude_in_Chrome__list_connected_browsers",
+      "mcp__Claude_in_Chrome__tabs_create_mcp",
+      "mcp__Claude_in_Chrome__read_network_requests",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "Bash(python3 -)",
+      "Bash(echo '=== __TRACKED_VAR__ ===')",
+      "Bash(grep -nB1 -A8 'onSubmit\\\\\\(\\\\|onSubmit?\\\\.\\\\\\(\\\\|onSubmit\\(' student-app/src/components/tasks/types/__TRACKED_VAR__.jsx)",
+      "Bash(grep -nE onSubmit student-app/src/components/tasks/types/__TRACKED_VAR__.jsx)",
+      "Bash(grep -n \"^    </div>\\\\|^    \\);\\\\|^  \\);$\\\\|^}\" teacher-app/src/pages/MyPlan.jsx)",
+      "Bash(grep -nE '^export default function|^  return \\\\\\(|maxWidth.*[0-9]|<h1|<h2.*style' teacher-app/src/pages/__TRACKED_VAR__.jsx)",
+      "Bash(grep -n \"^import\\\\|</div>\\\\s*$\" teacher-app/src/pages/SharedPresenterLaunch.jsx)",
+      "Bash(grep -nA20 'taskType: \"make-and-snap\"' student-app/src/demoTasks.js)",
+      "Bash(grep -nA15 'taskType: \"mystery-clues\"' student-app/src/demoTasks.js)",
+      "Bash(grep -n \"<MakeAndSnapTask\\\\|MakeAndSnapTask$\\\\|/MakeAndSnap\" student-app/src/components/tasks/TaskRunner.jsx)"
     ]
   }
 }
