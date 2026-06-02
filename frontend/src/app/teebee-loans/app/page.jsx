@@ -24,6 +24,15 @@ const TOKEN_KEY = "teebeepay.authToken";
 function getToken() { try { return localStorage.getItem(TOKEN_KEY); } catch { return null; } }
 function setToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch {} }
 
+async function openPdf(path) {
+  const tok = getToken();
+  const r = await fetch(path, { headers: tok ? { Authorization: "Bearer " + tok } : {} });
+  if (!r.ok) throw new Error("Could not generate the document.");
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function api(path, opts = {}) {
   const tok = getToken();
   const headers = { ...(opts.headers || {}) };
@@ -321,7 +330,12 @@ function ApplicationView({ appId, meta, onBack }) {
 
   return (
     <div style={{ maxWidth: 1000, margin: "0 auto", padding: "20px 24px 64px" }}>
-      <button onClick={onBack} style={{ ...btnGhostSm, marginBottom: 14 }}><ArrowLeft size={14} style={{ verticalAlign: -2 }} /> Pipeline</button>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 10, flexWrap: "wrap" }}>
+        <button onClick={onBack} style={btnGhostSm}><ArrowLeft size={14} style={{ verticalAlign: -2 }} /> Pipeline</button>
+        <button onClick={() => openPdf(`/api/loans/applications/${appId}/report`).catch((e) => setError(e.message))} style={btnGhostSm}>
+          <FileCheck2 size={14} style={{ verticalAlign: -2 }} /> Download package (PDF)
+        </button>
+      </div>
 
       <div style={{ ...card, marginBottom: 16 }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>

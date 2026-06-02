@@ -30,6 +30,16 @@ const TOUR_KEY = "teebee.audit.tour.v1";
 function tourSeen() { try { return localStorage.getItem(TOUR_KEY) === "1"; } catch { return false; } }
 function markTourSeen() { try { localStorage.setItem(TOUR_KEY, "1"); } catch {} }
 
+// Fetch an authenticated PDF and open it in a new tab.
+async function openPdf(path) {
+  const tok = getToken();
+  const r = await fetch(path, { headers: tok ? { Authorization: "Bearer " + tok } : {} });
+  if (!r.ok) throw new Error("Could not generate the report.");
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
 async function api(path, opts = {}) {
   const tok = getToken();
   const headers = { ...(opts.headers || {}) };
@@ -454,7 +464,11 @@ function EngagementView({ engagementId, me, onBack }) {
               ? <><Loader2 size={14} className="spin" style={{ marginRight: 6 }} /> Analyzing…</>
               : <><Sparkles size={14} style={{ marginRight: 6 }} /> Run software analysis</>}
           </button>
-          <Link href="/audit/admin" style={{ ...btnGhostLg, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => openPdf(`/api/audit/engagements/${engagementId}/report`).catch((e) => setError(e.message))}
+            style={{ ...btnGhostLg, width: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <FileText size={14} /> Download report
+          </button>
+          <Link href="/audit/admin" style={{ ...btnGhostLg, width: "auto", textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 6 }}>
             Open admin queue
           </Link>
         </div>
