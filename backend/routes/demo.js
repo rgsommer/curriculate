@@ -1253,6 +1253,72 @@ router.get("/practice-stats", async (req, res) => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  GET /exhausted-types?email=...&conference=...                      */
+/*  Returns the task types THIS player has "exhausted" — meaning they  */
+/*  gave 2 consecutive positive-only feedback entries on that type.    */
+/*  Practice mode filters these out so a tester stops seeing tasks    */
+/*  they've already enthusiastically signed off on. When every type   */
+/*  is exhausted, the client shows the "you've done all the practice  */
+/*  you can — thank you!" graduation screen.                          */
+/*                                                                    */
+/*  "Positive-only" = not skipped, fun ≥ 4, clarity ≥ 4, no           */
+/*  `confusing` complaint text. (Constructive suggestions are fine —   */
+/*  many happy testers still suggest tweaks.)                          */
+/* ------------------------------------------------------------------ */
+router.get("/exhausted-types", async (req, res) => {
+  try {
+    const email = String(req.query.email || "").toLowerCase().trim();
+    const conference = String(req.query.conference || "general").trim();
+    if (!email) return res.json({ ok: true, exhaustedTypes: [] });
+
+    const lead = await ConferenceLead.findOne(
+      { email, conference },
+      { feedbackEntries: 1 }
+    ).lean();
+    if (!lead) return res.json({ ok: true, exhaustedTypes: [] });
+
+    const entries = Array.isArray(lead.feedbackEntries) ? lead.feedbackEntries : [];
+
+    // Group entries by taskType. Skipped entries are "abandoned mid-task",
+    // not a thumbs-up/down — ignore them for the exhaustion signal.
+    const byType = new Map();
+    for (const e of entries) {
+      if (!e || e.skipped) continue;
+      const tt = String(e.taskType || "").trim();
+      if (!tt) continue;
+      const arr = byType.get(tt) || [];
+      arr.push(e);
+      byType.set(tt, arr);
+    }
+
+    const isPositiveOnly = (e) => {
+      const fun = Number(e?.fun) || 0;
+      const clarity = Number(e?.clarity) || 0;
+      const confusing = String(e?.confusing || "").trim();
+      return fun >= 4 && clarity >= 4 && !confusing;
+    };
+
+    const exhausted = [];
+    for (const [taskType, arr] of byType) {
+      const sorted = arr.slice().sort((a, b) => {
+        const at = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const bt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return bt - at; // newest first
+      });
+      if (sorted.length >= 2 && isPositiveOnly(sorted[0]) && isPositiveOnly(sorted[1])) {
+        exhausted.push(taskType);
+      }
+    }
+
+    res.set("Cache-Control", "private, max-age=30");
+    return res.json({ ok: true, exhaustedTypes: exhausted });
+  } catch (e) {
+    console.warn("[demo] exhausted-types failed:", e?.message);
+    return res.json({ ok: true, exhaustedTypes: [] });
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  GET /feedback-summary                                              */
 /*  Aggregates per-task-type feedback from all students                 */
 /* ------------------------------------------------------------------ */

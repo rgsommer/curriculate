@@ -917,6 +917,10 @@ function DemoPlayer({
 
   // Per-type practice counts → prioritize least-practiced + recently-fixed.
   const [practiceCounts, setPracticeCounts] = useState(null);
+  // Task types this player has "exhausted" (2 consecutive positive-only
+  // ratings).  Null until the fetch resolves so we don't accidentally
+  // freeze the order with an empty set and then re-freeze a second time.
+  const [exhaustedTypes, setExhaustedTypes] = useState(null);
   const orderFrozenRef = useRef(null);
 
   useEffect(() => {
@@ -933,15 +937,49 @@ function DemoPlayer({
     return () => { cancelled = true; };
   }, []);
 
+  // Per-player exhausted-types fetch.  Needs the player's email, so it
+  // can only run after login.  If the fetch fails or there's no lead
+  // yet (first session), we get an empty set and nothing is filtered.
+  useEffect(() => {
+    if (!user?.email) {
+      setExhaustedTypes(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const params = new URLSearchParams({
+          email: String(user.email).toLowerCase().trim(),
+          conference: "general",
+        });
+        const resp = await fetch(`${API_BASE_URL}/api/conference/exhausted-types?${params.toString()}`);
+        const data = await resp.json();
+        const list = Array.isArray(data?.exhaustedTypes) ? data.exhaustedTypes : [];
+        if (!cancelled) setExhaustedTypes(new Set(list));
+      } catch {
+        if (!cancelled) setExhaustedTypes(new Set());
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user?.email]);
+
   // Build a smart task order: recently-fixed + least-practiced types first, then
-  // repeats. Freeze once practice counts have loaded so it never reshuffles
-  // mid-session (counts load during email capture, before play begins).
+  // repeats.  Drop any types this player has exhausted (2x consecutive
+  // positive-only ratings) so they don't see the same fully-validated tasks
+  // again.  Freeze once both practice counts AND exhausted-types have
+  // loaded so the order never reshuffles mid-session.
   const taskOrder = useMemo(() => {
     if (orderFrozenRef.current) return orderFrozenRef.current;
-    const order = buildSmartTaskOrder(DEMO_TASKS, practiceCounts || {});
-    if (practiceCounts !== null) orderFrozenRef.current = order;
+    const exhausted = exhaustedTypes || new Set();
+    const eligible = exhausted.size > 0
+      ? DEMO_TASKS.filter((t) => !exhausted.has(t.taskType))
+      : DEMO_TASKS;
+    const order = buildSmartTaskOrder(eligible, practiceCounts || {});
+    if (practiceCounts !== null && exhaustedTypes !== null) {
+      orderFrozenRef.current = order;
+    }
     return order;
-  }, [practiceCounts]);
+  }, [practiceCounts, exhaustedTypes]);
 
   // ── Orphan-feedback recovery ───────────────────────────────────────
   // Drafts the user typed in TaskFeedback but never submitted (e.g.
@@ -1572,6 +1610,84 @@ function DemoPlayer({
   // No more on-screen idle countdown bar — replaced by the modal.
   const timerPct = 100;
   const showInactivityWarning = false;
+
+  // GRADUATION: every task type this player ever sees has now been
+  // marked positive-only twice in a row.  Practice mode has nothing
+  // fresh to show them — they've fully validated the catalog.
+  const allTypesExhausted =
+    exhaustedTypes !== null &&
+    exhaustedTypes.size > 0 &&
+    taskOrder.length === 0;
+
+  if (allTypesExhausted) {
+    return (
+      <div style={styles.playerOuter}>
+        <div
+          style={{
+            maxWidth: 560,
+            margin: "60px auto",
+            padding: "36px 28px",
+            borderRadius: 22,
+            background: "linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)",
+            boxShadow: "0 18px 50px rgba(217,119,6,0.25)",
+            textAlign: "center",
+          }}
+          role="status"
+        >
+          <div style={{ fontSize: 64, lineHeight: 1, marginBottom: 12 }}>🎓</div>
+          <div
+            style={{
+              fontSize: 26,
+              fontWeight: 900,
+              color: "#7c2d12",
+              marginBottom: 12,
+              lineHeight: 1.2,
+            }}
+          >
+            You have done all the practice you can.
+          </div>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: "#92400e",
+              marginBottom: 22,
+            }}
+          >
+            Thank you!
+          </div>
+          <div
+            style={{
+              fontSize: 14,
+              color: "#78350f",
+              marginBottom: 28,
+              lineHeight: 1.5,
+            }}
+          >
+            You've already given two positive reviews on every task type
+            in the catalog. We're not going to keep showing you the same
+            activities you've already signed off on.
+          </div>
+          <button
+            onClick={() => onFinish(results)}
+            style={{
+              padding: "12px 28px",
+              borderRadius: 12,
+              background: "linear-gradient(135deg, #d97706, #b45309)",
+              color: "#fff",
+              fontWeight: 800,
+              fontSize: 15,
+              border: "none",
+              cursor: "pointer",
+              boxShadow: "0 8px 22px rgba(180,83,9,0.35)",
+            }}
+          >
+            Finish session
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={styles.playerOuter}>
