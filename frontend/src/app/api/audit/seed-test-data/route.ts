@@ -1,7 +1,7 @@
 // POST → seeds sample audit engagements (Principal+ only, idempotent).
 // Useful for Theresia's first walk-through of the admin queue.
 //
-// One of them — Port Moresby Netball Association — also ships with a real,
+// One of them — Sample Netball Association — also ships with a real,
 // balanced trial balance and a reconciling general ledger uploaded into GridFS,
 // so the demo can be analysed end-to-end without anyone hunting for files.
 import { NextResponse } from "next/server";
@@ -59,7 +59,7 @@ const SEEDS = [
   },
   {
     status: "active",
-    company_name: "Port Moresby Netball Association",
+    company_name: "Sample Netball Association",
     contact_name: "Grace Wamp", contact_role: "Treasurer",
     contact_email: "demo+netball@example.com",
     contact_phone: "+675 7200 4488",
@@ -154,8 +154,8 @@ export async function POST(req: Request) {
         const eid = row._id instanceof ObjectId ? row._id : new ObjectId(String(row._id));
         const already = await dbi.collection("audit_files.files").findOne({ "metadata.engagement_id": eid, "metadata.seeded": true });
         if (!already) {
-          await uploadDemoFile(dbi, eid, "trial_balance", "Port Moresby Netball Association — Trial Balance 2025.csv", DEMO_TRIAL_BALANCE, u.email);
-          await uploadDemoFile(dbi, eid, "general_ledger", "Port Moresby Netball Association — General Ledger 2025.csv", DEMO_GENERAL_LEDGER, u.email);
+          await uploadDemoFile(dbi, eid, "trial_balance", "Sample Netball Association — Trial Balance 2025.csv", DEMO_TRIAL_BALANCE, u.email);
+          await uploadDemoFile(dbi, eid, "general_ledger", "Sample Netball Association — General Ledger 2025.csv", DEMO_GENERAL_LEDGER, u.email);
           await dbi.collection("audit_engagements").updateOne({ _id: eid },
             { $set: { last_upload_at: new Date(), last_upload_by: u.email } });
           filesAdded += 2;
