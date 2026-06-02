@@ -32,6 +32,48 @@ async function openPdf(path) {
   setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
 
+// Multipart upload (no JSON Content-Type so the browser sets the boundary).
+async function apiUpload(path, formData) {
+  const tok = getToken();
+  const r = await fetch(path, { method: "POST", headers: tok ? { Authorization: "Bearer " + tok } : {}, body: formData });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+  return j;
+}
+
+// Client mirror of api/tax/_docs.ts checklistForTaxType (slot + label + required).
+const TAX_DOC_CHECKLIST = {
+  cit: [
+    { slot: "financial_statements", label: "Financial statements (P&L, balance sheet)", required: true },
+    { slot: "trial_balance", label: "Trial balance", required: false },
+    { slot: "adjustments_workpaper", label: "Tax adjustments / computation workpaper", required: false },
+    { slot: "depreciation_schedule", label: "Fixed-asset / depreciation schedule", required: false },
+    { slot: "provisional_tax", label: "Provisional tax / instalment receipts", required: false },
+    { slot: "prior_return", label: "Prior-year return / IRC assessment", required: false },
+    { slot: "bank_statements", label: "Bank statements", required: false },
+  ],
+  individual: [
+    { slot: "salary_summary", label: "Salary / wages summary (Form S, payment summary)", required: true },
+    { slot: "other_income", label: "Other income evidence (rent, dividends, interest)", required: false },
+    { slot: "deductions_evidence", label: "Deduction evidence (donations, etc.)", required: false },
+    { slot: "prior_return", label: "Prior-year return / IRC assessment", required: false },
+    { slot: "bank_statements", label: "Bank statements", required: false },
+  ],
+  gst: [
+    { slot: "sales_ledger", label: "Sales ledger / output-tax workings", required: true },
+    { slot: "purchases_ledger", label: "Purchases ledger / input-tax workings", required: true },
+    { slot: "gst_invoices", label: "Tax invoices (sample)", required: false },
+    { slot: "prior_return", label: "Prior-year return / IRC assessment", required: false },
+    { slot: "bank_statements", label: "Bank statements", required: false },
+  ],
+};
+function taxDocsFor(type) {
+  return TAX_DOC_CHECKLIST[type] || [
+    { slot: "prior_return", label: "Prior-year return / IRC assessment", required: false },
+    { slot: "bank_statements", label: "Bank statements", required: false },
+  ];
+}
+
 async function api(path, opts = {}) {
   const tok = getToken();
   const headers = { ...(opts.headers || {}) };
@@ -376,6 +418,93 @@ function ReturnView({ returnId, me, meta, onBack }) {
       <ResultPanel ret={ret} />
 
       <WorkflowBar ret={ret} me={me} busy={busy} act={act} />
+
+      <TaxDocs returnId={returnId} taxType={ret.tax_type} setError={setError} />
+    </div>
+  );
+}
+
+function TaxDocs({ returnId, taxType, setError }) {
+  const items = taxDocsFor(taxType);
+  const [files, setFiles] = useState([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [busySlot, setBusySlot] = useState(null);
+
+  const load = useCallback(async () => {
+    try { const j = await api(`/api/tax/returns/${returnId}/files`); setFiles(j.files || []); }
+    catch (e) { setError && setError(e.message); }
+  }, [returnId, setError]);
+  useEffect(() => { load(); }, [load]);
+
+  const bySlot = files.reduce((m, f) => { (m[f.slot] = m[f.slot] || []).push(f); return m; }, {});
+
+  async function uploadTo(slot, file) {
+    if (!file) return;
+    setBusySlot(slot); setError && setError("");
+    try { const fd = new FormData(); fd.append("file", file); fd.append("slot", slot); await apiUpload(`/api/tax/returns/${returnId}/files`, fd); await load(); }
+    catch (e) { setError && setError(e.message); }
+    finally { setBusySlot(null); }
+  }
+  async function bulkUpload(arr) {
+    if (!arr.length) return;
+    setBulkBusy(true); setError && setError("");
+    for (const file of arr) {
+      try { const fd = new FormData(); fd.append("file", file); fd.append("slot", "auto"); await apiUpload(`/api/tax/returns/${returnId}/files`, fd); }
+      catch (e) { setError && setError(e.message); }
+    }
+    setBulkBusy(false); await load();
+  }
+  async function remove(fid) {
+    if (!confirm("Remove this document?")) return;
+    try { await api(`/api/tax/returns/${returnId}/files/${fid}`, { method: "DELETE" }); await load(); }
+    catch (e) { setError && setError(e.message); }
+  }
+
+  return (
+    <div style={{ ...card, marginTop: 16 }}>
+      <SectionHead icon={<FileText size={16} />} title="Supporting documents" />
+      <div style={{ background: C.goldSoft, border: "1px dashed #e3c976", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>Upload documents — we&rsquo;ll file them automatically</div>
+        <div style={{ fontSize: 12, color: C.muted, margin: "4px 0 10px" }}>Add financials, schedules and workings at once; each is sorted into the checklist by its name.</div>
+        <label style={{ ...btnPrimaryInline, cursor: bulkBusy ? "default" : "pointer", opacity: bulkBusy ? 0.6 : 1 }}>
+          {bulkBusy ? <><Loader2 size={14} className="spin" /> Filing…</> : <><FileText size={14} /> Choose files</>}
+          <input type="file" hidden multiple disabled={bulkBusy} onChange={(e) => { bulkUpload(Array.from(e.target.files || [])); e.target.value = ""; }} />
+        </label>
+      </div>
+      <div style={{ display: "grid", gap: 10 }}>
+        {items.map((it) => {
+          const fs = bySlot[it.slot] || [];
+          const done = fs.length > 0;
+          return (
+            <div key={it.slot} style={{ border: `1px solid ${done ? "#bbf7d0" : C.line}`, borderRadius: 10, padding: 12, background: done ? "#f0fdf4" : "#fff" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                {done ? <CheckCircle2 size={15} color={C.green} /> : <span style={{ width: 15, height: 15, borderRadius: 99, border: `2px solid ${it.required ? C.red : "#cbd5e1"}`, flexShrink: 0 }} />}
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{it.label}</span>
+                  {it.required && !done && <span style={{ fontSize: 10, color: C.red, marginLeft: 8, textTransform: "uppercase" }}>Required</span>}
+                </div>
+                <label style={{ ...btnGhostSm, cursor: busySlot === it.slot ? "default" : "pointer" }}>
+                  {busySlot === it.slot ? <Loader2 size={12} className="spin" /> : <><Plus size={12} /> Add</>}
+                  <input type="file" hidden disabled={busySlot === it.slot} onChange={(e) => { uploadTo(it.slot, e.target.files?.[0]); e.target.value = ""; }} />
+                </label>
+              </div>
+              {fs.length > 0 && (
+                <div style={{ marginTop: 8, display: "grid", gap: 4 }}>
+                  {fs.map((f) => (
+                    <div key={f.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, background: "#fff", border: "1px solid " + C.line, borderRadius: 6, padding: "5px 9px" }}>
+                      <a href="#" onClick={(e) => { e.preventDefault(); openPdf(`/api/tax/returns/${returnId}/files/${f.id}`).catch(() => {}); }} style={{ color: C.navy, textDecoration: "none" }}>{f.filename}</a>
+                      <button onClick={() => remove(f.id)} style={{ ...btnGhostSm, padding: "3px 7px", color: C.red, borderColor: "#fecaca" }}><Trash2 size={11} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {(bySlot.other || []).length > 0 && (
+          <div style={{ fontSize: 12, color: C.muted }}>Unsorted: {(bySlot.other || []).map((f) => f.filename).join(", ")}</div>
+        )}
+      </div>
     </div>
   );
 }
