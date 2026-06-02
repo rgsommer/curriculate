@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   Loader2, AlertCircle, RefreshCw, ArrowLeft, Send, CheckCircle2, Clock,
-  ClipboardCheck, Calculator, Landmark, FileText, X, MessageSquarePlus, PencilLine, Upload,
+  ClipboardCheck, Calculator, Landmark, FileText, X, MessageSquarePlus, PencilLine, Upload, BookOpen,
 } from "lucide-react";
 
 const C = {
@@ -87,7 +87,11 @@ export default function TeeBeeConsole() {
             {data.scope === "all" ? "Superuser — all activity" : "Principal"}
           </span>
         )}
-        <button onClick={refresh} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+        <Link href="/teebee-console/about" style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+          padding: "6px 12px", color: "#cbd5e1", textDecoration: "none", border: "1px solid #3a526b", borderRadius: 8, fontSize: 13 }}>
+          <BookOpen size={13} /> What these apps do
+        </Link>
+        <button onClick={refresh} style={{ display: "inline-flex", alignItems: "center", gap: 6,
           padding: "6px 12px", background: "transparent", color: "#cbd5e1", border: "1px solid #3a526b",
           borderRadius: 8, fontSize: 13, cursor: "pointer" }}>
           <RefreshCw size={13} /> Refresh
