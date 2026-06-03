@@ -666,6 +666,19 @@ function ImportEmployeesDialog({ companyId, onClose, onSaved }) {
     setCsv(text);
   }
 
+  async function downloadTemplate() {
+    setError("");
+    try {
+      const r = await fetch(`/api/teebeepay/employee-template`, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Couldn't download the template.");
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = "PNGPay-Bulk-Employees-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setError(e.message); }
+  }
+
   async function submit() {
     setError(""); setResult(null); setSubmitting(true);
     try {
@@ -692,6 +705,11 @@ function ImportEmployeesDialog({ companyId, onClose, onSaved }) {
         {" "}<code>declaration</code>, <code>status</code>, <code>notes</code>.
         {" "}Duplicates (matching first + last name) are skipped.
       </p>
+      <div style={{ marginBottom: 14 }}>
+        <button onClick={downloadTemplate} style={{ ...btnGhostLg, width: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <FileSpreadsheet size={14} /> Download XLSX template
+        </button>
+      </div>
       <Field label="Pick a .csv file">
         <input type="file" accept=".csv,text/csv" onChange={readFile} style={{ fontSize: 13 }} />
       </Field>
