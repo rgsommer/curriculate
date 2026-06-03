@@ -40,6 +40,7 @@ const APPS = [
       "Sign-off ladder: draft → prepared → reviewed → filed, with separate preparer & reviewer and an IRC reference on filing",
       "Supporting-document upload with auto-filing (financials, schedules, workings)",
       "Drafts a plain-English return summary and a client cover letter, ready to review and send",
+      "Drafts tax-strategy recommendations to reduce tax, grounded in the return's figures",
       "One-click tax return PDF",
     ],
   },
@@ -70,6 +71,7 @@ const APPS = [
 
 const CONSOLE_FEATURES = [
   "One dashboard across every product — activity per app and progress per company through its stages",
+  "Ask — pick a client and ask anything about their audit, tax, loan or payroll; answers come only from their own records",
   "Post progress updates and request outstanding documents from clients, on any process",
   "Upload a client's required documents and watch the requirement tick off automatically",
   "Superuser sees all activity; a Principal sees the firm's client work plus their own books",

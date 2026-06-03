@@ -4,11 +4,11 @@
 import { NextResponse } from "next/server";
 import { readAuth, db } from "../../teebeepay/_auth";
 import { aiConfigured, chatAnswer } from "../../_ai";
+import { findClientRecords } from "../../_client";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function esc(s: string) { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 function money(n: any) { return "PGK " + Number(n || 0).toLocaleString("en-US", { maximumFractionDigits: 0 }); }
 
 export async function POST(req: Request) {
@@ -28,10 +28,11 @@ export async function POST(req: Request) {
     const ctx: string[] = [];
 
     if (company) {
-      const rx = new RegExp(esc(company), "i");
+      // Light client linking: joins records even when the name differs slightly
+      // across products (e.g. "… Limited 2025" vs "… Ltd").
+      const found = await findClientRecords(dbi, company);
 
-      const engs: any[] = await dbi.collection("audit_engagements").find({ company_name: rx }).limit(8).toArray();
-      for (const e of engs) {
+      for (const e of found.audit) {
         const counts: any[] = await dbi.collection("audit_findings").aggregate([
           { $match: { engagement_id: e._id } }, { $group: { _id: "$severity", n: { $sum: 1 } } },
         ]).toArray();
@@ -41,20 +42,18 @@ export async function POST(req: Request) {
           (e.ai_writeup?.summary ? ` Summary: ${String(e.ai_writeup.summary).replace(/\s+/g, " ").slice(0, 600)}` : ""));
       }
 
-      const rets: any[] = await dbi.collection("tax_returns").find({ taxpayer_name: rx }).limit(8).toArray();
-      for (const r of rets) {
+      for (const r of found.tax) {
         ctx.push(`TAX — ${r.taxpayer_name}: ${r.tax_type} return, status ${r.status}, period ${r.period || r.fy_end || "—"}` +
-          (r.irc_reference ? `, IRC ref ${r.irc_reference}` : "") + ".");
+          (r.irc_reference ? `, IRC ref ${r.irc_reference}` : "") +
+          (r.ai_writeup?.recommendations ? `. Tax-planning ideas on file: ${String(r.ai_writeup.recommendations).replace(/\s+/g, " ").slice(0, 500)}` : "") + ".");
       }
 
-      const apps: any[] = await dbi.collection("loan_applications").find({ business_name: rx }).limit(8).toArray();
-      for (const a of apps) {
+      for (const a of found.loans) {
         ctx.push(`LOAN — ${a.business_name}: ${a.purpose || "facility"} ${a.loan_amount != null ? money(a.loan_amount) : ""}, status ${a.status}` +
           (a.score != null ? `, readiness score ${a.score}/100` : "") + ".");
       }
 
-      const cos: any[] = await dbi.collection("companies").find({ name: rx }).limit(4).toArray();
-      for (const c of cos) {
+      for (const c of found.payroll) {
         const emp = await dbi.collection("employees").countDocuments({ company_id: c._id });
         const lastPp: any = await dbi.collection("pay_periods").find({ company_id: c._id }).sort({ created_at: -1 }).limit(1).next();
         ctx.push(`PAYROLL — ${c.name}: ${emp} employees${lastPp ? `; last pay period status ${lastPp.status}` : ""}.`);
