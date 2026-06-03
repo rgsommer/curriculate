@@ -52,7 +52,7 @@ const PLATFORMS: Platform[] = [
   {
     name: "TeeBee Audit",
     status: "live",
-    desc: "AI-assisted audit — reconciliations and anomaly checks, plus planning (materiality, risk register, working papers) and CPA sign-off.",
+    desc: "software-assisted audit — reconciliations and anomaly checks, plus planning (materiality, risk register, working papers) and CPA sign-off.",
     target: "Companies needing statutory audits, audit-readiness, or IRC due diligence.",
     fees: "From K5,000 per engagement, scaled to size and complexity.",
     href: "/audit",

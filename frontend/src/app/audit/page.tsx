@@ -75,7 +75,7 @@ function Hero() {
           borderRadius: 999, background: C.goldSoft, color: C.navy, fontSize: 12, fontWeight: 600,
           letterSpacing: 0.04, marginBottom: 18,
         }}>
-          <Sparkles size={14} /> AI-assisted · CPA-signed · IFRS-compliant
+          <Sparkles size={14} /> software-assisted · CPA-signed · IFRS-compliant
         </div>
         <h1 style={{
           margin: "0 0 18px", fontSize: 56, fontWeight: 800, lineHeight: 1.05,
@@ -462,7 +462,7 @@ function SeoStructuredData() {
     "@type": "ProfessionalService",
     name: "TeeBee Audit — TeeBee Accountants Ltd",
     description:
-      "AI-assisted audit-readiness platform from TeeBee Accountants. Statutory audits, tax due diligence, audit-readiness reviews, NGO/donor-fund audits, landowner company audits. CPA-signed opinion every time. PNG IRC and ARB compliant.",
+      "software-assisted audit-readiness platform from TeeBee Accountants. Statutory audits, tax due diligence, audit-readiness reviews, NGO/donor-fund audits, landowner company audits. CPA-signed opinion every time. PNG IRC and ARB compliant.",
     address: { "@type": "PostalAddress", addressLocality: "Port Moresby", addressRegion: "NCD", addressCountry: "PG" },
     areaServed: "PG",
     url: "https://www.curriculate.net/audit",

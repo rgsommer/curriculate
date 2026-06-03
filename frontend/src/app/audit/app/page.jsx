@@ -137,7 +137,7 @@ export default function AuditAppPage() {
   );
 }
 
-/* ──────────────── AI write-up (draft summary + cover letter) ──────────────── */
+/* ──────────────── Write-up (draft summary + cover letter) ──────────────── */
 
 function AiWriteup({ endpoint, initial, reviewLabel }) {
   const [summary, setSummary] = useState(initial?.summary || "");
@@ -164,7 +164,7 @@ function AiWriteup({ endpoint, initial, reviewLabel }) {
     <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18, marginBottom: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <Sparkles size={16} color="#c9a227" />
-        <strong style={{ fontSize: 14 }}>AI write-up</strong>
+        <strong style={{ fontSize: 14 }}>Write-up</strong>
         <span style={{ fontSize: 10, fontWeight: 800, color: "#b45309", background: "#fef3c7", padding: "2px 7px", borderRadius: 99, textTransform: "uppercase", letterSpacing: 0.04 }}>Draft — {reviewLabel}</span>
         <button onClick={generate} disabled={busy === "gen"} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, border: "none", background: "#0f2c52", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
           {busy === "gen" ? <><Loader2 size={13} className="spin" /> Drafting…</> : <><Sparkles size={13} /> {has ? "Regenerate" : "Generate draft"}</>}
@@ -181,7 +181,7 @@ function AiWriteup({ endpoint, initial, reviewLabel }) {
           <button onClick={save} disabled={busy === "save"} style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#0f2c52", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
             {busy === "save" ? <><Loader2 size={13} className="spin" /> Saving…</> : <><CheckCircle2 size={13} /> Save edits</>}
           </button>
-          <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 10 }}>AI-generated from this engagement's data. Review and edit before issuing — this is not a final opinion.</div>
+          <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 10 }}>Drafted from this engagement's data. Review and edit before issuing — this is not a final opinion.</div>
         </>
       )}
     </div>

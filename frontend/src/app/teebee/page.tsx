@@ -41,7 +41,7 @@ const C = {
 
 const SERVICES = [
   { num: "01", icon: <ClipboardCheck size={22} />, title: "Audit & Assurance",
-    text: "Independent IFRS-compliant audits via TeeBee Audit — our new AI-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete.",
+    text: "Independent IFRS-compliant audits via TeeBee Audit — our new software-assisted platform. Upload your files, software runs reconciliations and anomaly checks, a CPA reviews and signs the opinion. Faster, cheaper, audit-trail complete.",
     href: "/audit", hrefLabel: "Explore TeeBee Audit", badge: "Platform live" },
   { num: "02", icon: <Calculator size={22} />, title: "Taxation Services",
     text: "Strategic tax planning, return preparation and lodgement, and IRC compliance — keeping your tax position optimised and fully aligned with IRC requirements. Explore it on TeeBee Tax.",
@@ -112,7 +112,7 @@ function SeoLd() {
     email: "info@teebeeaccountants.com.pg",
     openingHours: "Mo-Fr 08:00-17:00",
     priceRange: "$$",
-    knowsAbout: ["Audit", "AI-assisted audit", "Audit readiness", "IFRS compliance", "Taxation", "Accounting",
+    knowsAbout: ["Audit", "software-assisted audit", "Audit readiness", "IFRS compliance", "Taxation", "Accounting",
                   "Business Advisory", "Statutory Compliance", "Payroll", "IRC SWT", "NASFund"],
   };
   const breadcrumb = {
@@ -405,7 +405,7 @@ function AuditPlug() {
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 12,
             fontWeight: 700, color: C.navy, background: "rgba(15,44,82,.08)", padding: "6px 12px",
             borderRadius: 999, marginBottom: 18, letterSpacing: 0.05, textTransform: "uppercase" }}>
-            <ClipboardCheck size={13} /> New · AI-assisted audit
+            <ClipboardCheck size={13} /> New · software-assisted audit
           </div>
           <h2 style={{ fontSize: 36, fontWeight: 800, letterSpacing: -0.6, margin: 0, fontFamily: "Georgia, serif", color: C.ink }}>
             TeeBee Audit — faster audits, signed by your CPA.
@@ -429,7 +429,7 @@ function AuditPlug() {
             "Audit-readiness reviews before next year's audit",
             "Tax / IRC due diligence audits",
             "Landowner-company and donor-fund audits",
-            "AI-assisted analysis · CPA-signed opinion",
+            "software-assisted analysis · CPA-signed opinion",
             "Indicative pricing in 2 business days",
           ].map((line, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 14, color: C.inkSoft }}>

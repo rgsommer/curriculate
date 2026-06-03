@@ -71,7 +71,7 @@ export async function GET(req: Request) {
 
   // Services grid (2 cols × 3 rows)
   const services = [
-    ["01", "Audit & Assurance",     "IFRS-compliant audits via TeeBee Audit — AI-assisted, CPA-signed."],
+    ["01", "Audit & Assurance",     "IFRS-compliant audits via TeeBee Audit — software-assisted, CPA-signed."],
     ["02", "Taxation Services",     "Strategic tax planning and full IRC compliance."],
     ["03", "Accounting Services",   "Bookkeeping, financial reporting, payroll via TeebeePay."],
     ["04", "Business Advisory",     "Growth, financial planning, risk and efficiency."],
@@ -109,7 +109,7 @@ export async function GET(req: Request) {
   const halfW = (W - 96 - 32) / 2;
   p1.drawText("TeeBee Audit", { x: 64, y: newY - 38, size: 10.5, font: bold, color: NAVY_DEEP });
   drawWrapped(p1, reg, 9, INK,
-    "AI-assisted audit platform · upload files, software runs reconciliations and anomaly checks, CPA signs the opinion. www.curriculate.net/audit",
+    "software-assisted audit platform · upload files, software runs reconciliations and anomaly checks, CPA signs the opinion. www.curriculate.net/audit",
     64, newY - 50, halfW, 11);
   p1.drawText("TeebeePay", { x: 64 + halfW + 32, y: newY - 38, size: 10.5, font: bold, color: NAVY_DEEP });
   drawWrapped(p1, reg, 9, INK,
