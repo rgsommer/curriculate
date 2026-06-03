@@ -1259,6 +1259,7 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [baseline, setBaseline] = useState(null);
   const [pasteText, setPasteText] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [lastPeriods, setLastPeriods] = useState([]);
 
   useEffect(() => {
     (async () => {
@@ -1276,6 +1277,10 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
         setCompany(c);
         // Load baseline for anomaly detection (best-effort; ignore errors)
         try { setBaseline(await api(`/api/teebeepay/companies/${companyId}/period-baseline`)); }
+        catch {}
+        // Recent periods → anticipate the next fortnight's dates and flag deviations.
+        let lastP = [];
+        try { lastP = (await api(`/api/teebeepay/companies/${companyId}/periods`)).periods || []; setLastPeriods(lastP); }
         catch {}
 
         if (cloneFromPeriodId) {
@@ -1304,15 +1309,22 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
           setGrid(initial);
           setInfo(`Cloned ${cloned} employee${cloned === 1 ? "" : "s"} from ${src.period.period_start} → ${src.period.period_end}. Hours pre-filled; cash advances and notes reset.`);
         } else {
-          const today = new Date();
-          const end = new Date(today); end.setDate(end.getDate() - 1);
-          const start = new Date(end); start.setDate(start.getDate() - 13);
-          const pay = new Date(today);
-          setPeriod({
-            period_start: start.toISOString().slice(0, 10),
-            period_end:   end.toISOString().slice(0, 10),
-            pay_date:     pay.toISOString().slice(0, 10),
-          });
+          // Anticipate the next period from the established cadence; fall back to
+          // a today-based fortnight only when there's no prior period to learn from.
+          const exp = expectedNext(lastP);
+          if (exp) {
+            setPeriod({ period_start: exp.period_start, period_end: exp.period_end, pay_date: exp.pay_date });
+          } else {
+            const today = new Date();
+            const end = new Date(today); end.setDate(end.getDate() - 1);
+            const start = new Date(end); start.setDate(start.getDate() - 13);
+            const pay = new Date(today);
+            setPeriod({
+              period_start: start.toISOString().slice(0, 10),
+              period_end:   end.toISOString().slice(0, 10),
+              pay_date:     pay.toISOString().slice(0, 10),
+            });
+          }
         }
       } catch (e) { setError(e.message); }
     })();
@@ -1325,6 +1337,22 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   function addDays(iso, n) {
     const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n);
     return d.toISOString().slice(0, 10);
+  }
+  function ymdDiff(a, b) {
+    const da = new Date(a + "T00:00:00Z"), db = new Date(b + "T00:00:00Z");
+    return Math.round((db.getTime() - da.getTime()) / 86400000);
+  }
+  // The next period the established cadence predicts: contiguous with the last
+  // period, same length, same end→pay-date offset.
+  function expectedNext(periods) {
+    const last = periods && periods[0];
+    if (!last || !last.period_start || !last.period_end) return null;
+    const length = ymdDiff(last.period_start, last.period_end);
+    const payGap = last.pay_date ? ymdDiff(last.period_end, last.pay_date) : 0;
+    const start = nextDay(last.period_end);
+    const end = addDays(start, length);
+    const pay = addDays(end, payGap >= 0 ? payGap : 0);
+    return { period_start: start, period_end: end, pay_date: pay, length, fromEnd: last.period_end };
   }
 
   function set(eid, k, v) {
@@ -1448,6 +1476,15 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
 
   if (!employees || !company) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
 
+  // Cadence safety check: warn when the dates deviate from the established pattern.
+  const expected = expectedNext(lastPeriods);
+  const cadenceWarn = (() => {
+    if (cloneFromPeriodId || !expected || !period.period_start || !period.period_end) return null;
+    const startOff = period.period_start !== expected.period_start;
+    const lenOff = ymdDiff(period.period_start, period.period_end) !== expected.length;
+    return (startOff || lenOff) ? expected : null;
+  })();
+
   return (
     <div style={{ maxWidth: 1280, margin: "0 auto", padding: "28px 24px" }}>
       <button onClick={onBack} style={btnBack}><ArrowLeft size={14} /> Back to {company.name}</button>
@@ -1475,6 +1512,20 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
           <Field label="Pay date"><input style={input} type="date" value={period.pay_date} onChange={(e) => setPeriod({ ...period, pay_date: e.target.value })} /></Field>
         </Row>
       </div>
+
+      {cadenceWarn && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, display: "flex", gap: 10 }}>
+          <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1, color: "#b45309" }} />
+          <div>
+            <strong>These dates don't follow the established cadence.</strong>{" "}
+            Going by the last period (ended {cadenceWarn.fromEnd}), this one would run{" "}
+            <strong>{cadenceWarn.period_start} → {cadenceWarn.period_end}</strong> (pay {cadenceWarn.pay_date}).
+            You've set {period.period_start} → {period.period_end}. If that's an intentional exception, carry on — otherwise{" "}
+            <button onClick={() => setPeriod({ period_start: cadenceWarn.period_start, period_end: cadenceWarn.period_end, pay_date: cadenceWarn.pay_date })}
+              style={{ background: "none", border: "none", color: "#b45309", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit" }}>use the expected dates</button>.
+          </div>
+        </div>
+      )}
 
       {info && <FlashBox type="info" icon={<CheckCircle2 size={16} />}>{info}</FlashBox>}
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
