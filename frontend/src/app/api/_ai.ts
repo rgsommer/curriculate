@@ -50,3 +50,32 @@ export async function draftSummaryAndLetter(system: string, user: string): Promi
     cover_letter: String(parsed.cover_letter || "").trim(),
   };
 }
+
+// Grounded chat: a system prompt (with context) + a short message history.
+// Returns the assistant's plain-text reply.
+export async function chatAnswer(system: string, messages: Array<{ role: string; content: string }>): Promise<string> {
+  const last = messages[messages.length - 1]?.content || "";
+  if (process.env.AI_MOCK === "1") {
+    return `Mock answer (no model). You asked: "${last.slice(0, 120)}". Based on the context I was given, here is a concise response.`;
+  }
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("AI is not configured (OPENAI_API_KEY missing).");
+
+  const safeMsgs = messages.slice(-8).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: String(m.content || "").slice(0, 4000) }));
+  const r = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.2,
+      max_tokens: 800,
+      messages: [{ role: "system", content: system }, ...safeMsgs],
+    }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`AI request failed (${r.status}). ${t.slice(0, 200)}`);
+  }
+  const j = await r.json();
+  return String(j.choices?.[0]?.message?.content || "").trim();
+}
