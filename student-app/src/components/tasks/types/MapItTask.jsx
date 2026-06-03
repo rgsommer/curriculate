@@ -355,15 +355,106 @@ export default function MapItTask({
     return MARKER_COLORS[(m.number - 1) % MARKER_COLORS.length];
   }
 
+  // Highlight the next step in the two-tap flow. Tester sehraj (2026-06-03)
+  // skipped mapit with "didn't work" — likely didn't realise they needed
+  // to tap a NUMBER then tap a DESCRIPTOR. Surface the step explicitly.
+  const stepHint = showReview
+    ? null
+    : activeMarker
+    ? { idx: 2, text: "Now tap the matching place name below 👇" }
+    : activeChoice
+    ? { idx: 2, text: "Now tap the matching marker on the map 👆" }
+    : { idx: 1, text: "Tap a numbered marker on the map (or a place name below)" };
+
   return (
     // paddingBottom keeps the Submit button clear of TaskRunner's global
     // Skip Task button (position:absolute, bottom:10, right:10) — tester
     // (2026-05-31): "Skip Task button is on top of the Submit button".
     <div style={{ display: "flex", flexDirection: "column", gap: 12, color: palette.text, paddingBottom: 56 }}>
-      {/* Prompt — region hint is now a chip on the map itself, so don't
-          duplicate it here. */}
+      {/* How-to-play guide — explicit two-step flow above the prompt.
+          Tester sehraj (2026-06-03) couldn't figure out the two-tap UX
+          from the prompt sentence alone, so the steps are now visual
+          chips that highlight which step is "live" right now. */}
+      {!showReview && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 10px",
+            borderRadius: 12,
+            background: "#eff6ff",
+            border: "1px solid #bfdbfe",
+            color: "#1e3a8a",
+            fontSize: "0.85rem",
+            fontWeight: 700,
+            flexWrap: "wrap",
+          }}
+        >
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22, height: 22, borderRadius: "50%",
+              background: stepHint?.idx === 1 ? "#2563eb" : "#cbd5e1",
+              color: "#fff",
+              fontSize: 12, fontWeight: 900,
+              flexShrink: 0,
+            }}
+          >1</span>
+          <span style={{ color: stepHint?.idx === 1 ? "#1e3a8a" : "#64748b" }}>
+            Tap a number
+          </span>
+          <span style={{ color: "#94a3b8", margin: "0 2px" }}>→</span>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              width: 22, height: 22, borderRadius: "50%",
+              background: stepHint?.idx === 2 ? "#2563eb" : "#cbd5e1",
+              color: "#fff",
+              fontSize: 12, fontWeight: 900,
+              flexShrink: 0,
+            }}
+          >2</span>
+          <span style={{ color: stepHint?.idx === 2 ? "#1e3a8a" : "#64748b" }}>
+            Tap a place name
+          </span>
+        </div>
+      )}
+
+      {/* Live next-step nudge — appears the instant a marker OR a choice
+          is selected, so the player knows what to do next. */}
+      {stepHint?.idx === 2 && (
+        <div
+          style={{
+            padding: "8px 12px",
+            borderRadius: 10,
+            background: "#fef3c7",
+            border: "1px solid #fcd34d",
+            color: "#78350f",
+            fontWeight: 800,
+            fontSize: "0.88rem",
+            animation: "mapitNudge 0.25s ease-out",
+          }}
+          role="status"
+        >
+          {stepHint.text}
+        </div>
+      )}
+      <style>{`
+        @keyframes mapitNudge {
+          from { opacity: 0; transform: translateY(-4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      {/* Task prompt (the rubric / topic-specific sentence) lives below
+          the how-to chips so the player sees the controls first. */}
       <div style={{ fontSize: "0.95rem", fontWeight: 600, color: palette.subtext, lineHeight: 1.45 }}>
-        {task?.prompt || "Tap a numbered marker on the map, then tap the matching choice."}
+        {task?.prompt || "Match each numbered place on the map with its name."}
       </div>
 
       {/* Map area — OSM tile composite + de-overlapped marker overlay. */}
