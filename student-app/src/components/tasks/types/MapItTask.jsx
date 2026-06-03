@@ -212,7 +212,20 @@ export default function MapItTask({
   }
 
   function handleSubmit() {
-    if (!isComplete || isDisabled) return;
+    if (isDisabled) return;
+    // Allow partial submission — a stuck tester used to be trapped by a
+    // hard `!isComplete` gate, with Skip as their only escape (tester
+    // sehraj 2026-06-03: mapit "didn't work" via-skip). Now if a few
+    // markers are unmatched we confirm and proceed; missing ones render
+    // as red in review so the player still sees the right answers.
+    if (!isComplete) {
+      const missing = markers.length - Object.keys(matches).length;
+      const ok = window.confirm(
+        `You haven't matched ${missing} marker${missing === 1 ? "" : "s"} yet.\n\n` +
+          `Submit anyway and see the answers?`
+      );
+      if (!ok) return;
+    }
     if (hasAnswerKey && !localReview && !isReview) {
       setLocalReview(true);
       return;
@@ -476,6 +489,9 @@ export default function MapItTask({
           const picked = matches[m.id];
           const correct = showReview && hasAnswerKey && picked && norm(picked) === norm(correctMatches[m.id]);
           const wrong = showReview && hasAnswerKey && picked && norm(picked) !== norm(correctMatches[m.id]);
+          // Review of an unmatched marker — show as a wrong/missed row so the
+          // tester can still see the correct answer instead of an empty slot.
+          const missed = showReview && hasAnswerKey && !picked;
           return (
             <div
               key={m.id}
@@ -486,7 +502,7 @@ export default function MapItTask({
                 padding: "8px 12px",
                 borderRadius: 12,
                 border: isActive ? `2px solid ${palette.primary}` : "1px solid #e2e8f0",
-                background: correct ? "#f0fdf4" : wrong ? "#fef2f2" : palette.panel,
+                background: correct ? "#f0fdf4" : wrong || missed ? "#fef2f2" : palette.panel,
               }}
             >
               <button
@@ -514,6 +530,15 @@ export default function MapItTask({
                   }}>
                     {picked}
                     {wrong && correctMatches[m.id] && (
+                      <span style={{ marginLeft: 8, fontWeight: 600, color: "#15803d", fontSize: "0.85rem" }}>
+                        (was: {correctMatches[m.id]})
+                      </span>
+                    )}
+                  </span>
+                ) : missed ? (
+                  <span style={{ fontWeight: 700, color: "#b91c1c" }}>
+                    no answer
+                    {correctMatches[m.id] && (
                       <span style={{ marginLeft: 8, fontWeight: 600, color: "#15803d", fontSize: "0.85rem" }}>
                         (was: {correctMatches[m.id]})
                       </span>
@@ -621,21 +646,25 @@ export default function MapItTask({
           <button
             type="button"
             onClick={handleSubmit}
-            disabled={isDisabled || !isComplete}
+            disabled={isDisabled}
             style={{
               padding: "12px 22px",
               borderRadius: 12,
               border: "none",
-              background: !isComplete ? "#cbd5e1" : showReview ? "#16a34a" : palette.primary,
+              background: showReview ? "#16a34a" : isComplete ? palette.primary : "#64748b",
               color: "#ffffff",
               fontWeight: 800,
               fontSize: "1rem",
-              cursor: !isComplete || isDisabled ? "not-allowed" : "pointer",
+              cursor: isDisabled ? "not-allowed" : "pointer",
               boxShadow: "0 6px 14px rgba(37,99,235,0.25)",
               opacity: isDisabled ? 0.6 : 1,
             }}
           >
-            {showReview ? "✓ Continue" : isComplete ? "Submit" : `${Object.keys(matches).length}/${markers.length} placed`}
+            {showReview
+              ? "✓ Continue"
+              : isComplete
+              ? "Submit"
+              : `Submit (${Object.keys(matches).length}/${markers.length})`}
           </button>
         </div>
       )}

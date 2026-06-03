@@ -534,7 +534,7 @@ export default function MakeAndSnapTask({
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={uiDisabled || !imagePreview || !noteAcceptable}
+          disabled={uiDisabled || (!imagePreview && !practiceMode) || !noteAcceptable}
           style={{
             display: "block",
             width: "100%",
@@ -542,14 +542,14 @@ export default function MakeAndSnapTask({
             borderRadius: 10,
             border: "none",
             background:
-              uiDisabled || !imagePreview || !noteAcceptable
+              uiDisabled || (!imagePreview && !practiceMode) || !noteAcceptable
                 ? "#64748b"
                 : "#22c55e",
             color: "#fff",
             fontSize: "1rem",
             fontWeight: 600,
             cursor:
-              uiDisabled || !imagePreview || !noteAcceptable
+              uiDisabled || (!imagePreview && !practiceMode) || !noteAcceptable
                 ? "default"
                 : "pointer",
           }}
