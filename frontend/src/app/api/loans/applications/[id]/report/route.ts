@@ -40,6 +40,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     r.kv("Prepared", new Date().toISOString().slice(0, 10));
     r.gap(8);
 
+    if (row.ai_writeup?.summary) {
+      r.heading("Credit summary");
+      r.tag("DRAFT — FOR ACCOUNTANT REVIEW", COL.amberInk);
+      for (const p of String(row.ai_writeup.summary).split(/\n\n+/)) r.para(p.trim());
+      r.gap(8);
+    }
+
     if (res) {
       r.heading("Loan-readiness score");
       r.row(`Overall readiness — ${BAND_LABEL[res.band] || res.band}`, `${res.score} / 100`,
@@ -81,6 +88,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     r.gap(12);
     r.para("Prepared by TeeBee Accountants Ltd. Ratios and the readiness score are computed by the firm's scoring engine from the financials provided; they support, but do not replace, the lender's own credit assessment.");
+
+    if (row.ai_writeup?.cover_letter) {
+      r.gap(10);
+      r.heading("Cover letter (draft)");
+      for (const p of String(row.ai_writeup.cover_letter).split(/\n\n+/)) r.para(p.trim());
+    }
 
     const safeName = String(row.business_name || "business").replace(/[^A-Za-z0-9_-]+/g, "_");
     const bytes = await r.finalize("TeeBee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg");

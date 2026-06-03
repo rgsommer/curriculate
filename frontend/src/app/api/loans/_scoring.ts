@@ -208,6 +208,7 @@ export function shapeApplication(a: any): any {
     checklist: a.checklist || {},
     package: packageProgress(a.checklist),
     notes: a.notes || null,
+    ai_writeup: a.ai_writeup || null,
     assessed_by: a.assessed_by || null, assessed_at: a.assessed_at || null,
     submitted_at: a.submitted_at || null,
     created_at: a.created_at, updated_at: a.updated_at || null,

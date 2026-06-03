@@ -245,6 +245,7 @@ export function shapeReturn(r: any): any {
     notes: r.notes || null,
     inputs: r.inputs || null,
     result: r.inputs ? computeReturn(type, r.inputs) : null,
+    ai_writeup: r.ai_writeup || null,
     created_at: r.created_at, updated_at: r.updated_at || null,
   };
 }

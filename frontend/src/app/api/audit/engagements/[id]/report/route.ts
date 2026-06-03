@@ -46,6 +46,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     r.kv("Report date", new Date().toISOString().slice(0, 10));
     r.gap(8);
 
+    // AI-drafted executive summary (if generated) — clearly marked a draft
+    if (eng.ai_writeup?.summary) {
+      r.heading("Executive summary");
+      r.tag("DRAFT — FOR CPA REVIEW", COL.amberInk);
+      for (const p of String(eng.ai_writeup.summary).split(/\n\n+/)) r.para(p.trim());
+      r.gap(8);
+    }
+
     // Document checklist
     r.heading("Document checklist");
     const items = checklistForAuditType(String(eng.audit_type || "other"));
@@ -79,6 +87,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     r.kv("Prepared by", eng.invited_by || u.email);
     r.kv("Reviewed by", "_______________________");
     r.kv("Date", "_______________________");
+
+    if (eng.ai_writeup?.cover_letter) {
+      r.gap(10);
+      r.heading("Cover letter (draft)");
+      for (const p of String(eng.ai_writeup.cover_letter).split(/\n\n+/)) r.para(p.trim());
+    }
 
     const safeName = String(eng.company_name || "client").replace(/[^A-Za-z0-9_-]+/g, "_");
     const bytes = await r.finalize("TeeBee Accountants Ltd · Port Moresby, NCD, PNG · info@teebeeaccountants.com.pg");

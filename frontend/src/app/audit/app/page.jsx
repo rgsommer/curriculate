@@ -137,6 +137,57 @@ export default function AuditAppPage() {
   );
 }
 
+/* ──────────────── AI write-up (draft summary + cover letter) ──────────────── */
+
+function AiWriteup({ endpoint, initial, reviewLabel }) {
+  const [summary, setSummary] = useState(initial?.summary || "");
+  const [cover, setCover] = useState(initial?.cover_letter || "");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const has = !!(summary || cover);
+  const ta = { width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 13.5, lineHeight: 1.5, color: "#0f172a", fontFamily: "inherit", boxSizing: "border-box", outline: "none", resize: "vertical" };
+  const lbl = { fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.04, margin: "12px 0 6px" };
+
+  async function generate() {
+    setBusy("gen"); setError(""); setInfo("");
+    try { const j = await api(endpoint, { method: "POST" }); setSummary(j.summary || ""); setCover(j.cover_letter || ""); setInfo("Draft generated — review and edit before use."); }
+    catch (e) { setError(e.message); } finally { setBusy(""); }
+  }
+  async function save() {
+    setBusy("save"); setError(""); setInfo("");
+    try { await api(endpoint, { method: "PUT", body: JSON.stringify({ summary, cover_letter: cover }) }); setInfo("Saved — it will appear on the report."); }
+    catch (e) { setError(e.message); } finally { setBusy(""); }
+  }
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 12, padding: 18, marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <Sparkles size={16} color="#c9a227" />
+        <strong style={{ fontSize: 14 }}>AI write-up</strong>
+        <span style={{ fontSize: 10, fontWeight: 800, color: "#b45309", background: "#fef3c7", padding: "2px 7px", borderRadius: 99, textTransform: "uppercase", letterSpacing: 0.04 }}>Draft — {reviewLabel}</span>
+        <button onClick={generate} disabled={busy === "gen"} style={{ marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 13px", borderRadius: 8, border: "none", background: "#0f2c52", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          {busy === "gen" ? <><Loader2 size={13} className="spin" /> Drafting…</> : <><Sparkles size={13} /> {has ? "Regenerate" : "Generate draft"}</>}
+        </button>
+      </div>
+      {error && <div style={{ marginTop: 10, background: "#fee2e2", color: "#7f1d1d", border: "1px solid #fecaca", padding: "8px 12px", borderRadius: 8, fontSize: 13 }}>{error}</div>}
+      {info && <div style={{ marginTop: 10, background: "#dcfce7", color: "#14532d", border: "1px solid #bbf7d0", padding: "8px 12px", borderRadius: 8, fontSize: 13 }}>{info}</div>}
+      {has && (
+        <>
+          <div style={lbl}>Summary</div>
+          <textarea style={ta} value={summary} onChange={(e) => setSummary(e.target.value)} />
+          <div style={lbl}>Cover letter</div>
+          <textarea style={ta} value={cover} onChange={(e) => setCover(e.target.value)} />
+          <button onClick={save} disabled={busy === "save"} style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#0f2c52", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+            {busy === "save" ? <><Loader2 size={13} className="spin" /> Saving…</> : <><CheckCircle2 size={13} /> Save edits</>}
+          </button>
+          <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 10 }}>AI-generated from this engagement's data. Review and edit before issuing — this is not a final opinion.</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ──────────────── First-run tour ──────────────── */
 
 function FirstRunTour({ onClose, isAdmin }) {
@@ -476,6 +527,8 @@ function EngagementView({ engagementId, me, onBack }) {
 
       {/* Planning (firm-internal: materiality, risk register, working papers) */}
       {isAdmin && <AuditPlanningPanel engagementId={engagementId} />}
+
+      {isAdmin && <AiWriteup endpoint={`/api/audit/engagements/${engagementId}/writeup`} initial={eng.ai_writeup} reviewLabel="for CPA review" />}
 
       {/* Findings (after analysis) */}
       {findings.length > 0 && (

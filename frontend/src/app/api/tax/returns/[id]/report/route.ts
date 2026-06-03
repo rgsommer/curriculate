@@ -38,6 +38,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     r.kv("Prepared", new Date().toISOString().slice(0, 10));
     r.gap(8);
 
+    if (row.ai_writeup?.summary) {
+      r.heading("Summary");
+      r.tag("DRAFT — FOR TAX-AGENT REVIEW", COL.amberInk);
+      for (const p of String(row.ai_writeup.summary).split(/\n\n+/)) r.para(p.trim());
+      r.gap(8);
+    }
+
     r.heading("Computation");
     if (!res) {
       r.para("No computation inputs have been entered for this return yet.");
@@ -87,6 +94,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (row.reviewed_by) r.kv("Reviewed by", row.reviewed_by);
     if (row.filed_by) r.kv("Filed by", row.filed_by);
     r.para("Prepared by TeeBee Accountants Ltd, Registered Tax Agents, in accordance with PNG IRC requirements. Figures are computed by the firm's tax engine from the inputs provided by the taxpayer.");
+
+    if (row.ai_writeup?.cover_letter) {
+      r.gap(10);
+      r.heading("Cover letter (draft)");
+      for (const p of String(row.ai_writeup.cover_letter).split(/\n\n+/)) r.para(p.trim());
+    }
 
     const safeName = String(row.taxpayer_name || "taxpayer").replace(/[^A-Za-z0-9_-]+/g, "_");
     const bytes = await r.finalize("TeeBee Accountants Ltd · Registered Tax Agents · info@teebeeaccountants.com.pg");
