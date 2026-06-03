@@ -1506,13 +1506,31 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
 
   if (!employees || !company) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
 
-  // Cadence safety check: warn when the dates deviate from the established pattern.
+  // Cadence safety check: anticipate from the last period, and — even for the
+  // first period — flag a span that doesn't match the company's pay interval, so
+  // a fortnight always covers both weekends.
+  const intervalDays = (() => {
+    const pi = String(company.pay_interval || "fortnightly").toLowerCase();
+    if (pi.includes("month")) return null;                         // monthly — variable length, skip
+    if (pi.includes("week") && !pi.includes("fort")) return 7;     // weekly
+    return 14;                                                     // fortnightly (default)
+  })();
+  const intervalLabel = intervalDays === 7 ? "week" : "fortnight";
   const expected = expectedNext(lastPeriods);
   const cadenceWarn = (() => {
-    if (cloneFromPeriodId || !expected || !period.period_start || !period.period_end) return null;
-    const startOff = period.period_start !== expected.period_start;
-    const lenOff = ymdDiff(period.period_start, period.period_end) !== expected.length;
-    return (startOff || lenOff) ? expected : null;
+    if (cloneFromPeriodId || !period.period_start || !period.period_end) return null;
+    if (expected) {
+      const startOff = period.period_start !== expected.period_start;
+      const lenOff = ymdDiff(period.period_start, period.period_end) !== expected.length;
+      return (startOff || lenOff) ? { ...expected, kind: "cadence" } : null;
+    }
+    if (intervalDays) {
+      const span = ymdDiff(period.period_start, period.period_end) + 1;   // inclusive days
+      if (span !== intervalDays) {
+        return { period_start: addDays(period.period_end, -(intervalDays - 1)), period_end: period.period_end, pay_date: period.pay_date, kind: "length", span };
+      }
+    }
+    return null;
   })();
 
   return (
@@ -1547,12 +1565,25 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
         <div style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, display: "flex", gap: 10 }}>
           <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1, color: "#b45309" }} />
           <div>
-            <strong>These dates don't follow the established cadence.</strong>{" "}
-            Going by the last period (ended {cadenceWarn.fromEnd}), this one would run{" "}
-            <strong>{cadenceWarn.period_start} → {cadenceWarn.period_end}</strong> (pay {cadenceWarn.pay_date}).
-            You've set {period.period_start} → {period.period_end}. If that's an intentional exception, carry on — otherwise{" "}
+            {cadenceWarn.kind === "cadence" ? (
+              <>
+                <strong>These dates don't follow the established cadence.</strong>{" "}
+                Going by the last period (ended {cadenceWarn.fromEnd}), this one would run{" "}
+                <strong>{cadenceWarn.period_start} → {cadenceWarn.period_end}</strong> (pay {cadenceWarn.pay_date}).
+                You've set {period.period_start} → {period.period_end}.{" "}
+              </>
+            ) : (
+              <>
+                <strong>This is a {cadenceWarn.span}-day period.</strong>{" "}
+                A {intervalLabel} runs {intervalDays} days — a full {intervalLabel} covers both weekends.
+                Consider <strong>{cadenceWarn.period_start} → {cadenceWarn.period_end}</strong>.{" "}
+              </>
+            )}
+            If that's intentional, carry on — otherwise{" "}
             <button onClick={() => setPeriod({ period_start: cadenceWarn.period_start, period_end: cadenceWarn.period_end, pay_date: cadenceWarn.pay_date })}
-              style={{ background: "none", border: "none", color: "#b45309", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit" }}>use the expected dates</button>.
+              style={{ background: "none", border: "none", color: "#b45309", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit" }}>
+              {cadenceWarn.kind === "cadence" ? "use the expected dates" : `use the full ${intervalLabel}`}
+            </button>.
           </div>
         </div>
       )}
