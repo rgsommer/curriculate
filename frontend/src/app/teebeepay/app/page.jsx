@@ -1260,6 +1260,9 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [pasteText, setPasteText] = useState("");
   const [sheetOpen, setSheetOpen] = useState(false);
   const [lastPeriods, setLastPeriods] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [restoredDraft, setRestoredDraft] = useState(false);
+  const draftKey = `teebeepay.draftPeriod.${companyId}`;
 
   useEffect(() => {
     (async () => {
@@ -1309,26 +1312,45 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
           setGrid(initial);
           setInfo(`Cloned ${cloned} employee${cloned === 1 ? "" : "s"} from ${src.period.period_start} → ${src.period.period_end}. Hours pre-filled; cash advances and notes reset.`);
         } else {
-          // Anticipate the next period from the established cadence; fall back to
-          // a today-based fortnight only when there's no prior period to learn from.
-          const exp = expectedNext(lastP);
-          if (exp) {
-            setPeriod({ period_start: exp.period_start, period_end: exp.period_end, pay_date: exp.pay_date });
+          // Restore an auto-saved, not-yet-submitted draft if one exists for this
+          // company — so imported/entered hours aren't lost on refresh/navigation.
+          let draft = null;
+          try { const raw = localStorage.getItem(draftKey); if (raw) draft = JSON.parse(raw); } catch {}
+          if (draft && draft.grid && Object.keys(draft.grid).length) {
+            if (draft.period) setPeriod(draft.period);
+            setGrid(draft.grid);
+            setRestoredDraft(true);
           } else {
-            const today = new Date();
-            const end = new Date(today); end.setDate(end.getDate() - 1);
-            const start = new Date(end); start.setDate(start.getDate() - 13);
-            const pay = new Date(today);
-            setPeriod({
-              period_start: start.toISOString().slice(0, 10),
-              period_end:   end.toISOString().slice(0, 10),
-              pay_date:     pay.toISOString().slice(0, 10),
-            });
+            // Anticipate the next period from the established cadence; fall back to
+            // a today-based fortnight only when there's no prior period to learn from.
+            const exp = expectedNext(lastP);
+            if (exp) {
+              setPeriod({ period_start: exp.period_start, period_end: exp.period_end, pay_date: exp.pay_date });
+            } else {
+              const today = new Date();
+              const end = new Date(today); end.setDate(end.getDate() - 1);
+              const start = new Date(end); start.setDate(start.getDate() - 13);
+              const pay = new Date(today);
+              setPeriod({
+                period_start: start.toISOString().slice(0, 10),
+                period_end:   end.toISOString().slice(0, 10),
+                pay_date:     pay.toISOString().slice(0, 10),
+              });
+            }
           }
         }
+        setLoaded(true);
       } catch (e) { setError(e.message); }
     })();
   }, [companyId, cloneFromPeriodId]);
+
+  // Auto-save the in-progress (unsubmitted) period so it survives refresh/navigation.
+  useEffect(() => {
+    if (!loaded) return;
+    try {
+      if (Object.keys(grid).length) localStorage.setItem(draftKey, JSON.stringify({ period, grid, savedAt: Date.now() }));
+    } catch {}
+  }, [grid, period, loaded]);
 
   function nextDay(iso) {
     const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1);
@@ -1469,9 +1491,17 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
       const j = await api(`/api/teebeepay/companies/${companyId}/payroll-periods`, {
         method: "POST", body: JSON.stringify({ ...period, entries }),
       });
+      try { localStorage.removeItem(draftKey); } catch {}   // submitted — clear the draft
       onSaved(j.id);
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
+  }
+
+  function discardDraft() {
+    try { localStorage.removeItem(draftKey); } catch {}
+    setGrid({}); setRestoredDraft(false); setInfo("");
+    const exp = expectedNext(lastPeriods);
+    if (exp) setPeriod({ period_start: exp.period_start, period_end: exp.period_end, pay_date: exp.pay_date });
   }
 
   if (!employees || !company) return <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered>;
@@ -1524,6 +1554,14 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
             <button onClick={() => setPeriod({ period_start: cadenceWarn.period_start, period_end: cadenceWarn.period_end, pay_date: cadenceWarn.pay_date })}
               style={{ background: "none", border: "none", color: "#b45309", textDecoration: "underline", cursor: "pointer", padding: 0, font: "inherit" }}>use the expected dates</button>.
           </div>
+        </div>
+      )}
+
+      {restoredDraft && (
+        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 13.5, display: "flex", gap: 10, alignItems: "center" }}>
+          <CheckCircle2 size={16} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>Restored your unsubmitted hours (saved automatically). Pick up where you left off, or start over.</span>
+          <button onClick={discardDraft} style={{ ...btnGhostSmall }}>Discard &amp; start fresh</button>
         </div>
       )}
 
