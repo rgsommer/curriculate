@@ -1257,6 +1257,8 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [baseline, setBaseline] = useState(null);
+  const [pasteText, setPasteText] = useState("");
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -1329,6 +1331,63 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
     setGrid((g) => ({ ...g, [eid]: { ...(g[eid] || { hours: 0, cash_advance: 0, note: "" }), [k]: v } }));
   }
 
+  async function downloadTemplate() {
+    setError("");
+    try {
+      const r = await fetch(`/api/teebeepay/companies/${companyId}/period-entry-template`, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Couldn't download the template.");
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url; a.download = "Period-hours-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setError(e.message); }
+  }
+
+  // Fill the grid from a pasted/CSV spreadsheet (last_name, first_name, hours,
+  // cash_advance, note), matched to employees by name.
+  function fillFromText(text) {
+    setError("");
+    const lines = String(text || "").split(/\r?\n/).filter((l) => l.trim().length);
+    if (lines.length < 2) { setError("No data rows found — include a header row and at least one employee."); return; }
+    const delim = lines[0].includes("\t") ? "\t" : ",";
+    const split = (l) => l.split(delim).map((s) => s.replace(/^"|"$/g, "").trim());
+    const head = split(lines[0]).map((h) => h.toLowerCase());
+    const ix = (n) => head.indexOf(n);
+    const iLast = ix("last_name"), iFirst = ix("first_name"), iHours = ix("hours"), iAdv = ix("cash_advance"), iNote = ix("note");
+    if (iLast < 0 || iFirst < 0) { setError("Need 'last_name' and 'first_name' columns in the header row."); return; }
+    const byName = {};
+    for (const e of employees || []) byName[`${(e.last_name || "").toLowerCase()}|${(e.first_name || "").toLowerCase()}`] = e;
+    const next = { ...grid };
+    let matched = 0, unmatched = 0;
+    for (let r = 1; r < lines.length; r++) {
+      const c = split(lines[r]);
+      const e = byName[`${(c[iLast] || "").toLowerCase()}|${(c[iFirst] || "").toLowerCase()}`];
+      if (!e) { if ((c[iLast] || c[iFirst])) unmatched++; continue; }
+      next[e.id] = {
+        hours: iHours >= 0 ? (Number(c[iHours]) || 0) : (grid[e.id]?.hours || 0),
+        cash_advance: iAdv >= 0 ? (Number(c[iAdv]) || 0) : (grid[e.id]?.cash_advance || 0),
+        note: iNote >= 0 ? (c[iNote] || "") : (grid[e.id]?.note || ""),
+      };
+      matched++;
+    }
+    setGrid(next);
+    setInfo(`Filled ${matched} employee${matched === 1 ? "" : "s"} from the spreadsheet${unmatched ? ` · ${unmatched} row(s) didn't match an active employee name` : ""}.`);
+    setPasteText("");
+  }
+
+  async function onPickSheet(ev) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    ev.target.value = "";
+    const nm = (file.name || "").toLowerCase();
+    if (nm.endsWith(".csv") || nm.endsWith(".txt") || (file.type || "").includes("csv") || (file.type || "").includes("text")) {
+      fillFromText(await file.text());
+    } else {
+      setError("Upload a CSV (in Excel: File → Save As → CSV), or copy the cells from your sheet and paste them below.");
+    }
+  }
+
   function defaultHours(e) {
     return e.default_hours || company?.default_hours || 80;
   }
@@ -1390,6 +1449,34 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
       {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
       <SupervisedNotice items={supervisedEmployees} />
       <AnomalyBanner employees={employees} grid={grid} company={company} baseline={baseline} />
+
+      {/* Bulk hours via spreadsheet */}
+      <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, marginBottom: 14, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 13, color: C.muted, marginRight: 4 }}>Bulk entry:</span>
+        <button onClick={downloadTemplate} style={{ ...btnGhostLg, width: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <FileSpreadsheet size={14} /> Download template
+        </button>
+        <label style={{ ...btnGhostLg, width: "auto", display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <Upload size={14} /> Upload CSV
+          <input type="file" accept=".csv,text/csv,.txt" hidden onChange={onPickSheet} />
+        </label>
+        <button onClick={() => setSheetOpen((v) => !v)} style={{ ...btnGhostLg, width: "auto" }}>
+          {sheetOpen ? "Hide paste" : "…or paste"}
+        </button>
+      </div>
+      {sheetOpen && (
+        <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8 }}>
+            Copy the filled cells from the template (including the header row) and paste here, then Fill grid. Columns: last_name, first_name, hours, cash_advance, note.
+          </div>
+          <textarea rows={6} value={pasteText} onChange={(e) => setPasteText(e.target.value)}
+            placeholder={"last_name\tfirst_name\thours\tcash_advance\tnote"}
+            style={{ ...input, minHeight: 120, fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12 }} />
+          <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+            <button onClick={() => fillFromText(pasteText)} disabled={!pasteText.trim()} style={btnPrimaryInline}>Fill grid</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>
         <table className="tbp-grid" style={tableStyle}>
