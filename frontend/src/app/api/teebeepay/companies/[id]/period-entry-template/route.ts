@@ -24,9 +24,14 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       .find({ company_id: cid, is_active: { $ne: 0 } })
       .sort({ last_name: 1, first_name: 1 }).toArray();
 
+    // Optional ?period_end=YYYY-MM-DD prepends a period_end column pre-filled with
+    // that date, so the same file can hold many periods (one block of rows per date).
+    const periodEnd = new URL(req.url).searchParams.get("period_end") || "";
+
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Hours");
     ws.columns = [
+      ...(periodEnd ? [{ header: "period_end", key: "period_end", width: 14 }] : []),
       { header: "last_name", key: "last_name", width: 22 },
       { header: "first_name", key: "first_name", width: 18 },
       { header: "hours", key: "hours", width: 10 },
@@ -38,6 +43,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const defHours = company?.default_hours ?? 80;
     for (const e of emps) {
       ws.addRow({
+        ...(periodEnd ? { period_end: periodEnd } : {}),
         last_name: e.last_name || "", first_name: e.first_name || "",
         hours: e.default_hours ?? defHours, cash_advance: 0, note: "",
       });
@@ -54,6 +60,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       "cash_advance: any advance to deduct this period (leave 0 if none).",
       "note: optional, appears on the employee's pay stub.",
       "When done: in the New pay period screen, use 'Fill from spreadsheet' — paste the cells (copy from Excel) or upload this saved as CSV.",
+      "",
+      "One file, many periods: keep a 'period_end' column (YYYY-MM-DD) and add a fresh block of rows each fortnight in the SAME file. On import only the rows matching the period you're creating are used — so you reuse one master file all year.",
     ].forEach((line) => notes.addRow([line]));
 
     const buf = await wb.xlsx.writeBuffer();

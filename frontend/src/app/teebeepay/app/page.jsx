@@ -1334,7 +1334,8 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
   async function downloadTemplate() {
     setError("");
     try {
-      const r = await fetch(`/api/teebeepay/companies/${companyId}/period-entry-template`, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
+      const qp = period.period_end ? `?period_end=${encodeURIComponent(period.period_end)}` : "";
+      const r = await fetch(`/api/teebeepay/companies/${companyId}/period-entry-template${qp}`, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Couldn't download the template.");
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a");
@@ -1346,6 +1347,16 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
 
   // Fill the grid from a pasted/CSV spreadsheet (last_name, first_name, hours,
   // cash_advance, note), matched to employees by name.
+  // Normalise a date cell to YYYY-MM-DD (handles ISO, dd/mm/yyyy, dd/mm/yy).
+  function toYMD(s) {
+    s = String(s || "").trim();
+    let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2,4})/);
+    if (m) { let y = m[3]; if (y.length === 2) y = "20" + y; return `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`; }
+    const d = new Date(s); if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+    return s;
+  }
+
   function fillFromText(text) {
     setError("");
     const lines = String(text || "").split(/\r?\n/).filter((l) => l.trim().length);
@@ -1353,15 +1364,19 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
     const delim = lines[0].includes("\t") ? "\t" : ",";
     const split = (l) => l.split(delim).map((s) => s.replace(/^"|"$/g, "").trim());
     const head = split(lines[0]).map((h) => h.toLowerCase());
-    const ix = (n) => head.indexOf(n);
+    const ix = (...names) => { for (const n of names) { const i = head.indexOf(n); if (i >= 0) return i; } return -1; };
     const iLast = ix("last_name"), iFirst = ix("first_name"), iHours = ix("hours"), iAdv = ix("cash_advance"), iNote = ix("note");
+    const iPeriod = ix("period_end", "ppe", "pay_period_ending");
     if (iLast < 0 || iFirst < 0) { setError("Need 'last_name' and 'first_name' columns in the header row."); return; }
+    const wantPeriod = period.period_end ? period.period_end : null;
     const byName = {};
     for (const e of employees || []) byName[`${(e.last_name || "").toLowerCase()}|${(e.first_name || "").toLowerCase()}`] = e;
     const next = { ...grid };
-    let matched = 0, unmatched = 0;
+    let matched = 0, unmatched = 0, otherPeriod = 0;
     for (let r = 1; r < lines.length; r++) {
       const c = split(lines[r]);
+      // One file, many periods: when a period column is present, only take this period's rows.
+      if (iPeriod >= 0 && wantPeriod && toYMD(c[iPeriod]) !== wantPeriod) { if (c[iLast] || c[iFirst]) otherPeriod++; continue; }
       const e = byName[`${(c[iLast] || "").toLowerCase()}|${(c[iFirst] || "").toLowerCase()}`];
       if (!e) { if ((c[iLast] || c[iFirst])) unmatched++; continue; }
       next[e.id] = {
@@ -1371,8 +1386,15 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
       };
       matched++;
     }
+    if (iPeriod >= 0 && matched === 0 && otherPeriod > 0) {
+      setError(`That file has ${otherPeriod} rows, but none for the period ending ${wantPeriod}. Set the period-end date above to match the file, or check the period_end column.`);
+      return;
+    }
     setGrid(next);
-    setInfo(`Filled ${matched} employee${matched === 1 ? "" : "s"} from the spreadsheet${unmatched ? ` · ${unmatched} row(s) didn't match an active employee name` : ""}.`);
+    setInfo(`Filled ${matched} employee${matched === 1 ? "" : "s"} from the spreadsheet` +
+      (iPeriod >= 0 ? ` for period ending ${wantPeriod}` : "") +
+      (unmatched ? ` · ${unmatched} unmatched name(s)` : "") +
+      (otherPeriod ? ` · ${otherPeriod} row(s) for other periods skipped` : "") + ".");
     setPasteText("");
   }
 
@@ -1468,6 +1490,7 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
         <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, padding: 14, marginBottom: 14 }}>
           <div style={{ fontSize: 12.5, color: C.muted, marginBottom: 8 }}>
             Copy the filled cells from the template (including the header row) and paste here, then Fill grid. Columns: last_name, first_name, hours, cash_advance, note.
+            {" "}<strong>One file, many periods:</strong> add a <code>period_end</code> column (YYYY-MM-DD) and keep every fortnight in the same file — only the rows whose <code>period_end</code> matches the date above are imported.
           </div>
           <textarea rows={6} value={pasteText} onChange={(e) => setPasteText(e.target.value)}
             placeholder={"last_name\tfirst_name\thours\tcash_advance\tnote"}
