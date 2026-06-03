@@ -11,7 +11,7 @@ export const runtime = "nodejs";
 // are shown so the pattern is clear.
 const HEADERS = [
   "fname", "lname", "account_name", "bank_code", "branch_code", "bank_account",
-  "position", "department", "dob", "datestarted", "anual_price", "hour_price",
+  "position", "department", "dob", "datestarted", "annual_price", "hour_price",
   "hours", "fte", "email", "phone", "dependents", "nas", "meals", "school_fees",
   "leave_fares", "allowance_housing", "allowance_transport", "vol_salary",
   "vol_ncsl", "residency_status", "declaration", "status", "notes",
@@ -22,7 +22,7 @@ const SAMPLE: Record<string, string> = {
   fname: "Mary", lname: "Kila", account_name: "Mary Kila", bank_code: "BSP",
   branch_code: "018", bank_account: "1000123456", position: "Administrator",
   department: "Admin", dob: "1992-04-15", datestarted: "2023-01-10",
-  anual_price: "32000", hour_price: "", hours: "", fte: "1",
+  annual_price: "32000", hour_price: "", hours: "", fte: "1",
   email: "mary.kila@example.com", phone: "+675 7000 0000", dependents: "2",
   nas: "Y", meals: "0", school_fees: "0", leave_fares: "0",
   allowance_housing: "200", allowance_transport: "50", vol_salary: "0",
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
     "Required columns: fname, lname (shown in red). Everything else is optional.",
     "Row 2 is a sample — replace it with your employees, or delete it.",
     "Dates use YYYY-MM-DD (e.g. 2023-01-10).",
-    "anual_price = annual salary; hour_price + hours for hourly staff; fte = full-time equivalent (1 = full time).",
+    "annual_price = annual salary; hour_price + hours for hourly staff; fte = full-time equivalent (1 = full time).",
     "allowance_* — add as many columns as you need, each starting with 'allowance_' (e.g. allowance_housing, allowance_transport).",
     "nas / declaration: Y or N. residency_status: resident / non_resident. status: active / inactive.",
     "Duplicates (matching first + last name) are skipped on import.",

@@ -69,7 +69,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     bank_account: col("bank_account"),
     position: col("position"), department: col("department"),
     dob: col("dob"), datestarted: col("datestarted"),
-    anual_price: col("anual_price"), hour_price: col("hour_price"),
+    anual_price: col("anual_price") >= 0 ? col("anual_price") : col("annual_price"), // accept the correct spelling too
+    hour_price: col("hour_price"),
     hours: col("hours"), fte: col("fte"),
     email: col("email"), phone: col("phone"),
     dependents: col("dependents"), nas: col("nas"),

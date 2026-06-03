@@ -697,7 +697,7 @@ function ImportEmployeesDialog({ companyId, onClose, onSaved }) {
         headers). Required headers: <code>fname</code>, <code>lname</code>. Recognised:
         {" "}<code>account_name</code>, <code>bank_code</code>, <code>branch_code</code>,
         {" "}<code>bank_account</code>, <code>position</code>, <code>department</code>,
-        {" "}<code>dob</code>, <code>datestarted</code>, <code>anual_price</code>,
+        {" "}<code>dob</code>, <code>datestarted</code>, <code>annual_price</code>,
         {" "}<code>hour_price</code>, <code>hours</code>, <code>fte</code>, <code>email</code>,
         {" "}<code>phone</code>, <code>dependents</code>, <code>nas</code>, <code>meals</code>,
         {" "}<code>school_fees</code>, <code>leave_fares</code>, <code>allowance_*</code>,
