@@ -51,6 +51,42 @@ export async function draftSummaryAndLetter(system: string, user: string): Promi
   };
 }
 
+// Draft an arbitrary set of named string fields as one JSON object.
+export async function draftJson(system: string, user: string, fields: string[]): Promise<Record<string, string>> {
+  if (process.env.AI_MOCK === "1") {
+    const o: Record<string, string> = {};
+    for (const f of fields) o[f] = `DRAFT (mock) — ${f}.\n\n` + user.slice(0, 120).replace(/\s+/g, " ");
+    return o;
+  }
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) throw new Error("AI is not configured (OPENAI_API_KEY missing).");
+  const keyList = fields.map((f) => `"${f}"`).join(", ");
+  const r = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: "Bearer " + key },
+    body: JSON.stringify({
+      model: MODEL,
+      temperature: 0.3,
+      max_tokens: 1600,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system + `\n\nReply ONLY with a JSON object having these string keys: ${keyList}. Each value is professional prose. This is a DRAFT for professional review — hedge appropriately.` },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`AI request failed (${r.status}). ${t.slice(0, 200)}`);
+  }
+  const j = await r.json();
+  let parsed: any = {};
+  try { parsed = JSON.parse(j.choices?.[0]?.message?.content || "{}"); } catch { parsed = {}; }
+  const out: Record<string, string> = {};
+  for (const f of fields) out[f] = String(parsed[f] || "").trim();
+  return out;
+}
+
 // Grounded chat: a system prompt (with context) + a short message history.
 // Returns the assistant's plain-text reply.
 export async function chatAnswer(system: string, messages: Array<{ role: string; content: string }>): Promise<string> {

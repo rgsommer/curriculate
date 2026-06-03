@@ -95,6 +95,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     if (row.filed_by) r.kv("Filed by", row.filed_by);
     r.para("Prepared by TeeBee Accountants Ltd, Registered Tax Agents, in accordance with PNG IRC requirements. Figures are computed by the firm's tax engine from the inputs provided by the taxpayer.");
 
+    if (row.ai_writeup?.recommendations) {
+      r.gap(10);
+      r.heading("Tax-planning recommendations");
+      r.tag("DRAFT — FOR TAX-AGENT REVIEW", COL.amberInk);
+      for (const p of String(row.ai_writeup.recommendations).split(/\n\n+/)) r.para(p.trim());
+    }
+
     if (row.ai_writeup?.cover_letter) {
       r.gap(10);
       r.heading("Cover letter (draft)");

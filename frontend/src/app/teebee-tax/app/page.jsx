@@ -429,21 +429,22 @@ function ReturnView({ returnId, me, meta, onBack }) {
 function AiWriteup({ endpoint, initial, reviewLabel }) {
   const [summary, setSummary] = useState(initial?.summary || "");
   const [cover, setCover] = useState(initial?.cover_letter || "");
+  const [recs, setRecs] = useState(initial?.recommendations || "");
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
-  const has = !!(summary || cover);
+  const has = !!(summary || cover || recs);
   const ta = { width: "100%", minHeight: 110, padding: "10px 12px", borderRadius: 9, border: "1px solid #d1d5db", fontSize: 13.5, lineHeight: 1.5, color: "#0f172a", fontFamily: "inherit", boxSizing: "border-box", outline: "none", resize: "vertical" };
   const lbl = { fontSize: 12, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: 0.04, margin: "12px 0 6px" };
 
   async function generate() {
     setBusy("gen"); setError(""); setInfo("");
-    try { const j = await api(endpoint, { method: "POST" }); setSummary(j.summary || ""); setCover(j.cover_letter || ""); setInfo("Draft generated — review and edit before use."); }
+    try { const j = await api(endpoint, { method: "POST" }); setSummary(j.summary || ""); setCover(j.cover_letter || ""); setRecs(j.recommendations || ""); setInfo("Draft generated — review and edit before use."); }
     catch (e) { setError(e.message); } finally { setBusy(""); }
   }
   async function save() {
     setBusy("save"); setError(""); setInfo("");
-    try { await api(endpoint, { method: "PUT", body: JSON.stringify({ summary, cover_letter: cover }) }); setInfo("Saved — it will appear on the return PDF."); }
+    try { await api(endpoint, { method: "PUT", body: JSON.stringify({ summary, cover_letter: cover, recommendations: recs }) }); setInfo("Saved — it will appear on the return PDF."); }
     catch (e) { setError(e.message); } finally { setBusy(""); }
   }
 
@@ -463,6 +464,8 @@ function AiWriteup({ endpoint, initial, reviewLabel }) {
         <>
           <div style={lbl}>Summary</div>
           <textarea style={ta} value={summary} onChange={(e) => setSummary(e.target.value)} />
+          <div style={{ ...lbl, color: "#0f2c52" }}>Tax-strategy recommendations &mdash; ways to reduce tax</div>
+          <textarea style={{ ...ta, minHeight: 150 }} value={recs} onChange={(e) => setRecs(e.target.value)} />
           <div style={lbl}>Cover letter</div>
           <textarea style={ta} value={cover} onChange={(e) => setCover(e.target.value)} />
           <button onClick={save} disabled={busy === "save"} style={{ marginTop: 12, display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, border: "1px solid #d1d5db", background: "#fff", color: "#0f2c52", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
