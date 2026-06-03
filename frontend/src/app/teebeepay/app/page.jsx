@@ -1371,14 +1371,23 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
     const wantPeriod = period.period_end ? period.period_end : null;
     const byName = {};
     for (const e of employees || []) byName[`${(e.last_name || "").toLowerCase()}|${(e.first_name || "").toLowerCase()}`] = e;
+
+    const rows = lines.slice(1).map(split).filter((c) => (c[iLast] || c[iFirst]));
+    // Only filter by period when the file genuinely spans MULTIPLE periods; a
+    // single-period file imports regardless of the date set above.
+    let multi = false, filePeriod = null;
+    if (iPeriod >= 0) {
+      const set = new Set(rows.map((c) => toYMD(c[iPeriod])).filter(Boolean));
+      multi = set.size > 1;
+      if (set.size === 1) filePeriod = [...set][0];
+    }
+
     const next = { ...grid };
     let matched = 0, unmatched = 0, otherPeriod = 0;
-    for (let r = 1; r < lines.length; r++) {
-      const c = split(lines[r]);
-      // One file, many periods: when a period column is present, only take this period's rows.
-      if (iPeriod >= 0 && wantPeriod && toYMD(c[iPeriod]) !== wantPeriod) { if (c[iLast] || c[iFirst]) otherPeriod++; continue; }
+    for (const c of rows) {
+      if (multi && wantPeriod && toYMD(c[iPeriod]) !== wantPeriod) { otherPeriod++; continue; }
       const e = byName[`${(c[iLast] || "").toLowerCase()}|${(c[iFirst] || "").toLowerCase()}`];
-      if (!e) { if ((c[iLast] || c[iFirst])) unmatched++; continue; }
+      if (!e) { unmatched++; continue; }
       next[e.id] = {
         hours: iHours >= 0 ? (Number(c[iHours]) || 0) : (grid[e.id]?.hours || 0),
         cash_advance: iAdv >= 0 ? (Number(c[iAdv]) || 0) : (grid[e.id]?.cash_advance || 0),
@@ -1386,15 +1395,15 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
       };
       matched++;
     }
-    if (iPeriod >= 0 && matched === 0 && otherPeriod > 0) {
-      setError(`That file has ${otherPeriod} rows, but none for the period ending ${wantPeriod}. Set the period-end date above to match the file, or check the period_end column.`);
+    if (multi && matched === 0 && otherPeriod > 0) {
+      setError(`That file spans several periods but none for the period ending ${wantPeriod}. Set the period-end date above to match a period in the file.`);
       return;
     }
     setGrid(next);
     setInfo(`Filled ${matched} employee${matched === 1 ? "" : "s"} from the spreadsheet` +
-      (iPeriod >= 0 ? ` for period ending ${wantPeriod}` : "") +
+      (multi ? ` for period ending ${wantPeriod}` : (filePeriod && wantPeriod && filePeriod !== wantPeriod ? ` (file is dated ${filePeriod}; you're creating ${wantPeriod})` : "")) +
       (unmatched ? ` · ${unmatched} unmatched name(s)` : "") +
-      (otherPeriod ? ` · ${otherPeriod} row(s) for other periods skipped` : "") + ".");
+      (multi && otherPeriod ? ` · ${otherPeriod} other-period row(s) skipped` : "") + ".");
     setPasteText("");
   }
 
