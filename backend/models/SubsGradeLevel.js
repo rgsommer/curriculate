@@ -12,9 +12,10 @@ const SubsGradeLevelSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     // Display order within the school's grade list.
     order: { type: Number, default: 0 },
-    // The "appropriate VP" for this grade/division — overrides the school
-    // default VP for lesson-plan handoff when a sub is found. Falls back to
-    // SubsSchool.vpEmail when empty.
+    // The division (grade range) this grade belongs to — see
+    // SubsSchool.divisions; its VP is the "appropriate VP" for this grade.
+    division: { type: String, default: "", trim: true },
+    // Optional per-grade VP override (beats the division VP). Legacy/edge.
     vpEmail: { type: String, default: "", lowercase: true, trim: true },
   },
   { timestamps: true }

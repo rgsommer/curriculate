@@ -1180,6 +1180,7 @@ function SchoolSettings({ school, onSaved }) {
   const [budget, setBudget] = useState(school.subBudget?.total ?? "");
   const [vpEmail, setVpEmail] = useState(school.vpEmail || "");
   const [financeEmail, setFinanceEmail] = useState(school.financeEmail || "");
+  const [divisions, setDivisions] = useState(school.divisions || []);
   const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
   const [requireSickVoice, setRequireSickVoice] = useState(!!school.requireSickVoiceNote);
   const [adminPhone, setAdminPhone] = useState(school.adminPhone || "");
@@ -1200,7 +1201,7 @@ function SchoolSettings({ school, onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd, divisions: divisions.filter((d) => d.name?.trim()) },
       });
       onSaved();
       setOpen(false);
@@ -1315,8 +1316,33 @@ function SchoolSettings({ school, onSaved }) {
             </div>
           </div>
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "4px 0 0" }}>
-            On a fill, the VP (or the grade's own VP) and finance are notified automatically — you're done. Set per-grade VPs under Grade levels.
+            On a fill, the appropriate VP (the division's, else the default) and finance are notified automatically — you're done.
           </p>
+
+          <label style={{ ...C.label, marginTop: 12 }}>Divisions (VP by grade range)</label>
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 6px" }}>e.g. "JK–Grade 5" → VP. Assign each grade to a division under Grade levels.</p>
+          {divisions.map((d, i) => (
+            <div key={i} style={{ ...C.row, marginBottom: 6 }}>
+              <input
+                style={{ ...C.input, width: 150 }}
+                placeholder="JK–Grade 5"
+                value={d.name || ""}
+                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
+              />
+              <input
+                style={{ ...C.input, width: 220 }}
+                placeholder="VP email"
+                value={d.vpEmail || ""}
+                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpEmail: e.target.value } : x)))}
+              />
+              <button type="button" style={C.btnRed} onClick={() => setDivisions(divisions.filter((_, j) => j !== i))}>
+                remove
+              </button>
+            </div>
+          ))}
+          <button type="button" style={C.btnGhost} onClick={() => setDivisions([...divisions, { name: "", vpEmail: "" }])}>
+            + Add division
+          </button>
           <div style={{ marginTop: 10 }}>
             <label style={C.label}>Your mobile (text me when a sub is confirmed + test SMS)</label>
             <div style={C.row}>
@@ -1366,17 +1392,32 @@ function SchoolSettings({ school, onSaved }) {
 }
 
 function GradeVpRow({ school, grade }) {
-  const [vp, setVp] = useState(grade.vpEmail || "");
+  const [division, setDivision] = useState(grade.division || "");
   const [saved, setSaved] = useState(false);
-  async function save() {
-    await api(`/api/subs-admin/schools/${school._id}/grades/${grade._id}`, { method: "PATCH", body: { vpEmail: vp } });
+  const divs = school.divisions || [];
+  async function save(val) {
+    setDivision(val);
+    await api(`/api/subs-admin/schools/${school._id}/grades/${grade._id}`, { method: "PATCH", body: { division: val } });
     setSaved(true);
     setTimeout(() => setSaved(false), 1200);
   }
+  const vp = divs.find((d) => d.name === division)?.vpEmail || school.vpEmail || "";
   return (
     <div style={{ ...C.row, marginBottom: 4 }}>
       <span style={{ ...C.pill("#f1f5f9", "#334155"), minWidth: 90 }}>{grade.name}</span>
-      <input style={{ ...C.input, width: 220 }} value={vp} placeholder="VP for this grade (optional)" onChange={(e) => setVp(e.target.value)} onBlur={save} />
+      {divs.length ? (
+        <select style={{ ...C.input, width: 180 }} value={division} onChange={(e) => save(e.target.value)}>
+          <option value="">— no division —</option>
+          {divs.map((d) => (
+            <option key={d.name} value={d.name}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <span style={{ color: "#94a3b8", fontSize: 12 }}>Add divisions in Settings first</span>
+      )}
+      {vp && <span style={{ color: "#64748b", fontSize: 12 }}>VP: {vp}</span>}
       {saved && <span style={{ color: "#15803d", fontSize: 12 }}>saved</span>}
     </div>
   );

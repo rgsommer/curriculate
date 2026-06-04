@@ -42,6 +42,13 @@ const SubsSchoolSchema = new mongoose.Schema(
     // sub accepts, these are emailed automatically — the principal is done.
     vpEmail: { type: String, default: "", lowercase: true, trim: true },
     financeEmail: { type: String, default: "", lowercase: true, trim: true },
+    // Grade-range divisions, each with its own VP (e.g. "JK–Grade 5").
+    // A grade level belongs to a division (SubsGradeLevel.division); the
+    // division's VP is the "appropriate VP" for that grade.
+    divisions: {
+      type: [{ name: { type: String, trim: true }, vpEmail: { type: String, lowercase: true, trim: true } }],
+      default: [],
+    },
     // Principal/office mobile — used to send a test SMS and to text the
     // admin when a sub is confirmed (optional).
     adminPhone: { type: String, default: "", trim: true },

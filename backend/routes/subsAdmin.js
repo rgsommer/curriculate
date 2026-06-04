@@ -133,6 +133,11 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   for (const k of ["morningStart", "morningEnd", "dayStart", "dayEnd"]) {
     if (typeof req.body?.[k] === "string" && (req.body[k] === "" || /^\d{2}:\d{2}$/.test(req.body[k]))) set[`hours.${k}`] = req.body[k];
   }
+  if (Array.isArray(req.body?.divisions)) {
+    set.divisions = req.body.divisions
+      .filter((d) => d && typeof d.name === "string" && d.name.trim())
+      .map((d) => ({ name: d.name.trim(), vpEmail: String(d.vpEmail || "").trim().toLowerCase() }));
+  }
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
   if (typeof req.body?.requireSickVoiceNote === "boolean") set.requireSickVoiceNote = req.body.requireSickVoiceNote;
   await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });
@@ -186,6 +191,7 @@ router.patch("/schools/:id/grades/:gid", loadAdminSchool, async (req, res) => {
   if (!isOid(gid)) return res.status(400).json({ error: "Bad grade id" });
   const set = {};
   if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
+  if (typeof req.body?.division === "string") set.division = req.body.division.trim();
   if (typeof req.body?.name === "string" && req.body.name.trim()) set.name = req.body.name.trim();
   await SubsGradeLevel.updateOne({ _id: gid, schoolId: req.school._id }, { $set: set });
   res.json({ ok: true });
@@ -660,16 +666,36 @@ function safeDecrypt(enc) {
 // Build the caller's approver relationships across schools: where they're
 // an admin, the school's default VP, or a specific grade's VP.
 async function approverContext(email) {
-  const [adminSchools, vpSchools, vpGrades] = await Promise.all([
+  const [adminSchools, vpDefaultSchools, divisionSchools, vpGrades] = await Promise.all([
     SubsSchool.find({ adminEmails: email }).lean(),
-    SubsSchool.find({ vpEmail: email }).lean(),
-    SubsGradeLevel.find({ vpEmail: email }).lean(),
+    SubsSchool.find({ vpEmail: email }).lean(), // school-wide VP (all grades)
+    SubsSchool.find({ "divisions.vpEmail": email }).lean(), // VP of a division
+    SubsGradeLevel.find({ vpEmail: email }).lean(), // per-grade override
   ]);
+  const vpGradeSet = new Set(vpGrades.map((g) => String(g._id)));
+  // Grades covered because this email is the VP of their division.
+  if (divisionSchools.length) {
+    const divNamesBySchool = new Map(
+      divisionSchools.map((s) => [String(s._id), new Set((s.divisions || []).filter((d) => d.vpEmail === email).map((d) => d.name))])
+    );
+    const grades = await SubsGradeLevel.find({ schoolId: { $in: divisionSchools.map((s) => s._id) } }).lean();
+    for (const g of grades) {
+      const names = divNamesBySchool.get(String(g.schoolId));
+      if (names && g.division && names.has(g.division)) vpGradeSet.add(String(g._id));
+    }
+  }
   return {
     adminSet: new Set(adminSchools.map((s) => String(s._id))),
-    vpSchoolSet: new Set(vpSchools.map((s) => String(s._id))),
-    vpGradeSet: new Set(vpGrades.map((g) => String(g._id))),
-    schoolIds: [...new Set([...adminSchools, ...vpSchools].map((s) => String(s._id)).concat(vpGrades.map((g) => String(g.schoolId))))],
+    vpSchoolSet: new Set(vpDefaultSchools.map((s) => String(s._id))),
+    vpGradeSet,
+    schoolIds: [
+      ...new Set([
+        ...adminSchools.map((s) => String(s._id)),
+        ...vpDefaultSchools.map((s) => String(s._id)),
+        ...divisionSchools.map((s) => String(s._id)),
+        ...vpGrades.map((g) => String(g.schoolId)),
+      ]),
+    ],
   };
 }
 

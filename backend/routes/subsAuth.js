@@ -154,9 +154,9 @@ router.get("/me", async (req, res) => {
   const [schools, teacher, vpSchools, vpGrades] = await Promise.all([
     SubsSchool.find({ adminEmails: email }).select("name location").lean(),
     SubsTeacher.findOne({ email }).lean(),
-    // Schools where this email is the default VP…
-    SubsSchool.find({ vpEmail: email }).select("name").lean(),
-    // …and grade levels where this email is the grade's "appropriate VP".
+    // Schools where this email is the default VP or a division VP…
+    SubsSchool.find({ $or: [{ vpEmail: email }, { "divisions.vpEmail": email }] }).select("name").lean(),
+    // …and grade levels with a per-grade VP override for this email.
     SubsGradeLevel.find({ vpEmail: email }).select("name schoolId").lean(),
   ]);
   const vpSchoolIds = new Set([...vpSchools.map((s) => String(s._id)), ...vpGrades.map((g) => String(g.schoolId))]);
