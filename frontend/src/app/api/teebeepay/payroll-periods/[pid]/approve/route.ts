@@ -29,6 +29,9 @@ function stubHtml(co: any, period: any, emp: any, e: any) {
       ${postTax.map((l: any) => `<tr><td>- ${escape(l.name)}</td><td align="right">${ccy} ${Number(l.amount).toFixed(2)}</td></tr>`).join("")}
       ${Number(e.cash_advance) > 0 ? `<tr><td>Cash advance</td><td align="right">- ${ccy} ${Number(e.cash_advance).toFixed(2)}</td></tr>` : ""}
       <tr style="background:#f3f3f3;font-weight:600"><td>Net pay</td><td align="right">${ccy} ${Number(e.net).toFixed(2)}</td></tr>
+      ${(e.loan_balance_after != null) || (emp.loan_balance != null)
+        ? `<tr><td style="color:#666">Advance balance remaining</td><td align="right" style="color:#666">${ccy} ${Number(e.loan_balance_after != null ? e.loan_balance_after : emp.loan_balance).toFixed(2)}${Number(emp.loan_repayment) > 0 ? ` &nbsp;(${ccy} ${Number(emp.loan_repayment).toFixed(2)}/period)` : ""}</td></tr>`
+        : ""}
     </table>
     ${e.note ? `<p style="margin-top:16px;padding:10px;background:#fffbe6;border-left:3px solid #f0c000"><b>Note:</b> ${escape(e.note)}</p>` : ""}
     ${co.payslip_message ? `<p style="margin-top:16px;color:#444">${escape(co.payslip_message)}</p>` : ""}
@@ -82,6 +85,24 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
       await sendApprovalSummary(dbi, { company, period, entries, serviceFees, approver: u.email });
     } catch (e) { console.warn("[approve] summary email failed:", e); }
 
+    // Count down staff-advance balances by the loan repayment deducted this period;
+    // zero the per-period amount once an advance is fully repaid. Done BEFORE the
+    // stubs so each stub can show the balance remaining after this pay.
+    for (const e of entries) {
+      const emp = empMap[e.employee_id.toString()];
+      if (!emp || emp.loan_balance == null) continue;
+      const post = e.calc_breakdown?.post_tax_deductions || [];
+      const repaid = Number(post.find((d: any) => /loan/i.test(d.name))?.amount) || 0;
+      const newBal = Math.max(0, r2((Number(emp.loan_balance) || 0) - repaid));
+      e.loan_balance_after = newBal;                              // for the stub
+      if (repaid > 0) {
+        const set: any = { loan_balance: newBal };
+        if (newBal === 0) set.loan_repayment = 0;
+        await dbi.collection("employees").updateOne({ _id: emp._id }, { $set: set });
+        await dbi.collection("payroll_entries").updateOne({ _id: e._id }, { $set: { loan_balance_after: newBal } });
+      }
+    }
+
     let sent = 0, failed = 0;
     if (process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY) {
       for (const e of entries) {
@@ -98,21 +119,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
           console.error("[approve] stub send failed for", emp.email, err);
           failed++;
         }
-      }
-    }
-
-    // Count down staff-advance balances by the loan repayment deducted this period;
-    // zero the per-period amount once an advance is fully repaid.
-    for (const e of entries) {
-      const emp = empMap[e.employee_id.toString()];
-      if (!emp || emp.loan_balance == null) continue;
-      const post = e.calc_breakdown?.post_tax_deductions || [];
-      const repaid = Number(post.find((d: any) => /loan/i.test(d.name))?.amount) || 0;
-      if (repaid > 0) {
-        const newBal = Math.max(0, r2((Number(emp.loan_balance) || 0) - repaid));
-        const set: any = { loan_balance: newBal };
-        if (newBal === 0) set.loan_repayment = 0;
-        await dbi.collection("employees").updateOne({ _id: emp._id }, { $set: set });
       }
     }
 

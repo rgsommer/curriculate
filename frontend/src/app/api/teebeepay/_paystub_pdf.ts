@@ -83,6 +83,12 @@ export async function buildPayStubPdf(company: any, period: any, employee: any, 
     lines.push(["Cash advance", `- ${ccy} ${r2(Number(entry.cash_advance))}`, "out"]);
   }
   lines.push(["Net pay", `${ccy} ${r2(Number(entry.net || 0))}`, "total"]);
+  const advRemain = entry.loan_balance_after != null ? entry.loan_balance_after
+                  : (employee.loan_balance != null ? employee.loan_balance : null);
+  if (advRemain != null) {
+    const rate = Number(employee.loan_repayment) > 0 ? `  (${ccy} ${r2(Number(employee.loan_repayment))}/period)` : "";
+    lines.push([`Advance balance remaining${rate}`, `${ccy} ${r2(Number(advRemain))}`, "in"]);
+  }
 
   const tableX = 48, tableW = W - 96;
   let yRow = H - 220;
