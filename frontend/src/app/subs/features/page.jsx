@@ -33,6 +33,8 @@ const FEATURES = [
   ["📊", "Absence records & reports", "Every absence is logged per teacher. See a breakdown by reason on screen or email yourself a report on demand. Teachers can see their own record too."],
   ["🔄", "Plans change? It re-fills itself", "If a sub who accepted has to back out, they cancel in a tap — the request reopens and the system automatically resumes contacting the next available subs. You're notified, and so is the next person in line."],
   ["🗺️", "Directions, one tap", "When a sub accepts, their confirmation email and screen include a Google Maps link straight to the school — handy for someone covering a building they don't usually work in."],
+  ["👀", "Watch it work — see who's been contacted", "The requests board shows the cascade live: who was contacted and when, whether they accepted or skipped, and a click-to-call number for each. If it stalls, you can see exactly who's already been tried — and call them yourself."],
+  ["✨", "Smart match for the tough ones", "When no one strictly qualifies, an optional AI assist suggests the closest subs — handling synonyms like \"HS Math\" ≈ \"Senior Math\" — with a reason and a fit score, and lets you offer them directly."],
 ];
 
 export default function SubsFeaturesPage() {
