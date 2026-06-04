@@ -22,10 +22,11 @@ const EMAIL_FROM = process.env.SUBS_FROM || "Curriculate Subs <noreply@curricula
 
 // EMAIL. Real send via Resend when configured; otherwise log to console
 // so local dev needs no API key.
-async function sendEmail({ to, cc, subject, text, html }) {
+async function sendEmail({ to, cc, replyTo, subject, text, html }) {
   const ccList = (Array.isArray(cc) ? cc : cc ? [cc] : []).filter(Boolean);
+  const replyList = (Array.isArray(replyTo) ? replyTo : replyTo ? [replyTo] : []).filter(Boolean);
   if (!process.env.RESEND_API_KEY) {
-    console.log(`\n[subs:email:MOCK] → ${to}${ccList.length ? ` (cc: ${ccList.join(", ")})` : ""}\n  subject: ${subject}\n  ${text.replace(/\n/g, "\n  ")}\n`);
+    console.log(`\n[subs:email:MOCK] → ${to}${ccList.length ? ` (cc: ${ccList.join(", ")})` : ""}${replyList.length ? ` (reply-to: ${replyList.join(", ")})` : ""}\n  subject: ${subject}\n  ${text.replace(/\n/g, "\n  ")}\n`);
     return { ok: true, mock: true };
   }
   const r = await fetch("https://api.resend.com/emails", {
@@ -34,7 +35,7 @@ async function sendEmail({ to, cc, subject, text, html }) {
       Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ from: EMAIL_FROM, to: [to], ...(ccList.length ? { cc: ccList } : {}), subject, text, html }),
+    body: JSON.stringify({ from: EMAIL_FROM, to: [to], ...(ccList.length ? { cc: ccList } : {}), ...(replyList.length ? { reply_to: replyList } : {}), subject, text, html }),
   });
   if (!r.ok) {
     const body = await r.text().catch(() => "");
@@ -400,19 +401,23 @@ export function createNotifier() {
       // 4) The absent teacher: "X is covering for you — reply-all (VP cc'd)
       //    with your lesson plans." Cc the sub + VP so reply-all reaches both.
       if (absentTeacher?.email) {
-        const cc = [teacher?.email, vpEmail].filter(Boolean);
+        // Reply-To = sub + VP, so a plain "Reply" with the lesson plans
+        // reaches both (works regardless of the From address). Cc keeps them
+        // visible on the original too.
+        const subVp = [teacher?.email, vpEmail].filter(Boolean);
         await sendEmail({
           to: absentTeacher.email,
-          cc,
+          cc: subVp,
+          replyTo: subVp,
           subject: `Your ${gradeLevel?.name || "class"} is covered on ${request.date} — please send lesson plans`,
           text:
             `Hi ${absentTeacher.name || ""},\n\n${subName} will cover your ${gradeLevel?.name || "class"} on ${request.date}.\n\n` +
-            `Please REPLY-ALL to this email with your lesson plans and any notes — your sub and VP are included.`,
+            `Just REPLY to this email with your lesson plans and any notes — your sub and VP will both receive them.`,
           html: renderEmail({
             accent: "#16a34a",
             badge: pill("✓ Covered", "#dcfce7", "#15803d"),
             title: `Your class is covered — please send lesson plans`,
-            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply-all</strong> to this email with your lesson plans and any notes — your sub and VP are included.`,
+            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply</strong> to this email with your lesson plans and any notes — your sub and VP will both receive them.`,
             rows: requestRows(request, school, gradeLevel),
           }),
         }).catch((e) => console.error("[subs:notifyFilled:absent]", e?.message || e));
@@ -490,7 +495,7 @@ export function createNotifier() {
       const vpContact = vp?.email ? `your VP${vp.name ? ` (${vp.name})` : ""}${vp.email ? ` — ${vp.email}` : ""}` : "your VP";
       const next =
         `When a substitute is confirmed, we'll email you who it is. ` +
-        `Please get your lesson plans to ${vpContact} — or simply reply-all to that confirmation email and both your sub and VP will receive them.`;
+        `Please get your lesson plans to ${vpContact} — or simply reply to that confirmation email and both your sub and VP will receive them.`;
       await sendEmail({
         to: absentTeacher.email,
         subject: `Sub request received — ${classLabel(request, gradeLevel)} on ${request.date}`,
