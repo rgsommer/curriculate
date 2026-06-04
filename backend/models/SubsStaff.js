@@ -20,6 +20,10 @@ const SubsStaffSchema = new mongoose.Schema(
     gradeLevelId: { type: mongoose.Schema.Types.ObjectId, ref: "SubsGradeLevel", default: null },
     // True when the record was created by approving their own request.
     viaApproval: { type: Boolean, default: false },
+    // Remembered requirements for this teacher's class, so posting a sub
+    // request for them pre-fills what's usually needed.
+    defaultRole: { type: String, default: "" },
+    defaultRequiredQualifications: { type: [String], default: [] },
   },
   { timestamps: true }
 );

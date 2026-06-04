@@ -32,6 +32,7 @@ import SubsVoiceNote from "../models/SubsVoiceNote.js";
 import { getSubsEngine } from "../jobs/subsEscalation.js";
 import { decryptSecret } from "../services/subsCrypto.js";
 import { notifier, sendTestSms } from "../services/subsNotify.js";
+import { gradeVpContact, vpCanApprove } from "../services/subsVp.js";
 
 const router = express.Router();
 const jsonBody = express.json({ limit: "8kb" });
@@ -285,10 +286,19 @@ router.post("/request-sub", requireSubsAuth, audioBody, async (req, res) => {
   }
 
   // Notify the school's principals/admins AND the appropriate VP that an
-  // approval is waiting (grade VP overrides the school default VP).
-  const vpEmail = grade.vpEmail || school.vpEmail || "";
+  // approval is waiting. The VP is texted only when it's their decision.
+  const vp = gradeVpContact(grade, school);
   notifier
-    .notifyApprovalNeeded({ request: request.toObject(), school, gradeLevel: grade, absentTeacher: request.absentTeacher, adminEmails: school.adminEmails || [], vpEmail })
+    .notifyApprovalNeeded({
+      request: request.toObject(),
+      school,
+      gradeLevel: grade,
+      absentTeacher: request.absentTeacher,
+      adminEmails: school.adminEmails || [],
+      vpEmail: vp.email,
+      vpPhone: vp.phone,
+      vpCanApprove: vpCanApprove(school, { reason }),
+    })
     .catch((e) => console.error("[subs] notifyApprovalNeeded error:", e?.message || e));
 
   res.json({ ok: true, request: request.toObject() });

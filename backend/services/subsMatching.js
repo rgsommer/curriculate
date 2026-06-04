@@ -29,8 +29,11 @@ export function isEligible(teacher, request) {
   if (!roles.includes(role)) return false;
 
   // All required qualifications must be present (case-insensitive).
+  // "General" means general classroom coverage (e.g. K–8) — no subject
+  // filter, so any teacher of the right role qualifies.
   const haves = new Set((teacher.qualifications || []).map(norm));
   for (const q of request.requiredQualifications || []) {
+    if (norm(q) === "general") continue;
     if (!haves.has(norm(q))) return false;
   }
 
@@ -52,6 +55,7 @@ export function eligibilityReasons(teacher, request) {
   if (!roles.includes(role)) reasons.push(`not a ${role}`);
   const haves = new Set((teacher?.qualifications || []).map(norm));
   for (const q of request.requiredQualifications || []) {
+    if (norm(q) === "general") continue;
     if (!haves.has(norm(q))) reasons.push(`missing "${q}"`);
   }
   for (const key of request.requiredFaithFit || []) {

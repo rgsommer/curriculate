@@ -40,13 +40,24 @@ const SubsSchoolSchema = new mongoose.Schema(
     // VP handles lesson plans (default; a grade level may override with its
     // own "appropriate VP"). Finance is notified for budget/payroll. Once a
     // sub accepts, these are emailed automatically — the principal is done.
+    // Default VP (name + email + phone). Phone is used for an approval SMS
+    // only when the VP is the one who approves (see vpApproval).
     vpEmail: { type: String, default: "", lowercase: true, trim: true },
+    vpName: { type: String, default: "", trim: true },
+    vpPhone: { type: String, default: "", trim: true },
     financeEmail: { type: String, default: "", lowercase: true, trim: true },
     // Grade-range divisions, each with its own VP (e.g. "JK–Grade 5").
     // A grade level belongs to a division (SubsGradeLevel.division); the
     // division's VP is the "appropriate VP" for that grade.
     divisions: {
-      type: [{ name: { type: String, trim: true }, vpEmail: { type: String, lowercase: true, trim: true } }],
+      type: [
+        {
+          name: { type: String, trim: true },
+          vpName: { type: String, trim: true },
+          vpEmail: { type: String, lowercase: true, trim: true },
+          vpPhone: { type: String, trim: true },
+        },
+      ],
       default: [],
     },
     // Principal/office mobile — used to send a test SMS and to text the

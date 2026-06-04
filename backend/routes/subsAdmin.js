@@ -76,6 +76,17 @@ async function createLessonPlanDoc({ schoolId, input }) {
   return SubsLessonPlan.create(doc);
 }
 
+// Remember a class's usual requirements on the absent teacher's staff
+// record, so the next request for them pre-fills role + qualifications.
+async function rememberStaffDefaults(schoolId, email, role, quals) {
+  if (!email) return;
+  await SubsStaff.findOneAndUpdate(
+    { schoolId, email },
+    { $set: { defaultRole: role || "teacher", defaultRequiredQualifications: Array.isArray(quals) ? quals : [] }, $setOnInsert: { schoolId, email } },
+    { upsert: true, setDefaultsOnInsert: true }
+  ).catch((e) => console.error("[subs] rememberStaffDefaults", e?.message || e));
+}
+
 router.use(requireSubsAuth);
 router.use(express.json({ limit: "32kb" }));
 
@@ -125,6 +136,8 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   if (typeof req.body?.faithFitEnabled === "boolean") set["faithFit.enabled"] = req.body.faithFitEnabled;
   if (Number.isFinite(req.body?.subBudgetTotal)) set["subBudget.total"] = req.body.subBudgetTotal;
   if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
+  if (typeof req.body?.vpName === "string") set.vpName = req.body.vpName.trim();
+  if (typeof req.body?.vpPhone === "string") set.vpPhone = req.body.vpPhone.trim();
   if (typeof req.body?.financeEmail === "string") set.financeEmail = req.body.financeEmail.trim().toLowerCase();
   if (typeof req.body?.adminPhone === "string") set.adminPhone = req.body.adminPhone.trim();
   if (typeof req.body?.address === "string") set.address = req.body.address.trim();
@@ -136,7 +149,12 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   if (Array.isArray(req.body?.divisions)) {
     set.divisions = req.body.divisions
       .filter((d) => d && typeof d.name === "string" && d.name.trim())
-      .map((d) => ({ name: d.name.trim(), vpEmail: String(d.vpEmail || "").trim().toLowerCase() }));
+      .map((d) => ({
+        name: d.name.trim(),
+        vpName: String(d.vpName || "").trim(),
+        vpEmail: String(d.vpEmail || "").trim().toLowerCase(),
+        vpPhone: String(d.vpPhone || "").trim(),
+      }));
   }
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
   if (typeof req.body?.requireSickVoiceNote === "boolean") set.requireSickVoiceNote = req.body.requireSickVoiceNote;
@@ -321,6 +339,10 @@ router.post("/requests", async (req, res) => {
   // immediately flag "0 qualified candidates" (challenge #1).
   const eligibleCount = await getSubsEngine().countEligible(request.toObject());
   await SubsRequest.updateOne({ _id: request._id }, { $set: { eligibleCountAtPost: eligibleCount } });
+
+  // Remember these requirements for the absent teacher's class so the next
+  // request for them pre-fills.
+  await rememberStaffDefaults(request.schoolId, request.absentTeacher?.email, request.requiredRole, request.requiredQualifications);
 
   // Kick off the first offer immediately (don't wait for the next sweep).
   getSubsEngine()
@@ -587,6 +609,53 @@ router.get("/requests/:rid/candidates", async (req, res) => {
   res.json({ candidates, eligibleCount: candidates.filter((c) => c.eligible).length });
 });
 
+// ── Preview / dry-run: who would be contacted, in order, and how often ─
+// Computes the contact plan for a hypothetical request WITHOUT creating
+// anything — so the principal can see "teacher X is out → these subs, in
+// this order, at N-minute intervals" before posting.
+router.post("/preview", async (req, res) => {
+  const { schoolId, gradeLevelId } = req.body || {};
+  if (!isOid(schoolId) || !isOid(gradeLevelId)) return res.status(400).json({ error: "Pick a school and grade" });
+  const school = await SubsSchool.findById(schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const urgency = req.body?.urgency === "advance" ? "advance" : "urgent";
+  const override = Number(req.body?.escalationIntervalMs);
+  const intervalMs = Number.isFinite(override) && override > 0 ? override : urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS;
+  const pseudo = {
+    requiredRole: typeof req.body?.requiredRole === "string" ? req.body.requiredRole : "teacher",
+    requiredQualifications: Array.isArray(req.body?.requiredQualifications) ? req.body.requiredQualifications.filter((q) => typeof q === "string") : [],
+    requiredFaithFit: school.faithFit?.enabled && Array.isArray(req.body?.requiredFaithFit) ? req.body.requiredFaithFit : [],
+  };
+
+  const ranking = await SubsRanking.findOne({ schoolId, gradeLevelId }).lean();
+  const sorted = (ranking?.entries || []).slice().sort((a, b) => a.rank - b.rank);
+  const teachers = await SubsTeacher.find({ _id: { $in: sorted.map((e) => e.teacherId) } }).lean();
+  const byId = new Map(teachers.map((t) => [String(t._id), t]));
+
+  const intervalMin = Math.round(intervalMs / 60000);
+  const order = [];
+  let skipped = 0;
+  for (const e of sorted) {
+    const t = byId.get(String(e.teacherId));
+    if (!t) continue;
+    if (isEligible(t, pseudo)) {
+      order.push({
+        position: order.length + 1,
+        afterMinutes: order.length * intervalMin,
+        name: t.name || t.email,
+        phone: t.phone || "",
+        email: t.email || "",
+        contactPrefs: t.contactPrefs || { email: true },
+      });
+    } else {
+      skipped += 1;
+    }
+  }
+  res.json({ urgency, intervalMinutes: intervalMin, order, skipped, qualifiedCount: order.length });
+});
+
 // ── Smart match (AI-assisted suggestions for hard-to-fill requests) ───
 // Advisory only — suggests the closest subs (incl. near-misses the exact
 // filter excludes), each with a reason and fit score.
@@ -807,11 +876,20 @@ router.post("/requests/:rid/approve", async (req, res) => {
   };
   await SubsRequest.updateOne({ _id: request._id }, { $set: set });
 
-  // Auto-roster the requesting teacher onto the school's staff list.
+  // Auto-roster the requesting teacher + remember the chosen requirements.
   if (request.absentTeacher?.email) {
     await SubsStaff.findOneAndUpdate(
       { schoolId: request.schoolId, email: request.absentTeacher.email },
-      { $set: { name: request.absentTeacher.name || "", gradeLevelId: request.gradeLevelId, viaApproval: true } },
+      {
+        $set: {
+          name: request.absentTeacher.name || "",
+          gradeLevelId: request.gradeLevelId,
+          viaApproval: true,
+          defaultRole: set.requiredRole,
+          defaultRequiredQualifications: set.requiredQualifications,
+        },
+        $setOnInsert: { schoolId: request.schoolId, email: request.absentTeacher.email },
+      },
       { upsert: true, setDefaultsOnInsert: true }
     ).catch((e) => console.error("[subs] auto-roster error:", e?.message || e));
   }

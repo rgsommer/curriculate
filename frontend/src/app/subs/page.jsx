@@ -275,7 +275,7 @@ function VoiceRecorder({ required, onChange, onFail }) {
 // Shared, normalized vocabularies so a sub's profile and a school's request
 // requirements match on the same values (free text didn't reliably match).
 const SUBJECT_OPTIONS = [
-  "English/Language Arts", "Math", "HS Math", "Science", "Biology", "Chemistry", "Physics",
+  "General", "English/Language Arts", "Math", "HS Math", "Science", "Biology", "Chemistry", "Physics",
   "French", "Spanish", "Social Studies", "History", "Geography", "Music", "Art", "Drama",
   "Phys Ed", "Computer Science", "Tech", "Special Education", "ESL", "Religious Studies", "Early Years",
 ];
@@ -1179,6 +1179,8 @@ function SchoolSettings({ school, onSaved }) {
   const [faith, setFaith] = useState(!!school.faithFit?.enabled);
   const [budget, setBudget] = useState(school.subBudget?.total ?? "");
   const [vpEmail, setVpEmail] = useState(school.vpEmail || "");
+  const [vpName, setVpName] = useState(school.vpName || "");
+  const [vpPhone, setVpPhone] = useState(school.vpPhone || "");
   const [financeEmail, setFinanceEmail] = useState(school.financeEmail || "");
   const [divisions, setDivisions] = useState(school.divisions || []);
   const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
@@ -1201,7 +1203,7 @@ function SchoolSettings({ school, onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd, divisions: divisions.filter((d) => d.name?.trim()) },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, vpName, vpPhone, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd, divisions: divisions.filter((d) => d.name?.trim()) },
       });
       onSaved();
       setOpen(false);
@@ -1305,35 +1307,49 @@ function SchoolSettings({ school, onSaved }) {
             </div>
           </div>
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "4px 0 0" }}>Morning end doubles as the afternoon (PM half-day) start. The full-day start drives the morning countdown.</p>
+          <label style={{ ...C.label, marginTop: 8 }}>Default VP (used when a grade has no division VP)</label>
           <div style={C.row}>
-            <div>
-              <label style={C.label}>Default VP email (lesson plans)</label>
-              <input style={{ ...C.input, width: 220 }} value={vpEmail} onChange={(e) => setVpEmail(e.target.value)} placeholder="vp@school.org" />
-            </div>
-            <div>
-              <label style={C.label}>Finance email</label>
-              <input style={{ ...C.input, width: 220 }} value={financeEmail} onChange={(e) => setFinanceEmail(e.target.value)} placeholder="finance@school.org" />
-            </div>
+            <input style={{ ...C.input, width: 130 }} value={vpName} onChange={(e) => setVpName(e.target.value)} placeholder="VP name" />
+            <input style={{ ...C.input, width: 200 }} value={vpEmail} onChange={(e) => setVpEmail(e.target.value)} placeholder="vp@school.org" />
+            <input style={{ ...C.input, width: 150 }} value={vpPhone} onChange={(e) => setVpPhone(e.target.value)} placeholder="VP mobile (SMS)" />
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <label style={C.label}>Finance email</label>
+            <input style={{ ...C.input, width: 220 }} value={financeEmail} onChange={(e) => setFinanceEmail(e.target.value)} placeholder="finance@school.org" />
           </div>
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "4px 0 0" }}>
             On a fill, the appropriate VP (the division's, else the default) and finance are notified automatically — you're done.
           </p>
 
           <label style={{ ...C.label, marginTop: 12 }}>Divisions (VP by grade range)</label>
-          <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 6px" }}>e.g. "JK–Grade 5" → VP. Assign each grade to a division under Grade levels.</p>
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 6px" }}>
+            e.g. "JK–Grade 5" → VP. Assign each grade to a division under Grade levels. The VP's mobile is texted about approvals only when "VP can approve" lets them decide.
+          </p>
           {divisions.map((d, i) => (
             <div key={i} style={{ ...C.row, marginBottom: 6 }}>
               <input
-                style={{ ...C.input, width: 150 }}
+                style={{ ...C.input, width: 120 }}
                 placeholder="JK–Grade 5"
                 value={d.name || ""}
                 onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
               />
               <input
-                style={{ ...C.input, width: 220 }}
+                style={{ ...C.input, width: 120 }}
+                placeholder="VP name"
+                value={d.vpName || ""}
+                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpName: e.target.value } : x)))}
+              />
+              <input
+                style={{ ...C.input, width: 190 }}
                 placeholder="VP email"
                 value={d.vpEmail || ""}
                 onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpEmail: e.target.value } : x)))}
+              />
+              <input
+                style={{ ...C.input, width: 140 }}
+                placeholder="VP mobile (SMS)"
+                value={d.vpPhone || ""}
+                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpPhone: e.target.value } : x)))}
               />
               <button type="button" style={C.btnRed} onClick={() => setDivisions(divisions.filter((_, j) => j !== i))}>
                 remove
@@ -1584,11 +1600,40 @@ function PostRequest({ school, grades }) {
     setAbsentName(s.name || "");
     setAbsentEmail(s.email || "");
     if (s.gradeLevelId && grades.some((g) => g._id === String(s.gradeLevelId))) setGradeLevelId(String(s.gradeLevelId));
+    // Pre-fill the requirements we remembered for this teacher's class.
+    if (s.defaultRole) setRequiredRole(s.defaultRole);
+    if (Array.isArray(s.defaultRequiredQualifications) && s.defaultRequiredQualifications.length) setQuals(s.defaultRequiredQualifications);
   }
   const [plan, setPlan] = useState({ body: "", routineNotes: "", materials: "", credentials: [] });
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+
+  async function runPreview() {
+    if (!gradeLevelId) return;
+    setPreviewing(true);
+    setPreview(null);
+    try {
+      const r = await api("/api/subs-admin/preview", {
+        method: "POST",
+        body: {
+          schoolId: school._id,
+          gradeLevelId,
+          urgency,
+          requiredRole,
+          requiredQualifications: quals,
+          requiredFaithFit: Object.keys(faith).filter((k) => faith[k]),
+        },
+      });
+      setPreview(r);
+    } catch (e) {
+      setErr(e.message);
+    } finally {
+      setPreviewing(false);
+    }
+  }
 
   useEffect(() => {
     if (!gradeLevelId && grades[0]) setGradeLevelId(grades[0]._id);
@@ -1783,11 +1828,36 @@ function PostRequest({ school, grades }) {
           </div>
         )}
 
-        <div style={{ marginTop: 14 }}>
+        <div style={{ ...C.row, marginTop: 14 }}>
           <button style={C.btn} disabled={busy || !gradeLevelId}>
             {busy ? "Posting…" : "Post request"}
           </button>
+          <button type="button" style={C.btnGhost} disabled={previewing || !gradeLevelId} onClick={runPreview}>
+            {previewing ? "Checking…" : "Preview contact plan"}
+          </button>
         </div>
+
+        {preview && (
+          <div style={{ marginTop: 12, background: "#f8fbff", border: "1px solid #bfdbfe", borderRadius: 10, padding: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>
+              If posted now ({preview.urgency}, {preview.intervalMinutes}-min steps): {preview.qualifiedCount} qualified
+              {preview.skipped > 0 ? ` · ${preview.skipped} skipped (not qualified)` : ""}
+            </div>
+            {preview.order.length === 0 ? (
+              <div style={{ color: "#b91c1c", fontSize: 13, marginTop: 6 }}>⚠ No qualified subs would be contacted — widen the requirements or use Smart match / internal coverage.</div>
+            ) : (
+              <ol style={{ margin: "8px 0 0", paddingLeft: 20, fontSize: 13 }}>
+                {preview.order.map((o) => (
+                  <li key={o.position} style={{ marginBottom: 3 }}>
+                    <strong>{o.name}</strong> — {o.afterMinutes === 0 ? "contacted immediately" : `if no answer, after ${o.afterMinutes} min`}
+                    {o.phone ? ` · ${o.phone}` : o.email ? ` · ${o.email}` : ""}
+                  </li>
+                ))}
+              </ol>
+            )}
+            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>Preview only — nothing has been contacted.</div>
+          </div>
+        )}
       </form>
     </div>
   );

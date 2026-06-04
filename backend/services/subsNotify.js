@@ -331,11 +331,11 @@ export function createNotifier() {
 
     // A staff teacher submitted an absence request — the principal needs to
     // approve before fulfillment starts.
-    async notifyApprovalNeeded({ request, school, gradeLevel, absentTeacher, adminEmails = [], vpEmail }) {
+    async notifyApprovalNeeded({ request, school, gradeLevel, absentTeacher, adminEmails = [], vpEmail, vpPhone, vpCanApprove }) {
       const what = describe(request, school, gradeLevel);
       const who = absentTeacher?.name || absentTeacher?.email || "A teacher";
-      // Notify the principal/admins and the VP (dedup so a VP who is also
-      // an admin isn't emailed twice).
+      // Notify the principal/admins and the VP by email (dedup so a VP who
+      // is also an admin isn't emailed twice).
       const recipients = [...new Set([...adminEmails, vpEmail].filter(Boolean))];
       for (const to of recipients) {
         await sendEmail({
@@ -344,6 +344,10 @@ export function createNotifier() {
           text: `${who} reported an absence (${request.reason || "no reason given"}) and needs a sub for ${what}. Approve or deny in the dashboard.`,
           html: `<p><strong>${who}</strong> reported an absence (${request.reason || "no reason given"}) and needs a sub for <strong>${what}</strong>. Approve or deny in the dashboard.</p>`,
         }).catch((e) => console.error("[subs:notifyApprovalNeeded]", e?.message || e));
+      }
+      // Text the VP only when it's THEIR decision to approve.
+      if (vpCanApprove && vpPhone) {
+        await sendSms({ to: vpPhone, text: `Approval needed — ${who}: ${shortLine(request, school, gradeLevel)}. Approve/deny in the app.` }).catch(() => {});
       }
     },
 

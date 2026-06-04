@@ -23,7 +23,7 @@ import SubsRanking from "../models/SubsRanking.js";
 import SubsTeacher from "../models/SubsTeacher.js";
 import SubsSchool from "../models/SubsSchool.js";
 import SubsGradeLevel from "../models/SubsGradeLevel.js";
-import { gradeVp } from "./subsVp.js";
+import { gradeVpContact } from "./subsVp.js";
 
 export function createMongoStore() {
   return {
@@ -66,13 +66,15 @@ export function createMongoStore() {
         SubsGradeLevel.findById(request.gradeLevelId).lean(),
       ]);
       // The "appropriate VP": grade override → division VP → school default.
-      const vpEmail = gradeVp(gradeLevel, school);
+      const vp = gradeVpContact(gradeLevel, school);
       return {
         request,
         school,
         gradeLevel,
         adminEmails: school?.adminEmails || [],
-        vpEmail,
+        vpEmail: vp.email,
+        vpName: vp.name,
+        vpPhone: vp.phone,
         financeEmail: school?.financeEmail || "",
         absentTeacher: request.absentTeacher || null,
       };
