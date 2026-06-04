@@ -1014,6 +1014,29 @@ router.post("/schools/:id/absence-report/email", loadAdminSchool, async (req, re
   res.json({ ok: true, sentTo: to, staffCount: rows.length });
 });
 
+// Retry an exhausted (or still-open) request from scratch — e.g. the
+// principal ranked a new sub and wants to try again. Clears the prior
+// offers, reopens, and re-contacts eligible subs from the top.
+router.post("/requests/:rid/retry", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  if (!["exhausted", "open"].includes(request.status)) {
+    return res.status(400).json({ error: `Can't retry a ${request.status} request` });
+  }
+  await SubsOffer.deleteMany({ requestId: rid });
+  await SubsRequest.updateOne({ _id: rid }, { $set: { status: "open", exhaustedReason: null, currentRank: -1 } });
+  const updated = await SubsRequest.findById(rid).lean();
+  const eligibleCount = await getSubsEngine().countEligible(updated);
+  getSubsEngine().onRequestCreated(rid).catch((err) => console.error("[subs] retry onRequestCreated:", err?.message || err));
+  res.json({ ok: true, eligibleCount });
+});
+
 // Dev/diagnostic: force one escalation sweep right now instead of waiting
 // for the timer. Useful for demoing the full happy path quickly.
 router.post("/dev/tick", async (req, res) => {

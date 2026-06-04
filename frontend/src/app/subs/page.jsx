@@ -2355,13 +2355,25 @@ function RequestsBoard({ school }) {
     return () => clearInterval(t);
   }, [load]);
 
-  async function tick() {
-    await api("/api/subs-admin/dev/tick", { method: "POST" }).catch(() => {});
-    load();
+  const [refreshed, setRefreshed] = useState(false);
+  async function refresh() {
+    await load();
+    setRefreshed(true);
+    setTimeout(() => setRefreshed(false), 1200);
   }
   async function cancel(rid) {
     await api(`/api/subs-admin/requests/${rid}/cancel`, { method: "POST" }).catch((e) => setErr(e.message));
     load();
+  }
+  async function retry(rid) {
+    setErr("");
+    try {
+      const r = await api(`/api/subs-admin/requests/${rid}/retry`, { method: "POST" });
+      if (r.eligibleCount === 0) setErr("Retried, but still no qualified subs — rank a sub for this grade first.");
+      load();
+    } catch (e) {
+      setErr(e.message);
+    }
   }
 
   return (
@@ -2369,11 +2381,9 @@ function RequestsBoard({ school }) {
       <div style={{ ...C.row, justifyContent: "space-between" }}>
         <h2 style={C.h2}>Requests</h2>
         <div style={C.row}>
-          <button style={C.btnGhost} onClick={load}>
+          {refreshed && <span style={{ color: "#15803d", fontSize: 12 }}>updated</span>}
+          <button style={C.btnGhost} onClick={refresh}>
             Refresh
-          </button>
-          <button style={C.btnGhost} onClick={tick} title="Force one escalation sweep (dev)">
-            Tick now (dev)
           </button>
         </div>
       </div>
@@ -2438,8 +2448,13 @@ function RequestsBoard({ school }) {
 
           {r.status === "exhausted" && (
             <div style={{ marginTop: 8, background: "#fef2f2", borderRadius: 8, padding: "8px 10px" }}>
-              <div style={{ color: "#b91c1c", fontWeight: 600, fontSize: 13 }}>
-                {r.exhaustedReason === "no_eligible" ? "⚠ No qualified subs for this posting." : "⚠ All qualified subs declined or didn't respond."}
+              <div style={{ ...C.row, justifyContent: "space-between" }}>
+                <div style={{ color: "#b91c1c", fontWeight: 600, fontSize: 13 }}>
+                  {r.exhaustedReason === "no_eligible" ? "⚠ No qualified subs for this posting." : "⚠ All qualified subs declined or didn't respond."}
+                </div>
+                <button style={C.btn} onClick={() => retry(r._id)} title="Reopen and contact eligible subs again from the top">
+                  🔄 Try again
+                </button>
               </div>
               <CandidatesView request={r} />
               <SmartMatch request={r} onOffered={load} />
