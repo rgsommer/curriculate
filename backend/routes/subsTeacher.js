@@ -88,6 +88,7 @@ async function decorateOffers(offers) {
       sentAt: o.sentAt,
       expiresAt: o.expiresAt,
       respondedAt: o.respondedAt,
+      paid: !!o.paid,
       request: r
         ? {
             _id: r._id,
@@ -447,6 +448,16 @@ router.post("/offers/:id/cancel", requireSubsAuth, async (req, res) => {
   const result = await getSubsEngine().cancelAcceptance(offer);
   if (!result.ok) return res.status(409).json({ error: humanizeReason(result.reason) });
   res.json({ ok: true });
+});
+
+// The sub marks a worked day as paid / unpaid (personal pay tracking).
+router.post("/offers/:id/paid", requireSubsAuth, jsonBody, async (req, res) => {
+  const offer = await ownedOffer(req, res);
+  if (!offer) return;
+  if (offer.status !== "accepted") return res.status(409).json({ error: "You can only mark assignments you worked." });
+  const paid = req.body?.paid !== false;
+  await SubsOffer.updateOne({ _id: offer._id }, { $set: { paid, paidAt: paid ? new Date() : null } });
+  res.json({ ok: true, paid });
 });
 
 // Lesson plan for an offer the signed-in sub owns. Non-secret parts

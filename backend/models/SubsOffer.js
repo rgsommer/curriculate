@@ -40,6 +40,10 @@ const SubsOfferSchema = new mongoose.Schema(
 
     // Channels the engine actually dispatched on (for the audit trail).
     channels: { type: [String], default: [] },
+
+    // The sub can mark a worked day as paid (personal pay tracking).
+    paid: { type: Boolean, default: false },
+    paidAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

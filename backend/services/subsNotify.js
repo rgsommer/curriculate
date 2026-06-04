@@ -303,19 +303,29 @@ export function createNotifier() {
 
     // A sub cancelled after accepting — coverage fell through; we've resumed
     // contacting other subs, but the school should know.
-    async notifyCancelled({ request, school, gradeLevel, adminEmails = [], vpEmail }) {
+    async notifyCancelled({ request, school, gradeLevel, adminEmails = [], vpEmail, financeEmail, teacher }) {
       const what = describe(request, school, gradeLevel);
+      const subName = teacher?.name || teacher?.email || "The substitute";
       const recipients = [...new Set([...adminEmails, vpEmail].filter(Boolean))];
       for (const to of recipients) {
         await sendEmail({
           to,
           subject: `Heads up — sub cancelled: ${what}`,
-          text: `The substitute who had accepted ${what} cancelled. We're now contacting the next available subs. You'll be notified when it's covered again.`,
-          html: `<p>The substitute who had accepted <strong>${what}</strong> cancelled. We're now contacting the next available subs — you'll be notified when it's covered again.</p>`,
+          text: `${subName} cancelled their acceptance of ${what}. We're now contacting the next available subs. You'll be notified when it's covered again.`,
+          html: `<p><strong>${subName}</strong> cancelled their acceptance of <strong>${what}</strong>. We're now contacting the next available subs — you'll be notified when it's covered again.</p>`,
         }).catch((e) => console.error("[subs:notifyCancelled]", e?.message || e));
       }
+      // Finance: flag the cancellation so the sub isn't paid for this day.
+      if (financeEmail) {
+        await sendEmail({
+          to: financeEmail,
+          subject: `Do not pay — sub cancelled: ${what}`,
+          text: `${subName} was booked for ${what} but cancelled, so the day did NOT go ahead with them. Please do not process payment for this assignment.`,
+          html: `<p><strong>${subName}</strong> was booked for <strong>${what}</strong> but <strong>cancelled</strong>. Please do not process payment for this assignment.</p>`,
+        }).catch((e) => console.error("[subs:notifyCancelled:finance]", e?.message || e));
+      }
       if (school?.adminPhone) {
-        await sendSms({ to: school.adminPhone, text: `${shortLine(request, school, gradeLevel)} — sub CANCELLED; re-contacting others.` }).catch(() => {});
+        await sendSms({ to: school.adminPhone, text: `${shortLine(request, school, gradeLevel)} — ${subName} CANCELLED; re-contacting others.` }).catch(() => {});
       }
     },
 

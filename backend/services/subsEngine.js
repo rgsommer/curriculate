@@ -220,6 +220,37 @@ export function createEngine({ store, notifier, now = () => Date.now() }) {
       return { ok: true };
     },
 
+    // Offer to a specific teacher, bypassing the eligibility filter — for
+    // the admin's "Smart match → offer anyway" override on hard-to-fill
+    // requests. Keeps the one-pending-offer invariant by expiring any
+    // current pending offer first.
+    async offerSpecific(requestId, teacherId) {
+      const request = await store.getRequest(requestId);
+      // Allowed while still seeking coverage (open) or after it ran dry
+      // (exhausted) — in the latter case we reopen the request.
+      if (!request || !["open", "exhausted"].includes(request.status)) return { ok: false, reason: "request_closed" };
+      const teacher = await store.getTeacher(teacherId);
+      if (!teacher) return { ok: false, reason: "no_teacher" };
+      if (request.status === "exhausted") await store.updateRequest(requestId, { status: "open", exhaustedReason: null });
+      const offers = await store.getOffersForRequest(requestId);
+      for (const o of offers) {
+        if (o.status === "pending") await store.updateOffer(o._id, { status: "expired", respondedAt: nowDate() });
+      }
+      const offer = await store.createOffer({
+        requestId,
+        teacherId,
+        rank: -1, // override (not from the ranking)
+        status: "pending",
+        token: crypto.randomBytes(24).toString("hex"),
+        sentAt: nowDate(),
+        expiresAt: new Date(nowDate().getTime() + request.escalationIntervalMs),
+      });
+      const ctx = await store.getRequestContext(requestId);
+      const channels = await notifier.sendOffer({ ...ctx, offer, teacher });
+      if (channels && channels.length) await store.updateOffer(offer._id, { channels });
+      return { ok: true };
+    },
+
     // Exposed for tests / dev tooling.
     _processRequest: processRequest,
   };

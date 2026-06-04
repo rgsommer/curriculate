@@ -1951,6 +1951,65 @@ function AbsenceReport({ school }) {
   );
 }
 
+// AI-assisted suggestions for a hard-to-fill request + override-offer.
+function SmartMatch({ request, onOffered }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function run() {
+    setOpen(true);
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await api(`/api/subs-admin/requests/${request._id}/smart-match`, { method: "POST" });
+      setList(r.suggestions || []);
+    } catch (e) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function offer(tid) {
+    setMsg("");
+    try {
+      await api(`/api/subs-admin/requests/${request._id}/offer/${tid}`, { method: "POST" });
+      setMsg("Offer sent.");
+      onOffered && onOffered();
+    } catch (e) {
+      setMsg(e.message);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button style={C.btnGhost} onClick={open ? () => setOpen(false) : run}>
+        {open ? "Hide smart match" : "✨ Smart match"}
+      </button>
+      {open && (
+        <div style={{ marginTop: 6 }}>
+          {busy && <span style={{ color: "#64748b", fontSize: 13 }}>Finding the closest subs…</span>}
+          {msg && <div style={{ fontSize: 12, color: msg === "Offer sent." ? "#15803d" : "#92400e" }}>{msg}</div>}
+          {list &&
+            list.map((s) => (
+              <div key={s.teacherId} style={{ ...C.row, fontSize: 13, padding: "3px 0" }}>
+                <span style={C.pill(s.fit >= 70 ? "#dcfce7" : s.fit >= 40 ? "#fef9c3" : "#f1f5f9", s.fit >= 70 ? "#15803d" : s.fit >= 40 ? "#a16207" : "#334155")}>{s.fit}%</span>
+                <strong>{s.name}</strong>
+                {s.eligible ? <span style={C.pill("#dcfce7", "#15803d")}>qualified</span> : <span style={C.pill("#fef3c7", "#92400e")}>near match</span>}
+                <span style={{ color: "#64748b" }}>{s.reason}</span>
+                <button style={C.btnGhost} onClick={() => offer(s.teacherId)}>
+                  Offer
+                </button>
+              </div>
+            ))}
+          {list && list.length === 0 && <span style={{ color: "#94a3b8", fontSize: 13 }}>No candidates to suggest.</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RequestsBoard({ school }) {
   const [requests, setRequests] = useState([]);
   const [err, setErr] = useState("");
@@ -2046,9 +2105,11 @@ function RequestsBoard({ school }) {
                 {r.exhaustedReason === "no_eligible" ? "⚠ No qualified subs for this posting." : "⚠ All qualified subs declined or didn't respond."}
               </div>
               <CandidatesView request={r} />
+              <SmartMatch request={r} onOffered={load} />
               <InternalCoverageForm request={r} onDone={load} />
             </div>
           )}
+          {r.status === "open" && <SmartMatch request={r} onOffered={load} />}
         </div>
       ))}
     </div>
@@ -2458,6 +2519,15 @@ function TeacherDashboard() {
     }
   }
 
+  async function markPaid(id, paid) {
+    try {
+      await api(`/api/subs-teacher/offers/${id}/paid`, { method: "POST", body: { paid } });
+      load();
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
   const pending = offers.filter((o) => o.status === "pending");
   const history = offers.filter((o) => o.status !== "pending");
   const [reqKey, setReqKey] = useState(0);
@@ -2549,6 +2619,16 @@ function TeacherDashboard() {
                 Cancel my acceptance
               </button>
             )}
+            {o.status === "accepted" &&
+              (o.paid ? (
+                <button style={{ ...C.pill("#dcfce7", "#15803d"), border: 0, cursor: "pointer" }} onClick={() => markPaid(o._id, false)} title="Tap to undo">
+                  ✓ Paid
+                </button>
+              ) : (
+                <button style={C.btnGhost} onClick={() => markPaid(o._id, true)}>
+                  Mark paid
+                </button>
+              ))}
           </div>
         ))}
       </div>

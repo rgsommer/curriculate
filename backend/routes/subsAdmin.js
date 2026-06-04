@@ -38,6 +38,7 @@ import SubsVoiceNote from "../models/SubsVoiceNote.js";
 import { getSubsEngine, tickNow } from "../jobs/subsEscalation.js";
 import { notifier } from "../services/subsNotify.js";
 import { isEligible, eligibilityReasons } from "../services/subsMatching.js";
+import { smartMatch } from "../services/subsSmartMatch.js";
 import { encryptSecret, decryptSecret, encryptionAvailable } from "../services/subsCrypto.js";
 
 const router = express.Router();
@@ -575,6 +576,42 @@ router.get("/requests/:rid/candidates", async (req, res) => {
     };
   });
   res.json({ candidates, eligibleCount: candidates.filter((c) => c.eligible).length });
+});
+
+// ── Smart match (AI-assisted suggestions for hard-to-fill requests) ───
+// Advisory only — suggests the closest subs (incl. near-misses the exact
+// filter excludes), each with a reason and fit score.
+router.post("/requests/:rid/smart-match", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const ranking = await SubsRanking.findOne({ schoolId: request.schoolId, gradeLevelId: request.gradeLevelId }).lean();
+  const ids = (ranking?.entries || []).map((e) => e.teacherId);
+  const candidates = ids.length ? await SubsTeacher.find({ _id: { $in: ids }, active: { $ne: false } }).lean() : [];
+  const grade = await SubsGradeLevel.findById(request.gradeLevelId).lean();
+  const suggestions = await smartMatch({ request, gradeName: grade?.name, candidates });
+  res.json({ suggestions });
+});
+
+// Override-offer: contact a specific sub even if the filter excluded them
+// (acting on a smart-match suggestion).
+router.post("/requests/:rid/offer/:teacherId", async (req, res) => {
+  const { rid, teacherId } = req.params;
+  if (!isOid(rid) || !isOid(teacherId)) return res.status(400).json({ error: "Bad id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const result = await getSubsEngine().offerSpecific(rid, teacherId);
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json({ ok: true });
 });
 
 // ── Lesson plan (admin view — decrypts credentials for the owner) ─────
