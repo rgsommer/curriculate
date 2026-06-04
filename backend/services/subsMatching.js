@@ -42,6 +42,12 @@ export function isEligible(teacher, request) {
     if (!teacher.faithFit || teacher.faithFit[key] !== true) return false;
   }
 
+  // Approved divisions: if the principal restricted this sub to certain
+  // grade ranges, the request's division must be one of them.
+  if (teacher.approvedDivisions?.length && request.division) {
+    if (!teacher.approvedDivisions.includes(request.division)) return false;
+  }
+
   return true;
 }
 
@@ -60,6 +66,9 @@ export function eligibilityReasons(teacher, request) {
   }
   for (const key of request.requiredFaithFit || []) {
     if (!teacher?.faithFit || teacher.faithFit[key] !== true) reasons.push(`faith: ${key}`);
+  }
+  if (teacher?.approvedDivisions?.length && request.division && !teacher.approvedDivisions.includes(request.division)) {
+    reasons.push(`not approved for ${request.division}`);
   }
   return reasons;
 }

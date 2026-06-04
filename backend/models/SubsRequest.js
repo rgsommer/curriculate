@@ -63,6 +63,9 @@ const SubsRequestSchema = new mongoose.Schema(
     // ── Matching requirements (challenges #1, #5, #10, #11) ────────────
     // Only subs who satisfy ALL of these are offered the job.
     requiredRole: { type: String, default: "teacher" }, // teacher | ea | specialist | tech
+    // Division (grade range) of the class, denormalized from the grade so
+    // eligibility can check a sub's approved divisions without a join.
+    division: { type: String, default: "" },
     requiredQualifications: { type: [String], default: [] },
     requiredFaithFit: { type: [String], default: [] }, // subset of FAITH_KEYS
 

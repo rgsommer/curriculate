@@ -113,7 +113,7 @@ async function sendSms({ to, text }) {
 function offerLinks(offer) {
   // Token links let a teacher respond straight from the email/SMS.
   const base = `${APP_BASE_URL}/respond?token=${encodeURIComponent(offer.token)}`;
-  return { accept: `${base}&action=accept`, decline: `${base}&action=decline` };
+  return { accept: `${base}&action=accept`, decline: `${base}&action=decline`, page: base };
 }
 
 // Human label for the coverage window (whole/half/custom).
@@ -163,9 +163,10 @@ function mapsLink(school) {
 export function createNotifier() {
   return {
     async sendOffer({ offer, request, teacher, school, gradeLevel }) {
-      const { accept, decline } = offerLinks(offer);
+      const { accept, decline, page } = offerLinks(offer);
       const what = describe(request, school, gradeLevel);
-      const subject = `Sub request: ${what}`;
+      const tag = school?.abbrev || school?.name || "our school";
+      const subject = `Invitation to sub at ${tag}: ${classLabel(request, gradeLevel)} on ${request.date}`;
       const text =
         `Hi ${teacher.name || "there"},\n\n` +
         `You're being offered a substitute teaching assignment for ${what}.\n` +
@@ -189,9 +190,9 @@ export function createNotifier() {
           channels.push("email");
         }
         if (prefs.sms && teacher.phone) {
-          // Cross-school short form: "BCS: teach Gr5 on … — Accept / Skip".
-          const line = shortLine(request, school, gradeLevel);
-          await sendSms({ to: teacher.phone, text: `${line}\nAccept: ${accept}\nSkip: ${decline}` });
+          // Invitation framing + a single link to the page (which has both
+          // Accept and Decline) — not an interactive 1/2 reply.
+          await sendSms({ to: teacher.phone, text: `Invitation to sub at ${tag}: ${shortLine(request, school, gradeLevel)}. Accept or decline: ${page}` });
           channels.push("sms");
         }
       } catch (err) {
@@ -334,20 +335,40 @@ export function createNotifier() {
     async notifyApprovalNeeded({ request, school, gradeLevel, absentTeacher, adminEmails = [], vpEmail, vpPhone, vpCanApprove }) {
       const what = describe(request, school, gradeLevel);
       const who = absentTeacher?.name || absentTeacher?.email || "A teacher";
-      // Notify the principal/admins and the VP by email (dedup so a VP who
-      // is also an admin isn't emailed twice).
-      const recipients = [...new Set([...adminEmails, vpEmail].filter(Boolean))];
-      for (const to of recipients) {
+      const reason = request.reason || "no reason given";
+
+      // Principals/admins: it's theirs to action.
+      for (const to of adminEmails) {
         await sendEmail({
           to,
-          subject: `Approval needed — sub request: ${what}`,
-          text: `${who} reported an absence (${request.reason || "no reason given"}) and needs a sub for ${what}. Approve or deny in the dashboard.`,
-          html: `<p><strong>${who}</strong> reported an absence (${request.reason || "no reason given"}) and needs a sub for <strong>${what}</strong>. Approve or deny in the dashboard.</p>`,
-        }).catch((e) => console.error("[subs:notifyApprovalNeeded]", e?.message || e));
+          subject: `ACTION NEEDED — approve sub request: ${what}`,
+          text: `${who} reported an absence (${reason}) and needs a sub for ${what}.\n\nACTION NEEDED: approve or deny in the dashboard.`,
+          html: `<p><strong>${who}</strong> reported an absence (${reason}) and needs a sub for <strong>${what}</strong>.</p><p><strong>Action needed:</strong> approve or deny in the dashboard.</p>`,
+        }).catch((e) => console.error("[subs:notifyApprovalNeeded:admin]", e?.message || e));
       }
+
+      // VP: make crystal-clear whether it's theirs to action or just FYI.
+      if (vpEmail && !adminEmails.includes(vpEmail)) {
+        if (vpCanApprove) {
+          await sendEmail({
+            to: vpEmail,
+            subject: `ACTION NEEDED — approve sub request: ${what}`,
+            text: `${who} reported an absence (${reason}) for ${what}.\n\nThis one is yours to approve — please approve or deny in the app.`,
+            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><strong>Action needed — yours to approve:</strong> approve or deny in the app.</p>`,
+          }).catch((e) => console.error("[subs:notifyApprovalNeeded:vp]", e?.message || e));
+        } else {
+          await sendEmail({
+            to: vpEmail,
+            subject: `FYI — sub request: ${what}`,
+            text: `${who} reported an absence (${reason}) for ${what}.\n\nFYI only — the principal will approve this. No action needed from you.`,
+            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><em>FYI only — the principal will approve. No action needed from you.</em></p>`,
+          }).catch((e) => console.error("[subs:notifyApprovalNeeded:vpfyi]", e?.message || e));
+        }
+      }
+
       // Text the VP only when it's THEIR decision to approve.
       if (vpCanApprove && vpPhone) {
-        await sendSms({ to: vpPhone, text: `Approval needed — ${who}: ${shortLine(request, school, gradeLevel)}. Approve/deny in the app.` }).catch(() => {});
+        await sendSms({ to: vpPhone, text: `ACTION NEEDED — approve: ${who}, ${shortLine(request, school, gradeLevel)}. Approve/deny in the app.` }).catch(() => {});
       }
     },
 

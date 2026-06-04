@@ -256,6 +256,7 @@ router.post("/request-sub", requireSubsAuth, audioBody, async (req, res) => {
   const request = await SubsRequest.create({
     schoolId: b.schoolId,
     gradeLevelId: b.gradeLevelId,
+    division: grade?.division || "",
     date: b.date,
     urgency,
     escalationIntervalMs: urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS,

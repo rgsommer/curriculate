@@ -957,6 +957,9 @@ function VpDashboard() {
         <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
           Absences awaiting your approval. What you can approve depends on the principal's policy for your school.
         </p>
+        <p style={{ fontSize: 13, color: "#64748b", margin: "6px 0 0" }}>
+          Need a sub for your own class? Switch to the <strong>Teacher / Sub</strong> tab to report your absence.
+        </p>
       </div>
       <ApprovalsQueue emptyNote="Nothing awaiting your approval right now." />
     </div>
@@ -1087,10 +1090,13 @@ function SchoolPanel({ school }) {
         <h2 style={C.h2}>Substitute pool</h2>
         <div style={{ display: "grid", gap: 6 }}>
           {teachers.map((t) => (
-            <div key={t._id} style={C.row}>
-              <span style={{ fontWeight: 600 }}>{t.name || "(no name)"}</span>
-              <span style={{ color: "#64748b", fontSize: 13 }}>{t.email}</span>
-              {t.active === false && <span style={C.pill("#fee2e2", "#b91c1c")}>inactive</span>}
+            <div key={t._id} style={{ borderBottom: "1px solid #f8fafc", paddingBottom: 6 }}>
+              <div style={C.row}>
+                <span style={{ fontWeight: 600 }}>{t.name || "(no name)"}</span>
+                <span style={{ color: "#64748b", fontSize: 13 }}>{t.email}</span>
+                {t.active === false && <span style={C.pill("#fee2e2", "#b91c1c")}>inactive</span>}
+              </div>
+              {(school.divisions || []).length > 0 && <ApprovedDivisions teacher={t} school={school} onSaved={loadTeachers} />}
             </div>
           ))}
           {teachers.length === 0 && <span style={{ color: "#94a3b8" }}>No substitutes added yet.</span>}
@@ -1403,6 +1409,39 @@ function SchoolSettings({ school, onSaved }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Per-sub "approved for these grade ranges" chips (admin-set).
+function ApprovedDivisions({ teacher, school, onSaved }) {
+  const [sel, setSel] = useState(teacher.approvedDivisions || []);
+  const [saved, setSaved] = useState(false);
+  const divs = (school.divisions || []).map((d) => d.name).filter(Boolean);
+  async function toggle(name) {
+    const next = sel.includes(name) ? sel.filter((x) => x !== name) : [...sel, name];
+    setSel(next);
+    await api(`/api/subs-admin/teachers/${teacher._id}`, { method: "PATCH", body: { approvedDivisions: next } });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1000);
+    onSaved && onSaved();
+  }
+  return (
+    <div style={{ ...C.row, gap: 6, marginTop: 3, fontSize: 12 }}>
+      <span style={{ color: "#94a3b8" }}>Approved for:</span>
+      {divs.map((name) => (
+        <button
+          key={name}
+          type="button"
+          onClick={() => toggle(name)}
+          style={sel.includes(name) ? { ...C.pill("#2563eb", "#fff"), border: 0, cursor: "pointer" } : { ...C.pill("#f1f5f9", "#334155"), border: 0, cursor: "pointer" }}
+        >
+          {sel.includes(name) ? "✓ " : ""}
+          {name}
+        </button>
+      ))}
+      {sel.length === 0 && <span style={{ color: "#94a3b8" }}>(all)</span>}
+      {saved && <span style={{ color: "#15803d" }}>saved</span>}
     </div>
   );
 }

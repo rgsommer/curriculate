@@ -28,6 +28,10 @@ const SubsTeacherSchema = new mongoose.Schema(
     qualifications: { type: [String], default: [] }, // e.g. "French", "HS Math", "Chemistry", "SpEd"
     roleTypes: { type: [String], default: ["teacher"] }, // teacher | ea | specialist | tech
     gradeComfort: { type: [String], default: [] }, // grade names the sub is comfortable with
+    // Divisions (grade ranges) the principal has approved this sub for,
+    // e.g. ["JK–SK", "1–5"]. When set, the sub is only offered requests
+    // whose grade falls in one of these divisions. Empty = no restriction.
+    approvedDivisions: { type: [String], default: [] },
 
     // ── Faith / mission fit (challenge #11; self-declared) ─────────────
     faithFit: {

@@ -240,6 +240,19 @@ router.post("/teachers", async (req, res) => {
   res.json({ teacher });
 });
 
+// Set the divisions (grade ranges) a sub is approved for.
+router.patch("/teachers/:id", async (req, res) => {
+  const { id } = req.params;
+  if (!isOid(id)) return res.status(400).json({ error: "Bad teacher id" });
+  const set = {};
+  if (Array.isArray(req.body?.approvedDivisions)) {
+    set.approvedDivisions = req.body.approvedDivisions.filter((d) => typeof d === "string" && d.trim()).map((d) => d.trim());
+  }
+  const teacher = await SubsTeacher.findByIdAndUpdate(id, { $set: set }, { new: true }).lean();
+  if (!teacher) return res.status(404).json({ error: "Teacher not found" });
+  res.json({ teacher });
+});
+
 // ── Preference ranking per (school, grade) ────────────────────────────
 
 router.get("/schools/:id/grades/:gid/ranking", loadAdminSchool, async (req, res) => {
@@ -307,6 +320,7 @@ router.post("/requests", async (req, res) => {
   const request = await SubsRequest.create({
     schoolId,
     gradeLevelId,
+    division: grade?.division || "",
     date,
     urgency,
     escalationIntervalMs,
@@ -623,10 +637,12 @@ router.post("/preview", async (req, res) => {
   const urgency = req.body?.urgency === "advance" ? "advance" : "urgent";
   const override = Number(req.body?.escalationIntervalMs);
   const intervalMs = Number.isFinite(override) && override > 0 ? override : urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS;
+  const previewGrade = await SubsGradeLevel.findById(gradeLevelId).lean();
   const pseudo = {
     requiredRole: typeof req.body?.requiredRole === "string" ? req.body.requiredRole : "teacher",
     requiredQualifications: Array.isArray(req.body?.requiredQualifications) ? req.body.requiredQualifications.filter((q) => typeof q === "string") : [],
     requiredFaithFit: school.faithFit?.enabled && Array.isArray(req.body?.requiredFaithFit) ? req.body.requiredFaithFit : [],
+    division: previewGrade?.division || "",
   };
 
   const ranking = await SubsRanking.findOne({ schoolId, gradeLevelId }).lean();

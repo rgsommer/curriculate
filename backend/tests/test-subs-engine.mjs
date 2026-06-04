@@ -17,6 +17,7 @@
 
 import assert from "node:assert";
 import { createEngine } from "../services/subsEngine.js";
+import { isEligible } from "../services/subsMatching.js";
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -360,6 +361,24 @@ async function testCancelAcceptance() {
   ok("cancel reopens the request and contacts the next sub");
 }
 
+// ── Test 10: approved-divisions + General qualification ───────────────
+function testApprovedDivisionsAndGeneral() {
+  console.log("Test 10: approved-divisions gate + 'General' qualification");
+  const sub = { active: true, roleTypes: ["teacher"], qualifications: [], approvedDivisions: ["6–8"] };
+
+  assert.equal(isEligible(sub, { requiredRole: "teacher", division: "6–8" }), true, "approved for 6–8 → eligible for 6–8");
+  ok("a sub approved for a division is eligible there");
+  assert.equal(isEligible(sub, { requiredRole: "teacher", division: "JK–5" }), false, "not approved for JK–5 → ineligible");
+  ok("a sub is blocked from divisions they're not approved for");
+
+  // "General" required → no subject filter.
+  const plain = { active: true, roleTypes: ["teacher"], qualifications: [] };
+  assert.equal(isEligible(plain, { requiredRole: "teacher", requiredQualifications: ["General"] }), true, "General → any teacher qualifies");
+  ok("'General' qualification imposes no subject filter");
+  assert.equal(isEligible(plain, { requiredRole: "teacher", requiredQualifications: ["French"] }), false, "specific subject still filters");
+  ok("a specific required subject still filters");
+}
+
 (async () => {
   console.log("\nsubs escalation engine — tests\n");
   await testUrgentEscalation();
@@ -371,6 +390,7 @@ async function testCancelAcceptance() {
   await testInternalCoverage();
   await testApprovalGating();
   await testCancelAcceptance();
+  testApprovedDivisionsAndGeneral();
   console.log(`\n${passed} assertions passed ✓\n`);
 })().catch((err) => {
   console.error("\n✗ TEST FAILED:", err.message);
