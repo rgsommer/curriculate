@@ -123,11 +123,21 @@ function StatusPill({ status }) {
     accepted: ["#dcfce7", "#15803d"],
     exhausted: ["#fee2e2", "#b91c1c"],
     declined: ["#fee2e2", "#b91c1c"],
+    skipped: ["#fee2e2", "#b91c1c"],
     expired: ["#f1f5f9", "#64748b"],
     cancelled: ["#f1f5f9", "#64748b"],
   };
   const [bg, fg] = map[status] || ["#f1f5f9", "#64748b"];
   return <span style={C.pill(bg, fg)}>{status}</span>;
+}
+
+function clockTime(iso) {
+  if (!iso) return "";
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "";
+  }
 }
 
 function timeLeft(expiresAt) {
@@ -2079,10 +2089,17 @@ function RequestsBoard({ school }) {
           )}
           <div style={{ marginTop: 8 }}>
             {r.offers.map((o) => (
-              <div key={o._id} style={{ ...C.row, fontSize: 13, padding: "2px 0" }}>
-                <span style={{ color: "#94a3b8", width: 28 }}>#{o.rank + 1}</span>
-                <span style={{ minWidth: 140 }}>{o.teacherName}</span>
-                <StatusPill status={o.status} />
+              <div key={o._id} style={{ ...C.row, fontSize: 13, padding: "3px 0", borderBottom: "1px solid #f8fafc" }}>
+                <span style={{ color: "#94a3b8", width: 28 }}>{o.rank >= 0 ? `#${o.rank + 1}` : "★"}</span>
+                <span style={{ minWidth: 130, fontWeight: 600 }}>{o.teacherName}</span>
+                {o.teacherPhone && (
+                  <a href={`tel:${o.teacherPhone.replace(/[^\d+]/g, "")}`} style={{ color: "#2563eb", textDecoration: "none" }} title="Call this sub">
+                    📞 {o.teacherPhone}
+                  </a>
+                )}
+                <StatusPill status={o.status === "declined" ? "skipped" : o.status} />
+                {o.sentAt && <span style={{ color: "#94a3b8" }}>contacted {clockTime(o.sentAt)}</span>}
+                {o.respondedAt && o.status !== "pending" && <span style={{ color: "#94a3b8" }}>· replied {clockTime(o.respondedAt)}</span>}
                 {o.status === "pending" && <span style={{ color: "#a16207" }}>{timeLeft(o.expiresAt)}</span>}
                 {o.channels?.length > 0 && <span style={{ color: "#94a3b8" }}>via {o.channels.join(", ")}</span>}
               </div>

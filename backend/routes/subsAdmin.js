@@ -350,6 +350,9 @@ router.get("/schools/:id/requests", loadAdminSchool, async (req, res) => {
       respondedAt: o.respondedAt,
       channels: o.channels,
       teacherName: t?.name || t?.email || "Unknown",
+      // So the principal can call the sub directly if they want to.
+      teacherPhone: t?.phone || "",
+      teacherEmail: t?.email || "",
     });
     offersByReq.set(String(o.requestId), arr);
   }
