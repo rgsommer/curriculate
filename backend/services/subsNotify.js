@@ -74,12 +74,28 @@ async function sendViaSns(to, text) {
   const out = await sns.send(new PublishCommand({ PhoneNumber: toE164(to), Message: text, MessageAttributes }));
   // MessageId confirms SNS accepted it; actual carrier delivery depends on
   // sandbox status / a registered origination number (trace via CloudWatch).
-  return { ok: true, messageId: out?.MessageId || null, region };
+  return { ok: true, messageId: out?.MessageId || null, region, provider: "sns" };
 }
 
-// SMS. Picks a real provider when configured, else logs to the console so
-// local dev needs no account. Order: Twilio (if its creds are set) →
-// AWS SNS (when opted in via SUBS_SNS_SMS=1) → mock.
+// Text Request (Esendex) — v3 REST API. Auth via x-api-key; a dashboard_id
+// identifies the sending number. Needs TEXTREQUEST_API_KEY +
+// TEXTREQUEST_DASHBOARD_ID (admin → API Access).
+async function sendViaTextRequest(to, text) {
+  const r = await fetch("https://api.textrequest.com/api/v3/messages", {
+    method: "POST",
+    headers: { "x-api-key": process.env.TEXTREQUEST_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ dashboard_id: process.env.TEXTREQUEST_DASHBOARD_ID, phone_number: toE164(to), message_body: text }),
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    throw new Error(`TextRequest ${r.status}: ${t.slice(0, 200)}`);
+  }
+  const data = await r.json().catch(() => ({}));
+  return { ok: true, messageId: data?.message_id || null, provider: "textrequest" };
+}
+
+// SMS. Picks a configured provider, else logs to the console so local dev
+// needs no account. Order: Twilio → Text Request → AWS SNS → mock.
 async function sendSms({ to, text }) {
   if (!to) return { ok: false, reason: "no_phone" };
 
@@ -101,7 +117,12 @@ async function sendSms({ to, text }) {
       const t = await r.text().catch(() => "");
       throw new Error(`Twilio ${r.status}: ${t.slice(0, 200)}`);
     }
-    return { ok: true };
+    return { ok: true, provider: "twilio" };
+  }
+
+  // Text Request (free during the 14-day trial; admin API key + dashboard).
+  if (process.env.TEXTREQUEST_API_KEY && process.env.TEXTREQUEST_DASHBOARD_ID) {
+    return sendViaTextRequest(to, text);
   }
 
   // AWS SNS — opt in explicitly so we never run up SMS charges by accident.
@@ -110,7 +131,7 @@ async function sendSms({ to, text }) {
   }
 
   console.log(`\n[subs:sms:MOCK] → ${to}\n  ${text}\n`);
-  return { ok: true, mock: true };
+  return { ok: true, mock: true, provider: "mock" };
 }
 
 // ── Message builders ──────────────────────────────────────────────────

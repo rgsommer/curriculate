@@ -34,6 +34,14 @@ const REPORTER = { email: "", name: "" };
 // UI shows that texts are a paid add-on and email is the default channel.
 let SMS_ENABLED = false;
 
+// Friendly result line after a test send, tailored to the provider.
+function smsTestMessage(r) {
+  if (r.provider === "sns") return `Accepted by SNS 📲 in ${r.region || "?"} — if it doesn't arrive, configure SMS (sandbox/origination) in that region.`;
+  if (r.provider === "textrequest") return "Sent via Text Request 📲 — check your phone.";
+  if (r.provider === "twilio") return "Sent via Twilio 📲 — check your phone.";
+  return "Sent 📲 — check your phone.";
+}
+
 // Reused notice wherever SMS controls appear.
 function SmsPaidNotice() {
   if (SMS_ENABLED) return null;
@@ -1242,7 +1250,7 @@ function SchoolSettings({ school, onSaved }) {
     setTesting(true);
     try {
       const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone: adminPhone } });
-      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : `Accepted by SNS 📲 in ${r.region || "?"} — if it doesn't arrive, configure SMS (sandbox/origination) in that region.`);
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : smsTestMessage(r));
     } catch (e) {
       setTestMsg(e.message);
     } finally {
@@ -2854,7 +2862,7 @@ function TeacherProfile({ teacher, onSaved }) {
     setTesting(true);
     try {
       const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone } });
-      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : `Accepted by SNS 📲 in ${r.region || "?"} — if it doesn't arrive, configure SMS (sandbox/origination) in that region.`);
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : smsTestMessage(r));
     } catch (e) {
       setTestMsg(e.message);
     } finally {

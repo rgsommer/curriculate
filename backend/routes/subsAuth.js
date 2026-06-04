@@ -164,6 +164,7 @@ router.get("/me", async (req, res) => {
   // false, the UI shows that texts are a paid add-on and email is used.
   const smsEnabled =
     !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM) ||
+    !!(process.env.TEXTREQUEST_API_KEY && process.env.TEXTREQUEST_DASHBOARD_ID) ||
     process.env.SUBS_SNS_SMS === "1" ||
     process.env.SUBS_SMS_PROVIDER === "sns";
   return res.json({
