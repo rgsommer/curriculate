@@ -31,6 +31,8 @@ const FEATURES = [
   ["✅", "Approve in a tap — or let your VP", "Teacher-reported absences wait for approval so nothing goes out without your say-so. You decide how much authority your VP has: nothing, sick days only, or everything — and the right VP is looped in automatically."],
   ["📨", "The right people, automatically", "When a sub accepts, the system notifies the substitute, the appropriate VP (who handles lesson plans), finance, and the absent teacher — who can reply-all with their plans, VP cc'd. You're done."],
   ["📊", "Absence records & reports", "Every absence is logged per teacher. See a breakdown by reason on screen or email yourself a report on demand. Teachers can see their own record too."],
+  ["🔄", "Plans change? It re-fills itself", "If a sub who accepted has to back out, they cancel in a tap — the request reopens and the system automatically resumes contacting the next available subs. You're notified, and so is the next person in line."],
+  ["🗺️", "Directions, one tap", "When a sub accepts, their confirmation email and screen include a Google Maps link straight to the school — handy for someone covering a building they don't usually work in."],
 ];
 
 export default function SubsFeaturesPage() {

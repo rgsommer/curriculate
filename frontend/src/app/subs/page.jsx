@@ -274,6 +274,16 @@ const GRADE_OPTIONS = [
   "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
 ];
 
+// "Grade 5 (Mrs. Lackey)" — class identified by grade + absent teacher.
+function classLabel(grade, absentName) {
+  return absentName ? `${grade} (${absentName})` : grade;
+}
+// Google Maps navigation link to a school (for accepted assignments).
+function gmapsUrl(name, address) {
+  const dest = [name, address].filter(Boolean).join(", ");
+  return dest ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}` : "";
+}
+
 // Multi-select chip picker: common options as toggle chips + an "add your
 // own" box. Value is an array of strings. Normalizes input so matching is
 // reliable while still allowing custom entries.
@@ -748,7 +758,7 @@ function MorningDashboard() {
                 {r.urgency === "urgent" ? "URGENT" : "advance"}
               </span>
               <strong>{r.schoolAbbrev || r.schoolName}</strong>
-              <span>{r.gradeName}</span>
+              <span>{classLabel(r.gradeName, r.absentTeacher?.name)}</span>
               <span style={C.pill("#f1f5f9", "#334155")}>{dayPartLabel(r)}</span>
               {r.requiredRole && r.requiredRole !== "teacher" && <span style={C.pill("#f1f5f9", "#334155")}>{r.requiredRole}</span>}
               <span style={{ color: bell.urgent ? "#b91c1c" : "#64748b", fontWeight: bell.urgent ? 700 : 400, fontSize: 13 }}>⏰ {bell.text}</span>
@@ -1988,7 +1998,7 @@ function RequestsBoard({ school }) {
         <div key={r._id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, marginBottom: 10 }}>
           <div style={{ ...C.row, justifyContent: "space-between" }}>
             <div style={C.row}>
-              <strong>{r.gradeName}</strong>
+              <strong>{classLabel(r.gradeName, r.absentTeacher?.name)}</strong>
               <span style={{ color: "#64748b" }}>{r.date}</span>
               <span style={C.pill("#f1f5f9", "#334155")}>{dayPartLabel(r)}</span>
               <StatusPill status={r.status} />
@@ -2480,7 +2490,7 @@ function TeacherDashboard() {
           <div key={o._id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: 12, marginBottom: 10 }}>
             <div style={C.row}>
               <strong>{o.request?.schoolAbbrev || o.request?.schoolName}</strong>
-              <span>{o.request?.gradeName}</span>
+              <span>{classLabel(o.request?.gradeName, o.request?.absentTeacherName)}</span>
               <span style={{ color: "#64748b" }}>{o.request?.date}</span>
               <span style={C.pill("#f1f5f9", "#334155")}>{dayPartLabel(o.request)}</span>
               <span style={C.pill(o.request?.urgency === "urgent" ? "#fef3c7" : "#e0e7ff", o.request?.urgency === "urgent" ? "#92400e" : "#3730a3")}>
@@ -2494,6 +2504,14 @@ function TeacherDashboard() {
             )}
             {o.request?.notes && <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>{o.request.notes}</div>}
             {o.request?.supportLevel && <div style={{ color: "#64748b", fontSize: 13 }}>Support: {o.request.supportLevel}</div>}
+            {o.request?.schoolAddress && (
+              <div style={{ fontSize: 13, marginTop: 4 }}>
+                📍 {o.request.schoolAddress} ·{" "}
+                <a href={gmapsUrl(o.request.schoolName, o.request.schoolAddress)} target="_blank" rel="noreferrer" style={{ color: "#2563eb" }}>
+                  Directions
+                </a>
+              </div>
+            )}
             {o.request?.hasLessonPlan && (
               <div style={{ fontSize: 13, marginTop: 4 }}>
                 📋 Lesson plan {Math.round((o.request.lessonPlanCompleteness || 0) * 100)}% ready
@@ -2518,9 +2536,14 @@ function TeacherDashboard() {
         {history.map((o) => (
           <div key={o._id} style={{ ...C.row, fontSize: 14, padding: "4px 0" }}>
             <span style={{ minWidth: 90 }}>{o.request?.date}</span>
-            <span style={{ minWidth: 100 }}>{o.request?.gradeName}</span>
+            <span style={{ minWidth: 120 }}>{classLabel(o.request?.gradeName, o.request?.absentTeacherName)}</span>
             <span style={{ color: "#64748b", minWidth: 140 }}>{o.request?.schoolName}</span>
             <StatusPill status={o.status} />
+            {o.status === "accepted" && o.request?.schoolAddress && (
+              <a href={gmapsUrl(o.request.schoolName, o.request.schoolAddress)} target="_blank" rel="noreferrer" style={{ ...C.btnGhost, textDecoration: "none" }}>
+                📍 Navigate
+              </a>
+            )}
             {o.status === "accepted" && o.request?.status === "filled" && (
               <button style={C.btnRed} onClick={() => respond(o._id, "cancel")}>
                 Cancel my acceptance

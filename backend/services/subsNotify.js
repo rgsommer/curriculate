@@ -130,18 +130,32 @@ export function dayPartLabel(request) {
   }
 }
 
+// "Grade 5 (Mrs. Lackey)" — identify the class by grade + the absent
+// teacher's name (no need to model 5A/5B sections).
+function classLabel(request, gradeLevel) {
+  const grade = gradeLevel?.name || "a class";
+  const who = request.absentTeacher?.name ? ` (${request.absentTeacher.name})` : "";
+  return `${grade}${who}`;
+}
+
 function describe(request, school, gradeLevel) {
   const when =
     request.urgency === "urgent" ? "TODAY (urgent)" : `on ${request.date}`;
-  return `${gradeLevel?.name || "a class"} at ${school?.name || "a school"} ${when} (${dayPartLabel(request)})`;
+  return `${classLabel(request, gradeLevel)} at ${school?.name || "a school"} ${when} (${dayPartLabel(request)})`;
 }
 
 // Short SMS-style line a multi-school sub can read at a glance, prefixed
-// with the school abbreviation: "BCS: teach Gr5 on 2026-06-05 at 08:30".
+// with the school abbreviation: "BCS: teach Gr5 (Mrs. Lackey) on 2026-06-05".
 function shortLine(request, school, gradeLevel) {
   const tag = school?.abbrev || school?.name || "School";
   const role = request.requiredRole && request.requiredRole !== "teacher" ? request.requiredRole : "teach";
-  return `${tag}: ${role} ${gradeLevel?.name || "class"} on ${request.date} (${dayPartLabel(request)})`;
+  return `${tag}: ${role} ${classLabel(request, gradeLevel)} on ${request.date} (${dayPartLabel(request)})`;
+}
+
+// Google Maps navigation link to the school (item: nav link for the sub).
+function mapsLink(school) {
+  const dest = [school?.name, school?.address].filter(Boolean).join(", ");
+  return dest ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(dest)}` : "";
 }
 
 // ── Public interface ──────────────────────────────────────────────────
@@ -216,13 +230,19 @@ export function createNotifier() {
       const what = describe(request, school, gradeLevel);
       const subName = teacher?.name || teacher?.email || "A substitute";
 
-      // 1) Confirm to the substitute who accepted.
+      // 1) Confirm to the substitute who accepted — include a Google Maps
+      //    navigation link to the school for the day.
       if (teacher?.email) {
+        const maps = mapsLink(school);
+        const addr = school?.address ? `\nAddress: ${school.address}` : "";
         await sendEmail({
           to: teacher.email,
           subject: `Confirmed: ${what}`,
-          text: `Thanks ${teacher.name || ""}! You're confirmed to substitute for ${what}.`,
-          html: `<p>Thanks ${teacher.name || ""}! You're confirmed to substitute for <strong>${what}</strong>.</p>`,
+          text: `Thanks ${teacher.name || ""}! You're confirmed to substitute for ${what}.${addr}${maps ? `\nDirections: ${maps}` : ""}`,
+          html:
+            `<p>Thanks ${teacher.name || ""}! You're confirmed to substitute for <strong>${what}</strong>.</p>` +
+            (school?.address ? `<p>${school.address}</p>` : "") +
+            (maps ? `<p><a href="${maps}" style="background:#16a34a;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;">📍 Navigate (Google Maps)</a></p>` : ""),
         }).catch((e) => console.error("[subs:notifyFilled:teacher]", e?.message || e));
       }
 

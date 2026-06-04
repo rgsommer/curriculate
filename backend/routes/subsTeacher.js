@@ -67,7 +67,7 @@ async function decorateOffers(offers) {
   const schoolIds = [...new Set(requests.map((r) => String(r.schoolId)))];
   const gradeIds = [...new Set(requests.map((r) => String(r.gradeLevelId)))];
   const [schools, grades] = await Promise.all([
-    SubsSchool.find({ _id: { $in: schoolIds } }).select("name location").lean(),
+    SubsSchool.find({ _id: { $in: schoolIds } }).select("name abbrev location address").lean(),
     SubsGradeLevel.find({ _id: { $in: gradeIds } }).select("name").lean(),
   ]);
   const schoolById = new Map(schools.map((s) => [String(s._id), s]));
@@ -103,7 +103,9 @@ async function decorateOffers(offers) {
             supportLevel: r.supportLevel,
             schoolName: school?.name || "—",
             schoolAbbrev: school?.abbrev || "",
+            schoolAddress: school?.address || "",
             gradeName: gradeById.get(String(r.gradeLevelId))?.name || "—",
+            absentTeacherName: r.absentTeacher?.name || "",
             hasLessonPlan: !!r.lessonPlanId,
             lessonPlanCompleteness: r.lessonPlanId ? planById.get(String(r.lessonPlanId))?.completeness ?? 0 : null,
           }
