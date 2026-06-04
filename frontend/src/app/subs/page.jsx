@@ -1276,6 +1276,7 @@ function SchoolSettings({ school, grades = [], onSaved }) {
   const [divisions, setDivisions] = useState(school.divisions || []);
   const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
   const [requireSickVoice, setRequireSickVoice] = useState(!!school.requireSickVoiceNote);
+  const [shareSub, setShareSub] = useState(school.shareSubEmailWithTeacher !== false);
   const [adminPhone, setAdminPhone] = useState(school.adminPhone || "");
   const [address, setAddress] = useState(school.address || "");
   const [phone, setPhone] = useState(school.phone || "");
@@ -1294,7 +1295,7 @@ function SchoolSettings({ school, grades = [], onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, vpName, vpPhone, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd, divisions: divisions.filter((d) => d.name?.trim()) },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, vpName, vpPhone, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, shareSubEmailWithTeacher: shareSub, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd, divisions: divisions.filter((d) => d.name?.trim()) },
       });
       onSaved();
       setOpen(false);
@@ -1474,6 +1475,14 @@ function SchoolSettings({ school, grades = [], onSaved }) {
           <label style={{ ...C.row, marginTop: 10 }}>
             <input type="checkbox" checked={requireSickVoice} onChange={(e) => setRequireSickVoice(e.target.checked)} /> Require a voice note for sick days
           </label>
+          <label style={{ ...C.row, marginTop: 10 }}>
+            <input type="checkbox" checked={shareSub} onChange={(e) => setShareSub(e.target.checked)} /> Let teachers email lesson plans straight to the sub
+          </label>
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: "2px 0 0" }}>
+            {shareSub
+              ? "On a fill, the teacher can reply with plans to the sub + VP."
+              : "Off: the sub's email stays private — plans reply to the VP only, who relays to the sub."}
+          </p>
           <label style={{ ...C.row, marginTop: 10 }}>
             <input type="checkbox" checked={faith} onChange={(e) => setFaith(e.target.checked)} /> Enable mission / faith-fit attributes
           </label>

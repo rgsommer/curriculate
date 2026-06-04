@@ -78,6 +78,11 @@ const SubsSchoolSchema = new mongoose.Schema(
     // principal can play from the approval.
     requireSickVoiceNote: { type: Boolean, default: false },
 
+    // When true (default), the absent teacher can reply to the fill email
+    // with lesson plans straight to the sub + VP. When false, the sub's
+    // email is kept private — plans go to the VP only, who relays them.
+    shareSubEmailWithTeacher: { type: Boolean, default: true },
+
     // Reusable link the principal broadcasts to all staff. Clicking it
     // (while signed in) connects the teacher to this school's staff roster.
     staffJoinToken: { type: String, default: "", index: true },

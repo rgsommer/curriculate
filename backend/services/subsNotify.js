@@ -401,21 +401,23 @@ export function createNotifier() {
       // 4) The absent teacher: "X is covering for you — reply-all (VP cc'd)
       //    with your lesson plans." Cc the sub + VP so reply-all reaches both.
       if (absentTeacher?.email) {
-        // Reply-To = sub + VP, so a plain reply (or reply-all) with the
-        // lesson plans reaches both — works regardless of the From address.
-        const subVp = [teacher?.email, vpEmail].filter(Boolean);
+        // Principal controls whether the sub's email is shared with the
+        // teacher. On → reply reaches sub + VP. Off → VP only (relays).
+        const shareSub = school?.shareSubEmailWithTeacher !== false;
+        const recips = (shareSub ? [teacher?.email, vpEmail] : [vpEmail]).filter(Boolean);
+        const dest = shareSub ? "your VP and your sub will both receive them" : "they go to your VP, who passes them to your sub";
         await sendEmail({
           to: absentTeacher.email,
-          ...(subVp.length ? { cc: subVp, replyTo: subVp } : {}),
+          ...(recips.length ? { cc: recips, replyTo: recips } : {}),
           subject: `Your ${gradeLevel?.name || "class"} is covered on ${request.date} — please send lesson plans`,
           text:
             `Hi ${absentTeacher.name || ""},\n\n${subName} will cover your ${gradeLevel?.name || "class"} on ${request.date}.\n\n` +
-            `Just REPLY (or reply-all) to this email with your lesson plans and any notes — your VP and your sub will both receive them.`,
+            `Just REPLY to this email with your lesson plans and any notes — ${dest}.`,
           html: renderEmail({
             accent: "#16a34a",
             badge: pill("✓ Covered", "#dcfce7", "#15803d"),
             title: `Your class is covered — please send lesson plans`,
-            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply</strong> (or reply-all) to this email with your lesson plans and notes — your VP and your sub will both receive them.`,
+            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply</strong> to this email with your lesson plans and notes — ${dest}.`,
             rows: requestRows(request, school, gradeLevel),
           }),
         }).catch((e) => console.error("[subs:notifyFilled:absent]", e?.message || e));

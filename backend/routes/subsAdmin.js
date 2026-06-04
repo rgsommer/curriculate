@@ -160,6 +160,7 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   }
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
   if (typeof req.body?.requireSickVoiceNote === "boolean") set.requireSickVoiceNote = req.body.requireSickVoiceNote;
+  if (typeof req.body?.shareSubEmailWithTeacher === "boolean") set.shareSubEmailWithTeacher = req.body.shareSubEmailWithTeacher;
   await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });
   const school = await SubsSchool.findById(req.school._id).lean();
   res.json({ school });
