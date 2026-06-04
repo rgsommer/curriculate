@@ -160,6 +160,12 @@ router.get("/me", async (req, res) => {
     SubsGradeLevel.find({ vpEmail: email }).select("name schoolId").lean(),
   ]);
   const vpSchoolIds = new Set([...vpSchools.map((s) => String(s._id)), ...vpGrades.map((g) => String(g.schoolId))]);
+  // Whether a real SMS provider is configured (Twilio or AWS SNS). When
+  // false, the UI shows that texts are a paid add-on and email is used.
+  const smsEnabled =
+    !!(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN && process.env.TWILIO_FROM) ||
+    process.env.SUBS_SNS_SMS === "1" ||
+    process.env.SUBS_SMS_PROVIDER === "sns";
   return res.json({
     email,
     isAdmin: schools.length > 0,
@@ -167,6 +173,7 @@ router.get("/me", async (req, res) => {
     isVp: vpSchoolIds.size > 0,
     isTeacher: !!teacher,
     teacher: teacher || null,
+    smsEnabled,
   });
 });
 

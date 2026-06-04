@@ -30,6 +30,20 @@ const AUTH_KEY = "subs.auth.v1";
 // Identity for feedback/error reports (set once /me resolves). Non-secret.
 const REPORTER = { email: "", name: "" };
 
+// Whether a real SMS provider is configured (set from /me). When false, the
+// UI shows that texts are a paid add-on and email is the default channel.
+let SMS_ENABLED = false;
+
+// Reused notice wherever SMS controls appear.
+function SmsPaidNotice() {
+  if (SMS_ENABLED) return null;
+  return (
+    <div style={{ fontSize: 12, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "6px 10px", marginTop: 6 }}>
+      📱 Text (SMS) alerts are a paid add-on and aren't switched on yet — everyone is notified by <strong>email</strong> for now (it works great). SMS can be enabled later.
+    </div>
+  );
+}
+
 // Breadcrumb trail — a ring buffer of recent actions so a feedback report
 // or auto-captured error shows what the user tried and where they stopped.
 // Kept small and non-sensitive (labels only, never form values).
@@ -462,6 +476,7 @@ export default function SubsPage() {
       const data = await api("/api/subs-auth/me");
       REPORTER.email = data.email || "";
       REPORTER.name = data.teacher?.name || "";
+      SMS_ENABLED = !!data.smsEnabled;
       setMe(data);
       // Land on the most relevant view: admins on admin, VP-only users on
       // the approvals view, everyone else on the teacher view.
@@ -1374,6 +1389,7 @@ function SchoolSettings({ school, onSaved }) {
               </button>
             </div>
             {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("📲") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
+            <SmsPaidNotice />
           </div>
           <div style={{ marginTop: 10 }}>
             <label style={C.label}>VP can approve absences</label>
@@ -2914,6 +2930,7 @@ function TeacherProfile({ teacher, onSaved }) {
             <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Available for offers
           </label>
         </div>
+        <SmsPaidNotice />
 
         <label style={C.label}>I can serve as</label>
         <div style={C.row}>
