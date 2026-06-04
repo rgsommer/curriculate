@@ -113,7 +113,7 @@ export default function TeebeePayApp() {
       {view === "users" && <UsersPage me={me} onBack={() => setView("dashboard")} />}
       {view === "service_fees" && <ServiceFeesPage me={me} onBack={() => setView("dashboard")} />}
       {view === "employee" && <EmployeeProfile me={me} employeeId={selectedEmployeeId}
-        onBack={() => setView("company")} onOpenPeriod={goPeriod} />}
+        onBack={() => setView("company")} onOpenPeriod={goPeriod} onOpenEmployee={goEmployee} />}
       {view === "audit_log" && <AuditLogPage me={me} onBack={() => setView("dashboard")} />}
       {view === "my_team" && <MyTeamPage me={me} onBack={() => setView("dashboard")} />}
       {view === "my_stubs" && <MyStubsPortal me={me} />}
@@ -4472,18 +4472,51 @@ function ProfileDialog({ me, required, onClose, onSaved }) {
 
 /* ─────────── Employee profile ─────────── */
 
-function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod }) {
+function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod, onOpenEmployee }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [selected, setSelected] = useState(new Set());
   const [sending, setSending] = useState(false);
+  // Roster of the current company so we can step through employees with arrows.
+  // Cached by company id — navigating between employees in the same company
+  // reuses it (the same order as the Employees tab: active first, then surname).
+  const [roster, setRoster] = useState(null); // { cid, list: [{id, first_name, last_name, is_active}] }
   useEffect(() => {
     (async () => {
       try { setData(await api(`/api/teebeepay/employees/${employeeId}`)); }
       catch (e) { setError(e.message); }
     })();
   }, [employeeId]);
+  useEffect(() => {
+    const cid = data?.employee?.company_id;
+    if (!cid || roster?.cid === cid) return;
+    (async () => {
+      try {
+        const j = await api(`/api/teebeepay/companies/${cid}/employees`);
+        setRoster({ cid, list: (j.employees || []).map((e) => ({
+          id: e.id, first_name: e.first_name, last_name: e.last_name, is_active: e.is_active,
+        })) });
+      } catch { /* navigation arrows are optional — ignore */ }
+    })();
+  }, [data?.employee?.company_id, roster?.cid]);
+
+  const rosterList = (roster && data && roster.cid === data.employee.company_id) ? roster.list : [];
+  const rosterIdx = rosterList.findIndex((e) => e.id === employeeId);
+  const prevEmp = rosterIdx > 0 ? rosterList[rosterIdx - 1] : null;
+  const nextEmp = rosterIdx >= 0 && rosterIdx < rosterList.length - 1 ? rosterList[rosterIdx + 1] : null;
+  // Left/right arrow keys step through the roster (ignored while typing in a field).
+  useEffect(() => {
+    function onKey(ev) {
+      const t = ev.target;
+      if (t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable)) return;
+      if (ev.metaKey || ev.ctrlKey || ev.altKey) return;
+      if (ev.key === "ArrowLeft" && prevEmp) { ev.preventDefault(); onOpenEmployee?.(prevEmp.id); }
+      else if (ev.key === "ArrowRight" && nextEmp) { ev.preventDefault(); onOpenEmployee?.(nextEmp.id); }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [prevEmp?.id, nextEmp?.id, onOpenEmployee]);
 
   function toggleSel(entryId) {
     setSelected((s) => {
@@ -4537,6 +4570,23 @@ function EmployeeProfile({ me, employeeId, onBack, onOpenPeriod }) {
             {[employee.job_function, employee.department, employee.email].filter(Boolean).join(" · ") || "—"}
           </p>
         </div>
+        {rosterList.length > 1 && rosterIdx >= 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={() => prevEmp && onOpenEmployee?.(prevEmp.id)} disabled={!prevEmp}
+              style={{ ...btnGhostSmall, opacity: prevEmp ? 1 : 0.4, cursor: prevEmp ? "pointer" : "default" }}
+              title={prevEmp ? `${prevEmp.first_name} ${prevEmp.last_name}${prevEmp.is_active ? "" : " (inactive)"}` : "First employee"}>
+              <ChevronLeft size={16} /> Prev
+            </button>
+            <span style={{ fontSize: 13, color: C.muted, minWidth: 64, textAlign: "center" }}>
+              {rosterIdx + 1} of {rosterList.length}
+            </span>
+            <button onClick={() => nextEmp && onOpenEmployee?.(nextEmp.id)} disabled={!nextEmp}
+              style={{ ...btnGhostSmall, opacity: nextEmp ? 1 : 0.4, cursor: nextEmp ? "pointer" : "default" }}
+              title={nextEmp ? `${nextEmp.first_name} ${nextEmp.last_name}${nextEmp.is_active ? "" : " (inactive)"}` : "Last employee"}>
+              Next <ChevronRight size={16} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Summary cards */}

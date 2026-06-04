@@ -65,10 +65,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   try {
     const dbi = await db();
-    await dbi.collection("employees").updateOne(
-      { _id: new ObjectId(eid), company_id: new ObjectId(id) }, { $set }
-    );
-    return NextResponse.json({ ok: true });
+    const filter = { _id: new ObjectId(eid), company_id: new ObjectId(id) };
+    const $unset: any = {};
+    let rehired = false;
+    // Re-employment: when an inactive employee is switched back to active,
+    // they were likely terminated (final pay stamps is_active:0 + terminated_at).
+    // Clear the termination markers so the record reads as a current employee
+    // again, and stamp rehired_at for history. Any outstanding advance balance
+    // is deliberately LEFT in place — if they still owe, payroll resumes
+    // recovering it on their next run.
+    if ($set.is_active === 1) {
+      const cur: any = await dbi.collection("employees").findOne(filter, { projection: { is_active: 1, terminated_at: 1 } });
+      if (cur && (cur.is_active === 0 || cur.terminated_at)) {
+        rehired = true;
+        $set.rehired_at = new Date();
+        $unset.terminated_at = "";
+        if (!("end_date" in b)) $unset.end_date = "";
+      }
+    }
+    const update: any = { $set };
+    if (Object.keys($unset).length) update.$unset = $unset;
+    await dbi.collection("employees").updateOne(filter, update);
+    return NextResponse.json({ ok: true, rehired });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
   }
