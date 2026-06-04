@@ -263,6 +263,13 @@ export function createNotifier() {
         }).catch((e) => console.error("[subs:notifyFilled:absent]", e?.message || e));
       }
 
+      // 5b) Optional SMS to the principal/office mobile.
+      if (school?.adminPhone) {
+        await sendSms({ to: school.adminPhone, text: `${shortLine(request, school, gradeLevel)} — covered by ${subName}.` }).catch((e) =>
+          console.error("[subs:notifyFilled:adminSms]", e?.message || e)
+        );
+      }
+
       // 5) Confirm to the admins (no action needed).
       for (const to of adminEmails) {
         await sendEmail({

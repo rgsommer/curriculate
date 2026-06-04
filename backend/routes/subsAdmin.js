@@ -125,6 +125,7 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   if (Number.isFinite(req.body?.subBudgetTotal)) set["subBudget.total"] = req.body.subBudgetTotal;
   if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
   if (typeof req.body?.financeEmail === "string") set.financeEmail = req.body.financeEmail.trim().toLowerCase();
+  if (typeof req.body?.adminPhone === "string") set.adminPhone = req.body.adminPhone.trim();
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
   if (typeof req.body?.requireSickVoiceNote === "boolean") set.requireSickVoiceNote = req.body.requireSickVoiceNote;
   await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });

@@ -337,11 +337,36 @@ function FeedbackWidget() {
   );
 }
 
+// First-login role chooser — removes the "principal lands as a teacher"
+// confusion by making the very first choice explicit.
+function RoleChooser({ onChoose }) {
+  return (
+    <div style={C.card}>
+      <h2 style={{ ...C.h2, marginBottom: 4 }}>Welcome — what brings you here?</h2>
+      <p style={{ color: "#64748b", marginTop: 0 }}>You can switch anytime; this just sets your starting screen.</p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 8 }}>
+        <button style={{ ...C.btn, padding: 16, textAlign: "left" }} onClick={() => onChoose("admin")}>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>I'm a principal / administrator</div>
+          <div style={{ fontSize: 13, opacity: 0.9, marginTop: 4 }}>Set up my school, rank subs, approve absences, manage settings.</div>
+        </button>
+        <button style={{ ...C.btnGhost, padding: 16, textAlign: "left" }} onClick={() => onChoose("teacher")}>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>I'm a teacher or substitute</div>
+          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Report an absence (need a sub), or accept/decline sub offers.</div>
+        </button>
+      </div>
+      <p style={{ fontSize: 12, color: "#94a3b8", marginTop: 12 }}>
+        Teachers: if your principal sent you a sign-up link, open that link instead — it connects you to your school automatically.
+      </p>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────
 export default function SubsPage() {
   const [me, setMe] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState("admin"); // 'admin' | 'teacher'
+  const [view, setView] = useState("admin"); // 'admin' | 'vp' | 'teacher'
+  const [roleChosen, setRoleChosen] = useState(false); // dismissed the first-login chooser
 
   const refreshMe = useCallback(async () => {
     try {
@@ -449,6 +474,11 @@ export default function SubsPage() {
   // Always offer both roles — anyone can post requests as a school admin
   // (create a school) or act as a substitute.
   const showSwitch = true;
+  // First login with no established role yet → ask whether they're an
+  // administrator setting up a school, or a teacher/sub. (Skipped when they
+  // arrived via an invite or staff link — their role is already implied.)
+  const noRole = !me.isAdmin && !me.isVp && !me.isTeacher;
+  const showChooser = noRole && !roleChosen && !invite && !staffToken;
   return (
     <div style={C.page}>
       <div style={C.wrap}>
@@ -479,25 +509,37 @@ export default function SubsPage() {
           />
         )}
 
-        {showSwitch && (
-          <div style={{ ...C.row, marginBottom: 16 }}>
-            <button style={view === "admin" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: admin"); setView("admin"); }}>
-              School admin
-            </button>
-            {me.isVp && (
-              <button style={view === "vp" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: vp"); setView("vp"); }}>
-                Approvals (VP)
-              </button>
+        {showChooser ? (
+          <RoleChooser
+            onChoose={(v) => {
+              pushTrail(`role chosen: ${v}`);
+              setRoleChosen(true);
+              setView(v);
+            }}
+          />
+        ) : (
+          <>
+            {showSwitch && (
+              <div style={{ ...C.row, marginBottom: 16 }}>
+                <button style={view === "admin" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: admin"); setView("admin"); }}>
+                  Principal / Admin
+                </button>
+                {me.isVp && (
+                  <button style={view === "vp" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: vp"); setView("vp"); }}>
+                    Approvals (VP)
+                  </button>
+                )}
+                <button style={view === "teacher" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: teacher"); setView("teacher"); }}>
+                  Teacher / Sub
+                </button>
+              </div>
             )}
-            <button style={view === "teacher" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: teacher"); setView("teacher"); }}>
-              Teacher
-            </button>
-          </div>
-        )}
 
-        {view === "admin" && <AdminDashboard />}
-        {view === "vp" && <VpDashboard />}
-        {view === "teacher" && <TeacherDashboard />}
+            {view === "admin" && <AdminDashboard />}
+            {view === "vp" && <VpDashboard />}
+            {view === "teacher" && <TeacherDashboard />}
+          </>
+        )}
       </div>
       <FeedbackWidget />
     </div>
@@ -1040,6 +1082,9 @@ function SchoolSettings({ school, onSaved }) {
   const [financeEmail, setFinanceEmail] = useState(school.financeEmail || "");
   const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
   const [requireSickVoice, setRequireSickVoice] = useState(!!school.requireSickVoiceNote);
+  const [adminPhone, setAdminPhone] = useState(school.adminPhone || "");
+  const [testMsg, setTestMsg] = useState("");
+  const [testing, setTesting] = useState(false);
   const [staffLink, setStaffLink] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -1048,12 +1093,29 @@ function SchoolSettings({ school, onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone },
       });
       onSaved();
       setOpen(false);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function sendTest() {
+    setTestMsg("");
+    if (!adminPhone.trim()) {
+      setTestMsg("Enter your mobile number first.");
+      return;
+    }
+    setTesting(true);
+    try {
+      const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone: adminPhone } });
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : "Test sent — check your phone 📲");
+    } catch (e) {
+      setTestMsg(e.message);
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -1116,6 +1178,16 @@ function SchoolSettings({ school, onSaved }) {
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "4px 0 0" }}>
             On a fill, the VP (or the grade's own VP) and finance are notified automatically — you're done. Set per-grade VPs under Grade levels.
           </p>
+          <div style={{ marginTop: 10 }}>
+            <label style={C.label}>Your mobile (text me when a sub is confirmed + test SMS)</label>
+            <div style={C.row}>
+              <input style={{ ...C.input, width: 180 }} value={adminPhone} onChange={(e) => setAdminPhone(e.target.value)} placeholder="+1 555 123 4567" />
+              <button type="button" style={C.btnGhost} onClick={sendTest} disabled={testing || !adminPhone.trim()}>
+                {testing ? "Sending…" : "Send test SMS"}
+              </button>
+            </div>
+            {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("check your phone") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
+          </div>
           <div style={{ marginTop: 10 }}>
             <label style={C.label}>VP can approve absences</label>
             <select style={{ ...C.input, width: 280 }} value={vpApproval} onChange={(e) => setVpApproval(e.target.value)}>
