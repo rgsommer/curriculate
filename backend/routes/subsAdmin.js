@@ -218,6 +218,16 @@ router.patch("/schools/:id/grades/:gid", loadAdminSchool, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Remove a grade level (toggling a grade pill off). Also pulls it from any
+// division's coverage list.
+router.delete("/schools/:id/grades/:gid", loadAdminSchool, async (req, res) => {
+  const { gid } = req.params;
+  if (!isOid(gid)) return res.status(400).json({ error: "Bad grade id" });
+  await SubsGradeLevel.deleteOne({ _id: gid, schoolId: req.school._id });
+  await SubsSchool.updateOne({ _id: req.school._id }, { $pull: { "divisions.$[].gradeLevelIds": new mongoose.Types.ObjectId(gid) } });
+  res.json({ ok: true });
+});
+
 // ── Substitute teacher pool ───────────────────────────────────────────
 
 router.get("/teachers", async (req, res) => {

@@ -302,7 +302,7 @@ const SUBJECT_OPTIONS = [
   "Phys Ed", "Computer Science", "Tech", "Special Education", "ESL", "Religious Studies", "Early Years",
 ];
 const GRADE_OPTIONS = [
-  "Pre-K", "Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+  "JK", "SK", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
   "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
 ];
 
@@ -1087,14 +1087,13 @@ function AdminDashboard() {
     );
   }
 
-  const inSchool = ["settings", "grades", "subs", "post", "requests", "reports"];
+  const inSchool = ["settings", "subs", "post", "requests", "reports"];
   const items = [
     ["today", "🌅 Today"],
     ["approvals", "🛎️ Approvals"],
     ["post", "➕ Post a request"],
     ["requests", "📋 Requests"],
     ["settings", "⚙️ Settings"],
-    ["grades", "🎓 Grades & VPs"],
     ["subs", "🧑‍🏫 Substitutes"],
     ["reports", "📊 Absence report"],
     // Only offer school switching when there's more than one.
@@ -1191,25 +1190,7 @@ function SchoolPanel({ school, section = "settings" }) {
     <div>
       {err && <div style={C.err}>{err}</div>}
 
-      {section === "settings" && <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} />}
-
-      {section === "grades" && (
-        <div style={C.card}>
-          <h2 style={C.h2}>Grade levels</h2>
-          {grades.length === 0 && <span style={{ color: "#94a3b8" }}>No grade levels yet.</span>}
-          {grades.map((g) => (
-            <GradeVpRow key={g._id} school={school} grade={g} />
-          ))}
-          <InlineAdd
-            placeholder="e.g. Grade 3"
-            label="Add grade level"
-            onAdd={async (name) => {
-              await api(`/api/subs-admin/schools/${school._id}/grades`, { method: "POST", body: { name } });
-              loadGrades();
-            }}
-          />
-        </div>
-      )}
+      {section === "settings" && <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} onGradesChanged={loadGrades} />}
 
       {section === "subs" && (
         <>
@@ -1309,7 +1290,7 @@ function AddTeacher({ onAdded }) {
   );
 }
 
-function SchoolSettings({ school, grades = [], onSaved }) {
+function SchoolSettings({ school, grades = [], onSaved, onGradesChanged = () => {} }) {
   const [open, setOpen] = useState(false);
   const [abbrev, setAbbrev] = useState(school.abbrev || "");
   const [bellTime, setBellTime] = useState(school.bellTime || "08:30");
@@ -1459,6 +1440,18 @@ function SchoolSettings({ school, grades = [], onSaved }) {
             On a fill, the appropriate VP (the division's, else the default) and finance are notified automatically — you're done.
           </p>
 
+          <div style={{ borderTop: "1px solid #f1f5f9", marginTop: 14, paddingTop: 12 }}>
+            <GradeLevelPills school={school} grades={grades} onChanged={onGradesChanged} />
+            {grades.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <label style={{ ...C.label, marginTop: 0 }}>VP routing (set via divisions below)</label>
+                {grades.map((g) => (
+                  <GradeVpRow key={g._id} school={school} grade={g} />
+                ))}
+              </div>
+            )}
+          </div>
+
           <label style={{ ...C.label, marginTop: 12 }}>Divisions (VP by grade range)</label>
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 6px" }}>
             Tick which grades each division covers — that's what routes a grade's request to its VP (the label is just for you). A grade in no division uses the default VP above. The VP's mobile is texted about approvals only when "VP can approve" lets them decide.
@@ -1603,6 +1596,72 @@ function ApprovedDivisions({ teacher, school, onSaved }) {
       ))}
       {sel.length === 0 && <span style={{ color: "#94a3b8" }}>(all)</span>}
       {saved && <span style={{ color: "#15803d" }}>saved</span>}
+    </div>
+  );
+}
+
+// Pick the school's grade levels by tapping pills (create/delete on toggle).
+function GradeLevelPills({ school, grades, onChanged }) {
+  const [custom, setCustom] = useState("");
+  const [busy, setBusy] = useState(false);
+  const byName = new Map(grades.map((g) => [g.name, g]));
+  async function add(name) {
+    if (!name.trim()) return;
+    setBusy(true);
+    try {
+      await api(`/api/subs-admin/schools/${school._id}/grades`, { method: "POST", body: { name: name.trim() } });
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(g) {
+    setBusy(true);
+    try {
+      await api(`/api/subs-admin/schools/${school._id}/grades/${g._id}`, { method: "DELETE" });
+      await onChanged();
+    } finally {
+      setBusy(false);
+    }
+  }
+  const extras = grades.filter((g) => !GRADE_OPTIONS.includes(g.name));
+  const pill = (key, label, on, onClick) => (
+    <button
+      key={key}
+      type="button"
+      disabled={busy}
+      onClick={onClick}
+      style={on ? { ...C.pill("#2563eb", "#fff"), border: 0, cursor: "pointer" } : { ...C.pill("#f1f5f9", "#334155"), border: 0, cursor: "pointer" }}
+    >
+      {on ? "✓ " : ""}
+      {label}
+    </button>
+  );
+  return (
+    <div>
+      <label style={C.label}>Grade levels (tap to add or remove)</label>
+      <div style={{ ...C.row, gap: 6 }}>
+        {GRADE_OPTIONS.map((name) => pill(name, name, byName.has(name), () => (byName.has(name) ? remove(byName.get(name)) : add(name))))}
+        {extras.map((g) => pill(g._id, `${g.name} ✕`, true, () => remove(g)))}
+      </div>
+      <div style={{ ...C.row, marginTop: 6 }}>
+        <input
+          style={{ ...C.input, width: 160 }}
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          placeholder="add other (e.g. Music)"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              add(custom);
+              setCustom("");
+            }
+          }}
+        />
+        <button type="button" style={C.btnGhost} disabled={busy || !custom.trim()} onClick={() => { add(custom); setCustom(""); }}>
+          Add
+        </button>
+      </div>
     </div>
   );
 }
