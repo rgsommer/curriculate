@@ -335,5 +335,15 @@ export function createNotifier() {
   };
 }
 
+// Send a one-off test SMS so a user can confirm delivery from their
+// profile. Returns sendSms's result ({ ok, mock? }) or throws on provider
+// failure so the caller can surface the reason.
+export async function sendTestSms(to) {
+  return sendSms({
+    to,
+    text: "Curriculate Subs: this is a test message. If you got this, SMS is working — you'll receive sub offers here.",
+  });
+}
+
 // Shared singleton for the running server.
 export const notifier = createNotifier();

@@ -2352,9 +2352,28 @@ function TeacherProfile({ teacher, onSaved }) {
   const [availabilityNote, setAvailabilityNote] = useState(teacher.availability?.note || "");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [testMsg, setTestMsg] = useState("");
+  const [testing, setTesting] = useState(false);
 
   function toggleRole(r) {
     setRoleTypes((rs) => (rs.includes(r) ? rs.filter((x) => x !== r) : [...rs, r]));
+  }
+
+  async function sendTest() {
+    setTestMsg("");
+    if (!phone.trim()) {
+      setTestMsg("Enter a phone number first.");
+      return;
+    }
+    setTesting(true);
+    try {
+      const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone } });
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : "Test sent — check your phone 📲");
+    } catch (e) {
+      setTestMsg(e.message);
+    } finally {
+      setTesting(false);
+    }
   }
 
   async function save(e) {
@@ -2399,7 +2418,13 @@ function TeacherProfile({ teacher, onSaved }) {
           </div>
           <div>
             <label style={C.label}>Phone (for SMS)</label>
-            <input style={{ ...C.input, width: 150 }} value={phone} onChange={(e) => setPhone(e.target.value)} />
+            <div style={C.row}>
+              <input style={{ ...C.input, width: 150 }} value={phone} onChange={(e) => setPhone(e.target.value)} />
+              <button type="button" style={C.btnGhost} onClick={sendTest} disabled={testing || !phone.trim()}>
+                {testing ? "Sending…" : "Send test"}
+              </button>
+            </div>
+            {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("check your phone") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
           </div>
           <div>
             <label style={C.label}>Day rate ($)</label>

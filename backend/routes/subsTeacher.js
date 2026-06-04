@@ -31,7 +31,7 @@ import SubsLessonPlan from "../models/SubsLessonPlan.js";
 import SubsVoiceNote from "../models/SubsVoiceNote.js";
 import { getSubsEngine } from "../jobs/subsEscalation.js";
 import { decryptSecret } from "../services/subsCrypto.js";
-import { notifier } from "../services/subsNotify.js";
+import { notifier, sendTestSms } from "../services/subsNotify.js";
 
 const router = express.Router();
 const jsonBody = express.json({ limit: "8kb" });
@@ -169,6 +169,20 @@ router.put("/profile", requireSubsAuth, jsonBody, async (req, res) => {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).lean();
   res.json({ teacher, schools: await registeredSchools(teacher) });
+});
+
+// Send a test SMS to a number so the user can confirm delivery from their
+// profile. `mock: true` means no SMS provider is configured yet (the
+// message was only logged server-side).
+router.post("/test-sms", requireSubsAuth, jsonBody, async (req, res) => {
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : "";
+  if (!phone) return res.status(400).json({ error: "Enter a phone number first." });
+  try {
+    const result = await sendTestSms(phone);
+    res.json({ ok: true, mock: !!result?.mock });
+  } catch (e) {
+    res.status(502).json({ error: e?.message || "Couldn't send the test SMS." });
+  }
 });
 
 // Accept a school invite link. The token IS the proof the admin invited
