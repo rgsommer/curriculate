@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const u = readAuth(req);
   if (!u) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (u.clearance < 3) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  if (!aiConfigured()) return NextResponse.json({ error: "AI write-up isn't configured yet (no AI key set)." }, { status: 503 });
+  if (!aiConfigured()) return NextResponse.json({ error: "Write-up generation isn't available yet." }, { status: 503 });
   const { id } = await params;
   let oid: any; try { oid = new ObjectId(id); } catch { return NextResponse.json({ error: "Bad id" }, { status: 400 }); }
 
@@ -44,7 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ ok: true, ...out });
   } catch (e: any) {
     console.error("[loans/writeup] error:", e);
-    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
+    return NextResponse.json({ error: "Couldn't complete the write-up. Please try again." }, { status: 500 });
   }
 }
 
@@ -62,6 +62,6 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     });
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
+    return NextResponse.json({ error: "Couldn't complete the write-up. Please try again." }, { status: 500 });
   }
 }
