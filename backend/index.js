@@ -142,6 +142,12 @@ import stocksDiscoverRouter from "./routes/stocksDiscover.js";
 import stocksReconcileRouter from "./routes/stocksReconcile.js";
 import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
+// Substitute-teacher staffing app (/subs)
+import subsAuthRouter from "./routes/subsAuth.js";
+import subsAdminRouter from "./routes/subsAdmin.js";
+import subsTeacherRouter from "./routes/subsTeacher.js";
+import subsFeedbackRouter from "./routes/subsFeedback.js";
+import { startSubsEscalation } from "./jobs/subsEscalation.js";
 
 function renderEmailTemplate(str, vars) {
   let out = String(str || "");
@@ -579,6 +585,20 @@ app.use("/api/stocks-trade", stocksTradeRouter);
 app.use("/api/stocks-pending-orders", stocksPendingOrdersRouter);
 app.use("/api/stocks-discover", stocksDiscoverRouter);
 app.use("/api/stocks-reconcile", stocksReconcileRouter);
+
+// Substitute-teacher staffing app on curriculate.net/subs.
+// Passwordless email-PIN auth (subs_session cookie); the escalation engine
+// runs as a background sweep started below.
+if (!process.env.SUBS_SECRET && !process.env.STOCKS_SECRET && !process.env.MEDICENTRE_SECRET) {
+  console.warn("[subs] No SUBS_SECRET (or STOCKS_SECRET/MEDICENTRE_SECRET) set — /subs sign-in will fail until one is configured.");
+}
+app.use("/api/subs-auth", authLimiter, subsAuthRouter);
+app.use("/api/subs-admin", subsAdminRouter);
+app.use("/api/subs-teacher", subsTeacherRouter);
+app.use("/api/subs-feedback", subsFeedbackRouter);
+// Sequential escalation sweep — contacts preferred subs in rank order and
+// advances when an offer's interval elapses, even if nobody responds.
+startSubsEscalation();
 
 // Public flight-search tool on curriculate.net/travel (Amadeus-backed)
 app.use("/api/travel", travelRouter);
