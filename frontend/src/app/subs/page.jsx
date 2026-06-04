@@ -1227,7 +1227,7 @@ function SchoolSettings({ school, onSaved }) {
     setTesting(true);
     try {
       const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone: adminPhone } });
-      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : "Accepted by SMS provider 📲 — if it doesn't arrive, the number needs verifying in AWS (sandbox).");
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : `Accepted by SNS 📲 in ${r.region || "?"} — if it doesn't arrive, configure SMS (sandbox/origination) in that region.`);
     } catch (e) {
       setTestMsg(e.message);
     } finally {
@@ -2838,7 +2838,7 @@ function TeacherProfile({ teacher, onSaved }) {
     setTesting(true);
     try {
       const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone } });
-      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : "Accepted by SMS provider 📲 — if it doesn't arrive, the number needs verifying in AWS (sandbox).");
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : `Accepted by SNS 📲 in ${r.region || "?"} — if it doesn't arrive, configure SMS (sandbox/origination) in that region.`);
     } catch (e) {
       setTestMsg(e.message);
     } finally {

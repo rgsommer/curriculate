@@ -58,7 +58,10 @@ function toE164(num) {
 // S3 client already uses (env vars or the host's IAM role). Lazy-imported
 // so the dependency is only touched when SNS is actually enabled.
 async function sendViaSns(to, text) {
-  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+  // SMS settings (sandbox, origination numbers, delivery logging) are
+  // per-region — they MUST be configured in the same region we publish
+  // from. SUBS_SNS_REGION lets SMS use a different region than S3.
+  const region = process.env.SUBS_SNS_REGION || process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
   const { SNSClient, PublishCommand } = await import("@aws-sdk/client-sns");
   const sns = new SNSClient({ region });
   const MessageAttributes = {
@@ -71,7 +74,7 @@ async function sendViaSns(to, text) {
   const out = await sns.send(new PublishCommand({ PhoneNumber: toE164(to), Message: text, MessageAttributes }));
   // MessageId confirms SNS accepted it; actual carrier delivery depends on
   // sandbox status / a registered origination number (trace via CloudWatch).
-  return { ok: true, messageId: out?.MessageId || null };
+  return { ok: true, messageId: out?.MessageId || null, region };
 }
 
 // SMS. Picks a real provider when configured, else logs to the console so
