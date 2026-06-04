@@ -107,9 +107,9 @@ export default function SubsPage() {
     try {
       const data = await api("/api/subs-auth/me");
       setMe(data);
-      // Substitutes who aren't admins land on the teacher view; everyone
-      // else (admins, and brand-new users who'll create a school) on admin.
-      setView(data.isTeacher && !data.isAdmin ? "teacher" : "admin");
+      // Land on the most relevant view: admins on admin, VP-only users on
+      // the approvals view, everyone else on the teacher view.
+      setView(data.isAdmin ? "admin" : data.isVp ? "vp" : "teacher");
     } catch {
       setMe(null);
     } finally {
@@ -118,13 +118,15 @@ export default function SubsPage() {
   }, []);
 
   const [invite, setInvite] = useState(null);
+  const [staffToken, setStaffToken] = useState(null);
   const [inviteMsg, setInviteMsg] = useState("");
 
   useEffect(() => {
-    // Capture an invite token from the registration link (?invite=…).
+    // Capture tokens from links: ?invite=… (substitute) / ?staff=… (staff).
     try {
-      const tk = new URLSearchParams(window.location.search).get("invite");
-      if (tk) setInvite(tk);
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("invite")) setInvite(p.get("invite"));
+      if (p.get("staff")) setStaffToken(p.get("staff"));
     } catch {}
     let hint = null;
     try {
@@ -150,6 +152,22 @@ export default function SubsPage() {
       }
     })();
   }, [me, invite, refreshMe]);
+
+  // Redeem a staff join link — connects the teacher to the school and lands
+  // them on the staff (request-a-sub) view.
+  useEffect(() => {
+    if (!me || !staffToken) return;
+    (async () => {
+      try {
+        const r = await api("/api/subs-teacher/join-staff", { method: "POST", body: { token: staffToken } });
+        setInviteMsg(`You're connected to ${r.school?.name || "your school"} — report absences below.`);
+        setStaffToken(null);
+        setView("teacher");
+      } catch {
+        setStaffToken(null);
+      }
+    })();
+  }, [me, staffToken]);
 
   async function signOut() {
     await api("/api/subs-auth/logout", { method: "POST" }).catch(() => {});
@@ -177,6 +195,11 @@ export default function SubsPage() {
           {invite && (
             <div style={{ ...C.err, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}>
               You've been invited to join a school as a substitute — sign in to accept.
+            </div>
+          )}
+          {staffToken && (
+            <div style={{ ...C.err, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}>
+              Sign in to connect to your school — then you can request a sub whenever you're away.
             </div>
           )}
           <SignIn onSignedIn={refreshMe} />
@@ -216,13 +239,19 @@ export default function SubsPage() {
             <button style={view === "admin" ? C.btn : C.btnGhost} onClick={() => setView("admin")}>
               School admin
             </button>
+            {me.isVp && (
+              <button style={view === "vp" ? C.btn : C.btnGhost} onClick={() => setView("vp")}>
+                Approvals (VP)
+              </button>
+            )}
             <button style={view === "teacher" ? C.btn : C.btnGhost} onClick={() => setView("teacher")}>
-              Substitute
+              Teacher
             </button>
           </div>
         )}
 
         {view === "admin" && <AdminDashboard />}
+        {view === "vp" && <VpDashboard />}
         {view === "teacher" && <TeacherDashboard />}
       </div>
     </div>
@@ -448,25 +477,29 @@ function ApprovalRow({ a, onDone }) {
         {a.reason && <span style={C.pill("#f1f5f9", "#334155")}>{a.reason}</span>}
       </div>
       {a.notes && <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{a.notes}</div>}
-      <div style={{ ...C.row, marginTop: 10 }}>
-        <select style={{ ...C.input, width: 120 }} value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="teacher">Teacher</option>
-          <option value="ea">EA</option>
-          <option value="specialist">Specialist</option>
-          <option value="tech">Tech</option>
-        </select>
-        <input style={{ ...C.input, width: 200 }} placeholder="Required qualifications" value={quals} onChange={(e) => setQuals(e.target.value)} />
-        <select style={{ ...C.input, width: 110 }} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
-          <option value="urgent">Urgent</option>
-          <option value="advance">Advance</option>
-        </select>
-        <button style={C.btnGreen} onClick={approve} disabled={busy}>
-          Approve → start contacting
-        </button>
-        <button style={C.btnRed} onClick={() => setDenyOpen((d) => !d)} disabled={busy}>
-          Deny
-        </button>
-      </div>
+      {a.canApprove === false ? (
+        <div style={{ marginTop: 8, fontSize: 13, color: "#92400e" }}>Awaiting principal — you don't have approval authority for this absence.</div>
+      ) : (
+        <div style={{ ...C.row, marginTop: 10 }}>
+          <select style={{ ...C.input, width: 120 }} value={role} onChange={(e) => setRole(e.target.value)}>
+            <option value="teacher">Teacher</option>
+            <option value="ea">EA</option>
+            <option value="specialist">Specialist</option>
+            <option value="tech">Tech</option>
+          </select>
+          <input style={{ ...C.input, width: 200 }} placeholder="Required qualifications" value={quals} onChange={(e) => setQuals(e.target.value)} />
+          <select style={{ ...C.input, width: 110 }} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+            <option value="urgent">Urgent</option>
+            <option value="advance">Advance</option>
+          </select>
+          <button style={C.btnGreen} onClick={approve} disabled={busy}>
+            Approve → start contacting
+          </button>
+          <button style={C.btnRed} onClick={() => setDenyOpen((d) => !d)} disabled={busy}>
+            Deny
+          </button>
+        </div>
+      )}
       {denyOpen && (
         <div style={{ ...C.row, marginTop: 8 }}>
           <input style={{ ...C.input, width: 240 }} placeholder="Reason (optional)" value={denyReason} onChange={(e) => setDenyReason(e.target.value)} />
@@ -479,7 +512,7 @@ function ApprovalRow({ a, onDone }) {
   );
 }
 
-function ApprovalsQueue() {
+function ApprovalsQueue({ emptyNote }) {
   const [approvals, setApprovals] = useState([]);
   const load = useCallback(async () => {
     try {
@@ -493,7 +526,7 @@ function ApprovalsQueue() {
     return () => clearInterval(t);
   }, [load]);
 
-  if (approvals.length === 0) return null;
+  if (approvals.length === 0) return emptyNote ? <div style={C.card}>{emptyNote}</div> : null;
   return (
     <div style={{ ...C.card, borderColor: "#fde68a" }}>
       <h2 style={C.h2}>🛎️ Approvals needed ({approvals.length})</h2>
@@ -501,6 +534,21 @@ function ApprovalsQueue() {
       {approvals.map((a) => (
         <ApprovalRow key={a._id} a={a} onDone={load} />
       ))}
+    </div>
+  );
+}
+
+// VP-only view: just the approvals they're scoped to handle.
+function VpDashboard() {
+  return (
+    <div>
+      <div style={C.card}>
+        <h2 style={{ ...C.h2, marginBottom: 4 }}>VP approvals</h2>
+        <p style={{ fontSize: 13, color: "#64748b", margin: 0 }}>
+          Absences awaiting your approval. What you can approve depends on the principal's policy for your school.
+        </p>
+      </div>
+      <ApprovalsQueue emptyNote="Nothing awaiting your approval right now." />
     </div>
   );
 }
@@ -644,6 +692,7 @@ function SchoolPanel({ school }) {
 
       <PostRequest school={school} grades={grades} />
       <RequestsBoard school={school} />
+      <AbsenceReport school={school} />
     </div>
   );
 }
@@ -715,6 +764,8 @@ function SchoolSettings({ school, onSaved }) {
   const [budget, setBudget] = useState(school.subBudget?.total ?? "");
   const [vpEmail, setVpEmail] = useState(school.vpEmail || "");
   const [financeEmail, setFinanceEmail] = useState(school.financeEmail || "");
+  const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
+  const [staffLink, setStaffLink] = useState("");
   const [busy, setBusy] = useState(false);
 
   async function save() {
@@ -722,13 +773,18 @@ function SchoolSettings({ school, onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval },
       });
       onSaved();
       setOpen(false);
     } finally {
       setBusy(false);
     }
+  }
+
+  async function makeStaffLink() {
+    const r = await api(`/api/subs-admin/schools/${school._id}/staff-link`, { method: "POST" });
+    setStaffLink(r.link);
   }
 
   return (
@@ -768,6 +824,14 @@ function SchoolSettings({ school, onSaved }) {
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "4px 0 0" }}>
             On a fill, the VP (or the grade's own VP) and finance are notified automatically — you're done. Set per-grade VPs under Grade levels.
           </p>
+          <div style={{ marginTop: 10 }}>
+            <label style={C.label}>VP can approve absences</label>
+            <select style={{ ...C.input, width: 280 }} value={vpApproval} onChange={(e) => setVpApproval(e.target.value)}>
+              <option value="none">Only the principal approves</option>
+              <option value="sick_only">VP can approve sick days only</option>
+              <option value="all">VP can approve all absences</option>
+            </select>
+          </div>
           <label style={{ ...C.row, marginTop: 10 }}>
             <input type="checkbox" checked={faith} onChange={(e) => setFaith(e.target.checked)} /> Enable mission / faith-fit attributes
           </label>
@@ -775,6 +839,18 @@ function SchoolSettings({ school, onSaved }) {
             <button style={C.btn} onClick={save} disabled={busy}>
               {busy ? "Saving…" : "Save settings"}
             </button>
+          </div>
+          <div style={{ borderTop: "1px solid #f1f5f9", marginTop: 14, paddingTop: 12 }}>
+            <label style={C.label}>Staff sign-up link</label>
+            <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 8px" }}>
+              Send this to all staff. When a teacher opens it (and signs in), they're connected to this school and can report absences.
+            </p>
+            <div style={C.row}>
+              <button type="button" style={C.btnGhost} onClick={makeStaffLink}>
+                {staffLink ? "Regenerate link" : "Generate staff link"}
+              </button>
+              {staffLink && <code style={{ fontSize: 12, background: "#f1f5f9", padding: "4px 8px", borderRadius: 6 }}>{staffLink}</code>}
+            </div>
           </div>
         </div>
       )}
@@ -1267,6 +1343,79 @@ function CandidatesView({ request }) {
   );
 }
 
+function AbsenceReport({ school }) {
+  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState(null);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    const qs = new URLSearchParams();
+    if (from) qs.set("from", from);
+    if (to) qs.set("to", to);
+    const r = await api(`/api/subs-admin/schools/${school._id}/absence-report?${qs.toString()}`);
+    setRows(r.rows);
+  }, [school._id, from, to]);
+
+  async function emailReport() {
+    setMsg("");
+    const r = await api(`/api/subs-admin/schools/${school._id}/absence-report/email`, { method: "POST", body: { from: from || undefined, to: to || undefined } });
+    setMsg(`Report emailed to ${r.sentTo}.`);
+  }
+
+  return (
+    <div style={C.card}>
+      <div style={{ ...C.row, justifyContent: "space-between" }}>
+        <h2 style={{ ...C.h2, marginBottom: 0 }}>Absence report</h2>
+        <button
+          style={C.btnGhost}
+          onClick={() => {
+            setOpen((o) => !o);
+            if (!rows) load();
+          }}
+        >
+          {open ? "Hide" : "Show"}
+        </button>
+      </div>
+      {open && (
+        <div style={{ marginTop: 12 }}>
+          <div style={C.row}>
+            <label style={C.row}>
+              From <input style={{ ...C.input, width: 150 }} type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+            </label>
+            <label style={C.row}>
+              To <input style={{ ...C.input, width: 150 }} type="date" value={to} onChange={(e) => setTo(e.target.value)} />
+            </label>
+            <button style={C.btnGhost} onClick={load}>
+              Apply
+            </button>
+            <button style={C.btn} onClick={emailReport}>
+              Email me this report
+            </button>
+          </div>
+          {msg && <div style={{ ...C.err, background: "#ecfdf5", borderColor: "#a7f3d0", color: "#15803d", marginTop: 8 }}>{msg}</div>}
+          <div style={{ marginTop: 12 }}>
+            {rows && rows.length === 0 && <span style={{ color: "#94a3b8" }}>No absences in this period.</span>}
+            {rows &&
+              rows.map((r) => (
+                <div key={r.email} style={{ ...C.row, padding: "6px 0", borderBottom: "1px solid #f1f5f9" }}>
+                  <span style={{ minWidth: 180, fontWeight: 600 }}>{r.name || r.email}</span>
+                  <span style={C.pill("#eff6ff", "#1d4ed8")}>{r.total} absence(s)</span>
+                  {Object.entries(r.byReason).map(([k, v]) => (
+                    <span key={k} style={C.pill("#f1f5f9", "#334155")}>
+                      {k}: {v}
+                    </span>
+                  ))}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RequestsBoard({ school }) {
   const [requests, setRequests] = useState([]);
   const [err, setErr] = useState("");
@@ -1446,7 +1595,22 @@ function RequestSubForm({ defaultName, onSubmitted }) {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api("/api/subs-teacher/all-schools").then(({ schools }) => setSchools(schools)).catch(() => {});
+    // Prefer schools the teacher is connected to (via the staff link); fall
+    // back to the full list if they haven't joined one yet.
+    (async () => {
+      try {
+        const mine = await api("/api/subs-teacher/my-staff-schools");
+        if (mine.schools?.length) {
+          setSchools(mine.schools);
+          setSchoolId(mine.schools[0]._id);
+          return;
+        }
+      } catch {}
+      try {
+        const all = await api("/api/subs-teacher/all-schools");
+        setSchools(all.schools);
+      } catch {}
+    })();
   }, []);
   useEffect(() => {
     if (!schoolId) return setGrades([]);
@@ -1572,6 +1736,37 @@ function MyRequests({ reloadKey }) {
   );
 }
 
+function MyAbsences({ reloadKey }) {
+  const [data, setData] = useState(null);
+  useEffect(() => {
+    api("/api/subs-teacher/my-absences").then(setData).catch(() => {});
+  }, [reloadKey]);
+  if (!data || data.total === 0) return null;
+  return (
+    <div style={C.card}>
+      <h2 style={C.h2}>My absence record</h2>
+      <div style={C.row}>
+        <span style={C.pill("#eff6ff", "#1d4ed8")}>{data.total} total</span>
+        {Object.entries(data.byReason).map(([k, v]) => (
+          <span key={k} style={C.pill("#f1f5f9", "#334155")}>
+            {k}: {v}
+          </span>
+        ))}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        {data.absences.slice(0, 12).map((a, i) => (
+          <div key={i} style={{ ...C.row, fontSize: 13, padding: "2px 0" }}>
+            <span style={{ minWidth: 90 }}>{a.date}</span>
+            <span style={{ minWidth: 100 }}>{a.gradeName}</span>
+            <span style={{ color: "#64748b" }}>{a.reason}</span>
+            <StatusPill status={a.status === "pending_approval" ? "pending" : a.status} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Teacher dashboard ─────────────────────────────────────────────────
 function TeacherDashboard() {
   const [teacher, setTeacher] = useState(null);
@@ -1614,6 +1809,7 @@ function TeacherDashboard() {
       {err && <div style={C.err}>{err}</div>}
       <RequestSubForm defaultName={teacher?.name} onSubmitted={() => setReqKey((k) => k + 1)} />
       <MyRequests reloadKey={reqKey} />
+      <MyAbsences reloadKey={reqKey} />
       {schools.length > 0 && (
         <div style={C.card}>
           <h2 style={C.h2}>My schools</h2>

@@ -66,10 +66,28 @@ on create for testing/tuning.
   the engine fires at once.
 - **Teacher-reported** (`source: "teacher"`) — a staff teacher submits "I
   need a sub"; it sits in `pending_approval` and the engine does **not**
-  contact anyone. The principal sees it in the approvals queue and approves
-  (setting role/qualifications/urgency) → status `open` + engine fires, or
-  denies (`denied`) with a reason. The requesting teacher is emailed the
-  decision and auto-added to the staff roster on approval.
+  contact anyone. On submit, the principal/admins **and the appropriate VP**
+  are notified. An approver (principal, or a VP within their authority)
+  approves (setting role/qualifications/urgency) → status `open` + engine
+  fires, or denies (`denied`) with a reason. The requesting teacher is
+  emailed the decision and auto-added to the staff roster on approval.
+
+#### Staff onboarding & VP approval authority
+
+- **Broadcast staff link** — the principal generates one reusable link
+  (`POST /schools/:id/staff-link` → `?staff=<token>`) and sends it to all
+  staff. Opening it (while signed in) connects the teacher to the school's
+  staff roster — no per-teacher invites, no list to maintain.
+- **VP approval policy** (`SubsSchool.vpApproval`, principal-controlled):
+  `none` (only the principal approves), `sick_only` (VP may approve absences
+  whose reason is "Sick"), or `all`. A VP is recognised by email
+  (`SubsSchool.vpEmail` for the whole school, or a grade's `vpEmail` for that
+  division). The `/approvals` queue annotates each item with `canApprove`;
+  approve/deny enforce it server-side.
+- **Absence records** — every non-denied/cancelled request is an absence.
+  Principals get an on-screen + emailable per-staff breakdown
+  (`/schools/:id/absence-report[/email]`); teachers see their own
+  (`/my-absences`).
 
 ### Who's notified on a fill (principal is then done)
 
@@ -168,10 +186,13 @@ POST /api/subs-admin/teachers          { email, name?, phone? }
 GET/PUT  /api/subs-admin/schools/:id/grades/:gid/ranking  { teacherIds[] }
 PATCH /api/subs-admin/schools/:id      { abbrev?, bellTime?, faithFitEnabled?, subBudgetTotal?, vpEmail?, financeEmail? }
 PATCH /api/subs-admin/schools/:id/grades/:gid { vpEmail?, name? }   (per-grade "appropriate VP")
-GET  /api/subs-admin/approvals                       → pending teacher-reported absences
+GET  /api/subs-admin/approvals                       → pending absences I can see (admin/VP), each w/ canApprove
 POST /api/subs-admin/requests/:rid/approve { requiredRole?, requiredQualifications?, urgency? }  → opens + fires engine + auto-rosters
 POST /api/subs-admin/requests/:rid/deny    { denyReason? }
 GET/POST /api/subs-admin/schools/:id/staff           → staff roster (the auto-built teacher list)
+POST /api/subs-admin/schools/:id/staff-link          → broadcast staff sign-up link (?staff=token)
+GET  /api/subs-admin/schools/:id/absence-report[?from&to]    → per-staff breakdown
+POST /api/subs-admin/schools/:id/absence-report/email { to?, from?, to? }  → email the report
 POST /api/subs-admin/requests          { schoolId, gradeLevelId, date, urgency, startTime?, requiredRole?, requiredQualifications?, requiredFaithFit?, difficultyNote?, supportLevel?, estimatedCost?, lessonPlan?, notes? }  → { eligibleCount }
 GET  /api/subs-admin/dashboard                       → morning triage (open sorted by urgency+time-to-bell, coveredToday, burnout)
 GET  /api/subs-admin/schools/:id/requests           → requests + offers (live)
@@ -189,6 +210,9 @@ GET  /api/subs-teacher/all-schools                   → schools to pick when re
 GET  /api/subs-teacher/schools/:id/grades            → that school's classes
 POST /api/subs-teacher/request-sub     { schoolId, gradeLevelId, date, reason, urgency?, notes?, name? }  → pending_approval
 GET  /api/subs-teacher/my-requests                   → my reported absences + status
+POST /api/subs-teacher/join-staff      { token }     → connect to a school via the staff link
+GET  /api/subs-teacher/my-staff-schools              → schools I'm on staff at
+GET  /api/subs-teacher/my-absences                   → my own absence breakdown
 PUT  /api/subs-teacher/profile         { name?, phone?, active?, contactPrefs, qualifications?, roleTypes?, gradeComfort?, faithFit?, location?, maxTravelKm?, dayRate?, availabilityNote? }
 POST /api/subs-teacher/accept-invite   { token }     → { schools }
 GET  /api/subs-teacher/offers

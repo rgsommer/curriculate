@@ -26,6 +26,7 @@ import SubsRequest, { URGENT_INTERVAL_MS, ADVANCE_INTERVAL_MS } from "../models/
 import SubsSchool from "../models/SubsSchool.js";
 import SubsGradeLevel from "../models/SubsGradeLevel.js";
 import SubsInvite from "../models/SubsInvite.js";
+import SubsStaff from "../models/SubsStaff.js";
 import SubsLessonPlan from "../models/SubsLessonPlan.js";
 import { getSubsEngine } from "../jobs/subsEscalation.js";
 import { decryptSecret } from "../services/subsCrypto.js";
@@ -219,12 +220,71 @@ router.post("/request-sub", requireSubsAuth, jsonBody, async (req, res) => {
     currentRank: -1,
   });
 
-  // Notify the school's principals/admins that an approval is waiting.
+  // Notify the school's principals/admins AND the appropriate VP that an
+  // approval is waiting (grade VP overrides the school default VP).
+  const vpEmail = grade.vpEmail || school.vpEmail || "";
   notifier
-    .notifyApprovalNeeded({ request: request.toObject(), school, gradeLevel: grade, absentTeacher: request.absentTeacher, adminEmails: school.adminEmails || [] })
+    .notifyApprovalNeeded({ request: request.toObject(), school, gradeLevel: grade, absentTeacher: request.absentTeacher, adminEmails: school.adminEmails || [], vpEmail })
     .catch((e) => console.error("[subs] notifyApprovalNeeded error:", e?.message || e));
 
   res.json({ ok: true, request: request.toObject() });
+});
+
+// Connect to a school via the principal's broadcast staff link (?staff=…).
+// Adds the signed-in teacher to that school's staff roster.
+router.post("/join-staff", requireSubsAuth, jsonBody, async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token : "";
+  const school = token ? await SubsSchool.findOne({ staffJoinToken: token }).lean() : null;
+  if (!school) return res.status(404).json({ error: "That staff link is invalid or expired" });
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  await SubsStaff.findOneAndUpdate(
+    { schoolId: school._id, email: req.subsUser.email },
+    { $set: name ? { name } : {}, $setOnInsert: { schoolId: school._id, email: req.subsUser.email } },
+    { upsert: true, setDefaultsOnInsert: true }
+  );
+  res.json({ ok: true, school: { _id: school._id, name: school.name, abbrev: school.abbrev } });
+});
+
+// Schools where the signed-in teacher is on staff (for the request form).
+router.get("/my-staff-schools", requireSubsAuth, async (req, res) => {
+  const staff = await SubsStaff.find({ email: req.subsUser.email }).lean();
+  if (!staff.length) return res.json({ schools: [] });
+  const schools = await SubsSchool.find({ _id: { $in: staff.map((s) => s.schoolId) } }).select("name abbrev location").lean();
+  res.json({ schools });
+});
+
+// The signed-in teacher's own absence breakdown (challenge: teachers can
+// see their breakdown too).
+router.get("/my-absences", requireSubsAuth, async (req, res) => {
+  const email = req.subsUser.email;
+  const reqs = await SubsRequest.find({
+    status: { $nin: ["denied", "cancelled"] },
+    $or: [{ "absentTeacher.email": email }, { requestedByEmail: email }],
+  }).sort({ date: -1 }).lean();
+  const schoolIds = [...new Set(reqs.map((r) => String(r.schoolId)))];
+  const gradeIds = [...new Set(reqs.map((r) => String(r.gradeLevelId)))];
+  const [schools, grades] = await Promise.all([
+    SubsSchool.find({ _id: { $in: schoolIds } }).select("name").lean(),
+    SubsGradeLevel.find({ _id: { $in: gradeIds } }).select("name").lean(),
+  ]);
+  const sName = new Map(schools.map((s) => [String(s._id), s.name]));
+  const gName = new Map(grades.map((g) => [String(g._id), g.name]));
+  const byReason = {};
+  for (const r of reqs) {
+    const reason = r.reason || "Unspecified";
+    byReason[reason] = (byReason[reason] || 0) + 1;
+  }
+  res.json({
+    total: reqs.length,
+    byReason,
+    absences: reqs.map((r) => ({
+      date: r.date,
+      reason: r.reason || "Unspecified",
+      status: r.status,
+      schoolName: sName.get(String(r.schoolId)) || "—",
+      gradeName: gName.get(String(r.gradeLevelId)) || "—",
+    })),
+  });
 });
 
 // A staff teacher's own submitted absence requests + their status.

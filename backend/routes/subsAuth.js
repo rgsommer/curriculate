@@ -18,6 +18,7 @@ import express from "express";
 import crypto from "crypto";
 import SubsAuthPin from "../models/SubsAuthPin.js";
 import SubsSchool from "../models/SubsSchool.js";
+import SubsGradeLevel from "../models/SubsGradeLevel.js";
 import SubsTeacher from "../models/SubsTeacher.js";
 import {
   getSubsSecret,
@@ -150,14 +151,20 @@ router.get("/me", async (req, res) => {
   const payload = token ? verifySubsSession(token) : null;
   if (!payload) return res.status(401).json({ error: "Not signed in" });
   const email = payload.email.toLowerCase();
-  const [schools, teacher] = await Promise.all([
+  const [schools, teacher, vpSchools, vpGrades] = await Promise.all([
     SubsSchool.find({ adminEmails: email }).select("name location").lean(),
     SubsTeacher.findOne({ email }).lean(),
+    // Schools where this email is the default VP…
+    SubsSchool.find({ vpEmail: email }).select("name").lean(),
+    // …and grade levels where this email is the grade's "appropriate VP".
+    SubsGradeLevel.find({ vpEmail: email }).select("name schoolId").lean(),
   ]);
+  const vpSchoolIds = new Set([...vpSchools.map((s) => String(s._id)), ...vpGrades.map((g) => String(g.schoolId))]);
   return res.json({
     email,
     isAdmin: schools.length > 0,
     adminSchools: schools,
+    isVp: vpSchoolIds.size > 0,
     isTeacher: !!teacher,
     teacher: teacher || null,
   });

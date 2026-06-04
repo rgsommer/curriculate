@@ -124,9 +124,22 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   if (Number.isFinite(req.body?.subBudgetTotal)) set["subBudget.total"] = req.body.subBudgetTotal;
   if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
   if (typeof req.body?.financeEmail === "string") set.financeEmail = req.body.financeEmail.trim().toLowerCase();
+  if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
   await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });
   const school = await SubsSchool.findById(req.school._id).lean();
   res.json({ school });
+});
+
+// Generate (or return) the reusable staff join link the principal
+// broadcasts to all staff. Clicking it connects a signed-in teacher to
+// this school's roster (see /api/subs-teacher/join-staff).
+router.post("/schools/:id/staff-link", loadAdminSchool, async (req, res) => {
+  let token = req.school.staffJoinToken;
+  if (!token || req.body?.regenerate) {
+    token = crypto.randomBytes(16).toString("hex");
+    await SubsSchool.updateOne({ _id: req.school._id }, { $set: { staffJoinToken: token } });
+  }
+  res.json({ link: `${APP_BASE_URL}?staff=${token}`, token });
 });
 
 router.post("/schools/:id/admins", loadAdminSchool, async (req, res) => {
@@ -586,8 +599,48 @@ function safeDecrypt(enc) {
 }
 
 // ── Teacher-initiated requests: approval workflow ─────────────────────
-// Load a request + confirm the caller administers its school.
-async function loadAdminRequest(req, res) {
+// Build the caller's approver relationships across schools: where they're
+// an admin, the school's default VP, or a specific grade's VP.
+async function approverContext(email) {
+  const [adminSchools, vpSchools, vpGrades] = await Promise.all([
+    SubsSchool.find({ adminEmails: email }).lean(),
+    SubsSchool.find({ vpEmail: email }).lean(),
+    SubsGradeLevel.find({ vpEmail: email }).lean(),
+  ]);
+  return {
+    adminSet: new Set(adminSchools.map((s) => String(s._id))),
+    vpSchoolSet: new Set(vpSchools.map((s) => String(s._id))),
+    vpGradeSet: new Set(vpGrades.map((g) => String(g._id))),
+    schoolIds: [...new Set([...adminSchools, ...vpSchools].map((s) => String(s._id)).concat(vpGrades.map((g) => String(g.schoolId))))],
+  };
+}
+
+function isSickReason(reason) {
+  return /sick/i.test(reason || "");
+}
+
+// Visibility: can this person see the request in their queue at all?
+function approverSees(request, ctx) {
+  const sid = String(request.schoolId);
+  return ctx.adminSet.has(sid) || ctx.vpSchoolSet.has(sid) || ctx.vpGradeSet.has(String(request.gradeLevelId));
+}
+
+// Authority: may this person actually approve/deny it? Admins always; VPs
+// per the school's vpApproval policy (and grade scope).
+function approverCan(request, school, ctx) {
+  const sid = String(request.schoolId);
+  if (ctx.adminSet.has(sid)) return true;
+  const isVpScope = ctx.vpSchoolSet.has(sid) || ctx.vpGradeSet.has(String(request.gradeLevelId));
+  if (!isVpScope) return false;
+  const policy = school?.vpApproval || "none";
+  if (policy === "all") return true;
+  if (policy === "sick_only") return isSickReason(request.reason);
+  return false;
+}
+
+// Load a request for an approve/deny action and confirm the caller has
+// authority over it (admin or permitted VP).
+async function loadApprovableRequest(req, res) {
   const { rid } = req.params;
   if (!isOid(rid)) {
     res.status(400).json({ error: "Bad request id" });
@@ -599,33 +652,40 @@ async function loadAdminRequest(req, res) {
     return null;
   }
   const school = await SubsSchool.findById(request.schoolId).lean();
-  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
-    res.status(403).json({ error: "Not an admin of this school" });
+  const ctx = await approverContext(req.subsUser.email);
+  if (!approverCan(request, school, ctx)) {
+    res.status(403).json({ error: "You're not allowed to approve this absence" });
     return null;
   }
   return { request, school };
 }
 
-// Pending teacher-submitted requests awaiting approval, across my schools.
+// Pending teacher-submitted requests the caller can see (as admin or VP),
+// each annotated with whether they're actually allowed to approve it.
 router.get("/approvals", async (req, res) => {
-  const schools = await SubsSchool.find({ adminEmails: req.subsUser.email }).select("name abbrev").lean();
-  const schoolName = new Map(schools.map((s) => [String(s._id), s.name]));
-  const pending = await SubsRequest.find({ schoolId: { $in: schools.map((s) => s._id) }, status: "pending_approval" }).sort({ createdAt: 1 }).lean();
+  const ctx = await approverContext(req.subsUser.email);
+  if (ctx.schoolIds.length === 0) return res.json({ approvals: [] });
+  const schools = await SubsSchool.find({ _id: { $in: ctx.schoolIds } }).select("name abbrev vpApproval").lean();
+  const schoolById = new Map(schools.map((s) => [String(s._id), s]));
+  const pending = await SubsRequest.find({ schoolId: { $in: ctx.schoolIds }, status: "pending_approval" }).sort({ createdAt: 1 }).lean();
   const grades = await SubsGradeLevel.find({ _id: { $in: pending.map((r) => r.gradeLevelId) } }).select("name").lean();
   const gradeName = new Map(grades.map((g) => [String(g._id), g.name]));
   res.json({
-    approvals: pending.map((r) => ({
-      ...r,
-      schoolName: schoolName.get(String(r.schoolId)) || "—",
-      gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
-    })),
+    approvals: pending
+      .filter((r) => approverSees(r, ctx))
+      .map((r) => ({
+        ...r,
+        schoolName: schoolById.get(String(r.schoolId))?.name || "—",
+        gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
+        canApprove: approverCan(r, schoolById.get(String(r.schoolId)), ctx),
+      })),
   });
 });
 
 // Approve a teacher's absence request: set matching requirements, open it,
 // auto-roster the teacher, fire the engine, and tell the teacher.
 router.post("/requests/:rid/approve", async (req, res) => {
-  const loaded = await loadAdminRequest(req, res);
+  const loaded = await loadApprovableRequest(req, res);
   if (!loaded) return;
   const { request, school } = loaded;
   if (request.status !== "pending_approval") return res.status(400).json({ error: `Request is ${request.status}, not awaiting approval` });
@@ -669,7 +729,7 @@ router.post("/requests/:rid/approve", async (req, res) => {
 });
 
 router.post("/requests/:rid/deny", async (req, res) => {
-  const loaded = await loadAdminRequest(req, res);
+  const loaded = await loadApprovableRequest(req, res);
   if (!loaded) return;
   const { request, school } = loaded;
   if (request.status !== "pending_approval") return res.status(400).json({ error: `Request is ${request.status}, not awaiting approval` });
@@ -698,6 +758,54 @@ router.post("/schools/:id/staff", loadAdminSchool, async (req, res) => {
     { upsert: true, new: true, setDefaultsOnInsert: true }
   ).lean();
   res.json({ staff });
+});
+
+// ── Absence reporting (per staff) ─────────────────────────────────────
+// An "absence" = a request that actually represents the teacher being away
+// (not denied/cancelled). Grouped per staff member with a reason breakdown.
+async function buildAbsenceReport(schoolId, from, to) {
+  const q = { schoolId, status: { $nin: ["denied", "cancelled"] } };
+  if (from || to) q.date = {};
+  if (from) q.date.$gte = from;
+  if (to) q.date.$lte = to;
+  const reqs = await SubsRequest.find(q).sort({ date: 1 }).lean();
+  const byEmail = new Map();
+  for (const r of reqs) {
+    const email = r.absentTeacher?.email || r.requestedByEmail || "(unspecified)";
+    const name = r.absentTeacher?.name || "";
+    const row = byEmail.get(email) || { email, name, total: 0, byReason: {}, dates: [] };
+    if (name && !row.name) row.name = name;
+    row.total += 1;
+    const reason = r.reason || "Unspecified";
+    row.byReason[reason] = (row.byReason[reason] || 0) + 1;
+    row.dates.push({ date: r.date, reason, status: r.status });
+    byEmail.set(email, row);
+  }
+  return [...byEmail.values()].sort((a, b) => b.total - a.total);
+}
+
+router.get("/schools/:id/absence-report", loadAdminSchool, async (req, res) => {
+  const rows = await buildAbsenceReport(req.school._id, req.query.from, req.query.to);
+  res.json({ school: { _id: req.school._id, name: req.school.name }, from: req.query.from || null, to: req.query.to || null, rows });
+});
+
+// Email the report on demand (defaults to the requesting principal).
+router.post("/schools/:id/absence-report/email", loadAdminSchool, async (req, res) => {
+  const rows = await buildAbsenceReport(req.school._id, req.body?.from, req.body?.to);
+  const to = typeof req.body?.to === "string" && isValidEmail(req.body.to) ? req.body.to.toLowerCase() : req.subsUser.email;
+  const period = req.body?.from || req.body?.to ? ` (${req.body?.from || "…"} → ${req.body?.to || "…"})` : "";
+  const lines = [`Absence report — ${req.school.name}${period}`, ""];
+  for (const r of rows) {
+    const reasons = Object.entries(r.byReason).map(([k, v]) => `${k}: ${v}`).join(", ");
+    lines.push(`${r.name || r.email} — ${r.total} absence(s) [${reasons}]`);
+  }
+  if (rows.length === 0) lines.push("No absences in this period.");
+  try {
+    await notifier.sendAbsenceReport({ to, schoolName: req.school.name, text: lines.join("\n") });
+  } catch (e) {
+    return res.status(502).json({ error: `Could not send report: ${e.message}` });
+  }
+  res.json({ ok: true, sentTo: to, staffCount: rows.length });
 });
 
 // Dev/diagnostic: force one escalation sweep right now instead of waiting

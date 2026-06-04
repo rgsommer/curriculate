@@ -228,10 +228,13 @@ export function createNotifier() {
 
     // A staff teacher submitted an absence request — the principal needs to
     // approve before fulfillment starts.
-    async notifyApprovalNeeded({ request, school, gradeLevel, absentTeacher, adminEmails = [] }) {
+    async notifyApprovalNeeded({ request, school, gradeLevel, absentTeacher, adminEmails = [], vpEmail }) {
       const what = describe(request, school, gradeLevel);
       const who = absentTeacher?.name || absentTeacher?.email || "A teacher";
-      for (const to of adminEmails) {
+      // Notify the principal/admins and the VP (dedup so a VP who is also
+      // an admin isn't emailed twice).
+      const recipients = [...new Set([...adminEmails, vpEmail].filter(Boolean))];
+      for (const to of recipients) {
         await sendEmail({
           to,
           subject: `Approval needed — sub request: ${what}`,
@@ -239,6 +242,17 @@ export function createNotifier() {
           html: `<p><strong>${who}</strong> reported an absence (${request.reason || "no reason given"}) and needs a sub for <strong>${what}</strong>. Approve or deny in the dashboard.</p>`,
         }).catch((e) => console.error("[subs:notifyApprovalNeeded]", e?.message || e));
       }
+    },
+
+    // On-demand absence report email to the principal (plain-text body
+    // assembled by the route).
+    async sendAbsenceReport({ to, schoolName, text }) {
+      await sendEmail({
+        to,
+        subject: `Absence report — ${schoolName}`,
+        text,
+        html: `<pre style="font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:pre-wrap;">${text.replace(/</g, "&lt;")}</pre>`,
+      });
     },
 
     // Tell the requesting teacher their absence request was approved/denied.
