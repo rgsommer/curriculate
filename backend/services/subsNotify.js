@@ -482,6 +482,29 @@ export function createNotifier() {
       }
     },
 
+    // Confirm to the teacher who reported the absence that their request was
+    // received, and set expectations: they'll be told who the sub is, and
+    // they should get lesson plans to the VP (reply-all to the fill email).
+    async notifyRequestReceived({ request, school, gradeLevel, absentTeacher, vp }) {
+      if (!absentTeacher?.email) return;
+      const vpContact = vp?.email ? `your VP${vp.name ? ` (${vp.name})` : ""}${vp.email ? ` — ${vp.email}` : ""}` : "your VP";
+      const next =
+        `When a substitute is confirmed, we'll email you who it is. ` +
+        `Please get your lesson plans to ${vpContact} — or simply reply-all to that confirmation email and both your sub and VP will receive them.`;
+      await sendEmail({
+        to: absentTeacher.email,
+        subject: `Sub request received — ${classLabel(request, gradeLevel)} on ${request.date}`,
+        text: `Hi ${absentTeacher.name || ""}, your sub request has been sent to your principal for approval.\n\n${next}${footerText()}`,
+        html: renderEmail({
+          badge: pill("Request received", "#dbeafe", "#1d4ed8"),
+          title: `Your sub request is in`,
+          intro: `Thanks ${esc(absentTeacher.name || "")} — your request has been sent to your principal for approval.`,
+          rows: requestRows(request, school, gradeLevel, [["Reason", request.reason || ""]]),
+          note: next,
+        }),
+      }).catch((e) => console.error("[subs:notifyRequestReceived]", e?.message || e));
+    },
+
     // A staff teacher submitted an absence request — the principal needs to
     // approve before fulfillment starts.
     async notifyApprovalNeeded({ request, school, gradeLevel, absentTeacher, adminEmails = [], vpEmail, vpPhone, vpCanApprove }) {

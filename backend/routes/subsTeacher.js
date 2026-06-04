@@ -291,9 +291,15 @@ router.post("/request-sub", requireSubsAuth, audioBody, async (req, res) => {
     await SubsRequest.updateOne({ _id: request._id }, { $set: { voiceNoteId: note._id } });
   }
 
+  const vp = gradeVpContact(grade, school);
+
+  // Confirm to the requesting teacher (received + lesson-plan expectation).
+  notifier
+    .notifyRequestReceived({ request: request.toObject(), school, gradeLevel: grade, absentTeacher: request.absentTeacher, vp })
+    .catch((e) => console.error("[subs] notifyRequestReceived error:", e?.message || e));
+
   // Notify the school's principals/admins AND the appropriate VP that an
   // approval is waiting. The VP is texted only when it's their decision.
-  const vp = gradeVpContact(grade, school);
   notifier
     .notifyApprovalNeeded({
       request: request.toObject(),
