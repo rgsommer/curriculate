@@ -472,50 +472,56 @@ function RoleChooser({ onChoose }) {
   );
 }
 
-// Sticky in-page navigation (the page is long). Links scroll to section
-// anchors; hidden on narrow screens (see the .subs-sidebar media query).
-const SIDEBAR_ITEMS = {
-  admin: [
-    ["sec-today", "🌅 Today"],
-    ["sec-approvals", "🛎️ Approvals"],
-    ["sec-schools", "🏫 Schools"],
-    ["sec-settings", "⚙️ Settings"],
-    ["sec-grades", "🎓 Grades & VPs"],
-    ["sec-subs", "🧑‍🏫 Substitutes"],
-    ["sec-post", "➕ Post a request"],
-    ["sec-requests", "📋 Requests"],
-    ["sec-reports", "📊 Absence report"],
-  ],
-  vp: [["sec-approvals", "🛎️ Approvals"]],
-  teacher: [
-    ["sec-needsub", "🤒 Need a sub"],
-    ["sec-myreqs", "📨 My requests"],
-    ["sec-profile", "🪪 My profile"],
-    ["sec-offers", "📥 Offers"],
-    ["sec-history", "🕘 History"],
-  ],
-};
-
-function SubsSidebar({ view }) {
-  const items = SIDEBAR_ITEMS[view] || [];
+// Sticky tab-style section nav. Clicking an item selects it; the main area
+// shows only the active section. Hidden on narrow screens (.subs-sidebar).
+function SectionNav({ items, active, onSelect }) {
   if (!items.length) return null;
   return (
     <div className="subs-sidebar">
       <div style={{ ...C.card, padding: 8, marginBottom: 0 }}>
         {items.map(([id, label]) => (
-          <a
+          <button
             key={id}
-            href={`#${id}`}
-            onClick={(e) => {
-              e.preventDefault();
-              document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            type="button"
+            onClick={() => onSelect(id)}
+            style={{
+              display: "block",
+              width: "100%",
+              textAlign: "left",
+              padding: "8px 10px",
+              fontSize: 13,
+              fontWeight: active === id ? 700 : 500,
+              color: active === id ? "#1d4ed8" : "#334155",
+              background: active === id ? "#eff6ff" : "transparent",
+              border: 0,
+              borderRadius: 7,
+              cursor: "pointer",
+              marginBottom: 2,
             }}
-            style={{ display: "block", padding: "7px 9px", fontSize: 13, color: "#334155", textDecoration: "none", borderRadius: 6 }}
           >
             {label}
-          </a>
+          </button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// On small screens the sidebar is hidden — show a horizontal tab strip.
+function SectionTabs({ items, active, onSelect }) {
+  if (!items.length) return null;
+  return (
+    <div className="subs-tabs" style={{ gap: 6, overflowX: "auto", marginBottom: 12, paddingBottom: 4 }}>
+      {items.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          onClick={() => onSelect(id)}
+          style={{ ...(active === id ? C.btn : C.btnGhost), whiteSpace: "nowrap", flexShrink: 0, fontSize: 12, padding: "6px 10px" }}
+        >
+          {label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -645,7 +651,8 @@ export default function SubsPage() {
         .subs-layout{ display:flex; gap:16px; align-items:flex-start; }
         .subs-sidebar{ position:sticky; top:12px; width:165px; flex-shrink:0; }
         .subs-main{ flex:1; min-width:0; }
-        @media (max-width:760px){ .subs-layout{ display:block; } .subs-sidebar{ display:none; } }
+        .subs-tabs{ display:none; }
+        @media (max-width:760px){ .subs-layout{ display:block; } .subs-sidebar{ display:none; } .subs-tabs{ display:flex !important; } }
       `}</style>
       <div style={{ ...C.wrap, maxWidth: 1180 }}>
         <div style={{ ...C.row, justifyContent: "space-between", marginBottom: 18 }}>
@@ -701,14 +708,9 @@ export default function SubsPage() {
               </div>
             )}
 
-            <div className="subs-layout">
-              <SubsSidebar view={view} />
-              <div className="subs-main">
-                {view === "admin" && <AdminDashboard />}
-                {view === "vp" && <VpDashboard />}
-                {view === "teacher" && <TeacherDashboard />}
-              </div>
-            </div>
+            {view === "admin" && <AdminDashboard />}
+            {view === "vp" && <VpDashboard />}
+            {view === "teacher" && <TeacherDashboard />}
           </>
         )}
       </div>
@@ -1069,31 +1071,70 @@ function AdminDashboard() {
   }, [loadSchools]);
 
   const active = schools.find((s) => s._id === activeId) || null;
+  const [section, setSection] = useState("today");
+
+  // No school yet → a focused setup screen (no confusing "Schools" tab).
+  if (schools.length === 0) {
+    return (
+      <div>
+        {err && <div style={C.err}>{err}</div>}
+        <div style={C.card}>
+          <h2 style={C.h2}>Set up your school</h2>
+          <p style={{ color: "#64748b", marginTop: 0 }}>Name your school to get started — you'll become its administrator. (Already have a school set up by someone else? Ask them for the staff link and use the Teacher / Sub tab.)</p>
+          <CreateSchool onCreated={loadSchools} />
+        </div>
+      </div>
+    );
+  }
+
+  const inSchool = ["settings", "grades", "subs", "post", "requests", "reports"];
+  const items = [
+    ["today", "🌅 Today"],
+    ["approvals", "🛎️ Approvals"],
+    ["post", "➕ Post a request"],
+    ["requests", "📋 Requests"],
+    ["settings", "⚙️ Settings"],
+    ["grades", "🎓 Grades & VPs"],
+    ["subs", "🧑‍🏫 Substitutes"],
+    ["reports", "📊 Absence report"],
+    // Only offer school switching when there's more than one.
+    ...(schools.length > 1 ? [["schools", "🏫 Switch school"]] : []),
+  ];
 
   return (
     <div>
       {err && <div style={C.err}>{err}</div>}
-      <div id="sec-today"><MorningDashboard /></div>
-      <div id="sec-approvals"><ApprovalsQueue /></div>
-      <div id="sec-schools" style={C.card}>
-        <h2 style={C.h2}>Schools</h2>
-        {schools.length === 0 && (
-          <div style={{ ...C.err, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}>
-            You don't administer any school yet. Creating one below makes you its administrator. If your school is already set up,
-            you don't create another — ask its principal to send you the staff sign-up link (then use the Teacher / Sub view).
-          </div>
-        )}
-        <div style={C.row}>
-          {schools.map((s) => (
-            <button key={s._id} style={s._id === activeId ? C.btn : C.btnGhost} onClick={() => setActiveId(s._id)}>
-              {s.name}
-            </button>
-          ))}
+      {schools.length > 1 && (
+        <div style={{ ...C.row, marginBottom: 10 }}>
+          <span style={{ fontSize: 13, color: "#64748b" }}>School:</span>
+          <strong>{active?.name}</strong>
         </div>
-        <CreateSchool onCreated={loadSchools} />
+      )}
+      <SectionTabs items={items} active={section} onSelect={setSection} />
+      <div className="subs-layout">
+        <SectionNav items={items} active={section} onSelect={setSection} />
+        <div className="subs-main">
+          {section === "today" && <MorningDashboard />}
+          {section === "approvals" && <ApprovalsQueue emptyNote="Nothing awaiting approval right now." />}
+          {section === "schools" && (
+            <div style={C.card}>
+              <h2 style={C.h2}>Your schools</h2>
+              <div style={C.row}>
+                {schools.map((s) => (
+                  <button key={s._id} style={s._id === activeId ? C.btn : C.btnGhost} onClick={() => setActiveId(s._id)}>
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+              <div style={{ borderTop: "1px solid #f1f5f9", marginTop: 12, paddingTop: 10 }}>
+                <span style={{ fontSize: 13, color: "#64748b" }}>Add another school you administer:</span>
+                <CreateSchool onCreated={loadSchools} />
+              </div>
+            </div>
+          )}
+          {active && inSchool.includes(section) && <SchoolPanel school={active} section={section} />}
+        </div>
       </div>
-
-      {active && <SchoolPanel school={active} />}
     </div>
   );
 }
@@ -1128,7 +1169,7 @@ function CreateSchool({ onCreated }) {
   );
 }
 
-function SchoolPanel({ school }) {
+function SchoolPanel({ school, section = "settings" }) {
   const [grades, setGrades] = useState([]);
   const [teachers, setTeachers] = useState([]);
   const [err, setErr] = useState("");
@@ -1150,56 +1191,61 @@ function SchoolPanel({ school }) {
     <div>
       {err && <div style={C.err}>{err}</div>}
 
-      <div id="sec-settings">
-        <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} />
-      </div>
+      {section === "settings" && <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} />}
 
-      <div id="sec-grades" style={C.card}>
-        <h2 style={C.h2}>Grade levels</h2>
-        {grades.length === 0 && <span style={{ color: "#94a3b8" }}>No grade levels yet.</span>}
-        {grades.map((g) => (
-          <GradeVpRow key={g._id} school={school} grade={g} />
-        ))}
-        <InlineAdd
-          placeholder="e.g. Grade 3"
-          label="Add grade level"
-          onAdd={async (name) => {
-            await api(`/api/subs-admin/schools/${school._id}/grades`, { method: "POST", body: { name } });
-            loadGrades();
-          }}
-        />
-      </div>
-
-      <div id="sec-subs" style={C.card}>
-        <h2 style={C.h2}>Substitute pool</h2>
-        <div style={{ display: "grid", gap: 6 }}>
-          {teachers.map((t) => (
-            <div key={t._id} style={{ borderBottom: "1px solid #f8fafc", paddingBottom: 6 }}>
-              <div style={C.row}>
-                <span style={{ fontWeight: 600 }}>{t.name || "(no name)"}</span>
-                <span style={{ color: "#64748b", fontSize: 13 }}>{t.email}</span>
-                {t.active === false && <span style={C.pill("#fee2e2", "#b91c1c")}>inactive</span>}
-              </div>
-              {(school.divisions || []).length > 0 && <ApprovedDivisions teacher={t} school={school} onSaved={loadTeachers} />}
-              {school.faithFit?.enabled && <FaithApprovedToggle teacher={t} onSaved={loadTeachers} />}
-            </div>
+      {section === "grades" && (
+        <div style={C.card}>
+          <h2 style={C.h2}>Grade levels</h2>
+          {grades.length === 0 && <span style={{ color: "#94a3b8" }}>No grade levels yet.</span>}
+          {grades.map((g) => (
+            <GradeVpRow key={g._id} school={school} grade={g} />
           ))}
-          {teachers.length === 0 && <span style={{ color: "#94a3b8" }}>No substitutes added yet.</span>}
+          <InlineAdd
+            placeholder="e.g. Grade 3"
+            label="Add grade level"
+            onAdd={async (name) => {
+              await api(`/api/subs-admin/schools/${school._id}/grades`, { method: "POST", body: { name } });
+              loadGrades();
+            }}
+          />
         </div>
-        <AddTeacher onAdded={loadTeachers} />
-        <div style={{ borderTop: "1px solid #f1f5f9", marginTop: 12, paddingTop: 8 }}>
-          <span style={{ fontSize: 13, color: "#64748b" }}>Invite a sub to register with this school (they get a sign-in link):</span>
-          <InviteSub school={school} />
-        </div>
-      </div>
+      )}
 
-      {grades.map((g) => (
-        <RankingEditor key={g._id} school={school} grade={g} teachers={teachers} />
-      ))}
+      {section === "subs" && (
+        <>
+          <div style={C.card}>
+            <h2 style={C.h2}>Substitute pool</h2>
+            <div style={{ display: "grid", gap: 6 }}>
+              {teachers.map((t) => (
+                <div key={t._id} style={{ borderBottom: "1px solid #f8fafc", paddingBottom: 6 }}>
+                  <div style={C.row}>
+                    <span style={{ fontWeight: 600 }}>{t.name || "(no name)"}</span>
+                    <span style={{ color: "#64748b", fontSize: 13 }}>{t.email}</span>
+                    {t.active === false && <span style={C.pill("#fee2e2", "#b91c1c")}>inactive</span>}
+                  </div>
+                  {(school.divisions || []).length > 0 && <ApprovedDivisions teacher={t} school={school} onSaved={loadTeachers} />}
+                  {school.faithFit?.enabled && <FaithApprovedToggle teacher={t} onSaved={loadTeachers} />}
+                </div>
+              ))}
+              {teachers.length === 0 && <span style={{ color: "#94a3b8" }}>No substitutes added yet.</span>}
+            </div>
+            <AddTeacher onAdded={loadTeachers} />
+            <div style={{ borderTop: "1px solid #f1f5f9", marginTop: 12, paddingTop: 8 }}>
+              <span style={{ fontSize: 13, color: "#64748b" }}>Invite a sub to register with this school (they get a sign-in link):</span>
+              <InviteSub school={school} />
+            </div>
+          </div>
 
-      <div id="sec-post"><PostRequest school={school} grades={grades} /></div>
-      <div id="sec-requests"><RequestsBoard school={school} /></div>
-      <div id="sec-reports"><AbsenceReport school={school} /></div>
+          <h3 style={{ ...C.h2, fontSize: 15, margin: "4px 0" }}>Preferred-sub ranking per grade</h3>
+          {grades.map((g) => (
+            <RankingEditor key={g._id} school={school} grade={g} teachers={teachers} />
+          ))}
+        </>
+      )}
+
+      {section === "post" && <PostRequest school={school} grades={grades} />}
+      {section === "requests" && <RequestsBoard school={school} />}
+      {section === "reports" && <AbsenceReport school={school} />}
     </div>
   );
 }
@@ -2822,33 +2868,46 @@ function TeacherDashboard() {
   const pending = offers.filter((o) => o.status === "pending");
   const history = offers.filter((o) => o.status !== "pending");
   const [reqKey, setReqKey] = useState(0);
+  const [section, setSection] = useState("needsub");
+  const items = [
+    ["needsub", "🤒 Need a sub"],
+    ["offers", `📥 Offers${pending.length ? ` (${pending.length})` : ""}`],
+    ["mine", "📨 My requests"],
+    ["profile", "🪪 My profile"],
+    ["history", "🕘 History"],
+  ];
 
   return (
     <div>
       {err && <div style={C.err}>{err}</div>}
-      <div id="sec-needsub"><RequestSubForm defaultName={teacher?.name} onSubmitted={() => setReqKey((k) => k + 1)} /></div>
-      <div id="sec-myreqs"><MyRequests reloadKey={reqKey} /></div>
-      <MyAbsences reloadKey={reqKey} />
-      {schools.length > 0 && (
-        <div style={C.card}>
-          <h2 style={C.h2}>My schools</h2>
-          <div style={C.row}>
-            {schools.map((s) => (
-              <span key={s._id} style={C.pill("#eff6ff", "#1d4ed8")}>
-                {s.abbrev ? `${s.abbrev} — ` : ""}
-                {s.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {teacher && (
-        <div id="sec-profile">
-          <TeacherProfile teacher={teacher} onSaved={load} />
-        </div>
-      )}
+      <SectionTabs items={items} active={section} onSelect={setSection} />
+      <div className="subs-layout">
+        <SectionNav items={items} active={section} onSelect={setSection} />
+        <div className="subs-main">
+          {section === "needsub" && <RequestSubForm defaultName={teacher?.name} onSubmitted={() => setReqKey((k) => k + 1)} />}
+          {section === "mine" && (
+            <>
+              <MyRequests reloadKey={reqKey} />
+              <MyAbsences reloadKey={reqKey} />
+              {schools.length > 0 && (
+                <div style={C.card}>
+                  <h2 style={C.h2}>My schools</h2>
+                  <div style={C.row}>
+                    {schools.map((s) => (
+                      <span key={s._id} style={C.pill("#eff6ff", "#1d4ed8")}>
+                        {s.abbrev ? `${s.abbrev} — ` : ""}
+                        {s.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {section === "profile" && teacher && <TeacherProfile teacher={teacher} onSaved={load} />}
 
-      <div id="sec-offers" style={C.card}>
+          {section === "offers" && (
+          <div style={C.card}>
         <h2 style={C.h2}>Pending offers</h2>
         {pending.length === 0 && <span style={{ color: "#94a3b8" }}>No pending offers right now.</span>}
         {pending.map((o) => (
@@ -2893,9 +2952,11 @@ function TeacherDashboard() {
             </div>
           </div>
         ))}
-      </div>
+          </div>
+          )}
 
-      <div id="sec-history" style={C.card}>
+          {section === "history" && (
+          <div style={C.card}>
         <h2 style={C.h2}>History</h2>
         {history.length === 0 && <span style={{ color: "#94a3b8" }}>Nothing yet.</span>}
         {history.map((o) => (
@@ -2926,6 +2987,9 @@ function TeacherDashboard() {
               ))}
           </div>
         ))}
+          </div>
+          )}
+        </div>
       </div>
     </div>
   );
