@@ -332,6 +332,34 @@ async function testApprovalGating() {
   ok("fires the fulfillment routine once approved");
 }
 
+// ── Test 9: cancelling an acceptance reopens + re-contacts ────────────
+async function testCancelAcceptance() {
+  console.log("Test 9: a sub cancelling after accepting reopens + re-contacts");
+  let clock = 0;
+  const log = [];
+  const store = makeStore({ rankedTeachers: TEACHERS });
+  const engine = createEngine({ store, notifier: makeNotifier(log), now: () => clock });
+
+  const req = store.addRequest({ schoolId: "s1", gradeLevelId: "g1", urgency: "urgent", escalationIntervalMs: 5 * MIN });
+  await engine.onRequestCreated(req._id); // offer → Alice (rank 0)
+
+  const aliceOffer = (await store.getOffersForRequest(req._id))[0];
+  await engine.accept(aliceOffer);
+  assert.equal((await store.getRequest(req._id)).status, "filled", "filled after accept");
+
+  // Alice cancels her acceptance.
+  const accepted = (await store.getOffersForRequest(req._id)).find((o) => String(o.teacherId) === "t1");
+  const r = await engine.cancelAcceptance(accepted);
+  assert.equal(r.ok, true, "cancel succeeded");
+  ok("a sub can cancel after accepting");
+
+  const after = await store.getRequest(req._id);
+  assert.equal(after.status, "open", "request reopened");
+  const sent = log.filter((l) => l.type === "offer");
+  assert.equal(sent[sent.length - 1].to, "bob@subs.test", "re-contacted the next sub (Bob), skipping Alice");
+  ok("cancel reopens the request and contacts the next sub");
+}
+
 (async () => {
   console.log("\nsubs escalation engine — tests\n");
   await testUrgentEscalation();
@@ -342,6 +370,7 @@ async function testApprovalGating() {
   await testZeroEligible();
   await testInternalCoverage();
   await testApprovalGating();
+  await testCancelAcceptance();
   console.log(`\n${passed} assertions passed ✓\n`);
 })().catch((err) => {
   console.error("\n✗ TEST FAILED:", err.message);

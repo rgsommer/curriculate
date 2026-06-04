@@ -126,6 +126,12 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
   if (typeof req.body?.financeEmail === "string") set.financeEmail = req.body.financeEmail.trim().toLowerCase();
   if (typeof req.body?.adminPhone === "string") set.adminPhone = req.body.adminPhone.trim();
+  if (typeof req.body?.address === "string") set.address = req.body.address.trim();
+  if (typeof req.body?.phone === "string") set.phone = req.body.phone.trim();
+  if (typeof req.body?.email === "string") set.email = req.body.email.trim().toLowerCase();
+  for (const k of ["morningStart", "morningEnd", "dayStart", "dayEnd"]) {
+    if (typeof req.body?.[k] === "string" && (req.body[k] === "" || /^\d{2}:\d{2}$/.test(req.body[k]))) set[`hours.${k}`] = req.body[k];
+  }
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
   if (typeof req.body?.requireSickVoiceNote === "boolean") set.requireSickVoiceNote = req.body.requireSickVoiceNote;
   await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });
@@ -377,7 +383,14 @@ router.post("/requests/:rid/cancel", async (req, res) => {
 // candidate counts and fill status — plus what's already covered, and an
 // internal-coverage load tally to watch for burnout (challenge #8).
 function needByISO(request, school) {
-  const t = request.startTime || school?.bellTime || "08:30";
+  // PM half-days start at the school's afternoon start (morningEnd); else
+  // the request's own start; else the school's day start / bell time.
+  const t =
+    (request.dayPart === "pm" && school?.hours?.morningEnd) ||
+    request.startTime ||
+    school?.hours?.dayStart ||
+    school?.bellTime ||
+    "08:30";
   // Interpret as a naive local datetime string; the frontend renders the
   // countdown in the viewer's locale.
   return `${request.date}T${t.length === 5 ? t : "08:30"}:00`;

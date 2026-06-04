@@ -437,6 +437,16 @@ router.post("/offers/:id/decline", requireSubsAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Back out of an assignment already accepted — reopens the request and
+// resumes contacting other subs.
+router.post("/offers/:id/cancel", requireSubsAuth, async (req, res) => {
+  const offer = await ownedOffer(req, res);
+  if (!offer) return;
+  const result = await getSubsEngine().cancelAcceptance(offer);
+  if (!result.ok) return res.status(409).json({ error: humanizeReason(result.reason) });
+  res.json({ ok: true });
+});
+
 // Lesson plan for an offer the signed-in sub owns. Non-secret parts
 // (system/username, completeness) are always visible so the sub can judge
 // readiness before accepting; decrypted passwords are revealed ONLY once
@@ -503,6 +513,8 @@ router.post("/respond", jsonBody, async (req, res) => {
 function humanizeReason(reason) {
   if (reason === "offer_not_pending") return "This offer is no longer active — it may have expired or been answered.";
   if (reason === "request_closed") return "This assignment has already been filled or cancelled.";
+  if (reason === "not_accepted") return "You can only cancel an assignment you've accepted.";
+  if (reason === "not_the_filling_offer") return "This assignment can no longer be cancelled here.";
   return "Could not process this response.";
 }
 

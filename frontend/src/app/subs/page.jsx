@@ -262,6 +262,75 @@ function VoiceRecorder({ required, onChange, onFail }) {
   );
 }
 
+// Shared, normalized vocabularies so a sub's profile and a school's request
+// requirements match on the same values (free text didn't reliably match).
+const SUBJECT_OPTIONS = [
+  "English/Language Arts", "Math", "HS Math", "Science", "Biology", "Chemistry", "Physics",
+  "French", "Spanish", "Social Studies", "History", "Geography", "Music", "Art", "Drama",
+  "Phys Ed", "Computer Science", "Tech", "Special Education", "ESL", "Religious Studies", "Early Years",
+];
+const GRADE_OPTIONS = [
+  "Pre-K", "Kindergarten", "Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6",
+  "Grade 7", "Grade 8", "Grade 9", "Grade 10", "Grade 11", "Grade 12",
+];
+
+// Multi-select chip picker: common options as toggle chips + an "add your
+// own" box. Value is an array of strings. Normalizes input so matching is
+// reliable while still allowing custom entries.
+function TagPicker({ options, value, onChange, placeholder = "add your own…" }) {
+  const [custom, setCustom] = useState("");
+  const selected = new Set(value);
+  function toggle(v) {
+    onChange(selected.has(v) ? value.filter((x) => x !== v) : [...value, v]);
+  }
+  function addCustom() {
+    const v = custom.trim();
+    if (v && !value.some((x) => x.toLowerCase() === v.toLowerCase())) onChange([...value, v]);
+    setCustom("");
+  }
+  // Custom (off-list) selections so they remain visible/removable as chips.
+  const extras = value.filter((v) => !options.includes(v));
+  return (
+    <div>
+      <div style={{ ...C.row, gap: 6 }}>
+        {options.map((o) => (
+          <button
+            key={o}
+            type="button"
+            onClick={() => toggle(o)}
+            style={selected.has(o) ? { ...C.pill("#2563eb", "#fff"), border: 0, cursor: "pointer" } : { ...C.pill("#f1f5f9", "#334155"), border: 0, cursor: "pointer" }}
+          >
+            {selected.has(o) ? "✓ " : ""}
+            {o}
+          </button>
+        ))}
+        {extras.map((o) => (
+          <button key={o} type="button" onClick={() => toggle(o)} style={{ ...C.pill("#dbeafe", "#1d4ed8"), border: 0, cursor: "pointer" }}>
+            ✓ {o} ✕
+          </button>
+        ))}
+      </div>
+      <div style={{ ...C.row, marginTop: 6 }}>
+        <input
+          style={{ ...C.input, width: 200 }}
+          value={custom}
+          onChange={(e) => setCustom(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addCustom();
+            }
+          }}
+          placeholder={placeholder}
+        />
+        <button type="button" style={C.btnGhost} onClick={addCustom}>
+          Add
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Countdown to the bell ("time-to-bell" on the morning dashboard).
 function untilBell(needBy, nowTs) {
   if (!needBy) return { text: "", urgent: false };
@@ -744,7 +813,7 @@ function VoiceNotePlayer({ requestId }) {
 // ── Approvals queue (teacher-submitted absence requests) ──────────────
 function ApprovalRow({ a, onDone }) {
   const [role, setRole] = useState("teacher");
-  const [quals, setQuals] = useState("");
+  const [quals, setQuals] = useState([]);
   const [urgency, setUrgency] = useState(a.urgency || "urgent");
   const [denyOpen, setDenyOpen] = useState(false);
   const [denyReason, setDenyReason] = useState("");
@@ -755,7 +824,7 @@ function ApprovalRow({ a, onDone }) {
     try {
       await api(`/api/subs-admin/requests/${a._id}/approve`, {
         method: "POST",
-        body: { requiredRole: role, requiredQualifications: quals.split(",").map((q) => q.trim()).filter(Boolean), urgency },
+        body: { requiredRole: role, requiredQualifications: quals, urgency },
       });
       onDone();
     } finally {
@@ -796,24 +865,29 @@ function ApprovalRow({ a, onDone }) {
       {a.canApprove === false ? (
         <div style={{ marginTop: 8, fontSize: 13, color: "#92400e" }}>Awaiting principal — you don't have approval authority for this absence.</div>
       ) : (
-        <div style={{ ...C.row, marginTop: 10 }}>
-          <select style={{ ...C.input, width: 120 }} value={role} onChange={(e) => setRole(e.target.value)}>
-            <option value="teacher">Teacher</option>
-            <option value="ea">EA</option>
-            <option value="specialist">Specialist</option>
-            <option value="tech">Tech</option>
-          </select>
-          <input style={{ ...C.input, width: 200 }} placeholder="Required qualifications" value={quals} onChange={(e) => setQuals(e.target.value)} />
-          <select style={{ ...C.input, width: 110 }} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
-            <option value="urgent">Urgent</option>
-            <option value="advance">Advance</option>
-          </select>
-          <button style={C.btnGreen} onClick={approve} disabled={busy}>
-            Approve → start contacting
-          </button>
-          <button style={C.btnRed} onClick={() => setDenyOpen((d) => !d)} disabled={busy}>
-            Deny
-          </button>
+        <div style={{ marginTop: 10 }}>
+          <div style={C.row}>
+            <select style={{ ...C.input, width: 120 }} value={role} onChange={(e) => setRole(e.target.value)}>
+              <option value="teacher">Teacher</option>
+              <option value="ea">EA</option>
+              <option value="specialist">Specialist</option>
+              <option value="tech">Tech</option>
+            </select>
+            <select style={{ ...C.input, width: 110 }} value={urgency} onChange={(e) => setUrgency(e.target.value)}>
+              <option value="urgent">Urgent</option>
+              <option value="advance">Advance</option>
+            </select>
+            <button style={C.btnGreen} onClick={approve} disabled={busy}>
+              Approve → start contacting
+            </button>
+            <button style={C.btnRed} onClick={() => setDenyOpen((d) => !d)} disabled={busy}>
+              Deny
+            </button>
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <label style={{ ...C.label, marginTop: 0 }}>Required qualifications (optional)</label>
+            <TagPicker options={SUBJECT_OPTIONS} value={quals} onChange={setQuals} placeholder="add a subject…" />
+          </div>
         </div>
       )}
       {denyOpen && (
@@ -898,6 +972,12 @@ function AdminDashboard() {
       <ApprovalsQueue />
       <div style={C.card}>
         <h2 style={C.h2}>Schools</h2>
+        {schools.length === 0 && (
+          <div style={{ ...C.err, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}>
+            You don't administer any school yet. Creating one below makes you its administrator. If your school is already set up,
+            you don't create another — ask its principal to send you the staff sign-up link (then use the Teacher / Sub view).
+          </div>
+        )}
         <div style={C.row}>
           {schools.map((s) => (
             <button key={s._id} style={s._id === activeId ? C.btn : C.btnGhost} onClick={() => setActiveId(s._id)}>
@@ -1083,6 +1163,13 @@ function SchoolSettings({ school, onSaved }) {
   const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
   const [requireSickVoice, setRequireSickVoice] = useState(!!school.requireSickVoiceNote);
   const [adminPhone, setAdminPhone] = useState(school.adminPhone || "");
+  const [address, setAddress] = useState(school.address || "");
+  const [phone, setPhone] = useState(school.phone || "");
+  const [email, setEmail] = useState(school.email || "");
+  const [morningStart, setMorningStart] = useState(school.hours?.morningStart || "");
+  const [morningEnd, setMorningEnd] = useState(school.hours?.morningEnd || "");
+  const [dayStart, setDayStart] = useState(school.hours?.dayStart || "");
+  const [dayEnd, setDayEnd] = useState(school.hours?.dayEnd || "");
   const [testMsg, setTestMsg] = useState("");
   const [testing, setTesting] = useState(false);
   const [staffLink, setStaffLink] = useState("");
@@ -1093,7 +1180,7 @@ function SchoolSettings({ school, onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice, adminPhone, address, phone, email, morningStart, morningEnd, dayStart, dayEnd },
       });
       onSaved();
       setOpen(false);
@@ -1157,14 +1244,46 @@ function SchoolSettings({ school, onSaved }) {
               <input style={{ ...C.input, width: 100 }} value={abbrev} onChange={(e) => setAbbrev(e.target.value)} placeholder="BCS" />
             </div>
             <div>
-              <label style={C.label}>Default bell time</label>
-              <input style={{ ...C.input, width: 110 }} type="time" value={bellTime} onChange={(e) => setBellTime(e.target.value)} />
-            </div>
-            <div>
               <label style={C.label}>Sub budget ($)</label>
               <input style={{ ...C.input, width: 120 }} type="number" value={budget} onChange={(e) => setBudget(e.target.value)} placeholder="optional" />
             </div>
           </div>
+
+          <div style={{ marginTop: 8 }}>
+            <label style={C.label}>School address</label>
+            <input style={C.input} value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 School St, City" />
+          </div>
+          <div style={C.row}>
+            <div>
+              <label style={C.label}>School phone</label>
+              <input style={{ ...C.input, width: 180 }} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(905) 555-1234" />
+            </div>
+            <div>
+              <label style={C.label}>School email</label>
+              <input style={{ ...C.input, width: 220 }} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="office@school.org" />
+            </div>
+          </div>
+
+          <label style={{ ...C.label, marginTop: 10 }}>School hours</label>
+          <div style={C.row}>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>Morning</div>
+              <div style={C.row}>
+                <input style={{ ...C.input, width: 110 }} type="time" value={morningStart} onChange={(e) => setMorningStart(e.target.value)} />
+                <span style={{ color: "#64748b" }}>to</span>
+                <input style={{ ...C.input, width: 110 }} type="time" value={morningEnd} onChange={(e) => setMorningEnd(e.target.value)} />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: "#64748b" }}>Full day</div>
+              <div style={C.row}>
+                <input style={{ ...C.input, width: 110 }} type="time" value={dayStart} onChange={(e) => setDayStart(e.target.value)} />
+                <span style={{ color: "#64748b" }}>to</span>
+                <input style={{ ...C.input, width: 110 }} type="time" value={dayEnd} onChange={(e) => setDayEnd(e.target.value)} />
+              </div>
+            </div>
+          </div>
+          <p style={{ fontSize: 12, color: "#94a3b8", margin: "4px 0 0" }}>Morning end doubles as the afternoon (PM half-day) start. The full-day start drives the morning countdown.</p>
           <div style={C.row}>
             <div>
               <label style={C.label}>Default VP email (lesson plans)</label>
@@ -1378,7 +1497,7 @@ function PostRequest({ school, grades }) {
   const [dayPart, setDayPart] = useState("full");
   const [endTime, setEndTime] = useState("11:00");
   const [requiredRole, setRequiredRole] = useState("teacher");
-  const [quals, setQuals] = useState(""); // comma-separated
+  const [quals, setQuals] = useState([]);
   const [notes, setNotes] = useState("");
   const [difficultyNote, setDifficultyNote] = useState("");
   const [supportLevel, setSupportLevel] = useState("");
@@ -1430,7 +1549,7 @@ function PostRequest({ school, grades }) {
         dayPart,
         endTime: dayPart === "custom" ? endTime : "",
         requiredRole,
-        requiredQualifications: quals.split(",").map((q) => q.trim()).filter(Boolean),
+        requiredQualifications: quals,
         requiredFaithFit: Object.keys(faith).filter((k) => faith[k]),
         notes,
         difficultyNote,
@@ -1451,7 +1570,7 @@ function PostRequest({ school, grades }) {
       const n = r.eligibleCount;
       setMsg(n === 0 ? "⚠ Posted, but NO qualified subs match — consider widening requirements or internal coverage." : `Posted — contacting the first of ${n} qualified sub(s) now.`);
       setNotes("");
-      setQuals("");
+      setQuals([]);
       setDifficultyNote("");
     } catch (e2) {
       setErr(e2.message);
@@ -1519,8 +1638,8 @@ function PostRequest({ school, grades }) {
 
         <DayPartPicker dayPart={dayPart} setDayPart={setDayPart} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} />
 
-        <label style={C.label}>Required qualifications (comma-separated)</label>
-        <input style={C.input} value={quals} onChange={(e) => setQuals(e.target.value)} placeholder="e.g. French, HS Math, Chemistry" />
+        <label style={C.label}>Required qualifications</label>
+        <TagPicker options={SUBJECT_OPTIONS} value={quals} onChange={setQuals} placeholder="add a subject…" />
 
         <div style={C.row}>
           {staff.length > 0 && (
@@ -2402,6 +2521,11 @@ function TeacherDashboard() {
             <span style={{ minWidth: 100 }}>{o.request?.gradeName}</span>
             <span style={{ color: "#64748b", minWidth: 140 }}>{o.request?.schoolName}</span>
             <StatusPill status={o.status} />
+            {o.status === "accepted" && o.request?.status === "filled" && (
+              <button style={C.btnRed} onClick={() => respond(o._id, "cancel")}>
+                Cancel my acceptance
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -2415,9 +2539,9 @@ function TeacherProfile({ teacher, onSaved }) {
   const [email, setEmailPref] = useState(teacher.contactPrefs?.email !== false);
   const [sms, setSms] = useState(!!teacher.contactPrefs?.sms);
   const [active, setActive] = useState(teacher.active !== false);
-  const [quals, setQuals] = useState((teacher.qualifications || []).join(", "));
+  const [quals, setQuals] = useState(teacher.qualifications || []);
   const [roleTypes, setRoleTypes] = useState(teacher.roleTypes?.length ? teacher.roleTypes : ["teacher"]);
-  const [gradeComfort, setGradeComfort] = useState((teacher.gradeComfort || []).join(", "));
+  const [gradeComfort, setGradeComfort] = useState(teacher.gradeComfort || []);
   const [faith, setFaith] = useState(teacher.faithFit || {});
   const [maxTravelKm, setMaxTravelKm] = useState(teacher.maxTravelKm ?? "");
   const [dayRate, setDayRate] = useState(teacher.dayRate ?? "");
@@ -2459,9 +2583,9 @@ function TeacherProfile({ teacher, onSaved }) {
           phone,
           active,
           contactPrefs: { email, sms },
-          qualifications: quals.split(",").map((s) => s.trim()).filter(Boolean),
+          qualifications: quals,
           roleTypes: roleTypes.length ? roleTypes : ["teacher"],
-          gradeComfort: gradeComfort.split(",").map((s) => s.trim()).filter(Boolean),
+          gradeComfort,
           faithFit: faith,
           maxTravelKm: maxTravelKm === "" ? undefined : Number(maxTravelKm),
           dayRate: dayRate === "" ? undefined : Number(dayRate),
@@ -2531,11 +2655,11 @@ function TeacherProfile({ teacher, onSaved }) {
           ))}
         </div>
 
-        <label style={C.label}>Subjects I'm certified to teach (comma-separated)</label>
-        <input style={C.input} value={quals} onChange={(e) => setQuals(e.target.value)} placeholder="e.g. French, HS Math, Chemistry, SpEd" />
+        <label style={C.label}>Subjects I'm certified to teach</label>
+        <TagPicker options={SUBJECT_OPTIONS} value={quals} onChange={setQuals} placeholder="add a subject…" />
 
-        <label style={C.label}>Grades I'm comfortable with (comma-separated)</label>
-        <input style={C.input} value={gradeComfort} onChange={(e) => setGradeComfort(e.target.value)} placeholder="e.g. Grade 1, Grade 2, Kindergarten" />
+        <label style={{ ...C.label, marginTop: 14 }}>Grades I'm comfortable with</label>
+        <TagPicker options={GRADE_OPTIONS} value={gradeComfort} onChange={setGradeComfort} placeholder="add a grade…" />
 
         <div style={C.row}>
           <div>

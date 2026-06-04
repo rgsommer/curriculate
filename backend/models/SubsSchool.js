@@ -20,6 +20,19 @@ const SubsSchoolSchema = new mongoose.Schema(
     // Default bell time (HH:MM) used for the morning "time-to-bell"
     // countdown when a request doesn't specify its own start time.
     bellTime: { type: String, default: "08:30" },
+    // School contact details (informational).
+    address: { type: String, default: "", trim: true },
+    phone: { type: String, default: "", trim: true },
+    email: { type: String, default: "", lowercase: true, trim: true },
+    // School hours — morning session and full day (HH:MM). These give the
+    // half-day AM/PM and full-day coverage windows concrete times and feed
+    // the morning countdown (dayStart preferred over bellTime).
+    hours: {
+      morningStart: { type: String, default: "" },
+      morningEnd: { type: String, default: "" },
+      dayStart: { type: String, default: "" },
+      dayEnd: { type: String, default: "" },
+    },
     // Emails allowed to administer this school (lowercased).
     adminEmails: { type: [String], default: [], index: true },
 

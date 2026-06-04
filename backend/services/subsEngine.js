@@ -193,6 +193,33 @@ export function createEngine({ store, notifier, now = () => Date.now() }) {
       return { ok: true };
     },
 
+    // A sub backs out after accepting: reopen the request and resume
+    // contacting the remaining eligible subs (the canceller is already in
+    // the contacted set, so they won't be re-offered). The school is told
+    // coverage fell through.
+    async cancelAcceptance(offer) {
+      if (!offer || offer.status !== "accepted") return { ok: false, reason: "not_accepted" };
+      const request = await store.getRequest(offer.requestId);
+      if (!request || request.status !== "filled" || String(request.filledOfferId) !== String(offer._id)) {
+        return { ok: false, reason: "not_the_filling_offer" };
+      }
+      // Mark the offer declined so dispatchNext skips this teacher.
+      await store.updateOffer(offer._id, { status: "declined", respondedAt: nowDate() });
+      await store.updateRequest(request._id, {
+        status: "open",
+        coverageType: null,
+        filledByTeacherId: null,
+        filledOfferId: null,
+        filledAt: null,
+      });
+      const reopened = await store.getRequest(request._id);
+      await processRequest(reopened); // contact the next eligible sub
+      const ctx = await store.getRequestContext(request._id);
+      const teacher = await store.getTeacher(offer.teacherId);
+      if (notifier.notifyCancelled) await notifier.notifyCancelled({ ...ctx, teacher });
+      return { ok: true };
+    },
+
     // Exposed for tests / dev tooling.
     _processRequest: processRequest,
   };
