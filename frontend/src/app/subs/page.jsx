@@ -2092,11 +2092,15 @@ function RequestsBoard({ school }) {
               <div key={o._id} style={{ ...C.row, fontSize: 13, padding: "3px 0", borderBottom: "1px solid #f8fafc" }}>
                 <span style={{ color: "#94a3b8", width: 28 }}>{o.rank >= 0 ? `#${o.rank + 1}` : "★"}</span>
                 <span style={{ minWidth: 130, fontWeight: 600 }}>{o.teacherName}</span>
-                {o.teacherPhone && (
+                {o.teacherPhone ? (
                   <a href={`tel:${o.teacherPhone.replace(/[^\d+]/g, "")}`} style={{ color: "#2563eb", textDecoration: "none" }} title="Call this sub">
                     📞 {o.teacherPhone}
                   </a>
-                )}
+                ) : o.teacherEmail ? (
+                  <a href={`mailto:${o.teacherEmail}`} style={{ color: "#2563eb", textDecoration: "none" }} title="Email this sub">
+                    ✉️ {o.teacherEmail}
+                  </a>
+                ) : null}
                 <StatusPill status={o.status === "declined" ? "skipped" : o.status} />
                 {o.sentAt && <span style={{ color: "#94a3b8" }}>contacted {clockTime(o.sentAt)}</span>}
                 {o.respondedAt && o.status !== "pending" && <span style={{ color: "#94a3b8" }}>· replied {clockTime(o.respondedAt)}</span>}
