@@ -3,6 +3,21 @@
 import { NextResponse } from "next/server";
 import { readAuth, db, ObjectId } from "../../../../_auth";
 
+// Normalise the multi-account split array the edit dialog sends. Drops blank
+// rows, coerces percentage to a number, defaults bank code. Returns [] if none.
+function cleanBankAccounts(arr: any): any[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((a: any) => ({
+      bank_code: String(a?.bank_code || "").trim() || "088",
+      branch_code: String(a?.branch_code || "").trim(),
+      account_no: String(a?.account_no || "").trim(),
+      account_name: String(a?.account_name || "").trim(),
+      percentage: Number(a?.percentage) || 0,
+    }))
+    .filter((a) => a.account_no || a.account_name);
+}
+
 const SETTABLE = [
   "first_name", "last_name", "email", "dob", "start_date", "end_date",
   "pay_type", "annual_salary", "hourly_rate", "default_hours", "fte_pct",
@@ -68,6 +83,21 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const filter = { _id: new ObjectId(eid), company_id: new ObjectId(id) };
     const $unset: any = {};
     let rehired = false;
+    // Bank accounts: persist the split array and keep the legacy single-account
+    // mirrors in sync with the primary account (the bank file + stubs read both).
+    if ("bank_accounts" in b) {
+      const cleaned = cleanBankAccounts(b.bank_accounts);
+      if (cleaned.length) {
+        $set.bank_accounts = cleaned;
+        const p = cleaned[0];
+        $set.bank_account_no = p.account_no || null;
+        $set.bank_account_name = p.account_name || null;
+        $set.branch_code = p.branch_code || null;
+        $set.bank_code = p.bank_code || "088";
+      } else {
+        $unset.bank_accounts = "";
+      }
+    }
     // Re-employment: when an inactive employee is switched back to active,
     // they were likely terminated (final pay stamps is_active:0 + terminated_at).
     // Clear the termination markers so the record reads as a current employee

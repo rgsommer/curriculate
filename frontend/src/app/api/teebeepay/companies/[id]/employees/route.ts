@@ -2,6 +2,20 @@
 import { NextResponse } from "next/server";
 import { readAuth, db, ObjectId } from "../../../_auth";
 
+// Normalise the multi-account split array the employee dialog sends.
+function cleanBankAccounts(arr: any): any[] {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map((a: any) => ({
+      bank_code: String(a?.bank_code || "").trim() || "088",
+      branch_code: String(a?.branch_code || "").trim(),
+      account_no: String(a?.account_no || "").trim(),
+      account_name: String(a?.account_name || "").trim(),
+      percentage: Number(a?.percentage) || 0,
+    }))
+    .filter((a) => a.account_no || a.account_name);
+}
+
 /* GET — list employees the authed user can see (clearance-filtered). */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const u = readAuth(req);
@@ -113,10 +127,19 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       dependents: Number(b.dependents || 0),
       residency_status: b.residency_status === "non_resident" ? "non_resident" : "resident",
       declaration_lodged: b.declaration_lodged !== false,
-      bank_account_no: b.bank_account_no ? String(b.bank_account_no).trim() : null,
-      bank_account_name: b.bank_account_name ? String(b.bank_account_name).trim() : null,
-      branch_code: b.branch_code ? String(b.branch_code).trim() : null,
-      bank_code: b.bank_code || "088",
+      ...(() => {
+        // Persist the split array; mirror the primary account into the legacy
+        // single-account fields so the bank file + stubs stay consistent.
+        const accts = cleanBankAccounts(b.bank_accounts);
+        const p = accts[0];
+        return {
+          bank_accounts: accts.length ? accts : null,
+          bank_account_no: p ? (p.account_no || null) : (b.bank_account_no ? String(b.bank_account_no).trim() : null),
+          bank_account_name: p ? (p.account_name || null) : (b.bank_account_name ? String(b.bank_account_name).trim() : null),
+          branch_code: p ? (p.branch_code || null) : (b.branch_code ? String(b.branch_code).trim() : null),
+          bank_code: p ? (p.bank_code || "088") : (b.bank_code || "088"),
+        };
+      })(),
       housing_allowance: num(b.housing_allowance) || 0,
       vehicle_allowance: num(b.vehicle_allowance) || 0,
       fuel_allowance: num(b.fuel_allowance) || 0,
