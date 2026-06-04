@@ -1,0 +1,710 @@
+// backend/routes/subsAdmin.js
+//
+// School-admin API for /subs. Every route requires a valid subs session;
+// routes scoped to a school additionally require the signed-in email to
+// be on that school's adminEmails list.
+//
+// Mounted at /api/subs-admin. Endpoints:
+//   GET    /schools                         — schools I administer
+//   POST   /schools                         — create a school (I become admin)
+//   POST   /schools/:id/admins              — add another admin email
+//   GET    /schools/:id/grades              — list grade levels
+//   POST   /schools/:id/grades              — add a grade level
+//   GET    /teachers                        — the shared substitute pool
+//   POST   /teachers                        — add/upsert a substitute
+//   GET    /schools/:id/grades/:gid/ranking — ordered preferred subs
+//   PUT    /schools/:id/grades/:gid/ranking — set ordered preferred subs
+//   POST   /requests                        — post a sub request (starts engine)
+//   GET    /schools/:id/requests            — requests + live status/offers
+//   POST   /requests/:rid/cancel            — cancel an open request
+//   POST   /dev/tick                        — force one escalation sweep (dev)
+
+import express from "express";
+import mongoose from "mongoose";
+import crypto from "crypto";
+import { requireSubsAuth } from "../services/subsAuthToken.js";
+import SubsSchool from "../models/SubsSchool.js";
+import SubsGradeLevel from "../models/SubsGradeLevel.js";
+import SubsTeacher from "../models/SubsTeacher.js";
+import SubsRanking from "../models/SubsRanking.js";
+import SubsRequest, { URGENT_INTERVAL_MS, ADVANCE_INTERVAL_MS } from "../models/SubsRequest.js";
+import SubsOffer from "../models/SubsOffer.js";
+import SubsLessonPlan from "../models/SubsLessonPlan.js";
+import SubsInternalCoverage, { COVERAGE_TYPES } from "../models/SubsInternalCoverage.js";
+import SubsReliabilityFeedback from "../models/SubsReliabilityFeedback.js";
+import SubsInvite from "../models/SubsInvite.js";
+import SubsStaff from "../models/SubsStaff.js";
+import { getSubsEngine, tickNow } from "../jobs/subsEscalation.js";
+import { notifier } from "../services/subsNotify.js";
+import { isEligible, eligibilityReasons } from "../services/subsMatching.js";
+import { encryptSecret, decryptSecret, encryptionAvailable } from "../services/subsCrypto.js";
+
+const router = express.Router();
+
+const APP_BASE_URL = process.env.SUBS_BASE_URL || "https://curriculate.net/subs";
+
+// 0..1 readiness so subs see how complete a plan is (challenge #6).
+function planCompleteness(p) {
+  let s = 0;
+  if (p.body && p.body.trim()) s += 0.5;
+  if (p.routineNotes && p.routineNotes.trim()) s += 0.25;
+  if ((p.materialsLinks || []).length) s += 0.25;
+  return Math.round(s * 100) / 100;
+}
+
+// Build a SubsLessonPlan from request-body input, encrypting any secrets.
+async function createLessonPlanDoc({ schoolId, input }) {
+  const credentials = [];
+  for (const c of input.credentials || []) {
+    const cred = { system: c.system || "", username: c.username || "" };
+    if (c.secret) {
+      if (!encryptionAvailable()) throw new Error("SUBS_ENCRYPTION_KEY not set — cannot store lesson-plan passwords securely");
+      cred.secretEnc = encryptSecret(c.secret);
+    }
+    credentials.push(cred);
+  }
+  const doc = {
+    schoolId,
+    body: input.body || "",
+    routineNotes: input.routineNotes || "",
+    materialsLinks: Array.isArray(input.materialsLinks) ? input.materialsLinks.filter(Boolean) : [],
+    credentials,
+  };
+  doc.completeness = planCompleteness(doc);
+  return SubsLessonPlan.create(doc);
+}
+
+router.use(requireSubsAuth);
+router.use(express.json({ limit: "32kb" }));
+
+function isValidEmail(e) {
+  return typeof e === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+function isOid(id) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
+// Load the school in :id and confirm the caller administers it.
+async function loadAdminSchool(req, res, next) {
+  const { id } = req.params;
+  if (!isOid(id)) return res.status(400).json({ error: "Bad school id" });
+  const school = await SubsSchool.findById(id).lean();
+  if (!school) return res.status(404).json({ error: "School not found" });
+  if (!(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  req.school = school;
+  next();
+}
+
+// ── Schools ───────────────────────────────────────────────────────────
+
+router.get("/schools", async (req, res) => {
+  const schools = await SubsSchool.find({ adminEmails: req.subsUser.email }).sort({ name: 1 }).lean();
+  res.json({ schools });
+});
+
+router.post("/schools", async (req, res) => {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  if (!name) return res.status(400).json({ error: "School name is required" });
+  const location = typeof req.body?.location === "string" ? req.body.location.trim() : "";
+  const abbrev = typeof req.body?.abbrev === "string" ? req.body.abbrev.trim().slice(0, 8) : "";
+  const school = await SubsSchool.create({ name, location, abbrev, adminEmails: [req.subsUser.email] });
+  res.json({ school: school.toObject() });
+});
+
+// Update school settings: abbrev, bell time, faith-fit toggle, sub budget.
+router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
+  const set = {};
+  if (typeof req.body?.name === "string" && req.body.name.trim()) set.name = req.body.name.trim();
+  if (typeof req.body?.abbrev === "string") set.abbrev = req.body.abbrev.trim().slice(0, 8);
+  if (typeof req.body?.location === "string") set.location = req.body.location.trim();
+  if (typeof req.body?.bellTime === "string" && /^\d{2}:\d{2}$/.test(req.body.bellTime)) set.bellTime = req.body.bellTime;
+  if (typeof req.body?.faithFitEnabled === "boolean") set["faithFit.enabled"] = req.body.faithFitEnabled;
+  if (Number.isFinite(req.body?.subBudgetTotal)) set["subBudget.total"] = req.body.subBudgetTotal;
+  if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
+  if (typeof req.body?.financeEmail === "string") set.financeEmail = req.body.financeEmail.trim().toLowerCase();
+  await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });
+  const school = await SubsSchool.findById(req.school._id).lean();
+  res.json({ school });
+});
+
+router.post("/schools/:id/admins", loadAdminSchool, async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!isValidEmail(email)) return res.status(400).json({ error: "Invalid email address" });
+  await SubsSchool.updateOne({ _id: req.school._id }, { $addToSet: { adminEmails: email } });
+  const school = await SubsSchool.findById(req.school._id).lean();
+  res.json({ school });
+});
+
+// ── Grade levels ──────────────────────────────────────────────────────
+
+router.get("/schools/:id/grades", loadAdminSchool, async (req, res) => {
+  const grades = await SubsGradeLevel.find({ schoolId: req.school._id }).sort({ order: 1, name: 1 }).lean();
+  res.json({ grades });
+});
+
+router.post("/schools/:id/grades", loadAdminSchool, async (req, res) => {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  if (!name) return res.status(400).json({ error: "Grade level name is required" });
+  const count = await SubsGradeLevel.countDocuments({ schoolId: req.school._id });
+  const grade = await SubsGradeLevel.create({
+    schoolId: req.school._id,
+    name,
+    order: Number.isFinite(req.body?.order) ? req.body.order : count,
+    vpEmail: typeof req.body?.vpEmail === "string" ? req.body.vpEmail.trim().toLowerCase() : "",
+  });
+  res.json({ grade: grade.toObject() });
+});
+
+// Set the "appropriate VP" for a grade (overrides the school default VP).
+router.patch("/schools/:id/grades/:gid", loadAdminSchool, async (req, res) => {
+  const { gid } = req.params;
+  if (!isOid(gid)) return res.status(400).json({ error: "Bad grade id" });
+  const set = {};
+  if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
+  if (typeof req.body?.name === "string" && req.body.name.trim()) set.name = req.body.name.trim();
+  await SubsGradeLevel.updateOne({ _id: gid, schoolId: req.school._id }, { $set: set });
+  res.json({ ok: true });
+});
+
+// ── Substitute teacher pool ───────────────────────────────────────────
+
+router.get("/teachers", async (req, res) => {
+  const teachers = await SubsTeacher.find({}).sort({ name: 1, email: 1 }).lean();
+  res.json({ teachers });
+});
+
+// Add or upsert a substitute by email. Admins curate the pool; a teacher
+// can later sign in with the same email to set their own contact prefs.
+router.post("/teachers", async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!isValidEmail(email)) return res.status(400).json({ error: "Invalid email address" });
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : "";
+  const set = {};
+  if (name) set.name = name;
+  if (phone) set.phone = phone;
+  const teacher = await SubsTeacher.findOneAndUpdate(
+    { email },
+    { $set: set, $setOnInsert: { email } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+  res.json({ teacher });
+});
+
+// ── Preference ranking per (school, grade) ────────────────────────────
+
+router.get("/schools/:id/grades/:gid/ranking", loadAdminSchool, async (req, res) => {
+  const { gid } = req.params;
+  if (!isOid(gid)) return res.status(400).json({ error: "Bad grade id" });
+  const ranking = await SubsRanking.findOne({ schoolId: req.school._id, gradeLevelId: gid }).lean();
+  const teacherIds = (ranking?.entries || []).sort((a, b) => a.rank - b.rank).map((e) => e.teacherId);
+  res.json({ teacherIds });
+});
+
+// Replace the ranking with an ordered array of teacher ids (index = rank).
+router.put("/schools/:id/grades/:gid/ranking", loadAdminSchool, async (req, res) => {
+  const { gid } = req.params;
+  if (!isOid(gid)) return res.status(400).json({ error: "Bad grade id" });
+  const ids = Array.isArray(req.body?.teacherIds) ? req.body.teacherIds : null;
+  if (!ids) return res.status(400).json({ error: "teacherIds array required" });
+  if (!ids.every(isOid)) return res.status(400).json({ error: "teacherIds must be valid ids" });
+  const entries = ids.map((teacherId, rank) => ({ teacherId, rank }));
+  await SubsRanking.findOneAndUpdate(
+    { schoolId: req.school._id, gradeLevelId: gid },
+    { $set: { entries } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+  res.json({ ok: true, teacherIds: ids });
+});
+
+// ── Sub requests ──────────────────────────────────────────────────────
+
+router.post("/requests", async (req, res) => {
+  const { schoolId, gradeLevelId, date, urgency } = req.body || {};
+  if (!isOid(schoolId) || !isOid(gradeLevelId)) return res.status(400).json({ error: "Bad school/grade id" });
+  if (urgency !== "urgent" && urgency !== "advance") return res.status(400).json({ error: "urgency must be 'urgent' or 'advance'" });
+  if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ error: "date must be YYYY-MM-DD" });
+
+  const school = await SubsSchool.findById(schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const grade = await SubsGradeLevel.findById(gradeLevelId).lean();
+  if (!grade || String(grade.schoolId) !== String(schoolId)) return res.status(400).json({ error: "Grade level not in this school" });
+
+  // Allow an explicit override (ms) for testing/tuning; otherwise derive
+  // the interval from urgency and freeze it onto the request.
+  const override = Number(req.body?.escalationIntervalMs);
+  const escalationIntervalMs = Number.isFinite(override) && override > 0
+    ? override
+    : urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS;
+
+  // Faith-fit requirements only apply when the school enables the feature.
+  const faithReq = school.faithFit?.enabled && Array.isArray(req.body?.requiredFaithFit)
+    ? req.body.requiredFaithFit.filter((k) => typeof k === "string")
+    : [];
+
+  // Optional lesson plan (with encrypted credentials).
+  let lessonPlanId = null;
+  if (req.body?.lessonPlan && typeof req.body.lessonPlan === "object") {
+    try {
+      const plan = await createLessonPlanDoc({ schoolId, input: req.body.lessonPlan });
+      lessonPlanId = plan._id;
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+  }
+
+  const request = await SubsRequest.create({
+    schoolId,
+    gradeLevelId,
+    date,
+    urgency,
+    escalationIntervalMs,
+    startTime: typeof req.body?.startTime === "string" ? req.body.startTime : "",
+    requiredRole: typeof req.body?.requiredRole === "string" ? req.body.requiredRole : "teacher",
+    requiredQualifications: Array.isArray(req.body?.requiredQualifications)
+      ? req.body.requiredQualifications.filter((q) => typeof q === "string" && q.trim()).map((q) => q.trim())
+      : [],
+    requiredFaithFit: faithReq,
+    difficultyNote: typeof req.body?.difficultyNote === "string" ? req.body.difficultyNote.trim() : "",
+    supportLevel: typeof req.body?.supportLevel === "string" ? req.body.supportLevel.trim() : "",
+    lessonPlanId,
+    estimatedCost: Number.isFinite(req.body?.estimatedCost) ? req.body.estimatedCost : null,
+    notes: typeof req.body?.notes === "string" ? req.body.notes.trim() : "",
+    createdByEmail: req.subsUser.email,
+    source: "admin",
+    // The absent teacher being covered (optional on admin-posted requests);
+    // emailed on a fill to send lesson plans by reply-all.
+    absentTeacher: req.body?.absentTeacher && typeof req.body.absentTeacher === "object"
+      ? { name: String(req.body.absentTeacher.name || "").trim(), email: String(req.body.absentTeacher.email || "").trim().toLowerCase() }
+      : { name: "", email: "" },
+    reason: typeof req.body?.reason === "string" ? req.body.reason.trim() : "",
+    status: "open",
+    currentRank: -1,
+  });
+
+  // Compute how many ranked subs actually qualify, so the dashboard can
+  // immediately flag "0 qualified candidates" (challenge #1).
+  const eligibleCount = await getSubsEngine().countEligible(request.toObject());
+  await SubsRequest.updateOne({ _id: request._id }, { $set: { eligibleCountAtPost: eligibleCount } });
+
+  // Kick off the first offer immediately (don't wait for the next sweep).
+  getSubsEngine()
+    .onRequestCreated(request._id)
+    .catch((err) => console.error("[subs] onRequestCreated error:", err?.message || err));
+
+  res.json({ request: { ...request.toObject(), eligibleCountAtPost: eligibleCount }, eligibleCount });
+});
+
+// Requests for a school, each enriched with its offers + teacher names so
+// the admin can watch the escalation walk down the ranking live.
+router.get("/schools/:id/requests", loadAdminSchool, async (req, res) => {
+  const requests = await SubsRequest.find({ schoolId: req.school._id }).sort({ createdAt: -1 }).limit(100).lean();
+  const grades = await SubsGradeLevel.find({ schoolId: req.school._id }).lean();
+  const gradeName = new Map(grades.map((g) => [String(g._id), g.name]));
+
+  const reqIds = requests.map((r) => r._id);
+  const offers = await SubsOffer.find({ requestId: { $in: reqIds } }).sort({ createdAt: 1 }).lean();
+  const teacherIds = [...new Set(offers.map((o) => String(o.teacherId)))];
+  const teachers = await SubsTeacher.find({ _id: { $in: teacherIds } }).lean();
+  const teacherById = new Map(teachers.map((t) => [String(t._id), t]));
+
+  const offersByReq = new Map();
+  for (const o of offers) {
+    const arr = offersByReq.get(String(o.requestId)) || [];
+    const t = teacherById.get(String(o.teacherId));
+    arr.push({
+      _id: o._id,
+      rank: o.rank,
+      status: o.status,
+      sentAt: o.sentAt,
+      expiresAt: o.expiresAt,
+      respondedAt: o.respondedAt,
+      channels: o.channels,
+      teacherName: t?.name || t?.email || "Unknown",
+    });
+    offersByReq.set(String(o.requestId), arr);
+  }
+
+  res.json({
+    requests: requests.map((r) => ({
+      ...r,
+      gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
+      offers: offersByReq.get(String(r._id)) || [],
+    })),
+  });
+});
+
+router.post("/requests/:rid/cancel", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  if (request.status !== "open") return res.status(400).json({ error: `Request is already ${request.status}` });
+  await SubsRequest.updateOne({ _id: rid }, { $set: { status: "cancelled" } });
+  await SubsOffer.updateMany({ requestId: rid, status: "pending" }, { $set: { status: "expired", respondedAt: new Date() } });
+  res.json({ ok: true });
+});
+
+// ── Morning triage dashboard (challenge #2) ───────────────────────────
+// Everything a principal needs at 6 a.m.: today's open absences across all
+// their schools, sorted by urgency then time-to-bell, with live qualified-
+// candidate counts and fill status — plus what's already covered, and an
+// internal-coverage load tally to watch for burnout (challenge #8).
+function needByISO(request, school) {
+  const t = request.startTime || school?.bellTime || "08:30";
+  // Interpret as a naive local datetime string; the frontend renders the
+  // countdown in the viewer's locale.
+  return `${request.date}T${t.length === 5 ? t : "08:30"}:00`;
+}
+
+router.get("/dashboard", async (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const schools = await SubsSchool.find({ adminEmails: req.subsUser.email }).lean();
+  const schoolById = new Map(schools.map((s) => [String(s._id), s]));
+  const schoolIds = schools.map((s) => s._id);
+
+  const grades = await SubsGradeLevel.find({ schoolId: { $in: schoolIds } }).lean();
+  const gradeName = new Map(grades.map((g) => [String(g._id), g.name]));
+
+  const open = await SubsRequest.find({ schoolId: { $in: schoolIds }, status: "open" }).lean();
+  const coveredToday = await SubsRequest.find({ schoolId: { $in: schoolIds }, status: "filled", date: today }).lean();
+
+  const engine = getSubsEngine();
+  const openEnriched = await Promise.all(
+    open.map(async (r) => {
+      const school = schoolById.get(String(r.schoolId));
+      const eligibleCount = await engine.countEligible(r);
+      const pending = await SubsOffer.findOne({ requestId: r._id, status: "pending" }).lean();
+      return {
+        ...r,
+        schoolName: school?.name,
+        schoolAbbrev: school?.abbrev,
+        gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
+        eligibleCount,
+        needBy: needByISO(r, school),
+        pendingOfferExpiresAt: pending?.expiresAt || null,
+      };
+    })
+  );
+  // Urgent first, then soonest needed.
+  openEnriched.sort((a, b) => {
+    if (a.urgency !== b.urgency) return a.urgency === "urgent" ? -1 : 1;
+    return new Date(a.needBy) - new Date(b.needBy);
+  });
+
+  // Internal-coverage load per staff member (burnout signal).
+  const coverage = await SubsInternalCoverage.find({ schoolId: { $in: schoolIds } }).lean();
+  const loadMap = new Map();
+  for (const c of coverage) {
+    const key = c.staffEmail || c.staffName;
+    loadMap.set(key, { staffName: c.staffName, count: (loadMap.get(key)?.count || 0) + 1 });
+  }
+  const burnout = [...loadMap.values()].sort((a, b) => b.count - a.count);
+
+  res.json({
+    schools: schools.map((s) => ({ _id: s._id, name: s.name, abbrev: s.abbrev })),
+    open: openEnriched,
+    coveredToday: coveredToday.map((r) => ({
+      _id: r._id,
+      gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
+      schoolName: schoolById.get(String(r.schoolId))?.name,
+      coverageType: r.coverageType,
+    })),
+    burnout,
+  });
+});
+
+// ── Multi-school sub invite (registration) ────────────────────────────
+// Admin enters a sub's email; we attach them to this school and send a
+// sign-in link. When they click it, the app lists every school they're
+// registered with (see /api/subs-teacher/accept-invite).
+router.post("/schools/:id/invite", loadAdminSchool, async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!isValidEmail(email)) return res.status(400).json({ error: "Invalid email address" });
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const phone = typeof req.body?.phone === "string" ? req.body.phone.trim() : "";
+
+  const set = {};
+  if (name) set.name = name;
+  if (phone) set.phone = phone;
+  const teacher = await SubsTeacher.findOneAndUpdate(
+    { email },
+    { $set: set, $setOnInsert: { email }, $addToSet: { schoolIds: req.school._id } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+
+  const token = crypto.randomBytes(20).toString("hex");
+  await SubsInvite.create({ email, schoolId: req.school._id, token, invitedByEmail: req.subsUser.email });
+  const inviteLink = `${APP_BASE_URL}?invite=${token}`;
+
+  // Notify the sub (email always; SMS too if we have a number). Best-effort.
+  try {
+    await notifier.notifyInvite({ email, phone, school: req.school, inviteLink });
+  } catch (e) {
+    console.error("[subs] invite notify error:", e?.message || e);
+  }
+
+  res.json({ ok: true, teacher, inviteLink });
+});
+
+// ── Internal-coverage fallback (challenge #8) ─────────────────────────
+router.post("/requests/:rid/internal-coverage", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const type = req.body?.type;
+  const staffName = typeof req.body?.staffName === "string" ? req.body.staffName.trim() : "";
+  if (!COVERAGE_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of ${COVERAGE_TYPES.join(", ")}` });
+  if (!staffName) return res.status(400).json({ error: "staffName is required" });
+
+  const cov = await SubsInternalCoverage.create({
+    schoolId: request.schoolId,
+    requestId: rid,
+    type,
+    staffName,
+    staffEmail: typeof req.body?.staffEmail === "string" ? req.body.staffEmail.trim().toLowerCase() : "",
+    note: typeof req.body?.note === "string" ? req.body.note.trim() : "",
+    createdByEmail: req.subsUser.email,
+  });
+  const result = await getSubsEngine().assignInternalCoverage(request, { internalCoverageId: cov._id });
+  if (!result.ok) return res.status(409).json({ error: result.reason });
+  res.json({ ok: true });
+});
+
+// ── Reliability / quality feedback (challenges #9, #10) ───────────────
+router.post("/feedback", async (req, res) => {
+  const { teacherId, schoolId, requestId } = req.body || {};
+  if (!isOid(teacherId) || !isOid(schoolId)) return res.status(400).json({ error: "Bad teacher/school id" });
+  const school = await SubsSchool.findById(schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const rating = Number(req.body?.rating);
+  if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: "rating must be 1–5" });
+
+  await SubsReliabilityFeedback.create({
+    teacherId,
+    schoolId,
+    requestId: isOid(requestId) ? requestId : null,
+    rating,
+    onTime: typeof req.body?.onTime === "boolean" ? req.body.onTime : null,
+    canTeach: typeof req.body?.canTeach === "boolean" ? req.body.canTeach : null,
+    tags: Array.isArray(req.body?.tags) ? req.body.tags.filter((t) => typeof t === "string") : [],
+    note: typeof req.body?.note === "string" ? req.body.note.trim() : "",
+    createdByEmail: req.subsUser.email,
+  });
+
+  // Recompute the sub's aggregate rating + merge tags (informs ranking).
+  const all = await SubsReliabilityFeedback.find({ teacherId }).lean();
+  const avg = all.reduce((s, f) => s + f.rating, 0) / all.length;
+  const onTimeVals = all.filter((f) => typeof f.onTime === "boolean");
+  const onTimeRate = onTimeVals.length ? onTimeVals.filter((f) => f.onTime).length / onTimeVals.length : null;
+  const tags = [...new Set(all.flatMap((f) => f.tags || []))];
+  await SubsTeacher.updateOne(
+    { _id: teacherId },
+    { $set: { "reliability.adminRating": Math.round(avg * 10) / 10, "reliability.ratingCount": all.length, "reliability.onTimeRate": onTimeRate, "reliability.tags": tags } }
+  );
+  res.json({ ok: true });
+});
+
+// ── Why does nobody qualify? (challenge #1 diagnostics) ───────────────
+router.get("/requests/:rid/candidates", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  const ranking = await SubsRanking.findOne({ schoolId: request.schoolId, gradeLevelId: request.gradeLevelId }).lean();
+  const ids = (ranking?.entries || []).sort((a, b) => a.rank - b.rank).map((e) => e.teacherId);
+  const teachers = await SubsTeacher.find({ _id: { $in: ids } }).lean();
+  const byId = new Map(teachers.map((t) => [String(t._id), t]));
+  const candidates = ids.map((id) => {
+    const t = byId.get(String(id));
+    return {
+      teacherId: id,
+      name: t?.name || t?.email,
+      eligible: t ? isEligible(t, request) : false,
+      reasons: t ? eligibilityReasons(t, request) : ["not found"],
+    };
+  });
+  res.json({ candidates, eligibleCount: candidates.filter((c) => c.eligible).length });
+});
+
+// ── Lesson plan (admin view — decrypts credentials for the owner) ─────
+router.get("/requests/:rid/lesson-plan", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) return res.status(404).json({ error: "Request not found" });
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    return res.status(403).json({ error: "Not an admin of this school" });
+  }
+  if (!request.lessonPlanId) return res.json({ plan: null });
+  const plan = await SubsLessonPlan.findById(request.lessonPlanId).lean();
+  res.json({ plan: plan ? decoratePlan(plan, true) : null });
+});
+
+// Shape a plan for the client; reveal decrypted secrets only when allowed.
+export function decoratePlan(plan, reveal) {
+  return {
+    _id: plan._id,
+    body: plan.body,
+    routineNotes: plan.routineNotes,
+    materialsLinks: plan.materialsLinks,
+    completeness: plan.completeness,
+    credentials: (plan.credentials || []).map((c) => ({
+      system: c.system,
+      username: c.username,
+      hasSecret: !!c.secretEnc,
+      secret: reveal && c.secretEnc ? safeDecrypt(c.secretEnc) : undefined,
+    })),
+  };
+}
+function safeDecrypt(enc) {
+  try {
+    return decryptSecret(enc);
+  } catch {
+    return undefined; // never throw to the client; never log the value
+  }
+}
+
+// ── Teacher-initiated requests: approval workflow ─────────────────────
+// Load a request + confirm the caller administers its school.
+async function loadAdminRequest(req, res) {
+  const { rid } = req.params;
+  if (!isOid(rid)) {
+    res.status(400).json({ error: "Bad request id" });
+    return null;
+  }
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request) {
+    res.status(404).json({ error: "Request not found" });
+    return null;
+  }
+  const school = await SubsSchool.findById(request.schoolId).lean();
+  if (!school || !(school.adminEmails || []).includes(req.subsUser.email)) {
+    res.status(403).json({ error: "Not an admin of this school" });
+    return null;
+  }
+  return { request, school };
+}
+
+// Pending teacher-submitted requests awaiting approval, across my schools.
+router.get("/approvals", async (req, res) => {
+  const schools = await SubsSchool.find({ adminEmails: req.subsUser.email }).select("name abbrev").lean();
+  const schoolName = new Map(schools.map((s) => [String(s._id), s.name]));
+  const pending = await SubsRequest.find({ schoolId: { $in: schools.map((s) => s._id) }, status: "pending_approval" }).sort({ createdAt: 1 }).lean();
+  const grades = await SubsGradeLevel.find({ _id: { $in: pending.map((r) => r.gradeLevelId) } }).select("name").lean();
+  const gradeName = new Map(grades.map((g) => [String(g._id), g.name]));
+  res.json({
+    approvals: pending.map((r) => ({
+      ...r,
+      schoolName: schoolName.get(String(r.schoolId)) || "—",
+      gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
+    })),
+  });
+});
+
+// Approve a teacher's absence request: set matching requirements, open it,
+// auto-roster the teacher, fire the engine, and tell the teacher.
+router.post("/requests/:rid/approve", async (req, res) => {
+  const loaded = await loadAdminRequest(req, res);
+  if (!loaded) return;
+  const { request, school } = loaded;
+  if (request.status !== "pending_approval") return res.status(400).json({ error: `Request is ${request.status}, not awaiting approval` });
+
+  const urgency = req.body?.urgency === "advance" || req.body?.urgency === "urgent" ? req.body.urgency : request.urgency;
+  const override = Number(req.body?.escalationIntervalMs);
+  const escalationIntervalMs = Number.isFinite(override) && override > 0 ? override : urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS;
+  const faithReq = school.faithFit?.enabled && Array.isArray(req.body?.requiredFaithFit) ? req.body.requiredFaithFit.filter((k) => typeof k === "string") : [];
+
+  const set = {
+    status: "open",
+    approvedByEmail: req.subsUser.email,
+    approvedAt: new Date(),
+    urgency,
+    escalationIntervalMs,
+    requiredRole: typeof req.body?.requiredRole === "string" ? req.body.requiredRole : "teacher",
+    requiredQualifications: Array.isArray(req.body?.requiredQualifications) ? req.body.requiredQualifications.filter((q) => typeof q === "string" && q.trim()).map((q) => q.trim()) : [],
+    requiredFaithFit: faithReq,
+  };
+  await SubsRequest.updateOne({ _id: request._id }, { $set: set });
+
+  // Auto-roster the requesting teacher onto the school's staff list.
+  if (request.absentTeacher?.email) {
+    await SubsStaff.findOneAndUpdate(
+      { schoolId: request.schoolId, email: request.absentTeacher.email },
+      { $set: { name: request.absentTeacher.name || "", gradeLevelId: request.gradeLevelId, viaApproval: true } },
+      { upsert: true, setDefaultsOnInsert: true }
+    ).catch((e) => console.error("[subs] auto-roster error:", e?.message || e));
+  }
+
+  const updated = await SubsRequest.findById(request._id).lean();
+  const eligibleCount = await getSubsEngine().countEligible(updated);
+  await SubsRequest.updateOne({ _id: request._id }, { $set: { eligibleCountAtPost: eligibleCount } });
+
+  getSubsEngine().onRequestCreated(request._id).catch((err) => console.error("[subs] approve onRequestCreated:", err?.message || err));
+
+  const grade = await SubsGradeLevel.findById(request.gradeLevelId).lean();
+  notifier.notifyRequestDecision({ request: updated, school, gradeLevel: grade, absentTeacher: request.absentTeacher, approved: true }).catch(() => {});
+
+  res.json({ ok: true, eligibleCount });
+});
+
+router.post("/requests/:rid/deny", async (req, res) => {
+  const loaded = await loadAdminRequest(req, res);
+  if (!loaded) return;
+  const { request, school } = loaded;
+  if (request.status !== "pending_approval") return res.status(400).json({ error: `Request is ${request.status}, not awaiting approval` });
+  const denyReason = typeof req.body?.denyReason === "string" ? req.body.denyReason.trim() : "";
+  await SubsRequest.updateOne({ _id: request._id }, { $set: { status: "denied", denyReason, approvedByEmail: req.subsUser.email, approvedAt: new Date() } });
+  const grade = await SubsGradeLevel.findById(request.gradeLevelId).lean();
+  notifier.notifyRequestDecision({ request, school, gradeLevel: grade, absentTeacher: request.absentTeacher, approved: false, denyReason }).catch(() => {});
+  res.json({ ok: true });
+});
+
+// ── Staff roster (the auto-building teacher list) ─────────────────────
+router.get("/schools/:id/staff", loadAdminSchool, async (req, res) => {
+  const staff = await SubsStaff.find({ schoolId: req.school._id }).sort({ name: 1, email: 1 }).lean();
+  res.json({ staff });
+});
+
+router.post("/schools/:id/staff", loadAdminSchool, async (req, res) => {
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!isValidEmail(email)) return res.status(400).json({ error: "Invalid email address" });
+  const set = {};
+  if (typeof req.body?.name === "string") set.name = req.body.name.trim();
+  if (isOid(req.body?.gradeLevelId)) set.gradeLevelId = req.body.gradeLevelId;
+  const staff = await SubsStaff.findOneAndUpdate(
+    { schoolId: req.school._id, email },
+    { $set: set, $setOnInsert: { schoolId: req.school._id, email } },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  ).lean();
+  res.json({ staff });
+});
+
+// Dev/diagnostic: force one escalation sweep right now instead of waiting
+// for the timer. Useful for demoing the full happy path quickly.
+router.post("/dev/tick", async (req, res) => {
+  const summary = await tickNow();
+  res.json({ ok: true, ...summary });
+});
+
+export default router;
