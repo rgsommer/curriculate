@@ -666,11 +666,20 @@ function AdvancesImportDialog({ companyId, onClose, onSaved }) {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState(null);
+  const [arBusy, setArBusy] = useState(false);
+  const [arResult, setArResult] = useState(null);
 
   async function readFile(ev) {
     const file = ev.target.files?.[0];
     if (!file) return;
     setCsv(await file.text());
+  }
+  async function createReceivables() {
+    setError(""); setArResult(null); setArBusy(true);
+    try {
+      setArResult(await api(`/api/teebeepay/companies/${companyId}/ar/from-advances`, { method: "POST", body: JSON.stringify({ csv }) }));
+    } catch (e) { setError(e.message); }
+    finally { setArBusy(false); }
   }
   async function downloadTemplate() {
     setError("");
@@ -719,6 +728,27 @@ function AdvancesImportDialog({ companyId, onClose, onSaved }) {
               <summary>{result.errors.length} note(s)</summary>
               <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
                 {result.errors.slice(0, 20).map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </details>
+          )}
+        </FlashBox>
+      )}
+      {result && result.skipped > 0 && (
+        <div style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", borderRadius: 9, padding: "10px 12px", marginTop: 10, fontSize: 13 }}>
+          {result.skipped} row(s) didn't match an active employee — likely former staff who left still owing.
+          {" "}<button onClick={createReceivables} disabled={arBusy} style={{ ...btnGhostSmall, marginLeft: 6 }}>
+            {arBusy ? <><Loader2 className="tbp-spin" size={13} /> Working…</> : "Track these as receivables"}
+          </button>
+        </div>
+      )}
+      {arResult && (
+        <FlashBox type="info" icon={<CheckCircle2 size={16} />}>
+          Created <strong>{arResult.created}</strong> receivable(s){arResult.skipped_existing ? ` · ${arResult.skipped_existing} already existed` : ""}{arResult.skipped_active ? ` · ${arResult.skipped_active} active (left to payroll)` : ""}.
+          {arResult.invoices?.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary>{arResult.invoices.length} invoice(s)</summary>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
+                {arResult.invoices.map((x, i) => <li key={i}>{x.ref} · {x.name} · K{Number(x.amount).toLocaleString()} (draft)</li>)}
               </ul>
             </details>
           )}
