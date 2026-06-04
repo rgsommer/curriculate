@@ -260,7 +260,8 @@ python feedback.py clear subs
 | `SUBS_SECRET` | prod | Session signing secret. Falls back to `STOCKS_SECRET` / `MEDICENTRE_SECRET` in dev. |
 | `SUBS_ENCRYPTION_KEY` | to store lesson-plan passwords | 32-byte key (hex/base64) for AES-256-GCM credential encryption. Without it, posting a plan **with** a password is rejected (we never store plaintext); plans without passwords work fine. |
 | `RESEND_API_KEY` | for real email | Without it, emails/PINs are logged to the server console (dev). |
-| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | for real SMS | All three enable Twilio SMS. Missing any → SMS falls back to a console mock (dev). |
+| `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM` | for Twilio SMS | All three enable Twilio. Takes priority if set. |
+| `SUBS_SNS_SMS=1` | for AWS SNS SMS | Cheaper alternative — sends via AWS SNS using the same AWS creds/region as S3 (`AWS_REGION`, env keys or IAM role). Opt-in so charges never happen by accident. Optional `SUBS_SNS_SENDER_ID`. With neither Twilio nor SNS set, SMS logs to the console (mock). |
 | `SUBS_FROM` | optional | Email From header. Default `Curriculate Subs <noreply@curriculate.net>`. |
 | `SUBS_BASE_URL` | optional | Base URL for accept/decline + invite links. Default `https://curriculate.net/subs`. |
 | `SUBS_SWEEP_MS` | optional | Escalation sweep cadence (ms). Default `20000`. |
@@ -323,7 +324,7 @@ Scaffolded (models + fields + soft logic exist; needs finishing):
 
 Operational:
 
-- **Real SMS/email** — set `TWILIO_*` and verify the `SUBS_FROM` domain in Resend.
+- **Real SMS** — set `SUBS_SNS_SMS=1` for AWS SNS (cheapest; reuses S3's AWS creds) or `TWILIO_*` for Twilio. **Real email** — verify the `SUBS_FROM` domain in Resend.
 - **Multi-instance escalation** — the sweep assumes a single backend process.
   If horizontally scaled, add a Mongo `findOneAndUpdate` lease per request so
   two workers don't double-send.

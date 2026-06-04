@@ -43,34 +43,69 @@ async function sendEmail({ to, cc, subject, text, html }) {
   return { ok: true };
 }
 
-// SMS. Sends via Twilio when TWILIO_* env is configured; otherwise logs to
-// the console so local dev needs no account (challenge: optional SMS).
+// Normalise a phone number to E.164 (required by AWS SNS). Defaults bare
+// 10-digit numbers to North American (+1).
+function toE164(num) {
+  const s = String(num || "").trim();
+  if (s.startsWith("+")) return s.replace(/[^\d+]/g, "");
+  const digits = s.replace(/\D/g, "");
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith("1")) return `+${digits}`;
+  return digits ? `+${digits}` : "";
+}
+
+// AWS SNS — cheaper than Twilio and reuses the AWS credentials/region the
+// S3 client already uses (env vars or the host's IAM role). Lazy-imported
+// so the dependency is only touched when SNS is actually enabled.
+async function sendViaSns(to, text) {
+  const region = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1";
+  const { SNSClient, PublishCommand } = await import("@aws-sdk/client-sns");
+  const sns = new SNSClient({ region });
+  const MessageAttributes = {
+    // Transactional → higher delivery priority (e.g. urgent same-day offers).
+    "AWS.SNS.SMS.SMSType": { DataType: "String", StringValue: "Transactional" },
+  };
+  if (process.env.SUBS_SNS_SENDER_ID) {
+    MessageAttributes["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: process.env.SUBS_SNS_SENDER_ID };
+  }
+  await sns.send(new PublishCommand({ PhoneNumber: toE164(to), Message: text, MessageAttributes }));
+  return { ok: true };
+}
+
+// SMS. Picks a real provider when configured, else logs to the console so
+// local dev needs no account. Order: Twilio (if its creds are set) →
+// AWS SNS (when opted in via SUBS_SNS_SMS=1) → mock.
 async function sendSms({ to, text }) {
   if (!to) return { ok: false, reason: "no_phone" };
 
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_FROM;
-  if (!sid || !token || !from) {
-    console.log(`\n[subs:sms:MOCK] → ${to}\n  ${text}\n`);
-    return { ok: true, mock: true };
+  if (sid && token && from) {
+    // Twilio Messages API — form-encoded, HTTP basic auth (SID:token).
+    const body = new URLSearchParams({ To: to, From: from, Body: text });
+    const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body,
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => "");
+      throw new Error(`Twilio ${r.status}: ${t.slice(0, 200)}`);
+    }
+    return { ok: true };
   }
 
-  // Twilio Messages API — form-encoded, HTTP basic auth (SID:token).
-  const body = new URLSearchParams({ To: to, From: from, Body: text });
-  const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body,
-  });
-  if (!r.ok) {
-    const t = await r.text().catch(() => "");
-    throw new Error(`Twilio ${r.status}: ${t.slice(0, 200)}`);
+  // AWS SNS — opt in explicitly so we never run up SMS charges by accident.
+  if (process.env.SUBS_SNS_SMS === "1" || process.env.SUBS_SMS_PROVIDER === "sns") {
+    return sendViaSns(to, text);
   }
-  return { ok: true };
+
+  console.log(`\n[subs:sms:MOCK] → ${to}\n  ${text}\n`);
+  return { ok: true, mock: true };
 }
 
 // ── Message builders ──────────────────────────────────────────────────
