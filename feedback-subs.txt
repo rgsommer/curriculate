@@ -1,0 +1,9 @@
+=== CURRICULATE SUBS (substitute staffing) FEEDBACK REPORT ===
+(empty — run `python feedback.py pull subs` to populate from the backend)
+
+Sources:
+  • Teachers/principals: the 💬 Feedback widget on /subs (problem / idea)
+  • Auto-captured client errors (network failures, 5xx) reported by the app
+Backend: POST /api/subs-feedback/report  →  stored in MongoDB (subs_feedback)
+Pull:    python feedback.py pull subs     →  overwrites this file
+Clear:   python feedback.py clear subs

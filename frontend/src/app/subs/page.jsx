@@ -27,18 +27,72 @@ const BACKEND_URL =
 
 const AUTH_KEY = "subs.auth.v1";
 
+// Identity for feedback/error reports (set once /me resolves). Non-secret.
+const REPORTER = { email: "", name: "" };
+
+// Breadcrumb trail — a ring buffer of recent actions so a feedback report
+// or auto-captured error shows what the user tried and where they stopped.
+// Kept small and non-sensitive (labels only, never form values).
+const TRAIL = [];
+function pushTrail(event) {
+  try {
+    const t = new Date().toISOString().slice(11, 19); // HH:MM:SS
+    TRAIL.push(`${t} ${event}`);
+    if (TRAIL.length > 25) TRAIL.shift();
+  } catch {}
+}
+
+// Fire-and-forget feedback/error report → feedback-subs.txt (via backend).
+// Never throws and never routes through api() (to avoid recursion on error).
+function reportSubsFeedback(kind, message, { surface, context } = {}) {
+  try {
+    fetch(`${BACKEND_URL}/api/subs-feedback/report`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      keepalive: true,
+      body: JSON.stringify({
+        kind,
+        message: String(message || "").slice(0, 4000),
+        surface: surface || (typeof window !== "undefined" ? window.location.pathname : "subs"),
+        // Attach the recent-action trail + current view so triage can see
+        // the path the user took and where it broke down.
+        context: { ...(context || {}), trail: TRAIL.slice(-25), view: typeof window !== "undefined" ? window.location.pathname : "" },
+        fromEmail: REPORTER.email,
+        fromName: REPORTER.name,
+      }),
+    }).catch(() => {});
+  } catch {}
+}
+
 async function api(path, { method = "GET", body } = {}) {
-  const res = await fetch(`${BACKEND_URL}${path}`, {
-    method,
-    credentials: "include",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  pushTrail(`${method} ${path}`);
+  let res;
+  try {
+    res = await fetch(`${BACKEND_URL}${path}`, {
+      method,
+      credentials: "include",
+      headers: body ? { "Content-Type": "application/json" } : undefined,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (netErr) {
+    pushTrail(`✗ network ${method} ${path}`);
+    // Network/transport failure — auto-report so it lands in feedback-subs.txt.
+    reportSubsFeedback("error", `Network error on ${method} ${path}: ${netErr?.message || netErr}`, { surface: path });
+    throw new Error("Network error — please check your connection and try again.");
+  }
   let data = null;
   try {
     data = await res.json();
   } catch {}
-  if (!res.ok) throw new Error(data?.error || `Request failed (${res.status})`);
+  if (!res.ok) pushTrail(`✗ ${res.status} ${method} ${path}`);
+  if (!res.ok) {
+    // Auto-report server-side failures (5xx); 4xx are usually expected
+    // (validation / not-signed-in) so we don't spam the log with those.
+    if (res.status >= 500) {
+      reportSubsFeedback("error", `${method} ${path} → ${res.status}: ${data?.error || "server error"}`, { surface: path, context: { status: res.status } });
+    }
+    throw new Error(data?.error || `Request failed (${res.status})`);
+  }
   return data;
 }
 
@@ -220,6 +274,69 @@ function untilBell(needBy, nowTs) {
   return { text: past ? `${text} (past bell)` : `${text} to bell`, urgent: ms < 60 * 60000 };
 }
 
+// Floating "Feedback" widget — manual problem/suggestion reports. Errors
+// are auto-reported by api(); this is the human channel. Both land in
+// feedback-subs.txt via the backend.
+function FeedbackWidget() {
+  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState("problem");
+  const [message, setMessage] = useState("");
+  const [sent, setSent] = useState(false);
+
+  function submit(e) {
+    e.preventDefault();
+    if (!message.trim()) return;
+    reportSubsFeedback(kind, message.trim(), { surface: "manual" });
+    setSent(true);
+    setMessage("");
+    setTimeout(() => {
+      setSent(false);
+      setOpen(false);
+    }, 1400);
+  }
+
+  return (
+    <div style={{ position: "fixed", right: 16, bottom: 16, zIndex: 50 }}>
+      {open && (
+        <div style={{ ...C.card, width: 300, marginBottom: 8, boxShadow: "0 8px 30px rgba(0,0,0,.15)" }}>
+          {sent ? (
+            <div style={{ color: "#15803d", fontWeight: 600 }}>Thanks — sent! 🙏</div>
+          ) : (
+            <form onSubmit={submit}>
+              <div style={{ ...C.row, justifyContent: "space-between" }}>
+                <strong>Send feedback</strong>
+                <button type="button" style={{ ...C.btnGhost, padding: "2px 8px" }} onClick={() => setOpen(false)}>
+                  ✕
+                </button>
+              </div>
+              <div style={{ ...C.row, marginTop: 8 }}>
+                <label style={C.row}>
+                  <input type="radio" checked={kind === "problem"} onChange={() => setKind("problem")} /> Problem
+                </label>
+                <label style={C.row}>
+                  <input type="radio" checked={kind === "suggestion"} onChange={() => setKind("suggestion")} /> Idea
+                </label>
+              </div>
+              <textarea
+                style={{ ...C.input, minHeight: 80, marginTop: 8 }}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                placeholder={kind === "problem" ? "What went wrong?" : "What would make this better?"}
+              />
+              <div style={{ marginTop: 8 }}>
+                <button style={C.btn}>Send</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+      <button style={{ ...C.btn, borderRadius: 999, boxShadow: "0 4px 14px rgba(37,99,235,.4)" }} onClick={() => setOpen((o) => !o)}>
+        💬 Feedback
+      </button>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────
 export default function SubsPage() {
   const [me, setMe] = useState(null);
@@ -229,6 +346,8 @@ export default function SubsPage() {
   const refreshMe = useCallback(async () => {
     try {
       const data = await api("/api/subs-auth/me");
+      REPORTER.email = data.email || "";
+      REPORTER.name = data.teacher?.name || "";
       setMe(data);
       // Land on the most relevant view: admins on admin, VP-only users on
       // the approvals view, everyone else on the teacher view.
@@ -322,6 +441,7 @@ export default function SubsPage() {
             </a>
           </div>
         </div>
+        <FeedbackWidget />
       </div>
     );
   }
@@ -361,15 +481,15 @@ export default function SubsPage() {
 
         {showSwitch && (
           <div style={{ ...C.row, marginBottom: 16 }}>
-            <button style={view === "admin" ? C.btn : C.btnGhost} onClick={() => setView("admin")}>
+            <button style={view === "admin" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: admin"); setView("admin"); }}>
               School admin
             </button>
             {me.isVp && (
-              <button style={view === "vp" ? C.btn : C.btnGhost} onClick={() => setView("vp")}>
+              <button style={view === "vp" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: vp"); setView("vp"); }}>
                 Approvals (VP)
               </button>
             )}
-            <button style={view === "teacher" ? C.btn : C.btnGhost} onClick={() => setView("teacher")}>
+            <button style={view === "teacher" ? C.btn : C.btnGhost} onClick={() => { pushTrail("view: teacher"); setView("teacher"); }}>
               Teacher
             </button>
           </div>
@@ -379,6 +499,7 @@ export default function SubsPage() {
         {view === "vp" && <VpDashboard />}
         {view === "teacher" && <TeacherDashboard />}
       </div>
+      <FeedbackWidget />
     </div>
   );
 }
@@ -1223,6 +1344,7 @@ function PostRequest({ school, grades }) {
 
   async function submit(e) {
     e.preventDefault();
+    pushTrail("submit: post-request");
     setErr("");
     setMsg("");
     setBusy(true);
@@ -1920,6 +2042,7 @@ function RequestSubForm({ defaultName, onSubmitted }) {
 
   async function submit(e) {
     e.preventDefault();
+    pushTrail(`submit: request-sub (${reason})`);
     setErr("");
     setMsg("");
     // Only insist on a voice note when one is required AND recording is

@@ -232,6 +232,23 @@ POST /api/subs-teacher/offers/:id/accept | /decline
 GET  /api/subs-teacher/offers/:id/lesson-plan        → plan; password revealed only once accepted
 GET  /api/subs-teacher/offer-by-token/:token
 POST /api/subs-teacher/respond         { token, action }   (public, token = credential)
+
+POST /api/subs-feedback/report         { kind, message, surface?, fromName?, fromEmail?, context? }  (public, rate-limited)
+GET  /api/subs-feedback/feedback-export?key=ADMIN_API_TOKEN   → plain-text dump
+GET  /api/subs-feedback/feedback-clear?key=ADMIN_API_TOKEN
+```
+
+### Feedback & error reporting
+
+A 💬 Feedback widget on every `/subs` view lets users file a **problem** or
+**idea**; the app also **auto-reports** client errors (network failures and
+5xx responses) as `kind: "error"`. All land in MongoDB (`subs_feedback`) and
+export to **`feedback-subs.txt`** at the repo root via the shared utility —
+same as the other products:
+
+```bash
+python feedback.py pull subs     # → feedback-subs.txt
+python feedback.py clear subs
 ```
 
 ---
