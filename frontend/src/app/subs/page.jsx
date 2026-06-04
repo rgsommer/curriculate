@@ -85,6 +85,129 @@ function timeLeft(expiresAt) {
   return `${Math.round(m / 60)}h left`;
 }
 
+// Display label for a coverage window.
+function dayPartLabel(r) {
+  if (!r) return "";
+  if (r.dayPart === "am") return "Half day (AM)";
+  if (r.dayPart === "pm") return "Half day (PM)";
+  if (r.dayPart === "custom") return r.startTime && r.endTime ? `${r.startTime}–${r.endTime}` : "Specific times";
+  return "Full day";
+}
+
+// Reusable whole/half/custom coverage-window picker.
+function DayPartPicker({ dayPart, setDayPart, startTime, setStartTime, endTime, setEndTime }) {
+  return (
+    <div>
+      <label style={C.label}>Coverage needed</label>
+      <div style={C.row}>
+        <select style={{ ...C.input, width: 170 }} value={dayPart} onChange={(e) => setDayPart(e.target.value)}>
+          <option value="full">Whole day</option>
+          <option value="am">Half day — AM only</option>
+          <option value="pm">Half day — PM only</option>
+          <option value="custom">Specific times</option>
+        </select>
+        {dayPart === "custom" && (
+          <>
+            <input style={{ ...C.input, width: 110 }} type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+            <span style={{ color: "#64748b" }}>to</span>
+            <input style={{ ...C.input, width: 110 }} type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Record a short voice clip for a sick day (MediaRecorder → data URL).
+// If recording isn't possible (no mic, denied permission, unsupported
+// browser), we DON'T trap the user: we surface a friendly note and call
+// onFail() so the form can still be submitted (flagged for the approver).
+function VoiceRecorder({ required, onChange, onFail }) {
+  const [recording, setRecording] = useState(false);
+  const [seconds, setSeconds] = useState(0);
+  const [dataUrl, setDataUrl] = useState("");
+  const [failed, setFailed] = useState(false);
+  const recRef = React.useRef(null);
+  const chunksRef = React.useRef([]);
+  const timerRef = React.useRef(null);
+  const MAX = 60;
+
+  const supported = typeof window !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof window.MediaRecorder !== "undefined";
+
+  useEffect(() => {
+    if (!supported) fail();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supported]);
+
+  function fail() {
+    setFailed(true);
+    onFail && onFail();
+  }
+
+  function stop() {
+    if (recRef.current && recRef.current.state !== "inactive") recRef.current.stop();
+  }
+
+  async function start() {
+    setFailed(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const rec = new MediaRecorder(stream);
+      chunksRef.current = [];
+      rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        clearInterval(timerRef.current);
+        setRecording(false);
+        const blob = new Blob(chunksRef.current, { type: rec.mimeType || "audio/webm" });
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setDataUrl(reader.result);
+          onChange(reader.result, Math.min(seconds, MAX));
+        };
+        reader.readAsDataURL(blob);
+      };
+      recRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setSeconds(0);
+      timerRef.current = setInterval(() => setSeconds((s) => (s + 1 >= MAX ? (stop(), MAX) : s + 1)), 1000);
+    } catch {
+      fail();
+    }
+  }
+
+  function clear() {
+    setDataUrl("");
+    setSeconds(0);
+    onChange("", 0);
+  }
+
+  return (
+    <div style={{ border: "1px dashed #cbd5e1", borderRadius: 10, padding: 10, marginTop: 6 }}>
+      <label style={{ ...C.label, marginTop: 0 }}>
+        Voice note {required ? <span style={{ color: "#b91c1c" }}>(your school asks for one on sick days)</span> : "(optional)"}
+      </label>
+      {failed ? (
+        <div style={{ fontSize: 13, color: "#92400e" }}>
+          Couldn't access your microphone — no problem. You can still submit; your principal will be told the voice note couldn't be recorded.
+        </div>
+      ) : !dataUrl ? (
+        <button type="button" style={recording ? C.btnRed : C.btnGhost} onClick={recording ? stop : start}>
+          {recording ? `⏹ Stop (${seconds}s)` : "🎙 Record"}
+        </button>
+      ) : (
+        <div style={C.row}>
+          <audio controls src={dataUrl} style={{ height: 36 }} />
+          <button type="button" style={C.btnGhost} onClick={clear}>
+            Re-record
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Countdown to the bell ("time-to-bell" on the morning dashboard).
 function untilBell(needBy, nowTs) {
   if (!needBy) return { text: "", urgent: false };
@@ -153,20 +276,10 @@ export default function SubsPage() {
     })();
   }, [me, invite, refreshMe]);
 
-  // Redeem a staff join link — connects the teacher to the school and lands
-  // them on the staff (request-a-sub) view.
+  // A staff join link shows the join form (name + grade) on the teacher
+  // view; the form completes the connection.
   useEffect(() => {
-    if (!me || !staffToken) return;
-    (async () => {
-      try {
-        const r = await api("/api/subs-teacher/join-staff", { method: "POST", body: { token: staffToken } });
-        setInviteMsg(`You're connected to ${r.school?.name || "your school"} — report absences below.`);
-        setStaffToken(null);
-        setView("teacher");
-      } catch {
-        setStaffToken(null);
-      }
-    })();
+    if (me && staffToken) setView("teacher");
   }, [me, staffToken]);
 
   async function signOut() {
@@ -233,6 +346,18 @@ export default function SubsPage() {
         </div>
 
         {inviteMsg && <div style={{ ...C.err, background: "#ecfdf5", borderColor: "#a7f3d0", color: "#15803d" }}>{inviteMsg}</div>}
+
+        {staffToken && (
+          <StaffJoinForm
+            token={staffToken}
+            defaultName={me.teacher?.name}
+            onJoined={(schoolName) => {
+              setStaffToken(null);
+              setInviteMsg(`Connected to ${schoolName} — you can report absences from the Teacher view.`);
+              setView("teacher");
+            }}
+          />
+        )}
 
         {showSwitch && (
           <div style={{ ...C.row, marginBottom: 16 }}>
@@ -392,6 +517,7 @@ function MorningDashboard() {
               </span>
               <strong>{r.schoolAbbrev || r.schoolName}</strong>
               <span>{r.gradeName}</span>
+              <span style={C.pill("#f1f5f9", "#334155")}>{dayPartLabel(r)}</span>
               {r.requiredRole && r.requiredRole !== "teacher" && <span style={C.pill("#f1f5f9", "#334155")}>{r.requiredRole}</span>}
               <span style={{ color: bell.urgent ? "#b91c1c" : "#64748b", fontWeight: bell.urgent ? 700 : 400, fontSize: 13 }}>⏰ {bell.text}</span>
               {zero ? (
@@ -430,6 +556,25 @@ function MorningDashboard() {
         </div>
       )}
     </div>
+  );
+}
+
+function VoiceNotePlayer({ requestId }) {
+  const [url, setUrl] = useState("");
+  const [loading, setLoading] = useState(false);
+  async function load() {
+    setLoading(true);
+    try {
+      const r = await api(`/api/subs-admin/requests/${requestId}/voice-note`);
+      setUrl(r.dataUrl);
+    } catch {}
+    setLoading(false);
+  }
+  if (url) return <audio controls src={url} style={{ height: 34, verticalAlign: "middle" }} />;
+  return (
+    <button type="button" style={C.btnGhost} onClick={load} disabled={loading}>
+      {loading ? "Loading…" : "🎙 Play voice note"}
+    </button>
   );
 }
 
@@ -477,6 +622,14 @@ function ApprovalRow({ a, onDone }) {
         {a.reason && <span style={C.pill("#f1f5f9", "#334155")}>{a.reason}</span>}
       </div>
       {a.notes && <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{a.notes}</div>}
+      {a.hasVoiceNote && (
+        <div style={{ marginTop: 6 }}>
+          <VoiceNotePlayer requestId={a._id} />
+        </div>
+      )}
+      {a.voiceNoteStatus === "failed" && (
+        <div style={{ marginTop: 6, fontSize: 13, color: "#92400e" }}>🎙 Voice note couldn't be recorded on the teacher's device.</div>
+      )}
       {a.canApprove === false ? (
         <div style={{ marginTop: 8, fontSize: 13, color: "#92400e" }}>Awaiting principal — you don't have approval authority for this absence.</div>
       ) : (
@@ -765,6 +918,7 @@ function SchoolSettings({ school, onSaved }) {
   const [vpEmail, setVpEmail] = useState(school.vpEmail || "");
   const [financeEmail, setFinanceEmail] = useState(school.financeEmail || "");
   const [vpApproval, setVpApproval] = useState(school.vpApproval || "none");
+  const [requireSickVoice, setRequireSickVoice] = useState(!!school.requireSickVoiceNote);
   const [staffLink, setStaffLink] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -773,7 +927,7 @@ function SchoolSettings({ school, onSaved }) {
     try {
       await api(`/api/subs-admin/schools/${school._id}`, {
         method: "PATCH",
-        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval },
+        body: { abbrev, bellTime, faithFitEnabled: faith, subBudgetTotal: budget === "" ? undefined : Number(budget), vpEmail, financeEmail, vpApproval, requireSickVoiceNote: requireSickVoice },
       });
       onSaved();
       setOpen(false);
@@ -782,9 +936,26 @@ function SchoolSettings({ school, onSaved }) {
     }
   }
 
+  const [copied, setCopied] = useState(false);
   async function makeStaffLink() {
     const r = await api(`/api/subs-admin/schools/${school._id}/staff-link`, { method: "POST" });
     setStaffLink(r.link);
+    // Build a ready-to-send email and put it on the clipboard.
+    const email =
+      `Dear Teachers,\n\n` +
+      `We're now using Curriculate Subs to arrange substitute coverage. Please take a minute to connect your account:\n\n` +
+      `1. Open this link: ${r.link}\n` +
+      `2. Sign in with your school email (you'll receive a 6-digit code).\n` +
+      `3. Enter your name and the grade you teach.\n\n` +
+      `Once you're connected, whenever you're going to be away you can request a substitute right from the app — just pick the date and whether it's a whole day, half day, or specific times. Your VP and I are notified automatically, and you'll get an email as soon as the class is covered.\n\n` +
+      `Thanks,\n${school.name} Administration`;
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch {
+      setCopied(false);
+    }
   }
 
   return (
@@ -833,6 +1004,9 @@ function SchoolSettings({ school, onSaved }) {
             </select>
           </div>
           <label style={{ ...C.row, marginTop: 10 }}>
+            <input type="checkbox" checked={requireSickVoice} onChange={(e) => setRequireSickVoice(e.target.checked)} /> Require a voice note for sick days
+          </label>
+          <label style={{ ...C.row, marginTop: 10 }}>
             <input type="checkbox" checked={faith} onChange={(e) => setFaith(e.target.checked)} /> Enable mission / faith-fit attributes
           </label>
           <div style={{ marginTop: 12 }}>
@@ -846,11 +1020,12 @@ function SchoolSettings({ school, onSaved }) {
               Send this to all staff. When a teacher opens it (and signs in), they're connected to this school and can report absences.
             </p>
             <div style={C.row}>
-              <button type="button" style={C.btnGhost} onClick={makeStaffLink}>
-                {staffLink ? "Regenerate link" : "Generate staff link"}
+              <button type="button" style={C.btn} onClick={makeStaffLink}>
+                {staffLink ? "Copy email again" : "Copy staff email"}
               </button>
-              {staffLink && <code style={{ fontSize: 12, background: "#f1f5f9", padding: "4px 8px", borderRadius: 6 }}>{staffLink}</code>}
+              {copied && <span style={C.pill("#dcfce7", "#15803d")}>✓ Email copied — paste into your mail app</span>}
             </div>
+            {staffLink && <code style={{ fontSize: 12, background: "#f1f5f9", padding: "4px 8px", borderRadius: 6, display: "inline-block", marginTop: 8 }}>{staffLink}</code>}
           </div>
         </div>
       )}
@@ -1007,6 +1182,8 @@ function PostRequest({ school, grades }) {
   const [urgency, setUrgency] = useState("urgent");
   const [date, setDate] = useState(today);
   const [startTime, setStartTime] = useState(school.bellTime || "08:30");
+  const [dayPart, setDayPart] = useState("full");
+  const [endTime, setEndTime] = useState("11:00");
   const [requiredRole, setRequiredRole] = useState("teacher");
   const [quals, setQuals] = useState(""); // comma-separated
   const [notes, setNotes] = useState("");
@@ -1015,8 +1192,26 @@ function PostRequest({ school, grades }) {
   const [estimatedCost, setEstimatedCost] = useState("");
   const [absentName, setAbsentName] = useState("");
   const [absentEmail, setAbsentEmail] = useState("");
+  const [staff, setStaff] = useState([]);
   const [faith, setFaith] = useState({});
   const [showPlan, setShowPlan] = useState(false);
+
+  useEffect(() => {
+    api(`/api/subs-admin/schools/${school._id}/staff`).then(({ staff }) => setStaff(staff)).catch(() => {});
+  }, [school._id]);
+
+  // Picking a staff member fills in the absent teacher and their class.
+  function pickStaff(id) {
+    const s = staff.find((x) => x._id === id);
+    if (!s) {
+      setAbsentName("");
+      setAbsentEmail("");
+      return;
+    }
+    setAbsentName(s.name || "");
+    setAbsentEmail(s.email || "");
+    if (s.gradeLevelId && grades.some((g) => g._id === String(s.gradeLevelId))) setGradeLevelId(String(s.gradeLevelId));
+  }
   const [plan, setPlan] = useState({ body: "", routineNotes: "", materials: "", credentials: [] });
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -1038,6 +1233,8 @@ function PostRequest({ school, grades }) {
         urgency,
         date,
         startTime,
+        dayPart,
+        endTime: dayPart === "custom" ? endTime : "",
         requiredRole,
         requiredQualifications: quals.split(",").map((q) => q.trim()).filter(Boolean),
         requiredFaithFit: Object.keys(faith).filter((k) => faith[k]),
@@ -1126,10 +1323,25 @@ function PostRequest({ school, grades }) {
           </div>
         </div>
 
+        <DayPartPicker dayPart={dayPart} setDayPart={setDayPart} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} />
+
         <label style={C.label}>Required qualifications (comma-separated)</label>
         <input style={C.input} value={quals} onChange={(e) => setQuals(e.target.value)} placeholder="e.g. French, HS Math, Chemistry" />
 
         <div style={C.row}>
+          {staff.length > 0 && (
+            <div>
+              <label style={C.label}>Request a day off for a staff teacher</label>
+              <select style={{ ...C.input, width: 200 }} onChange={(e) => pickStaff(e.target.value)} defaultValue="">
+                <option value="">— choose / or type below —</option>
+                {staff.map((s) => (
+                  <option key={s._id} value={s._id}>
+                    {s.name || s.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label style={C.label}>Absent teacher (optional)</label>
             <input style={{ ...C.input, width: 160 }} value={absentName} onChange={(e) => setAbsentName(e.target.value)} placeholder="Name" />
@@ -1465,6 +1677,7 @@ function RequestsBoard({ school }) {
             <div style={C.row}>
               <strong>{r.gradeName}</strong>
               <span style={{ color: "#64748b" }}>{r.date}</span>
+              <span style={C.pill("#f1f5f9", "#334155")}>{dayPartLabel(r)}</span>
               <StatusPill status={r.status} />
               <span style={C.pill(r.urgency === "urgent" ? "#fef3c7" : "#e0e7ff", r.urgency === "urgent" ? "#92400e" : "#3730a3")}>{r.urgency}</span>
             </div>
@@ -1578,6 +1791,75 @@ function LessonPlanView({ offerId }) {
   );
 }
 
+// Complete connection via the principal's staff link: name + grade level.
+// Storing the grade is what lets the system know the teacher's VP.
+function StaffJoinForm({ token, defaultName, onJoined }) {
+  const [school, setSchool] = useState(null);
+  const [grades, setGrades] = useState([]);
+  const [name, setName] = useState(defaultName || "");
+  const [gradeLevelId, setGradeLevelId] = useState("");
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api(`/api/subs-teacher/staff-invite/${encodeURIComponent(token)}`)
+      .then((r) => {
+        setSchool(r.school);
+        setGrades(r.grades);
+      })
+      .catch((e) => setErr(e.message));
+  }, [token]);
+
+  const vp = grades.find((g) => g._id === gradeLevelId)?.vpEmail;
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      await api("/api/subs-teacher/join-staff", { method: "POST", body: { token, name, gradeLevelId } });
+      onJoined(school?.name || "your school");
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ ...C.card, borderColor: "#bfdbfe", background: "#f8fbff" }}>
+      <h2 style={C.h2}>Join {school?.name || "your school"}</h2>
+      {err && <div style={C.err}>{err}</div>}
+      <p style={{ fontSize: 13, color: "#64748b", marginTop: -6 }}>Tell us your name and the grade you teach so we route absences to the right VP.</p>
+      <form onSubmit={submit}>
+        <div style={C.row}>
+          <div>
+            <label style={C.label}>Your name</label>
+            <input style={{ ...C.input, width: 200 }} value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
+          </div>
+          <div>
+            <label style={C.label}>Grade you teach</label>
+            <select style={{ ...C.input, width: 160 }} value={gradeLevelId} onChange={(e) => setGradeLevelId(e.target.value)} required>
+              <option value="">Select…</option>
+              {grades.map((g) => (
+                <option key={g._id} value={g._id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+        {vp && <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Your VP: {vp}</div>}
+        <div style={{ marginTop: 12 }}>
+          <button style={C.btn} disabled={busy || !gradeLevelId}>
+            {busy ? "Connecting…" : "Connect to this school"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // Staff teacher reports their own absence ("I am a teacher, I need a sub").
 function RequestSubForm({ defaultName, onSubmitted }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -1589,10 +1871,21 @@ function RequestSubForm({ defaultName, onSubmitted }) {
   const [date, setDate] = useState(today);
   const [reason, setReason] = useState("Sick");
   const [urgency, setUrgency] = useState("urgent");
+  const [dayPart, setDayPart] = useState("full");
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("11:00");
   const [notes, setNotes] = useState("");
+  const [myGrades, setMyGrades] = useState({}); // schoolId → my grade
+  const [voiceDataUrl, setVoiceDataUrl] = useState("");
+  const [voiceDuration, setVoiceDuration] = useState(0);
+  const [voiceFailed, setVoiceFailed] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const selectedSchool = schools.find((s) => s._id === schoolId);
+  const isSick = reason === "Sick";
+  const voiceRequired = !!selectedSchool?.requireSickVoiceNote && isSick;
 
   useEffect(() => {
     // Prefer schools the teacher is connected to (via the staff link); fall
@@ -1602,6 +1895,7 @@ function RequestSubForm({ defaultName, onSubmitted }) {
         const mine = await api("/api/subs-teacher/my-staff-schools");
         if (mine.schools?.length) {
           setSchools(mine.schools);
+          setMyGrades(Object.fromEntries(mine.schools.map((s) => [s._id, s.myGradeLevelId]).filter(([, g]) => g)));
           setSchoolId(mine.schools[0]._id);
           return;
         }
@@ -1614,17 +1908,45 @@ function RequestSubForm({ defaultName, onSubmitted }) {
   }, []);
   useEffect(() => {
     if (!schoolId) return setGrades([]);
-    api(`/api/subs-teacher/schools/${schoolId}/grades`).then(({ grades }) => setGrades(grades)).catch(() => setGrades([]));
-    setGradeLevelId("");
-  }, [schoolId]);
+    api(`/api/subs-teacher/schools/${schoolId}/grades`)
+      .then(({ grades }) => {
+        setGrades(grades);
+        // Pre-select the grade this teacher teaches (so the right VP is used).
+        const mine = myGrades[schoolId];
+        setGradeLevelId(mine && grades.some((g) => g._id === mine) ? mine : "");
+      })
+      .catch(() => setGrades([]));
+  }, [schoolId, myGrades]);
 
   async function submit(e) {
     e.preventDefault();
     setErr("");
     setMsg("");
+    // Only insist on a voice note when one is required AND recording is
+    // actually working — never trap a teacher whose mic failed.
+    if (voiceRequired && !voiceDataUrl && !voiceFailed) {
+      setErr("Your school asks for a voice note on sick days — please record one (or it'll note that recording failed).");
+      return;
+    }
     setBusy(true);
     try {
-      await api("/api/subs-teacher/request-sub", { method: "POST", body: { schoolId, gradeLevelId, date, reason, urgency, notes, name } });
+      await api("/api/subs-teacher/request-sub", {
+        method: "POST",
+        body: {
+          schoolId,
+          gradeLevelId,
+          date,
+          reason,
+          urgency,
+          notes,
+          name,
+          dayPart,
+          startTime: dayPart === "custom" ? startTime : "",
+          endTime: dayPart === "custom" ? endTime : "",
+          voiceNote: voiceDataUrl ? { dataUrl: voiceDataUrl, durationSec: voiceDuration } : undefined,
+          voiceNoteFailed: voiceFailed && !voiceDataUrl,
+        },
+      });
       setMsg("Submitted — your principal will approve it, then we start contacting subs. You'll be emailed when it's covered.");
       setNotes("");
       onSubmitted && onSubmitted();
@@ -1692,6 +2014,18 @@ function RequestSubForm({ defaultName, onSubmitted }) {
             </select>
           </div>
         </div>
+        <DayPartPicker dayPart={dayPart} setDayPart={setDayPart} startTime={startTime} setStartTime={setStartTime} endTime={endTime} setEndTime={setEndTime} />
+        {isSick && (
+          <VoiceRecorder
+            required={voiceRequired}
+            onChange={(url, dur) => {
+              setVoiceDataUrl(url);
+              setVoiceDuration(dur);
+              if (url) setVoiceFailed(false);
+            }}
+            onFail={() => setVoiceFailed(true)}
+          />
+        )}
         <label style={C.label}>Notes for your principal (optional)</label>
         <input style={C.input} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Plans are in the top drawer" />
         <div style={{ marginTop: 14 }}>
@@ -1833,10 +2167,8 @@ function TeacherDashboard() {
             <div style={C.row}>
               <strong>{o.request?.schoolAbbrev || o.request?.schoolName}</strong>
               <span>{o.request?.gradeName}</span>
-              <span style={{ color: "#64748b" }}>
-                {o.request?.date}
-                {o.request?.startTime ? ` ${o.request.startTime}` : ""}
-              </span>
+              <span style={{ color: "#64748b" }}>{o.request?.date}</span>
+              <span style={C.pill("#f1f5f9", "#334155")}>{dayPartLabel(o.request)}</span>
               <span style={C.pill(o.request?.urgency === "urgent" ? "#fef3c7" : "#e0e7ff", o.request?.urgency === "urgent" ? "#92400e" : "#3730a3")}>
                 {o.request?.urgency}
               </span>

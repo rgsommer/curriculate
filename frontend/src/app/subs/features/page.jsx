@@ -25,6 +25,11 @@ const FEATURES = [
   ["✝️", "Mission fit, when it matters", "Optionally require or prefer subs who align with your statement of faith, are comfortable leading devotions, or share your school's values. Fully configurable — non-faith schools simply leave it off."],
   ["📍", "Fair to hard-to-staff schools", "Store sub and school locations and let subs set a travel limit and preferred schools, so proximity factors into ranking and chronically under-filled schools aren't left starved."],
   ["💵", "Keeps an eye on the budget", "Track per-sub day rates and your coverage budget, see running spend, and distinguish paid external coverage from internal — so a tight month doesn't surprise you."],
+  ["🤒", "Teachers report their own absences", "A sick teacher opens the app and submits 'I need a sub' — date, reason, and whether it's a whole day, half day (AM/PM), or specific times like 9–11am. It lands in your approvals queue; approve and the contacting starts automatically."],
+  ["🔗", "One link onboards all staff", "Send every teacher a single sign-up link (we even copy a ready-to-send email to your clipboard). They enter their name and the grade they teach — so the system already knows their VP. No roster to build by hand."],
+  ["✅", "Approve in a tap — or let your VP", "Teacher-reported absences wait for approval so nothing goes out without your say-so. You decide how much authority your VP has: nothing, sick days only, or everything — and the right VP is looped in automatically."],
+  ["📨", "The right people, automatically", "When a sub accepts, the system notifies the substitute, the appropriate VP (who handles lesson plans), finance, and the absent teacher — who can reply-all with their plans, VP cc'd. You're done."],
+  ["📊", "Absence records & reports", "Every absence is logged per teacher. See a breakdown by reason on screen or email yourself a report on demand. Teachers can see their own record too."],
 ];
 
 export default function SubsFeaturesPage() {

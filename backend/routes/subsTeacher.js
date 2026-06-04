@@ -28,15 +28,28 @@ import SubsGradeLevel from "../models/SubsGradeLevel.js";
 import SubsInvite from "../models/SubsInvite.js";
 import SubsStaff from "../models/SubsStaff.js";
 import SubsLessonPlan from "../models/SubsLessonPlan.js";
+import SubsVoiceNote from "../models/SubsVoiceNote.js";
 import { getSubsEngine } from "../jobs/subsEscalation.js";
 import { decryptSecret } from "../services/subsCrypto.js";
 import { notifier } from "../services/subsNotify.js";
 
 const router = express.Router();
 const jsonBody = express.json({ limit: "8kb" });
+// Larger limit for the absence form, which may carry a short base64 voice clip.
+const audioBody = express.json({ limit: "5mb" });
 
 function isOid(id) {
   return mongoose.Types.ObjectId.isValid(id);
+}
+
+const SICK = (reason) => /sick/i.test(reason || "");
+
+// Parse a "data:audio/...;base64,XXXX" URL into { mimeType, b64 }. Returns
+// null if it isn't a plausible audio data URL.
+function parseAudioDataUrl(dataUrl) {
+  const m = /^data:(audio\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(String(dataUrl || ""));
+  if (!m) return null;
+  return { mimeType: m[1], b64: m[2] };
 }
 
 // Resolve the schools a teacher is registered with (multi-school view).
@@ -80,6 +93,8 @@ async function decorateOffers(offers) {
             _id: r._id,
             date: r.date,
             startTime: r.startTime,
+            dayPart: r.dayPart || "full",
+            endTime: r.endTime || "",
             urgency: r.urgency,
             status: r.status,
             notes: r.notes,
@@ -181,7 +196,7 @@ router.post("/accept-invite", requireSubsAuth, jsonBody, async (req, res) => {
 
 // Schools to pick from (names aren't sensitive). Used by the request form.
 router.get("/all-schools", requireSubsAuth, async (req, res) => {
-  const schools = await SubsSchool.find({}).select("name abbrev location").sort({ name: 1 }).lean();
+  const schools = await SubsSchool.find({}).select("name abbrev location requireSickVoiceNote").sort({ name: 1 }).lean();
   res.json({ schools });
 });
 
@@ -192,7 +207,7 @@ router.get("/schools/:id/grades", requireSubsAuth, async (req, res) => {
   res.json({ grades });
 });
 
-router.post("/request-sub", requireSubsAuth, jsonBody, async (req, res) => {
+router.post("/request-sub", requireSubsAuth, audioBody, async (req, res) => {
   const email = req.subsUser.email;
   const b = req.body || {};
   if (!isOid(b.schoolId) || !isOid(b.gradeLevelId)) return res.status(400).json({ error: "Pick your school and class" });
@@ -203,6 +218,22 @@ router.post("/request-sub", requireSubsAuth, jsonBody, async (req, res) => {
   const grade = await SubsGradeLevel.findById(b.gradeLevelId).lean();
   if (!grade || String(grade.schoolId) !== String(b.schoolId)) return res.status(400).json({ error: "That class isn't at this school" });
 
+  const reason = typeof b.reason === "string" ? b.reason.trim() : "";
+
+  // Validate any attached voice note; enforce the school's sick-day policy.
+  // If the teacher's recorder failed (mic denied / unsupported), we DON'T
+  // block them — the request goes through flagged so the approver knows.
+  let audio = null;
+  if (b.voiceNote?.dataUrl) {
+    audio = parseAudioDataUrl(b.voiceNote.dataUrl);
+    if (!audio) return res.status(400).json({ error: "Voice note must be an audio recording" });
+  }
+  const voiceFailed = !!b.voiceNoteFailed;
+  if (school.requireSickVoiceNote && SICK(reason) && !audio && !voiceFailed) {
+    return res.status(400).json({ error: "This school requires a voice note for sick days — please record one." });
+  }
+  const voiceNoteStatus = audio ? "attached" : voiceFailed ? "failed" : "none";
+
   const urgency = b.urgency === "advance" ? "advance" : "urgent"; // sick → same-day default
   const request = await SubsRequest.create({
     schoolId: b.schoolId,
@@ -211,14 +242,30 @@ router.post("/request-sub", requireSubsAuth, jsonBody, async (req, res) => {
     urgency,
     escalationIntervalMs: urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS,
     startTime: typeof b.startTime === "string" ? b.startTime : "",
+    dayPart: ["full", "am", "pm", "custom"].includes(b.dayPart) ? b.dayPart : "full",
+    endTime: typeof b.endTime === "string" ? b.endTime : "",
     source: "teacher",
     status: "pending_approval",
-    reason: typeof b.reason === "string" ? b.reason.trim() : "",
+    reason,
+    voiceNoteStatus,
     requestedByEmail: email,
     absentTeacher: { name: typeof b.name === "string" ? b.name.trim() : "", email },
     notes: typeof b.notes === "string" ? b.notes.trim() : "",
     currentRank: -1,
   });
+
+  // Persist the voice note (if any) and link it to the request.
+  if (audio) {
+    const note = await SubsVoiceNote.create({
+      requestId: request._id,
+      schoolId: b.schoolId,
+      mimeType: audio.mimeType,
+      dataB64: audio.b64,
+      durationSec: Number(b.voiceNote?.durationSec) || 0,
+      createdByEmail: email,
+    });
+    await SubsRequest.updateOne({ _id: request._id }, { $set: { voiceNoteId: note._id } });
+  }
 
   // Notify the school's principals/admins AND the appropriate VP that an
   // approval is waiting (grade VP overrides the school default VP).
@@ -230,27 +277,45 @@ router.post("/request-sub", requireSubsAuth, jsonBody, async (req, res) => {
   res.json({ ok: true, request: request.toObject() });
 });
 
+// Resolve a staff link to its school + grade list (for the join form, so
+// the teacher can pick the grade they teach — which determines their VP).
+router.get("/staff-invite/:token", requireSubsAuth, async (req, res) => {
+  const school = await SubsSchool.findOne({ staffJoinToken: req.params.token }).lean();
+  if (!school) return res.status(404).json({ error: "That staff link is invalid or expired" });
+  const grades = await SubsGradeLevel.find({ schoolId: school._id }).select("name order vpEmail").sort({ order: 1, name: 1 }).lean();
+  res.json({
+    school: { _id: school._id, name: school.name, abbrev: school.abbrev, vpEmail: school.vpEmail || "" },
+    grades: grades.map((g) => ({ _id: g._id, name: g.name, vpEmail: g.vpEmail || school.vpEmail || "" })),
+  });
+});
+
 // Connect to a school via the principal's broadcast staff link (?staff=…).
-// Adds the signed-in teacher to that school's staff roster.
+// The teacher gives their name and grade level; storing the grade means the
+// system knows their "appropriate VP" for absence handling.
 router.post("/join-staff", requireSubsAuth, jsonBody, async (req, res) => {
   const token = typeof req.body?.token === "string" ? req.body.token : "";
   const school = token ? await SubsSchool.findOne({ staffJoinToken: token }).lean() : null;
   if (!school) return res.status(404).json({ error: "That staff link is invalid or expired" });
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const set = {};
+  if (name) set.name = name;
+  if (isOid(req.body?.gradeLevelId)) set.gradeLevelId = req.body.gradeLevelId;
   await SubsStaff.findOneAndUpdate(
     { schoolId: school._id, email: req.subsUser.email },
-    { $set: name ? { name } : {}, $setOnInsert: { schoolId: school._id, email: req.subsUser.email } },
+    { $set: set, $setOnInsert: { schoolId: school._id, email: req.subsUser.email } },
     { upsert: true, setDefaultsOnInsert: true }
   );
   res.json({ ok: true, school: { _id: school._id, name: school.name, abbrev: school.abbrev } });
 });
 
-// Schools where the signed-in teacher is on staff (for the request form).
+// Schools where the signed-in teacher is on staff (for the request form),
+// each with the grade they teach so it can be pre-selected.
 router.get("/my-staff-schools", requireSubsAuth, async (req, res) => {
   const staff = await SubsStaff.find({ email: req.subsUser.email }).lean();
   if (!staff.length) return res.json({ schools: [] });
-  const schools = await SubsSchool.find({ _id: { $in: staff.map((s) => s.schoolId) } }).select("name abbrev location").lean();
-  res.json({ schools });
+  const schools = await SubsSchool.find({ _id: { $in: staff.map((s) => s.schoolId) } }).select("name abbrev location requireSickVoiceNote").lean();
+  const gradeBySchool = new Map(staff.map((s) => [String(s.schoolId), s.gradeLevelId]));
+  res.json({ schools: schools.map((s) => ({ ...s, myGradeLevelId: gradeBySchool.get(String(s._id)) || null })) });
 });
 
 // The signed-in teacher's own absence breakdown (challenge: teachers can

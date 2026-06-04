@@ -88,6 +88,17 @@ on create for testing/tuning.
   Principals get an on-screen + emailable per-staff breakdown
   (`/schools/:id/absence-report[/email]`); teachers see their own
   (`/my-absences`).
+- **Sick-day voice note** — principals can require a short recorded voice
+  clip on sick-day requests (`SubsSchool.requireSickVoiceNote`); some like to
+  "hear" that a teacher is genuinely unwell. The teacher records it in-app
+  (MediaRecorder); it's stored in `SubsVoiceNote` and plays from the
+  approval (`GET /requests/:rid/voice-note`).
+- **Coverage window** — every request specifies whole day / half day (AM or
+  PM) / specific times (`dayPart` + `startTime`/`endTime`), shown on the
+  dashboard, board, offers, and in notifications.
+- **Admin can request a day off for a teacher** — when posting, the admin
+  picks a staff member (or types a name/email); it's recorded as that
+  teacher's absence and triggers the same fill + reply-all-lesson-plan flow.
 
 ### Who's notified on a fill (principal is then done)
 
@@ -137,7 +148,8 @@ offers (`BCS: teach Gr5 on …` / Accept / Skip).
 | `SubsSchool`     | School + `adminEmails`, `abbrev`, `bellTime`, `faithFit.enabled`, `subBudget`, **`vpEmail`, `financeEmail`** |
 | `SubsGradeLevel` | A grade level within a school, with optional **`vpEmail`** (the grade's "appropriate VP") |
 | `SubsTeacher`    | A substitute: contact prefs, **qualifications, roleTypes, gradeComfort, faithFit, location/maxTravelKm, reliability, dayRate, schoolIds** |
-| `SubsStaff`      | A school's staff-teacher roster (the absent teachers); **auto-built on approval** |
+| `SubsStaff`      | A school's staff-teacher roster (the absent teachers); auto-built on approval, or via the staff link (name + grade → VP) |
+| `SubsVoiceNote`  | A short recorded sick-day voice clip (base64), played by the approver |
 | `SubsRanking`    | Ordered preferred subs for one `(school, gradeLevel)` |
 | `SubsRequest`    | A request: grade, date, urgency, frozen interval, **`source`, `status` incl. `pending_approval`/`denied`, `absentTeacher`, `reason`,** requiredRole/Qualifications/FaithFit, startTime, difficultyNote, lessonPlanId, coverageType, exhaustedReason, eligibleCountAtPost |
 | `SubsOffer`      | One offer to one teacher (pending/accepted/declined/expired) + token |

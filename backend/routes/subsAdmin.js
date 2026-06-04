@@ -34,6 +34,7 @@ import SubsInternalCoverage, { COVERAGE_TYPES } from "../models/SubsInternalCove
 import SubsReliabilityFeedback from "../models/SubsReliabilityFeedback.js";
 import SubsInvite from "../models/SubsInvite.js";
 import SubsStaff from "../models/SubsStaff.js";
+import SubsVoiceNote from "../models/SubsVoiceNote.js";
 import { getSubsEngine, tickNow } from "../jobs/subsEscalation.js";
 import { notifier } from "../services/subsNotify.js";
 import { isEligible, eligibilityReasons } from "../services/subsMatching.js";
@@ -125,6 +126,7 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
   if (typeof req.body?.vpEmail === "string") set.vpEmail = req.body.vpEmail.trim().toLowerCase();
   if (typeof req.body?.financeEmail === "string") set.financeEmail = req.body.financeEmail.trim().toLowerCase();
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
+  if (typeof req.body?.requireSickVoiceNote === "boolean") set.requireSickVoiceNote = req.body.requireSickVoiceNote;
   await SubsSchool.updateOne({ _id: req.school._id }, { $set: set });
   const school = await SubsSchool.findById(req.school._id).lean();
   res.json({ school });
@@ -277,6 +279,8 @@ router.post("/requests", async (req, res) => {
     urgency,
     escalationIntervalMs,
     startTime: typeof req.body?.startTime === "string" ? req.body.startTime : "",
+    dayPart: ["full", "am", "pm", "custom"].includes(req.body?.dayPart) ? req.body.dayPart : "full",
+    endTime: typeof req.body?.endTime === "string" ? req.body.endTime : "",
     requiredRole: typeof req.body?.requiredRole === "string" ? req.body.requiredRole : "teacher",
     requiredQualifications: Array.isArray(req.body?.requiredQualifications)
       ? req.body.requiredQualifications.filter((q) => typeof q === "string" && q.trim()).map((q) => q.trim())
@@ -678,8 +682,24 @@ router.get("/approvals", async (req, res) => {
         schoolName: schoolById.get(String(r.schoolId))?.name || "—",
         gradeName: gradeName.get(String(r.gradeLevelId)) || "—",
         canApprove: approverCan(r, schoolById.get(String(r.schoolId)), ctx),
+        hasVoiceNote: !!r.voiceNoteId,
+        voiceNoteStatus: r.voiceNoteStatus || "none",
       })),
   });
+});
+
+// Play a sick-day voice note — for any approver who can see the request
+// (admins of the school, or VPs scoped to it). Returns a data URL.
+router.get("/requests/:rid/voice-note", async (req, res) => {
+  const { rid } = req.params;
+  if (!isOid(rid)) return res.status(400).json({ error: "Bad request id" });
+  const request = await SubsRequest.findById(rid).lean();
+  if (!request || !request.voiceNoteId) return res.status(404).json({ error: "No voice note" });
+  const ctx = await approverContext(req.subsUser.email);
+  if (!approverSees(request, ctx)) return res.status(403).json({ error: "Not allowed" });
+  const note = await SubsVoiceNote.findById(request.voiceNoteId).lean();
+  if (!note) return res.status(404).json({ error: "No voice note" });
+  res.json({ dataUrl: `data:${note.mimeType};base64,${note.dataB64}`, durationSec: note.durationSec });
 });
 
 // Approve a teacher's absence request: set matching requirements, open it,

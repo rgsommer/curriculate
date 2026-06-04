@@ -37,6 +37,11 @@ const SubsSchoolSchema = new mongoose.Schema(
     //   "all"       → VP may approve any absence
     vpApproval: { type: String, enum: ["none", "sick_only", "all"], default: "none" },
 
+    // Some principals like to "hear" that a teacher is genuinely sick. When
+    // enabled, a sick-day request must include a short voice note, which the
+    // principal can play from the approval.
+    requireSickVoiceNote: { type: Boolean, default: false },
+
     // Reusable link the principal broadcasts to all staff. Clicking it
     // (while signed in) connects the teacher to this school's staff roster.
     staffJoinToken: { type: String, default: "", index: true },

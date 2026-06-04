@@ -81,10 +81,24 @@ function offerLinks(offer) {
   return { accept: `${base}&action=accept`, decline: `${base}&action=decline` };
 }
 
+// Human label for the coverage window (whole/half/custom).
+export function dayPartLabel(request) {
+  switch (request?.dayPart) {
+    case "am":
+      return "half day (AM)";
+    case "pm":
+      return "half day (PM)";
+    case "custom":
+      return request.startTime && request.endTime ? `${request.startTime}–${request.endTime}` : "specific times";
+    default:
+      return "full day";
+  }
+}
+
 function describe(request, school, gradeLevel) {
   const when =
     request.urgency === "urgent" ? "TODAY (urgent)" : `on ${request.date}`;
-  return `${gradeLevel?.name || "a class"} at ${school?.name || "a school"} ${when}`;
+  return `${gradeLevel?.name || "a class"} at ${school?.name || "a school"} ${when} (${dayPartLabel(request)})`;
 }
 
 // Short SMS-style line a multi-school sub can read at a glance, prefixed
@@ -92,8 +106,7 @@ function describe(request, school, gradeLevel) {
 function shortLine(request, school, gradeLevel) {
   const tag = school?.abbrev || school?.name || "School";
   const role = request.requiredRole && request.requiredRole !== "teacher" ? request.requiredRole : "teach";
-  const at = request.startTime ? ` at ${request.startTime}` : "";
-  return `${tag}: ${role} ${gradeLevel?.name || "class"} on ${request.date}${at}`;
+  return `${tag}: ${role} ${gradeLevel?.name || "class"} on ${request.date} (${dayPartLabel(request)})`;
 }
 
 // ── Public interface ──────────────────────────────────────────────────

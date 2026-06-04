@@ -52,6 +52,13 @@ const SubsRequestSchema = new mongoose.Schema(
     // Time the sub is needed (HH:MM) — drives the morning "time-to-bell"
     // countdown (challenge #2). Falls back to the school's bellTime.
     startTime: { type: String, default: "" },
+    // Coverage window the teacher/admin specified:
+    //   "full"   → whole day
+    //   "am"     → half day, morning only
+    //   "pm"     → half day, afternoon only
+    //   "custom" → specific times (startTime–endTime, e.g. 09:00–11:00)
+    dayPart: { type: String, enum: ["full", "am", "pm", "custom"], default: "full" },
+    endTime: { type: String, default: "" }, // used with dayPart "custom"
 
     // ── Matching requirements (challenges #1, #5, #10, #11) ────────────
     // Only subs who satisfy ALL of these are offered the job.
@@ -65,6 +72,15 @@ const SubsRequestSchema = new mongoose.Schema(
 
     // ── Lesson plan (challenge #6) ─────────────────────────────────────
     lessonPlanId: { type: mongoose.Schema.Types.ObjectId, ref: "SubsLessonPlan", default: null },
+
+    // Optional voice note recorded by the teacher for a sick day (the
+    // principal can play it from the approval). Stored separately to keep
+    // this document small. `voiceNoteStatus` tells the approver whether one
+    // is attached, or that recording failed on the teacher's device (we
+    // never block a genuinely-sick teacher just because their mic didn't
+    // cooperate — the request still goes through, flagged for the approver).
+    voiceNoteId: { type: mongoose.Schema.Types.ObjectId, ref: "SubsVoiceNote", default: null },
+    voiceNoteStatus: { type: String, enum: ["none", "attached", "failed"], default: "none" },
 
     // ── Budget snapshot (challenge #7; scaffold) ───────────────────────
     estimatedCost: { type: Number, default: null },
