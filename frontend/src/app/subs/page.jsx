@@ -1227,7 +1227,7 @@ function SchoolSettings({ school, onSaved }) {
     setTesting(true);
     try {
       const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone: adminPhone } });
-      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : "Test sent — check your phone 📲");
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet (email still works)." : "Accepted by SMS provider 📲 — if it doesn't arrive, the number needs verifying in AWS (sandbox).");
     } catch (e) {
       setTestMsg(e.message);
     } finally {
@@ -1373,7 +1373,7 @@ function SchoolSettings({ school, onSaved }) {
                 {testing ? "Sending…" : "Send test SMS"}
               </button>
             </div>
-            {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("check your phone") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
+            {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("📲") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
           </div>
           <div style={{ marginTop: 10 }}>
             <label style={C.label}>VP can approve absences</label>
@@ -2838,7 +2838,7 @@ function TeacherProfile({ teacher, onSaved }) {
     setTesting(true);
     try {
       const r = await api("/api/subs-teacher/test-sms", { method: "POST", body: { phone } });
-      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : "Test sent — check your phone 📲");
+      setTestMsg(r.mock ? "Sent in test mode — SMS isn't switched on yet." : "Accepted by SMS provider 📲 — if it doesn't arrive, the number needs verifying in AWS (sandbox).");
     } catch (e) {
       setTestMsg(e.message);
     } finally {
@@ -2894,7 +2894,7 @@ function TeacherProfile({ teacher, onSaved }) {
                 {testing ? "Sending…" : "Send test"}
               </button>
             </div>
-            {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("check your phone") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
+            {testMsg && <div style={{ fontSize: 12, color: testMsg.includes("📲") ? "#15803d" : "#92400e", marginTop: 4 }}>{testMsg}</div>}
           </div>
           <div>
             <label style={C.label}>Day rate ($)</label>

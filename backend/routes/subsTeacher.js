@@ -183,7 +183,7 @@ router.post("/test-sms", requireSubsAuth, jsonBody, async (req, res) => {
   if (!phone) return res.status(400).json({ error: "Enter a phone number first." });
   try {
     const result = await sendTestSms(phone);
-    res.json({ ok: true, mock: !!result?.mock });
+    res.json({ ok: true, mock: !!result?.mock, messageId: result?.messageId || null });
   } catch (e) {
     res.status(502).json({ error: e?.message || "Couldn't send the test SMS." });
   }

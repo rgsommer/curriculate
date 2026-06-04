@@ -68,8 +68,10 @@ async function sendViaSns(to, text) {
   if (process.env.SUBS_SNS_SENDER_ID) {
     MessageAttributes["AWS.SNS.SMS.SenderID"] = { DataType: "String", StringValue: process.env.SUBS_SNS_SENDER_ID };
   }
-  await sns.send(new PublishCommand({ PhoneNumber: toE164(to), Message: text, MessageAttributes }));
-  return { ok: true };
+  const out = await sns.send(new PublishCommand({ PhoneNumber: toE164(to), Message: text, MessageAttributes }));
+  // MessageId confirms SNS accepted it; actual carrier delivery depends on
+  // sandbox status / a registered origination number (trace via CloudWatch).
+  return { ok: true, messageId: out?.MessageId || null };
 }
 
 // SMS. Picks a real provider when configured, else logs to the console so
