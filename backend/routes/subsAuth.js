@@ -29,6 +29,7 @@ import {
   SUBS_COOKIE_NAME,
   SESSION_TTL_SEC,
 } from "../services/subsAuthToken.js";
+import { renderEmail } from "../services/subsNotify.js";
 
 const router = express.Router();
 
@@ -48,12 +49,14 @@ async function sendPinEmail(to, pin) {
     return;
   }
   const from = process.env.SUBS_FROM || "Curriculate Subs <noreply@curriculate.net>";
-  const html = `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.55;color:#0f172a;max-width:520px;margin:24px auto;padding:24px;">
-    <h2 style="margin:0 0 12px;font-size:18px;">Your sign-in code</h2>
-    <p style="color:#475569;margin:0 0 18px;">Enter this 6-digit code at <a href="https://curriculate.net/subs" style="color:#2563eb;">curriculate.net/subs</a> to sign in.</p>
-    <p style="font-size:2rem;font-weight:700;letter-spacing:.4em;background:#eff6ff;color:#1e40af;padding:.75rem 1.5rem;border-radius:10px;display:inline-block;font-family:'SF Mono',Menlo,monospace;">${pin}</p>
-    <p style="color:#64748b;font-size:.9rem;margin-top:18px;">This code expires in 10 minutes. If you didn't request this, you can safely ignore this message.</p>
-  </div>`;
+  const html = renderEmail({
+    title: "Your sign-in code",
+    intro: "Enter this 6-digit code to sign in to Curriculate Subs:",
+    note:
+      `<div style="text-align:center;margin:6px 0 4px;"><span style="display:inline-block;font-size:30px;font-weight:800;letter-spacing:.35em;background:#eff6ff;color:#1e40af;padding:14px 24px;border-radius:10px;font-family:'SF Mono',Menlo,monospace;">${pin}</span></div>` +
+      `<p style="color:#94a3b8;font-size:13px;text-align:center;margin:14px 0 0;">This code expires in 10 minutes. If you didn't request it, you can ignore this email.</p>`,
+    footer: false,
+  });
   const r = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },

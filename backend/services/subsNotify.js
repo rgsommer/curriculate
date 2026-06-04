@@ -172,13 +172,87 @@ function describe(request, school, gradeLevel) {
   return `${classLabel(request, gradeLevel)} at ${tag} ${when} (${dayPartLabel(request)})`;
 }
 
-// Shared footer for staff-facing emails: links to manage/visit the app, to
-// see what it does, and to recommend it to another school.
+// Shared footer for staff-facing plain-text emails.
 function footerText() {
   return `\n—\nCurriculate Subs · Sign in or update your settings: ${APP_BASE_URL}\nSee what it does, or recommend it to another school: ${APP_BASE_URL}/features`;
 }
-function footerHtml() {
-  return `<hr style="border:0;border-top:1px solid #e2e8f0;margin:18px 0 10px"/><p style="font-size:12px;color:#94a3b8;">Curriculate Subs · <a href="${APP_BASE_URL}" style="color:#2563eb;">Sign in / your settings</a> · <a href="${APP_BASE_URL}/features" style="color:#2563eb;">See what it does (and recommend it)</a></p>`;
+
+// ── Professional, email-client-safe HTML templating ───────────────────
+// Table layout + inline styles (no fl//grid) so it renders across clients.
+const FONT = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
+const esc = (s) => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+// Coloured pill (e.g. urgency / status).
+function pill(text, bg, fg) {
+  return `<span style="display:inline-block;background:${bg};color:${fg};font-size:12px;font-weight:700;padding:3px 10px;border-radius:999px;">${esc(text)}</span>`;
+}
+
+// Primary/secondary CTA button (bulletproof-ish anchor button).
+function emailBtn(href, label, color = "#2563eb") {
+  return `<a href="${href}" style="display:inline-block;background:${color};color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;line-height:1;padding:13px 24px;border-radius:8px;">${esc(label)}</a>`;
+}
+
+// A clean label/value detail table from [[label, value], ...] (htmlValue
+// allowed by passing a 3rd truthy element).
+function detailTable(rows) {
+  const body = (rows || [])
+    .filter(([, v]) => v != null && v !== "")
+    .map(
+      ([label, value, isHtml]) =>
+        `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;width:130px;vertical-align:top;">${esc(label)}</td>` +
+        `<td style="padding:5px 0;color:#0f172a;font-size:14px;font-weight:600;">${isHtml ? value : esc(value)}</td></tr>`
+    )
+    .join("");
+  return body ? `<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="margin:6px 0 2px;border-top:1px solid #f1f5f9;">${body}</table>` : "";
+}
+
+// Render a full branded HTML email.
+//   title, intro(html ok), rows[], buttonsHtml, note(html ok), accent, footer
+export function renderEmail({ title, intro = "", badge = "", rows = [], buttonsHtml = "", note = "", accent = "#2563eb", footer = true }) {
+  return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#eef2f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#eef2f7;padding:24px 10px;">
+    <tr><td align="center">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0;font-family:${FONT};">
+        <tr><td style="background:${accent};padding:16px 24px;">
+          <span style="color:#ffffff;font-size:16px;font-weight:800;letter-spacing:.2px;">📋 Curriculate&nbsp;Subs</span>
+        </td></tr>
+        <tr><td style="padding:24px;">
+          ${badge ? `<div style="margin:0 0 10px;">${badge}</div>` : ""}
+          <h1 style="margin:0 0 10px;font-size:20px;line-height:1.3;color:#0f172a;">${title}</h1>
+          ${intro ? `<p style="margin:0 0 6px;color:#475569;font-size:15px;line-height:1.55;">${intro}</p>` : ""}
+          ${detailTable(rows)}
+          ${buttonsHtml ? `<div style="margin:20px 0 4px;">${buttonsHtml}</div>` : ""}
+          ${note ? `<p style="margin:14px 0 0;color:#94a3b8;font-size:13px;line-height:1.5;">${note}</p>` : ""}
+          <hr style="border:0;border-top:1px solid #eef2f7;margin:22px 0 12px"/>
+          ${
+            footer
+              ? `<p style="margin:0;font-size:12px;color:#94a3b8;line-height:1.6;">Curriculate Subs · <a href="${APP_BASE_URL}" style="color:#2563eb;text-decoration:none;">Sign in / settings</a> &nbsp;·&nbsp; <a href="${APP_BASE_URL}/features" style="color:#2563eb;text-decoration:none;">See features &amp; recommend</a></p>`
+              : ""
+          }
+        </td></tr>
+      </table>
+      <p style="margin:14px 0 0;color:#94a3b8;font-size:11px;font-family:${FONT};">Substitute staffing, made simple.</p>
+    </td></tr>
+  </table>
+</body></html>`;
+}
+
+// Urgency badge for a request.
+function urgencyBadge(request) {
+  return request?.urgency === "urgent" ? pill("URGENT — TODAY", "#fee2e2", "#b91c1c") : pill("Advance notice", "#e0e7ff", "#3730a3");
+}
+
+// Standard detail rows describing a request (reused across emails).
+function requestRows(request, school, gradeLevel, extra = []) {
+  return [
+    ["School", school?.abbrev || school?.name],
+    ["Class", classLabel(request, gradeLevel)],
+    ["Date", request?.date],
+    ["Coverage", dayPartLabel(request)],
+    ...(request?.requiredRole && request.requiredRole !== "teacher" ? [["Role", request.requiredRole]] : []),
+    ...extra,
+  ];
 }
 
 // Short SMS-style line a multi-school sub can read at a glance, prefixed
@@ -210,14 +284,18 @@ export function createNotifier() {
         (request.notes ? `Notes: ${request.notes}\n` : "") +
         `\nACCEPT: ${accept}\nDECLINE: ${decline}\n\n` +
         `If you don't respond, the assignment will be offered to the next teacher.`;
-      const html =
-        `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.55;color:#0f172a;max-width:520px;margin:24px auto;padding:24px;">` +
-        `<h2 style="margin:0 0 12px;font-size:18px;">Substitute teaching offer</h2>` +
-        `<p style="color:#475569;margin:0 0 8px;">Hi ${teacher.name || "there"}, you're being offered an assignment for <strong>${what}</strong>.</p>` +
-        (request.notes ? `<p style="color:#475569;margin:0 0 8px;">Notes: ${request.notes}</p>` : "") +
-        `<p style="margin:18px 0;"><a href="${accept}" style="background:#16a34a;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;margin-right:8px;">Accept</a>` +
-        `<a href="${decline}" style="background:#e2e8f0;color:#0f172a;padding:10px 18px;border-radius:8px;text-decoration:none;">Decline</a></p>` +
-        `<p style="color:#94a3b8;font-size:.85rem;">If you don't respond, the assignment will be offered to the next teacher.</p></div>`;
+      const html = renderEmail({
+        accent: request.urgency === "urgent" ? "#dc2626" : "#2563eb",
+        badge: urgencyBadge(request),
+        title: `You're invited to substitute`,
+        intro: `Hi ${esc(teacher.name || "there")} — ${esc(school?.name || "a school")} would like you to cover the class below.`,
+        rows: requestRows(request, school, gradeLevel, [
+          ...(request.notes ? [["Notes", request.notes]] : []),
+          ...(school?.address ? [["Address", school.address]] : []),
+        ]),
+        buttonsHtml: `${emailBtn(accept, "✓ Accept", "#16a34a")}&nbsp;&nbsp;${emailBtn(decline, "Decline", "#64748b")}`,
+        note: "If you don't respond, the assignment is offered to the next teacher.",
+      });
 
       const channels = [];
       const prefs = teacher.contactPrefs || { email: true, sms: false };
@@ -253,11 +331,11 @@ export function createNotifier() {
       const text =
         `${name} has added you to their substitute teacher list on Curriculate Subs.\n\n` +
         `Sign in to set your contact preferences and see all the schools you're registered with:\n${inviteLink}`;
-      const html =
-        `<div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.55;color:#0f172a;max-width:520px;margin:24px auto;padding:24px;">` +
-        `<h2 style="margin:0 0 12px;font-size:18px;">You're on ${name}'s substitute list</h2>` +
-        `<p style="color:#475569;">Sign in to set your contact preferences (email / SMS) and see every school you're registered with.</p>` +
-        `<p style="margin:18px 0;"><a href="${inviteLink}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;">Set up my profile</a></p></div>`;
+      const html = renderEmail({
+        title: `You're on ${esc(name)}'s substitute list`,
+        intro: `Sign in to set your contact preferences and see every school you're registered with — then you'll start receiving sub offers.`,
+        buttonsHtml: emailBtn(inviteLink, "Set up my profile"),
+      });
       await sendEmail({ to: email, subject: `${name} added you as a substitute teacher`, text, html });
       if (phone) {
         await sendSms({ to: phone, text: `${school?.abbrev || name} added you to their sub list. Set up: ${inviteLink}` }).catch(() => {});
@@ -275,12 +353,16 @@ export function createNotifier() {
         const addr = school?.address ? `\nAddress: ${school.address}` : "";
         await sendEmail({
           to: teacher.email,
-          subject: `Confirmed: ${what}`,
+          subject: `✓ Confirmed: ${what}`,
           text: `Thanks ${teacher.name || ""}! You're confirmed to substitute for ${what}.${addr}${maps ? `\nDirections: ${maps}` : ""}`,
-          html:
-            `<p>Thanks ${teacher.name || ""}! You're confirmed to substitute for <strong>${what}</strong>.</p>` +
-            (school?.address ? `<p>${school.address}</p>` : "") +
-            (maps ? `<p><a href="${maps}" style="background:#16a34a;color:#fff;padding:8px 16px;border-radius:8px;text-decoration:none;">📍 Navigate (Google Maps)</a></p>` : ""),
+          html: renderEmail({
+            accent: "#16a34a",
+            badge: pill("✓ Confirmed", "#dcfce7", "#15803d"),
+            title: `You're confirmed to substitute`,
+            intro: `Thanks ${esc(teacher.name || "")}! Here are the details for your assignment.`,
+            rows: requestRows(request, school, gradeLevel, [["Address", school?.address || ""]]),
+            buttonsHtml: maps ? emailBtn(maps, "📍 Navigate (Google Maps)", "#16a34a") : "",
+          }),
         }).catch((e) => console.error("[subs:notifyFilled:teacher]", e?.message || e));
       }
 
@@ -289,8 +371,14 @@ export function createNotifier() {
         await sendEmail({
           to: vpEmail,
           subject: `Sub confirmed — lesson plans needed: ${what}`,
-          text: `${subName} will cover ${what}. Please coordinate lesson plans${absentTeacher?.email ? ` with ${absentTeacher.name || absentTeacher.email}` : ""}.`,
-          html: `<p><strong>${subName}</strong> will cover <strong>${what}</strong>. Please coordinate lesson plans${absentTeacher?.email ? ` with ${absentTeacher.name || absentTeacher.email}` : ""}.</p>`,
+          text: `${subName} will cover ${what}. Please coordinate lesson plans${absentTeacher?.email ? ` with ${absentTeacher.name || absentTeacher.email}` : ""}.${footerText()}`,
+          html: renderEmail({
+            badge: pill("Lesson plans", "#e0e7ff", "#3730a3"),
+            title: `Sub confirmed — please coordinate lesson plans`,
+            intro: `<strong>${esc(subName)}</strong> will cover the class below${absentTeacher?.name || absentTeacher?.email ? `. Coordinate plans with <strong>${esc(absentTeacher.name || absentTeacher.email)}</strong>` : ""}.`,
+            rows: requestRows(request, school, gradeLevel),
+            buttonsHtml: emailBtn(APP_BASE_URL, "Open in the app"),
+          }),
         }).catch((e) => console.error("[subs:notifyFilled:vp]", e?.message || e));
       }
 
@@ -299,8 +387,13 @@ export function createNotifier() {
         await sendEmail({
           to: financeEmail,
           subject: `Sub booked: ${what}`,
-          text: `${subName} is booked for ${what}${request.estimatedCost ? ` at an estimated $${request.estimatedCost}` : ""}.`,
-          html: `<p><strong>${subName}</strong> is booked for <strong>${what}</strong>${request.estimatedCost ? ` at an estimated $${request.estimatedCost}` : ""}.</p>`,
+          text: `${subName} is booked for ${what}${request.estimatedCost ? ` at an estimated $${request.estimatedCost}` : ""}.${footerText()}`,
+          html: renderEmail({
+            badge: pill("Finance", "#dbeafe", "#1d4ed8"),
+            title: `Substitute booked`,
+            intro: `<strong>${esc(subName)}</strong> is booked for the assignment below.`,
+            rows: requestRows(request, school, gradeLevel, [["Est. cost", request.estimatedCost ? `$${request.estimatedCost}` : ""]]),
+          }),
         }).catch((e) => console.error("[subs:notifyFilled:finance]", e?.message || e));
       }
 
@@ -315,9 +408,13 @@ export function createNotifier() {
           text:
             `Hi ${absentTeacher.name || ""},\n\n${subName} will cover your ${gradeLevel?.name || "class"} on ${request.date}.\n\n` +
             `Please REPLY-ALL to this email with your lesson plans and any notes — your sub and VP are included.`,
-          html:
-            `<p>Hi ${absentTeacher.name || ""}, <strong>${subName}</strong> will cover your ${gradeLevel?.name || "class"} on ${request.date}.</p>` +
-            `<p>Please <strong>reply-all</strong> with your lesson plans and any notes — your sub and VP are included.</p>`,
+          html: renderEmail({
+            accent: "#16a34a",
+            badge: pill("✓ Covered", "#dcfce7", "#15803d"),
+            title: `Your class is covered — please send lesson plans`,
+            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply-all</strong> to this email with your lesson plans and any notes — your sub and VP are included.`,
+            rows: requestRows(request, school, gradeLevel),
+          }),
         }).catch((e) => console.error("[subs:notifyFilled:absent]", e?.message || e));
       }
 
@@ -334,7 +431,13 @@ export function createNotifier() {
           to,
           subject: `✓ Sub filled: ${what}`,
           text: `${subName} accepted the assignment for ${what}. VP and finance have been notified — you're all set.${footerText()}`,
-          html: `<p><strong>${subName}</strong> accepted the assignment for <strong>${what}</strong>. VP and finance have been notified — you're all set.</p>${footerHtml()}`,
+          html: renderEmail({
+            accent: "#16a34a",
+            badge: pill("✓ Filled", "#dcfce7", "#15803d"),
+            title: `Covered — you're all set`,
+            intro: `<strong>${esc(subName)}</strong> accepted the assignment. The VP and finance have been notified automatically.`,
+            rows: requestRows(request, school, gradeLevel),
+          }),
         }).catch((e) => console.error("[subs:notifyFilled:admin]", e?.message || e));
       }
     },
@@ -350,7 +453,13 @@ export function createNotifier() {
           to,
           subject: `Heads up — sub cancelled: ${what}`,
           text: `${subName} cancelled their acceptance of ${what}. We're now contacting the next available subs. You'll be notified when it's covered again.`,
-          html: `<p><strong>${subName}</strong> cancelled their acceptance of <strong>${what}</strong>. We're now contacting the next available subs — you'll be notified when it's covered again.</p>`,
+          html: renderEmail({
+            accent: "#d97706",
+            badge: pill("Sub cancelled", "#fef3c7", "#92400e"),
+            title: `A sub cancelled — re-contacting others`,
+            intro: `<strong>${esc(subName)}</strong> cancelled their acceptance. We're already contacting the next available subs — you'll be notified when it's covered again.`,
+            rows: requestRows(request, school, gradeLevel),
+          }),
         }).catch((e) => console.error("[subs:notifyCancelled]", e?.message || e));
       }
       // Finance: flag the cancellation so the sub isn't paid for this day.
@@ -359,7 +468,13 @@ export function createNotifier() {
           to: financeEmail,
           subject: `Do not pay — sub cancelled: ${what}`,
           text: `${subName} was booked for ${what} but cancelled, so the day did NOT go ahead with them. Please do not process payment for this assignment.`,
-          html: `<p><strong>${subName}</strong> was booked for <strong>${what}</strong> but <strong>cancelled</strong>. Please do not process payment for this assignment.</p>`,
+          html: renderEmail({
+            accent: "#dc2626",
+            badge: pill("DO NOT PAY", "#fee2e2", "#b91c1c"),
+            title: `Cancelled — do not process payment`,
+            intro: `<strong>${esc(subName)}</strong> was booked for the assignment below but <strong>cancelled</strong>. The day did not go ahead with them — please do not process payment.`,
+            rows: requestRows(request, school, gradeLevel),
+          }),
         }).catch((e) => console.error("[subs:notifyCancelled:finance]", e?.message || e));
       }
       if (school?.adminPhone) {
@@ -380,7 +495,14 @@ export function createNotifier() {
           to,
           subject: `ACTION NEEDED — approve sub request: ${what}`,
           text: `${who} reported an absence (${reason}) and needs a sub for ${what}.\n\nACTION NEEDED: approve or deny in the dashboard. You'll be notified when the class is covered.${footerText()}`,
-          html: `<p><strong>${who}</strong> reported an absence (${reason}) and needs a sub for <strong>${what}</strong>.</p><p><strong>Action needed:</strong> approve or deny in the dashboard. You'll be notified when the class is covered.</p>${footerHtml()}`,
+          html: renderEmail({
+            accent: "#d97706",
+            badge: pill("ACTION NEEDED", "#fef3c7", "#92400e"),
+            title: `Approve a sub request`,
+            intro: `<strong>${esc(who)}</strong> reported an absence and needs a sub. Approve to start contacting subs — you'll be notified when the class is covered.`,
+            rows: requestRows(request, school, gradeLevel, [["Reason", reason]]),
+            buttonsHtml: emailBtn(APP_BASE_URL, "Approve or deny", "#d97706"),
+          }),
         }).catch((e) => console.error("[subs:notifyApprovalNeeded:admin]", e?.message || e));
       }
 
@@ -391,14 +513,27 @@ export function createNotifier() {
             to: vpEmail,
             subject: `ACTION NEEDED — approve sub request: ${what}`,
             text: `${who} reported an absence (${reason}) for ${what}.\n\nThis one is yours to approve — please approve or deny in the app. You'll be notified when the class is covered.${footerText()}`,
-            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><strong>Action needed — yours to approve:</strong> approve or deny in the app. You'll be notified when the class is covered.</p>${footerHtml()}`,
+            html: renderEmail({
+              accent: "#d97706",
+              badge: pill("ACTION NEEDED — yours to approve", "#fef3c7", "#92400e"),
+              title: `Approve a sub request`,
+              intro: `<strong>${esc(who)}</strong> reported an absence. This one is yours to approve — you'll be notified when the class is covered.`,
+              rows: requestRows(request, school, gradeLevel, [["Reason", reason]]),
+              buttonsHtml: emailBtn(APP_BASE_URL, "Approve or deny", "#d97706"),
+            }),
           }).catch((e) => console.error("[subs:notifyApprovalNeeded:vp]", e?.message || e));
         } else {
           await sendEmail({
             to: vpEmail,
             subject: `FYI — sub request: ${what}`,
             text: `${who} reported an absence (${reason}) for ${what}.\n\nFYI only — the principal will approve this. No action needed from you. You'll be notified when the sub is filled.${footerText()}`,
-            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><em>FYI only — the principal will approve. No action needed from you. You'll be notified when the sub is filled.</em></p>${footerHtml()}`,
+            html: renderEmail({
+              accent: "#64748b",
+              badge: pill("FYI — no action needed", "#f1f5f9", "#475569"),
+              title: `Heads up: a sub request was submitted`,
+              intro: `<strong>${esc(who)}</strong> reported an absence. The principal will approve this — no action needed from you. You'll be notified when the sub is filled.`,
+              rows: requestRows(request, school, gradeLevel, [["Reason", reason]]),
+            }),
           }).catch((e) => console.error("[subs:notifyApprovalNeeded:vpfyi]", e?.message || e));
         }
       }
@@ -416,7 +551,12 @@ export function createNotifier() {
         to,
         subject: `Absence report — ${schoolName}`,
         text,
-        html: `<pre style="font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:pre-wrap;">${text.replace(/</g, "&lt;")}</pre>`,
+        html: renderEmail({
+          title: `Absence report`,
+          intro: `Per-staff absence summary for <strong>${esc(schoolName)}</strong>.`,
+          note: `<pre style="font-family:ui-monospace,Menlo,monospace;font-size:13px;white-space:pre-wrap;color:#0f172a;background:#f8fafc;border:1px solid #eef2f7;border-radius:8px;padding:12px;margin:0;">${esc(text)}</pre>`,
+          buttonsHtml: emailBtn(`${APP_BASE_URL}`, "Open the dashboard"),
+        }),
       });
     },
 
@@ -424,28 +564,46 @@ export function createNotifier() {
     async notifyRequestDecision({ request, school, gradeLevel, absentTeacher, approved, denyReason }) {
       if (!absentTeacher?.email) return;
       const what = describe(request, school, gradeLevel);
-      const subject = approved ? `Approved: sub request for ${what}` : `Not approved: sub request for ${what}`;
+      const subject = approved ? `✓ Approved: your sub request` : `Not approved: your sub request`;
       const body = approved
-        ? `Your absence request for ${what} was approved — we're now contacting substitutes.`
+        ? `Your absence request for ${what} was approved — we're now contacting substitutes. You'll be emailed when it's covered.`
         : `Your absence request for ${what} was not approved${denyReason ? `: ${denyReason}` : ""}. Please speak with your principal.`;
-      await sendEmail({ to: absentTeacher.email, subject, text: body, html: `<p>${body}</p>` }).catch((e) =>
-        console.error("[subs:notifyRequestDecision]", e?.message || e)
-      );
+      await sendEmail({
+        to: absentTeacher.email,
+        subject,
+        text: body,
+        html: renderEmail({
+          accent: approved ? "#16a34a" : "#dc2626",
+          badge: approved ? pill("✓ Approved", "#dcfce7", "#15803d") : pill("Not approved", "#fee2e2", "#b91c1c"),
+          title: approved ? `Your sub request was approved` : `Your sub request wasn't approved`,
+          intro: approved
+            ? `We're contacting substitutes now — you'll be emailed the moment your class is covered.`
+            : `Your request wasn't approved${denyReason ? `: <strong>${esc(denyReason)}</strong>` : ""}. Please speak with your principal.`,
+          rows: requestRows(request, school, gradeLevel),
+        }),
+      }).catch((e) => console.error("[subs:notifyRequestDecision]", e?.message || e));
     },
 
     async notifyExhausted({ request, school, gradeLevel, adminEmails = [], reason }) {
       const what = describe(request, school, gradeLevel);
       const lead =
         reason === "no_eligible"
-          ? `No substitutes qualified for ${what} (check the required role/qualifications, or widen them).`
-          : `We contacted every qualified substitute for ${what} and none accepted.`;
-      const tail = "Consider internal coverage from the dashboard.";
+          ? `No substitutes qualified for this posting — check the required role/qualifications, or widen them.`
+          : `We contacted every qualified substitute and none accepted.`;
       for (const to of adminEmails) {
         await sendEmail({
           to,
           subject: `Sub request needs attention: ${what}`,
-          text: `${lead} ${tail}`,
-          html: `<p>${lead}</p><p>${tail}</p>`,
+          text: `${lead} Consider internal coverage from the dashboard.${footerText()}`,
+          html: renderEmail({
+            accent: "#dc2626",
+            badge: pill("Needs attention", "#fee2e2", "#b91c1c"),
+            title: `This sub request needs your attention`,
+            intro: lead,
+            rows: requestRows(request, school, gradeLevel),
+            buttonsHtml: emailBtn(APP_BASE_URL, "Open the dashboard", "#dc2626"),
+            note: "From the dashboard you can run Smart match, widen the requirements, or log internal coverage.",
+          }),
         }).catch((e) => console.error("[subs:notifyExhausted]", e?.message || e));
       }
     },
