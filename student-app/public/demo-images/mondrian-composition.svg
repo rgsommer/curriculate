@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" preserveAspectRatio="xMidYMid slice">
+  <rect width="800" height="600" fill="#f5f5f4"/>
+  <!-- coloured blocks -->
+  <rect x="0"   y="0"   width="320" height="240" fill="#dc2626"/>
+  <rect x="640" y="380" width="160" height="220" fill="#1d4ed8"/>
+  <rect x="640" y="0"   width="160" height="160" fill="#facc15"/>
+  <rect x="0"   y="500" width="160" height="100" fill="#f5f5f4"/>
+  <!-- black grid lines -->
+  <g fill="#0a0a0a">
+    <rect x="320" y="0"   width="14" height="600"/>
+    <rect x="624" y="0"   width="16" height="600"/>
+    <rect x="0"   y="240" width="334" height="14"/>
+    <rect x="0"   y="500" width="334" height="14"/>
+    <rect x="624" y="160" width="176" height="16"/>
+    <rect x="624" y="380" width="176" height="14"/>
+    <rect x="160" y="500" width="14" height="100"/>
+  </g>
+</svg>

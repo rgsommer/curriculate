@@ -189,11 +189,16 @@ const RECENTLY_UPDATED_TASK_TYPES = new Set([
   "word-weaver-duel", "mystery-clues", "body-break", "open-text", "teach-back",
 ]);
 
-// Order practice tasks (one per type) so the LEAST-practiced and RECENTLY-FIXED
-// types come first — every task gets properly field-tested and fresh fixes are
-// re-verified. `counts` is { taskType: completedCount } from
-// /api/demo/practice-stats (empty → falls back to random).
-function buildSmartTaskOrder(tasks, counts = {}) {
+// Order practice tasks (one per type) for maximum coverage of new task
+// types each session. Priority ladder:
+//   1. Types THIS tester has never tried (covers the 6/68-only gap —
+//      owner concern 2026-06-04: most testers only hit a small slice
+//      of the catalog).
+//   2. Recently-fixed types (so fresh fixes get re-verified).
+//   3. Least globally-practiced types (so every type gets field data).
+// `counts` is the global { taskType: completedCount } from practice-stats.
+// `triedSet` is this tester's personal Set<taskType> from /exhausted-types.
+function buildSmartTaskOrder(tasks, counts = {}, triedSet = new Set()) {
   const seen = new Set();
   const firstPass = [];
   const extras = [];
@@ -207,14 +212,22 @@ function buildSmartTaskOrder(tasks, counts = {}) {
       extras.push(t);
     }
   }
-  // Rank the one-per-type pass: recently-fixed first, then fewest completions.
+  // Rank the one-per-type pass.
   firstPass.sort((a, b) => {
+    // 1. Personally untried beats personally tried. Without this, a
+    //    returning tester re-cycles the same handful of types they
+    //    happened to start with.
+    const aTried = triedSet.has(a.taskType) ? 1 : 0;
+    const bTried = triedSet.has(b.taskType) ? 1 : 0;
+    if (aTried !== bTried) return aTried - bTried;
+    // 2. Recently-fixed first (verify fresh fixes).
     const aFixed = RECENTLY_UPDATED_TASK_TYPES.has(a.taskType) ? 0 : 1;
     const bFixed = RECENTLY_UPDATED_TASK_TYPES.has(b.taskType) ? 0 : 1;
     if (aFixed !== bFixed) return aFixed - bFixed;
+    // 3. Least globally-practiced.
     const aCount = counts[a.taskType] ?? 0;
     const bCount = counts[b.taskType] ?? 0;
-    return aCount - bCount; // least-practiced first
+    return aCount - bCount;
   });
   return [...firstPass, ...shuffleArray(extras)];
 }
@@ -921,6 +934,11 @@ function DemoPlayer({
   // ratings).  Null until the fetch resolves so we don't accidentally
   // freeze the order with an empty set and then re-freeze a second time.
   const [exhaustedTypes, setExhaustedTypes] = useState(null);
+  // Task types this player has any history with (completed or rated).
+  // Used by buildSmartTaskOrder to surface NEW types first so every
+  // tester actually samples the catalog instead of cycling the same
+  // handful (owner concern 2026-06-04).
+  const [triedTypes, setTriedTypes] = useState(null);
   const orderFrozenRef = useRef(null);
 
   useEffect(() => {
@@ -937,12 +955,13 @@ function DemoPlayer({
     return () => { cancelled = true; };
   }, []);
 
-  // Per-player exhausted-types fetch.  Needs the player's email, so it
-  // can only run after login.  If the fetch fails or there's no lead
-  // yet (first session), we get an empty set and nothing is filtered.
+  // Per-player exhausted-types + tried-types fetch.  Needs the player's
+  // email, so it can only run after login.  If the fetch fails or there's
+  // no lead yet (first session), both default to empty sets.
   useEffect(() => {
     if (!user?.email) {
       setExhaustedTypes(new Set());
+      setTriedTypes(new Set());
       return;
     }
     let cancelled = false;
@@ -954,32 +973,43 @@ function DemoPlayer({
         });
         const resp = await fetch(`${API_BASE_URL}/api/conference/exhausted-types?${params.toString()}`);
         const data = await resp.json();
-        const list = Array.isArray(data?.exhaustedTypes) ? data.exhaustedTypes : [];
-        if (!cancelled) setExhaustedTypes(new Set(list));
+        const ex = Array.isArray(data?.exhaustedTypes) ? data.exhaustedTypes : [];
+        const tried = Array.isArray(data?.triedTypes) ? data.triedTypes : [];
+        if (!cancelled) {
+          setExhaustedTypes(new Set(ex));
+          setTriedTypes(new Set(tried));
+        }
       } catch {
-        if (!cancelled) setExhaustedTypes(new Set());
+        if (!cancelled) {
+          setExhaustedTypes(new Set());
+          setTriedTypes(new Set());
+        }
       }
     })();
     return () => { cancelled = true; };
   }, [user?.email]);
 
-  // Build a smart task order: recently-fixed + least-practiced types first, then
-  // repeats.  Drop any types this player has exhausted (2x consecutive
-  // positive-only ratings) so they don't see the same fully-validated tasks
-  // again.  Freeze once both practice counts AND exhausted-types have
-  // loaded so the order never reshuffles mid-session.
+  // Build a smart task order: personally untried first, then recently-fixed,
+  // then least-practiced.  Drop any types this player has exhausted (2x
+  // consecutive positive-only ratings).  Freeze once all three signals
+  // have loaded so the order never reshuffles mid-session.
   const taskOrder = useMemo(() => {
     if (orderFrozenRef.current) return orderFrozenRef.current;
     const exhausted = exhaustedTypes || new Set();
+    const tried = triedTypes || new Set();
     const eligible = exhausted.size > 0
       ? DEMO_TASKS.filter((t) => !exhausted.has(t.taskType))
       : DEMO_TASKS;
-    const order = buildSmartTaskOrder(eligible, practiceCounts || {});
-    if (practiceCounts !== null && exhaustedTypes !== null) {
+    const order = buildSmartTaskOrder(eligible, practiceCounts || {}, tried);
+    if (
+      practiceCounts !== null &&
+      exhaustedTypes !== null &&
+      triedTypes !== null
+    ) {
       orderFrozenRef.current = order;
     }
     return order;
-  }, [practiceCounts, exhaustedTypes]);
+  }, [practiceCounts, exhaustedTypes, triedTypes]);
 
   // ── Orphan-feedback recovery ───────────────────────────────────────
   // Drafts the user typed in TaskFeedback but never submitted (e.g.

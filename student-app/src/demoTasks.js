@@ -13,7 +13,20 @@ import { buildDiffScene } from "@shared/diffDetectiveScene.js";
 // Self-contained (data-URI) image pair for the Spot-the-Difference demo, so it
 // actually shows TWO IMAGES instead of text passages (tester: image tasks never
 // rendered an image). No network dependency.
-const _DEMO_DIFF_SCENE = buildDiffScene(["Apple", "Sun", "Tree", "House", "Star", "Cat"], "demo-diff-v1");
+//
+// Rotated from a pool at module load so repeat practice doesn't show the
+// exact same scene every time (tester sehraj 2026-06-03: "It is mostly the
+// same thing make it more better like change the pictures").
+const _DEMO_DIFF_POOL = [
+  { topics: ["Apple", "Sun", "Tree", "House", "Star", "Cat"], seed: "demo-diff-classic", labels: ["Backyard A", "Backyard B"] },
+  { topics: ["Pencil", "Book", "Ruler", "Backpack", "Apple", "Clock"], seed: "demo-diff-classroom", labels: ["Desk A", "Desk B"] },
+  { topics: ["Whale", "Ship", "Anchor", "Fish", "Wave", "Crab"], seed: "demo-diff-ocean", labels: ["Ocean A", "Ocean B"] },
+  { topics: ["Castle", "Knight", "Dragon", "Sword", "Shield", "Crown"], seed: "demo-diff-medieval", labels: ["Kingdom A", "Kingdom B"] },
+  { topics: ["Rocket", "Planet", "Star", "Astronaut", "Moon", "Comet"], seed: "demo-diff-space", labels: ["Space A", "Space B"] },
+  { topics: ["Pizza", "Burger", "Cookie", "Milk", "Salad", "Cupcake"], seed: "demo-diff-cafeteria", labels: ["Tray A", "Tray B"] },
+];
+const _DEMO_DIFF_PICK = _DEMO_DIFF_POOL[Math.floor(Math.random() * _DEMO_DIFF_POOL.length)];
+const _DEMO_DIFF_SCENE = buildDiffScene(_DEMO_DIFF_PICK.topics, _DEMO_DIFF_PICK.seed);
 
 const DEMO_TASKS = [
 
@@ -412,8 +425,52 @@ const DEMO_TASKS = [
     title: "What Am I? — Deduction Challenge",
     prompt: "Guess what I am — earlier guesses earn more points.",
     config: {
-      // Pool — rotated per practice session
+      // Pool — rotated per practice session.  Easier, universally-known
+      // subjects come FIRST so a tester's first impression isn't a
+      // curriculum-specific concept (testers sehraj + Harnoor D.,
+      // 2026-06-03: "MAKE IT EASIER PLASEEEEEEEE" / "we never covered
+      // this, should be more grade-level appropriate").
       pool: [
+        {
+          answer: "Pizza",
+          acceptableAnswers: ["pizza", "a pizza"],
+          clues: [
+            { level: 1, text: "I am usually round and people slice me before eating." },
+            { level: 2, text: "I come out of a very hot oven." },
+            { level: 3, text: "My base is dough, my middle is tomato sauce, my top is cheese." },
+            { level: 4, text: "Italy is famous for inventing me." },
+          ],
+        },
+        {
+          answer: "Penguin",
+          acceptableAnswers: ["penguin", "a penguin", "penguins"],
+          clues: [
+            { level: 1, text: "I am a bird, but I cannot fly." },
+            { level: 2, text: "I waddle when I walk and slide on my belly." },
+            { level: 3, text: "I am an excellent swimmer in icy cold water." },
+            { level: 4, text: "I live mostly in Antarctica and wear a black-and-white 'tuxedo'." },
+          ],
+        },
+        {
+          answer: "Rainbow",
+          acceptableAnswers: ["rainbow", "a rainbow"],
+          clues: [
+            { level: 1, text: "You can usually see me after it rains." },
+            { level: 2, text: "I appear when sunlight passes through water droplets." },
+            { level: 3, text: "I have seven colours in a curved arch." },
+            { level: 4, text: "Red, orange, yellow, green, blue, indigo, violet — that's me." },
+          ],
+        },
+        {
+          answer: "Volcano",
+          acceptableAnswers: ["volcano", "a volcano"],
+          clues: [
+            { level: 1, text: "I am a mountain, but a very angry one." },
+            { level: 2, text: "When I erupt, I throw out smoke, ash, and glowing rock." },
+            { level: 3, text: "The hot melted rock that flows out of me is called lava." },
+            { level: 4, text: "Hawaii, Iceland, and Mount Vesuvius all have one of me." },
+          ],
+        },
         {
           answer: "Photosynthesis",
           acceptableAnswers: ["photosynthesis", "photo synthesis"],
@@ -761,8 +818,8 @@ const DEMO_TASKS = [
     mode: "image",
     imageA: _DEMO_DIFF_SCENE?.imageA,
     imageB: _DEMO_DIFF_SCENE?.imageB,
-    labelA: _DEMO_DIFF_SCENE?.labelA || "Scene A",
-    labelB: _DEMO_DIFF_SCENE?.labelB || "Scene B",
+    labelA: _DEMO_DIFF_PICK.labels[0],
+    labelB: _DEMO_DIFF_PICK.labels[1],
     differences: _DEMO_DIFF_SCENE?.differences || [],
   },
 
@@ -1340,30 +1397,65 @@ const DEMO_TASKS = [
   // =========================================================================
 
   // 60. Art View (uses config.imageUrl + config.focusHints + spotItems)
-  {
-    taskType: "art-view",
-    title: "Art View",
-    prompt: "Study the artwork carefully, then share your observations!",
-    config: {
-      // Local bundled asset — external Wikimedia URLs were unreliable in
-      // classroom networks (hotlink/CORS), so the demo never rendered art.
-      imageUrl: "/demo-images/great-wave.svg",
-      imageTitle: "The Great Wave off Kanagawa",
-      imageArtist: "Katsushika Hokusai",
-      imageYear: "c. 1831",
-      viewingSeconds: 45,
-      responseSeconds: 90,
-      minObservations: 3,
-      focusHints: ["Look at the wave's shape", "Notice Mount Fuji in the background", "Observe the colors and movement"],
-      // "I noticed the…" spot-check (3 real + 1 plausible decoy).
-      spotItems: [
-        { text: "a giant wave with claw-like foam", isBogus: false },
-        { text: "Mount Fuji in the background", isBogus: false },
-        { text: "small fishing boats riding the swell", isBogus: false },
-        { text: "a red sun rising on the horizon", isBogus: true },
-      ],
-    },
-  },
+  //
+  // Rotated from a pool at module load — tester sehraj (2026-06-03):
+  // "The pictures are always the same". Each session now picks one of
+  // three bundled artworks with matching spot-items + focus hints.
+  (() => {
+    const POOL = [
+      {
+        imageUrl: "/demo-images/great-wave.svg",
+        imageTitle: "The Great Wave off Kanagawa",
+        imageArtist: "Katsushika Hokusai",
+        imageYear: "c. 1831",
+        focusHints: ["Look at the wave's shape", "Notice Mount Fuji in the background", "Observe the colors and movement"],
+        spotItems: [
+          { text: "a giant wave with claw-like foam", isBogus: false },
+          { text: "Mount Fuji in the background", isBogus: false },
+          { text: "small fishing boats riding the swell", isBogus: false },
+          { text: "a red sun rising on the horizon", isBogus: true },
+        ],
+      },
+      {
+        imageUrl: "/demo-images/starry-night.svg",
+        imageTitle: "The Starry Night",
+        imageArtist: "Vincent van Gogh",
+        imageYear: "1889",
+        focusHints: ["Notice the swirling sky", "Look at the village below", "Find the cypress tree"],
+        spotItems: [
+          { text: "a swirling night sky", isBogus: false },
+          { text: "a glowing crescent moon", isBogus: false },
+          { text: "a sleeping village with a steeple", isBogus: false },
+          { text: "a horse-drawn carriage on the road", isBogus: true },
+        ],
+      },
+      {
+        imageUrl: "/demo-images/mondrian-composition.svg",
+        imageTitle: "Composition with Red, Blue and Yellow",
+        imageArtist: "Piet Mondrian",
+        imageYear: "1930",
+        focusHints: ["Notice the primary colours", "Look at how the black lines divide the canvas", "Count the rectangles"],
+        spotItems: [
+          { text: "large blocks of red, blue, and yellow", isBogus: false },
+          { text: "thick black grid lines", isBogus: false },
+          { text: "rectangles of different sizes", isBogus: false },
+          { text: "a self-portrait of the artist", isBogus: true },
+        ],
+      },
+    ];
+    const pick = POOL[Math.floor(Math.random() * POOL.length)];
+    return {
+      taskType: "art-view",
+      title: "Art View",
+      prompt: "Study the artwork carefully, then share your observations!",
+      config: {
+        ...pick,
+        viewingSeconds: 45,
+        responseSeconds: 90,
+        minObservations: 3,
+      },
+    };
+  })(),
 
   // 61. Historical Document (uses config.imageUrl + config.analysisPrompts + spotItems)
   {
@@ -1378,8 +1470,11 @@ const DEMO_TASKS = [
       docYear: "1863",
       imageDescription: "The Emancipation Proclamation, issued by President Abraham Lincoln on January 1, 1863, declaring enslaved people in the Confederate states to be free.",
       historicalContext: "Issued during the Civil War, the Emancipation Proclamation reframed the war as a fight against slavery and paved the way for the 13th Amendment.",
-      viewingSeconds: 40,
-      responseSeconds: 90,
+      // Trimmed from 40s/90s — tester Harnoor D. (2026-06-03): "maybe make
+      // the time to study the document shorter". A 25s study window still
+      // gives students enough time to read the headline + signature.
+      viewingSeconds: 25,
+      responseSeconds: 60,
       analysisPrompts: [
         "What is the main action this document declares, and who does it affect?",
         "Why might Lincoln have issued this proclamation during the Civil War?",

@@ -451,13 +451,18 @@ export default function MakeAndSnapTask({
           marginBottom: 10,
         }}
       >
-        {imagePreview ? "Retake Photo" : "Open Camera / Take Photo"}
+        {imagePreview ? "Change Photo" : "Take Photo or Choose from Gallery"}
       </button>
 
+      {/* `capture="environment"` was removed (tester Harnoor D. 2026-06-03:
+          "can't take aphoto"). On her device the capture hint forced the
+          camera and then silently failed, with no gallery fallback.
+          Without the hint, mobile browsers still let users tap the
+          camera icon in the file picker, but ALSO show a gallery option
+          when the camera doesn't open. */}
       <input
         type="file"
         accept="image/*"
-        capture="environment"
         ref={fileRef}
         style={{ display: "none" }}
         onChange={handleFileChange}

@@ -1269,18 +1269,21 @@ router.get("/exhausted-types", async (req, res) => {
   try {
     const email = String(req.query.email || "").toLowerCase().trim();
     const conference = String(req.query.conference || "general").trim();
-    if (!email) return res.json({ ok: true, exhaustedTypes: [] });
+    if (!email) return res.json({ ok: true, exhaustedTypes: [], triedTypes: [] });
 
     const lead = await ConferenceLead.findOne(
       { email, conference },
-      { feedbackEntries: 1 }
+      { feedbackEntries: 1, results: 1 }
     ).lean();
-    if (!lead) return res.json({ ok: true, exhaustedTypes: [] });
+    if (!lead) return res.json({ ok: true, exhaustedTypes: [], triedTypes: [] });
 
     const entries = Array.isArray(lead.feedbackEntries) ? lead.feedbackEntries : [];
+    const results = Array.isArray(lead.results) ? lead.results : [];
 
-    // Group entries by taskType. Skipped entries are "abandoned mid-task",
-    // not a thumbs-up/down — ignore them for the exhaustion signal.
+    // Group feedback entries by taskType. Skipped entries are
+    // "abandoned mid-task", not a thumbs-up/down — ignore them for the
+    // exhaustion signal but DO count them as "tried" so the order can
+    // push attempted-then-bailed types behind brand-new ones.
     const byType = new Map();
     for (const e of entries) {
       if (!e || e.skipped) continue;
@@ -1289,6 +1292,22 @@ router.get("/exhausted-types", async (req, res) => {
       const arr = byType.get(tt) || [];
       arr.push(e);
       byType.set(tt, arr);
+    }
+
+    // triedTypes — every task type this tester has any history with,
+    // pulled from BOTH `results` (latest session's completions) and
+    // `feedbackEntries` (append-only log of every rated/skipped task).
+    // Used by the student-app to prioritize task types the tester has
+    // never seen, addressing the "students only tried 6/68 types"
+    // coverage gap (owner concern 2026-06-04).
+    const tried = new Set();
+    for (const r of results) {
+      const tt = String(r?.taskType || "").trim();
+      if (tt) tried.add(tt);
+    }
+    for (const e of entries) {
+      const tt = String(e?.taskType || "").trim();
+      if (tt) tried.add(tt);
     }
 
     const isPositiveOnly = (e) => {
@@ -1311,10 +1330,14 @@ router.get("/exhausted-types", async (req, res) => {
     }
 
     res.set("Cache-Control", "private, max-age=30");
-    return res.json({ ok: true, exhaustedTypes: exhausted });
+    return res.json({
+      ok: true,
+      exhaustedTypes: exhausted,
+      triedTypes: Array.from(tried),
+    });
   } catch (e) {
     console.warn("[demo] exhausted-types failed:", e?.message);
-    return res.json({ ok: true, exhaustedTypes: [] });
+    return res.json({ ok: true, exhaustedTypes: [], triedTypes: [] });
   }
 });
 

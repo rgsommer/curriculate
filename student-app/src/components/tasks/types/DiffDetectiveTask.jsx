@@ -71,9 +71,17 @@ export default function DiffDetectiveTask({
       if (diffTokens.length === 0) return { text, isHit: false, hitTokens: [] };
       const hits = diffTokens.filter((t) => studentTokens.has(t));
       const ratio = hits.length / diffTokens.length;
-      // Hit if at least 50% of the content tokens overlap, OR ≥2 distinct
-      // content words match (works for short 1-word diffs like "1812").
-      const isHit = ratio >= 0.5 || hits.length >= 2;
+      // Hit if at least 1/3 of the content tokens overlap, OR at least
+      // one 4+-letter content noun matches AND the diff is short
+      // (≤3 content tokens — these are the tight phrases where one
+      // matched noun is highly diagnostic). Loosened from ratio≥0.5 /
+      // hits≥2 after tester Harnoor D. (2026-06-03): "It didn't read
+      // some of the differences I wrote." Students who DID spot the
+      // change usually mention the key noun in different words.
+      const isHit =
+        ratio >= 0.34 ||
+        (hits.length >= 1 && diffTokens.length <= 3) ||
+        hits.length >= 2;
       return { text, isHit, hitTokens: hits };
     });
     return { correct: perDiff.filter((p) => p.isHit).length, total: numExpected, perDiff };
