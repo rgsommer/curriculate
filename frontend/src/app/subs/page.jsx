@@ -1091,7 +1091,7 @@ function SchoolPanel({ school }) {
     <div>
       {err && <div style={C.err}>{err}</div>}
 
-      <SchoolSettings school={school} onSaved={() => window.location.reload()} />
+      <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} />
 
       <div style={C.card}>
         <h2 style={C.h2}>Grade levels</h2>
@@ -1202,7 +1202,7 @@ function AddTeacher({ onAdded }) {
   );
 }
 
-function SchoolSettings({ school, onSaved }) {
+function SchoolSettings({ school, grades = [], onSaved }) {
   const [open, setOpen] = useState(false);
   const [abbrev, setAbbrev] = useState(school.abbrev || "");
   const [bellTime, setBellTime] = useState(school.bellTime || "08:30");
@@ -1353,40 +1353,42 @@ function SchoolSettings({ school, onSaved }) {
 
           <label style={{ ...C.label, marginTop: 12 }}>Divisions (VP by grade range)</label>
           <p style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 6px" }}>
-            e.g. "JK–Grade 5" → VP. Assign each grade to a division under Grade levels. The VP's mobile is texted about approvals only when "VP can approve" lets them decide.
+            Tick which grades each division covers — that's what routes a grade's request to its VP (the label is just for you). A grade in no division uses the default VP above. The VP's mobile is texted about approvals only when "VP can approve" lets them decide.
           </p>
-          {divisions.map((d, i) => (
-            <div key={i} style={{ ...C.row, marginBottom: 6 }}>
-              <input
-                style={{ ...C.input, width: 120 }}
-                placeholder="JK–Grade 5"
-                value={d.name || ""}
-                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))}
-              />
-              <input
-                style={{ ...C.input, width: 120 }}
-                placeholder="VP name"
-                value={d.vpName || ""}
-                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpName: e.target.value } : x)))}
-              />
-              <input
-                style={{ ...C.input, width: 190 }}
-                placeholder="VP email"
-                value={d.vpEmail || ""}
-                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpEmail: e.target.value } : x)))}
-              />
-              <input
-                style={{ ...C.input, width: 140 }}
-                placeholder="VP mobile (SMS)"
-                value={d.vpPhone || ""}
-                onChange={(e) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, vpPhone: e.target.value } : x)))}
-              />
-              <button type="button" style={C.btnRed} onClick={() => setDivisions(divisions.filter((_, j) => j !== i))}>
-                remove
-              </button>
-            </div>
-          ))}
-          <button type="button" style={C.btnGhost} onClick={() => setDivisions([...divisions, { name: "", vpEmail: "" }])}>
+          {divisions.map((d, i) => {
+            const upd = (patch) => setDivisions(divisions.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+            const covered = (d.gradeLevelIds || []).map(String);
+            const toggleGrade = (gid) => upd({ gradeLevelIds: covered.includes(gid) ? covered.filter((x) => x !== gid) : [...covered, gid] });
+            return (
+              <div key={i} style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: 8, marginBottom: 8 }}>
+                <div style={C.row}>
+                  <input style={{ ...C.input, width: 120 }} placeholder="Label (e.g. Junior)" value={d.name || ""} onChange={(e) => upd({ name: e.target.value })} />
+                  <input style={{ ...C.input, width: 120 }} placeholder="VP name" value={d.vpName || ""} onChange={(e) => upd({ vpName: e.target.value })} />
+                  <input style={{ ...C.input, width: 180 }} placeholder="VP email" value={d.vpEmail || ""} onChange={(e) => upd({ vpEmail: e.target.value })} />
+                  <input style={{ ...C.input, width: 140 }} placeholder="VP mobile (SMS)" value={d.vpPhone || ""} onChange={(e) => upd({ vpPhone: e.target.value })} />
+                  <button type="button" style={C.btnRed} onClick={() => setDivisions(divisions.filter((_, j) => j !== i))}>
+                    remove
+                  </button>
+                </div>
+                <div style={{ ...C.row, gap: 6, marginTop: 6 }}>
+                  <span style={{ fontSize: 12, color: "#64748b" }}>Covers these grades:</span>
+                  {grades.length === 0 && <span style={{ fontSize: 12, color: "#94a3b8" }}>Add grade levels first.</span>}
+                  {grades.map((g) => (
+                    <button
+                      key={g._id}
+                      type="button"
+                      onClick={() => toggleGrade(g._id)}
+                      style={covered.includes(g._id) ? { ...C.pill("#2563eb", "#fff"), border: 0, cursor: "pointer" } : { ...C.pill("#f1f5f9", "#334155"), border: 0, cursor: "pointer" }}
+                    >
+                      {covered.includes(g._id) ? "✓ " : ""}
+                      {g.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+          <button type="button" style={C.btnGhost} onClick={() => setDivisions([...divisions, { name: "", vpEmail: "", gradeLevelIds: [] }])}>
             + Add division
           </button>
           <div style={{ marginTop: 10 }}>
@@ -1489,34 +1491,25 @@ function ApprovedDivisions({ teacher, school, onSaved }) {
   );
 }
 
+// Read-only routing summary per grade — confirms which VP a grade's request
+// will reach. The assignment itself is done in Settings → Divisions (tick
+// the grades each division covers).
 function GradeVpRow({ school, grade }) {
-  const [division, setDivision] = useState(grade.division || "");
-  const [saved, setSaved] = useState(false);
   const divs = school.divisions || [];
-  async function save(val) {
-    setDivision(val);
-    await api(`/api/subs-admin/schools/${school._id}/grades/${grade._id}`, { method: "PATCH", body: { division: val } });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1200);
-  }
-  const vp = divs.find((d) => d.name === division)?.vpEmail || school.vpEmail || "";
+  const division =
+    divs.find((d) => (d.gradeLevelIds || []).map(String).includes(String(grade._id))) ||
+    (grade.division ? divs.find((d) => d.name === grade.division) : null);
+  const vp = division?.vpEmail || school.vpEmail || "";
   return (
-    <div style={{ ...C.row, marginBottom: 4 }}>
+    <div style={{ ...C.row, marginBottom: 4, fontSize: 13 }}>
       <span style={{ ...C.pill("#f1f5f9", "#334155"), minWidth: 90 }}>{grade.name}</span>
-      {divs.length ? (
-        <select style={{ ...C.input, width: 180 }} value={division} onChange={(e) => save(e.target.value)}>
-          <option value="">— no division —</option>
-          {divs.map((d) => (
-            <option key={d.name} value={d.name}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+      <span style={{ color: "#64748b" }}>→</span>
+      {division ? (
+        <span style={{ color: "#334155" }}>{division.name || "(division)"}</span>
       ) : (
-        <span style={{ color: "#94a3b8", fontSize: 12 }}>Add divisions in Settings first</span>
+        <span style={{ color: "#94a3b8" }}>default VP</span>
       )}
-      {vp && <span style={{ color: "#64748b", fontSize: 12 }}>VP: {vp}</span>}
-      {saved && <span style={{ color: "#15803d", fontSize: 12 }}>saved</span>}
+      <span style={{ color: "#64748b" }}>· VP: {vp || "none set — add in Settings"}</span>
     </div>
   );
 }

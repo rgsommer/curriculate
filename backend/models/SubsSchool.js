@@ -56,6 +56,8 @@ const SubsSchoolSchema = new mongoose.Schema(
           vpName: { type: String, trim: true },
           vpEmail: { type: String, lowercase: true, trim: true },
           vpPhone: { type: String, trim: true },
+          // The grade levels this division covers — the actual routing key.
+          gradeLevelIds: { type: [mongoose.Schema.Types.ObjectId], default: [] },
         },
       ],
       default: [],

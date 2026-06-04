@@ -39,6 +39,7 @@ import { getSubsEngine, tickNow } from "../jobs/subsEscalation.js";
 import { notifier } from "../services/subsNotify.js";
 import { isEligible, eligibilityReasons } from "../services/subsMatching.js";
 import { smartMatch } from "../services/subsSmartMatch.js";
+import { divisionNameForGrade } from "../services/subsVp.js";
 import { encryptSecret, decryptSecret, encryptionAvailable } from "../services/subsCrypto.js";
 
 const router = express.Router();
@@ -154,6 +155,7 @@ router.patch("/schools/:id", loadAdminSchool, async (req, res) => {
         vpName: String(d.vpName || "").trim(),
         vpEmail: String(d.vpEmail || "").trim().toLowerCase(),
         vpPhone: String(d.vpPhone || "").trim(),
+        gradeLevelIds: Array.isArray(d.gradeLevelIds) ? d.gradeLevelIds.filter((id) => isOid(id)) : [],
       }));
   }
   if (["none", "sick_only", "all"].includes(req.body?.vpApproval)) set.vpApproval = req.body.vpApproval;
@@ -321,7 +323,7 @@ router.post("/requests", async (req, res) => {
   const request = await SubsRequest.create({
     schoolId,
     gradeLevelId,
-    division: grade?.division || "",
+    division: divisionNameForGrade(grade, school),
     date,
     urgency,
     escalationIntervalMs,
@@ -759,14 +761,22 @@ async function approverContext(email) {
     SubsGradeLevel.find({ vpEmail: email }).lean(), // per-grade override
   ]);
   const vpGradeSet = new Set(vpGrades.map((g) => String(g._id)));
-  // Grades covered because this email is the VP of their division.
+  // Grades covered because this email is the VP of their division — by the
+  // division's explicit gradeLevelIds (plus legacy name match).
   if (divisionSchools.length) {
-    const divNamesBySchool = new Map(
-      divisionSchools.map((s) => [String(s._id), new Set((s.divisions || []).filter((d) => d.vpEmail === email).map((d) => d.name))])
-    );
-    const grades = await SubsGradeLevel.find({ schoolId: { $in: divisionSchools.map((s) => s._id) } }).lean();
+    const legacyNamesBySchool = new Map();
+    for (const s of divisionSchools) {
+      for (const d of s.divisions || []) {
+        if (d.vpEmail !== email) continue;
+        for (const id of d.gradeLevelIds || []) vpGradeSet.add(String(id));
+        if (!legacyNamesBySchool.has(String(s._id))) legacyNamesBySchool.set(String(s._id), new Set());
+        legacyNamesBySchool.get(String(s._id)).add(d.name);
+      }
+    }
+    // Back-compat: grades linked by the old grade.division name.
+    const grades = await SubsGradeLevel.find({ schoolId: { $in: divisionSchools.map((s) => s._id) }, division: { $ne: "" } }).lean();
     for (const g of grades) {
-      const names = divNamesBySchool.get(String(g.schoolId));
+      const names = legacyNamesBySchool.get(String(g.schoolId));
       if (names && g.division && names.has(g.division)) vpGradeSet.add(String(g._id));
     }
   }

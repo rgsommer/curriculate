@@ -32,7 +32,7 @@ import SubsVoiceNote from "../models/SubsVoiceNote.js";
 import { getSubsEngine } from "../jobs/subsEscalation.js";
 import { decryptSecret } from "../services/subsCrypto.js";
 import { notifier, sendTestSms } from "../services/subsNotify.js";
-import { gradeVpContact, vpCanApprove } from "../services/subsVp.js";
+import { gradeVpContact, vpCanApprove, divisionNameForGrade } from "../services/subsVp.js";
 
 const router = express.Router();
 const jsonBody = express.json({ limit: "8kb" });
@@ -261,7 +261,7 @@ router.post("/request-sub", requireSubsAuth, audioBody, async (req, res) => {
   const request = await SubsRequest.create({
     schoolId: b.schoolId,
     gradeLevelId: b.gradeLevelId,
-    division: grade?.division || "",
+    division: divisionNameForGrade(grade, school),
     date: b.date,
     urgency,
     escalationIntervalMs: urgency === "urgent" ? URGENT_INTERVAL_MS : ADVANCE_INTERVAL_MS,
