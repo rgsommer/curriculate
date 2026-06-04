@@ -1519,35 +1519,46 @@ function InviteSub({ school }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [link, setLink] = useState("");
+  const [invitedName, setInvitedName] = useState("");
+  const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setErr("");
+    setLink("");
+    if (!email.trim()) {
+      setErr("Enter the sub's email first.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const r = await api(`/api/subs-admin/schools/${school._id}/invite`, { method: "POST", body: { email, name, phone } });
+      setLink(r.inviteLink);
+      setInvitedName(name || email);
+      setEmail("");
+      setName("");
+      setPhone("");
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <form
-      style={{ ...C.row, marginTop: 12 }}
-      onSubmit={async (e) => {
-        e.preventDefault();
-        if (!email.trim()) return;
-        setBusy(true);
-        try {
-          const r = await api(`/api/subs-admin/schools/${school._id}/invite`, { method: "POST", body: { email, name, phone } });
-          setLink(r.inviteLink);
-          setEmail("");
-          setName("");
-          setPhone("");
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
+    <form style={{ ...C.row, marginTop: 12 }} onSubmit={submit}>
       <input style={{ ...C.input, width: 160 }} placeholder="sub@email.org" value={email} onChange={(e) => setEmail(e.target.value)} />
       <input style={{ ...C.input, width: 120 }} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
       <input style={{ ...C.input, width: 120 }} placeholder="Phone (SMS)" value={phone} onChange={(e) => setPhone(e.target.value)} />
       <button style={C.btn} disabled={busy}>
-        Invite to {school.abbrev || "school"}
+        {busy ? "Inviting…" : `Invite to ${school.abbrev || "school"}`}
       </button>
+      {err && <div style={{ ...C.err, width: "100%", marginTop: 6 }}>{err}</div>}
       {link && (
-        <span style={{ fontSize: 12, color: "#15803d", width: "100%" }}>
-          Invite sent. Link: <code>{link}</code>
-        </span>
+        <div style={{ ...C.err, background: "#ecfdf5", borderColor: "#a7f3d0", color: "#15803d", width: "100%", marginTop: 6 }}>
+          ✓ Invited {invitedName} — they'll get a sign-in email. Link: <code>{link}</code>
+        </div>
       )}
     </form>
   );
