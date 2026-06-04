@@ -167,7 +167,18 @@ function classLabel(request, gradeLevel) {
 function describe(request, school, gradeLevel) {
   const when =
     request.urgency === "urgent" ? "TODAY (urgent)" : `on ${request.date}`;
-  return `${classLabel(request, gradeLevel)} at ${school?.name || "a school"} ${when} (${dayPartLabel(request)})`;
+  // Prefer the school's short acronym (set in Settings) over the full name.
+  const tag = school?.abbrev || school?.name || "a school";
+  return `${classLabel(request, gradeLevel)} at ${tag} ${when} (${dayPartLabel(request)})`;
+}
+
+// Shared footer for staff-facing emails: links to manage/visit the app, to
+// see what it does, and to recommend it to another school.
+function footerText() {
+  return `\n—\nCurriculate Subs · Sign in or update your settings: ${APP_BASE_URL}\nSee what it does, or recommend it to another school: ${APP_BASE_URL}/features`;
+}
+function footerHtml() {
+  return `<hr style="border:0;border-top:1px solid #e2e8f0;margin:18px 0 10px"/><p style="font-size:12px;color:#94a3b8;">Curriculate Subs · <a href="${APP_BASE_URL}" style="color:#2563eb;">Sign in / your settings</a> · <a href="${APP_BASE_URL}/features" style="color:#2563eb;">See what it does (and recommend it)</a></p>`;
 }
 
 // Short SMS-style line a multi-school sub can read at a glance, prefixed
@@ -321,9 +332,9 @@ export function createNotifier() {
       for (const to of adminEmails) {
         await sendEmail({
           to,
-          subject: `Sub filled: ${what}`,
-          text: `${subName} accepted the assignment for ${what}. VP and finance have been notified.`,
-          html: `<p><strong>${subName}</strong> accepted the assignment for ${what}. VP and finance have been notified.</p>`,
+          subject: `✓ Sub filled: ${what}`,
+          text: `${subName} accepted the assignment for ${what}. VP and finance have been notified — you're all set.${footerText()}`,
+          html: `<p><strong>${subName}</strong> accepted the assignment for <strong>${what}</strong>. VP and finance have been notified — you're all set.</p>${footerHtml()}`,
         }).catch((e) => console.error("[subs:notifyFilled:admin]", e?.message || e));
       }
     },
@@ -368,8 +379,8 @@ export function createNotifier() {
         await sendEmail({
           to,
           subject: `ACTION NEEDED — approve sub request: ${what}`,
-          text: `${who} reported an absence (${reason}) and needs a sub for ${what}.\n\nACTION NEEDED: approve or deny in the dashboard.`,
-          html: `<p><strong>${who}</strong> reported an absence (${reason}) and needs a sub for <strong>${what}</strong>.</p><p><strong>Action needed:</strong> approve or deny in the dashboard.</p>`,
+          text: `${who} reported an absence (${reason}) and needs a sub for ${what}.\n\nACTION NEEDED: approve or deny in the dashboard. You'll be notified when the class is covered.${footerText()}`,
+          html: `<p><strong>${who}</strong> reported an absence (${reason}) and needs a sub for <strong>${what}</strong>.</p><p><strong>Action needed:</strong> approve or deny in the dashboard. You'll be notified when the class is covered.</p>${footerHtml()}`,
         }).catch((e) => console.error("[subs:notifyApprovalNeeded:admin]", e?.message || e));
       }
 
@@ -379,15 +390,15 @@ export function createNotifier() {
           await sendEmail({
             to: vpEmail,
             subject: `ACTION NEEDED — approve sub request: ${what}`,
-            text: `${who} reported an absence (${reason}) for ${what}.\n\nThis one is yours to approve — please approve or deny in the app.`,
-            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><strong>Action needed — yours to approve:</strong> approve or deny in the app.</p>`,
+            text: `${who} reported an absence (${reason}) for ${what}.\n\nThis one is yours to approve — please approve or deny in the app. You'll be notified when the class is covered.${footerText()}`,
+            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><strong>Action needed — yours to approve:</strong> approve or deny in the app. You'll be notified when the class is covered.</p>${footerHtml()}`,
           }).catch((e) => console.error("[subs:notifyApprovalNeeded:vp]", e?.message || e));
         } else {
           await sendEmail({
             to: vpEmail,
             subject: `FYI — sub request: ${what}`,
-            text: `${who} reported an absence (${reason}) for ${what}.\n\nFYI only — the principal will approve this. No action needed from you.`,
-            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><em>FYI only — the principal will approve. No action needed from you.</em></p>`,
+            text: `${who} reported an absence (${reason}) for ${what}.\n\nFYI only — the principal will approve this. No action needed from you. You'll be notified when the sub is filled.${footerText()}`,
+            html: `<p><strong>${who}</strong> reported an absence (${reason}) for <strong>${what}</strong>.</p><p><em>FYI only — the principal will approve. No action needed from you. You'll be notified when the sub is filled.</em></p>${footerHtml()}`,
           }).catch((e) => console.error("[subs:notifyApprovalNeeded:vpfyi]", e?.message || e));
         }
       }

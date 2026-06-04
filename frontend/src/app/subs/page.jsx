@@ -472,6 +472,54 @@ function RoleChooser({ onChoose }) {
   );
 }
 
+// Sticky in-page navigation (the page is long). Links scroll to section
+// anchors; hidden on narrow screens (see the .subs-sidebar media query).
+const SIDEBAR_ITEMS = {
+  admin: [
+    ["sec-today", "🌅 Today"],
+    ["sec-approvals", "🛎️ Approvals"],
+    ["sec-schools", "🏫 Schools"],
+    ["sec-settings", "⚙️ Settings"],
+    ["sec-grades", "🎓 Grades & VPs"],
+    ["sec-subs", "🧑‍🏫 Substitutes"],
+    ["sec-post", "➕ Post a request"],
+    ["sec-requests", "📋 Requests"],
+    ["sec-reports", "📊 Absence report"],
+  ],
+  vp: [["sec-approvals", "🛎️ Approvals"]],
+  teacher: [
+    ["sec-needsub", "🤒 Need a sub"],
+    ["sec-myreqs", "📨 My requests"],
+    ["sec-profile", "🪪 My profile"],
+    ["sec-offers", "📥 Offers"],
+    ["sec-history", "🕘 History"],
+  ],
+};
+
+function SubsSidebar({ view }) {
+  const items = SIDEBAR_ITEMS[view] || [];
+  if (!items.length) return null;
+  return (
+    <div className="subs-sidebar">
+      <div style={{ ...C.card, padding: 8, marginBottom: 0 }}>
+        {items.map(([id, label]) => (
+          <a
+            key={id}
+            href={`#${id}`}
+            onClick={(e) => {
+              e.preventDefault();
+              document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            style={{ display: "block", padding: "7px 9px", fontSize: 13, color: "#334155", textDecoration: "none", borderRadius: 6 }}
+          >
+            {label}
+          </a>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────
 export default function SubsPage() {
   const [me, setMe] = useState(null);
@@ -593,7 +641,13 @@ export default function SubsPage() {
   const showChooser = noRole && !roleChosen && !invite && !staffToken;
   return (
     <div style={C.page}>
-      <div style={C.wrap}>
+      <style>{`
+        .subs-layout{ display:flex; gap:16px; align-items:flex-start; }
+        .subs-sidebar{ position:sticky; top:12px; width:165px; flex-shrink:0; }
+        .subs-main{ flex:1; min-width:0; }
+        @media (max-width:760px){ .subs-layout{ display:block; } .subs-sidebar{ display:none; } }
+      `}</style>
+      <div style={{ ...C.wrap, maxWidth: 1180 }}>
         <div style={{ ...C.row, justifyContent: "space-between", marginBottom: 18 }}>
           <h1 style={{ ...C.h1, marginBottom: 0 }}>Curriculate Subs</h1>
           <div style={C.row}>
@@ -647,9 +701,14 @@ export default function SubsPage() {
               </div>
             )}
 
-            {view === "admin" && <AdminDashboard />}
-            {view === "vp" && <VpDashboard />}
-            {view === "teacher" && <TeacherDashboard />}
+            <div className="subs-layout">
+              <SubsSidebar view={view} />
+              <div className="subs-main">
+                {view === "admin" && <AdminDashboard />}
+                {view === "vp" && <VpDashboard />}
+                {view === "teacher" && <TeacherDashboard />}
+              </div>
+            </div>
           </>
         )}
       </div>
@@ -1014,9 +1073,9 @@ function AdminDashboard() {
   return (
     <div>
       {err && <div style={C.err}>{err}</div>}
-      <MorningDashboard />
-      <ApprovalsQueue />
-      <div style={C.card}>
+      <div id="sec-today"><MorningDashboard /></div>
+      <div id="sec-approvals"><ApprovalsQueue /></div>
+      <div id="sec-schools" style={C.card}>
         <h2 style={C.h2}>Schools</h2>
         {schools.length === 0 && (
           <div style={{ ...C.err, background: "#eff6ff", borderColor: "#bfdbfe", color: "#1d4ed8" }}>
@@ -1091,9 +1150,11 @@ function SchoolPanel({ school }) {
     <div>
       {err && <div style={C.err}>{err}</div>}
 
-      <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} />
+      <div id="sec-settings">
+        <SchoolSettings school={school} grades={grades} onSaved={() => window.location.reload()} />
+      </div>
 
-      <div style={C.card}>
+      <div id="sec-grades" style={C.card}>
         <h2 style={C.h2}>Grade levels</h2>
         {grades.length === 0 && <span style={{ color: "#94a3b8" }}>No grade levels yet.</span>}
         {grades.map((g) => (
@@ -1109,7 +1170,7 @@ function SchoolPanel({ school }) {
         />
       </div>
 
-      <div style={C.card}>
+      <div id="sec-subs" style={C.card}>
         <h2 style={C.h2}>Substitute pool</h2>
         <div style={{ display: "grid", gap: 6 }}>
           {teachers.map((t) => (
@@ -1136,9 +1197,9 @@ function SchoolPanel({ school }) {
         <RankingEditor key={g._id} school={school} grade={g} teachers={teachers} />
       ))}
 
-      <PostRequest school={school} grades={grades} />
-      <RequestsBoard school={school} />
-      <AbsenceReport school={school} />
+      <div id="sec-post"><PostRequest school={school} grades={grades} /></div>
+      <div id="sec-requests"><RequestsBoard school={school} /></div>
+      <div id="sec-reports"><AbsenceReport school={school} /></div>
     </div>
   );
 }
@@ -2756,8 +2817,8 @@ function TeacherDashboard() {
   return (
     <div>
       {err && <div style={C.err}>{err}</div>}
-      <RequestSubForm defaultName={teacher?.name} onSubmitted={() => setReqKey((k) => k + 1)} />
-      <MyRequests reloadKey={reqKey} />
+      <div id="sec-needsub"><RequestSubForm defaultName={teacher?.name} onSubmitted={() => setReqKey((k) => k + 1)} /></div>
+      <div id="sec-myreqs"><MyRequests reloadKey={reqKey} /></div>
       <MyAbsences reloadKey={reqKey} />
       {schools.length > 0 && (
         <div style={C.card}>
@@ -2772,9 +2833,13 @@ function TeacherDashboard() {
           </div>
         </div>
       )}
-      {teacher && <TeacherProfile teacher={teacher} onSaved={load} />}
+      {teacher && (
+        <div id="sec-profile">
+          <TeacherProfile teacher={teacher} onSaved={load} />
+        </div>
+      )}
 
-      <div style={C.card}>
+      <div id="sec-offers" style={C.card}>
         <h2 style={C.h2}>Pending offers</h2>
         {pending.length === 0 && <span style={{ color: "#94a3b8" }}>No pending offers right now.</span>}
         {pending.map((o) => (
@@ -2821,7 +2886,7 @@ function TeacherDashboard() {
         ))}
       </div>
 
-      <div style={C.card}>
+      <div id="sec-history" style={C.card}>
         <h2 style={C.h2}>History</h2>
         {history.length === 0 && <span style={{ color: "#94a3b8" }}>Nothing yet.</span>}
         {history.map((o) => (
