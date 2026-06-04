@@ -45,12 +45,17 @@ function isOid(id) {
 
 const SICK = (reason) => /sick/i.test(reason || "");
 
-// Parse a "data:audio/...;base64,XXXX" URL into { mimeType, b64 }. Returns
-// null if it isn't a plausible audio data URL.
+// Parse a "data:audio/...;base64,XXXX" URL into { mimeType, b64 }. Handles
+// media-type parameters the browser adds (e.g. "audio/webm;codecs=opus",
+// Safari's "audio/mp4"). Returns null if it isn't an audio data URL.
 function parseAudioDataUrl(dataUrl) {
-  const m = /^data:(audio\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(String(dataUrl || ""));
-  if (!m) return null;
-  return { mimeType: m[1], b64: m[2] };
+  const s = String(dataUrl || "");
+  const idx = s.indexOf(";base64,");
+  if (!s.startsWith("data:audio/") || idx === -1) return null;
+  const mimeType = s.slice(5, idx); // everything after "data:" up to ;base64,
+  const b64 = s.slice(idx + 8);
+  if (!b64) return null;
+  return { mimeType, b64 };
 }
 
 // Resolve the schools a teacher is registered with (multi-school view).
