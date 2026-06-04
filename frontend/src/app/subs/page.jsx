@@ -1442,14 +1442,6 @@ function SchoolSettings({ school, grades = [], onSaved, onGradesChanged = () => 
 
           <div style={{ borderTop: "1px solid #f1f5f9", marginTop: 14, paddingTop: 12 }}>
             <GradeLevelPills school={school} grades={grades} onChanged={onGradesChanged} />
-            {grades.length > 0 && (
-              <div style={{ marginTop: 8 }}>
-                <label style={{ ...C.label, marginTop: 0 }}>VP routing (set via divisions below)</label>
-                {grades.map((g) => (
-                  <GradeVpRow key={g._id} school={school} grade={g} />
-                ))}
-              </div>
-            )}
           </div>
 
           <label style={{ ...C.label, marginTop: 12 }}>Divisions (VP by grade range)</label>
