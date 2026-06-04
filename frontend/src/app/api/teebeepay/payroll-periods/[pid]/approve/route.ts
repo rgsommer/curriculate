@@ -101,6 +101,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
       }
     }
 
+    // Count down staff-advance balances by the loan repayment deducted this period;
+    // zero the per-period amount once an advance is fully repaid.
+    for (const e of entries) {
+      const emp = empMap[e.employee_id.toString()];
+      if (!emp || emp.loan_balance == null) continue;
+      const post = e.calc_breakdown?.post_tax_deductions || [];
+      const repaid = Number(post.find((d: any) => /loan/i.test(d.name))?.amount) || 0;
+      if (repaid > 0) {
+        const newBal = Math.max(0, r2((Number(emp.loan_balance) || 0) - repaid));
+        const set: any = { loan_balance: newBal };
+        if (newBal === 0) set.loan_repayment = 0;
+        await dbi.collection("employees").updateOne({ _id: emp._id }, { $set: set });
+      }
+    }
+
     await logAudit({
       actor_email: u.email, actor_kind: "user",
       action: "payroll.approve",

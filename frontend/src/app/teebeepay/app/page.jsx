@@ -487,6 +487,7 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
   const [error, setError] = useState("");
   const [showEmpDialog, setShowEmpDialog] = useState(null); // null | {} | employee_id
   const [showImport, setShowImport] = useState(false);
+  const [showAdvances, setShowAdvances] = useState(false);
   const [selectedEmps, setSelectedEmps] = useState(new Set());
 
   const refresh = useCallback(async () => {
@@ -596,6 +597,9 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
               <button onClick={() => setShowImport(true)} style={btnGhostLg}>
                 <Upload size={14} style={{ marginRight: 6 }} /> Import from CSV
               </button>
+              <button onClick={() => setShowAdvances(true)} style={btnGhostLg}>
+                <Upload size={14} style={{ marginRight: 6 }} /> Import advances
+              </button>
               {selectedEmps.size > 0 && (
                 <button onClick={bulkDeactivate} style={{ ...btnGhostLg, color: "#991b1b", borderColor: "#fecaca" }}>
                   <Trash2 size={14} style={{ marginRight: 6 }} /> Deactivate {selectedEmps.size} selected
@@ -647,7 +651,90 @@ function CompanyDetail({ me, companyId, onBack, onNewPeriod, onOpenPeriod, onOpe
           onClose={() => setShowImport(false)}
           onSaved={() => { setShowImport(false); refresh(); }} />
       )}
+      {showAdvances && (
+        <AdvancesImportDialog companyId={companyId}
+          onClose={() => setShowAdvances(false)}
+          onSaved={() => { setShowAdvances(false); refresh(); }} />
+      )}
     </div>
+  );
+}
+
+/* ─────────── Advances import dialog ─────────── */
+function AdvancesImportDialog({ companyId, onClose, onSaved }) {
+  const [csv, setCsv] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [result, setResult] = useState(null);
+
+  async function readFile(ev) {
+    const file = ev.target.files?.[0];
+    if (!file) return;
+    setCsv(await file.text());
+  }
+  async function downloadTemplate() {
+    setError("");
+    try {
+      const r = await fetch(`/api/teebeepay/companies/${companyId}/advances-template`, { headers: { Authorization: "Bearer " + localStorage.getItem(TOKEN_KEY) } });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Couldn't download the template.");
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a"); a.href = url; a.download = "Advances-template.xlsx";
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) { setError(e.message); }
+  }
+  async function submit() {
+    setError(""); setResult(null); setSubmitting(true);
+    try {
+      setResult(await api(`/api/teebeepay/companies/${companyId}/advances/import`, { method: "POST", body: JSON.stringify({ csv }) }));
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  return (
+    <Modal title="Import staff advances" onClose={onClose} wide>
+      <p style={{ fontSize: 13, color: C.muted, margin: "0 0 14px" }}>
+        Carry forward outstanding staff advances/loans. Columns: <code>last_name</code>, <code>first_name</code>,
+        {" "}<code>balance</code> (still owing), <code>per_period</code> (deducted each pay period).
+        {" "}Payroll deducts <code>per_period</code> each fortnight — capped at the balance — and counts it down; deductions stop automatically at zero. Matched by name.
+      </p>
+      <div style={{ marginBottom: 14 }}>
+        <button onClick={downloadTemplate} style={{ ...btnGhostLg, width: "auto", display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <FileSpreadsheet size={14} /> Download XLSX template
+        </button>
+      </div>
+      <Field label="Pick a .csv file">
+        <input type="file" accept=".csv,text/csv" onChange={readFile} style={{ fontSize: 13 }} />
+      </Field>
+      <Field label="…or paste CSV directly">
+        <textarea rows={10} value={csv} onChange={(e) => setCsv(e.target.value)}
+          placeholder="last_name,first_name,balance,per_period"
+          style={{ ...input, minHeight: 160, fontFamily: "ui-monospace, Menlo, Consolas, monospace", fontSize: 12 }} />
+      </Field>
+      {error && <FlashBox type="error" icon={<AlertCircle size={16} />}>{error}</FlashBox>}
+      {result && (
+        <FlashBox type="info" icon={<CheckCircle2 size={16} />}>
+          <strong>{result.updated}</strong> updated · <strong>{result.skipped}</strong> skipped (no name match)
+          {result.errors && result.errors.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary>{result.errors.length} note(s)</summary>
+              <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12 }}>
+                {result.errors.slice(0, 20).map((e, i) => <li key={i}>{e}</li>)}
+              </ul>
+            </details>
+          )}
+        </FlashBox>
+      )}
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 18 }}>
+        <button onClick={onClose} style={btnGhostLg}>{result ? "Close" : "Cancel"}</button>
+        {result ? (
+          <button onClick={onSaved} style={btnPrimaryInline}>Refresh list</button>
+        ) : (
+          <button onClick={submit} disabled={!csv.trim() || submitting} style={btnPrimaryInline}>
+            {submitting ? <><Loader2 className="tbp-spin" size={16} style={{ marginRight: 6 }} /> Importing…</> : "Import advances"}
+          </button>
+        )}
+      </div>
+    </Modal>
   );
 }
 

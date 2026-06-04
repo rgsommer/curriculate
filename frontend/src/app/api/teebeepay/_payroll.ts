@@ -51,7 +51,11 @@ function sumStanding(emp: any) {
   addPost("Savings",         emp.savings_deduction);
   addPost("Education",       emp.education_deduction);
   addPost("Christmas",       emp.christmas_bonus);
-  addPost("Loan repayment",  emp.loan_repayment);
+  // Cap the loan/advance repayment at the outstanding balance so it never
+  // over-deducts and stops once repaid. When no balance is tracked (legacy),
+  // deduct the full standing amount as before.
+  addPost("Loan repayment",
+    emp.loan_balance != null ? Math.min(Number(emp.loan_repayment) || 0, Number(emp.loan_balance) || 0) : emp.loan_repayment);
   return { preTax, postTax, preTaxTotal: r2(preTaxTotal), postTaxTotal: r2(postTaxTotal) };
 }
 

@@ -56,6 +56,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
           school_fees_allowance: e.school_fees_allowance || 0,
           salary_sacrifice: e.salary_sacrifice || 0,
           ncsl_voluntary: e.ncsl_voluntary || 0,
+          loan_repayment: e.loan_repayment || 0,
+          loan_balance: e.loan_balance != null ? e.loan_balance : null,
           // Division flow
           division_id: did,
           division_name: div?.name || null,
