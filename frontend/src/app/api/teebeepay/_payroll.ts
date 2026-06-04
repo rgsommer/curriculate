@@ -51,11 +51,7 @@ function sumStanding(emp: any) {
   addPost("Savings",         emp.savings_deduction);
   addPost("Education",       emp.education_deduction);
   addPost("Christmas",       emp.christmas_bonus);
-  // Cap the loan/advance repayment at the outstanding balance so it never
-  // over-deducts and stops once repaid. When no balance is tracked (legacy),
-  // deduct the full standing amount as before.
-  addPost("Loan repayment",
-    emp.loan_balance != null ? Math.min(Number(emp.loan_repayment) || 0, Number(emp.loan_balance) || 0) : emp.loan_repayment);
+  // Loan/advance repayment is handled in calculate() (net-aware, final-pay aware).
   return { preTax, postTax, preTaxTotal: r2(preTaxTotal), postTaxTotal: r2(postTaxTotal) };
 }
 
@@ -110,10 +106,25 @@ export function calculate(emp: any, entry: any, rules: any, company: any) {
   let tax = computeSwt(taxable, chooseBrackets(emp, rules));
   tax = applyDependantRebate(tax, emp.dependents || 0, rules, periodsPerYear(company.pay_interval));
 
-  const net = r2(gross - standing.preTaxTotal - nasfundEmployee - tax - standing.postTaxTotal - advance);
+  // Loan/advance repayment (post-tax), net-aware so it never makes net pay
+  // negative. On a final pay we try to clear the whole outstanding balance.
+  const netBeforeLoan = r2(gross - standing.preTaxTotal - nasfundEmployee - tax - standing.postTaxTotal - advance);
+  let loanRepay = 0;
+  if (worked) {
+    const tracked = emp.loan_balance != null;
+    const bal = Math.max(0, Number(emp.loan_balance) || 0);
+    const want = entry.final_pay
+      ? (tracked ? bal : Number(emp.loan_repayment) || 0)            // final pay → clear the balance
+      : (tracked ? Math.min(Number(emp.loan_repayment) || 0, bal)   // normal → standing amount, capped at balance
+                 : Number(emp.loan_repayment) || 0);
+    loanRepay = r2(Math.max(0, Math.min(want, Math.max(0, netBeforeLoan))));
+  }
+  const postTax = loanRepay > 0 ? [...standing.postTax, { name: "Loan repayment", amount: loanRepay }] : standing.postTax;
+  const postTaxTotal = r2(standing.postTaxTotal + loanRepay);
+  const net = r2(netBeforeLoan - loanRepay);
   return {
     gross, tax, nasfund: nasfundEmployee,
-    other_deductions: r2(standing.preTaxTotal + standing.postTaxTotal + advance),
+    other_deductions: r2(standing.preTaxTotal + postTaxTotal + advance),
     net,
     breakdown: {
       hours, base, overtime,
@@ -121,8 +132,8 @@ export function calculate(emp: any, entry: any, rules: any, company: any) {
       gross, pre_tax_deductions: standing.preTax, pre_tax_total: standing.preTaxTotal,
       taxable, tax,
       nasfund_employee: nasfundEmployee, nasfund_employer: nasfundEmployer,
-      post_tax_deductions: standing.postTax, post_tax_total: standing.postTaxTotal,
-      cash_advance: advance, net,
+      post_tax_deductions: postTax, post_tax_total: postTaxTotal,
+      cash_advance: advance, net, final_pay: !!entry.final_pay,
     },
   };
 }

@@ -60,12 +60,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     let inserted = 0;
     const insertEntry = async (emp: any, hours: number, cash_advance: number, note: string,
-                                source: "site_payroll" | "supervisor_pending") => {
-      const calc = calculate(emp, { hours, cash_advance }, rules, company);
+                                source: "site_payroll" | "supervisor_pending", final_pay = false) => {
+      const calc = calculate(emp, { hours, cash_advance, final_pay }, rules, company);
       await dbi.collection("payroll_entries").insertOne({
         pay_period_id: periodId,
         employee_id: emp._id,
-        hours, cash_advance, note,
+        hours, cash_advance, note, final_pay,
         gross: calc.gross, tax: calc.tax, nasfund: calc.nasfund,
         other_deductions: calc.other_deductions, net: calc.net,
         calc_breakdown: calc.breakdown,
@@ -82,7 +82,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const hours = parseFloat(e.hours || "0") || 0;
       const cash_advance = parseFloat(e.cash_advance || "0") || 0;
       const note = (e.note || "").slice(0, 1000);
-      await insertEntry(emp, hours, cash_advance, note, "site_payroll");
+      await insertEntry(emp, hours, cash_advance, note, "site_payroll", !!e.final_pay);
     }
 
     // Pull in supervisor-managed employees' pending_hours.

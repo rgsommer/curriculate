@@ -1574,6 +1574,7 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
         hours: grid[e.id]?.hours || 0,
         cash_advance: grid[e.id]?.cash_advance || 0,
         note: grid[e.id]?.note || "",
+        final_pay: !!grid[e.id]?.final_pay,
       }));
       const j = await api(`/api/teebeepay/companies/${companyId}/payroll-periods`, {
         method: "POST", body: JSON.stringify({ ...period, entries }),
@@ -1726,15 +1727,19 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
               <th style={{ ...th, width: 110 }}>Hours</th>
               <th style={{ ...th, width: 110 }}>Cash advance</th>
               <th style={th}>Note (shown on stub)</th>
+              <th style={{ ...th, width: 90, textAlign: "center" }} title="Final pay on termination — clears the outstanding advance">Final pay</th>
             </tr>
           </thead>
           <tbody>
             {employees.map((e) => {
               const g = grid[e.id] || {};
               const def = defaultHours(e);
+              const owes = e.loan_balance != null && Number(e.loan_balance) > 0;
               return (
-                <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9" }}>
-                  <td style={td}>{e.last_name}, {e.first_name}</td>
+                <tr key={e.id} style={{ borderTop: "1px solid #f1f5f9", background: g.final_pay ? "#fff7ed" : undefined }}>
+                  <td style={td}>{e.last_name}, {e.first_name}
+                    {owes && <span style={{ fontSize: 11, color: C.muted, marginLeft: 6 }}>· advance {Number(e.loan_balance).toFixed(0)}</span>}
+                  </td>
                   <td style={{ ...td, textAlign: "right", color: C.muted }}>{def}</td>
                   <td style={td}>
                     <input type="number" step="0.25" min="0" value={g.hours ?? 0}
@@ -1747,6 +1752,10 @@ function NewPeriod({ me, companyId, cloneFromPeriodId, onBack, onSaved }) {
                   </td>
                   <td style={td}><input type="text" value={g.note ?? ""}
                     onChange={(ev) => set(e.id, "note", ev.target.value)} placeholder="Optional" /></td>
+                  <td style={{ ...td, textAlign: "center" }}
+                    title={owes ? "Clears the outstanding advance and deactivates the employee on approval" : "Marks this as the employee's final pay and deactivates them on approval"}>
+                    <input type="checkbox" checked={!!g.final_pay} onChange={(ev) => set(e.id, "final_pay", ev.target.checked)} />
+                  </td>
                 </tr>
               );
             })}
@@ -1921,6 +1930,17 @@ function PeriodDetail({ me, periodId, onBack, onClone }) {
         <FlashBox type="info" icon={<CheckCircle2 size={16} />}>
           Approved. Total gross K{result.totalGross?.toLocaleString()}. Pay stubs emailed: {result.stubsSent}{result.stubsFailed ? `, failed: ${result.stubsFailed}` : ""}.
         </FlashBox>
+      )}
+      {result?.unrecovered?.length > 0 && (
+        <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 10, padding: "12px 14px", marginBottom: 14, fontSize: 13.5, display: "flex", gap: 10 }}>
+          <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div>
+            <strong>Advance not fully recovered on final pay.</strong> The final pay didn't cover the whole outstanding advance for:
+            <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+              {result.unrecovered.map((x, i) => <li key={i}>{x.name} — K{Number(x.balance).toLocaleString()} still owing</li>)}
+            </ul>
+          </div>
+        </div>
       )}
 
       <div style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: 10, overflow: "hidden" }}>

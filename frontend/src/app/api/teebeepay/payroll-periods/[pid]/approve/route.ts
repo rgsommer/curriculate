@@ -86,21 +86,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
     } catch (e) { console.warn("[approve] summary email failed:", e); }
 
     // Count down staff-advance balances by the loan repayment deducted this period;
-    // zero the per-period amount once an advance is fully repaid. Done BEFORE the
-    // stubs so each stub can show the balance remaining after this pay.
+    // zero the per-period amount once repaid. On a final pay, deactivate the
+    // employee and flag any advance balance that couldn't be fully recovered.
+    // Done BEFORE the stubs so each stub shows the balance remaining after pay.
+    const unrecovered: Array<{ name: string; balance: number }> = [];
     for (const e of entries) {
       const emp = empMap[e.employee_id.toString()];
-      if (!emp || emp.loan_balance == null) continue;
+      if (!emp) continue;
+      const finalPay = !!(e.final_pay || e.calc_breakdown?.final_pay);
+      const hasLoan = emp.loan_balance != null;
+      if (!finalPay && !hasLoan) continue;
       const post = e.calc_breakdown?.post_tax_deductions || [];
       const repaid = Number(post.find((d: any) => /loan/i.test(d.name))?.amount) || 0;
-      const newBal = Math.max(0, r2((Number(emp.loan_balance) || 0) - repaid));
-      e.loan_balance_after = newBal;                              // for the stub
-      if (repaid > 0) {
-        const set: any = { loan_balance: newBal };
-        if (newBal === 0) set.loan_repayment = 0;
-        await dbi.collection("employees").updateOne({ _id: emp._id }, { $set: set });
-        await dbi.collection("payroll_entries").updateOne({ _id: e._id }, { $set: { loan_balance_after: newBal } });
-      }
+      const newBal = hasLoan ? Math.max(0, r2((Number(emp.loan_balance) || 0) - repaid)) : 0;
+      e.loan_balance_after = hasLoan ? newBal : null;            // for the stub
+      const set: any = {};
+      if (hasLoan && repaid > 0) { set.loan_balance = newBal; if (newBal === 0) set.loan_repayment = 0; }
+      if (finalPay) { set.is_active = 0; set.terminated_at = new Date(); }
+      if (Object.keys(set).length) await dbi.collection("employees").updateOne({ _id: emp._id }, { $set: set });
+      if (e.loan_balance_after != null) await dbi.collection("payroll_entries").updateOne({ _id: e._id }, { $set: { loan_balance_after: e.loan_balance_after } });
+      if (finalPay && hasLoan && newBal > 0) unrecovered.push({ name: `${emp.first_name || ""} ${emp.last_name || ""}`.trim(), balance: newBal });
     }
 
     let sent = 0, failed = 0;
@@ -127,10 +132,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ pid: st
       action: "payroll.approve",
       resource_type: "pay_period", resource_id: period._id.toString(),
       company_id: period.company_id.toString(),
-      details: { entries: entries.length, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, glRef, via: "app" },
+      details: { entries: entries.length, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, glRef, via: "app", unrecovered },
     });
 
-    return NextResponse.json({ ok: true, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, serviceFees, glRef });
+    return NextResponse.json({ ok: true, totalGross: r2(totalGross), stubsSent: sent, stubsFailed: failed, serviceFees, glRef, unrecovered });
   } catch (e: any) {
     console.error("[teebeepay/approve] error:", e);
     return NextResponse.json({ error: e?.message || "Server error" }, { status: 500 });
