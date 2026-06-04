@@ -1120,6 +1120,7 @@ function SchoolPanel({ school }) {
                 {t.active === false && <span style={C.pill("#fee2e2", "#b91c1c")}>inactive</span>}
               </div>
               {(school.divisions || []).length > 0 && <ApprovedDivisions teacher={t} school={school} onSaved={loadTeachers} />}
+              {school.faithFit?.enabled && <FaithApprovedToggle teacher={t} onSaved={loadTeachers} />}
             </div>
           ))}
           {teachers.length === 0 && <span style={{ color: "#94a3b8" }}>No substitutes added yet.</span>}
@@ -1437,6 +1438,24 @@ function SchoolSettings({ school, onSaved }) {
   );
 }
 
+// Principal vouches that a sub aligns with the school's statement of faith
+// / values (school-specific, so admin-set rather than self-declared).
+function FaithApprovedToggle({ teacher, onSaved }) {
+  const [on, setOn] = useState(!!teacher.faithApproved);
+  async function toggle() {
+    const next = !on;
+    setOn(next);
+    await api(`/api/subs-admin/teachers/${teacher._id}`, { method: "PATCH", body: { faithApproved: next } });
+    onSaved && onSaved();
+  }
+  return (
+    <label style={{ ...C.row, gap: 6, marginTop: 3, fontSize: 12 }}>
+      <input type="checkbox" checked={on} onChange={toggle} />
+      <span style={{ color: "#475569" }}>Faith-approved for our school (statement of faith / values)</span>
+    </label>
+  );
+}
+
 // Per-sub "approved for these grade ranges" chips (admin-set).
 function ApprovedDivisions({ teacher, school, onSaved }) {
   const [sel, setSel] = useState(teacher.approvedDivisions || []);
@@ -1621,12 +1640,15 @@ function RankingEditor({ school, grade, teachers }) {
   );
 }
 
-const FAITH_OPTIONS = [
-  ["statementOfFaith", "Aligns with statement of faith"],
-  ["prayer", "Comfortable leading prayer/devotions"],
-  ["christianEd", "Understands Christian education"],
-  ["values", "Shares school values"],
+// Portable, self-declarable attributes (true regardless of school).
+const PROFILE_FAITH_OPTIONS = [
+  ["prayer", "Comfortable leading prayer / devotions"],
+  ["christianEd", "Experienced with Christian education"],
 ];
+// What a school can require on a request. "approved" = principal-vouched
+// (statement of faith / values are school-specific, so the principal
+// attests to them per sub — not the sub).
+const REQUEST_FAITH_OPTIONS = [["approved", "Faith-approved for our school"], ...PROFILE_FAITH_OPTIONS];
 
 function PostRequest({ school, grades }) {
   const today = new Date().toISOString().slice(0, 10);
@@ -1838,7 +1860,7 @@ function PostRequest({ school, grades }) {
           <>
             <label style={C.label}>Required mission / faith fit</label>
             <div style={C.row}>
-              {FAITH_OPTIONS.map(([k, lbl]) => (
+              {REQUEST_FAITH_OPTIONS.map(([k, lbl]) => (
                 <label key={k} style={C.row}>
                   <input type="checkbox" checked={!!faith[k]} onChange={(e) => setFaith((f) => ({ ...f, [k]: e.target.checked }))} /> {lbl}
                 </label>
@@ -2971,9 +2993,9 @@ function TeacherProfile({ teacher, onSaved }) {
           </div>
         </div>
 
-        <label style={C.label}>Mission / faith fit (self-declared)</label>
+        <label style={C.label}>Faith-based teaching (self-declared)</label>
         <div style={C.row}>
-          {FAITH_OPTIONS.map(([k, lbl]) => (
+          {PROFILE_FAITH_OPTIONS.map(([k, lbl]) => (
             <label key={k} style={C.row}>
               <input type="checkbox" checked={!!faith[k]} onChange={(e) => setFaith((f) => ({ ...f, [k]: e.target.checked }))} /> {lbl}
             </label>

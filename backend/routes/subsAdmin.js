@@ -248,6 +248,7 @@ router.patch("/teachers/:id", async (req, res) => {
   if (Array.isArray(req.body?.approvedDivisions)) {
     set.approvedDivisions = req.body.approvedDivisions.filter((d) => typeof d === "string" && d.trim()).map((d) => d.trim());
   }
+  if (typeof req.body?.faithApproved === "boolean") set.faithApproved = req.body.faithApproved;
   const teacher = await SubsTeacher.findByIdAndUpdate(id, { $set: set }, { new: true }).lean();
   if (!teacher) return res.status(404).json({ error: "Teacher not found" });
   res.json({ teacher });

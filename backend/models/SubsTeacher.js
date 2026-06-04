@@ -33,13 +33,18 @@ const SubsTeacherSchema = new mongoose.Schema(
     // whose grade falls in one of these divisions. Empty = no restriction.
     approvedDivisions: { type: [String], default: [] },
 
-    // ── Faith / mission fit (challenge #11; self-declared) ─────────────
+    // ── Faith / mission fit (challenge #11) ────────────────────────────
+    // Portable, self-declared attributes (true regardless of school).
     faithFit: {
-      statementOfFaith: { type: Boolean, default: false },
       prayer: { type: Boolean, default: false }, // comfortable leading prayer/devotions
-      christianEd: { type: Boolean, default: false }, // understands Christian education
-      values: { type: Boolean, default: false }, // shares school values
+      christianEd: { type: Boolean, default: false }, // experience with Christian education
+      // legacy keys kept for back-compat; no longer self-declared:
+      statementOfFaith: { type: Boolean, default: false },
+      values: { type: Boolean, default: false },
     },
+    // School-specific faith alignment (statement of faith / values) — the
+    // PRINCIPAL vouches for this per sub, since it varies by school.
+    faithApproved: { type: Boolean, default: false },
 
     // ── Proximity / availability (challenge #3; scaffold) ──────────────
     location: { address: String, lat: Number, lng: Number },

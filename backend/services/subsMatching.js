@@ -37,9 +37,15 @@ export function isEligible(teacher, request) {
     if (!haves.has(norm(q))) return false;
   }
 
-  // Faith-fit: every required key must be self-declared true.
+  // Faith-fit. "approved" is principal-vouched (statement of faith / values
+  // are school-specific, so only the school can attest to them); the rest
+  // are portable, self-declared attributes.
   for (const key of request.requiredFaithFit || []) {
-    if (!teacher.faithFit || teacher.faithFit[key] !== true) return false;
+    if (key === "approved") {
+      if (teacher.faithApproved !== true) return false;
+    } else if (!teacher.faithFit || teacher.faithFit[key] !== true) {
+      return false;
+    }
   }
 
   // Approved divisions: if the principal restricted this sub to certain
@@ -65,7 +71,11 @@ export function eligibilityReasons(teacher, request) {
     if (!haves.has(norm(q))) reasons.push(`missing "${q}"`);
   }
   for (const key of request.requiredFaithFit || []) {
-    if (!teacher?.faithFit || teacher.faithFit[key] !== true) reasons.push(`faith: ${key}`);
+    if (key === "approved") {
+      if (teacher?.faithApproved !== true) reasons.push("not faith-approved");
+    } else if (!teacher?.faithFit || teacher.faithFit[key] !== true) {
+      reasons.push(`faith: ${key}`);
+    }
   }
   if (teacher?.approvedDivisions?.length && request.division && !teacher.approvedDivisions.includes(request.division)) {
     reasons.push(`not approved for ${request.division}`);
