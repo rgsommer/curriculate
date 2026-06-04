@@ -401,23 +401,22 @@ export function createNotifier() {
       // 4) The absent teacher: "X is covering for you — reply-all (VP cc'd)
       //    with your lesson plans." Cc the sub + VP so reply-all reaches both.
       if (absentTeacher?.email) {
-        // Reply-To = sub + VP, so a plain "Reply" with the lesson plans
-        // reaches both (works regardless of the From address). Cc keeps them
-        // visible on the original too.
-        const subVp = [teacher?.email, vpEmail].filter(Boolean);
+        // Route lesson plans via the VP (the coordinator) — the sub's email
+        // is never exposed to teachers. Reply-To = VP so a plain "Reply"
+        // reaches them; the VP passes plans to the sub.
+        const vpOnly = [vpEmail].filter(Boolean);
         await sendEmail({
           to: absentTeacher.email,
-          cc: subVp,
-          replyTo: subVp,
+          ...(vpOnly.length ? { cc: vpOnly, replyTo: vpOnly } : {}),
           subject: `Your ${gradeLevel?.name || "class"} is covered on ${request.date} — please send lesson plans`,
           text:
             `Hi ${absentTeacher.name || ""},\n\n${subName} will cover your ${gradeLevel?.name || "class"} on ${request.date}.\n\n` +
-            `Just REPLY to this email with your lesson plans and any notes — your sub and VP will both receive them.`,
+            `Please REPLY to this email with your lesson plans and any notes — they'll go to your VP, who passes them to your sub.`,
           html: renderEmail({
             accent: "#16a34a",
             badge: pill("✓ Covered", "#dcfce7", "#15803d"),
             title: `Your class is covered — please send lesson plans`,
-            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply</strong> to this email with your lesson plans and any notes — your sub and VP will both receive them.`,
+            intro: `Hi ${esc(absentTeacher.name || "")}, <strong>${esc(subName)}</strong> will cover your class. Just <strong>reply</strong> to this email with your lesson plans and notes — they go to your VP, who passes them to your sub.`,
             rows: requestRows(request, school, gradeLevel),
           }),
         }).catch((e) => console.error("[subs:notifyFilled:absent]", e?.message || e));
@@ -495,7 +494,7 @@ export function createNotifier() {
       const vpContact = vp?.email ? `your VP${vp.name ? ` (${vp.name})` : ""}${vp.email ? ` — ${vp.email}` : ""}` : "your VP";
       const next =
         `When a substitute is confirmed, we'll email you who it is. ` +
-        `Please get your lesson plans to ${vpContact} — or simply reply to that confirmation email and both your sub and VP will receive them.`;
+        `Please get your lesson plans to ${vpContact} — or simply reply to that confirmation email and they'll go to your VP, who passes them to your sub.`;
       await sendEmail({
         to: absentTeacher.email,
         subject: `Sub request received — ${classLabel(request, gradeLevel)} on ${request.date}`,
