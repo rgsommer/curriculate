@@ -140,6 +140,15 @@ export interface EngagementWithResponses extends Engagement {
   creator: Profile;
 }
 
+export interface Rating {
+  id: string;
+  response_id: string;
+  engagement_id: string;
+  rater_id: string;
+  score: number;
+  created_at: string;
+}
+
 export interface Invitation {
   id: string;
   group_id: string;

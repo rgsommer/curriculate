@@ -19,11 +19,13 @@ export default function EngagementDetailPage() {
     responses,
     reactions,
     comments,
+    ratings,
     myResponse,
     responseCount,
     loading,
     submitResponse,
     addReaction,
+    addRating,
     addComment,
     sendNudge,
     refresh,
@@ -91,6 +93,31 @@ export default function EngagementDetailPage() {
   const isCreator = engagement.creator_id === user?.id;
   const pollOptions = (engagement.config?.options as string[]) ?? [];
   const canEdit = isCreator && engagement.status === "active";
+
+  // ── Ratings / winner (non-poll, after reveal) ──
+  const ratingFor = (responseId: string) => {
+    const scores = ratings.filter((rt) => rt.response_id === responseId);
+    return {
+      avg: scores.length ? scores.reduce((a, b) => a + b.score, 0) / scores.length : 0,
+      count: scores.length,
+    };
+  };
+  const myRatingFor = (responseId: string) =>
+    ratings.find((rt) => rt.response_id === responseId && rt.rater_id === user?.id)?.score ?? 0;
+  // Winner = highest average rating (needs ≥1 rating); ties → earliest response.
+  let winnerResponseId: string | null = null;
+  let bestAvg = -1;
+  for (const r of responses) {
+    const { avg, count } = ratingFor(r.id);
+    if (count > 0 && avg > bestAvg) {
+      bestAvg = avg;
+      winnerResponseId = r.id;
+    }
+  }
+  const winnerUserId = winnerResponseId
+    ? responses.find((r) => r.id === winnerResponseId)?.user_id ?? null
+    : null;
+  const iWon = isRevealed && !!winnerUserId && winnerUserId === user?.id;
 
   // ── Creator: edit the prompt ──
 
@@ -337,6 +364,11 @@ export default function EngagementDetailPage() {
                 <span className="text-sm font-medium text-slate-900">
                   {engagement.is_blind ? "Anonymous" : r.profile?.display_name ?? "Unknown"}
                 </span>
+                {r.id === winnerResponseId && (
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                    🏆 Winner
+                  </span>
+                )}
               </div>
 
               {/* Content */}
@@ -388,6 +420,36 @@ export default function EngagementDetailPage() {
                     </button>
                   );
                 })}
+              </div>
+
+              {/* Rating */}
+              <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2">
+                {r.user_id === user?.id ? (
+                  <span className="text-xs text-slate-400">Your entry — others rate it</span>
+                ) : (
+                  <div className="flex items-center gap-0.5">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => addRating(r.id, n)}
+                        title={`Rate ${n} star${n === 1 ? "" : "s"}`}
+                        className="text-base leading-none hover:scale-110 transition"
+                      >
+                        {n <= myRatingFor(r.id) ? "⭐" : "☆"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {(() => {
+                  const { avg, count } = ratingFor(r.id);
+                  return count > 0 ? (
+                    <span className="text-xs font-medium text-slate-600">
+                      {avg.toFixed(1)} ★ ({count})
+                    </span>
+                  ) : (
+                    <span className="text-xs text-slate-300">no ratings yet</span>
+                  );
+                })()}
               </div>
             </div>
           );
@@ -706,14 +768,24 @@ export default function EngagementDetailPage() {
       {(hasResponded || isRevealed) && (
         <Link
           href={`/campfirelive/group/${groupId}/engagement/new`}
-          className="block rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/60 p-5 text-center hover:bg-orange-50 transition mb-6"
+          className={`block rounded-2xl border-2 border-dashed p-5 text-center transition mb-6 ${
+            iWon
+              ? "border-amber-400 bg-amber-50 hover:bg-amber-100"
+              : "border-orange-300 bg-orange-50/60 hover:bg-orange-50"
+          }`}
         >
-          <div className="text-2xl mb-1">🔥</div>
+          <div className="text-2xl mb-1">{iWon ? "🏆" : "🔥"}</div>
           <div className="font-bold text-slate-900">
-            {isRevealed ? "Your turn — start the next one" : "While you wait, start your own"}
+            {iWon
+              ? "You won! Start the next engagement"
+              : isRevealed
+              ? "Your turn — start the next one"
+              : "While you wait, start your own"}
           </div>
           <p className="text-sm text-slate-600 mt-0.5">
-            Pose a question, challenge, or check-in and keep the group going.
+            {iWon
+              ? "Winner's privilege — pose the next one for the group. 🎉"
+              : "Pose a question, challenge, or check-in and keep the group going."}
           </p>
           <span className="inline-block mt-3 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white">
             + Start an engagement

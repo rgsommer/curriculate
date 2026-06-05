@@ -13,6 +13,7 @@ import type {
   Comment,
   Streak,
   Invitation,
+  Rating,
   EngagementType,
   RevealMode,
 } from "./types";
@@ -202,6 +203,7 @@ export function useEngagement(engagementId: string) {
   const [responses, setResponses] = useState<(Response & { profile: Profile })[]>([]);
   const [reactions, setReactions] = useState<Reaction[]>([]);
   const [comments, setComments] = useState<(Comment & { profile: Profile })[]>([]);
+  const [ratings, setRatings] = useState<Rating[]>([]);
   const [myResponse, setMyResponse] = useState<Response | null>(null);
   const [responseCount, setResponseCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -241,9 +243,9 @@ export function useEngagement(engagementId: string) {
       .eq("engagement_id", engagementId);
     if (resps) setResponses(resps as (Response & { profile: Profile })[]);
 
-    // Reactions & comments (also RLS-gated to revealed engagements)
+    // Reactions, comments & ratings (also RLS-gated to revealed engagements)
     if (eng?.status === "revealed") {
-      const [reactRes, commentRes] = await Promise.all([
+      const [reactRes, commentRes, ratingRes] = await Promise.all([
         supabase.from("reactions").select("*").in(
           "response_id",
           (resps ?? []).map((r) => r.id)
@@ -253,9 +255,14 @@ export function useEngagement(engagementId: string) {
           .select("*, profile:profiles(*)")
           .eq("engagement_id", engagementId)
           .order("created_at", { ascending: true }),
+        supabase
+          .from("campfire_ratings")
+          .select("*")
+          .eq("engagement_id", engagementId),
       ]);
       if (reactRes.data) setReactions(reactRes.data as Reaction[]);
       if (commentRes.data) setComments(commentRes.data as (Comment & { profile: Profile })[]);
+      if (ratingRes.data) setRatings(ratingRes.data as Rating[]);
     }
 
     setLoading(false);
@@ -291,6 +298,21 @@ export function useEngagement(engagementId: string) {
     await fetchEngagement();
   };
 
+  // Rate a response (1–5). One score per rater per response; re-rating updates.
+  const addRating = async (responseId: string, score: number) => {
+    if (!user || !engagementId) return;
+    await supabase.from("campfire_ratings").upsert(
+      {
+        response_id: responseId,
+        engagement_id: engagementId,
+        rater_id: user.id,
+        score,
+      },
+      { onConflict: "response_id,rater_id" }
+    );
+    await fetchEngagement();
+  };
+
   // Add comment
   const addComment = async (text: string, responseId?: string) => {
     if (!user || !engagementId) return;
@@ -318,11 +340,13 @@ export function useEngagement(engagementId: string) {
     responses,
     reactions,
     comments,
+    ratings,
     myResponse,
     responseCount,
     loading,
     submitResponse,
     addReaction,
+    addRating,
     addComment,
     sendNudge,
     refresh: fetchEngagement,
