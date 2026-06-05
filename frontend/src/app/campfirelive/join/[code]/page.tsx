@@ -20,9 +20,8 @@ export default function JoinGroupPage() {
     if (authLoading) return;
 
     if (!user) {
-      // Store invite code and redirect to auth
-      sessionStorage.setItem("campfire_invite", code);
-      router.push("/campfirelive/auth");
+      // Send them to sign in, then come right back here to finish joining.
+      router.push(`/campfirelive/auth?next=${encodeURIComponent(`/campfirelive/join/${code}`)}`);
       return;
     }
 

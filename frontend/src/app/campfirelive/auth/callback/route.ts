@@ -48,5 +48,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  return NextResponse.redirect(new URL("/campfirelive", request.url));
+  // Resume wherever the user was headed (e.g. a join link), guarding against
+  // open redirects — only in-app relative paths are allowed.
+  const rawNext = requestUrl.searchParams.get("next");
+  const dest =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+      ? rawNext
+      : "/campfirelive";
+
+  return NextResponse.redirect(new URL(dest, request.url));
 }

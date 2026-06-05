@@ -23,12 +23,39 @@ export default function GroupDetailPage() {
   }, [refresh]);
   useRealtimeGroup(groupId, handleUpdate);
 
-  const copyInviteCode = () => {
-    if (group) {
-      navigator.clipboard.writeText(group.invite_code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
+  const joinUrl = group
+    ? `${typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net"}/campfirelive/join/${group.invite_code}`
+    : "";
+
+  const inviteMessage = group
+    ? `${group.avatar_emoji} You're invited to "${group.name}" on Campfire!
+
+Campfire is where our group plays together — polls, challenges, questions — with one twist: nobody sees anyone's answers until everyone has responded. Then it all unlocks at once. 🎉
+
+👉 Tap to join: ${joinUrl}
+
+How to jump in:
+1. Tap the link above
+2. Choose "Continue with Google" (takes about 5 seconds)
+3. You're in! Answer the first question, then wait for the big reveal 🔥
+
+(Already signed in? Just enter invite code ${group.invite_code}.)
+
+See you around the campfire! 🏕️`
+    : "";
+
+  const copyInvite = () => {
+    if (!group) return;
+    navigator.clipboard.writeText(inviteMessage);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyLink = () => {
+    if (!group) return;
+    navigator.clipboard.writeText(joinUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (loading) {
@@ -92,19 +119,39 @@ export default function GroupDetailPage() {
       </div>
 
       {/* Invite + Members */}
-      <div className="flex gap-3 mb-6">
-        <button
-          onClick={copyInviteCode}
-          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          {copied ? "✓ Copied!" : `Invite Code: ${group.invite_code}`}
-        </button>
-        <button
-          onClick={() => setShowMembers(!showMembers)}
-          className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          {showMembers ? "Hide" : "Show"} Members
-        </button>
+      <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={copyInvite}
+            className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+          >
+            {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy invite"}
+          </button>
+          <button
+            onClick={() => setShowMembers(!showMembers)}
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            {showMembers ? "Hide" : "Show"} Members
+          </button>
+        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          Copies a friendly invite with the join link + instructions — ready to
+          paste into email, iMessage, or WhatsApp.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <span className="text-slate-400">Or share directly:</span>
+          <button
+            onClick={copyLink}
+            title="Copy join link"
+            className="rounded-md border border-slate-200 bg-white px-2 py-1 font-mono text-slate-600 hover:bg-slate-50"
+          >
+            {joinUrl.replace(/^https?:\/\//, "")}
+          </button>
+          <span className="text-slate-300">·</span>
+          <span className="text-slate-500">
+            code <span className="font-mono font-semibold text-slate-700">{group.invite_code}</span>
+          </span>
+        </div>
       </div>
 
       {/* Members panel */}

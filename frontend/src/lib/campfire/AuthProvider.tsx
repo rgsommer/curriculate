@@ -12,9 +12,9 @@ interface AuthState {
   loading: boolean;
   isTrialActive: boolean;
   trialDaysLeft: number;
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>;
+  signUp: (email: string, password: string, displayName: string, next?: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
-  signInWithGoogle: () => Promise<void>;
+  signInWithGoogle: (next?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -82,13 +82,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     : 0;
   const isTrialActive = profile?.is_premium || trialDaysLeft > 0;
 
-  const signUp = async (email: string, password: string, displayName: string) => {
+  const callbackUrl = (next?: string) =>
+    `${window.location.origin}/campfirelive/auth/callback${
+      next ? `?next=${encodeURIComponent(next)}` : ""
+    }`;
+
+  const signUp = async (email: string, password: string, displayName: string, next?: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         data: { display_name: displayName },
-        emailRedirectTo: `${window.location.origin}/campfirelive/auth/callback`,
+        emailRedirectTo: callbackUrl(next),
       },
     });
     return { error: error?.message ?? null };
@@ -99,11 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error?.message ?? null };
   };
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (next?: string) => {
     await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/campfirelive/auth/callback`,
+        redirectTo: callbackUrl(next),
       },
     });
   };

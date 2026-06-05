@@ -16,9 +16,21 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [confirmSent, setConfirmSent] = useState(false);
 
+  // Where to send the user after they authenticate (e.g. back to a join link).
+  // Read from the URL directly to avoid needing a Suspense boundary.
+  const rawNext =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("next")
+      : null;
+  // Only allow in-app relative paths (no open redirects).
+  const next =
+    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//")
+      ? rawNext
+      : "/campfirelive";
+
   // Already logged in
   if (user) {
-    router.push("/campfirelive");
+    router.push(next);
     return null;
   }
 
@@ -33,7 +45,7 @@ export default function AuthPage() {
         setLoading(false);
         return;
       }
-      const result = await signUp(email, password, displayName.trim());
+      const result = await signUp(email, password, displayName.trim(), next);
       if (result.error) {
         setError(result.error);
       } else {
@@ -44,7 +56,7 @@ export default function AuthPage() {
       if (result.error) {
         setError(result.error);
       } else {
-        router.push("/campfirelive");
+        router.push(next);
       }
     }
     setLoading(false);
@@ -92,7 +104,7 @@ export default function AuthPage() {
 
         {/* Google sign in */}
         <button
-          onClick={signInWithGoogle}
+          onClick={() => signInWithGoogle(next)}
           className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 flex items-center justify-center gap-3 mb-6"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
