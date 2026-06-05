@@ -247,13 +247,15 @@ See you around the campfire! 🏕️`
                   <div className="flex items-start gap-3">
                     <span className="text-2xl">{meta?.icon ?? "📌"}</span>
                     <div>
-                      <p className="text-xs font-semibold text-orange-600">
-                        {eng.creator_id === user?.id
-                          ? "Your"
-                          : `${eng.creator?.display_name ?? "Someone"}'s`}{" "}
-                        {meta?.label ?? eng.type}
-                      </p>
-                      <h3 className="font-bold text-slate-900">{eng.title}</h3>
+                      <h3 className="font-bold text-slate-900">
+                        <span className="text-orange-600">
+                          {eng.creator_id === user?.id
+                            ? "Your"
+                            : `${eng.creator?.display_name ?? "Someone"}'s`}{" "}
+                          {meta?.label ?? eng.type}:
+                        </span>{" "}
+                        {eng.title}
+                      </h3>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {new Date(eng.created_at).toLocaleDateString()}
                       </p>
