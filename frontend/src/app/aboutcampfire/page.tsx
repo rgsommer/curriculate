@@ -603,12 +603,12 @@ export default function AboutCampfirePage() {
         <SectionHeader
           eyebrow="Smart Mechanics"
           title="The person who starts the engagement controls how it plays out"
-          desc="Deadlines, blind mode, reveal mechanics, ratings, and rewards — all configurable per engagement."
+          desc="Deadlines, blind mode, reveal mechanics, ratings, and recurrence — all configurable per engagement, all live today."
         />
         <div className="grid gap-4 md:grid-cols-2">
           <Card
             title="🔒 Sealed Results"
-            desc="The core mechanic. Nobody sees poll results, challenge entries, or accountability answers until every member has responded. The reveal happens together."
+            desc="The core mechanic. Nobody sees poll results, challenge entries, or accountability answers until every member has responded — then the reveal happens together, automatically."
             bullets={[
               "Builds anticipation and honest responses",
               "Eliminates bandwagon voting and bias",
@@ -616,48 +616,48 @@ export default function AboutCampfirePage() {
             ]}
           />
           <Card
-            title="⏱️ Deadlines"
-            desc="Set a response window. If someone doesn't respond, they're temporarily locked out until they do."
+            title="🎬 Four Reveal Modes"
+            desc="Sealed (wait for everyone), all-at-once (you trigger the reveal), or as-they-come / instant (responses show live as they land)."
+          />
+          <Card
+            title="⭐ Ratings & Winner"
+            desc="After the reveal, members rate each other's entries 1–5 stars. The highest average is crowned the winner — who gets a prompt to start the next one."
+          />
+          <Card
+            title="⏱️ Deadlines, Enforced"
+            desc="Set a response window. Reminders go out automatically as it nears, and the reveal auto-fires after the deadline so one straggler can't freeze it."
           />
           <Card
             title="🙈 Blind Responses"
             desc="Hide identities so no one knows whose response is whose. Perfect for honest accountability and unbiased judging."
           />
           <Card
-            title="🎬 Four Reveal Modes"
-            desc="All at once, first in, as they come, or instant (on your mark, get set, go)."
-          />
-          <Card
-            title="🏅 Ratings and Rewards"
-            desc="Enable ratings. The winner can post the next engagement or claim a real reward."
-          />
-          <Card
-            title="👋 Nudges"
-            desc="Gently remind slow responders to keep momentum going."
-          />
-          <Card
-            title="🎲 Random Guests"
-            desc="Add random users who opt in during sign-up. Adult content preferences respected."
+            title="👋 Real Nudges"
+            desc="One tap emails everyone who hasn't responded yet; the system also nudges automatically as a deadline approaches."
           />
           <Card
             title="🔄 Recurring Engagements"
-            desc="Schedule weekly accountability check-ins, monthly challenges, or daily trivia to auto-post on a cycle."
+            desc="Set a poll, check-in, or challenge to repeat daily or weekly — a fresh copy auto-posts to the group each cycle."
           />
           <Card
-            title="💬 Reactions & Commentary"
+            title="📤 Share Card"
+            desc="Export a clean results image — poll bars or the crowned winner — to drop on a class screen or share on socials."
+          />
+          <Card
+            title="💬 Reactions & Comments"
             desc="After the reveal, react with emojis and leave comments on individual responses for deeper interaction."
           />
           <Card
-            title="📤 Export & Share"
-            desc="Export video mash-ups, photo collages, and poll results to share on social media with Campfire branding."
+            title="🛡️ Moderation & Safety"
+            desc="Hosts can remove a response, any member can report one, and a profanity filter keeps things kind — built with classrooms in mind."
           />
           <Card
-            title="👁️ Spectator Mode"
-            desc="Let some members watch without participating. Perfect for large communities or observer roles."
+            title="📊 Host Analytics"
+            desc="Admins see participation rates, invite conversion, and a live streak leaderboard at a glance."
           />
           <Card
-            title="🔗 Engagement Chains"
-            desc="Winners automatically get the right to post the next engagement, creating self-sustaining activity."
+            title="🏅 Badges"
+            desc="Members earn badges — On a roll, Streak leader, Recruiter, 100% crew — for showing up and keeping the group going."
           />
         </div>
 
@@ -883,21 +883,21 @@ export default function AboutCampfirePage() {
         {/* ── Platform ── */}
         <SectionHeader
           eyebrow="Platform"
-          title="Built for mobile-first engagement"
-          desc="Native apps on iOS and Android, with QR-code onboarding and privacy-first design."
+          title="Works everywhere — install it like an app"
+          desc="A fast web app you can add to your home screen, with friction-free joining and privacy-first design."
         />
         <div className="grid gap-4 md:grid-cols-3">
           <Card
-            title="📱 iOS and Android"
-            desc="Native apps on both major stores, optimized for camera-first, notification-driven interactions."
+            title="📲 Installable (PWA)"
+            desc="Add Campfire to your home screen on iOS or Android — app icon, full-screen, offline-aware — with no app store download."
           />
           <Card
-            title="🔗 QR and Link Onboarding"
-            desc="Join a specific engagement by scanning a QR code or clicking a join link — minimal sign-up friction."
+            title="🔗 One-Tap Joining"
+            desc="Join a group from a link, and sign in with Google or just your name — no account or email required for students."
           />
           <Card
-            title="🔒 Privacy-First"
-            desc="Blind responses, opt-in random guests, and adult content controls put users in charge."
+            title="✉️ Email Invites"
+            desc="Invite a whole class by email; track who's joined, add more, and nudge anyone who hasn't — or copy a ready-made invite to paste anywhere."
           />
         </div>
 
