@@ -463,16 +463,14 @@ export default function EngagementDetailPage() {
               </div>
             ) : (
               <>
+                <p className="text-xs font-semibold text-orange-600">
+                  {isCreator
+                    ? "Your"
+                    : `${engagement.creator?.display_name ?? "Someone"}'s`}{" "}
+                  {meta?.label ?? engagement.type}
+                </p>
                 <div className="flex items-start gap-2">
-                  <h1 className="text-xl font-extrabold text-slate-900">
-                    <span className="text-orange-600">
-                      {isCreator
-                        ? "Your"
-                        : `${engagement.creator?.display_name ?? "Someone"}'s`}{" "}
-                      {meta?.label ?? engagement.type}:
-                    </span>{" "}
-                    {engagement.title}
-                  </h1>
+                  <h1 className="text-xl font-extrabold text-slate-900">{engagement.title}</h1>
                   {canEdit && (
                     <button
                       onClick={startEdit}
