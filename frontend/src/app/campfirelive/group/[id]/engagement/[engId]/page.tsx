@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
+import { hasProfanity } from "@/lib/campfire/profanity";
 
 // ── Canvas helpers for the shareable results card ──
 function roundRectPath(
@@ -74,6 +75,8 @@ export default function EngagementDetailPage() {
     addComment,
     sendNudge,
     revealNow,
+    removeResponse,
+    reportResponse,
     refresh,
   } = useEngagement(engagementId);
 
@@ -102,6 +105,7 @@ export default function EngagementDetailPage() {
   const [editDesc, setEditDesc] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
+  const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
 
   // Detect reveal transition for animation
   useEffect(() => {
@@ -314,6 +318,10 @@ export default function EngagementDetailPage() {
 
   const handleTextSubmit = async () => {
     if (!textInput.trim()) return;
+    if (hasProfanity(textInput)) {
+      alert("Let's keep it kind — please reword your response.");
+      return;
+    }
     setSubmitting(true);
     await submitResponse({ text: textInput.trim() });
     setSubmitting(false);
@@ -353,6 +361,10 @@ export default function EngagementDetailPage() {
 
   const handleCommentSubmit = async () => {
     if (!commentText.trim()) return;
+    if (hasProfanity(commentText)) {
+      alert("Let's keep it kind — please reword your comment.");
+      return;
+    }
     await addComment(commentText.trim());
     setCommentText("");
   };
@@ -609,6 +621,32 @@ export default function EngagementDetailPage() {
                     <span className="text-xs text-slate-300">no ratings yet</span>
                   );
                 })()}
+              </div>
+              <div className="mt-2 flex items-center gap-3 text-[11px]">
+                {r.user_id !== user?.id &&
+                  (reportedIds.has(r.id) ? (
+                    <span className="text-slate-400">Reported ✓</span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        reportResponse(r.id);
+                        setReportedIds((prev) => new Set(prev).add(r.id));
+                      }}
+                      className="text-slate-400 hover:text-amber-600"
+                    >
+                      Report
+                    </button>
+                  ))}
+                {isCreator && (
+                  <button
+                    onClick={() => {
+                      if (confirm("Remove this response from the group?")) removeResponse(r.id);
+                    }}
+                    className="text-slate-400 hover:text-red-600"
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
               </>
               )}

@@ -323,6 +323,26 @@ export function useEngagement(engagementId: string) {
     await fetchEngagement();
   };
 
+  // Moderation: remove a response (creator/admin; RLS-enforced).
+  const removeResponse = async (responseId: string) => {
+    await supabase.from("responses").delete().eq("id", responseId);
+    await fetchEngagement();
+  };
+
+  // Moderation: report a response.
+  const reportResponse = async (responseId: string, reason?: string) => {
+    if (!user || !engagementId) return;
+    await supabase.from("campfire_reports").upsert(
+      {
+        response_id: responseId,
+        engagement_id: engagementId,
+        reporter_id: user.id,
+        reason: reason ?? null,
+      },
+      { onConflict: "response_id,reporter_id" }
+    );
+  };
+
   // Add comment
   const addComment = async (text: string, responseId?: string) => {
     if (!user || !engagementId) return;
@@ -360,6 +380,8 @@ export function useEngagement(engagementId: string) {
     addComment,
     sendNudge,
     revealNow,
+    removeResponse,
+    reportResponse,
     refresh: fetchEngagement,
   };
 }
