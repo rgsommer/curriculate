@@ -82,16 +82,18 @@ export default function NewEngagementPage() {
       setError(result.error);
       setCreating(false);
     } else if (result.engagement) {
-      // Email the group right away that a new engagement is up (reuses the
-      // straggler-nudge route — nobody has responded yet, so it pings everyone).
+      // Email the group that a new engagement is up — describing its distinctives.
       if (notify && session) {
-        fetch("/api/campfire/engagement/nudge", {
+        fetch("/api/campfire/engagement/notify-new", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${session.access_token}`,
           },
-          body: JSON.stringify({ engagementId: result.engagement.id }),
+          body: JSON.stringify({
+            engagementId: result.engagement.id,
+            origin: window.location.origin,
+          }),
         }).catch(() => {});
       }
       router.push(`/campfirelive/group/${groupId}/engagement/${result.engagement.id}`);

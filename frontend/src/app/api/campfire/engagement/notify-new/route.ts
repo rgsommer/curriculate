@@ -1,0 +1,97 @@
+import { NextResponse } from "next/server";
+import { Resend } from "resend";
+import { createClient } from "@supabase/supabase-js";
+import {
+  authorizeGroupRequester,
+  getGroupMemberEmails,
+  newEngagementEmail,
+  campfireFrom,
+  mailDefaults,
+} from "@/lib/campfire/serverInvites";
+import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Emails the group when a new engagement is posted, describing its distinctives.
+export async function POST(req: Request) {
+  try {
+    const body = await req.json().catch(() => null);
+    const engagementId = typeof body?.engagementId === "string" ? body.engagementId : "";
+    const originIn = typeof body?.origin === "string" ? body.origin : "";
+    if (!engagementId) {
+      return NextResponse.json({ error: "Missing engagement." }, { status: 400 });
+    }
+
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!serviceKey) {
+      return NextResponse.json({ error: "Server not configured." }, { status: 500 });
+    }
+    const svc = createClient(url, serviceKey);
+    const { data: eng } = await svc
+      .from("engagements")
+      .select("group_id, creator_id, title, type, is_blind, reveal, deadline")
+      .eq("id", engagementId)
+      .single();
+    if (!eng) {
+      return NextResponse.json({ error: "Engagement not found." }, { status: 404 });
+    }
+
+    const auth = await authorizeGroupRequester(req, eng.group_id);
+    if ("error" in auth) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+    const { admin } = auth;
+
+    // Members to notify (everyone but the creator).
+    const allEmails = await getGroupMemberEmails(admin, eng.group_id);
+    const { data: creatorUser } = await admin.auth.admin.getUserById(eng.creator_id);
+    const creatorEmail = (creatorUser?.user?.email || "").toLowerCase();
+    const emails = allEmails.filter((e) => e.toLowerCase() !== creatorEmail);
+    if (emails.length === 0) {
+      return NextResponse.json({ ok: true, sent: 0 });
+    }
+
+    const [{ data: group }, { data: profile }] = await Promise.all([
+      admin.from("groups").select("name").eq("id", eng.group_id).single(),
+      admin.from("profiles").select("display_name").eq("id", eng.creator_id).single(),
+    ]);
+
+    const meta = ENGAGEMENT_TYPES[eng.type as keyof typeof ENGAGEMENT_TYPES];
+    const base = /^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
+      ? originIn
+      : process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
+    const engUrl = `${base.replace(/\/$/, "")}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
+
+    const m = newEngagementEmail({
+      creator: profile?.display_name || "Someone",
+      groupName: group?.name || "your group",
+      title: eng.title,
+      typeLabel: meta?.label || "engagement",
+      typeIcon: meta?.icon || "🔥",
+      isBlind: !!eng.is_blind,
+      reveal: eng.reveal,
+      deadline: eng.deadline,
+      url: engUrl,
+    });
+    const from = campfireFrom();
+
+    for (let i = 0; i < emails.length; i += 100) {
+      await resend.batch.send(
+        emails.slice(i, i + 100).map((to) => ({
+          from,
+          to: [to],
+          subject: m.subject,
+          text: m.text,
+          html: m.html,
+          ...mailDefaults(),
+        }))
+      );
+    }
+
+    return NextResponse.json({ ok: true, sent: emails.length });
+  } catch (err) {
+    console.error("Campfire notify-new error:", err);
+    return NextResponse.json({ error: "Server error." }, { status: 500 });
+  }
+}
