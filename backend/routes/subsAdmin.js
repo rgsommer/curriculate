@@ -40,6 +40,7 @@ import { notifier } from "../services/subsNotify.js";
 import { isEligible, eligibilityReasons } from "../services/subsMatching.js";
 import { smartMatch } from "../services/subsSmartMatch.js";
 import { divisionNameForGrade } from "../services/subsVp.js";
+import { sortGrades } from "../services/subsGradeOrder.js";
 import { encryptSecret, decryptSecret, encryptionAvailable } from "../services/subsCrypto.js";
 
 const router = express.Router();
@@ -189,7 +190,7 @@ router.post("/schools/:id/admins", loadAdminSchool, async (req, res) => {
 // ── Grade levels ──────────────────────────────────────────────────────
 
 router.get("/schools/:id/grades", loadAdminSchool, async (req, res) => {
-  const grades = await SubsGradeLevel.find({ schoolId: req.school._id }).sort({ order: 1, name: 1 }).lean();
+  const grades = sortGrades(await SubsGradeLevel.find({ schoolId: req.school._id }).lean());
   res.json({ grades });
 });
 

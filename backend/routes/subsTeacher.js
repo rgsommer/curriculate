@@ -33,6 +33,7 @@ import { getSubsEngine } from "../jobs/subsEscalation.js";
 import { decryptSecret } from "../services/subsCrypto.js";
 import { notifier, sendTestSms } from "../services/subsNotify.js";
 import { gradeVpContact, vpCanApprove, divisionNameForGrade } from "../services/subsVp.js";
+import { sortGrades } from "../services/subsGradeOrder.js";
 
 const router = express.Router();
 const jsonBody = express.json({ limit: "8kb" });
@@ -226,7 +227,7 @@ router.get("/all-schools", requireSubsAuth, async (req, res) => {
 // Grade levels for a chosen school (so the teacher can pick their class).
 router.get("/schools/:id/grades", requireSubsAuth, async (req, res) => {
   if (!isOid(req.params.id)) return res.status(400).json({ error: "Bad school id" });
-  const grades = await SubsGradeLevel.find({ schoolId: req.params.id }).select("name order").sort({ order: 1, name: 1 }).lean();
+  const grades = sortGrades(await SubsGradeLevel.find({ schoolId: req.params.id }).select("name order").lean());
   res.json({ grades });
 });
 
