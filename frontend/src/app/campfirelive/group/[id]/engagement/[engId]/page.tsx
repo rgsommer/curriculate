@@ -108,6 +108,7 @@ export default function EngagementDetailPage() {
   const [editDesc, setEditDesc] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
+  const [justLaunched, setJustLaunched] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
@@ -324,6 +325,7 @@ export default function EngagementDetailPage() {
       setLaunching(false);
       return;
     }
+    setJustLaunched(true);
     // Email the group + pending invitees, if the creator opted in at create time.
     if (engagement.notify && session) {
       try {
@@ -757,30 +759,58 @@ export default function EngagementDetailPage() {
       </Link>
 
       {/* ── DRAFT: not live yet — only the creator can see it until launch ── */}
-      {isDraft && isCreator && (
-        <div className="mb-6 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50 p-5">
+      {(isDraft || justLaunched) && isCreator && (
+        <div
+          className={`mb-6 rounded-2xl border-2 p-5 ${
+            justLaunched
+              ? "border-green-300 bg-green-50"
+              : "border-dashed border-orange-300 bg-orange-50"
+          }`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="flex items-center gap-2 text-sm font-bold text-orange-900">
-                <span className="rounded-full bg-orange-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
-                  Draft
-                </span>
-                Only you can see this right now
-              </div>
-              <p className="mt-1 text-xs text-orange-800/80">
-                Review the prompt below. When you hit launch, it goes live for the
-                group
-                {engagement.notify
-                  ? " and everyone (members + invitees) gets an email to respond."
-                  : ". (Email is off — turn it on at create time to notify the group.)"}
-              </p>
+              {justLaunched ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm font-bold text-green-900">
+                    <span className="rounded-full bg-green-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                      Live
+                    </span>
+                    It&apos;s launched — the group can see it now
+                  </div>
+                  <p className="mt-1 text-xs text-green-800/80">
+                    {engagement.notify
+                      ? "We emailed the members and any pending invitees to respond."
+                      : "It's live in the group. (Email was off, so no notification went out.)"}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2 text-sm font-bold text-orange-900">
+                    <span className="rounded-full bg-orange-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                      Draft
+                    </span>
+                    Only you can see this right now
+                  </div>
+                  <p className="mt-1 text-xs text-orange-800/80">
+                    Review the prompt below. When you hit launch, it goes live for the
+                    group
+                    {engagement.notify
+                      ? " and everyone (members + invitees) gets an email to respond."
+                      : ". (Email is off — turn it on at create time to notify the group.)"}
+                  </p>
+                </>
+              )}
             </div>
             <button
               onClick={launch}
-              disabled={launching}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+              disabled={launching || justLaunched}
+              className={`rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-100 ${
+                justLaunched
+                  ? "bg-green-600"
+                  : "bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 disabled:opacity-50"
+              }`}
             >
-              {launching ? "Launching…" : "🚀 Launch to the group"}
+              {justLaunched ? "✓ Launched" : launching ? "Launching…" : "🚀 Launch to the group"}
             </button>
           </div>
         </div>

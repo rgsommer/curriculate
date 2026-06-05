@@ -11,7 +11,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -22,6 +22,9 @@ export default function GroupDetailPage() {
   const [inviteResult, setInviteResult] = useState<string | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
   const [qrUrl, setQrUrl] = useState<string | null>(null);
+  const [renaming, setRenaming] = useState(false);
+  const [nameInput, setNameInput] = useState("");
+  const [savingName, setSavingName] = useState(false);
 
   // Real-time updates
   const handleUpdate = useCallback(() => {
@@ -202,8 +205,60 @@ See you around the campfire! 🏕️`
         </Link>
         <div className="flex items-center gap-4">
           <span className="text-5xl">{group.avatar_emoji}</span>
-          <div>
-            <h1 className="text-2xl font-extrabold text-slate-900">{group.name}</h1>
+          <div className="flex-1">
+            {renaming ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  maxLength={60}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setRenaming(false);
+                  }}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xl font-extrabold text-slate-900 outline-none focus:border-orange-500"
+                />
+                <button
+                  disabled={savingName || !nameInput.trim()}
+                  onClick={async () => {
+                    setSavingName(true);
+                    const { error } = await renameGroup(nameInput);
+                    setSavingName(false);
+                    if (error) {
+                      alert("Couldn't rename: " + error);
+                      return;
+                    }
+                    setRenaming(false);
+                  }}
+                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {savingName ? "Saving…" : "Save"}
+                </button>
+                <button
+                  onClick={() => setRenaming(false)}
+                  className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-700"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <h1 className="text-2xl font-extrabold text-slate-900">{group.name}</h1>
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      setNameInput(group.name);
+                      setRenaming(true);
+                    }}
+                    title="Rename group"
+                    className="text-slate-400 hover:text-orange-600"
+                  >
+                    ✏️
+                  </button>
+                )}
+              </div>
+            )}
             {group.description && (
               <p className="text-sm text-slate-500">{group.description}</p>
             )}

@@ -192,7 +192,29 @@ export function useGroup(groupId: string) {
     fetchGroup();
   }, [fetchGroup]);
 
-  return { group, members, engagements, streaks, invitations, loading, refresh: fetchGroup };
+  // Admin renames the group (RLS allows only the creator/admin to update).
+  const renameGroup = async (name: string) => {
+    const trimmed = name.trim();
+    if (!trimmed) return { error: "Name can't be empty" };
+    setGroup((g) => (g ? { ...g, name: trimmed } : g)); // optimistic
+    const { error } = await supabase
+      .from("groups")
+      .update({ name: trimmed })
+      .eq("id", groupId);
+    if (error) await fetchGroup(); // revert on failure
+    return { error: error?.message ?? null };
+  };
+
+  return {
+    group,
+    members,
+    engagements,
+    streaks,
+    invitations,
+    loading,
+    refresh: fetchGroup,
+    renameGroup,
+  };
 }
 
 // ── Engagement Detail (with sealed reveal) ──
