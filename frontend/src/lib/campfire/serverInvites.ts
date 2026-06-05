@@ -147,9 +147,16 @@ export function newEngagementEmail(opts: {
   reveal: string;
   deadline: string | null;
   url: string;
+  invited?: boolean; // recipient isn't a member yet — frame it as an invite
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url } = opts;
-  const subject = `${creator} started a ${typeLabel} in ${groupName}`;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url, invited } = opts;
+  const subject = invited
+    ? `${creator} invited you to "${groupName}" on Campfire`
+    : `${creator} started a ${typeLabel} in ${groupName}`;
+  const intro = invited
+    ? `${creator} invited you to join "${groupName}" on Campfire — and there's already a ${typeLabel} waiting for you:`
+    : `${creator} started a ${typeLabel} in ${groupName}:`;
+  const cta = invited ? "Join & add your answer" : "Add your answer";
 
   const bits: string[] = [];
   if (reveal === "as_they_come" || reveal === "instant") {
@@ -168,22 +175,24 @@ export function newEngagementEmail(opts: {
     bits.push(`⏰ Get your answer in by ${new Date(deadline).toLocaleString()}.`);
   }
 
-  const text = `${creator} just started "${title}" — a ${typeLabel} — in ${groupName}.
+  const text = `${intro}
+
+"${title}"
 
 ${bits.map((b) => "• " + b).join("\n")}
 
-Jump in and add your answer: ${url}`;
+${cta}: ${url}`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">${typeIcon}</div>
-  <p style="color:#475569; margin:0 0 4px;">${escapeHtml(creator)} started a ${escapeHtml(typeLabel)} in <strong>${escapeHtml(groupName)}</strong>:</p>
+  <p style="color:#475569; margin:0 0 4px;">${escapeHtml(intro)}</p>
   <h1 style="font-size:22px; margin:4px 0 14px;">${escapeHtml(title)}</h1>
   <ul style="color:#475569; margin:0 0 16px; padding-left:18px;">
     ${bits.map((b) => `<li style="margin-bottom:6px;">${escapeHtml(b)}</li>`).join("")}
   </ul>
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Add your answer</a>
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${escapeHtml(cta)}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
 </div>`.trim();

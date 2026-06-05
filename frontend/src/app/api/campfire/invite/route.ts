@@ -19,6 +19,9 @@ export async function POST(req: Request) {
     const groupId = typeof body?.groupId === "string" ? body.groupId : "";
     const rawEmails: unknown[] = Array.isArray(body?.emails) ? body.emails : [];
     const originIn = typeof body?.origin === "string" ? body.origin : "";
+    // Stage = add to the group's invite list now, but DON'T email yet. They get
+    // emailed when an engagement is posted (the engagement email is their invite).
+    const stage = body?.stage === true;
 
     if (!groupId) {
       return NextResponse.json({ error: "Missing group." }, { status: 400 });
@@ -97,30 +100,33 @@ export async function POST(req: Request) {
     const baseJoinUrl = buildJoinUrl(originIn, group.invite_code);
     const from = campfireFrom();
 
-    // Per-recipient link carrying the invited address (?inv=…) so we can mark the
-    // right invitation joined even if they sign in with a different email.
-    const { error: sendErr } = await resend.batch.send(
-      emails.map((to) => {
-        const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;
-        const m = inviteEmail({
-          inviter,
-          groupName: group.name,
-          groupEmoji: group.avatar_emoji,
-          inviteCode: group.invite_code,
-          joinUrl,
-        });
-        return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
-      })
-    );
-    if (sendErr) {
-      console.error("Campfire invite send error:", sendErr);
-      return NextResponse.json(
-        { error: "Couldn't send the invites. Try again." },
-        { status: 502 }
+    if (!stage) {
+      // Per-recipient link carrying the invited address (?inv=…) so we can mark
+      // the right invitation joined even if they sign in with a different email.
+      const { error: sendErr } = await resend.batch.send(
+        emails.map((to) => {
+          const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;
+          const m = inviteEmail({
+            inviter,
+            groupName: group.name,
+            groupEmoji: group.avatar_emoji,
+            inviteCode: group.invite_code,
+            joinUrl,
+          });
+          return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
+        })
       );
+      if (sendErr) {
+        console.error("Campfire invite send error:", sendErr);
+        return NextResponse.json(
+          { error: "Couldn't send the invites. Try again." },
+          { status: 502 }
+        );
+      }
     }
 
-    // Persist the invitations (so they can be tracked, nudged, revoked).
+    // Persist the invitations (so they can be tracked, nudged, revoked, and
+    // emailed when an engagement is posted).
     await admin.from("campfire_invitations").upsert(
       emails.map((email) => ({
         group_id: groupId,
@@ -132,7 +138,9 @@ export async function POST(req: Request) {
       { onConflict: "group_id,email" }
     );
 
-    return NextResponse.json({ ok: true, sent: emails.length });
+    return stage
+      ? NextResponse.json({ ok: true, staged: emails.length })
+      : NextResponse.json({ ok: true, sent: emails.length });
   } catch (err) {
     console.error("Campfire invite route error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });

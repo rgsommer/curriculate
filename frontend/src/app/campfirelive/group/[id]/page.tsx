@@ -98,14 +98,14 @@ See you around the campfire! 🏕️`
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ groupId, emails, origin: window.location.origin }),
+        body: JSON.stringify({ groupId, emails, origin: window.location.origin, stage: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setInviteResult(data.error || "Couldn't send invites.");
+        setInviteResult(data.error || "Couldn't add invites.");
       } else {
         setInviteResult(
-          `✓ Sent ${data.sent} invite${data.sent === 1 ? "" : "s"}! They'll get an email — you can share the link below too and tell them to check their inbox.`
+          `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an engagement.`
         );
         setEmailInput("");
         await refresh();
@@ -308,7 +308,7 @@ See you around the campfire! 🏕️`
             onClick={() => setShowEmailInvite((v) => !v)}
             className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
-            ✉️ Email invites
+            ✉️ Add by email
           </button>
           <button
             onClick={showQrCode}
@@ -328,8 +328,9 @@ See you around the campfire! 🏕️`
         {showEmailInvite && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
             <label className="block text-xs font-medium text-slate-600 mb-1">
-              Invite by email — one or more, separated by commas or spaces. We&apos;ll
-              send each person a join link and quick instructions.
+              Add people by email — one or more, separated by commas or spaces. They
+              aren&apos;t emailed yet: they get a friendly invite the moment you post an
+              engagement (so no one gets a dead &ldquo;join my empty group&rdquo; email).
             </label>
             <textarea
               value={emailInput}
@@ -344,7 +345,7 @@ See you around the campfire! 🏕️`
                 disabled={sending || !emailInput.trim()}
                 className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {sending ? "Sending..." : "Send email invites"}
+                {sending ? "Adding..." : "Add to invite list"}
               </button>
               {inviteResult && (
                 <span
@@ -380,8 +381,9 @@ See you around the campfire! 🏕️`
         </div>
 
         <p className="mt-2 text-[11px] text-orange-700/80">
-          💡 Tip: emailing invites lets you track who joined and nudge anyone who
-          hasn&apos;t — a pasted link can&apos;t do that.
+          💡 The invite list is emailed when you post an engagement (so the first
+          email is something fun to do, not an empty group). For in-person joining,
+          show the QR or share the link any time.
         </p>
 
         {/* Tracked invitations */}

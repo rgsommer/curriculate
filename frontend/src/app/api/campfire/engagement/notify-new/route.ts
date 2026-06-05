@@ -48,48 +48,62 @@ export async function POST(req: Request) {
     const { data: creatorUser } = await admin.auth.admin.getUserById(eng.creator_id);
     const creatorEmail = (creatorUser?.user?.email || "").toLowerCase();
     const emails = allEmails.filter((e) => e.toLowerCase() !== creatorEmail);
-    if (emails.length === 0) {
-      return NextResponse.json({ ok: true, sent: 0 });
-    }
 
     const [{ data: group }, { data: profile }] = await Promise.all([
-      admin.from("groups").select("name").eq("id", eng.group_id).single(),
+      admin.from("groups").select("name, invite_code").eq("id", eng.group_id).single(),
       admin.from("profiles").select("display_name").eq("id", eng.creator_id).single(),
     ]);
 
     const meta = ENGAGEMENT_TYPES[eng.type as keyof typeof ENGAGEMENT_TYPES];
-    const base = /^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
+    const base = (/^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
       ? originIn
-      : process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
-    const engUrl = `${base.replace(/\/$/, "")}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
-
-    const m = newEngagementEmail({
+      : process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net"
+    ).replace(/\/$/, "");
+    const engUrl = `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
+    const from = campfireFrom();
+    const shared = {
       creator: profile?.display_name || "Someone",
       groupName: group?.name || "your group",
       title: eng.title,
       typeLabel: meta?.label || "engagement",
       typeIcon: meta?.icon || "🔥",
       isBlind: !!eng.is_blind,
-      reveal: eng.reveal,
-      deadline: eng.deadline,
-      url: engUrl,
-    });
-    const from = campfireFrom();
+      reveal: eng.reveal as string,
+      deadline: eng.deadline as string | null,
+    };
 
-    for (let i = 0; i < emails.length; i += 100) {
-      await resend.batch.send(
-        emails.slice(i, i + 100).map((to) => ({
-          from,
-          to: [to],
-          subject: m.subject,
-          text: m.text,
-          html: m.html,
-          ...mailDefaults(),
-        }))
-      );
+    // Members → notification that links straight to the engagement.
+    if (emails.length) {
+      const m = newEngagementEmail({ ...shared, url: engUrl });
+      for (let i = 0; i < emails.length; i += 100) {
+        await resend.batch.send(
+          emails.slice(i, i + 100).map((to) => ({
+            from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults(),
+          }))
+        );
+      }
     }
 
-    return NextResponse.json({ ok: true, sent: emails.length });
+    // Still-pending invitees → this engagement IS their invite (join link, ?inv=…).
+    let invited = 0;
+    const { data: pend } = await admin
+      .from("campfire_invitations")
+      .select("email")
+      .eq("group_id", eng.group_id)
+      .eq("status", "pending");
+    if (pend?.length && group?.invite_code) {
+      const invMsgs = pend.map((p) => {
+        const joinUrl = `${base}/campfirelive/join/${group.invite_code}?inv=${encodeURIComponent(p.email)}`;
+        const im = newEngagementEmail({ ...shared, url: joinUrl, invited: true });
+        return { from, to: [p.email], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
+      });
+      for (let i = 0; i < invMsgs.length; i += 100) {
+        await resend.batch.send(invMsgs.slice(i, i + 100));
+      }
+      invited = invMsgs.length;
+    }
+
+    return NextResponse.json({ ok: true, sent: emails.length, invited });
   } catch (err) {
     console.error("Campfire notify-new error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });
