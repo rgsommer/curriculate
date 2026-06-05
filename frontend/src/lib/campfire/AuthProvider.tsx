@@ -15,6 +15,7 @@ interface AuthState {
   signUp: (email: string, password: string, displayName: string, next?: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: (next?: string) => Promise<void>;
+  signInAsGuest: (displayName: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -29,6 +30,7 @@ const AuthContext = createContext<AuthState>({
   signUp: async () => ({ error: null }),
   signIn: async () => ({ error: null }),
   signInWithGoogle: async () => {},
+  signInAsGuest: async () => ({ error: null }),
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -113,6 +115,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  // No-account class join: an anonymous session carrying just a display name.
+  // (Requires "Allow anonymous sign-ins" enabled in Supabase Auth settings.)
+  const signInAsGuest = async (displayName: string) => {
+    const { error } = await supabase.auth.signInAnonymously({
+      options: { data: { display_name: displayName } },
+    });
+    return { error: error?.message ?? null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -136,6 +147,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signIn,
         signInWithGoogle,
+        signInAsGuest,
         signOut,
         refreshProfile,
       }}

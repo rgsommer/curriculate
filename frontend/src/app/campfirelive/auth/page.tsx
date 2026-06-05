@@ -7,7 +7,9 @@ import Link from "next/link";
 
 export default function AuthPage() {
   const router = useRouter();
-  const { signUp, signIn, signInWithGoogle, user } = useAuth();
+  const { signUp, signIn, signInWithGoogle, signInAsGuest, user } = useAuth();
+  const [guestName, setGuestName] = useState("");
+  const [guestLoading, setGuestLoading] = useState(false);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -33,6 +35,19 @@ export default function AuthPage() {
     router.push(next);
     return null;
   }
+
+  const handleGuest = async () => {
+    if (!guestName.trim()) return;
+    setGuestLoading(true);
+    setError("");
+    const result = await signInAsGuest(guestName.trim());
+    if (result.error) {
+      setError(result.error);
+      setGuestLoading(false);
+    } else {
+      router.push(next);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -127,6 +142,33 @@ export default function AuthPage() {
           </svg>
           Continue with Google
         </button>
+
+        {/* Guest / class join — no account, no email */}
+        <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-3 mb-6">
+          <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            Joining a class or group? Just enter your name:
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={guestName}
+              onChange={(e) => setGuestName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleGuest()}
+              placeholder="Your name"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+            />
+            <button
+              onClick={handleGuest}
+              disabled={guestLoading || !guestName.trim()}
+              className="rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {guestLoading ? "…" : "Join"}
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11px] text-slate-500">
+            No account, no email — the quickest way in.
+          </p>
+        </div>
 
         <div className="relative mb-6">
           <div className="absolute inset-0 flex items-center">
