@@ -6,14 +6,37 @@ export const dynamic = "force-dynamic";
 // Campfire lives in Supabase (separate from the Mongo backend the other admin
 // panels use), so this route reads it directly with the service-role key.
 // Gated by the same x-admin-token the admin page already sends.
+async function authorize(req) {
+  const provided = (
+    req.headers.get("x-admin-token") ||
+    new URL(req.url).searchParams.get("key") ||
+    ""
+  ).trim();
+  if (!provided) return false;
+  // Accept the frontend's own admin token...
+  const local = String(process.env.ADMIN_API_TOKEN || "").trim();
+  if (local && provided === local) return true;
+  // ...or any token the backend admin accepts (matches how the rest of /admin
+  // trusts the operator — the admin page's stored token validates there).
+  try {
+    const base = String(
+      process.env.BACKEND_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL ||
+        "https://api.curriculate.net"
+    ).replace(/\/$/, "");
+    const r = await fetch(`${base}/admin/diagnostics?limit=1`, {
+      headers: { "x-admin-token": provided, accept: "application/json" },
+      cache: "no-store",
+    });
+    return r.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(req) {
   try {
-    const expected = String(process.env.ADMIN_API_TOKEN || "").trim();
-    const provided =
-      req.headers.get("x-admin-token") ||
-      new URL(req.url).searchParams.get("key") ||
-      "";
-    if (!expected || provided !== expected) {
+    if (!(await authorize(req))) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
@@ -28,6 +51,7 @@ export async function GET(req) {
     const sb = createClient(url, key);
 
     const since7 = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const since30 = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     const headCount = async (table, mod) => {
       let q = sb.from(table).select("*", { count: "exact", head: true });
       if (mod) q = mod(q);
@@ -47,6 +71,8 @@ export async function GET(req) {
       newEngagements7d,
       invites,
       invitesJoined,
+      engagements30d,
+      responses30d,
     ] = await Promise.all([
       headCount("profiles"),
       headCount("groups"),
@@ -58,6 +84,8 @@ export async function GET(req) {
       headCount("engagements", (q) => q.gte("created_at", since7)),
       headCount("campfire_invitations"),
       headCount("campfire_invitations", (q) => q.eq("status", "joined")),
+      headCount("engagements", (q) => q.gte("created_at", since30)),
+      headCount("responses", (q) => q.gte("created_at", since30)),
     ]);
 
     const { data: recentGroups } = await sb
@@ -80,6 +108,7 @@ export async function GET(req) {
         invitesJoined,
       },
       last7d: { newGroups: newGroups7d, newEngagements: newEngagements7d },
+      last30d: { engagements: engagements30d, responses: responses30d },
       revealRate: engagements ? Math.round((revealed / engagements) * 100) : 0,
       inviteConversion: invites ? Math.round((invitesJoined / invites) * 100) : 0,
       recentGroups: recentGroups || [],

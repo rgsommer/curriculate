@@ -296,6 +296,8 @@ export default function AdminUsageDashboard() {
       }
 
       setData(j);
+      // Fold Campfire (Supabase) into the dashboard too — fire and forget.
+      loadCampfireStats();
     } catch (e) {
       setErr(e?.message || "Failed to load");
     } finally {
@@ -361,8 +363,11 @@ export default function AdminUsageDashboard() {
       "curriculate": "Curriculate",
       "fieldday": "FieldDay",
     };
-    return arr.map((x) => ({ name: labels[x.app] || x.app || "Unknown", count: x.count || 0 }));
-  }, [data]);
+    const list = arr.map((x) => ({ name: labels[x.app] || x.app || "Unknown", count: x.count || 0 }));
+    // Campfire lives in Supabase (not the usage pipeline), so fold it in here.
+    if (cfStats) list.push({ name: "Campfire", count: cfStats.last30d?.engagements ?? 0 });
+    return list;
+  }, [data, cfStats]);
 
   const momGrowth = data?.derived?.monthOverMonth?.growthPercent;
   const momMethod = data?.derived?.monthOverMonth?.method;
