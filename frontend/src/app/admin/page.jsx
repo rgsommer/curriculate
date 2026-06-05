@@ -1288,19 +1288,79 @@ export default function AdminUsageDashboard() {
                     </div>
                   </div>
 
-                  {cfStats.recentGroups?.length > 0 && (
+                  {cfStats.engagement && (
                     <div>
-                      <div className="text-xs font-bold text-white/70 mb-1">Recent groups</div>
-                      <div className="max-h-64 overflow-y-auto text-xs space-y-1 rounded border border-white/10 p-2">
-                        {cfStats.recentGroups.map((g, i) => (
-                          <div key={i} className="flex justify-between gap-2 border-b border-white/5 py-1">
-                            <span><span className="mr-1">{g.avatar_emoji}</span><span className="font-bold text-orange-300">{g.name}</span></span>
-                            <span className="text-white/40 whitespace-nowrap">{g.created_at ? new Date(g.created_at).toLocaleString() : ""}</span>
-                          </div>
-                        ))}
+                      <div className="text-xs font-bold text-white/70 mb-1">Engagement level</div>
+                      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                          <div className="text-xl font-bold text-orange-300">{cfStats.engagement.responseRate}%</div>
+                          <div className="text-[10px] text-white/50">Response rate (of expected)</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                          <div className="text-xl font-bold text-orange-300">{cfStats.engagement.activeGroups}</div>
+                          <div className="text-[10px] text-white/50">Active groups (with engagements)</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                          <div className="text-xl font-bold text-orange-300">{cfStats.engagement.avgEngagementsPerGroup}</div>
+                          <div className="text-[10px] text-white/50">Avg engagements / group</div>
+                        </div>
+                        <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                          <div className="text-xl font-bold text-orange-300">{cfStats.engagement.avgResponsesPerEngagement}</div>
+                          <div className="text-[10px] text-white/50">Avg responses / engagement</div>
+                        </div>
                       </div>
                     </div>
                   )}
+
+                  {cfStats.groupsDetail?.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">Groups ({cfStats.groupsDetail.length})</div>
+                      <div className="overflow-x-auto rounded border border-white/10">
+                        <table className="w-full text-xs">
+                          <thead className="bg-white/5 text-white/50">
+                            <tr><th className="p-2 text-left">Group</th><th className="p-2 text-right">Members</th><th className="p-2 text-right">Engag.</th><th className="p-2 text-right">Responses</th><th className="p-2 text-left">Created</th></tr>
+                          </thead>
+                          <tbody>
+                            {cfStats.groupsDetail.map((g, i) => (
+                              <tr key={i} className="border-t border-white/5">
+                                <td className="p-2"><span className="mr-1">{g.emoji}</span><span className="font-semibold text-orange-300">{g.name}</span></td>
+                                <td className="p-2 text-right">{g.members}</td>
+                                <td className="p-2 text-right">{g.engagements}</td>
+                                <td className="p-2 text-right">{g.responses}</td>
+                                <td className="p-2 text-white/40 whitespace-nowrap">{g.created_at ? new Date(g.created_at).toLocaleDateString() : ""}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {cfStats.usersList?.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">Users ({cfStats.totals?.users ?? cfStats.usersList.length})</div>
+                      <div className="max-h-64 overflow-auto rounded border border-white/10">
+                        <table className="w-full text-xs">
+                          <thead className="bg-white/5 text-white/50">
+                            <tr><th className="p-2 text-left">Name</th><th className="p-2 text-left">Email</th><th className="p-2 text-left">Joined</th></tr>
+                          </thead>
+                          <tbody>
+                            {cfStats.usersList.map((u, i) => (
+                              <tr key={i} className="border-t border-white/5">
+                                <td className="p-2 font-semibold">{u.name || "—"}</td>
+                                <td className="p-2 text-white/60">{u.email || "—"}</td>
+                                <td className="p-2 text-white/40 whitespace-nowrap">{u.created_at ? new Date(u.created_at).toLocaleDateString() : ""}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {cfStats.totals?.users > cfStats.usersList.length && (
+                        <div className="text-[10px] text-white/30 mt-1">Showing latest {cfStats.usersList.length} of {cfStats.totals.users}.</div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="text-[10px] text-white/30">As of {cfStats.generatedAt ? new Date(cfStats.generatedAt).toLocaleString() : "—"}</div>
                 </>
               )}
