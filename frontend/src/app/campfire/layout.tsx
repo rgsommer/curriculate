@@ -82,6 +82,12 @@ export default function CampfirePrototypeLayout({
           }),
         }}
       />
+      <div className="fixed top-2 left-1/2 -translate-x-1/2 z-[60] rounded-full bg-slate-900/90 px-4 py-1.5 text-xs font-semibold text-white shadow-lg backdrop-blur">
+        🎬 Demo — sample data, not a real account.{" "}
+        <a href="/campfirelive" className="text-orange-300 underline">
+          Open the real app →
+        </a>
+      </div>
       {children}
     </>
   );
