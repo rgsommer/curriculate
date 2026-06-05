@@ -30,6 +30,7 @@ import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecy
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 import { computeDeterministicFactors, deterministicComposite, fetchYahooDaily } from "../services/stocksDiscoveryScore.js";
+import { validateTextPrices, correctBriefingWithVerifiedPrices, validateRecSizing, buildTickerCurrencyHints } from "../routes/stocksAdvice.js";
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
@@ -973,6 +974,34 @@ export async function runDailyBriefing(opts = {}) {
         const block = formatAllReportsMarkdown(reports);
         if (block) md = `${block}\n\n---\n\n${md}`;
       }
+
+      // Price-validation + correction pass — the SAME safeguard the live
+      // /send-briefing endpoint applies. The cron used to skip this entirely,
+      // which is how stale prices labelled "verified" reached the inbox.
+      let priceWarnings = [];
+      let sizingWarnings = [];
+      try {
+        const ccyHints = buildTickerCurrencyHints(p.positions);
+        priceWarnings = await validateTextPrices(md, ccyHints);
+      } catch (e) { console.warn("[stocks-briefing] validateTextPrices warn:", e?.message); }
+      try { sizingWarnings = validateRecSizing(md, p); } catch (e) { console.warn("[stocks-briefing] validateRecSizing warn:", e?.message); }
+
+      if (priceWarnings.length || sizingWarnings.length) {
+        console.log(`[stocks-briefing] correction pass for ${p.email}: ${priceWarnings.length} price + ${sizingWarnings.length} sizing — rewriting`);
+        let corrected = null;
+        try { corrected = await correctBriefingWithVerifiedPrices(md, priceWarnings, sizingWarnings); } catch (e) { console.warn("[stocks-briefing] correction failed:", e?.message); }
+        if (corrected && corrected !== md) {
+          md = corrected;
+        } else {
+          // Fail-LOUD: correction couldn't run or returned no change. Don't
+          // silently send the unverified briefing — prepend a banner so the
+          // user knows which tickers' prices weren't validated.
+          const flagged = [...new Set((priceWarnings || []).map((w) => w?.ticker).filter(Boolean))];
+          const banner = `> ⚠️ **Price-validation banner:** automatic price-correction did not complete for this briefing. Independently verify any live price before acting${flagged.length ? ` (flagged tickers: ${flagged.join(", ")})` : ""}. The numeric "verified" tags below were NOT confirmed against the live feed for this run.\n\n`;
+          md = banner + md;
+        }
+      }
+
       const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
       await emailBriefing({ to: p.email, subject, md });
       // Persist as the in-app advice snapshot so the Advice tab reflects

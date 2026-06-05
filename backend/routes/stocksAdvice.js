@@ -829,7 +829,7 @@ function extractTickerQuotes(text) {
 // We don't want to expose "the AI got it wrong" to the user. We just
 // want the output to be right. Cost: one extra Claude call per briefing
 // only when warnings exist (most briefings won't trigger this).
-async function correctBriefingWithVerifiedPrices(markdown, warnings, sizingWarnings = []) {
+export async function correctBriefingWithVerifiedPrices(markdown, warnings, sizingWarnings = []) {
   if (!process.env.ANTHROPIC_API_KEY) return markdown;
   const hasPriceWarnings = warnings && warnings.length > 0;
   const hasSizingWarnings = sizingWarnings && sizingWarnings.length > 0;
@@ -916,7 +916,7 @@ async function correctBriefingWithVerifiedPrices(markdown, warnings, sizingWarni
 // positions, so when the AI writes a bare "ENB" we know the user holds
 // the Canadian listing and validate against ENB.TO rather than the US
 // ADR. ccy on each position is the native trading currency.
-function buildTickerCurrencyHints(positions) {
+export function buildTickerCurrencyHints(positions) {
   const hints = {};
   for (const p of positions || []) {
     if (!p?.ticker) continue;
@@ -932,7 +932,7 @@ function buildTickerCurrencyHints(positions) {
 // downsize the rec before it reaches the user.
 //
 // Accepts profile so we can resolve account names to actual cash buckets.
-function validateRecSizing(text, profile) {
+export function validateRecSizing(text, profile) {
   if (!text || !profile?.accounts?.length) return [];
   const accounts = profile.accounts;
   // Build (lowercased name → { cashCad, cashUsd }) for lookup
@@ -1102,7 +1102,7 @@ async function correctAdviceCards(cards, perCardPriceWarnings, allSizingWarnings
 //   tickerCcyHints — optional map of (TICKER → "CAD"|"USD") used when
 //   the AI writes a bare ticker. The quote's inline "CAD"/"USD" suffix
 //   takes priority; this map is the fallback.
-async function validateTextPrices(text, tickerCcyHints = {}) {
+export async function validateTextPrices(text, tickerCcyHints = {}) {
   if (!text || typeof text !== "string") return [];
   const quotes = extractTickerQuotes(text);
   if (quotes.length === 0) return [];
