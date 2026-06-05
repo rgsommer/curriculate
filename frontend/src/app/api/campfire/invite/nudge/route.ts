@@ -5,6 +5,7 @@ import {
   buildJoinUrl,
   inviteEmail,
   mailDefaults,
+  campfireFrom,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -66,7 +67,7 @@ export async function POST(req: Request) {
       joinUrl,
       nudge: true,
     });
-    const from = process.env.CONTACT_FROM || "Campfire <noreply@curriculate.net>";
+    const from = campfireFrom();
 
     const { error: sendErr } = await resend.batch.send(
       pending.map((p) => ({ from, to: [p.email], subject, text, html, ...mailDefaults() }))

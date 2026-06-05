@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
@@ -58,6 +58,7 @@ export default function EngagementDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const engagementId = params.engId as string;
+  const router = useRouter();
   const { user, session } = useAuth();
 
   const {
@@ -75,6 +76,7 @@ export default function EngagementDetailPage() {
     addComment,
     sendNudge,
     revealNow,
+    deleteEngagement,
     removeResponse,
     reportResponse,
     refresh,
@@ -305,6 +307,23 @@ export default function EngagementDetailPage() {
       a.click();
       URL.revokeObjectURL(url);
     });
+  };
+
+  // Creator cancels (deletes) the engagement — it vanishes for everyone (live).
+  const cancelEngagement = async () => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Cancel this engagement? It will be removed for everyone — this can't be undone."
+      )
+    )
+      return;
+    const { error } = await deleteEngagement();
+    if (error) {
+      alert("Couldn't cancel: " + error);
+      return;
+    }
+    router.push(`/campfirelive/group/${groupId}`);
   };
 
   // ── Submit handlers ──
@@ -1055,6 +1074,18 @@ export default function EngagementDetailPage() {
             + Start an engagement
           </span>
         </Link>
+      )}
+
+      {/* Creator: cancel (delete) the engagement */}
+      {isCreator && (
+        <div className="mt-2 text-center">
+          <button
+            onClick={cancelEngagement}
+            className="text-xs text-slate-400 underline hover:text-red-600"
+          >
+            Cancel this engagement
+          </button>
+        </div>
       )}
     </div>
   );

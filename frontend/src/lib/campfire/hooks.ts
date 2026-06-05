@@ -323,6 +323,13 @@ export function useEngagement(engagementId: string) {
     await fetchEngagement();
   };
 
+  // Creator cancels (deletes) the engagement.
+  const deleteEngagement = async () => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase.from("engagements").delete().eq("id", engagementId);
+    return { error: error?.message ?? null };
+  };
+
   // Moderation: remove a response (creator/admin; RLS-enforced).
   const removeResponse = async (responseId: string) => {
     await supabase.from("responses").delete().eq("id", responseId);
@@ -380,6 +387,7 @@ export function useEngagement(engagementId: string) {
     addComment,
     sendNudge,
     revealNow,
+    deleteEngagement,
     removeResponse,
     reportResponse,
     refresh: fetchEngagement,

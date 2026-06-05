@@ -3,6 +3,12 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const MAX_INVITES = 50;
 
+// Campfire-branded sender (overrides the shared CONTACT_FROM so the name reads
+// "Campfire"). noreply@curriculate.net is on the DKIM-verified domain.
+export function campfireFrom() {
+  return process.env.CAMPFIRE_FROM || "Campfire <noreply@curriculate.net>";
+}
+
 // Deliverability defaults applied to every Campfire email: a real Reply-To (not
 // the noreply sender) and a List-Unsubscribe header — both signal legitimacy to
 // spam filters (Gmail/Yahoo look for List-Unsubscribe on notification mail).
@@ -112,7 +118,7 @@ export async function getGroupMemberEmails(
 
 export function revealEmail(opts: { groupName: string; title: string; url: string }) {
   const { groupName, title, url } = opts;
-  const subject = `🎉 Results are in — "${title}" (${groupName})`;
+  const subject = `Results are in: "${title}" (${groupName})`;
   const text = `Everyone's responded — the results for "${title}" in ${groupName} just unlocked!
 
 See the reveal: ${url}`;
@@ -137,7 +143,7 @@ export function reminderEmail(opts: {
   total: number;
 }) {
   const { groupName, title, url, responded, total } = opts;
-  const subject = `⏰ Your response is needed — "${title}" (${groupName})`;
+  const subject = `Your response is needed: "${title}" (${groupName})`;
   const text = `The group "${groupName}" is waiting on you for "${title}".
 ${responded} of ${total} have responded — be one of the ones that unlocks the reveal!
 

@@ -9,6 +9,7 @@ import {
   buildJoinUrl,
   inviteEmail,
   mailDefaults,
+  campfireFrom,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -35,7 +36,7 @@ export async function GET(req: Request) {
   }
   const admin = createClient(url, serviceKey);
   const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
-  const from = process.env.CONTACT_FROM || "Campfire <noreply@curriculate.net>";
+  const from = campfireFrom();
   const now = Date.now();
 
   const { data: engs } = await admin

@@ -5,6 +5,8 @@ import {
   buildJoinUrl,
   inviteEmail,
   mailDefaults,
+  campfireFrom,
+  getGroupMemberEmails,
   EMAIL_RE,
   MAX_INVITES,
 } from "@/lib/campfire/serverInvites";
@@ -57,6 +59,24 @@ export async function POST(req: Request) {
       .single();
     const inviter = profile?.display_name || "A friend";
 
+    // Don't invite people who are already in the group (incl. inviting yourself).
+    const memberEmails = new Set(
+      (await getGroupMemberEmails(admin, groupId)).map((e) => e.toLowerCase())
+    );
+    const wereMembers = emails.filter((e) => memberEmails.has(e));
+    emails = emails.filter((e) => !memberEmails.has(e));
+    if (emails.length === 0) {
+      return NextResponse.json(
+        {
+          error:
+            wereMembers.length === 1
+              ? "That person is already in the group."
+              : "Those people are already in the group.",
+        },
+        { status: 400 }
+      );
+    }
+
     // Don't re-email people who already joined.
     const { data: existing } = await admin
       .from("campfire_invitations")
@@ -75,7 +95,7 @@ export async function POST(req: Request) {
     }
 
     const baseJoinUrl = buildJoinUrl(originIn, group.invite_code);
-    const from = process.env.CONTACT_FROM || "Campfire <noreply@curriculate.net>";
+    const from = campfireFrom();
 
     // Per-recipient link carrying the invited address (?inv=…) so we can mark the
     // right invitation joined even if they sign in with a different email.
