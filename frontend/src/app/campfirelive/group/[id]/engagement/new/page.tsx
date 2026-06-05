@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCreateEngagement } from "@/lib/campfire/hooks";
-import { useAuth } from "@/lib/campfire/AuthProvider";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
@@ -13,7 +12,6 @@ export default function NewEngagementPage() {
   const groupId = params.id as string;
   const router = useRouter();
   const { create } = useCreateEngagement(groupId);
-  const { session } = useAuth();
 
   const [step, setStep] = useState<"type" | "details" | "options">("type");
   const [selectedType, setSelectedType] = useState<EngagementType | null>(null);
@@ -23,7 +21,7 @@ export default function NewEngagementPage() {
   const [isBlind, setIsBlind] = useState(false);
   const [deadline, setDeadline] = useState("");
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
-  const [notify, setNotify] = useState(false);
+  const [notify, setNotify] = useState(true);
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -82,20 +80,7 @@ export default function NewEngagementPage() {
       setError(result.error);
       setCreating(false);
     } else if (result.engagement) {
-      // Email the group that a new engagement is up — describing its distinctives.
-      if (notify && session) {
-        fetch("/api/campfire/engagement/notify-new", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            engagementId: result.engagement.id,
-            origin: window.location.origin,
-          }),
-        }).catch(() => {});
-      }
+      // Created as a DRAFT — the creator reviews it and hits Launch when ready.
       router.push(`/campfirelive/group/${groupId}/engagement/${result.engagement.id}`);
     }
   };
@@ -383,9 +368,12 @@ export default function NewEngagementPage() {
                   className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
                 />
                 <div>
-                  <div className="text-sm font-medium text-slate-700">📧 Email the group</div>
+                  <div className="text-sm font-medium text-slate-700">
+                    📧 Email the group when I launch
+                  </div>
                   <div className="text-xs text-slate-500">
-                    Email members now to respond, and again when the results reveal.
+                    On launch, email members + invitees to respond (and again when
+                    results reveal). You launch when you&apos;re ready — nothing sends now.
                   </div>
                 </div>
               </label>
@@ -401,7 +389,7 @@ export default function NewEngagementPage() {
               disabled={creating}
               className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-3 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
             >
-              {creating ? "Creating..." : "🔥 Start Engagement"}
+              {creating ? "Creating..." : "✏️ Create draft — review & launch next"}
             </button>
           </div>
         </div>

@@ -68,6 +68,8 @@ export interface Engagement {
   parent_id: string | null;
   chain_next_creator_id: string | null;
   created_at: string;
+  launched_at?: string | null; // null = draft (only the creator can see it)
+  notify?: boolean; // email the group when launched
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
 }

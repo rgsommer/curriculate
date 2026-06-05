@@ -323,6 +323,17 @@ export function useEngagement(engagementId: string) {
     await fetchEngagement();
   };
 
+  // Creator launches a draft engagement — makes it live (visible to the group).
+  const launchEngagement = async () => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ launched_at: new Date().toISOString() })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
   // Creator cancels (deletes) the engagement.
   const deleteEngagement = async () => {
     if (!engagementId) return { error: "Missing engagement" };
@@ -387,6 +398,7 @@ export function useEngagement(engagementId: string) {
     addComment,
     sendNudge,
     revealNow,
+    launchEngagement,
     deleteEngagement,
     removeResponse,
     reportResponse,

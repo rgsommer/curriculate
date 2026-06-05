@@ -596,6 +596,7 @@ See you around the campfire! 🏕️`
         <div className="grid gap-3">
           {filteredEngagements.map((eng) => {
             const meta = ENGAGEMENT_TYPES[eng.type];
+            const isDraft = !eng.launched_at; // creator-only until launched (RLS hides from others)
             const isSealed = eng.status === "active" && eng.reveal === "sealed";
             const isRevealed = eng.status === "revealed";
             const progress = eng.total_expected > 0
@@ -629,7 +630,12 @@ See you around the campfire! 🏕️`
                   </div>
 
                   {/* Status badge */}
-                  {isSealed && (
+                  {isDraft && (
+                    <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
+                      ✏️ Draft · tap to launch
+                    </span>
+                  )}
+                  {!isDraft && isSealed && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
                       🔒 Sealed
                     </span>

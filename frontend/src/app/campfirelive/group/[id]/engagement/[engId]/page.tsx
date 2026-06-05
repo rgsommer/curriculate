@@ -76,6 +76,7 @@ export default function EngagementDetailPage() {
     addComment,
     sendNudge,
     revealNow,
+    launchEngagement,
     deleteEngagement,
     removeResponse,
     reportResponse,
@@ -106,6 +107,7 @@ export default function EngagementDetailPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [launching, setLaunching] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
@@ -152,6 +154,7 @@ export default function EngagementDetailPage() {
   const hasResponded = !!myResponse;
   const allIn = responseCount >= engagement.total_expected;
   const isCreator = engagement.creator_id === user?.id;
+  const isDraft = !engagement.launched_at;
   const pollOptions = (engagement.config?.options as string[]) ?? [];
   const canEdit = isCreator && engagement.status === "active";
 
@@ -309,6 +312,37 @@ export default function EngagementDetailPage() {
       a.click();
       URL.revokeObjectURL(url);
     });
+  };
+
+  // Creator launches the draft — makes it live for the group, then (optionally) emails.
+  const launch = async () => {
+    if (launching) return;
+    setLaunching(true);
+    const { error } = await launchEngagement();
+    if (error) {
+      alert("Couldn't launch: " + error);
+      setLaunching(false);
+      return;
+    }
+    // Email the group + pending invitees, if the creator opted in at create time.
+    if (engagement.notify && session) {
+      try {
+        await fetch("/api/campfire/engagement/notify-new", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            engagementId: engagement.id,
+            origin: window.location.origin,
+          }),
+        });
+      } catch {
+        /* non-fatal: the engagement is live regardless */
+      }
+    }
+    setLaunching(false);
   };
 
   // Creator cancels (deletes) the engagement — it vanishes for everyone (live).
@@ -721,6 +755,36 @@ export default function EngagementDetailPage() {
       >
         ← Back to group
       </Link>
+
+      {/* ── DRAFT: not live yet — only the creator can see it until launch ── */}
+      {isDraft && isCreator && (
+        <div className="mb-6 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-sm font-bold text-orange-900">
+                <span className="rounded-full bg-orange-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                  Draft
+                </span>
+                Only you can see this right now
+              </div>
+              <p className="mt-1 text-xs text-orange-800/80">
+                Review the prompt below. When you hit launch, it goes live for the
+                group
+                {engagement.notify
+                  ? " and everyone (members + invitees) gets an email to respond."
+                  : ". (Email is off — turn it on at create time to notify the group.)"}
+              </p>
+            </div>
+            <button
+              onClick={launch}
+              disabled={launching}
+              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+            >
+              {launching ? "Launching…" : "🚀 Launch to the group"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Reveal Animation ── */}
       {showRevealAnimation && (
