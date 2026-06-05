@@ -107,6 +107,8 @@ export default function EngagementDetailPage() {
   const [editDesc, setEditDesc] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
+  // "Guess who" game for blind engagements: responseId -> guessed name
+  const [guesses, setGuesses] = useState<Record<string, string>>({});
   const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
 
   // Detect reveal transition for animation
@@ -533,6 +535,11 @@ export default function EngagementDetailPage() {
   const renderRevealedResponses = () => {
     if (!showResults || engagement.type === "poll") return null;
 
+    // "Guess who" candidates = everyone who responded.
+    const responderNames = Array.from(
+      new Set(responses.map((x) => x.profile?.display_name).filter(Boolean))
+    ) as string[];
+
     return (
       <div className="space-y-3">
         {responses.map((r) => {
@@ -558,6 +565,36 @@ export default function EngagementDetailPage() {
                   </span>
                 )}
               </div>
+
+              {/* Guess who (blind engagements only, not your own response) */}
+              {isRevealed && engagement.is_blind && r.user_id !== user?.id && responderNames.length > 1 && (
+                <div className="mb-2 text-xs">
+                  {guesses[r.id] ? (
+                    guesses[r.id] === (r.profile?.display_name ?? "") ? (
+                      <span className="font-medium text-green-600">
+                        ✓ Nailed it — it was {r.profile?.display_name}!
+                      </span>
+                    ) : (
+                      <span className="text-slate-600">
+                        It was <b>{r.profile?.display_name}</b> — you guessed {guesses[r.id]}.
+                      </span>
+                    )
+                  ) : (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="text-slate-500">🕵️ Guess who:</span>
+                      {responderNames.map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setGuesses((g) => ({ ...g, [r.id]: n }))}
+                          className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+                        >
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Content */}
               {content.text && (
