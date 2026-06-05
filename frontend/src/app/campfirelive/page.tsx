@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
 export default function DashboardPage() {
+  const router = useRouter();
   const { profile, isTrialActive } = useAuth();
   const { groups, loading, createGroup, joinGroup } = useGroups();
   const [showCreate, setShowCreate] = useState(false);
@@ -30,13 +32,11 @@ export default function DashboardPage() {
     );
     if (!group) {
       setError(createError ?? "Failed to create group. Try again.");
+      setCreating(false);
     } else {
-      setShowCreate(false);
-      setNewName("");
-      setNewDesc("");
-      setNewEmoji("🔥");
+      // Drop straight into the new group so the next steps are obvious.
+      router.push(`/campfirelive/group/${group.id}`);
     }
-    setCreating(false);
   };
 
   const handleJoin = async () => {
