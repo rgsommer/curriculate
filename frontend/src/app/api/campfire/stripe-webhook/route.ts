@@ -3,16 +3,26 @@ import type { NextRequest } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2025-03-31.basil" as Stripe.LatestApiVersion,
-});
+// Lazily construct clients so a missing env var can't crash `next build`
+// (module-scope construction runs during "collecting page data").
+function getStripe() {
+  return new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: "2025-03-31.basil" as Stripe.LatestApiVersion,
+  });
+}
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY! // Server-side only, bypasses RLS
-);
+function getSupabaseAdmin() {
+  // Server-side only, bypasses RLS
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export async function POST(request: NextRequest) {
+  const stripe = getStripe();
+  const supabaseAdmin = getSupabaseAdmin();
+
   const body = await request.text();
   const sig = request.headers.get("stripe-signature")!;
 

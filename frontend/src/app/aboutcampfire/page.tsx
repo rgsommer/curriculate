@@ -2,30 +2,32 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "About Campfire — Group Engagement Reimagined",
+  title: "How Campfire Works — Group Engagement Reimagined",
   description:
-    "Campfire is a group engagement app with sealed results — nobody sees answers until everyone responds. 12 activity types including polls, challenges, games, and accountability for families, friends, churches, and communities.",
+    "New to Campfire? Here's how it works: join a group, answer the question, and nobody sees the results until everyone responds. Then it all opens at once. A friendly walkthrough plus the full feature tour — 12 activity types, sealed reveals, streaks, and template packs for families, friends, churches, classes, and communities.",
   keywords: [
     "campfire app",
+    "how campfire works",
+    "campfire intro",
+    "campfire getting started",
     "group engagement app",
     "sealed polls",
+    "sealed reveal",
     "group challenges",
+    "join a campfire group",
+    "classroom engagement app",
     "family group app",
     "church group activities",
     "community engagement platform",
     "group activities app",
     "interactive group games",
-    "social engagement",
     "accountability app",
-    "group poll app",
-    "team building app",
-    "friend group app",
     "youth group activities",
   ],
   openGraph: {
-    title: "Campfire — Group Engagement Reimagined",
+    title: "How Campfire Works — Group Engagement Reimagined",
     description:
-      "The group app where results stay sealed until everyone responds. Polls, challenges, games, accountability — for families, friends, and communities.",
+      "Join a group, answer the question, and watch everyone's answers unlock at the same moment. A friendly walkthrough plus the full tour of what Campfire can do.",
     url: "https://curriculate.net/aboutcampfire",
     siteName: "Campfire",
     type: "website",
@@ -41,9 +43,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Campfire — Group Engagement Reimagined",
+    title: "How Campfire Works — Group Engagement Reimagined",
     description:
-      "Sealed polls, group challenges, accountability check-ins, and 12 activity types. The app that brings your group to life.",
+      "Join a group, answer the question, and watch everyone's answers unlock together. Here's the flow — plus the full feature tour.",
     images: ["https://curriculate.net/images/og/og-campfire-live.png"],
   },
   alternates: {
@@ -132,9 +134,86 @@ function EngCard({
   );
 }
 
+function FlowStep({
+  num,
+  title,
+  desc,
+  you,
+}: {
+  num: string;
+  title: string;
+  desc: string;
+  you?: string;
+}) {
+  return (
+    <div className="flex gap-4 py-4">
+      <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-rose-500 text-sm font-bold text-white">
+        {num}
+      </div>
+      <div>
+        <h3 className="font-bold text-slate-900">{title}</h3>
+        <p className="text-sm text-slate-600 leading-relaxed">{desc}</p>
+        {you ? (
+          <p className="mt-1 text-sm font-semibold text-orange-700">👉 {you}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function Faq({ q, a }: { q: string; a: string }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h3 className="font-bold text-slate-900">{q}</h3>
+      <p className="mt-1 text-sm text-slate-600 leading-relaxed">{a}</p>
+    </div>
+  );
+}
+
 export default function AboutCampfirePage() {
   return (
     <main className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
+      {/* HowTo schema — for the "flow" */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "HowTo",
+            name: "How to use Campfire",
+            description:
+              "Join a group, start or answer an engagement, and reveal everyone's answers together once all members have responded.",
+            step: [
+              {
+                "@type": "HowToStep",
+                name: "Sign in",
+                text: "Create an account or continue with Google. Your free trial starts automatically.",
+              },
+              {
+                "@type": "HowToStep",
+                name: "Create or join a group",
+                text: "Start a new group and invite people, or tap an invite link / scan a QR code to join one.",
+              },
+              {
+                "@type": "HowToStep",
+                name: "Start an engagement",
+                text: "Pick an activity type — a poll, a challenge, a check-in — and send it to the group.",
+              },
+              {
+                "@type": "HowToStep",
+                name: "Everyone responds",
+                text: "Each person submits their answer. Results stay sealed until the last person is in.",
+              },
+              {
+                "@type": "HowToStep",
+                name: "The reveal",
+                text: "When everyone has responded, the envelope opens and the whole group sees the results at the same moment.",
+              },
+            ],
+          }),
+        }}
+      />
+      {/* SoftwareApplication schema — for the product/features */}
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{
@@ -187,69 +266,89 @@ export default function AboutCampfirePage() {
           }),
         }}
       />
+
       {/* ── Hero ── */}
       <section className="mx-auto max-w-6xl px-6 pt-16 pb-10">
         <div className="max-w-3xl">
           <div className="flex flex-wrap gap-2 mb-4">
             <Pill>Campfire</Pill>
-            <Pill>Group Engagement App</Pill>
+            <Pill>A 2-minute intro</Pill>
           </div>
 
           <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900 leading-tight">
-            Social media lost something.{" "}
+            New here?{" "}
             <span className="bg-gradient-to-r from-orange-500 to-rose-500 bg-clip-text text-transparent">
-              Campfire brings it back.
+              Here&apos;s how Campfire works.
             </span>
           </h1>
 
           <p className="mt-5 text-lg text-slate-600 leading-relaxed">
-            Campfire is a social engagement app designed to replicate the richness of
-            communal life — the challenges, the surprises, the accountability, the
-            fun — that other platforms have left behind. Built for families, friends,
-            churches, and any group that wants more than a text thread.
+            Campfire is a place where your group — your class, your friends, your
+            family — actually does things together. Someone posts a question,
+            challenge, or game. Everyone answers. And here&apos;s the twist:{" "}
+            <strong className="text-slate-800">
+              nobody sees a single answer until everyone has responded.
+            </strong>{" "}
+            Then it all opens at once.
           </p>
 
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
-              href="/campfire"
+              href="/campfirelive"
               className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
             >
-              Try the Prototype
+              Get started
+            </Link>
+            <Link
+              href="/campfire"
+              className="rounded-full border border-slate-300 bg-white px-6 py-2.5 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              See a quick preview
             </Link>
           </div>
+
+          <p className="mt-4 text-sm text-slate-500">
+            Got an invite link or QR code from your teacher or group leader? Just
+            tap or scan it — it brings you straight to the right group.
+          </p>
         </div>
 
-        {/* ── Sealed Results Callout ── */}
+        {/* ── The big idea ── */}
         <div className="mt-10 rounded-3xl border-2 border-amber-200 bg-amber-50/60 p-7 shadow-sm">
           <div className="flex items-start gap-4">
             <div className="text-4xl">🔒</div>
             <div>
               <h2 className="text-2xl font-extrabold text-slate-900">
-                The sealed envelope mechanic
+                The one thing that makes Campfire different
               </h2>
               <p className="mt-2 text-slate-700 leading-relaxed">
-                This is what makes Campfire different from every other poll, challenge,
-                or group activity app.{" "}
+                On most apps, you see other people&apos;s answers as they come in —
+                so it&apos;s easy to just follow the crowd. Campfire seals every
+                response in an envelope.{" "}
                 <strong className="text-amber-800">
-                  Nobody sees results until everyone has responded.
+                  You answer honestly, because you can&apos;t see anyone else yet.
                 </strong>{" "}
-                Poll results stay hidden. Challenge entries stay locked. Accountability
-                answers stay sealed. The moment everyone is in, the envelope opens — and
-                the collective reveal becomes the highlight. It turns every engagement
-                into an event.
+                The moment the last person is in, the envelope opens and everyone
+                sees the results together. That shared reveal is the fun part.
               </p>
               <div className="mt-4 grid sm:grid-cols-3 gap-3 text-sm">
                 <div className="rounded-xl bg-white/80 border border-amber-200 p-3">
                   <div className="font-bold text-amber-900">No peeking</div>
-                  <div className="text-slate-600">Results sealed until the last person responds</div>
+                  <div className="text-slate-600">
+                    Answers stay hidden until the last person responds
+                  </div>
                 </div>
                 <div className="rounded-xl bg-white/80 border border-amber-200 p-3">
-                  <div className="font-bold text-amber-900">Nudge stragglers</div>
-                  <div className="text-slate-600">Gentle reminders keep momentum and build anticipation</div>
+                  <div className="font-bold text-amber-900">Answer honestly</div>
+                  <div className="text-slate-600">
+                    No bandwagon voting — your answer is your own
+                  </div>
                 </div>
                 <div className="rounded-xl bg-white/80 border border-amber-200 p-3">
-                  <div className="font-bold text-amber-900">Collective reveal</div>
-                  <div className="text-slate-600">Everyone sees results at the same moment — together</div>
+                  <div className="font-bold text-amber-900">Reveal together</div>
+                  <div className="text-slate-600">
+                    Everyone sees the results at the exact same moment
+                  </div>
                 </div>
               </div>
             </div>
@@ -258,9 +357,87 @@ export default function AboutCampfirePage() {
       </section>
 
       <section className="mx-auto max-w-6xl px-6">
-        {/* ── Problem ── */}
+        {/* ── The flow ── */}
         <SectionHeader
-          eyebrow="The Problem"
+          eyebrow="The Flow"
+          title="What actually happens, step by step"
+          desc="From opening the app to the big reveal — here's the whole loop. The orange line is what you do."
+        />
+        <div className="max-w-2xl">
+          <FlowStep
+            num="1"
+            title="Sign in"
+            desc="Create an account or continue with Google. It takes a few seconds, and your free trial starts right away."
+            you="Tap “Get started,” then sign in."
+          />
+          <FlowStep
+            num="2"
+            title="Create or join a group"
+            desc="A group is just the people you'll play with — a class, a club, a family. Start your own and invite people, or join one that already exists."
+            you="Joining? Tap the invite link or scan the QR code you were given. You'll land right in the group."
+          />
+          <FlowStep
+            num="3"
+            title="An engagement gets posted"
+            desc="An engagement is one activity — a poll, a photo challenge, a quick check-in, a trivia question. Anyone in the group can start one and choose how it works (deadline, anonymous or not, how it reveals)."
+            you="Watch for it, or start your own once you're comfortable."
+          />
+          <FlowStep
+            num="4"
+            title="Everyone responds — sealed"
+            desc="Each person submits their answer privately. You won't see anyone else's yet, and they won't see yours. A little tracker shows how many people are still to go, and you can nudge the stragglers."
+            you="Answer the question. Then wait for the rest of the group."
+          />
+          <FlowStep
+            num="5"
+            title="The big reveal"
+            desc="The moment the last person responds, the envelope breaks and everyone's answers appear at once — for the whole group, at the same time. React with emojis, leave comments, rate entries, or crown a winner."
+            you="Enjoy the reveal — this is the payoff."
+          />
+          <FlowStep
+            num="6"
+            title="Keep it going"
+            desc="Groups build streaks the more they play, and a group health score shows how active you are. The next engagement is usually just a tap away — sometimes the winner gets to post it."
+            you="Come back for the next one and keep your streak alive."
+          />
+        </div>
+
+        <Divider />
+
+        {/* ── Quickstart (classroom / demo) ── */}
+        <SectionHeader
+          eyebrow="Quickstart"
+          title="Joining a group in under a minute"
+          desc="The fastest path — perfect if your teacher or group leader just shared a link or put a QR code on the screen."
+        />
+        <div className="rounded-3xl border border-orange-200 bg-white p-6 shadow-sm">
+          <ol className="grid gap-4 sm:grid-cols-2">
+            {[
+              ["Tap the link or scan the QR code", "It opens Campfire on the exact group you're joining."],
+              ["Continue with Google", "One tap, no password to remember. Your trial starts automatically."],
+              ["You're in the group", "You'll see the group and any engagement that's waiting for you."],
+              ["Answer the question", "Submit your response — remember, nobody can see it yet."],
+              ["Wait for the reveal", "Once everyone's answered, all the results open at the same moment."],
+              ["React and join the next one", "Drop a reaction or comment, then keep the streak going."],
+            ].map(([t, d], i) => (
+              <li key={t} className="flex gap-3">
+                <span className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-orange-100 text-sm font-bold text-orange-700">
+                  {i + 1}
+                </span>
+                <div>
+                  <div className="font-semibold text-slate-900">{t}</div>
+                  <div className="text-sm text-slate-600">{d}</div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+
+        <Divider />
+
+        {/* ── Why Campfire (the problem it solves) ── */}
+        <SectionHeader
+          eyebrow="Why Campfire Exists"
           title="Group chats killed the group experience"
           desc="Social media became passive and performative. Group chats became noise. Nobody built a structured group activity layer — until now."
         />
@@ -301,7 +478,7 @@ export default function AboutCampfirePage() {
         <SectionHeader
           eyebrow="Engagement Types"
           title="12 ways to bring your group to life"
-          desc="From lighthearted games to meaningful accountability, Campfire offers a rich toolkit for group interaction."
+          desc="From lighthearted games to meaningful accountability, Campfire offers a rich toolkit for group interaction. Every one uses the same sealed-reveal magic."
         />
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           <EngCard icon="📊" name="Poll" desc="Multiple choice, yes/no, or open questions. Shareable via QR code." />
@@ -358,54 +535,6 @@ export default function AboutCampfirePage() {
             name="Couples Pack"
             desc="Relationship questions, date night ideas, anniversary countdowns, and memory shares."
           />
-        </div>
-
-        <Divider />
-
-        {/* ── How It Works ── */}
-        <SectionHeader
-          eyebrow="How It Works"
-          title="From sign-up to celebration in 5 steps"
-          desc="Getting started takes less than a minute."
-        />
-        <div className="max-w-xl mx-auto">
-          {[
-            {
-              num: "1",
-              title: "Sign up free",
-              desc: "Create your profile. Optionally, indicate if you'd be available as a random guest in other groups.",
-            },
-            {
-              num: "2",
-              title: "Create or join a group",
-              desc: "Invite 2+ people. New members can join via QR code or a shared link.",
-            },
-            {
-              num: "3",
-              title: "Start an engagement",
-              desc: "Choose from 12 types. Set deadline, blind mode, ratings, reveal mode, and more.",
-            },
-            {
-              num: "4",
-              title: "Respond — results stay sealed",
-              desc: "Everyone submits their vote, entry, or answer. Results are locked behind a sealed envelope until the last person responds. Nudge stragglers to keep momentum.",
-            },
-            {
-              num: "5",
-              title: "The big reveal",
-              desc: "When everyone is in, the seal breaks. Results appear for the whole group at once — react, comment, rate, and crown a winner. Save favourites to replay.",
-            },
-          ].map((step) => (
-            <div key={step.num} className="flex gap-4 py-4">
-              <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-orange-500 to-rose-500 text-sm font-bold text-white">
-                {step.num}
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900">{step.title}</h3>
-                <p className="text-sm text-slate-600">{step.desc}</p>
-              </div>
-            </div>
-          ))}
         </div>
 
         <Divider />
@@ -537,6 +666,41 @@ export default function AboutCampfirePage() {
             icon="💝"
             name="Love & Gratitude Series"
             desc="Appreciation shares, compliment exchanges, and love-letter submissions."
+          />
+        </div>
+
+        <Divider />
+
+        {/* ── Good to Know (FAQ) ── */}
+        <SectionHeader
+          eyebrow="Good to Know"
+          title="Quick answers before you jump in"
+          desc="The things first-timers usually wonder about."
+        />
+        <div className="grid gap-4 md:grid-cols-2">
+          <Faq
+            q="Do I need an account?"
+            a="Yes, a quick one — so the app knows who's responded and can keep the envelope sealed until everyone's in. Continuing with Google is the fastest way."
+          />
+          <Faq
+            q="Is it free?"
+            a="You start with a free trial that gives you full access. After that there's an optional premium plan, but everything you need to join in and play is available from day one."
+          />
+          <Faq
+            q="Can people see my answer before I'm ready?"
+            a="No. That's the whole point. Your response stays sealed — even from the person who started the engagement — until the last group member has responded."
+          />
+          <Faq
+            q="What if I want to answer honestly but privately?"
+            a="Many engagements can be set to blind mode, where answers reveal without showing whose is whose. Great for honest check-ins and unbiased judging."
+          />
+          <Faq
+            q="What happens if someone doesn't respond?"
+            a="The engagement waits on them, and anyone can send a gentle nudge. Some engagements have a deadline, so the reveal still happens on time."
+          />
+          <Faq
+            q="How do I join the group my teacher set up?"
+            a="Just tap the invite link they shared or scan the QR code on the screen. It drops you straight into the right group — no code to type."
           />
         </div>
 
@@ -676,23 +840,37 @@ export default function AboutCampfirePage() {
             desc="Blind responses, opt-in random guests, and adult content controls put users in charge."
           />
         </div>
+
+        <Divider />
+
+        {/* ── Recap ── */}
+        <div className="rounded-3xl border border-slate-200 bg-white p-7 shadow-sm">
+          <h2 className="text-2xl font-extrabold text-slate-900">
+            The whole thing in one sentence
+          </h2>
+          <p className="mt-3 text-lg text-slate-700 leading-relaxed">
+            Join a group → answer the question →{" "}
+            <strong className="text-orange-600">
+              everyone&apos;s answers unlock together
+            </strong>{" "}
+            the moment the last person responds. That&apos;s Campfire.
+          </p>
+        </div>
       </section>
 
       {/* ── CTA ── */}
       <section className="mt-12">
         <div className="bg-gradient-to-r from-orange-500 to-rose-500 py-16 px-6 text-center text-white">
-          <h2 className="text-3xl font-extrabold mb-3">
-            Ready to bring your group to life?
-          </h2>
+          <h2 className="text-3xl font-extrabold mb-3">Ready to jump in?</h2>
           <p className="text-white/90 max-w-lg mx-auto mb-6">
-            Campfire is currently in development. Try the interactive prototype or
-            get in touch to discuss investment and partnership opportunities.
+            Sign in, join your group, and answer your first question. The reveal is
+            waiting on the other side.
           </p>
           <Link
-            href="/campfire"
+            href="/campfirelive"
             className="inline-block rounded-full bg-white px-8 py-3 text-sm font-bold text-orange-600 shadow-md hover:opacity-90"
           >
-            Try the Prototype
+            Get started
           </Link>
         </div>
       </section>
