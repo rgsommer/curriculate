@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCreateEngagement } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
+import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
 export default function NewEngagementPage() {
   const params = useParams();
@@ -25,6 +26,17 @@ export default function NewEngagementPage() {
 
   const handleSelectType = (type: EngagementType) => {
     setSelectedType(type);
+    setStep("details");
+  };
+
+  const applyTemplate = (t: EngagementTemplate) => {
+    setSelectedType(t.type);
+    setTitle(t.title);
+    setDescription(t.description ?? "");
+    if (t.type === "poll") {
+      const opts = t.options ?? [];
+      setPollOptions(opts.length >= 2 ? opts : [...opts, "", ""].slice(0, 3));
+    }
     setStep("details");
   };
 
@@ -82,7 +94,35 @@ export default function NewEngagementPage() {
       {/* Step 1: Choose Type */}
       {step === "type" && (
         <div>
-          <p className="text-slate-500 mb-4">What kind of engagement?</p>
+          {/* Templates — start from a ready-made one */}
+          <div className="mb-8 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
+            <p className="text-sm font-semibold text-slate-700 mb-3">
+              ⚡ Start from a template
+            </p>
+            <div className="space-y-4">
+              {TEMPLATE_PACKS.map((pack) => (
+                <div key={pack.id}>
+                  <div className="text-xs font-semibold text-slate-500 mb-1.5">
+                    {pack.emoji} {pack.name}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {pack.templates.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => applyTemplate(t)}
+                        title={t.title}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:border-orange-300 hover:bg-orange-50"
+                      >
+                        {ENGAGEMENT_TYPES[t.type].icon} {t.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-slate-500 mb-4">…or start from scratch — what kind of engagement?</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {(Object.entries(ENGAGEMENT_TYPES) as [EngagementType, typeof ENGAGEMENT_TYPES[EngagementType]][]).map(
               ([type, meta]) => (

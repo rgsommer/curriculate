@@ -20,6 +20,7 @@ export default function GroupDetailPage() {
   const [emailInput, setEmailInput] = useState("");
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
+  const [showAnalytics, setShowAnalytics] = useState(false);
 
   // Real-time updates
   const handleUpdate = useCallback(() => {
@@ -145,6 +146,21 @@ See you around the campfire! 🏕️`
   const revealedEngagements = engagements.filter((e) => e.status === "revealed");
   const filteredEngagements =
     tab === "active" ? activeEngagements : tab === "revealed" ? revealedEngagements : engagements;
+
+  const isAdmin = members.find((m) => m.user_id === user?.id)?.role === "admin";
+  const partRates = engagements
+    .filter((e) => e.total_expected > 0)
+    .map((e) => e.response_count / e.total_expected);
+  const avgParticipation = partRates.length
+    ? Math.round((100 * partRates.reduce((a, b) => a + b, 0)) / partRates.length)
+    : 0;
+  const invitesJoined = invitations.filter((i) => i.status === "joined").length;
+  const invitesTotal = invitations.filter((i) => i.status !== "revoked").length;
+  const streakBoard = [...streaks]
+    .sort((a, b) => b.current_streak - a.current_streak)
+    .slice(0, 5);
+  const nameFor = (uid: string) =>
+    members.find((m) => m.user_id === uid)?.profile?.display_name ?? "Member";
 
   return (
     <div>
@@ -357,6 +373,61 @@ See you around the campfire! 🏕️`
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Host analytics (admins only) */}
+      {isAdmin && (
+        <div className="mb-6">
+          <button
+            onClick={() => setShowAnalytics((v) => !v)}
+            className="text-sm font-semibold text-slate-600 hover:text-slate-900"
+          >
+            📊 Host analytics {showAnalytics ? "▲" : "▼"}
+          </button>
+          {showAnalytics && (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <div className="text-xl font-bold text-slate-900">{avgParticipation}%</div>
+                  <div className="text-xs text-slate-500">Avg participation</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <div className="text-xl font-bold text-slate-900">{activeEngagements.length}</div>
+                  <div className="text-xs text-slate-500">Active</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <div className="text-xl font-bold text-slate-900">{revealedEngagements.length}</div>
+                  <div className="text-xs text-slate-500">Revealed</div>
+                </div>
+                <div className="rounded-xl bg-slate-50 p-3 text-center">
+                  <div className="text-xl font-bold text-slate-900">
+                    {invitesTotal > 0 ? `${invitesJoined}/${invitesTotal}` : "—"}
+                  </div>
+                  <div className="text-xs text-slate-500">Invites joined</div>
+                </div>
+              </div>
+              {streakBoard.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-slate-500 mb-2">
+                    🔥 Streak leaderboard
+                  </div>
+                  <div className="grid gap-1">
+                    {streakBoard.map((s, i) => (
+                      <div key={s.user_id} className="flex items-center justify-between text-sm">
+                        <span className="text-slate-700">
+                          {i + 1}. {nameFor(s.user_id)}
+                        </span>
+                        <span className="font-semibold text-orange-600">
+                          {s.current_streak} 🔥
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
