@@ -146,7 +146,7 @@ export function useGroup(groupId: string) {
         .eq("group_id", groupId),
       supabase
         .from("engagements")
-        .select("*")
+        .select("*, creator:profiles!creator_id(display_name)")
         .eq("group_id", groupId)
         .order("created_at", { ascending: false }),
       supabase
@@ -204,7 +204,7 @@ export function useEngagement(engagementId: string) {
 
     const { data: eng } = await supabase
       .from("engagements")
-      .select("*")
+      .select("*, creator:profiles!creator_id(display_name)")
       .eq("id", engagementId)
       .single();
 

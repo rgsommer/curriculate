@@ -463,21 +463,26 @@ export default function EngagementDetailPage() {
               </div>
             ) : (
               <>
+                <p className="text-xs font-semibold text-orange-600">
+                  {isCreator
+                    ? "Your"
+                    : `${engagement.creator?.display_name ?? "Someone"}'s`}{" "}
+                  {meta?.label ?? engagement.type}
+                </p>
                 <div className="flex items-start gap-2">
                   <h1 className="text-xl font-extrabold text-slate-900">{engagement.title}</h1>
                   {canEdit && (
                     <button
                       onClick={startEdit}
                       title="Edit prompt"
-                      className="mt-0.5 flex-shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                      className="mt-1 flex-shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
                     >
                       ✏️ Edit
                     </button>
                   )}
                 </div>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  {meta?.label ?? engagement.type} · Created{" "}
-                  {new Date(engagement.created_at).toLocaleDateString()}
+                  Created {new Date(engagement.created_at).toLocaleDateString()}
                   {engagement.is_blind && " · 🙈 Blind mode"}
                 </p>
               </>

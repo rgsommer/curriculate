@@ -68,6 +68,8 @@ export interface Engagement {
   parent_id: string | null;
   chain_next_creator_id: string | null;
   created_at: string;
+  // Joined: the originator's display name (for "Name's Type" headers)
+  creator?: { display_name: string } | null;
 }
 
 export interface Response {
