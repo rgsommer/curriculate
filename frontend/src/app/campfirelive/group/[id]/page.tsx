@@ -10,12 +10,16 @@ import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
 export default function GroupDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { group, members, engagements, streaks, loading, refresh } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
+  const [showEmailInvite, setShowEmailInvite] = useState(false);
+  const [emailInput, setEmailInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const [inviteResult, setInviteResult] = useState<string | null>(null);
 
   // Real-time updates
   const handleUpdate = useCallback(() => {
@@ -56,6 +60,40 @@ See you around the campfire! 🏕️`
     navigator.clipboard.writeText(joinUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const sendEmailInvites = async () => {
+    if (!group || !session) return;
+    const emails = emailInput
+      .split(/[\s,;]+/)
+      .map((e) => e.trim())
+      .filter(Boolean);
+    if (emails.length === 0) {
+      setInviteResult("Enter at least one email address.");
+      return;
+    }
+    setSending(true);
+    setInviteResult(null);
+    try {
+      const res = await fetch("/api/campfire/invite", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ groupId, emails, origin: window.location.origin }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setInviteResult(data.error || "Couldn't send invites.");
+      } else {
+        setInviteResult(`✓ Sent ${data.sent} invite${data.sent === 1 ? "" : "s"}!`);
+        setEmailInput("");
+      }
+    } catch {
+      setInviteResult("Couldn't send invites. Try again.");
+    }
+    setSending(false);
   };
 
   if (loading) {
@@ -128,14 +166,57 @@ See you around the campfire! 🏕️`
             {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy invite"}
           </button>
           <button
+            onClick={() => setShowEmailInvite((v) => !v)}
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            ✉️ Email invites
+          </button>
+          <button
             onClick={() => setShowMembers(!showMembers)}
             className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             {showMembers ? "Hide" : "Show"} Members
           </button>
         </div>
+
+        {/* Email-invite form */}
+        {showEmailInvite && (
+          <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Invite by email — one or more, separated by commas or spaces. We&apos;ll
+              send each person a join link and quick instructions.
+            </label>
+            <textarea
+              value={emailInput}
+              onChange={(e) => setEmailInput(e.target.value)}
+              rows={3}
+              placeholder="alex@example.com, jordan@example.com"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
+            />
+            <div className="mt-2 flex items-center gap-3">
+              <button
+                onClick={sendEmailInvites}
+                disabled={sending || !emailInput.trim()}
+                className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
+              >
+                {sending ? "Sending..." : "Send email invites"}
+              </button>
+              {inviteResult && (
+                <span
+                  className={`text-xs font-medium ${
+                    inviteResult.startsWith("✓") ? "text-green-600" : "text-red-600"
+                  }`}
+                >
+                  {inviteResult}
+                </span>
+              )}
+            </div>
+            <p className="mt-2 text-[11px] text-slate-400">Up to 50 at a time.</p>
+          </div>
+        )}
+
         <p className="mt-3 text-xs text-slate-500">
-          Copies a friendly invite with the join link + instructions — ready to
+          Or copy a friendly invite with the join link + instructions — ready to
           paste into email, iMessage, or WhatsApp.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
