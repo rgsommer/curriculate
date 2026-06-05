@@ -6,16 +6,20 @@ of the three products into product-specific files at the repo root:
     feedback-curriculate.txt   (student practice / scavenger hunts)
     feedback-fieldday.txt      (Field Day app)
     feedback-grading.txt       (Pulse Grading — when wired up backend-side)
+    feedback-subs.txt          (Curriculate Subs)
+    feedback-campfire.txt      (Campfire — when wired up backend-side)
 
 Run from the project root:
     python feedback.py             (interactive menu)
-    python feedback.py pull        (pull ALL three products)
+    python feedback.py pull        (pull ALL products)
     python feedback.py pull fieldday
     python feedback.py pull curriculate
     python feedback.py pull grading
+    python feedback.py pull campfire
     python feedback.py clear fieldday      (wipes everything)
     python feedback.py clear curriculate
     python feedback.py clear grading
+    python feedback.py clear campfire
     python feedback.py token
 
 Token is read in this order: $ADMIN_API_TOKEN env var → ./.feedback-token
@@ -56,6 +60,12 @@ PRODUCTS = {
         "export_url": "/api/subs-feedback/feedback-export",
         "clear_url":  "/api/subs-feedback/feedback-clear",
         "out_file":   os.path.join(ROOT_DIR, "feedback-subs.txt"),
+    },
+    "campfire": {
+        "label":      "Campfire (group engagement)",
+        "export_url": "/api/campfire/feedback-export",
+        "clear_url":  "/api/campfire/feedback-clear",
+        "out_file":   os.path.join(ROOT_DIR, "feedback-campfire.txt"),
     },
 }
 
@@ -197,21 +207,23 @@ def show_menu():
     print("│   3. Pull Field Day feedback                    │")
     print("│   4. Pull Pulse Grading feedback                │")
     print("│   5. Pull Curriculate Subs feedback             │")
-    print("│   6. Clear feedback (per product)               │")
-    print(f"│   7. Update API token  ({status:>7})              │")
-    print("│   8. Exit                                       │")
+    print("│   6. Pull Campfire feedback                     │")
+    print("│   7. Clear feedback (per product)               │")
+    print(f"│   8. Update API token  ({status:>7})              │")
+    print("│   9. Exit                                       │")
     print("└─────────────────────────────────────────────────┘")
 
 def interactive():
     while True:
         show_menu()
-        choice = input("\nChoice (1-8): ").strip()
+        choice = input("\nChoice (1-9): ").strip()
         if   choice == "1": pull_all()
         elif choice == "2": pull_one("curriculate")
         elif choice == "3": pull_one("fieldday")
         elif choice == "4": pull_one("grading")
         elif choice == "5": pull_one("subs")
-        elif choice == "6":
+        elif choice == "6": pull_one("campfire")
+        elif choice == "7":
             print("\nWhich product to clear?")
             keys = list(PRODUCTS.keys())
             for i, k in enumerate(keys, 1):
@@ -220,9 +232,9 @@ def interactive():
             sub = input("Choice: ").strip()
             if sub.isdigit() and 1 <= int(sub) <= len(keys):
                 clear_one(keys[int(sub)-1])
-        elif choice == "7": update_token()
-        elif choice == "8": print("Bye!"); break
-        else: print("Pick 1-8.")
+        elif choice == "8": update_token()
+        elif choice == "9": print("Bye!"); break
+        else: print("Pick 1-9.")
 
 # ---------------------------------------------------------------- main --
 
