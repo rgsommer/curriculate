@@ -20,6 +20,7 @@ export default function NewEngagementPage() {
   const [reveal, setReveal] = useState<RevealMode>("sealed");
   const [isBlind, setIsBlind] = useState(false);
   const [deadline, setDeadline] = useState("");
+  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -70,6 +71,7 @@ export default function NewEngagementPage() {
       deadline: deadline ? new Date(deadline) : undefined,
       reveal,
       is_blind: isBlind,
+      recurrence_rule: recurrence === "none" ? undefined : recurrence,
     });
 
     if (result.error) {
@@ -319,6 +321,38 @@ export default function NewEngagementPage() {
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
               />
+            </div>
+
+            {/* Repeat */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Repeat <span className="text-slate-400">(optional)</span>
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: "none" as const, label: "Once" },
+                  { value: "daily" as const, label: "🔁 Daily" },
+                  { value: "weekly" as const, label: "🔁 Weekly" },
+                ].map((r) => (
+                  <button
+                    key={r.value}
+                    onClick={() => setRecurrence(r.value)}
+                    className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                      recurrence === r.value
+                        ? "border-orange-500 bg-orange-50 text-slate-900"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                    }`}
+                  >
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+              {recurrence !== "none" && (
+                <p className="mt-1.5 text-xs text-slate-500">
+                  A fresh copy auto-posts to the group every{" "}
+                  {recurrence === "daily" ? "day" : "week"} after this one wraps.
+                </p>
+              )}
             </div>
 
             {error && (

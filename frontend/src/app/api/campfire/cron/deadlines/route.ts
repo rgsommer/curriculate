@@ -128,5 +128,44 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, revealed, nudged });
+  // ── Recurring: spawn the next instance for completed recurring engagements ──
+  let spawned = 0;
+  const { data: recs } = await admin
+    .from("engagements")
+    .select(
+      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at"
+    )
+    .not("recurrence_rule", "is", null)
+    .in("status", ["revealed", "expired"]);
+
+  for (const e of recs ?? []) {
+    // Only the tail of a chain spawns (skip if it already has a child).
+    const { count: childCount } = await admin
+      .from("engagements")
+      .select("*", { count: "exact", head: true })
+      .eq("parent_id", e.id);
+    if (childCount && childCount > 0) continue;
+
+    const intervalMs =
+      e.recurrence_rule === "weekly" ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    if (now < new Date(e.created_at as string).getTime() + intervalMs) continue;
+
+    await admin.from("engagements").insert({
+      group_id: e.group_id,
+      creator_id: e.creator_id,
+      type: e.type,
+      title: e.title,
+      description: e.description,
+      config: e.config,
+      reveal: e.reveal,
+      is_blind: e.is_blind,
+      recurrence_rule: e.recurrence_rule,
+      parent_id: e.id,
+      status: "active",
+      deadline: new Date(now + intervalMs).toISOString(),
+    });
+    spawned++;
+  }
+
+  return NextResponse.json({ ok: true, revealed, nudged, spawned });
 }
