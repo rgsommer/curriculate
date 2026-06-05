@@ -701,6 +701,25 @@ export default function EngagementDetailPage() {
           </div>
         </div>
       )}
+
+      {/* ── Your turn: nudge the participant to start their own ── */}
+      {(hasResponded || isRevealed) && (
+        <Link
+          href={`/campfirelive/group/${groupId}/engagement/new`}
+          className="block rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/60 p-5 text-center hover:bg-orange-50 transition mb-6"
+        >
+          <div className="text-2xl mb-1">🔥</div>
+          <div className="font-bold text-slate-900">
+            {isRevealed ? "Your turn — start the next one" : "While you wait, start your own"}
+          </div>
+          <p className="text-sm text-slate-600 mt-0.5">
+            Pose a question, challenge, or check-in and keep the group going.
+          </p>
+          <span className="inline-block mt-3 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white">
+            + Start an engagement
+          </span>
+        </Link>
+      )}
     </div>
   );
 }
