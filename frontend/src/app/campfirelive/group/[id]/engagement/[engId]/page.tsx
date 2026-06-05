@@ -8,6 +8,51 @@ import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 
+// ── Canvas helpers for the shareable results card ──
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+function wrapText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number
+) {
+  const words = text.split(/\s+/);
+  let line = "";
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      ctx.fillText(line, x, y);
+      y += lineHeight;
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) {
+    ctx.fillText(line, x, y);
+    y += lineHeight;
+  }
+  return y;
+}
+
 export default function EngagementDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
@@ -178,6 +223,84 @@ export default function EngagementDetailPage() {
     } catch {
       setNudgeMsg("Couldn't send nudges.");
     }
+  };
+
+  // Build & download a shareable PNG of the revealed results.
+  const shareResults = () => {
+    const W = 1080;
+    const H = 1350;
+    const c = document.createElement("canvas");
+    c.width = W;
+    c.height = H;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#f97316");
+    g.addColorStop(1, "#e11d48");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.font = "bold 46px system-ui, -apple-system, sans-serif";
+    ctx.fillText("🔥 Campfire", 80, 80);
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 66px system-ui, -apple-system, sans-serif";
+    let y = wrapText(ctx, engagement.title, 80, 190, W - 160, 80) + 40;
+
+    if (engagement.type === "poll") {
+      const votes: Record<string, number> = {};
+      pollOptions.forEach((o) => (votes[o] = 0));
+      responses.forEach((r) => {
+        const o = (r.content as Record<string, unknown>)?.option as string;
+        if (o) votes[o] = (votes[o] ?? 0) + 1;
+      });
+      const total = responses.length || 1;
+      pollOptions.forEach((o) => {
+        const pct = Math.round(((votes[o] ?? 0) / total) * 100);
+        ctx.font = "bold 42px system-ui, -apple-system, sans-serif";
+        ctx.fillStyle = "#ffffff";
+        ctx.textAlign = "left";
+        ctx.fillText(o.length > 24 ? o.slice(0, 23) + "…" : o, 80, y);
+        ctx.textAlign = "right";
+        ctx.fillText(`${pct}%`, W - 80, y);
+        ctx.textAlign = "left";
+        y += 60;
+        ctx.fillStyle = "rgba(255,255,255,0.25)";
+        roundRectPath(ctx, 80, y, W - 160, 36, 18);
+        ctx.fill();
+        ctx.fillStyle = "#ffffff";
+        roundRectPath(ctx, 80, y, (W - 160) * (pct / 100), 36, 18);
+        ctx.fill();
+        y += 84;
+      });
+    } else {
+      ctx.font = "bold 50px system-ui, -apple-system, sans-serif";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(`${responses.length} responses revealed`, 80, y);
+      y += 84;
+      if (winnerUserId) {
+        const wn = responses.find((r) => r.user_id === winnerUserId)?.profile?.display_name;
+        if (wn) ctx.fillText(`🏆 ${engagement.is_blind ? "Anonymous" : wn}`, 80, y);
+      }
+    }
+
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.font = "36px system-ui, -apple-system, sans-serif";
+    ctx.textAlign = "left";
+    ctx.fillText("curriculate.net/campfire", 80, H - 90);
+
+    c.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `campfire-${engagementId.slice(0, 8)}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
   };
 
   // ── Submit handlers ──
@@ -767,13 +890,23 @@ export default function EngagementDetailPage() {
       {/* ── RESULTS (revealed, or live as-they-come / instant) ── */}
       {showResults && (
         <div className="mb-6">
-          <h2 className="text-lg font-bold text-slate-900 mb-4">
-            {justRevealed
-              ? "🎉 Results Are In!"
-              : isRevealed
-              ? "Results"
-              : "Live results"}
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-slate-900">
+              {justRevealed
+                ? "🎉 Results Are In!"
+                : isRevealed
+                ? "Results"
+                : "Live results"}
+            </h2>
+            {isRevealed && (
+              <button
+                onClick={shareResults}
+                className="rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                📤 Share
+              </button>
+            )}
+          </div>
           {!isRevealed && liveMode && (
             <p className="-mt-2 mb-4 text-xs text-slate-500">
               {engagement.reveal === "instant"

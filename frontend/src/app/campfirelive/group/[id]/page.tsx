@@ -162,6 +162,21 @@ See you around the campfire! 🏕️`
   const nameFor = (uid: string) =>
     members.find((m) => m.user_id === uid)?.profile?.display_name ?? "Member";
 
+  // Your earned badges (client-computed from group activity).
+  const myCurrentStreak = myStreak?.current_streak ?? 0;
+  const topStreak = streaks.reduce((m, s) => Math.max(m, s.current_streak), 0);
+  const iRecruited = invitations.some(
+    (i) => i.invited_by === user?.id && i.status === "joined"
+  );
+  const myBadges = [
+    myCurrentStreak >= 3 && { e: "🔥", t: "On a roll" },
+    myCurrentStreak >= 7 && { e: "⚡", t: "Week streak" },
+    myCurrentStreak > 0 && myCurrentStreak === topStreak && { e: "🏆", t: "Streak leader" },
+    isAdmin && { e: "⭐", t: "Group host" },
+    iRecruited && { e: "📣", t: "Recruiter" },
+    engagements.length > 0 && avgParticipation === 100 && { e: "💯", t: "100% crew" },
+  ].filter(Boolean) as { e: string; t: string }[];
+
   return (
     <div>
       {/* Group Header */}
@@ -195,6 +210,21 @@ See you around the campfire! 🏕️`
           <div className="text-xs text-slate-500">Your Streak</div>
         </div>
       </div>
+
+      {/* Your badges */}
+      {myBadges.length > 0 && (
+        <div className="mb-6 flex flex-wrap items-center gap-2">
+          <span className="text-xs font-semibold text-slate-500">Your badges:</span>
+          {myBadges.map((b) => (
+            <span
+              key={b.t}
+              className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800"
+            >
+              {b.e} {b.t}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* Invite + Members */}
       <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
