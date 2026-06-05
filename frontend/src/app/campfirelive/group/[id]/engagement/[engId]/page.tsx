@@ -815,6 +815,31 @@ export default function EngagementDetailPage() {
         )}
       </div>
 
+      {/* ── CREATOR CONTROL: force the reveal / end the engagement anytime ── */}
+      {isCreator && engagement.status === "active" && (
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                You started this — you control the reveal
+              </div>
+              <p className="text-xs text-slate-500">
+                {responseCount} of {engagement.total_expected} responded.
+                {engagement.reveal === "all_at_once"
+                  ? " Reveal whenever you're ready."
+                  : " Nudged everyone and some won't respond? End it early and reveal."}
+              </p>
+            </div>
+            <button
+              onClick={revealNow}
+              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              🎬 Reveal now
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── SEALED STATE: Waiting for everyone ── */}
       {isSealed && hasResponded && !allIn && (
         <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-6 mb-6">
@@ -884,28 +909,19 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {/* ── ALL-AT-ONCE: waiting for the creator to trigger the reveal ── */}
-      {awaitingCreatorReveal && hasResponded && (
+      {/* ── ALL-AT-ONCE: non-creators wait for the creator (creator has the control above) ── */}
+      {awaitingCreatorReveal && hasResponded && !isCreator && (
         <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-6 mb-6">
-          <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-3">
             <span className="text-3xl">🎬</span>
             <div>
               <h2 className="font-bold text-amber-900">Waiting for the reveal</h2>
               <p className="text-sm text-amber-700">
-                {responseCount} of {engagement.total_expected} responded.{" "}
-                {isCreator ? "You" : "The creator"} can reveal whenever you&apos;re
-                ready — it doesn&apos;t wait for everyone.
+                {responseCount} of {engagement.total_expected} responded. The creator
+                will reveal the results.
               </p>
             </div>
           </div>
-          {isCreator && (
-            <button
-              onClick={revealNow}
-              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
-            >
-              🎬 Reveal now ({responseCount} in)
-            </button>
-          )}
         </div>
       )}
 
