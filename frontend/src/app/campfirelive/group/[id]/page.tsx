@@ -11,7 +11,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, loading, refresh } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -87,14 +87,38 @@ See you around the campfire! 🏕️`
       if (!res.ok) {
         setInviteResult(data.error || "Couldn't send invites.");
       } else {
-        setInviteResult(`✓ Sent ${data.sent} invite${data.sent === 1 ? "" : "s"}!`);
+        setInviteResult(
+          `✓ Sent ${data.sent} invite${data.sent === 1 ? "" : "s"}! They'll get an email — you can share the link below too and tell them to check their inbox.`
+        );
         setEmailInput("");
+        await refresh();
       }
     } catch {
       setInviteResult("Couldn't send invites. Try again.");
     }
     setSending(false);
   };
+
+  // Nudge / revoke tracked invitations (creator actions).
+  const inviteAction = async (path: string, emails?: string[]) => {
+    if (!group || !session) return;
+    try {
+      await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ groupId, emails, origin: window.location.origin }),
+      });
+    } catch {
+      /* surfaced via refreshed list */
+    }
+    await refresh();
+  };
+  const nudgeOne = (email: string) => inviteAction("/api/campfire/invite/nudge", [email]);
+  const nudgeAllPending = () => inviteAction("/api/campfire/invite/nudge");
+  const revokeOne = (email: string) => inviteAction("/api/campfire/invite/revoke", [email]);
 
   if (loading) {
     return (
@@ -233,6 +257,75 @@ See you around the campfire! 🏕️`
             code <span className="font-mono font-semibold text-slate-700">{group.invite_code}</span>
           </span>
         </div>
+
+        <p className="mt-2 text-[11px] text-orange-700/80">
+          💡 Tip: emailing invites lets you track who joined and nudge anyone who
+          hasn&apos;t — a pasted link can&apos;t do that.
+        </p>
+
+        {/* Tracked invitations */}
+        {invitations.length > 0 && (
+          <div className="mt-3 border-t border-orange-100 pt-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-slate-600">
+                Invitations ({invitations.filter((i) => i.status === "joined").length}/
+                {invitations.filter((i) => i.status !== "revoked").length} joined)
+              </span>
+              {invitations.some((i) => i.status === "pending") && (
+                <button
+                  onClick={nudgeAllPending}
+                  className="text-xs font-semibold text-orange-600 hover:underline"
+                >
+                  👋 Nudge all pending
+                </button>
+              )}
+            </div>
+            <div className="grid gap-1">
+              {invitations.map((inv) => (
+                <div
+                  key={inv.id}
+                  className="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span
+                    className={`truncate ${
+                      inv.status === "revoked" ? "text-slate-400 line-through" : "text-slate-700"
+                    }`}
+                  >
+                    {inv.email}
+                  </span>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    {inv.status === "joined" && (
+                      <span className="font-medium text-green-600">✓ joined</span>
+                    )}
+                    {inv.status === "revoked" && (
+                      <span className="text-slate-400">revoked</span>
+                    )}
+                    {inv.status === "pending" && (
+                      <>
+                        <span className="text-amber-600">
+                          pending
+                          {inv.nudge_count > 0 ? ` · nudged ${inv.nudge_count}×` : ""}
+                        </span>
+                        <button
+                          onClick={() => nudgeOne(inv.email)}
+                          className="text-orange-600 hover:underline"
+                        >
+                          nudge
+                        </button>
+                        <button
+                          onClick={() => revokeOne(inv.email)}
+                          className="text-slate-400 hover:text-red-600 hover:underline"
+                        >
+                          revoke
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Members panel */}

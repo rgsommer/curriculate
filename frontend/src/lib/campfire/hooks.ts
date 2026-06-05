@@ -12,6 +12,7 @@ import type {
   Reaction,
   Comment,
   Streak,
+  Invitation,
   EngagementType,
   RevealMode,
 } from "./types";
@@ -132,13 +133,14 @@ export function useGroup(groupId: string) {
   const [members, setMembers] = useState<(GroupMember & { profile: Profile })[]>([]);
   const [engagements, setEngagements] = useState<(Engagement & { response_count: number })[]>([]);
   const [streaks, setStreaks] = useState<Streak[]>([]);
+  const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchGroup = useCallback(async () => {
     if (!user || !groupId) return;
     setLoading(true);
 
-    const [groupRes, membersRes, engRes, streakRes] = await Promise.all([
+    const [groupRes, membersRes, engRes, streakRes, invRes] = await Promise.all([
       supabase.from("groups").select("*").eq("id", groupId).single(),
       supabase
         .from("group_members")
@@ -153,6 +155,11 @@ export function useGroup(groupId: string) {
         .from("streaks")
         .select("*")
         .eq("group_id", groupId),
+      supabase
+        .from("campfire_invitations")
+        .select("*")
+        .eq("group_id", groupId)
+        .order("created_at", { ascending: true }),
     ]);
 
     if (groupRes.data) setGroup(groupRes.data as Group);
@@ -176,6 +183,7 @@ export function useGroup(groupId: string) {
     }
 
     if (streakRes.data) setStreaks(streakRes.data as Streak[]);
+    if (invRes.data) setInvitations(invRes.data as Invitation[]);
     setLoading(false);
   }, [user, groupId]);
 
@@ -183,7 +191,7 @@ export function useGroup(groupId: string) {
     fetchGroup();
   }, [fetchGroup]);
 
-  return { group, members, engagements, streaks, loading, refresh: fetchGroup };
+  return { group, members, engagements, streaks, invitations, loading, refresh: fetchGroup };
 }
 
 // ── Engagement Detail (with sealed reveal) ──

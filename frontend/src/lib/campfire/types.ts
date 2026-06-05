@@ -140,6 +140,18 @@ export interface EngagementWithResponses extends Engagement {
   creator: Profile;
 }
 
+export interface Invitation {
+  id: string;
+  group_id: string;
+  email: string;
+  invited_by: string | null;
+  status: "pending" | "joined" | "revoked";
+  created_at: string;
+  joined_at: string | null;
+  last_nudged_at: string | null;
+  nudge_count: number;
+}
+
 // ── Engagement type metadata ──
 // `description` = factual (used in the create flow).
 // `hook` = a short, enticing one-liner shown on cards to pull people in.
