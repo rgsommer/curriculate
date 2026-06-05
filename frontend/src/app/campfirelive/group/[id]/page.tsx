@@ -461,13 +461,23 @@ See you around the campfire! 🏕️`
         </div>
       )}
 
-      {/* New Engagement button */}
-      <div className="mb-6">
+      {/* Start-your-own promo — turns every member (esp. new joiners) into a starter */}
+      <div className="mb-6 rounded-2xl border-2 border-dashed border-orange-300 bg-orange-50/60 p-5 text-center">
+        <div className="text-2xl mb-1">🔥</div>
+        <div className="font-bold text-slate-900">
+          {activeEngagements.length === 0
+            ? "Be the first to spark something"
+            : "Your turn to spark something"}
+        </div>
+        <p className="mt-0.5 mb-3 text-sm text-slate-600">
+          Anyone can start an engagement — a question, a challenge, a check-in.
+          Nobody sees the answers until everyone&apos;s in.
+        </p>
         <Link
           href={`/campfirelive/group/${groupId}/engagement/new`}
-          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
         >
-          + New Engagement
+          + Start an engagement
         </Link>
       </div>
 

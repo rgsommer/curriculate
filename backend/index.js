@@ -147,6 +147,7 @@ import subsAuthRouter from "./routes/subsAuth.js";
 import subsAdminRouter from "./routes/subsAdmin.js";
 import subsTeacherRouter from "./routes/subsTeacher.js";
 import subsFeedbackRouter from "./routes/subsFeedback.js";
+import campfireFeedbackRouter from "./routes/campfireFeedback.js";
 import { startSubsEscalation } from "./jobs/subsEscalation.js";
 
 function renderEmailTemplate(str, vars) {
@@ -596,6 +597,7 @@ app.use("/api/subs-auth", authLimiter, subsAuthRouter);
 app.use("/api/subs-admin", subsAdminRouter);
 app.use("/api/subs-teacher", subsTeacherRouter);
 app.use("/api/subs-feedback", subsFeedbackRouter);
+app.use("/api/campfire", campfireFeedbackRouter);
 // Sequential escalation sweep — contacts preferred subs in rank order and
 // advances when an offer's interval elapses, even if nobody responds.
 startSubsEscalation();

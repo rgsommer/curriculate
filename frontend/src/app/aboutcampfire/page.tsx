@@ -266,6 +266,66 @@ export default function AboutCampfirePage() {
           }),
         }}
       />
+      {/* FAQ schema — for FAQ rich results */}
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{
+          __html: JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "FAQPage",
+            mainEntity: [
+              {
+                "@type": "Question",
+                name: "Do I need an account to use Campfire?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "Yes, a quick one — so the app knows who's responded and can keep the envelope sealed until everyone's in. Continuing with Google is the fastest way.",
+                },
+              },
+              {
+                "@type": "Question",
+                name: "Is Campfire free?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "You start with a free trial that gives you full access. After that there's an optional premium plan, but everything you need to join in and play is available from day one.",
+                },
+              },
+              {
+                "@type": "Question",
+                name: "Can people see my answer before I'm ready?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "No. Your response stays sealed — even from the person who started the engagement — until the last group member has responded.",
+                },
+              },
+              {
+                "@type": "Question",
+                name: "Can I answer honestly but privately?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "Many engagements can be set to blind mode, where answers reveal without showing whose is whose. Great for honest check-ins and unbiased judging.",
+                },
+              },
+              {
+                "@type": "Question",
+                name: "What happens if someone doesn't respond?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "The engagement waits on them, and anyone can send a gentle nudge. Some engagements have a deadline, so the reveal still happens on time.",
+                },
+              },
+              {
+                "@type": "Question",
+                name: "How do I join the group my teacher set up?",
+                acceptedAnswer: {
+                  "@type": "Answer",
+                  text: "Just tap the invite link they shared or scan the QR code on the screen. It drops you straight into the right group — no code to type.",
+                },
+              },
+            ],
+          }),
+        }}
+      />
 
       {/* ── Hero ── */}
       <section className="mx-auto max-w-6xl px-6 pt-16 pb-10">
