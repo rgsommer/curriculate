@@ -502,8 +502,10 @@ export default function EngagementDetailPage() {
           )}
         </div>
 
-        {!editing && engagement.description && (
-          <p className="text-sm text-slate-600 mb-4">{engagement.description}</p>
+        {!editing && (engagement.description?.trim() || meta?.hook) && (
+          <p className="text-sm text-slate-600 mb-4">
+            {engagement.description?.trim() || meta?.hook}
+          </p>
         )}
 
         {/* Progress */}

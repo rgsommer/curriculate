@@ -141,23 +141,25 @@ export interface EngagementWithResponses extends Engagement {
 }
 
 // ── Engagement type metadata ──
+// `description` = factual (used in the create flow).
+// `hook` = a short, enticing one-liner shown on cards to pull people in.
 export const ENGAGEMENT_TYPES: Record<
   EngagementType,
-  { icon: string; label: string; description: string; color: string }
+  { icon: string; label: string; description: string; hook: string; color: string }
 > = {
-  poll: { icon: "📊", label: "Poll", description: "Multiple choice, yes/no, or open questions", color: "bg-blue-50 text-blue-700" },
-  challenge: { icon: "🏆", label: "Challenge", description: "Video, photo, or task-based challenges with deadlines", color: "bg-amber-50 text-amber-700" },
-  truth_or_dare: { icon: "🎯", label: "Truth or Dare", description: "Classic game with optional real stakes", color: "bg-red-50 text-red-700" },
-  photo_pose: { icon: "📸", label: "Photo Pose", description: "Request a picture in a specific scenario", color: "bg-pink-50 text-pink-700" },
-  share: { icon: "💬", label: "Share", description: "Request a favourite recipe, memory, or anything meaningful", color: "bg-green-50 text-green-700" },
-  accountability: { icon: "🙏", label: "Accountability", description: "Structured check-in questions for distance groups", color: "bg-violet-50 text-violet-700" },
-  game: { icon: "♟️", label: "Game", description: "Turn-based games: chess, word games, spelling bees", color: "bg-indigo-50 text-indigo-700" },
-  instant: { icon: "🧠", label: "Instant", description: "Trivia, math, Pictionary — quick-fire fun", color: "bg-cyan-50 text-cyan-700" },
-  anonymous_judge: { icon: "⚖️", label: "Anonymous Judge", description: "Submit entries anonymously, group rates blind", color: "bg-slate-50 text-slate-700" },
-  guess: { icon: "🔍", label: "Guess", description: "Post a mystery photo for the group to guess", color: "bg-orange-50 text-orange-700" },
-  surprise: { icon: "🎉", label: "Surprise", description: "Coordinate greetings hidden from the recipient", color: "bg-yellow-50 text-yellow-700" },
-  advice: { icon: "💡", label: "Advice", description: "Ask your group for counsel", color: "bg-teal-50 text-teal-700" },
-  voice_response: { icon: "🎤", label: "Voice Response", description: "Leave voice notes instead of text", color: "bg-rose-50 text-rose-700" },
+  poll: { icon: "📊", label: "Poll", description: "Multiple choice, yes/no, or open questions", hook: "Cast your vote — nobody sees the tally until everyone's in.", color: "bg-blue-50 text-blue-700" },
+  challenge: { icon: "🏆", label: "Challenge", description: "Video, photo, or task-based challenges with deadlines", hook: "Show us what you've got — entries stay hidden until the big reveal.", color: "bg-amber-50 text-amber-700" },
+  truth_or_dare: { icon: "🎯", label: "Truth or Dare", description: "Classic game with optional real stakes", hook: "Truth or dare? Lock in your answer before anyone else can peek.", color: "bg-red-50 text-red-700" },
+  photo_pose: { icon: "📸", label: "Photo Pose", description: "Request a picture in a specific scenario", hook: "Strike the pose and snap it — every photo drops at the same moment.", color: "bg-pink-50 text-pink-700" },
+  share: { icon: "💬", label: "Share", description: "Request a favourite recipe, memory, or anything meaningful", hook: "Share yours — everyone's reveals together, all at once.", color: "bg-green-50 text-green-700" },
+  accountability: { icon: "🙏", label: "Accountability", description: "Structured check-in questions for distance groups", hook: "A quick, honest check-in — answers unlock together, no peeking.", color: "bg-violet-50 text-violet-700" },
+  game: { icon: "♟️", label: "Game", description: "Turn-based games: chess, word games, spelling bees", hook: "Your move — jump in and play.", color: "bg-indigo-50 text-indigo-700" },
+  instant: { icon: "🧠", label: "Instant", description: "Trivia, math, Pictionary — quick-fire fun", hook: "Quick-fire round — think fast and lock it in!", color: "bg-cyan-50 text-cyan-700" },
+  anonymous_judge: { icon: "⚖️", label: "Anonymous Judge", description: "Submit entries anonymously, group rates blind", hook: "Submit anonymously and let the group judge blind.", color: "bg-slate-50 text-slate-700" },
+  guess: { icon: "🔍", label: "Guess", description: "Post a mystery photo for the group to guess", hook: "Can you crack it? Take your guess before the reveal.", color: "bg-orange-50 text-orange-700" },
+  surprise: { icon: "🎉", label: "Surprise", description: "Coordinate greetings hidden from the recipient", hook: "Add your bit to a surprise they'll never see coming. 🤫", color: "bg-yellow-50 text-yellow-700" },
+  advice: { icon: "💡", label: "Advice", description: "Ask your group for counsel", hook: "Weigh in — the group wants your honest take.", color: "bg-teal-50 text-teal-700" },
+  voice_response: { icon: "🎤", label: "Voice Response", description: "Leave voice notes instead of text", hook: "Say it out loud — drop a quick voice note.", color: "bg-rose-50 text-rose-700" },
 };
 
 // ── Supabase Database type (simplified — use supabase gen types for full version) ──

@@ -254,7 +254,10 @@ See you around the campfire! 🏕️`
                         {meta?.label ?? eng.type}
                       </p>
                       <h3 className="font-bold text-slate-900">{eng.title}</h3>
-                      <p className="text-xs text-slate-500 mt-0.5">
+                      <p className="text-sm text-slate-600 mt-0.5">
+                        {eng.description?.trim() || meta?.hook}
+                      </p>
+                      <p className="text-xs text-slate-400 mt-1">
                         {new Date(eng.created_at).toLocaleDateString()}
                       </p>
                     </div>
