@@ -10,18 +10,27 @@ export default function JoinGroupPage() {
   const params = useParams();
   const code = params.code as string;
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading } = useAuth();
   const { joinGroup } = useGroups();
   const [status, setStatus] = useState<"loading" | "joining" | "success" | "error">("loading");
   const [error, setError] = useState("");
   const [groupId, setGroupId] = useState<string | null>(null);
 
+  // The invited address, carried from the email link (?inv=…).
+  const invEmail =
+    typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search).get("inv")
+      : null;
+
   useEffect(() => {
     if (authLoading) return;
 
     if (!user) {
-      // Send them to sign in, then come right back here to finish joining.
-      router.push(`/campfirelive/auth?next=${encodeURIComponent(`/campfirelive/join/${code}`)}`);
+      // Send them to sign in, then back here (preserving ?inv) to finish joining.
+      const joinPath = `/campfirelive/join/${code}${
+        invEmail ? `?inv=${encodeURIComponent(invEmail)}` : ""
+      }`;
+      router.push(`/campfirelive/auth?next=${encodeURIComponent(joinPath)}`);
       return;
     }
 
@@ -34,12 +43,23 @@ export default function JoinGroupPage() {
       } else {
         setStatus("success");
         setGroupId(result.groupId ?? null);
+        // Mark the email-invitation joined (handles sign-in with a different email).
+        if (invEmail && session && result.groupId) {
+          fetch("/api/campfire/invite/accept", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ groupId: result.groupId, email: invEmail }),
+          }).catch(() => {});
+        }
         setTimeout(() => {
           router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
         }, 1500);
       }
     });
-  }, [user, authLoading, code, joinGroup, router]);
+  }, [user, session, authLoading, code, invEmail, joinGroup, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 flex items-center justify-center p-6">

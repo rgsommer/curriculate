@@ -3,7 +3,9 @@ import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
 import {
   getNonResponderEmails,
+  getGroupMemberEmails,
   reminderEmail,
+  revealEmail,
   buildJoinUrl,
   inviteEmail,
 } from "@/lib/campfire/serverInvites";
@@ -167,5 +169,46 @@ export async function GET(req: Request) {
     spawned++;
   }
 
-  return NextResponse.json({ ok: true, revealed, nudged, spawned });
+  // ── Reveal emails: notify members of newly-revealed engagements that opted in ──
+  let notifiedReveals = 0;
+  const { data: toNotify } = await admin
+    .from("engagements")
+    .select("id, group_id, title")
+    .eq("status", "revealed")
+    .eq("notify", true)
+    .is("reveal_notified_at", null);
+
+  for (const e of toNotify ?? []) {
+    const emails = await getGroupMemberEmails(admin, e.group_id);
+    if (emails.length) {
+      const { data: group } = await admin
+        .from("groups")
+        .select("name")
+        .eq("id", e.group_id)
+        .single();
+      const m = revealEmail({
+        groupName: group?.name ?? "your group",
+        title: e.title,
+        url: `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`,
+      });
+      for (let i = 0; i < emails.length; i += 100) {
+        await resend.batch.send(
+          emails.slice(i, i + 100).map((to) => ({
+            from,
+            to: [to],
+            subject: m.subject,
+            text: m.text,
+            html: m.html,
+          }))
+        );
+      }
+    }
+    await admin
+      .from("engagements")
+      .update({ reveal_notified_at: new Date(now).toISOString() })
+      .eq("id", e.id);
+    notifiedReveals++;
+  }
+
+  return NextResponse.json({ ok: true, revealed, nudged, spawned, notifiedReveals });
 }

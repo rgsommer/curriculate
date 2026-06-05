@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCreateEngagement } from "@/lib/campfire/hooks";
+import { useAuth } from "@/lib/campfire/AuthProvider";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
@@ -12,6 +13,7 @@ export default function NewEngagementPage() {
   const groupId = params.id as string;
   const router = useRouter();
   const { create } = useCreateEngagement(groupId);
+  const { session } = useAuth();
 
   const [step, setStep] = useState<"type" | "details" | "options">("type");
   const [selectedType, setSelectedType] = useState<EngagementType | null>(null);
@@ -21,6 +23,7 @@ export default function NewEngagementPage() {
   const [isBlind, setIsBlind] = useState(false);
   const [deadline, setDeadline] = useState("");
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
+  const [notify, setNotify] = useState(false);
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -72,12 +75,25 @@ export default function NewEngagementPage() {
       reveal,
       is_blind: isBlind,
       recurrence_rule: recurrence === "none" ? undefined : recurrence,
+      notify,
     });
 
     if (result.error) {
       setError(result.error);
       setCreating(false);
     } else if (result.engagement) {
+      // Email the group right away that a new engagement is up (reuses the
+      // straggler-nudge route — nobody has responded yet, so it pings everyone).
+      if (notify && session) {
+        fetch("/api/campfire/engagement/nudge", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ engagementId: result.engagement.id }),
+        }).catch(() => {});
+      }
       router.push(`/campfirelive/group/${groupId}/engagement/${result.engagement.id}`);
     }
   };
@@ -353,6 +369,24 @@ export default function NewEngagementPage() {
                   {recurrence === "daily" ? "day" : "week"} after this one wraps.
                 </p>
               )}
+            </div>
+
+            {/* Email notifications */}
+            <div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={notify}
+                  onChange={(e) => setNotify(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-slate-700">📧 Email the group</div>
+                  <div className="text-xs text-slate-500">
+                    Email members now to respond, and again when the results reveal.
+                  </div>
+                </div>
+              </label>
             </div>
 
             {error && (

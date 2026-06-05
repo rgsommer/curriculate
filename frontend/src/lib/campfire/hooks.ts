@@ -400,6 +400,7 @@ export function useCreateEngagement(groupId: string) {
     reveal?: RevealMode;
     is_blind?: boolean;
     recurrence_rule?: string;
+    notify?: boolean;
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
 
@@ -416,6 +417,7 @@ export function useCreateEngagement(groupId: string) {
         reveal: params.reveal ?? "sealed",
         is_blind: params.is_blind ?? false,
         recurrence_rule: params.recurrence_rule ?? null,
+        notify: params.notify ?? false,
       })
       .select()
       .single();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
@@ -8,6 +8,10 @@ import { supabase } from "@/lib/campfire/supabase";
 export default function SettingsPage() {
   const { user, profile, isTrialActive, trialDaysLeft, refreshProfile, signOut } = useAuth();
   const [displayName, setDisplayName] = useState(profile?.display_name ?? "");
+  // Pre-fill the field once the profile loads (so it shows the current name).
+  useEffect(() => {
+    if (profile?.display_name) setDisplayName(profile.display_name);
+  }, [profile?.display_name]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 

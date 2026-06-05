@@ -79,6 +79,43 @@ export async function getNonResponderEmails(
   return emails;
 }
 
+// Emails of every member of a group.
+export async function getGroupMemberEmails(
+  admin: SupabaseClient,
+  groupId: string
+): Promise<string[]> {
+  const { data: members } = await admin
+    .from("group_members")
+    .select("user_id")
+    .eq("group_id", groupId);
+  const emails: string[] = [];
+  for (const m of members ?? []) {
+    const { data } = await admin.auth.admin.getUserById(m.user_id as string);
+    const email = data?.user?.email;
+    if (email) emails.push(email);
+  }
+  return emails;
+}
+
+export function revealEmail(opts: { groupName: string; title: string; url: string }) {
+  const { groupName, title, url } = opts;
+  const subject = `🎉 Results are in — "${title}" (${groupName})`;
+  const text = `Everyone's responded — the results for "${title}" in ${groupName} just unlocked!
+
+See the reveal: ${url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">🎉</div>
+  <h1 style="font-size:22px; margin:8px 0;">Results are in!</h1>
+  <p style="color:#475569; margin:0 0 12px;">Everyone's responded — the reveal for <strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> just unlocked.</p>
+  <p style="text-align:center; margin:24px 0;">
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See the reveal</a>
+  </p>
+  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function reminderEmail(opts: {
   groupName: string;
   title: string;

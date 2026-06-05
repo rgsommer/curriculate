@@ -73,18 +73,23 @@ export async function POST(req: Request) {
       );
     }
 
-    const joinUrl = buildJoinUrl(originIn, group.invite_code);
-    const { subject, text, html } = inviteEmail({
-      inviter,
-      groupName: group.name,
-      groupEmoji: group.avatar_emoji,
-      inviteCode: group.invite_code,
-      joinUrl,
-    });
+    const baseJoinUrl = buildJoinUrl(originIn, group.invite_code);
     const from = process.env.CONTACT_FROM || "Campfire <noreply@curriculate.net>";
 
+    // Per-recipient link carrying the invited address (?inv=…) so we can mark the
+    // right invitation joined even if they sign in with a different email.
     const { error: sendErr } = await resend.batch.send(
-      emails.map((to) => ({ from, to: [to], subject, text, html }))
+      emails.map((to) => {
+        const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;
+        const m = inviteEmail({
+          inviter,
+          groupName: group.name,
+          groupEmoji: group.avatar_emoji,
+          inviteCode: group.invite_code,
+          joinUrl,
+        });
+        return { from, to: [to], subject: m.subject, text: m.text, html: m.html };
+      })
     );
     if (sendErr) {
       console.error("Campfire invite send error:", sendErr);

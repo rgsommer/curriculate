@@ -85,9 +85,13 @@ function Shell({ children }: { children: React.ReactNode }) {
               ✨ Features
             </Link>
             {profile && (
-              <span className="hidden sm:inline text-sm text-slate-600">
+              <Link
+                href="/campfirelive/settings"
+                title="Edit your name & settings"
+                className="hidden sm:inline text-sm text-slate-600 hover:text-orange-600"
+              >
                 {profile.display_name}
-              </span>
+              </Link>
             )}
             <button
               onClick={signOut}
