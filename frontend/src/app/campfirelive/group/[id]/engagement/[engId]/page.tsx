@@ -48,6 +48,12 @@ export default function EngagementDetailPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
+  // Creator edit state
+  const [editing, setEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDesc, setEditDesc] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Detect reveal transition for animation
   useEffect(() => {
     if (prevStatusRef.current === "active" && engagement?.status === "revealed") {
@@ -84,6 +90,34 @@ export default function EngagementDetailPage() {
   const allIn = responseCount >= engagement.total_expected;
   const isCreator = engagement.creator_id === user?.id;
   const pollOptions = (engagement.config?.options as string[]) ?? [];
+  const canEdit = isCreator && engagement.status === "active";
+
+  // ── Creator: edit the prompt ──
+
+  const startEdit = () => {
+    setEditTitle(engagement.title);
+    setEditDesc(engagement.description ?? "");
+    setEditing(true);
+  };
+
+  const saveEdit = async () => {
+    if (!editTitle.trim()) return;
+    setSavingEdit(true);
+    const { error } = await supabase
+      .from("engagements")
+      .update({
+        title: editTitle.trim(),
+        description: editDesc.trim() || null,
+      })
+      .eq("id", engagementId);
+    setSavingEdit(false);
+    if (error) {
+      alert("Couldn't save your changes: " + error.message);
+      return;
+    }
+    setEditing(false);
+    refresh();
+  };
 
   // ── Submit handlers ──
 
@@ -387,12 +421,67 @@ export default function EngagementDetailPage() {
         <div className="flex items-start gap-3 mb-3">
           <span className="text-3xl">{meta?.icon ?? "📌"}</span>
           <div className="flex-1">
-            <h1 className="text-xl font-extrabold text-slate-900">{engagement.title}</h1>
-            <p className="text-xs text-slate-500 mt-0.5">
-              {meta?.label ?? engagement.type} · Created{" "}
-              {new Date(engagement.created_at).toLocaleDateString()}
-              {engagement.is_blind && " · 🙈 Blind mode"}
-            </p>
+            {editing ? (
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  placeholder="Prompt / question"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base font-semibold text-slate-900 focus:border-orange-500 outline-none"
+                  autoFocus
+                />
+                <textarea
+                  value={editDesc}
+                  onChange={(e) => setEditDesc(e.target.value)}
+                  placeholder="Add more detail (optional)"
+                  rows={2}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-orange-500 outline-none resize-none"
+                />
+                {responseCount > 0 && (
+                  <p className="text-xs text-amber-700">
+                    ⚠️ {responseCount}{" "}
+                    {responseCount === 1 ? "person has" : "people have"} already
+                    responded — editing changes the prompt they answered.
+                  </p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={saveEdit}
+                    disabled={!editTitle.trim() || savingEdit}
+                    className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-xs font-semibold text-white disabled:opacity-50"
+                  >
+                    {savingEdit ? "Saving..." : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="rounded-full border border-slate-300 bg-white px-4 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="flex items-start gap-2">
+                  <h1 className="text-xl font-extrabold text-slate-900">{engagement.title}</h1>
+                  {canEdit && (
+                    <button
+                      onClick={startEdit}
+                      title="Edit prompt"
+                      className="mt-0.5 flex-shrink-0 rounded-full border border-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-700"
+                    >
+                      ✏️ Edit
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {meta?.label ?? engagement.type} · Created{" "}
+                  {new Date(engagement.created_at).toLocaleDateString()}
+                  {engagement.is_blind && " · 🙈 Blind mode"}
+                </p>
+              </>
+            )}
           </div>
 
           {/* Status badge */}
@@ -408,7 +497,7 @@ export default function EngagementDetailPage() {
           )}
         </div>
 
-        {engagement.description && (
+        {!editing && engagement.description && (
           <p className="text-sm text-slate-600 mb-4">{engagement.description}</p>
         )}
 
