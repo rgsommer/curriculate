@@ -1249,7 +1249,15 @@ export default function AdminUsageDashboard() {
                 {cfLoading ? "Loading…" : cfStats ? "Refresh" : "Load Campfire Stats"}
               </button>
               {cfErr && (
-                <div className="text-xs text-red-400">Couldn't load: {cfErr}</div>
+                <div className="text-xs text-red-400">
+                  Couldn&apos;t load: {cfErr}
+                  {/unauthorized|401/i.test(cfErr) && (
+                    <span className="block text-white/40">
+                      Your admin token isn&apos;t set or is stale — paste your
+                      ADMIN_API_TOKEN in the token field at the top of the page.
+                    </span>
+                  )}
+                </div>
               )}
               {cfStats && (
                 <>
