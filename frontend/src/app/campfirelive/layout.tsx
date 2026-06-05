@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import AppShell from "./AppShell";
+import PwaRegister from "./PwaRegister";
 
 export const metadata: Metadata = {
   title: {
@@ -53,6 +54,16 @@ export const metadata: Metadata = {
     index: true,
     follow: true,
   },
+  manifest: "/campfire.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Campfire",
+    statusBarStyle: "default",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#f97316",
 };
 
 export default function CampfireLiveLayout({
@@ -84,6 +95,7 @@ export default function CampfireLiveLayout({
           }),
         }}
       />
+      <PwaRegister />
       <AppShell>{children}</AppShell>
     </>
   );
