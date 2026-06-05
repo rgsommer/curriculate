@@ -5,6 +5,7 @@ import {
   authorizeGroupRequester,
   getNonResponderEmails,
   reminderEmail,
+  mailDefaults,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
           subject: m.subject,
           text: m.text,
           html: m.html,
+          ...mailDefaults(),
         }))
       );
     }

@@ -4,6 +4,7 @@ import {
   authorizeGroupRequester,
   buildJoinUrl,
   inviteEmail,
+  mailDefaults,
   EMAIL_RE,
   MAX_INVITES,
 } from "@/lib/campfire/serverInvites";
@@ -88,7 +89,7 @@ export async function POST(req: Request) {
           inviteCode: group.invite_code,
           joinUrl,
         });
-        return { from, to: [to], subject: m.subject, text: m.text, html: m.html };
+        return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
       })
     );
     if (sendErr) {

@@ -8,6 +8,7 @@ import {
   revealEmail,
   buildJoinUrl,
   inviteEmail,
+  mailDefaults,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -98,7 +99,7 @@ export async function GET(req: Request) {
           total: (e.total_expected as number) ?? 0,
         });
         for (const to of memberEmails) {
-          messages.push({ from, to: [to], subject: m.subject, text: m.text, html: m.html });
+          messages.push({ from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() });
         }
       }
       if (pend?.length && group) {
@@ -112,7 +113,7 @@ export async function GET(req: Request) {
           nudge: true,
         });
         for (const p of pend) {
-          messages.push({ from, to: [p.email], subject: inv.subject, text: inv.text, html: inv.html });
+          messages.push({ from, to: [p.email], subject: inv.subject, text: inv.text, html: inv.html, ...mailDefaults() });
         }
       }
 
@@ -199,6 +200,7 @@ export async function GET(req: Request) {
             subject: m.subject,
             text: m.text,
             html: m.html,
+            ...mailDefaults(),
           }))
         );
       }

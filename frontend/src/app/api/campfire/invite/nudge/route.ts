@@ -4,6 +4,7 @@ import {
   authorizeGroupRequester,
   buildJoinUrl,
   inviteEmail,
+  mailDefaults,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     const from = process.env.CONTACT_FROM || "Campfire <noreply@curriculate.net>";
 
     const { error: sendErr } = await resend.batch.send(
-      pending.map((p) => ({ from, to: [p.email], subject, text, html }))
+      pending.map((p) => ({ from, to: [p.email], subject, text, html, ...mailDefaults() }))
     );
     if (sendErr) {
       console.error("Campfire nudge send error:", sendErr);

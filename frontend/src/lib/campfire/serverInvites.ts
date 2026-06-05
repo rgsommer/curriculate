@@ -3,6 +3,19 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const MAX_INVITES = 50;
 
+// Deliverability defaults applied to every Campfire email: a real Reply-To (not
+// the noreply sender) and a List-Unsubscribe header — both signal legitimacy to
+// spam filters (Gmail/Yahoo look for List-Unsubscribe on notification mail).
+export function mailDefaults() {
+  const addr = process.env.CONTACT_REPLYTO || "admin@curriculate.net";
+  return {
+    replyTo: addr,
+    headers: {
+      "List-Unsubscribe": `<mailto:${addr}?subject=unsubscribe%20campfire>`,
+    },
+  };
+}
+
 export function escapeHtml(str: string) {
   return str
     .replace(/&/g, "&amp;")
