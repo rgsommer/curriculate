@@ -313,6 +313,16 @@ export function useEngagement(engagementId: string) {
     await fetchEngagement();
   };
 
+  // Creator triggers the reveal (all_at_once mode, or forcing it early).
+  const revealNow = async () => {
+    if (!engagementId) return;
+    await supabase
+      .from("engagements")
+      .update({ status: "revealed" })
+      .eq("id", engagementId);
+    await fetchEngagement();
+  };
+
   // Add comment
   const addComment = async (text: string, responseId?: string) => {
     if (!user || !engagementId) return;
@@ -349,6 +359,7 @@ export function useEngagement(engagementId: string) {
     addRating,
     addComment,
     sendNudge,
+    revealNow,
     refresh: fetchEngagement,
   };
 }

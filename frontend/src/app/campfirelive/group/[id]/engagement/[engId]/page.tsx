@@ -28,6 +28,7 @@ export default function EngagementDetailPage() {
     addRating,
     addComment,
     sendNudge,
+    revealNow,
     refresh,
   } = useEngagement(engagementId);
 
@@ -88,6 +89,12 @@ export default function EngagementDetailPage() {
   const meta = ENGAGEMENT_TYPES[engagement.type];
   const isSealed = engagement.reveal === "sealed" && engagement.status === "active";
   const isRevealed = engagement.status === "revealed";
+  // Live modes show responses as they arrive; all_at_once waits for the creator.
+  const liveMode =
+    engagement.reveal === "as_they_come" || engagement.reveal === "instant";
+  const showResults = isRevealed || liveMode;
+  const awaitingCreatorReveal =
+    engagement.reveal === "all_at_once" && engagement.status === "active";
   const hasResponded = !!myResponse;
   const allIn = responseCount >= engagement.total_expected;
   const isCreator = engagement.creator_id === user?.id;
@@ -308,7 +315,7 @@ export default function EngagementDetailPage() {
   };
 
   const renderPollResults = () => {
-    if (!isRevealed || engagement.type !== "poll") return null;
+    if (!showResults || engagement.type !== "poll") return null;
 
     const votes: Record<string, number> = {};
     pollOptions.forEach((o) => (votes[o] = 0));
@@ -343,7 +350,7 @@ export default function EngagementDetailPage() {
   };
 
   const renderRevealedResponses = () => {
-    if (!isRevealed || engagement.type === "poll") return null;
+    if (!showResults || engagement.type === "poll") return null;
 
     return (
       <div className="space-y-3">
@@ -399,7 +406,9 @@ export default function EngagementDetailPage() {
                 </div>
               )}
 
-              {/* Reactions */}
+              {/* Reactions & rating only after a true reveal */}
+              {isRevealed && (
+              <>
               <div className="flex items-center gap-1 mt-3 flex-wrap">
                 {["👍", "😂", "❤️", "🔥", "👏", "😮"].map((emoji) => {
                   const count = responseReactions.filter((rc) => rc.emoji === emoji).length;
@@ -451,6 +460,8 @@ export default function EngagementDetailPage() {
                   );
                 })()}
               </div>
+              </>
+              )}
             </div>
           );
         })}
@@ -684,6 +695,31 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
+      {/* ── ALL-AT-ONCE: waiting for the creator to trigger the reveal ── */}
+      {awaitingCreatorReveal && hasResponded && (
+        <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 p-6 mb-6">
+          <div className="flex items-center gap-3 mb-3">
+            <span className="text-3xl">🎬</span>
+            <div>
+              <h2 className="font-bold text-amber-900">Waiting for the reveal</h2>
+              <p className="text-sm text-amber-700">
+                {responseCount} of {engagement.total_expected} responded.{" "}
+                {isCreator ? "You" : "The creator"} can reveal whenever you&apos;re
+                ready — it doesn&apos;t wait for everyone.
+              </p>
+            </div>
+          </div>
+          {isCreator && (
+            <button
+              onClick={revealNow}
+              className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
+            >
+              🎬 Reveal now ({responseCount} in)
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── RESPONSE FORM (not yet responded) ── */}
       {engagement.status === "active" && !hasResponded && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
@@ -700,12 +736,23 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {/* ── REVEALED: Results ── */}
-      {isRevealed && (
+      {/* ── RESULTS (revealed, or live as-they-come / instant) ── */}
+      {showResults && (
         <div className="mb-6">
           <h2 className="text-lg font-bold text-slate-900 mb-4">
-            {justRevealed ? "🎉 Results Are In!" : "Results"}
+            {justRevealed
+              ? "🎉 Results Are In!"
+              : isRevealed
+              ? "Results"
+              : "Live results"}
           </h2>
+          {!isRevealed && liveMode && (
+            <p className="-mt-2 mb-4 text-xs text-slate-500">
+              {engagement.reveal === "instant"
+                ? "Instant mode — responses appear the moment they're in."
+                : "As-they-come — responses show up live."}
+            </p>
+          )}
 
           {/* Poll results */}
           {renderPollResults()}
@@ -713,7 +760,8 @@ export default function EngagementDetailPage() {
           {/* Other response types */}
           {renderRevealedResponses()}
 
-          {/* Comments section */}
+          {/* Comments section (post-reveal only) */}
+          {isRevealed && (
           <div className="mt-6">
             <h3 className="font-bold text-slate-900 mb-3">
               Comments ({comments.length})
@@ -751,6 +799,7 @@ export default function EngagementDetailPage() {
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
 
