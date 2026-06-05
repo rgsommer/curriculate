@@ -61,6 +61,29 @@ export default function AdminUsageDashboard() {
   const [fdStats, setFdStats] = useState(null);
   const [fdStatsLoading, setFdStatsLoading] = useState(false);
   const [fdStatsErr, setFdStatsErr] = useState("");
+
+  // Campfire stats (Supabase-backed; loaded on demand)
+  const [cfStats, setCfStats] = useState(null);
+  const [cfLoading, setCfLoading] = useState(false);
+  const [cfErr, setCfErr] = useState("");
+
+  async function loadCampfireStats() {
+    setCfLoading(true);
+    setCfErr("");
+    try {
+      const res = await fetch("/api/admin/campfire-stats", {
+        headers: { "x-admin-token": adminToken },
+        cache: "no-store",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j?.error || `HTTP ${res.status}`);
+      setCfStats(j);
+    } catch (e) {
+      setCfErr(e?.message || "Failed to load");
+    } finally {
+      setCfLoading(false);
+    }
+  }
   const [recSending, setRecSending] = useState(false);
   const [recStatus, setRecStatus] = useState(null);
   const [diagLoading, setDiagLoading] = useState(false);
@@ -1206,6 +1229,74 @@ export default function AdminUsageDashboard() {
                       </div>
                     </div>
                   )}
+                </>
+              )}
+            </div>
+          </Card>
+
+          {/* Campfire Usage (Supabase-backed) */}
+          <Card title="🔥 Campfire Usage">
+            <div className="space-y-3">
+              <button
+                onClick={loadCampfireStats}
+                className="rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-white/60 hover:bg-white/10 hover:text-white/80"
+              >
+                {cfLoading ? "Loading…" : cfStats ? "Refresh" : "Load Campfire Stats"}
+              </button>
+              {cfErr && (
+                <div className="text-xs text-red-400">Couldn't load: {cfErr}</div>
+              )}
+              {cfStats && (
+                <>
+                  <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-orange-300">{cfStats.totals?.users ?? 0}</div>
+                      <div className="text-xs text-white/60">Users</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-orange-300">{cfStats.totals?.groups ?? 0}</div>
+                      <div className="text-xs text-white/60">Groups</div>
+                      <div className="text-[10px] text-white/40">{cfStats.last7d?.newGroups ?? 0} new this week</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-orange-300">{cfStats.totals?.engagements ?? 0}</div>
+                      <div className="text-xs text-white/60">Engagements</div>
+                      <div className="text-[10px] text-white/40">{cfStats.totals?.active ?? 0} active · {cfStats.totals?.revealed ?? 0} revealed ({cfStats.revealRate ?? 0}%)</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-2xl font-bold text-orange-300">{cfStats.totals?.responses ?? 0}</div>
+                      <div className="text-xs text-white/60">Responses</div>
+                      <div className="text-[10px] text-white/40">{cfStats.last7d?.newEngagements ?? 0} new engagements / week</div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-xl font-bold text-orange-300">{cfStats.totals?.invites ?? 0}</div>
+                      <div className="text-xs text-white/60">Email invites sent</div>
+                      <div className="text-[10px] text-white/40">{cfStats.totals?.invitesJoined ?? 0} joined ({cfStats.inviteConversion ?? 0}%)</div>
+                    </div>
+                    <div className="rounded-lg border border-white/10 bg-white/5 p-3">
+                      <div className="text-xl font-bold text-orange-300">{cfStats.revealRate ?? 0}%</div>
+                      <div className="text-xs text-white/60">Reveal rate</div>
+                      <div className="text-[10px] text-white/40">of all engagements completed</div>
+                    </div>
+                  </div>
+
+                  {cfStats.recentGroups?.length > 0 && (
+                    <div>
+                      <div className="text-xs font-bold text-white/70 mb-1">Recent groups</div>
+                      <div className="max-h-64 overflow-y-auto text-xs space-y-1 rounded border border-white/10 p-2">
+                        {cfStats.recentGroups.map((g, i) => (
+                          <div key={i} className="flex justify-between gap-2 border-b border-white/5 py-1">
+                            <span><span className="mr-1">{g.avatar_emoji}</span><span className="font-bold text-orange-300">{g.name}</span></span>
+                            <span className="text-white/40 whitespace-nowrap">{g.created_at ? new Date(g.created_at).toLocaleString() : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="text-[10px] text-white/30">As of {cfStats.generatedAt ? new Date(cfStats.generatedAt).toLocaleString() : "—"}</div>
                 </>
               )}
             </div>
