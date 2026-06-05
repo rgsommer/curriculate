@@ -21,6 +21,7 @@ export default function GroupDetailPage() {
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [qrUrl, setQrUrl] = useState<string | null>(null);
 
   // Real-time updates
   const handleUpdate = useCallback(() => {
@@ -61,6 +62,21 @@ See you around the campfire! 🏕️`
     navigator.clipboard.writeText(joinUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const showQrCode = async () => {
+    if (!group) return;
+    try {
+      const QRCode = (await import("qrcode")).default;
+      const url = await QRCode.toDataURL(joinUrl, {
+        width: 360,
+        margin: 2,
+        color: { dark: "#0f172a", light: "#ffffff" },
+      });
+      setQrUrl(url);
+    } catch {
+      /* ignore */
+    }
   };
 
   const sendEmailInvites = async () => {
@@ -240,6 +256,12 @@ See you around the campfire! 🏕️`
             className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             ✉️ Email invites
+          </button>
+          <button
+            onClick={showQrCode}
+            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            📱 Show QR
           </button>
           <button
             onClick={() => setShowMembers(!showMembers)}
@@ -593,6 +615,35 @@ See you around the campfire! 🏕️`
               </Link>
             );
           })}
+        </div>
+      )}
+
+      {/* QR join code — show on a screen for others to scan */}
+      {qrUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+          onClick={() => setQrUrl(null)}
+        >
+          <div
+            className="rounded-3xl bg-white p-6 text-center shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-bold text-slate-900">
+              {group.avatar_emoji} {group.name}
+            </div>
+            <p className="mb-3 text-sm text-slate-500">Scan to join the group</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrUrl} alt="Join QR code" width={300} height={300} className="mx-auto rounded-xl" />
+            <p className="mt-3 break-all font-mono text-xs text-slate-500">
+              {joinUrl.replace(/^https?:\/\//, "")}
+            </p>
+            <button
+              onClick={() => setQrUrl(null)}
+              className="mt-4 rounded-full bg-slate-100 px-6 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>

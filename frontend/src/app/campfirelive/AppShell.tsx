@@ -78,8 +78,14 @@ function Shell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-4">
+            <Link
+              href="/aboutcampfire"
+              className="text-sm font-medium text-slate-600 hover:text-orange-600"
+            >
+              ✨ Features
+            </Link>
             {profile && (
-              <span className="text-sm text-slate-600">
+              <span className="hidden sm:inline text-sm text-slate-600">
                 {profile.display_name}
               </span>
             )}
