@@ -66,7 +66,7 @@ export function useGroups() {
   }, [fetchGroups]);
 
   const createGroup = async (name: string, description: string, emoji: string) => {
-    if (!user) return null;
+    if (!user) return { group: null, error: "You're not signed in." };
 
     const { data: group, error } = await supabase
       .from("groups")
@@ -74,7 +74,12 @@ export function useGroups() {
       .select()
       .single();
 
-    if (error || !group) return null;
+    if (error || !group) {
+      return {
+        group: null,
+        error: error?.message ?? "Could not create the group.",
+      };
+    }
 
     // Add creator as admin member
     await supabase
@@ -82,7 +87,7 @@ export function useGroups() {
       .insert({ group_id: group.id, user_id: user.id, role: "admin" });
 
     await fetchGroups();
-    return group as Group;
+    return { group: group as Group, error: null };
   };
 
   const joinGroup = async (inviteCode: string) => {

@@ -23,9 +23,13 @@ export default function DashboardPage() {
     if (!newName.trim()) return;
     setCreating(true);
     setError("");
-    const group = await createGroup(newName.trim(), newDesc.trim(), newEmoji);
+    const { group, error: createError } = await createGroup(
+      newName.trim(),
+      newDesc.trim(),
+      newEmoji
+    );
     if (!group) {
-      setError("Failed to create group. Try again.");
+      setError(createError ?? "Failed to create group. Try again.");
     } else {
       setShowCreate(false);
       setNewName("");
