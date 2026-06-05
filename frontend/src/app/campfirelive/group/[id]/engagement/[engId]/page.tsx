@@ -12,7 +12,7 @@ export default function EngagementDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const engagementId = params.engId as string;
-  const { user } = useAuth();
+  const { user, session } = useAuth();
 
   const {
     engagement,
@@ -56,6 +56,7 @@ export default function EngagementDetailPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
+  const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
 
   // Detect reveal transition for animation
   useEffect(() => {
@@ -151,6 +152,32 @@ export default function EngagementDetailPage() {
     }
     setEditing(false);
     refresh();
+  };
+
+  // Email a reminder to everyone who hasn't responded yet.
+  const nudgeStragglers = async () => {
+    if (!session) return;
+    setNudgeMsg("Sending…");
+    try {
+      const res = await fetch("/api/campfire/engagement/nudge", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setNudgeMsg(data.error || "Couldn't send nudges.");
+      else
+        setNudgeMsg(
+          data.nudged > 0
+            ? `✓ Nudged ${data.nudged} ${data.nudged === 1 ? "person" : "people"}`
+            : "Everyone has already responded!"
+        );
+    } catch {
+      setNudgeMsg("Couldn't send nudges.");
+    }
   };
 
   // ── Submit handlers ──
@@ -680,18 +707,19 @@ export default function EngagementDetailPage() {
             )}
           </div>
 
-          {/* Nudge button */}
-          <button
-            onClick={() => {
-              // Nudge all who haven't responded
-              // In a real app, we'd know exactly who hasn't responded
-              // For now, this is a general nudge action
-              alert("Nudges sent to group members who haven't responded yet!");
-            }}
-            className="rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50"
-          >
-            👋 Nudge Stragglers
-          </button>
+          {/* Nudge button — emails everyone who hasn't responded */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={nudgeStragglers}
+              disabled={nudgeMsg === "Sending…"}
+              className="rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+            >
+              👋 Nudge Stragglers
+            </button>
+            {nudgeMsg && nudgeMsg !== "Sending…" && (
+              <span className="text-xs font-medium text-amber-700">{nudgeMsg}</span>
+            )}
+          </div>
         </div>
       )}
 

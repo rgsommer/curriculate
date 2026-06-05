@@ -1,0 +1,132 @@
+import { NextResponse } from "next/server";
+import { Resend } from "resend";
+import { createClient } from "@supabase/supabase-js";
+import {
+  getNonResponderEmails,
+  reminderEmail,
+  buildJoinUrl,
+  inviteEmail,
+} from "@/lib/campfire/serverInvites";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+const GRACE_MS = 24 * 60 * 60 * 1000; // nudge for 24h past the deadline, then reveal
+const NUDGE_THROTTLE_MS = 20 * 60 * 60 * 1000; // at most ~once a day per engagement
+
+// Vercel strips inbound x-vercel-* headers from external callers, so its
+// presence proves a genuine cron invocation. A CRON_SECRET bearer also works.
+function authorized(req: Request) {
+  if (req.headers.get("x-vercel-cron")) return true;
+  const secret = process.env.CRON_SECRET;
+  return !!secret && req.headers.get("authorization") === `Bearer ${secret}`;
+}
+
+export async function GET(req: Request) {
+  if (!authorized(req)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 401 });
+  }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!serviceKey) {
+    return NextResponse.json({ error: "Not configured" }, { status: 500 });
+  }
+  const admin = createClient(url, serviceKey);
+  const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
+  const from = process.env.CONTACT_FROM || "Campfire <noreply@curriculate.net>";
+  const now = Date.now();
+
+  const { data: engs } = await admin
+    .from("engagements")
+    .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at")
+    .eq("status", "active")
+    .not("deadline", "is", null);
+
+  let revealed = 0;
+  let nudged = 0;
+
+  for (const e of engs ?? []) {
+    const dl = new Date(e.deadline as string).getTime();
+
+    // Past the grace window → reveal with whoever's in, so it never freezes.
+    if (now > dl + GRACE_MS) {
+      await admin.from("engagements").update({ status: "revealed" }).eq("id", e.id);
+      revealed++;
+      continue;
+    }
+
+    // Within the window (24h before deadline through grace): nudge the people we
+    // can reach — non-responding members + still-pending invitees. Throttled.
+    if (now > dl - GRACE_MS) {
+      const lastNudge = e.deadline_nudged_at
+        ? new Date(e.deadline_nudged_at as string).getTime()
+        : 0;
+      if (now - lastNudge < NUDGE_THROTTLE_MS) continue;
+
+      const { count } = await admin
+        .from("responses")
+        .select("*", { count: "exact", head: true })
+        .eq("engagement_id", e.id);
+      const memberEmails = await getNonResponderEmails(admin, e.id as string, e.group_id as string);
+      const { data: pend } = await admin
+        .from("campfire_invitations")
+        .select("email")
+        .eq("group_id", e.group_id)
+        .eq("status", "pending");
+      const { data: group } = await admin
+        .from("groups")
+        .select("name, invite_code, avatar_emoji")
+        .eq("id", e.group_id)
+        .single();
+
+      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+      const messages: {
+        from: string;
+        to: string[];
+        subject: string;
+        text: string;
+        html: string;
+      }[] = [];
+
+      if (memberEmails.length) {
+        const m = reminderEmail({
+          groupName: group?.name ?? "your group",
+          title: e.title as string,
+          url: engUrl,
+          responded: count ?? 0,
+          total: (e.total_expected as number) ?? 0,
+        });
+        for (const to of memberEmails) {
+          messages.push({ from, to: [to], subject: m.subject, text: m.text, html: m.html });
+        }
+      }
+      if (pend?.length && group) {
+        const joinUrl = buildJoinUrl(base, group.invite_code);
+        const inv = inviteEmail({
+          inviter: "Your group",
+          groupName: group.name,
+          groupEmoji: group.avatar_emoji,
+          inviteCode: group.invite_code,
+          joinUrl,
+          nudge: true,
+        });
+        for (const p of pend) {
+          messages.push({ from, to: [p.email], subject: inv.subject, text: inv.text, html: inv.html });
+        }
+      }
+
+      if (messages.length) {
+        // Resend batch caps at 100; chunk to be safe.
+        for (let i = 0; i < messages.length; i += 100) {
+          await resend.batch.send(messages.slice(i, i + 100));
+        }
+        await admin
+          .from("engagements")
+          .update({ deadline_nudged_at: new Date(now).toISOString() })
+          .eq("id", e.id);
+        nudged++;
+      }
+    }
+  }
+
+  return NextResponse.json({ ok: true, revealed, nudged });
+}

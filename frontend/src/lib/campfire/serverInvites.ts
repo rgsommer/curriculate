@@ -55,6 +55,56 @@ export function buildJoinUrl(originIn: string, inviteCode: string) {
   return `${base.replace(/\/$/, "")}/campfirelive/join/${inviteCode}`;
 }
 
+// Emails of group members who haven't responded to this engagement yet.
+// Member emails live in auth.users (not profiles), so we resolve via admin auth.
+export async function getNonResponderEmails(
+  admin: SupabaseClient,
+  engagementId: string,
+  groupId: string
+): Promise<string[]> {
+  const [{ data: members }, { data: responses }] = await Promise.all([
+    admin.from("group_members").select("user_id").eq("group_id", groupId),
+    admin.from("responses").select("user_id").eq("engagement_id", engagementId),
+  ]);
+  const responded = new Set((responses ?? []).map((r) => r.user_id as string));
+  const missing = (members ?? [])
+    .map((m) => m.user_id as string)
+    .filter((id) => !responded.has(id));
+  const emails: string[] = [];
+  for (const id of missing) {
+    const { data } = await admin.auth.admin.getUserById(id);
+    const email = data?.user?.email;
+    if (email) emails.push(email);
+  }
+  return emails;
+}
+
+export function reminderEmail(opts: {
+  groupName: string;
+  title: string;
+  url: string;
+  responded: number;
+  total: number;
+}) {
+  const { groupName, title, url, responded, total } = opts;
+  const subject = `⏰ Your response is needed — "${title}" (${groupName})`;
+  const text = `The group "${groupName}" is waiting on you for "${title}".
+${responded} of ${total} have responded — be one of the ones that unlocks the reveal!
+
+Respond here: ${url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">⏰</div>
+  <h1 style="font-size:20px; margin:8px 0;">Your response is needed</h1>
+  <p style="color:#475569; margin:0 0 12px;">The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>. ${responded} of ${total} have responded — nobody sees the results until everyone's in.</p>
+  <p style="text-align:center; margin:24px 0;">
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Respond now</a>
+  </p>
+  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function inviteEmail(opts: {
   inviter: string;
   groupName: string;
