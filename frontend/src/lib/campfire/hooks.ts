@@ -193,6 +193,17 @@ export function useGroup(groupId: string) {
     return { error: error?.message ?? null };
   };
 
+  // A member leaves the group (removes their own membership).
+  const leaveGroup = async () => {
+    if (!user) return { error: "Not signed in" };
+    const { error } = await supabase
+      .from("group_members")
+      .delete()
+      .eq("group_id", groupId)
+      .eq("user_id", user.id);
+    return { error: error?.message ?? null };
+  };
+
   // Host toggles whether members (not just the host) may invite others.
   const setAllowMemberInvites = async (allow: boolean) => {
     setGroup((g) => (g ? { ...g, allow_member_invites: allow } : g)); // optimistic
@@ -228,6 +239,7 @@ export function useGroup(groupId: string) {
     renameGroup,
     setMyGroupName,
     setAllowMemberInvites,
+    leaveGroup,
   };
 }
 

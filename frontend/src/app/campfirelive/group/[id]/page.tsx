@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
@@ -10,9 +10,10 @@ import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, leaveGroup } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -942,6 +943,32 @@ See you around the campfire! 🏕️`
       )}
 
       {/* QR join code — show on a screen for others to scan */}
+      {/* Leave group — any member except the creator (who owns it) */}
+      {group.creator_id !== user?.id &&
+        members.some((m) => m.user_id === user?.id) && (
+          <div className="mt-8 text-center">
+            <button
+              onClick={async () => {
+                if (
+                  !window.confirm(
+                    `Leave "${group.name}"? You'll stop seeing its engagements. You can rejoin later with the invite link.`
+                  )
+                )
+                  return;
+                const { error } = await leaveGroup();
+                if (error) {
+                  alert("Couldn't leave: " + error);
+                  return;
+                }
+                router.push("/campfirelive");
+              }}
+              className="text-xs text-slate-400 underline hover:text-red-600"
+            >
+              Leave this group
+            </button>
+          </div>
+        )}
+
       {qrUrl && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
