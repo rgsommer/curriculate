@@ -199,6 +199,17 @@ export function useGroup(groupId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Admin sets another member's per-group display name.
+  const setMemberName = async (userId: string, name: string) => {
+    const { error } = await supabase.rpc("set_member_display_name", {
+      _group_id: groupId,
+      _user_id: userId,
+      _name: name,
+    });
+    if (!error) await fetchGroup();
+    return { error: error?.message ?? null };
+  };
+
   // Admin promotes/demotes a member (creator stays admin; enforced server-side).
   const setMemberRole = async (userId: string, role: "admin" | "member") => {
     const { error } = await supabase.rpc("set_member_role", {
@@ -259,6 +270,7 @@ export function useGroup(groupId: string) {
     leaveGroup,
     deleteGroup,
     setMemberRole,
+    setMemberName,
   };
 }
 

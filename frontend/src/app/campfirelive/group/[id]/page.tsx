@@ -13,13 +13,15 @@ export default function GroupDetailPage() {
   const router = useRouter();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, leaveGroup, deleteGroup, setMemberRole } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, leaveGroup, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [editingMyName, setEditingMyName] = useState(false);
   const [myNameInput, setMyNameInput] = useState("");
   const [savingMyName, setSavingMyName] = useState(false);
+  const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
+  const [memberNameInput, setMemberNameInput] = useState("");
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
@@ -727,10 +729,57 @@ See you around the campfire! 🏕️`
                     )}
                   </div>
                   <div className="min-w-0">
-                    <span className="text-sm font-medium text-slate-900">
-                      {nameOf(m.user_id)}
-                      {m.user_id === user?.id && " (you)"}
-                    </span>
+                    {editingMemberId === m.user_id ? (
+                      <span className="inline-flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          value={memberNameInput}
+                          onChange={(e) => setMemberNameInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Escape" && setEditingMemberId(null)}
+                          maxLength={40}
+                          autoFocus
+                          className="rounded-lg border border-slate-300 px-2 py-0.5 text-sm outline-none focus:border-orange-500"
+                        />
+                        <button
+                          onClick={async () => {
+                            const { error } = await setMemberName(m.user_id, memberNameInput);
+                            if (error) {
+                              alert("Couldn't rename: " + error);
+                              return;
+                            }
+                            setEditingMemberId(null);
+                          }}
+                          className="text-xs font-semibold text-orange-600 hover:underline"
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={() => setEditingMemberId(null)}
+                          className="text-xs text-slate-400 hover:text-slate-600"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="text-sm font-medium text-slate-900">
+                        {nameOf(m.user_id)}
+                        {m.user_id === user?.id && " (you)"}
+                        {isAdmin && (
+                          <button
+                            onClick={() => {
+                              setMemberNameInput(
+                                members.find((x) => x.user_id === m.user_id)?.display_name || ""
+                              );
+                              setEditingMemberId(m.user_id);
+                            }}
+                            title="Rename in this group"
+                            className="ml-1.5 text-slate-300 hover:text-orange-600"
+                          >
+                            ✏️
+                          </button>
+                        )}
+                      </span>
+                    )}
                     {m.user_id === group.creator_id && (
                       <span className="ml-2 text-xs text-orange-600 font-semibold">Host</span>
                     )}
