@@ -101,7 +101,7 @@ export default function NewEngagementPage() {
       config,
       deadline: deadline ? new Date(deadline) : undefined,
       reveal: selectedType === "two_truths" ? "sealed" : reveal,
-      is_blind: isBlind,
+      is_blind: selectedType === "two_truths" ? false : isBlind,
       recurrence_rule: recurrence === "none" ? undefined : recurrence,
       notify: true, // launching always notifies the group
       // Only meaningful for sealed + a deadline; ignore otherwise.
@@ -365,25 +365,28 @@ export default function NewEngagementPage() {
               )}
             </div>
 
-            {/* Blind mode */}
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={isBlind}
-                  onChange={(e) => setIsBlind(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                />
-                <div>
-                  <div className="text-sm font-medium text-slate-700">
-                    🙈 Blind Responses
+            {/* Blind mode — not relevant for Two Truths (knowing who wrote it is
+                the whole point of guessing their lie). */}
+            {selectedType !== "two_truths" && (
+              <div>
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={isBlind}
+                    onChange={(e) => setIsBlind(e.target.checked)}
+                    className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">
+                      🙈 Blind Responses
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Hide identities — no one knows whose response is whose
+                    </div>
                   </div>
-                  <div className="text-xs text-slate-500">
-                    Hide identities — no one knows whose response is whose
-                  </div>
-                </div>
-              </label>
-            </div>
+                </label>
+              </div>
+            )}
 
             {/* Deadline */}
             <div>
