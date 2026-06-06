@@ -26,10 +26,10 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       {
         id: "two-truths",
         name: "Two Truths & a Lie",
-        type: "share",
+        type: "two_truths",
         title: "Two truths and a lie — what are yours?",
         description:
-          "Share three statements about yourself; one is false. We'll guess at the reveal.",
+          "Share three statements about yourself — two true, one a lie. We'll all guess the lie!",
       },
       {
         id: "wyr",
