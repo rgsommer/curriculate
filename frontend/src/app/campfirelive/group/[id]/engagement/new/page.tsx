@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { useCreateEngagement } from "@/lib/campfire/hooks";
+import { useCreateEngagement, useGroups } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
@@ -11,7 +11,8 @@ export default function NewEngagementPage() {
   const params = useParams();
   const groupId = params.id as string;
   const router = useRouter();
-  const { create } = useCreateEngagement(groupId);
+  const { create } = useCreateEngagement();
+  const { groups, createGroup } = useGroups();
 
   const [step, setStep] = useState<"type" | "details" | "options">("type");
   const [selectedType, setSelectedType] = useState<EngagementType | null>(null);
@@ -21,10 +22,14 @@ export default function NewEngagementPage() {
   const [isBlind, setIsBlind] = useState(false);
   const [deadline, setDeadline] = useState("");
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
-  const [notify, setNotify] = useState(true);
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
+
+  // Where to post: the current group by default, another group, or a new one.
+  const [targetGroupId, setTargetGroupId] = useState<string>(groupId);
+  const [makingNewGroup, setMakingNewGroup] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
 
   const handleSelectType = (type: EngagementType) => {
     setSelectedType(type);
@@ -64,7 +69,25 @@ export default function NewEngagementPage() {
       config.media_type = "photo"; // Default, could be made selectable
     }
 
+    // Resolve the destination group — make a new one first if requested.
+    let destGroupId = targetGroupId;
+    if (makingNewGroup) {
+      if (!newGroupName.trim()) {
+        setError("Give your new group a name.");
+        setCreating(false);
+        return;
+      }
+      const { group, error: gErr } = await createGroup(newGroupName.trim(), "", "🔥");
+      if (gErr || !group) {
+        setError(gErr || "Couldn't create the group.");
+        setCreating(false);
+        return;
+      }
+      destGroupId = group.id;
+    }
+
     const result = await create({
+      groupId: destGroupId,
       type: selectedType,
       title: title.trim(),
       description: description.trim() || undefined,
@@ -73,7 +96,7 @@ export default function NewEngagementPage() {
       reveal,
       is_blind: isBlind,
       recurrence_rule: recurrence === "none" ? undefined : recurrence,
-      notify,
+      notify: true, // launching always notifies the group
     });
 
     if (result.error) {
@@ -81,7 +104,7 @@ export default function NewEngagementPage() {
       setCreating(false);
     } else if (result.engagement) {
       // Created as a DRAFT — the creator reviews it and hits Launch when ready.
-      router.push(`/campfirelive/group/${groupId}/engagement/${result.engagement.id}`);
+      router.push(`/campfirelive/group/${destGroupId}/engagement/${result.engagement.id}`);
     }
   };
 
@@ -165,6 +188,46 @@ export default function NewEngagementPage() {
           </div>
 
           <div className="space-y-4 max-w-lg">
+            {/* Posting target — this group, another group, or a brand-new one */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Posting to
+              </label>
+              <select
+                value={makingNewGroup ? "__new__" : targetGroupId}
+                onChange={(e) => {
+                  if (e.target.value === "__new__") {
+                    setMakingNewGroup(true);
+                  } else {
+                    setMakingNewGroup(false);
+                    setTargetGroupId(e.target.value);
+                  }
+                }}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none bg-white"
+              >
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.avatar_emoji} {g.name}
+                    {g.id === groupId ? " (this group)" : ""}
+                  </option>
+                ))}
+                <option value="__new__">➕ New group…</option>
+              </select>
+              {makingNewGroup && (
+                <input
+                  type="text"
+                  value={newGroupName}
+                  onChange={(e) => setNewGroupName(e.target.value)}
+                  placeholder="Name your new group (e.g. Book Club)"
+                  autoFocus
+                  className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+              )}
+              <p className="mt-1 text-xs text-slate-500">
+                Everyone in the chosen group is emailed to respond the moment you launch.
+              </p>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
               <input
@@ -358,25 +421,11 @@ export default function NewEngagementPage() {
               )}
             </div>
 
-            {/* Email notifications */}
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={notify}
-                  onChange={(e) => setNotify(e.target.checked)}
-                  className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                />
-                <div>
-                  <div className="text-sm font-medium text-slate-700">
-                    📧 Email the group when I launch
-                  </div>
-                  <div className="text-xs text-slate-500">
-                    On launch, email members + invitees to respond (and again when
-                    results reveal). You launch when you&apos;re ready — nothing sends now.
-                  </div>
-                </div>
-              </label>
+            {/* Launch notifies the group — no toggle, so nobody gets left out. */}
+            <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600">
+              📧 This stays a private draft until you hit Launch. The moment you
+              launch, everyone in the group (and any pending invitees) gets an email
+              to respond — and again when the results reveal.
             </div>
 
             {error && (

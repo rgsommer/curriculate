@@ -326,8 +326,9 @@ export default function EngagementDetailPage() {
       return;
     }
     setJustLaunched(true);
-    // Email the group + pending invitees, if the creator opted in at create time.
-    if (engagement.notify && session) {
+    // Launching always notifies the group (+ pending invitees) so nobody is left
+    // out when a member posts. Non-fatal if the email send hiccups.
+    if (session) {
       try {
         await fetch("/api/campfire/engagement/notify-new", {
           method: "POST",
@@ -778,9 +779,7 @@ export default function EngagementDetailPage() {
                     It&apos;s launched — the group can see it now
                   </div>
                   <p className="mt-1 text-xs text-green-800/80">
-                    {engagement.notify
-                      ? "We emailed the members and any pending invitees to respond."
-                      : "It's live in the group. (Email was off, so no notification went out.)"}
+                    We emailed everyone in the group and any pending invitees to respond.
                   </p>
                 </>
               ) : (
@@ -793,10 +792,8 @@ export default function EngagementDetailPage() {
                   </div>
                   <p className="mt-1 text-xs text-orange-800/80">
                     Review the prompt below. When you hit launch, it goes live for the
-                    group
-                    {engagement.notify
-                      ? " and everyone (members + invitees) gets an email to respond."
-                      : ". (Email is off — turn it on at create time to notify the group.)"}
+                    group and everyone (members + pending invitees) gets an email to
+                    respond.
                   </p>
                 </>
               )}

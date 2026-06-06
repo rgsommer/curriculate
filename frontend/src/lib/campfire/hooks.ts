@@ -417,7 +417,7 @@ export function useEngagement(engagementId: string) {
 
 // ── Create Engagement ──
 
-export function useCreateEngagement(groupId: string) {
+export function useCreateEngagement(defaultGroupId?: string) {
   const { user } = useAuth();
 
   const create = async (params: {
@@ -430,13 +430,16 @@ export function useCreateEngagement(groupId: string) {
     is_blind?: boolean;
     recurrence_rule?: string;
     notify?: boolean;
+    groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
+    const targetGroupId = params.groupId ?? defaultGroupId;
+    if (!targetGroupId) return { error: "No group selected", engagement: null };
 
     const { data, error } = await supabase
       .from("engagements")
       .insert({
-        group_id: groupId,
+        group_id: targetGroupId,
         creator_id: user.id,
         type: params.type,
         title: params.title,
