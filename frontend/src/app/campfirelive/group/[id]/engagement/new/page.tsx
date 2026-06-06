@@ -964,7 +964,7 @@ export default function NewEngagementPage() {
                 <img
                   src={coverUrl}
                   alt="Cover preview"
-                  className="mt-2 max-h-32 w-full rounded-lg object-cover"
+                  className="mt-2 w-full rounded-lg object-contain bg-slate-50"
                 />
               )}
             </div>
