@@ -17,7 +17,8 @@ export type EngagementType =
   | "advice"
   | "voice_response"
   | "two_truths"
-  | "baby_reveal";
+  | "baby_reveal"
+  | "most_likely";
 
 export type EngagementStatus = "active" | "sealed" | "revealed" | "expired";
 export type RevealMode = "sealed" | "all_at_once" | "first_in" | "as_they_come" | "instant";
@@ -210,6 +211,7 @@ export const ENGAGEMENT_TYPES: Record<
   voice_response: { icon: "🎤", label: "Voice Response", description: "Leave voice notes instead of text", hook: "Say it out loud — drop a quick voice note.", color: "bg-rose-50 text-rose-700" },
   two_truths: { icon: "🕵️", label: "Two Truths & a Lie", description: "Everyone shares 3 statements — 2 true, 1 lie — then the group guesses the lie", hook: "Two truths and a lie — can the group spot your fib?", color: "bg-purple-50 text-purple-700" },
   baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Set the choices (Boy/Girl, name, date…); everyone guesses, and it unseals on the big day with winners", hook: "Place your guess — all is revealed on the big day!", color: "bg-sky-50 text-sky-700" },
+  most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
 };
 
 // ── Supabase Database type (simplified — use supabase gen types for full version) ──

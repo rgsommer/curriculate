@@ -139,6 +139,35 @@ export default function EngagementDetailPage() {
   // Two Truths & a Lie entry state
   const [ttStatements, setTtStatements] = useState(["", "", ""]);
   const [ttLie, setTtLie] = useState<number | null>(null);
+  // "Most Likely To…" — the group roster (candidates) and this user's votes
+  const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
+  const [mlVotes, setMlVotes] = useState<Record<number, string>>({});
+  // "Most Likely To…" roster (candidate list + winner names).
+  useEffect(() => {
+    if (engagement?.type !== "most_likely") return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("group_members")
+        .select("user_id, profile:profiles(display_name)")
+        .eq("group_id", groupId);
+      if (!cancelled && data) {
+        const list = (
+          data as {
+            user_id: string;
+            profile: { display_name: string } | { display_name: string }[] | null;
+          }[]
+        ).map((m) => {
+          const p = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+          return { user_id: m.user_id, name: p?.display_name ?? "Someone" };
+        });
+        setRoster(list);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [engagement?.type, groupId]);
   const [commentText, setCommentText] = useState("");
   const [showRevealAnimation, setShowRevealAnimation] = useState(false);
   const [justRevealed, setJustRevealed] = useState(false);
@@ -498,6 +527,23 @@ export default function EngagementDetailPage() {
     if (ttErr) alert("Couldn't submit: " + ttErr);
   };
 
+  const handleMostLikelySubmit = async () => {
+    const anyVote = Object.values(mlVotes).some(Boolean);
+    if (!anyVote) {
+      alert("Vote for at least one award.");
+      return;
+    }
+    // Drop any blank picks before saving.
+    const answers: Record<string, string> = {};
+    Object.entries(mlVotes).forEach(([k, v]) => {
+      if (v) answers[k] = v;
+    });
+    setSubmitting(true);
+    const { error: mlErr } = await submitResponse({ answers });
+    setSubmitting(false);
+    if (mlErr) alert("Couldn't submit: " + mlErr);
+  };
+
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -545,6 +591,44 @@ export default function EngagementDetailPage() {
     if (hasResponded) return null;
 
     switch (engagement.type) {
+      case "most_likely": {
+        const qs = (engagement.config?.questions as string[]) ?? [];
+        return (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Vote a group-mate for each award. Sealed until the reveal.
+            </p>
+            {qs.map((q, i) => (
+              <div key={i}>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  🏆 {q}
+                </label>
+                <select
+                  value={mlVotes[i] ?? ""}
+                  onChange={(e) => setMlVotes({ ...mlVotes, [i]: e.target.value })}
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:border-orange-500 outline-none"
+                >
+                  <option value="">— pick someone —</option>
+                  {roster.map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.name}
+                      {m.user_id === user?.id ? " (you)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            <button
+              onClick={handleMostLikelySubmit}
+              disabled={submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock In My Votes"}
+            </button>
+          </div>
+        );
+      }
+
       case "baby_reveal":
         return (
           <div className="space-y-2">
@@ -750,6 +834,58 @@ export default function EngagementDetailPage() {
                   <span className="text-sm font-bold text-slate-700">{pct}% ({count})</span>
                 </div>
               </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderMostLikelyResults = () => {
+    if (!showResults || engagement.type !== "most_likely") return null;
+    const qs = (engagement.config?.questions as string[]) ?? [];
+    const nameOf = (uid: string) =>
+      roster.find((m) => m.user_id === uid)?.name ?? "Someone";
+
+    return (
+      <div className="space-y-3">
+        {qs.map((q, i) => {
+          const counts: Record<string, number> = {};
+          responses.forEach((r) => {
+            const ans = (r.content as { answers?: Record<string, string> })?.answers?.[
+              String(i)
+            ];
+            if (ans) counts[ans] = (counts[ans] ?? 0) + 1;
+          });
+          const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+          const top = entries.length ? entries[0][1] : 0;
+          const winners = entries.filter(([, c]) => c === top && top > 0).map(([uid]) => uid);
+          const runnersUp = entries.filter(([uid]) => !winners.includes(uid));
+          return (
+            <div key={i} className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+              <div className="text-sm font-semibold text-slate-700 mb-1">🏆 {q}</div>
+              {winners.length ? (
+                <div className="text-lg font-extrabold text-amber-700">
+                  {winners.map(nameOf).join(" & ")}{" "}
+                  <span className="text-xs font-normal text-slate-500">
+                    ({top} {top === 1 ? "vote" : "votes"})
+                  </span>
+                </div>
+              ) : (
+                <div className="text-sm text-slate-400">No votes for this one.</div>
+              )}
+              {runnersUp.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1">
+                  {runnersUp.slice(0, 5).map(([uid, c]) => (
+                    <span
+                      key={uid}
+                      className="text-[11px] rounded-full bg-white border border-slate-200 text-slate-600 px-2 py-0.5"
+                    >
+                      {nameOf(uid)} · {c}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -999,7 +1135,8 @@ export default function EngagementDetailPage() {
       !showResults ||
       engagement.type === "poll" ||
       engagement.type === "two_truths" ||
-      engagement.type === "baby_reveal"
+      engagement.type === "baby_reveal" ||
+      engagement.type === "most_likely"
     )
       return null;
 
@@ -1734,6 +1871,9 @@ export default function EngagementDetailPage() {
 
           {/* Baby Reveal — tally + winners */}
           {renderBabyRevealResults()}
+
+          {/* Most Likely To… — winner per award */}
+          {renderMostLikelyResults()}
 
           {/* Other response types */}
           {renderRevealedResponses()}

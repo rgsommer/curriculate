@@ -28,6 +28,8 @@ export default function NewEngagementPage() {
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
+  // "Most Likely To…" awards (one engagement, many questions)
+  const [questions, setQuestions] = useState<string[]>(["", "", ""]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -78,6 +80,17 @@ export default function NewEngagementPage() {
       setPollOptions(["Boy", "Girl"]);
       setReveal("sealed"); // guesses stay sealed until the reveal date
     }
+    if (type === "most_likely") {
+      if (!title.trim()) setTitle("Most Likely To… 🏆");
+      if (!description.trim())
+        setDescription("Vote a group-mate for each award. Sealed until the reveal!");
+      setQuestions([
+        "Most likely to change the world",
+        "Always makes everyone laugh",
+        "The friend you can always count on",
+      ]);
+      setReveal("sealed");
+    }
     setStep("details");
   };
 
@@ -121,6 +134,16 @@ export default function NewEngagementPage() {
       return;
     }
 
+    if (selectedType === "most_likely") {
+      const qs = questions.map((q) => q.trim()).filter(Boolean);
+      if (qs.length < 1) {
+        setError("Add at least one award (a “Most likely to…” question).");
+        setCreating(false);
+        return;
+      }
+      config.questions = qs;
+    }
+
     if (selectedType === "challenge") {
       config.media_type = "photo"; // Default, could be made selectable
     }
@@ -150,7 +173,9 @@ export default function NewEngagementPage() {
       config,
       deadline: deadline ? new Date(deadline) : undefined,
       reveal:
-        selectedType === "two_truths" || selectedType === "baby_reveal"
+        selectedType === "two_truths" ||
+        selectedType === "baby_reveal" ||
+        selectedType === "most_likely"
           ? "sealed"
           : reveal,
       is_blind: selectedType === "two_truths" ? false : isBlind,
@@ -365,6 +390,51 @@ export default function NewEngagementPage() {
               </div>
             )}
 
+            {/* Most Likely To… — the list of awards */}
+            {selectedType === "most_likely" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  The awards (each one becomes a vote)
+                </label>
+                {questions.map((q, i) => (
+                  <div key={i} className="flex gap-2 mb-2 items-center">
+                    <span className="text-slate-400 text-sm">🏆</span>
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) => {
+                        const next = [...questions];
+                        next[i] = e.target.value;
+                        setQuestions(next);
+                      }}
+                      placeholder="Most likely to…"
+                      className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                    />
+                    {questions.length > 1 && (
+                      <button
+                        onClick={() => setQuestions(questions.filter((_, j) => j !== i))}
+                        className="text-slate-400 hover:text-red-500 px-2"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {questions.length < 12 && (
+                  <button
+                    onClick={() => setQuestions([...questions, ""])}
+                    className="text-sm text-orange-600 font-medium"
+                  >
+                    + Add award
+                  </button>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  Everyone votes a group-mate for each award; winners are crowned at
+                  the reveal.
+                </p>
+              </div>
+            )}
+
             <button
               onClick={() => setStep("options")}
               disabled={!title.trim()}
@@ -390,7 +460,9 @@ export default function NewEngagementPage() {
 
           <div className="space-y-5 max-w-lg">
             {/* Reveal Mode — hidden for types that are always sealed */}
-            {selectedType !== "two_truths" && selectedType !== "baby_reveal" && (
+            {selectedType !== "two_truths" &&
+              selectedType !== "baby_reveal" &&
+              selectedType !== "most_likely" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Reveal Mode
@@ -425,8 +497,10 @@ export default function NewEngagementPage() {
             </div>
             )}
 
-            {/* Blind mode — not relevant for Two Truths / Baby Reveal */}
-            {selectedType !== "two_truths" && selectedType !== "baby_reveal" && (
+            {/* Blind mode — not relevant for Two Truths / Baby Reveal / Most Likely */}
+            {selectedType !== "two_truths" &&
+              selectedType !== "baby_reveal" &&
+              selectedType !== "most_likely" && (
               <div>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
