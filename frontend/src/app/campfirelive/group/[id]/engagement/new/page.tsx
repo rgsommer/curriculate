@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useCreateEngagement, useGroups } from "@/lib/campfire/hooks";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
 // Plain-language "how it works" per type — { how it works, what each person sees }.
@@ -811,9 +811,23 @@ export default function NewEngagementPage() {
                     />
                     <span className="text-xs text-slate-500">
                       — put <span className="font-mono">{"{age}"}</span> in the title and
-                      it auto-fills (e.g. &ldquo;Happy 28th Birthday&rdquo;), bumping each year.
+                      it auto-fills the ordinal (1st, 2nd, 3rd, 28th…), bumping each year.
                     </span>
                   </div>
+                  {title.includes("{age}") && (
+                    <div className="rounded-lg bg-white border border-pink-200 px-3 py-1.5 text-sm">
+                      <span className="text-xs text-slate-400">Shows as: </span>
+                      <span className="font-semibold text-slate-800">
+                        {deadline
+                          ? resolveTitle(
+                              title,
+                              birthYear.trim() ? parseInt(birthYear, 10) : null,
+                              new Date(deadline).toISOString()
+                            )
+                          : "set the birthday date to preview"}
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
