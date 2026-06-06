@@ -746,6 +746,26 @@ const DEMO_TASKS = [
     },
   },
 
+  // 18e2. UpVote — one debatable proposition; class votes For/Against and
+  // sees the strongest case on each side. NOT True/False (no fact answer)
+  // and NOT Live Debate (no head-to-head). See aiPrompt in shared/taskTypes.js.
+  {
+    taskType: "upvote",
+    title: "UpVote — Queenston Heights",
+    prompt: "Read the proposition, then vote For or Against. One sentence to defend your side.",
+    config: {
+      proposition:
+        "Sir Isaac Brock should not have personally led the charge at Queenston Heights.",
+      subject: "History",
+      unitName: "War of 1812",
+      gradeLevel: 7,
+      worldview: "general",
+      voteTimeSeconds: 120,
+      showRunningTally: true,
+      requireReasoningOnSubmit: false,
+    },
+  },
+
   // 18f. Hole in One — minimal solvable board with two pre-placed obstacles.
   // No question bank (skips Earn phase). No team members → skips TilterPicker → goes straight to Tilt.
   {

@@ -70,6 +70,7 @@ import CareersTask from "./types/CareersTask";
 import HoleInOneTask from "./types/HoleInOneTask";
 import LegendsTask from "./types/LegendsTask";
 import TruthOrDareTask from "./types/TruthOrDareTask";
+import UpVoteTask from "./types/UpVoteTask";
 import TriviaTask from "./types/TriviaTask";
 import SpinnerTask from "./types/SpinnerTask";
 import TeamSelfieTask from "./types/TeamSelfieTask";
@@ -3364,6 +3365,19 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
           roomCode={roomCode}
           teamId={derivedTeamId}
           taskIndex={taskIndex}
+          practiceMode={practiceMode}
+        />
+      );
+      break;
+    }
+
+    case TASK_TYPES.UPVOTE:
+    case "upvote": {
+      content = (
+        <UpVoteTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
           practiceMode={practiceMode}
         />
       );

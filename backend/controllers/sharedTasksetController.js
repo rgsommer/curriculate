@@ -958,6 +958,51 @@ function validateMindMapperTask(task) {
  * IMPORTANT: We do NOT trust `task.taskType` coming back from the model.
  * We force the type to the one we are currently generating.
  */
+/* ============================================================
+   UpVote debatability gate
+   ============================================================
+   Hits gpt-4o-mini with a YES/NO classifier — "is this proposition
+   genuinely debatable, i.e. does it have at least two defensible
+   viewpoints?". On YES the proposition is kept; on NO the caller
+   regenerates. Returning a falsy value also covers the network /
+   parse-error path so a flaky API never silently passes a bad task.
+*/
+export async function verifyUpvoteIsDebatable(proposition, worldview = "general") {
+  const prop = String(proposition || "").trim();
+  if (!prop) return false;
+  // Skip the network call entirely in tests / when the key is missing —
+  // unit tests assert structural shape, not LLM behaviour.
+  if (!process.env.OPENAI_API_KEY) return true;
+  try {
+    const openai = getClient();
+    const system =
+      "You are an experienced classroom teacher checking whether a proposition is suitable for a class vote. " +
+      "A suitable proposition is GENUINELY debatable — a thoughtful student could defend either YES or NO. " +
+      "It is NOT a question of established empirical fact ('Do zebras have stripes?'), " +
+      "NOT a moral consensus question ('Is murder wrong?'), and NOT a vacuous preference ('Should you study?'). " +
+      "Reply with one word only: YES or NO.";
+    const worldviewNote = worldview === "faith"
+      ? " (This is for a faith-tradition class; interpretive questions inside the tradition are fine.)"
+      : "";
+    const user = `Proposition: "${prop}"${worldviewNote}\n\nIs this genuinely debatable — does it have at least two defensible viewpoints? Answer YES or NO.`;
+    const resp = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 4,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    });
+    const answer = String(resp?.choices?.[0]?.message?.content || "").trim().toUpperCase();
+    return answer.startsWith("YES");
+  } catch (e) {
+    console.warn("[Upvote Debatability] check failed:", e?.message);
+    // Don't drop the task on infra errors — only drop on a clear NO.
+    return true;
+  }
+}
+
 export function validateAiTask(expectedType, task) {
   const type = normalizeSelectedType(expectedType);
   if (!type) return { ok: false, errors: ["taskType missing/unknown"] };
@@ -1117,6 +1162,8 @@ export const retryMustHave = {
     'TRIVIA must include config.rounds as an array of 2-4 round objects. Mix at least 2 different modes. Include at least one "subject" round and one "pop" (pop-culture/student-world) round. Modes: "bluff" needs facts[] (exactly 3 strings, 2 real + 1 fake) + fakeIndex (0-2) + explanation. "truefalse" needs statement + answer (boolean, NOT string) + explanation. "closerto" needs question + choices[] (exactly 2 strings) + correctChoice (0 or 1) + actualAnswer + explanation. CRITICAL: fakeIndex must be a valid index, answer must be true/false not "true"/"false", correctChoice must be 0 or 1.',
   [TASK_TYPES.SPINNER]:
     'SPINNER must include config.spinPrompt (fun string) and config.wedges (array of 6-10 objects). Each wedge: { label (short, fits on wheel), points (number), type: "points"|"bonus"|"perk"|"jackpot" }. Most wedges (4-6) should be "points" type with varied values (50, 100, 150, 200). Include exactly 1 "jackpot" wedge (400-500 pts). Include 1-2 "perk" wedges with fun classroom rewards. Labels must be short (max ~15 chars).',
+  [TASK_TYPES.UPVOTE]:
+    'UPVOTE must include config.proposition (ONE declarative sentence, 20-250 chars, GENUINELY two-sided — a thoughtful student must be able to defend EITHER side). Also config.subject, config.unitName, config.gradeLevel (1-12). Optional: config.voteTimeSeconds (30-300, default 120), config.showRunningTally (default true), config.requireReasoningOnSubmit (default false), config.worldview ("faith"|"secular"|"general"). FORBIDDEN propositions: questions of established fact ("Do zebras have stripes?"), moral consensus ("Is murder wrong?"), vacuous preferences ("Should you study?"), named living politicians/athletes/celebrities, contested personal-choice medical/legal/sexuality questions, framing any religious tradition as inferior. The proposition is the WHOLE task — make it count.',
 };
 
 /* ============================================================
@@ -1616,6 +1663,17 @@ export async function regenerateSingleTask({
       }
 
       assertValidAiTask(allowedType, normalized);
+
+      // UpVote debatability gate — see verifyUpvoteIsDebatable above.
+      if (allowedType === TASK_TYPES.UPVOTE) {
+        const prop = normalized?.config?.proposition || "";
+        const worldview = normalized?.config?.worldview || "general";
+        const isDebatable = await verifyUpvoteIsDebatable(prop, worldview);
+        if (!isDebatable) {
+          throw new Error(`[Upvote Debatability] Proposition is not genuinely debatable — a thoughtful student would not be able to defend BOTH sides: "${prop}"`);
+        }
+      }
+
       return normalized;
     } catch (templateErr) {
       console.warn(`[Template] ${allowedType} template generation failed, falling back to freeform: ${templateErr.message}`);
@@ -1731,6 +1789,16 @@ export async function regenerateSingleTask({
 
     // 3) Validate exactly once, against the expected type
     assertValidAiTask(allowedType, normalized);
+
+    // 4) UpVote debatability gate (freeform path) — same logic as template path.
+    if (allowedType === TASK_TYPES.UPVOTE) {
+      const prop = normalized?.config?.proposition || "";
+      const worldview = normalized?.config?.worldview || "general";
+      const isDebatable = await verifyUpvoteIsDebatable(prop, worldview);
+      if (!isDebatable) {
+        throw new Error(`[Upvote Debatability] Proposition is not genuinely debatable — a thoughtful student would not be able to defend BOTH sides: "${prop}"`);
+      }
+    }
 
   return normalized;
 

@@ -774,6 +774,15 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.UPVOTE: {
+      const cfg = t.config || {};
+      // The proposition is the WHOLE task — without it there's nothing to vote on.
+      if (!isNonEmptyString(cfg.proposition)) {
+        issues.push("upvote requires config.proposition");
+      }
+      break;
+    }
+
     default: {
       // Unknown types: only enforce generic title/prompt
       issues.push(`unknown taskType "${t.taskType}" (normalized to "${normalizedType}")`);

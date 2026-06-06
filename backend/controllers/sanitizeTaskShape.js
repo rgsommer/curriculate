@@ -1184,6 +1184,62 @@ export function sanitizeTaskShapeByType(type, task) {
     t.config = cfg;
   }
 
+  // ── UPVOTE: promote top-level vote fields, apply defaults + clamps ──
+  if (type === TASK_TYPES.UPVOTE) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+
+    for (const k of [
+      "proposition", "subject", "unitName", "gradeLevel",
+      "voteTimeSeconds", "showRunningTally", "requireReasoningOnSubmit",
+      "worldview",
+    ]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+
+    // Trim proposition (the playability check fires on empty strings too).
+    if (typeof cfg.proposition === "string") {
+      cfg.proposition = cfg.proposition.trim();
+    }
+
+    // Infer worldview from subject when unset — mirrors Truth or Dare.
+    if (!cfg.worldview || typeof cfg.worldview !== "string" || !cfg.worldview.trim()) {
+      const subj = String(cfg.subject || "");
+      if (/bible|religion|faith|theology|scripture/i.test(subj)) {
+        cfg.worldview = "faith";
+      } else if (/secular|atheist|humanist/i.test(subj)) {
+        cfg.worldview = "secular";
+      } else {
+        cfg.worldview = "general";
+      }
+    }
+
+    // Defaults.
+    if (cfg.showRunningTally == null) cfg.showRunningTally = true;
+    if (cfg.requireReasoningOnSubmit == null) cfg.requireReasoningOnSubmit = false;
+    cfg.showRunningTally = !!cfg.showRunningTally;
+    cfg.requireReasoningOnSubmit = !!cfg.requireReasoningOnSubmit;
+
+    // Clamp the vote timer to 30-300 (default 120). Anything outside that
+    // range almost always means the AI emitted a token rather than seconds.
+    {
+      const raw = cfg.voteTimeSeconds == null ? 120 : Number(cfg.voteTimeSeconds);
+      const v = Number.isFinite(raw) ? raw : 120;
+      cfg.voteTimeSeconds = Math.max(30, Math.min(300, Math.round(v)));
+    }
+
+    // Coerce gradeLevel numerically if present.
+    if (cfg.gradeLevel != null) {
+      const n = Number(cfg.gradeLevel);
+      if (Number.isFinite(n)) cfg.gradeLevel = n;
+    }
+
+    t.config = cfg;
+  }
+
   // ── QUEST: promote top-level mission fields into config ──
   if (type === TASK_TYPES.QUEST) {
     const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);

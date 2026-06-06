@@ -541,6 +541,8 @@ app.use("/api", reportsRouter);
 app.use("/api", analyticsRouter);
 app.use("/api", billingHandoffRouter);
 app.use("/api/speech", speechRouter);
+import upvoteRouter from "./routes/upvote.js";
+app.use("/api/upvote", upvoteRouter);
 app.use("/api/voice", voiceRouter);
 app.use("/api/teacher-profile", teacherProfileRouter);
 app.use("/api/admin", adminRouter);

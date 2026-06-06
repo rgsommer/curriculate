@@ -195,7 +195,7 @@ const bloomsData: BloomLevel[] = [
     description: "Breaking material into parts and detecting relationships",
     icon: <Search className="w-5 h-5" />,
     primary: 13,
-    secondary: 16,
+    secondary: 17,
     tasks: [
       "Mind Mapper",
       "Brain Blitz",
@@ -229,6 +229,7 @@ const bloomsData: BloomLevel[] = [
       "Hole in One",
       "Truth or Dare",
       "Map It",
+      "UpVote",
     ],
   },
   {
@@ -238,7 +239,7 @@ const bloomsData: BloomLevel[] = [
     color: "#3b82f6",
     description: "Making judgments based on criteria and standards",
     icon: <Scale className="w-5 h-5" />,
-    primary: 10,
+    primary: 11,
     secondary: 16,
     tasks: [
       "Open Text",
@@ -251,6 +252,7 @@ const bloomsData: BloomLevel[] = [
       "Interview",
       "Photo Journal",
       "Careers",
+      "UpVote",
     ],
     secondaryTasks: [
       "Tower Builder",
@@ -307,7 +309,7 @@ const bloomsData: BloomLevel[] = [
   },
 ];
 
-const TOTAL_COGNITIVE = 68; // total primary classifications across all levels
+const TOTAL_COGNITIVE = 69; // total primary classifications across all levels
 
 /* ─── Other frameworks ─── */
 

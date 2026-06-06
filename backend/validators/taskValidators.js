@@ -3767,6 +3767,43 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
+    case TASK_TYPES.UPVOTE: {
+      const cfg = isObject(task.config) ? task.config : {};
+      // Proposition: required, 20-250 chars after trim. Length floor is on
+      // purpose — anything shorter is almost always a slogan or a question
+      // fragment and not a debatable claim.
+      const prop = typeof cfg.proposition === "string" ? cfg.proposition.trim() : "";
+      if (!prop) {
+        errors.push("upvote requires config.proposition");
+      } else if (prop.length < 20) {
+        errors.push(`upvote config.proposition too short (got ${prop.length} chars, need ≥ 20)`);
+      } else if (prop.length > 250) {
+        errors.push(`upvote config.proposition too long (got ${prop.length} chars, max 250)`);
+      }
+      // Vote timer
+      if (cfg.voteTimeSeconds != null) {
+        const v = Number(cfg.voteTimeSeconds);
+        if (!(v >= 30 && v <= 300)) {
+          errors.push(`upvote config.voteTimeSeconds must be 30-300 (got ${cfg.voteTimeSeconds})`);
+        }
+      }
+      // Boolean knobs — only error if the wrong TYPE is passed (null means default)
+      if (cfg.requireReasoningOnSubmit != null && typeof cfg.requireReasoningOnSubmit !== "boolean") {
+        errors.push(`upvote config.requireReasoningOnSubmit must be a boolean (got ${typeof cfg.requireReasoningOnSubmit})`);
+      }
+      if (cfg.showRunningTally != null && typeof cfg.showRunningTally !== "boolean") {
+        errors.push(`upvote config.showRunningTally must be a boolean (got ${typeof cfg.showRunningTally})`);
+      }
+      // Worldview enum (soft — accept missing/empty)
+      if (cfg.worldview && typeof cfg.worldview === "string") {
+        const allowed = ["faith", "secular", "general"];
+        if (!allowed.includes(cfg.worldview)) {
+          errors.push(`upvote config.worldview must be one of ${allowed.join("/")} (got ${cfg.worldview})`);
+        }
+      }
+      break;
+    }
+
     case TASK_TYPES.CURRENT_EVENTS: {
       // The persisted task is a SHELL — the only required input is lessonTopic
       // (everything else has a default). The `resolved` block is filled at runtime

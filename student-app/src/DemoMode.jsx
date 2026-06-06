@@ -181,6 +181,7 @@ function shuffleArray(arr) {
 // added; also pulled in the other recently-shipped types that needed
 // field-verification in the latest waves.
 const RECENTLY_UPDATED_TASK_TYPES = new Set([
+  "upvote",                   // new task type (just shipped)
   "mapit",                    // new task type (just shipped)
   "make-and-snap",            // over-stuffing guard
   "collaboration",            // over-stuffing guard

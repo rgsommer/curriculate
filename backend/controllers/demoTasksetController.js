@@ -140,6 +140,25 @@ const STATIC_DEMO_TASKS = {
     },
   },
 
+  [TASK_TYPES.UPVOTE]: {
+    taskType: TASK_TYPES.UPVOTE,
+    title: "UpVote — Queenston Heights",
+    prompt:
+      "Read the proposition, then vote For or Against. One sentence to defend your side.",
+    points: 10,
+    config: {
+      proposition:
+        "Sir Isaac Brock should not have personally led the charge at Queenston Heights.",
+      subject: "History",
+      unitName: "War of 1812",
+      gradeLevel: 7,
+      worldview: "general",
+      voteTimeSeconds: 120,
+      showRunningTally: true,
+      requireReasoningOnSubmit: false,
+    },
+  },
+
   [TASK_TYPES.WHAT_AM_I]: {
     taskType: TASK_TYPES.WHAT_AM_I,
     title: "What Am I? — Photosynthesis",

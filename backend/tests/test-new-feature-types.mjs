@@ -582,6 +582,180 @@ section("N. Truth or Dare — type plumbing + safety + library + selector");
   assert(["ai", "library", "fallback"].includes(result.challenge.sourceProvenance), `sourceProvenance is valid (${result.challenge.sourceProvenance})`);
 }
 
+/* ──────────────── O. UPVOTE ──────────────── */
+section("O. UpVote — debatable proposition; sanitize + validate + playability");
+{
+  const { assessTaskPlayability } = await import("../../shared/taskPlayability.js");
+
+  // ── 1. Meta coverage ──
+  {
+    const meta = TASK_TYPE_META["upvote"];
+    const blooms = TASK_BLOOMS_MAP["upvote"];
+    assert(meta && meta.implemented === true, "upvote: meta.implemented = true");
+    assert(meta && meta.generatorEligible === true, "upvote: meta.generatorEligible = true");
+    assert(
+      Array.isArray(blooms) && blooms[0] === "EVALUATE" && blooms[1] === "ANALYZE",
+      `upvote: Bloom map is [EVALUATE, ANALYZE] (got ${JSON.stringify(blooms)})`
+    );
+    assert(
+      typeof meta?.aiPrompt === "string" && meta.aiPrompt.length > 200,
+      "upvote: meta.aiPrompt is substantial (safety + worldview rules)"
+    );
+  }
+
+  // Canonical pipeline helper.
+  const run = (input) => {
+    const s = sanitizeTaskShapeByType("upvote", input);
+    const n = normalizeTaskByType("upvote", s);
+    return { s, n, v: validateTaskByType("upvote", n), p: assessTaskPlayability(n) };
+  };
+
+  // ── 2. Well-formed task validates clean + is playable. ──
+  {
+    const ok = run({
+      taskType: "upvote",
+      title: "UpVote — Queenston Heights",
+      prompt: "Read and vote.",
+      config: {
+        proposition: "Sir Isaac Brock should not have personally led the charge at Queenston Heights.",
+        subject: "History",
+        unitName: "War of 1812",
+        gradeLevel: 7,
+        voteTimeSeconds: 120,
+        showRunningTally: true,
+        requireReasoningOnSubmit: false,
+      },
+    });
+    assert(ok.v.ok, `well-formed upvote validates (errors: ${ok.v.errors?.join("; ")})`);
+    assert(ok.p.playable, "well-formed upvote is playable");
+    assert(
+      ok.n.config.voteTimeSeconds === 120 &&
+        ok.n.config.showRunningTally === true &&
+        ok.n.config.requireReasoningOnSubmit === false,
+      "well-formed upvote: config values preserved"
+    );
+  }
+
+  // ── 3. Missing proposition → validate fails + playability flags it. ──
+  {
+    const bad = run({
+      taskType: "upvote",
+      title: "Bad UpVote",
+      prompt: "no prop",
+      config: {
+        subject: "History", unitName: "War of 1812", gradeLevel: 7,
+      },
+    });
+    assert(!bad.v.ok, "missing proposition fails validation");
+    assert(
+      !bad.p.playable && bad.p.issues.some((i) => /proposition/i.test(i)),
+      "missing proposition fails playability with a proposition-specific issue"
+    );
+  }
+
+  // ── 4. voteTimeSeconds: 5 → clamped to 30 by sanitizer. ──
+  {
+    const clamped = run({
+      taskType: "upvote",
+      title: "Clamp Low",
+      prompt: "p",
+      config: {
+        proposition: "Pluto should still be classified as a planet today.",
+        subject: "Science", unitName: "Solar System", gradeLevel: 8,
+        voteTimeSeconds: 5,
+      },
+    });
+    assert(
+      clamped.n.config.voteTimeSeconds === 30,
+      `voteTimeSeconds=5 clamped to 30 (got ${clamped.n.config.voteTimeSeconds})`
+    );
+    assert(clamped.v.ok, "clamped voteTimeSeconds still validates clean");
+  }
+
+  // ── 5. voteTimeSeconds: 9999 → clamped to 300 by sanitizer. ──
+  {
+    const clampedHigh = run({
+      taskType: "upvote",
+      title: "Clamp High",
+      prompt: "p",
+      config: {
+        proposition: "Macbeth is more responsible for his downfall than Lady Macbeth is.",
+        subject: "English", unitName: "Macbeth", gradeLevel: 10,
+        voteTimeSeconds: 9999,
+      },
+    });
+    assert(
+      clampedHigh.n.config.voteTimeSeconds === 300,
+      `voteTimeSeconds=9999 clamped to 300 (got ${clampedHigh.n.config.voteTimeSeconds})`
+    );
+  }
+
+  // ── 6. Top-level proposition is promoted into config by sanitizer. ──
+  {
+    const promoted = run({
+      taskType: "upvote",
+      title: "Promote",
+      prompt: "p",
+      // proposition at the ROOT — AI sometimes emits it here instead of under config
+      proposition: "Memorising times tables is more valuable than learning to derive them.",
+      subject: "Math",
+      unitName: "Number Sense",
+      gradeLevel: 9,
+    });
+    assert(
+      typeof promoted.n.config.proposition === "string" &&
+        promoted.n.config.proposition.length > 0,
+      "top-level proposition promoted into config"
+    );
+    assert(
+      promoted.n.proposition === undefined,
+      "top-level proposition removed after promotion"
+    );
+  }
+
+  // ── 7. Defaults: showRunningTally true, requireReasoningOnSubmit false. ──
+  {
+    const defaults = run({
+      taskType: "upvote",
+      title: "Defaults",
+      prompt: "p",
+      config: {
+        proposition: "Peter's denial of Jesus is a worse failure than Judas's betrayal.",
+        subject: "Bible", unitName: "Passion Week", gradeLevel: 6,
+      },
+    });
+    assert(
+      defaults.n.config.showRunningTally === true,
+      "default showRunningTally is true"
+    );
+    assert(
+      defaults.n.config.requireReasoningOnSubmit === false,
+      "default requireReasoningOnSubmit is false"
+    );
+    assert(
+      defaults.n.config.worldview === "faith",
+      `worldview inferred to 'faith' from Bible subject (got ${defaults.n.config.worldview})`
+    );
+  }
+
+  // ── 8. Playability fails on empty-string proposition. ──
+  {
+    const empty = run({
+      taskType: "upvote",
+      title: "Empty Prop",
+      prompt: "p",
+      config: {
+        proposition: "   ",
+        subject: "History", unitName: "War of 1812", gradeLevel: 7,
+      },
+    });
+    assert(
+      !empty.p.playable,
+      "empty-string proposition fails playability after trim"
+    );
+  }
+}
+
 /* ──────────────── P. TASKSET-GENERATION AUDIT FIXES ──────────────── */
 section("P. Taskset-generation audit fixes (Grade-8 Bible/Pentecost audit)");
 {

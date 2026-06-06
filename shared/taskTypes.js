@@ -160,6 +160,12 @@ export const TASK_TYPES = {
   // Truth or Dare — classroom-safe social engagement engine.
   // Standalone task and overlay-injectable. See TRUTH_OR_DARE_PLAN.md.
   TRUTH_OR_DARE: "truth-or-dare",
+
+  // UpVote — debatable binary proposition. Class votes For/Against on a
+  // genuinely two-sided subject-tied claim; AI surfaces the strongest
+  // reasoning for each side. NOT a fact-check (use True/False) and NOT a
+  // one-vs-one debate (use Live Debate) — UpVote is a class judgement call.
+  UPVOTE: "upvote",
 };
 
 // ================================
@@ -235,6 +241,7 @@ export const TASK_BLOOMS_MAP = {
   "current-events":             ["ANALYZE", "EVALUATE"],
   "legends":                    ["ANALYZE", "REMEMBER"],
   "truth-or-dare":              ["APPLY", "ANALYZE", "REMEMBER"],
+  "upvote":                     ["EVALUATE", "ANALYZE"],
 
   // Evaluate -- critique, judge, argue, defend
   "open-text":                  ["EVALUATE", "UNDERSTAND"],
@@ -4885,6 +4892,117 @@ config: {
     `,
   },
 
+  // ──────────────────────────────────────────────────────────────────────
+  // UPVOTE — debatable binary proposition; class judgement call.
+  // ──────────────────────────────────────────────────────────────────────
+  [TASK_TYPES.UPVOTE]: {
+    label: "UpVote",
+    category: CATEGORY.OTHER,
+    implemented: true,
+    demoEligible: true,
+    demoSelectable: true,
+    generatorEligible: true,
+    profileInjectedOnly: false,
+    objectiveKeyed: false,
+    aiScoringDefaultOn: false,
+    scoringMode: "participation",
+    quickTaskEligible: true,
+    hasOptions: false,
+    expectsText: false,
+    maxTimeSeconds: 180,
+    estimatedMinutes: 4,
+    correctAnswerShape: "none",
+    interTeamEnabled: false,
+    intraTeamEnabled: true,
+    description:
+      "UpVote — a single debatable proposition tied to the unit. Each team votes For or Against; the class sees the tally and the AI surfaces the strongest argument on each side. Distinct from True/False (no fact answer) and Live Debate (no head-to-head). Best for 'should / better / more / worse' judgement calls, ethical trade-offs, and historical counterfactuals.",
+    aiPrompt: `
+Generate ONE Curriculate task object with taskType "upvote".
+
+WHAT UPVOTE IS:
+A single binary proposition that the class votes For or Against. The
+proposition MUST be genuinely two-sided — both Yes and No are defensible
+by a thoughtful student. Think "should / better / more / worse" judgement
+calls, ethical trade-offs, historical counterfactuals.
+
+WHAT UPVOTE IS NOT:
+- NOT True/False — UpVote is never a question of established fact.
+- NOT Live Debate — UpVote has no head-to-head matchup, no fixed sides
+  assigned to teams, no postulate-style turn-taking.
+- NOT a survey of preferences ("Do you like pizza?") — must hinge on the
+  subject content.
+
+HARD REQUIREMENTS:
+- Output ONLY a single JSON object (no markdown, no commentary).
+- title: 3-7 words tied to the unit.
+- prompt: 1 sentence student-facing intro that frames the vote.
+- config.proposition: ONE sentence, 8-25 words, declarative (not a
+  question), subject-tied, with at least TWO defensible viewpoints.
+- config.subject (e.g. "History", "Science", "English", "Bible")
+- config.unitName (the specific unit/topic)
+- config.gradeLevel (number 1-12)
+- config.voteTimeSeconds (30-300, default 120)
+- config.showRunningTally (boolean, default true)
+- config.requireReasoningOnSubmit (boolean, default false)
+- config.worldview ("faith" | "secular" | "general", default "general")
+
+EXAMPLES OF GOOD PROPOSITIONS (ship these):
+- History G7: "Sir Isaac Brock should not have personally led the charge at Queenston Heights."
+- Science G8: "Pluto should still be classified as a planet."
+- Bible G6: "Peter's denial of Jesus is a worse failure than Judas's betrayal."
+- Math G9: "Memorising times tables is more valuable than learning to derive them."
+- English G10: "Macbeth is more responsible for his downfall than Lady Macbeth is."
+
+EXAMPLES OF BAD PROPOSITIONS (reject these):
+- "Do zebras have stripes?" — trivially true, not a question of judgement.
+- "Was Brock a Frenchman?" — trivially false, fact question.
+- "Is murder wrong?" — no defensible counter-case.
+- "Is the Pythagorean theorem useful?" — one-sided.
+- "Should you study?" — vacuous, not subject-tied.
+
+SAFETY (absolute — no exceptions):
+- NO targeting of named LIVING individuals from current politics, sports,
+  or entertainment (historical figures like Brock, Caesar, Lincoln are
+  fine; living named politicians, athletes, celebrities are NOT).
+- NO contested personal-choice medical, legal, or sexuality questions
+  (abortion, gender-affirming care, gun ownership, capital punishment,
+  drug legalisation, sexual orientation).
+- NO framing of any religious tradition as inferior, dishonest, or false;
+  do not invite students to vote against the legitimacy of someone's
+  faith tradition.
+- NO personal disclosure prompts ("are you a better person than…").
+- NO romance, attraction, body image, family income.
+- NO endorsement-shaped propositions about brands or commercial products.
+
+WORLDVIEW HANDLING:
+- worldview "faith" (e.g. Christian-school Bible/Theology units): you MAY
+  generate interior-to-the-tradition interpretive questions at age-
+  appropriate framing ("Peter's denial vs Judas's betrayal", "free will
+  vs predestination at G9", "Mary or Martha showed better discipleship").
+  Treat the tradition's truth claims as the shared frame; the vote is on
+  interpretation, not on whether the tradition is true.
+- worldview "secular" or "general": frame propositions in empirical,
+  historical, ethical, or aesthetic terms only. Avoid theology votes.
+
+Example output:
+{
+  "taskType": "upvote",
+  "title": "UpVote — Queenston Heights",
+  "prompt": "Read the proposition, then cast your vote For or Against. Defend your side in one line.",
+  "config": {
+    "proposition": "Sir Isaac Brock should not have personally led the charge at Queenston Heights.",
+    "subject": "History",
+    "unitName": "War of 1812",
+    "gradeLevel": 7,
+    "voteTimeSeconds": 120,
+    "showRunningTally": true,
+    "requireReasoningOnSubmit": false,
+    "worldview": "general"
+  }
+}
+    `,
+  },
+
   [TASK_TYPES.QUEST]: {
     label: "Quest",
     category: CATEGORY.OTHER,
@@ -5541,6 +5659,7 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.SPINNER]:                { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.TEAM_SELFIE]:            { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.TRUTH_OR_DARE]:          { math: 0.7, science: 0.9, history: 0.95, language: 0.95, arts: 1.0, health: 0.8, business: 0.7, religion: 0.7, general: 0.9 },
+  [TASK_TYPES.UPVOTE]:                 { math: 0.5, science: 0.7, history: 1.0,  language: 0.9,  arts: 0.8, health: 0.7, business: 0.9, religion: 1.0,  general: 0.8 },
 };
 
 // Subject-detection: map freeform subject strings to affinity bucket keys
@@ -6767,6 +6886,41 @@ export const TASK_SHELLS = {
         judgmentMode: "mixed",
         safeClassroomMode: false,
         seedChallenges,
+      },
+    };
+    return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
+  },
+
+  // ──────────────────────────────────────────────────────────────────────
+  // UpVote — single debatable proposition. Shell is intentionally tight:
+  // the only "live" field is the proposition itself; everything else is a
+  // session knob with a safe default.
+  // ──────────────────────────────────────────────────────────────────────
+  [TASK_TYPES.UPVOTE]: function buildUpVoteShell() {
+    const placeholders = [
+      "TITLE: 3-7 words tied to the unit (e.g. 'UpVote — Queenston Heights')",
+      "PROMPT: 1 sentence student-facing intro that frames the vote",
+      "PROPOSITION: One declarative sentence, 8-25 words, GENUINELY two-sided, subject-tied. NOT a fact question, NOT a survey of preference. See aiPrompt examples.",
+      "SUBJECT: General subject area (e.g. 'History', 'Bible', 'English')",
+      "UNIT_NAME: Specific unit/topic",
+      "GRADE_LEVEL: integer 1-12 matching the requested grade",
+      "WORLDVIEW: 'faith' | 'secular' | 'general' — typically 'general' unless the unit is religious/explicitly secular",
+    ];
+    const names = ["TITLE", "PROMPT", "PROPOSITION", "SUBJECT", "UNIT_NAME", "GRADE_LEVEL", "WORLDVIEW"];
+
+    const shell = {
+      taskType: "upvote",
+      title: "{{TITLE}}",
+      prompt: "{{PROMPT}}",
+      config: {
+        proposition: "{{PROPOSITION}}",
+        subject: "{{SUBJECT}}",
+        unitName: "{{UNIT_NAME}}",
+        gradeLevel: "{{GRADE_LEVEL}}",
+        worldview: "{{WORLDVIEW}}",
+        voteTimeSeconds: 120,
+        showRunningTally: true,
+        requireReasoningOnSubmit: false,
       },
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };

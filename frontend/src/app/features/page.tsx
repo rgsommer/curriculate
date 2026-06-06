@@ -565,6 +565,17 @@ export default function FeaturesPage() {
                 ]}
               />
               <FeatureCard
+                title="🗳 UpVote"
+                body="One debatable proposition tied to the unit. The class votes For or Against, sees the tally, and the AI surfaces the strongest case on each side. Distinct from True/False (no fact answer) and Live Debate (no head-to-head matchup) — UpVote is a class judgement call. Practice mode turns it into a one-person dialectic."
+                bullets={[
+                  "Two-pass generator: AI emits the proposition, then a gpt-4o-mini debatability gate asks YES/NO 'is this genuinely two-sided?'. Anything one-sided is regenerated up to twice, then dropped — no trivial votes ever ship.",
+                  "Worldview-aware prompt pool: 'faith' worldview opens interior-to-tradition interpretive questions (Peter's denial vs Judas's betrayal); 'secular' or 'general' frames in empirical / ethical / aesthetic terms only",
+                  "Strict safety no-fly zones — no named living politicians, no contested personal-choice medical/legal/sexuality questions, no framing of any religious tradition as inferior, no body-image or family-income propositions",
+                  "Heavy affinity for history, religion, and English (where judgement calls are the point); lower for math (where there's usually a right answer)",
+                  "Bloom mapping: EVALUATE (primary) + ANALYZE (secondary) — students judge a claim, then defend their side in one sentence",
+                ]}
+              />
+              <FeatureCard
                 title="🗺 Map It"
                 body="Match-on-a-map for any geography-flavoured unit. Students see a real cartographic image with 3–5 numbered coloured markers and match each marker to the correct location, event, or person from a shuffled choice list — the same two-tap interaction as Matching, but anchored to a place."
                 bullets={[
