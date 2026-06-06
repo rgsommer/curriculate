@@ -19,6 +19,7 @@ export default function GroupDetailPage() {
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
+  const [inviteTarget, setInviteTarget] = useState(""); // "" = whole group, else engagement id
   const [emailInput, setEmailInput] = useState("");
   const [sending, setSending] = useState(false);
   const [inviteResult, setInviteResult] = useState<string | null>(null);
@@ -109,27 +110,52 @@ See you around the campfire! 🏕️`
     setSending(true);
     setInviteResult(null);
     try {
-      const res = await fetch("/api/campfire/invite", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ groupId, invites, origin: window.location.origin, stage: true }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setInviteResult(data.error || "Couldn't add invites.");
+      if (inviteTarget) {
+        // Invite to a SPECIFIC engagement — emails the deep-link straight into it.
+        const res = await fetch("/api/campfire/engagement/invite", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            engagementId: inviteTarget,
+            invites,
+            origin: window.location.origin,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) setInviteResult(data.error || "Couldn't send.");
+        else {
+          setInviteResult(`✓ Emailed ${data.sent} — they'll land right in that engagement.`);
+          setEmailInput("");
+          await refresh();
+        }
       } else {
-        setInviteResult(
-          data.emailedNow > 0
-            ? `✓ Added ${data.staged}. ${data.emailedNow} ${
-                data.emailedNow === 1 ? "was" : "were"
-              } emailed the live engagement right away; the rest get a friendly invite the moment you post one.`
-            : `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an engagement.`
-        );
-        setEmailInput("");
-        await refresh();
+        // Invite to the whole group (staged; emailed when an engagement is posted,
+        // or right away if one's already live).
+        const res = await fetch("/api/campfire/invite", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ groupId, invites, origin: window.location.origin, stage: true }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setInviteResult(data.error || "Couldn't add invites.");
+        } else {
+          setInviteResult(
+            data.emailedNow > 0
+              ? `✓ Added ${data.staged}. ${data.emailedNow} ${
+                  data.emailedNow === 1 ? "was" : "were"
+                } emailed the live engagement right away; the rest get a friendly invite the moment you post one.`
+              : `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an engagement.`
+          );
+          setEmailInput("");
+          await refresh();
+        }
       }
     } catch {
       setInviteResult("Couldn't send invites. Try again.");
@@ -422,16 +448,32 @@ See you around the campfire! 🏕️`
           </button>
         </div>
 
-        {/* Email-invite form */}
+        {/* Email-invite form — the one place to enter emails */}
         {showEmailInvite && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
+            {/* What is this invite about? */}
             <label className="block text-xs font-medium text-slate-600 mb-1">
-              Add people by email — one or more, separated by commas or spaces. You can
-              paste straight from your contacts (e.g. <span className="font-mono">Alex
-              Lee &lt;alex@example.com&gt;</span>) — we&apos;ll keep each person&apos;s name
-              and greet them by it in the invite. They aren&apos;t emailed yet: they get a
-              friendly invite the moment you post an engagement (so no one gets a dead
-              &ldquo;join my empty group&rdquo; email).
+              Invite to
+            </label>
+            <select
+              value={inviteTarget}
+              onChange={(e) => setInviteTarget(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-orange-500 outline-none mb-2"
+            >
+              <option value="">📋 The whole group (sees all engagements)</option>
+              {liveEngagements.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} {e.title}
+                </option>
+              ))}
+            </select>
+
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Email addresses — commas or spaces; paste from contacts too (e.g.{" "}
+              <span className="font-mono">Alex Lee &lt;alex@example.com&gt;</span>).
+              {inviteTarget
+                ? " They get a link straight into that engagement (and can step back to the group for the rest)."
+                : " They're added to the list and emailed the moment you post an engagement."}
             </label>
             <textarea
               value={emailInput}
@@ -446,7 +488,13 @@ See you around the campfire! 🏕️`
                 disabled={sending || !emailInput.trim()}
                 className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
               >
-                {sending ? "Adding..." : "Add to invite list"}
+                {sending
+                  ? inviteTarget
+                    ? "Sending…"
+                    : "Adding..."
+                  : inviteTarget
+                  ? "Send email invites"
+                  : "Add to invite list"}
               </button>
               {inviteResult && (
                 <span

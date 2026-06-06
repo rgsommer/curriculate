@@ -8,7 +8,6 @@ import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
-import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 // ── Canvas helpers for the shareable results card ──
 function roundRectPath(
@@ -191,10 +190,6 @@ export default function EngagementDetailPage() {
   const [pendingCount, setPendingCount] = useState(0);
   const [groupInfo, setGroupInfo] = useState<{ name: string; invite_code: string } | null>(null);
   const [sharedEng, setSharedEng] = useState(false);
-  const [showEngEmail, setShowEngEmail] = useState(false);
-  const [engEmailInput, setEngEmailInput] = useState("");
-  const [engInviteSending, setEngInviteSending] = useState(false);
-  const [engInviteResult, setEngInviteResult] = useState<string | null>(null);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
@@ -453,37 +448,6 @@ export default function EngagementDetailPage() {
     } catch {
       alert(msg); // clipboard blocked — show it so they can copy manually
     }
-  };
-
-  // Email specific people about THIS engagement (deep-links them straight in).
-  const sendEngagementEmailInvites = async () => {
-    if (!session) return;
-    const invites = parseInviteList(engEmailInput);
-    if (invites.length === 0) {
-      setEngInviteResult("Enter at least one email address.");
-      return;
-    }
-    setEngInviteSending(true);
-    setEngInviteResult(null);
-    try {
-      const res = await fetch("/api/campfire/engagement/invite", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ engagementId, invites, origin: window.location.origin }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) setEngInviteResult(data.error || "Couldn't send.");
-      else {
-        setEngInviteResult(`✓ Emailed ${data.sent} — they'll land right here when they join.`);
-        setEngEmailInput("");
-      }
-    } catch {
-      setEngInviteResult("Couldn't send. Try again.");
-    }
-    setEngInviteSending(false);
   };
 
   const launch = async () => {
@@ -1621,54 +1585,19 @@ export default function EngagementDetailPage() {
         )}
       </div>
 
-      {/* ── Invite people straight into THIS engagement ── */}
+      {/* ── Share a link that drops people straight into THIS engagement ──
+          (To email people, use the group's invite form — one place for emails.) */}
       {!isDraft && groupInfo && (
-        <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs text-slate-500">
-              Inviting someone new? They join the group <em>and</em> land right here.
-            </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={shareEngagement}
-                className="rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
-              >
-                {sharedEng ? "✓ Copied — paste it anywhere!" : "📨 Copy invite link"}
-              </button>
-              {isCreator && (
-                <button
-                  onClick={() => setShowEngEmail((v) => !v)}
-                  className="rounded-full border border-slate-300 bg-white px-4 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  ✉️ By email
-                </button>
-              )}
-            </div>
-          </div>
-
-          {isCreator && showEngEmail && (
-            <div className="mt-3 border-t border-slate-100 pt-3">
-              <textarea
-                value={engEmailInput}
-                onChange={(e) => setEngEmailInput(e.target.value)}
-                rows={2}
-                placeholder="alex@example.com, Jordan Lee <jordan@example.com>"
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
-              />
-              <div className="mt-2 flex items-center gap-3">
-                <button
-                  onClick={sendEngagementEmailInvites}
-                  disabled={engInviteSending || !engEmailInput.trim()}
-                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
-                >
-                  {engInviteSending ? "Sending…" : "Send email invites"}
-                </button>
-                {engInviteResult && (
-                  <span className="text-xs text-slate-600">{engInviteResult}</span>
-                )}
-              </div>
-            </div>
-          )}
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+          <p className="text-xs text-slate-500">
+            Post this in a chat — it joins the group <em>and</em> lands right here.
+          </p>
+          <button
+            onClick={shareEngagement}
+            className="rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
+          >
+            {sharedEng ? "✓ Copied — paste it anywhere!" : "📨 Copy invite link"}
+          </button>
         </div>
       )}
 
