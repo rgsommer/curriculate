@@ -315,7 +315,8 @@
       "Bash(grep -n \"^import\\\\|</div>\\\\s*$\" teacher-app/src/pages/SharedPresenterLaunch.jsx)",
       "Bash(grep -nA20 'taskType: \"make-and-snap\"' student-app/src/demoTasks.js)",
       "Bash(grep -nA15 'taskType: \"mystery-clues\"' student-app/src/demoTasks.js)",
-      "Bash(grep -n \"<MakeAndSnapTask\\\\|MakeAndSnapTask$\\\\|/MakeAndSnap\" student-app/src/components/tasks/TaskRunner.jsx)"
+      "Bash(grep -n \"<MakeAndSnapTask\\\\|MakeAndSnapTask$\\\\|/MakeAndSnap\" student-app/src/components/tasks/TaskRunner.jsx)",
+      "Bash(npx tsc *)"
     ]
   }
 }

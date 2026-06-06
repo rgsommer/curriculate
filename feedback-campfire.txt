@@ -1,6 +1,11 @@
 === CAMPFIRE (group engagement) FEEDBACK REPORT ===
-Generated: 2026-06-05T18:25:45.240Z
-Total: 0
+Generated: 2026-06-05T20:26:17.624Z
+Total: 2
 Since:  (all time)
 
-  (none)
+  [cc3663] 2026-06-05T20:24:33.322Z  (anon)  page=/campfirelive/group/e3aff061-8148-491d-ba91-5ae0a80e8485/engagement/f3c9efa3-6eda-4177-acc9-333e875e4466
+    I created engagement and then it prompted me to put my response in, so I did. And then it immediately revealed the results that was not expected. Behavior it should wait until the deadline. Also when the results are revealed if it's an anonymous group I mean the results are anonymous let the users guess who the contributors are
+    Make that a fun way to engage once the results are revealed.
+    Maybe with a drop down of all the users, the following each response.
+  [cc35ad] 2026-06-05T20:20:08.388Z  (anon)  page=/campfirelive/group/a80d50a5-0db4-458d-8cb5-84c2e01e2f5e
+    Hi joined from an email invitation, and then I signed in through Google, and the invitation still shows us pending. Also, is there a way to edit the username instead of just using the google username

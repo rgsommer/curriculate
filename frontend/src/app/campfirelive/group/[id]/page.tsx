@@ -22,6 +22,8 @@ export default function GroupDetailPage() {
   const [savingMyName, setSavingMyName] = useState(false);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [memberNameInput, setMemberNameInput] = useState("");
+  const [editingInviteEmail, setEditingInviteEmail] = useState<string | null>(null);
+  const [inviteNameInput, setInviteNameInput] = useState("");
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
@@ -190,6 +192,24 @@ See you around the campfire! 🏕️`
   const nudgeAllPending = () => inviteAction("/api/campfire/invite/nudge");
   const revokeOne = (email: string) => inviteAction("/api/campfire/invite/revoke", [email]);
   const markJoined = (email: string) => inviteAction("/api/campfire/invite/mark-joined", [email]);
+
+  // Inline-rename a tracked invitee (host only).
+  const renameInvite = async (email: string, name: string) => {
+    if (!group || !session) return;
+    try {
+      await fetch("/api/campfire/invite/rename", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ groupId, email, name }),
+      });
+    } catch {
+      /* surfaced via refreshed list */
+    }
+    await refresh();
+  };
 
   if (loading) {
     return (
@@ -648,36 +668,86 @@ See you around the campfire! 🏕️`
                   key={inv.id}
                   className="rounded-lg bg-white/60 px-2.5 py-2 text-xs"
                 >
-                  {/* Top line: name + status badge — always visible, never truncated off */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`min-w-0 truncate font-medium ${
-                        inv.status === "revoked"
-                          ? "text-slate-400 line-through"
-                          : "text-slate-800"
-                      }`}
-                    >
-                      {inv.name || inv.email}
-                    </span>
-                    <span className="flex-shrink-0">
-                      {inv.status === "joined" && (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">
-                          ✓ joined
+                  {/* Top line: name (+ rename) + status badge — always visible */}
+                  {editingInviteEmail === inv.email ? (
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={inviteNameInput}
+                        onChange={(e) => setInviteNameInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") setEditingInviteEmail(null);
+                          if (e.key === "Enter") {
+                            renameInvite(inv.email, inviteNameInput);
+                            setEditingInviteEmail(null);
+                          }
+                        }}
+                        placeholder="Name"
+                        maxLength={60}
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-lg border border-slate-300 px-2 py-0.5 text-sm outline-none focus:border-orange-500"
+                      />
+                      <button
+                        onClick={() => {
+                          renameInvite(inv.email, inviteNameInput);
+                          setEditingInviteEmail(null);
+                        }}
+                        className="flex-shrink-0 font-semibold text-orange-600 hover:underline"
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => setEditingInviteEmail(null)}
+                        className="flex-shrink-0 text-slate-400 hover:text-slate-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1">
+                        <span
+                          className={`min-w-0 truncate font-medium ${
+                            inv.status === "revoked"
+                              ? "text-slate-400 line-through"
+                              : "text-slate-800"
+                          }`}
+                        >
+                          {inv.name || inv.email}
                         </span>
-                      )}
-                      {inv.status === "revoked" && (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">
-                          revoked
-                        </span>
-                      )}
-                      {inv.status === "pending" && (
-                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
-                          pending
-                          {inv.nudge_count > 0 ? ` · ${inv.nudge_count}×` : ""}
-                        </span>
-                      )}
-                    </span>
-                  </div>
+                        {isAdmin && inv.status !== "revoked" && (
+                          <button
+                            onClick={() => {
+                              setInviteNameInput(inv.name || "");
+                              setEditingInviteEmail(inv.email);
+                            }}
+                            title="Edit name"
+                            className="flex-shrink-0 text-slate-400 hover:text-orange-600"
+                          >
+                            ✏️
+                          </button>
+                        )}
+                      </span>
+                      <span className="flex-shrink-0">
+                        {inv.status === "joined" && (
+                          <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">
+                            ✓ joined
+                          </span>
+                        )}
+                        {inv.status === "revoked" && (
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">
+                            revoked
+                          </span>
+                        )}
+                        {inv.status === "pending" && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+                            pending
+                            {inv.nudge_count > 0 ? ` · ${inv.nudge_count}×` : ""}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Email (only when a name is shown above) + who added them */}
                   <div className="mt-0.5 truncate text-slate-400">
@@ -783,7 +853,7 @@ See you around the campfire! 🏕️`
                               setEditingMemberId(m.user_id);
                             }}
                             title="Rename in this group"
-                            className="ml-1.5 text-slate-300 hover:text-orange-600"
+                            className="ml-1.5 text-slate-400 hover:text-orange-600"
                           >
                             ✏️
                           </button>
