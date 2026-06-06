@@ -107,7 +107,7 @@ export default function EngagementDetailPage() {
     (async () => {
       const { data } = await supabase
         .from("campfire_invitations")
-        .select("status")
+        .select("email, name, status")
         .eq("group_id", groupId);
       // Member-safe pending count (works for everyone, returns a number only).
       const { data: pc } = await supabase.rpc("pending_invite_count", { _gid: groupId });
@@ -123,6 +123,11 @@ export default function EngagementDetailPage() {
             joined: data.filter((r) => r.status === "joined").length,
             pending: data.filter((r) => r.status === "pending").length,
           });
+          setPendingInvitees(
+            data
+              .filter((r) => r.status === "pending")
+              .map((r) => ({ email: r.email as string, name: (r.name as string) ?? null }))
+          );
         }
         setPendingCount((pc as number) ?? 0);
         if (g) setGroupInfo(g as { name: string; invite_code: string });
@@ -191,6 +196,9 @@ export default function EngagementDetailPage() {
   const [editDesc, setEditDesc] = useState("");
   const [editRecurrence, setEditRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
+  const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
+  const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
+  const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
@@ -320,6 +328,8 @@ export default function EngagementDetailPage() {
       (engagement.recurrence_rule as "daily" | "weekly" | "monthly" | null) ?? "none"
     );
     setEditAllowMemberInvites(!!engagement.allow_member_invites);
+    setEditExcludedIds(engagement.excluded_user_ids ?? []);
+    setEditExcludedEmails(engagement.excluded_emails ?? []);
     setEditing(true);
   };
 
@@ -333,6 +343,8 @@ export default function EngagementDetailPage() {
         description: editDesc.trim() || null,
         recurrence_rule: editRecurrence === "none" ? null : editRecurrence,
         allow_member_invites: editAllowMemberInvites,
+        excluded_user_ids: editExcludedIds,
+        excluded_emails: editExcludedEmails,
       })
       .eq("id", engagementId);
     setSavingEdit(false);
@@ -1841,6 +1853,68 @@ export default function EngagementDetailPage() {
                   </div>
                 </div>
               </label>
+
+              {/* Surprise: hide from (members + pending invitees) */}
+              {(roster.filter((m) => m.user_id !== user?.id).length > 0 ||
+                pendingInvitees.length > 0) && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    🎁 Hide from (surprise) — they don&apos;t see it until the reveal
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {roster
+                      .filter((m) => m.user_id !== user?.id)
+                      .map((m) => {
+                        const on = editExcludedIds.includes(m.user_id);
+                        return (
+                          <button
+                            key={m.user_id}
+                            type="button"
+                            onClick={() =>
+                              setEditExcludedIds((prev) =>
+                                on
+                                  ? prev.filter((id) => id !== m.user_id)
+                                  : [...prev, m.user_id]
+                              )
+                            }
+                            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                              on
+                                ? "border-rose-500 bg-rose-500 text-white"
+                                : "border-slate-300 bg-white text-slate-700 hover:border-rose-300"
+                            }`}
+                          >
+                            {on ? "🙈 " : ""}
+                            {m.name}
+                          </button>
+                        );
+                      })}
+                    {pendingInvitees.map((p) => {
+                      const on = editExcludedEmails.includes(p.email);
+                      return (
+                        <button
+                          key={p.email}
+                          type="button"
+                          onClick={() =>
+                            setEditExcludedEmails((prev) =>
+                              on ? prev.filter((e) => e !== p.email) : [...prev, p.email]
+                            )
+                          }
+                          className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                            on
+                              ? "border-rose-500 bg-rose-500 text-white"
+                              : "border-slate-200 bg-slate-50 text-slate-600 hover:border-rose-300"
+                          }`}
+                        >
+                          {on ? "🙈 " : ""}
+                          {p.name || p.email}{" "}
+                          <span className={on ? "text-rose-100" : "text-slate-400"}>· not joined</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {responseCount > 0 && (
                 <p className="text-xs text-amber-700">
                   ⚠️ {responseCount}{" "}
