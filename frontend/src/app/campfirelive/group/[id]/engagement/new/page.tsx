@@ -71,6 +71,13 @@ export default function NewEngagementPage() {
         setDescription("Share three statements about yourself — two true, one a lie. We'll all guess the lie!");
       setReveal("sealed"); // statements stay sealed until everyone's in
     }
+    if (type === "baby_reveal") {
+      if (!title.trim()) setTitle("Boy or girl? 🍼");
+      if (!description.trim())
+        setDescription("Lock in your guess — all is revealed on the big day!");
+      setPollOptions(["Boy", "Girl"]);
+      setReveal("sealed"); // guesses stay sealed until the reveal date
+    }
     setStep("details");
   };
 
@@ -93,14 +100,25 @@ export default function NewEngagementPage() {
     const config: Record<string, unknown> = {};
 
     // Type-specific config
-    if (selectedType === "poll") {
+    if (selectedType === "poll" || selectedType === "baby_reveal") {
       const opts = pollOptions.filter((o) => o.trim());
       if (opts.length < 2) {
-        setError("Add at least 2 options for your poll.");
+        setError(
+          selectedType === "baby_reveal"
+            ? "Add at least 2 choices to guess between."
+            : "Add at least 2 options for your poll."
+        );
         setCreating(false);
         return;
       }
       config.options = opts;
+    }
+
+    // Baby Reveal auto-opens on a date — a reveal date is required.
+    if (selectedType === "baby_reveal" && !deadline) {
+      setError("Pick the reveal date — that's when it unseals.");
+      setCreating(false);
+      return;
     }
 
     if (selectedType === "challenge") {
@@ -131,12 +149,18 @@ export default function NewEngagementPage() {
       description: description.trim() || undefined,
       config,
       deadline: deadline ? new Date(deadline) : undefined,
-      reveal: selectedType === "two_truths" ? "sealed" : reveal,
+      reveal:
+        selectedType === "two_truths" || selectedType === "baby_reveal"
+          ? "sealed"
+          : reveal,
       is_blind: selectedType === "two_truths" ? false : isBlind,
       recurrence_rule: recurrence === "none" ? undefined : recurrence,
       notify: true, // launching always notifies the group
-      // Only meaningful for sealed + a deadline; ignore otherwise.
-      hold_until_deadline: reveal === "sealed" && !!deadline && holdUntilDeadline,
+      // Baby Reveal always holds until the date; others only when opted in.
+      hold_until_deadline:
+        selectedType === "baby_reveal"
+          ? true
+          : reveal === "sealed" && !!deadline && holdUntilDeadline,
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
@@ -301,11 +325,11 @@ export default function NewEngagementPage() {
               />
             </div>
 
-            {/* Poll-specific: options */}
-            {selectedType === "poll" && (
+            {/* Poll / Baby Reveal: the choices */}
+            {(selectedType === "poll" || selectedType === "baby_reveal") && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Poll Options
+                  {selectedType === "baby_reveal" ? "Choices to guess between" : "Poll Options"}
                 </label>
                 {pollOptions.map((opt, i) => (
                   <div key={i} className="flex gap-2 mb-2">
@@ -365,7 +389,8 @@ export default function NewEngagementPage() {
           <h2 className="text-lg font-bold text-slate-900 mb-4">Engagement Options</h2>
 
           <div className="space-y-5 max-w-lg">
-            {/* Reveal Mode */}
+            {/* Reveal Mode — hidden for types that are always sealed */}
+            {selectedType !== "two_truths" && selectedType !== "baby_reveal" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Reveal Mode
@@ -398,10 +423,10 @@ export default function NewEngagementPage() {
                 </div>
               )}
             </div>
+            )}
 
-            {/* Blind mode — not relevant for Two Truths (knowing who wrote it is
-                the whole point of guessing their lie). */}
-            {selectedType !== "two_truths" && (
+            {/* Blind mode — not relevant for Two Truths / Baby Reveal */}
+            {selectedType !== "two_truths" && selectedType !== "baby_reveal" && (
               <div>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
@@ -425,7 +450,15 @@ export default function NewEngagementPage() {
             {/* Deadline */}
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Deadline <span className="text-slate-400">(optional)</span>
+                {selectedType === "baby_reveal" ? (
+                  <>
+                    🍼 Reveal date <span className="text-rose-500">(required)</span>
+                  </>
+                ) : (
+                  <>
+                    Deadline <span className="text-slate-400">(optional)</span>
+                  </>
+                )}
               </label>
               <input
                 type="datetime-local"
@@ -433,9 +466,16 @@ export default function NewEngagementPage() {
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
               />
+              {selectedType === "baby_reveal" && (
+                <p className="mt-1 text-xs text-slate-500">
+                  Guesses stay sealed until this exact moment, then it auto-reveals with
+                  the winners. Set the real answer on the engagement before then.
+                </p>
+              )}
 
-              {/* Hold the reveal until the deadline — only for sealed mode */}
-              {reveal === "sealed" && (
+              {/* Hold the reveal until the deadline — only for sealed mode (baby
+                  reveal already always holds, so don't show the toggle there) */}
+              {reveal === "sealed" && selectedType !== "baby_reveal" && (
                 <label
                   className={`mt-2 flex items-start gap-3 rounded-xl border p-3 ${
                     deadline
@@ -464,7 +504,8 @@ export default function NewEngagementPage() {
               )}
 
               {/* Wait for the whole invite list to join + respond (sealed) */}
-              {(reveal === "sealed" || selectedType === "two_truths") && (
+              {(reveal === "sealed" || selectedType === "two_truths") &&
+                selectedType !== "baby_reveal" && (
                 <label className="mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer">
                   <input
                     type="checkbox"

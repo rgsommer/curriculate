@@ -71,11 +71,13 @@ export default function EngagementDetailPage() {
     responseCount,
     lieGuesses,
     lieAnswers,
+    revealAnswer,
     loading,
     submitResponse,
     submitTwoTruths,
     submitLieGuess,
     revealLiesNow,
+    setRevealAnswer,
     addReaction,
     addRating,
     addComment,
@@ -514,6 +516,35 @@ export default function EngagementDetailPage() {
     if (hasResponded) return null;
 
     switch (engagement.type) {
+      case "baby_reveal":
+        return (
+          <div className="space-y-2">
+            <p className="text-xs text-slate-500">
+              Lock in your guess — it stays sealed until the reveal date.
+            </p>
+            {pollOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setSelectedOption(opt)}
+                className={`w-full text-left rounded-xl border p-3 text-sm transition ${
+                  selectedOption === opt
+                    ? "border-sky-500 bg-sky-50 font-semibold"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                {opt}
+              </button>
+            ))}
+            <button
+              onClick={handlePollSubmit}
+              disabled={!selectedOption || submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🍼 Lock In My Guess"}
+            </button>
+          </div>
+        );
+
       case "two_truths":
         return (
           <div className="space-y-3">
@@ -697,6 +728,94 @@ export default function EngagementDetailPage() {
     );
   };
 
+  const renderBabyRevealResults = () => {
+    if (!showResults || engagement.type !== "baby_reveal") return null;
+    const answer = revealAnswer?.answer ?? null;
+    const tally: Record<string, number> = {};
+    pollOptions.forEach((o) => (tally[o] = 0));
+    responses.forEach((r) => {
+      const opt = (r.content as { option?: string })?.option;
+      if (opt) tally[opt] = (tally[opt] ?? 0) + 1;
+    });
+    const total = responses.length || 1;
+    const winners = answer
+      ? responses.filter((r) => (r.content as { option?: string })?.option === answer)
+      : [];
+
+    return (
+      <div className="space-y-3">
+        {answer ? (
+          <div className="rounded-2xl border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-indigo-50 p-5 text-center">
+            <div className="text-4xl mb-1">🎉</div>
+            <div className="text-xl font-extrabold text-slate-900">It&apos;s {answer}!</div>
+            <p className="mt-1 text-sm text-slate-600">
+              {winners.length === 0
+                ? "Nobody guessed it!"
+                : `${winners.length} guessed right: ${winners
+                    .map((w) => w.profile?.display_name ?? "Someone")
+                    .join(", ")}`}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+            Guesses are in — waiting for the host to set the real answer.
+          </div>
+        )}
+
+        {pollOptions.map((opt) => {
+          const count = tally[opt] ?? 0;
+          const pct = Math.round((count / total) * 100);
+          const isAnswer = answer === opt;
+          return (
+            <div
+              key={opt}
+              className={`rounded-xl border p-3 ${
+                isAnswer ? "border-sky-400 bg-sky-50" : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="flex justify-between text-sm mb-1">
+                <span className="font-medium text-slate-800">
+                  {opt} {isAnswer && <span className="text-sky-600">✓ the answer</span>}
+                </span>
+                <span className="text-slate-500">
+                  {count} {count === 1 ? "guess" : "guesses"} · {pct}%
+                </span>
+              </div>
+              <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    isAnswer
+                      ? "bg-gradient-to-r from-sky-400 to-indigo-500"
+                      : "bg-slate-300"
+                  }`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              {/* Who guessed this (names visible post-reveal) */}
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {responses
+                  .filter((r) => (r.content as { option?: string })?.option === opt)
+                  .map((r) => (
+                    <span
+                      key={r.id}
+                      className={`text-[11px] rounded-full px-2 py-0.5 ${
+                        isAnswer
+                          ? "bg-sky-100 text-sky-800 font-medium"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {r.profile?.display_name ?? "Someone"}
+                      {r.user_id === user?.id ? " (you)" : ""}
+                    </span>
+                  ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderTwoTruthsResults = () => {
     if (!showResults || engagement.type !== "two_truths") return null;
     const liesRevealed = !!engagement.lies_revealed_at;
@@ -847,7 +966,12 @@ export default function EngagementDetailPage() {
   };
 
   const renderRevealedResponses = () => {
-    if (!showResults || engagement.type === "poll" || engagement.type === "two_truths")
+    if (
+      !showResults ||
+      engagement.type === "poll" ||
+      engagement.type === "two_truths" ||
+      engagement.type === "baby_reveal"
+    )
       return null;
 
     // "Guess who" candidates = everyone who responded.
@@ -1270,6 +1394,36 @@ export default function EngagementDetailPage() {
         )}
       </div>
 
+      {/* ── BABY REVEAL: host sets the secret answer (hidden until reveal) ── */}
+      {isCreator && engagement.type === "baby_reveal" && (
+        <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
+          <div className="text-sm font-bold text-slate-900">
+            🤫 The real answer
+            {revealAnswer ? " — set, kept secret until the reveal" : " (only you can set this)"}
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5 mb-2">
+            Pick the true answer. It stays hidden from everyone until
+            {deadlineStr ? ` ${deadlineStr}` : " the reveal"} — then winners light up.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {pollOptions.map((opt) => (
+              <button
+                key={opt}
+                onClick={() => setRevealAnswer(opt)}
+                className={`rounded-full border px-4 py-1.5 text-sm font-medium ${
+                  revealAnswer?.answer === opt
+                    ? "border-sky-500 bg-sky-500 text-white"
+                    : "border-slate-300 bg-white text-slate-700 hover:border-sky-400"
+                }`}
+              >
+                {opt}
+                {revealAnswer?.answer === opt ? " ✓" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── CREATOR CONTROL: force the reveal / end the engagement anytime ── */}
       {isCreator && engagement.status === "active" && (
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
@@ -1523,6 +1677,9 @@ export default function EngagementDetailPage() {
 
           {/* Two Truths & a Lie — guess-the-lie + scored reveal */}
           {renderTwoTruthsResults()}
+
+          {/* Baby Reveal — tally + winners */}
+          {renderBabyRevealResults()}
 
           {/* Other response types */}
           {renderRevealedResponses()}

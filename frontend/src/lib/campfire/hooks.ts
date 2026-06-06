@@ -18,6 +18,7 @@ import type {
   RevealMode,
   LieGuess,
   LieAnswer,
+  RevealAnswer,
 } from "./types";
 
 // ── Groups ──
@@ -220,6 +221,7 @@ export function useEngagement(engagementId: string) {
   const [responseCount, setResponseCount] = useState(0);
   const [lieGuesses, setLieGuesses] = useState<LieGuess[]>([]);
   const [lieAnswers, setLieAnswers] = useState<LieAnswer[]>([]);
+  const [revealAnswer, setRevealAnswerState] = useState<RevealAnswer | null>(null);
   const [loading, setLoading] = useState(true);
 
   const fetchEngagement = useCallback(async () => {
@@ -268,6 +270,18 @@ export function useEngagement(engagementId: string) {
     } else {
       setLieGuesses([]);
       setLieAnswers([]);
+    }
+
+    // Baby Reveal: the host's secret answer (RLS: host always; others post-reveal)
+    if (eng?.type === "baby_reveal") {
+      const { data: ra } = await supabase
+        .from("campfire_reveal_answers")
+        .select("*")
+        .eq("engagement_id", engagementId)
+        .maybeSingle();
+      setRevealAnswerState((ra as RevealAnswer) ?? null);
+    } else {
+      setRevealAnswerState(null);
     }
 
     // Reactions, comments & ratings (also RLS-gated to revealed engagements)
@@ -348,6 +362,19 @@ export function useEngagement(engagementId: string) {
     if (error) return { error: error.message };
     await fetchEngagement();
     return { error: null };
+  };
+
+  // Baby Reveal: host sets/changes the secret answer (hidden until reveal).
+  const setRevealAnswer = async (answer: string) => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("campfire_reveal_answers")
+      .upsert(
+        { engagement_id: engagementId, answer },
+        { onConflict: "engagement_id" }
+      );
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
   };
 
   // Creator force-reveals the lies (e.g. some players never guessed).
@@ -500,11 +527,13 @@ export function useEngagement(engagementId: string) {
     responseCount,
     lieGuesses,
     lieAnswers,
+    revealAnswer,
     loading,
     submitResponse,
     submitTwoTruths,
     submitLieGuess,
     revealLiesNow,
+    setRevealAnswer,
     addReaction,
     addRating,
     addComment,
