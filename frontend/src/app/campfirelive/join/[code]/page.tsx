@@ -170,7 +170,7 @@ export default function JoinGroupPage() {
                 Or join with email / Google
               </button>
               <p className="mt-1 text-xs text-slate-400">
-                Pick this if you&apos;ll log in from more than one device.
+                Pick this for more results.
               </p>
             </div>
           </div>
