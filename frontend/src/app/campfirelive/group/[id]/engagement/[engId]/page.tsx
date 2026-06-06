@@ -1590,13 +1590,16 @@ export default function EngagementDetailPage() {
       {!isDraft && groupInfo && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
           <p className="text-xs text-slate-500">
-            Post this in a chat — it joins the group <em>and</em> lands right here.
+            <span className="font-semibold text-slate-700">Invite to this engagement.</span>{" "}
+            Drops them straight in — and they&apos;ll have the whole group&apos;s
+            engagements at their fingertips once they join.
           </p>
           <button
             onClick={shareEngagement}
-            className="rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
+            title="Invite to this engagement — they'll see all the group's engagements once they join"
+            className="flex-shrink-0 rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
           >
-            {sharedEng ? "✓ Copied — paste it anywhere!" : "📨 Copy invite link"}
+            {sharedEng ? "✓ Copied — paste it anywhere!" : "📨 Copy invite"}
           </button>
         </div>
       )}

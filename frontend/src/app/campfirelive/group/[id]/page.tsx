@@ -422,9 +422,10 @@ See you around the campfire! 🏕️`
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             onClick={copyInvite}
+            title="Invite to this group — with a peek at all the active engagements"
             className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
           >
-            {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy invite"}
+            {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy Invite"}
           </button>
           {isAdmin && (
             <button
@@ -447,6 +448,11 @@ See you around the campfire! 🏕️`
             {showMembers ? "Hide" : "Show"} Members
           </button>
         </div>
+
+        <p className="mt-2 text-[11px] text-slate-500">
+          <span className="font-semibold">📋 Copy Invite</span> — invite to this group,
+          with a peek at all the active engagements.
+        </p>
 
         {/* Email-invite form — the one place to enter emails */}
         {showEmailInvite && (
