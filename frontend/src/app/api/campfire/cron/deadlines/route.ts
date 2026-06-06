@@ -252,13 +252,15 @@ export async function GET(req: Request) {
         excluded_user_ids: e.excluded_user_ids,
         excluded_emails: e.excluded_emails,
         cover_image_urls: e.cover_image_urls,
-        // Pick a fresh random cover from the pool for this year.
-        cover_image_url:
-          ((e.cover_image_urls as string[]) ?? []).length > 0
-            ? (e.cover_image_urls as string[])[
-                Math.floor(Math.random() * (e.cover_image_urls as string[]).length)
-              ]
-            : (e.cover_image_url as string | null),
+        // Pick a fresh random cover for this year — avoiding last year's so it
+        // always changes when there are 2+ images.
+        cover_image_url: (() => {
+          const pool = (e.cover_image_urls as string[]) ?? [];
+          if (pool.length === 0) return e.cover_image_url as string | null;
+          const choices =
+            pool.length > 1 ? pool.filter((u) => u !== e.cover_image_url) : pool;
+          return choices[Math.floor(Math.random() * choices.length)];
+        })(),
       });
       spawned++;
       continue;
