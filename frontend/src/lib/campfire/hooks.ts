@@ -333,6 +333,28 @@ export function useEngagement(engagementId: string) {
     await fetchEngagement();
   };
 
+  // Creator un-reveals — puts it back to sealed/active (e.g. revealed too early).
+  const unrevealEngagement = async () => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ status: "active" })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
+  // Creator toggles "hold until the deadline" on an existing engagement.
+  const setHoldUntilDeadline = async (hold: boolean) => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ hold_until_deadline: hold })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
   // Creator launches a draft engagement — makes it live (visible to the group).
   const launchEngagement = async () => {
     if (!engagementId) return { error: "Missing engagement" };
@@ -408,6 +430,8 @@ export function useEngagement(engagementId: string) {
     addComment,
     sendNudge,
     revealNow,
+    unrevealEngagement,
+    setHoldUntilDeadline,
     launchEngagement,
     deleteEngagement,
     removeResponse,

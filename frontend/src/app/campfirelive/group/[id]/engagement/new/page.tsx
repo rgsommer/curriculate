@@ -409,11 +409,11 @@ export default function NewEngagementPage() {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      ⏳ Wait until the deadline to reveal
+                      ⏳ Wait until the deadline to reveal (surprise mode)
                     </div>
                     <div className="text-xs text-slate-500">
                       {deadline
-                        ? "Hold the reveal until the deadline even if everyone responds early — gives invited people time to join first."
+                        ? "Stay sealed until the deadline even if everyone responds early — like a birthday gift that opens on the day. Off = reveals as soon as everyone's in (or at the deadline, whichever comes first)."
                         : "Set a deadline above to enable this."}
                     </div>
                   </div>

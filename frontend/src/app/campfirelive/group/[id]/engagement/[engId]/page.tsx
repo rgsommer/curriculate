@@ -76,6 +76,8 @@ export default function EngagementDetailPage() {
     addComment,
     sendNudge,
     revealNow,
+    unrevealEngagement,
+    setHoldUntilDeadline,
     launchEngagement,
     deleteEngagement,
     removeResponse,
@@ -1035,6 +1037,72 @@ export default function EngagementDetailPage() {
               className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white hover:opacity-90"
             >
               🎬 Reveal now
+            </button>
+          </div>
+
+          {/* Birthday-surprise mode: hold the reveal until the deadline */}
+          {engagement.reveal === "sealed" && engagement.deadline && (
+            <label className="mt-3 flex items-start gap-3 border-t border-slate-100 pt-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={!!engagement.hold_until_deadline}
+                onChange={(e) => setHoldUntilDeadline(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+              />
+              <div>
+                <div className="text-sm font-medium text-slate-700">
+                  ⏳ Wait until the deadline to reveal (surprise mode)
+                </div>
+                <div className="text-xs text-slate-500">
+                  Keep it sealed until{" "}
+                  {new Date(engagement.deadline).toLocaleDateString("en-US", {
+                    weekday: "short",
+                    month: "short",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}{" "}
+                  even if everyone responds early — like a gift that opens on the day.
+                </div>
+              </div>
+            </label>
+          )}
+        </div>
+      )}
+
+      {/* ── CREATOR CONTROL: un-reveal (e.g. it revealed earlier than wanted) ── */}
+      {isCreator && isRevealed && (
+        <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-slate-900">
+                Revealed too early? Put it back.
+              </div>
+              <p className="text-xs text-slate-500">
+                Re-seals it for everyone. Existing responses are kept — turn on
+                &ldquo;wait until the deadline&rdquo; next so it holds for the surprise.
+              </p>
+            </div>
+            <button
+              onClick={async () => {
+                const { error: unErr } = await unrevealEngagement();
+                if (unErr) {
+                  alert("Couldn't un-reveal: " + unErr);
+                  return;
+                }
+                // If there's a future deadline, offer to hold it until then.
+                if (
+                  engagement.deadline &&
+                  new Date(engagement.deadline).getTime() > Date.now() &&
+                  typeof window !== "undefined" &&
+                  window.confirm("Hold it sealed until the deadline so it can't re-reveal early?")
+                ) {
+                  await setHoldUntilDeadline(true);
+                }
+              }}
+              className="rounded-full border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              ↩️ Un-reveal (re-seal)
             </button>
           </div>
         </div>
