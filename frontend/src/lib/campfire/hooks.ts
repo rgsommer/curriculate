@@ -95,32 +95,19 @@ export function useGroups() {
   const joinGroup = async (inviteCode: string) => {
     if (!user) return { error: "Not logged in" };
 
-    const { data: group } = await supabase
-      .from("groups")
-      .select("*")
-      .eq("invite_code", inviteCode.toUpperCase())
-      .single();
-
-    if (!group) return { error: "Invalid invite code" };
-
-    // Check if already a member
-    const { data: existing } = await supabase
-      .from("group_members")
-      .select("*")
-      .eq("group_id", group.id)
-      .eq("user_id", user.id)
-      .single();
-
-    if (existing) return { error: "Already a member", groupId: group.id };
-
-    const { error } = await supabase
-      .from("group_members")
-      .insert({ group_id: group.id, user_id: user.id, role: "member" });
+    // Resolve the code + join in one RLS-safe step. A non-member can't SELECT a
+    // group by invite_code (groups SELECT policy is members-only), so we go
+    // through a SECURITY DEFINER function that looks up the code and joins the
+    // caller. Idempotent — re-joining just returns the same group id.
+    const { data: gid, error } = await supabase.rpc("join_group_by_code", {
+      _code: inviteCode,
+    });
 
     if (error) return { error: error.message };
+    if (!gid) return { error: "Invalid invite code" };
 
     await fetchGroups();
-    return { error: null, groupId: group.id };
+    return { error: null, groupId: gid as string };
   };
 
   return { groups, loading, createGroup, joinGroup, refresh: fetchGroups };
