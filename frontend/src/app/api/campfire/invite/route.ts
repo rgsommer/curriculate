@@ -4,6 +4,7 @@ import {
   authorizeGroupRequester,
   buildJoinUrl,
   inviteEmail,
+  newEngagementEmail,
   mailDefaults,
   campfireFrom,
   getGroupMemberEmails,
@@ -11,6 +12,7 @@ import {
   MAX_INVITES,
   extractEmail,
 } from "@/lib/campfire/serverInvites";
+import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -103,6 +105,11 @@ export async function POST(req: Request) {
     const alreadyJoined = new Set(
       (existing ?? []).filter((r) => r.status === "joined").map((r) => r.email)
     );
+    // People already on the pending list shouldn't be re-emailed about a live
+    // engagement — only the genuinely new additions should get the catch-up email.
+    const alreadyPending = new Set(
+      (existing ?? []).filter((r) => r.status === "pending").map((r) => r.email)
+    );
     emails = emails.filter((e) => !alreadyJoined.has(e));
     if (emails.length === 0) {
       return NextResponse.json(
@@ -154,9 +161,59 @@ export async function POST(req: Request) {
       { onConflict: "group_id,email" }
     );
 
+    // Catch-up: if the group already has a live engagement, the newly-added
+    // invitees shouldn't have to wait for the next one — email them about the
+    // current one right now (this is their invite). Only the genuinely new
+    // additions are emailed, so re-adding someone won't double-send.
+    let emailedNow = 0;
+    const newlyAdded = emails.filter((e) => !alreadyPending.has(e));
+    if (newlyAdded.length) {
+      const { data: activeEng } = await admin
+        .from("engagements")
+        .select("id, title, type, is_blind, reveal, deadline")
+        .eq("group_id", groupId)
+        .eq("status", "active")
+        .not("launched_at", "is", null)
+        .order("launched_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (activeEng) {
+        const meta = ENGAGEMENT_TYPES[activeEng.type as keyof typeof ENGAGEMENT_TYPES];
+        const shared = {
+          creator: inviter,
+          groupName: group.name,
+          title: activeEng.title,
+          typeLabel: meta?.label || "engagement",
+          typeIcon: meta?.icon || "🔥",
+          isBlind: !!activeEng.is_blind,
+          reveal: activeEng.reveal as string,
+          deadline: activeEng.deadline as string | null,
+        };
+        const msgs = newlyAdded.map((to) => {
+          const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;
+          const im = newEngagementEmail({
+            ...shared,
+            url: joinUrl,
+            invited: true,
+            recipientName: nameByEmail.get(to),
+          });
+          return { from, to: [to], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
+        });
+        for (let i = 0; i < msgs.length; i += 100) {
+          const { error: sendErr } = await resend.batch.send(msgs.slice(i, i + 100));
+          if (sendErr) {
+            console.error("Campfire catch-up invite send error:", sendErr);
+            break;
+          }
+          emailedNow += msgs.slice(i, i + 100).length;
+        }
+      }
+    }
+
     return stage
-      ? NextResponse.json({ ok: true, staged: emails.length })
-      : NextResponse.json({ ok: true, sent: emails.length });
+      ? NextResponse.json({ ok: true, staged: emails.length, emailedNow })
+      : NextResponse.json({ ok: true, sent: emails.length, emailedNow });
   } catch (err) {
     console.error("Campfire invite route error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });

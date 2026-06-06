@@ -109,7 +109,11 @@ See you around the campfire! 🏕️`
         setInviteResult(data.error || "Couldn't add invites.");
       } else {
         setInviteResult(
-          `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an engagement.`
+          data.emailedNow > 0
+            ? `✓ Added ${data.staged}. ${data.emailedNow} ${
+                data.emailedNow === 1 ? "was" : "were"
+              } emailed the live engagement right away; the rest get a friendly invite the moment you post one.`
+            : `✓ Added ${data.staged} to the invite list. They'll be emailed the moment you post an engagement.`
         );
         setEmailInput("");
         await refresh();
