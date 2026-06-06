@@ -16,20 +16,22 @@ export default function JoinGroupPage() {
   const [error, setError] = useState("");
   const [groupId, setGroupId] = useState<string | null>(null);
 
-  // The invited address, carried from the email link (?inv=…).
-  const invEmail =
-    typeof window !== "undefined"
-      ? new URLSearchParams(window.location.search).get("inv")
-      : null;
+  // The invited address (?inv=…) and an optional target engagement (?e=…) so we
+  // can drop the joiner straight into the engagement they were invited to.
+  const params2 =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const invEmail = params2?.get("inv") ?? null;
+  const engId = params2?.get("e") ?? null;
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!user) {
-      // Send them to sign in, then back here (preserving ?inv) to finish joining.
-      const joinPath = `/campfirelive/join/${code}${
-        invEmail ? `?inv=${encodeURIComponent(invEmail)}` : ""
-      }`;
+      // Send them to sign in, then back here (preserving ?inv and ?e) to finish.
+      const qs = new URLSearchParams();
+      if (invEmail) qs.set("inv", invEmail);
+      if (engId) qs.set("e", engId);
+      const joinPath = `/campfirelive/join/${code}${qs.toString() ? `?${qs}` : ""}`;
       router.push(`/campfirelive/auth?next=${encodeURIComponent(joinPath)}`);
       return;
     }
@@ -55,11 +57,16 @@ export default function JoinGroupPage() {
           }).catch(() => {});
         }
         setTimeout(() => {
-          router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
+          if (result.groupId && engId) {
+            // Jump straight into the engagement they were invited to.
+            router.push(`/campfirelive/group/${result.groupId}/engagement/${engId}`);
+          } else {
+            router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
+          }
         }, 1500);
       }
     });
-  }, [user, session, authLoading, code, invEmail, joinGroup, router]);
+  }, [user, session, authLoading, code, invEmail, engId, joinGroup, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 flex items-center justify-center p-6">

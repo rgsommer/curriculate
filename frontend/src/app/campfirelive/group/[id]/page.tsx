@@ -38,10 +38,22 @@ export default function GroupDetailPage() {
     ? `${typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net"}/campfirelive/join/${group.invite_code}`
     : "";
 
+  // Live (launched, still-active) engagements — surfaced in the invite so people
+  // know what they're joining into.
+  const liveEngagements = engagements.filter(
+    (e) => e.status === "active" && e.launched_at
+  );
+  const happeningBlock =
+    liveEngagements.length > 0
+      ? `\n\nHappening right now:\n${liveEngagements
+          .map((e) => `• ${ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} ${e.title}`)
+          .join("\n")}`
+      : "";
+
   const inviteMessage = group
     ? `${group.avatar_emoji} You're invited to "${group.name}" on Campfire!
 
-Campfire is where our group plays together — polls, challenges, questions — with one twist: nobody sees anyone's answers until everyone has responded. Then it all unlocks at once. 🎉
+Campfire is where our group plays together — polls, challenges, questions — with one twist: nobody sees anyone's answers until everyone has responded. Then it all unlocks at once. 🎉${happeningBlock}
 
 👉 Tap to join: ${joinUrl}
 

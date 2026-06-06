@@ -110,6 +110,12 @@ export default function EngagementDetailPage() {
         .eq("group_id", groupId);
       // Member-safe pending count (works for everyone, returns a number only).
       const { data: pc } = await supabase.rpc("pending_invite_count", { _gid: groupId });
+      // Group name + code for the per-engagement invite link (members can read).
+      const { data: g } = await supabase
+        .from("groups")
+        .select("name, invite_code")
+        .eq("id", groupId)
+        .maybeSingle();
       if (!cancelled) {
         if (data) {
           setInviteStats({
@@ -118,6 +124,7 @@ export default function EngagementDetailPage() {
           });
         }
         setPendingCount((pc as number) ?? 0);
+        if (g) setGroupInfo(g as { name: string; invite_code: string });
       }
     })();
     return () => {
@@ -152,6 +159,8 @@ export default function EngagementDetailPage() {
   // (RLS lets only the group admin read invitations, so non-admins just get 0.)
   const [inviteStats, setInviteStats] = useState({ joined: 0, pending: 0 });
   const [pendingCount, setPendingCount] = useState(0);
+  const [groupInfo, setGroupInfo] = useState<{ name: string; invite_code: string } | null>(null);
+  const [sharedEng, setSharedEng] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
@@ -379,6 +388,26 @@ export default function EngagementDetailPage() {
   };
 
   // Creator launches the draft — makes it live for the group, then (optionally) emails.
+  // Copy an invite that's about THIS engagement, with a join link that drops the
+  // person straight into it after they join the group.
+  const shareEngagement = async () => {
+    if (!engagement || !groupInfo) return;
+    const origin =
+      typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net";
+    const url = `${origin}/campfirelive/join/${groupInfo.invite_code}?e=${engagement.id}`;
+    const blurb = engagement.description?.trim() || meta?.hook || "";
+    const msg = `You're invited to "${engagement.title}" in ${groupInfo.name} on Campfire! 🔥${
+      blurb ? `\n\n${blurb}` : ""
+    }\n\nTap to join & jump straight in:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)`;
+    try {
+      await navigator.clipboard.writeText(msg);
+      setSharedEng(true);
+      setTimeout(() => setSharedEng(false), 2500);
+    } catch {
+      alert(msg); // clipboard blocked — show it so they can copy manually
+    }
+  };
+
   const launch = async () => {
     if (launching) return;
     setLaunching(true);
@@ -1402,6 +1431,22 @@ export default function EngagementDetailPage() {
           </p>
         )}
       </div>
+
+      {/* ── Invite people straight into THIS engagement ── */}
+      {!isDraft && groupInfo && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+          <p className="text-xs text-slate-500">
+            Inviting someone new? This link joins the group <em>and</em> drops them
+            right here.
+          </p>
+          <button
+            onClick={shareEngagement}
+            className="rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
+          >
+            {sharedEng ? "✓ Invite copied — paste it anywhere!" : "📨 Invite to this"}
+          </button>
+        </div>
+      )}
 
       {/* ── BABY REVEAL: host sets the secret answer (hidden until reveal) ── */}
       {isCreator && engagement.type === "baby_reveal" && (
