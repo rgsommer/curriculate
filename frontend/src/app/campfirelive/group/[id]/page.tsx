@@ -84,12 +84,18 @@ See you around the campfire! 🏕️`
 
   const sendEmailInvites = async () => {
     if (!group || !session) return;
-    const emails = emailInput
-      .split(/[\s,;]+/)
-      .map((e) => e.trim())
-      .filter(Boolean);
+    // Pull addresses out of any format — bare emails OR "Name <email@x.com>"
+    // pasted from a contacts app. Angle brackets/commas/quotes are excluded from
+    // the match, so names are ignored and only the addresses survive.
+    const emails = Array.from(
+      new Set(
+        (emailInput.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/g) ?? []).map((e) =>
+          e.trim().toLowerCase()
+        )
+      )
+    );
     if (emails.length === 0) {
-      setInviteResult("Enter at least one email address.");
+      setInviteResult("Enter at least one email address (names are fine too).");
       return;
     }
     setSending(true);
@@ -383,15 +389,18 @@ See you around the campfire! 🏕️`
         {showEmailInvite && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3">
             <label className="block text-xs font-medium text-slate-600 mb-1">
-              Add people by email — one or more, separated by commas or spaces. They
-              aren&apos;t emailed yet: they get a friendly invite the moment you post an
-              engagement (so no one gets a dead &ldquo;join my empty group&rdquo; email).
+              Add people by email — one or more, separated by commas or spaces. You can
+              paste straight from your contacts (e.g. <span className="font-mono">Alex
+              Lee &lt;alex@example.com&gt;</span>) — we&apos;ll pull out the addresses and
+              ignore the names. They aren&apos;t emailed yet: they get a friendly invite
+              the moment you post an engagement (so no one gets a dead &ldquo;join my
+              empty group&rdquo; email).
             </label>
             <textarea
               value={emailInput}
               onChange={(e) => setEmailInput(e.target.value)}
               rows={3}
-              placeholder="alex@example.com, jordan@example.com"
+              placeholder="alex@example.com, Jordan Lee <jordan@example.com>"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
             />
             <div className="mt-2 flex items-center gap-3">

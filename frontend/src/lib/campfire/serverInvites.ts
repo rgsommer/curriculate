@@ -1,7 +1,13 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const EMAIL_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/;
 export const MAX_INVITES = 50;
+
+// Pull a clean address out of a raw entry that may be "Name <email@x.com>".
+export function extractEmail(raw: unknown): string {
+  const m = String(raw).match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/);
+  return m ? m[0].trim().toLowerCase() : "";
+}
 
 // Campfire-branded sender (overrides the shared CONTACT_FROM so the name reads
 // "Campfire"). noreply@curriculate.net is on the DKIM-verified domain.

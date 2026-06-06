@@ -9,6 +9,7 @@ import {
   getGroupMemberEmails,
   EMAIL_RE,
   MAX_INVITES,
+  extractEmail,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     let emails = Array.from(
       new Set(
         rawEmails
-          .map((e) => String(e).trim().toLowerCase())
+          .map(extractEmail) // tolerates "Name <email@x.com>" entries
           .filter((e) => EMAIL_RE.test(e))
       )
     ).slice(0, MAX_INVITES);
