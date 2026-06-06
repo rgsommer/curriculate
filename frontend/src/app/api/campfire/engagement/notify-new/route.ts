@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, is_blind, reveal, deadline")
+      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, excluded_user_ids")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -43,13 +43,23 @@ export async function POST(req: Request) {
     }
     const { admin } = auth;
 
-    // Members to notify: everyone in the group EXCEPT the person who created the
-    // engagement (you don't email yourself). De-duped by lowercased address.
+    // Surprise: never email the excluded members at launch (would spoil it).
+    const excludedEmails = new Set<string>();
+    for (const uid of (eng.excluded_user_ids as string[]) ?? []) {
+      const { data: u } = await admin.auth.admin.getUserById(uid);
+      const em = u?.user?.email?.toLowerCase();
+      if (em) excludedEmails.add(em);
+    }
+
+    // Members to notify: everyone in the group EXCEPT the creator (you don't email
+    // yourself) and any surprise recipients. De-duped by lowercased address.
     const allEmails = await getGroupMemberEmails(admin, eng.group_id);
     const { data: creatorUser } = await admin.auth.admin.getUserById(eng.creator_id);
     const creatorEmail = (creatorUser?.user?.email || "").toLowerCase();
     const recipients = new Set(
-      allEmails.map((e) => e.toLowerCase()).filter((e) => e && e !== creatorEmail)
+      allEmails
+        .map((e) => e.toLowerCase())
+        .filter((e) => e && e !== creatorEmail && !excludedEmails.has(e))
     );
 
     const [{ data: group }, { data: profile }, { data: gm }] = await Promise.all([

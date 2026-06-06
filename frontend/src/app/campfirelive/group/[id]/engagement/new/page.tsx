@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCreateEngagement, useGroups } from "@/lib/campfire/hooks";
+import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
@@ -14,6 +15,7 @@ export default function NewEngagementPage() {
   const router = useRouter();
   const { create } = useCreateEngagement();
   const { groups, createGroup } = useGroups();
+  const { user } = useAuth();
 
   const [step, setStep] = useState<"type" | "details" | "options">("type");
   const [selectedType, setSelectedType] = useState<EngagementType | null>(null);
@@ -25,6 +27,9 @@ export default function NewEngagementPage() {
   const [holdUntilDeadline, setHoldUntilDeadline] = useState(false);
   const [waitForAllInvited, setWaitForAllInvited] = useState(false);
   const [allowMemberInvites, setAllowMemberInvites] = useState(false);
+  // Surprise / "All Except": members hidden from it until the reveal.
+  const [groupMembers, setGroupMembers] = useState<{ user_id: string; name: string }[]>([]);
+  const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
@@ -65,6 +70,40 @@ export default function NewEngagementPage() {
       cancelled = true;
     };
   }, [targetGroupId, makingNewGroup]);
+
+  // Roster of the destination group (for the surprise "hide from" picker).
+  useEffect(() => {
+    if (makingNewGroup) {
+      setGroupMembers([]);
+      setExcludedIds([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("group_members")
+        .select("user_id, display_name, profile:profiles(display_name)")
+        .eq("group_id", targetGroupId);
+      if (!cancelled && data) {
+        const list = (
+          data as {
+            user_id: string;
+            display_name: string | null;
+            profile: { display_name: string } | { display_name: string }[] | null;
+          }[]
+        )
+          .filter((m) => m.user_id !== user?.id) // can't surprise yourself
+          .map((m) => {
+            const p = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+            return { user_id: m.user_id, name: m.display_name || p?.display_name || "Someone" };
+          });
+        setGroupMembers(list);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetGroupId, makingNewGroup, user?.id]);
 
   const handleSelectType = (type: EngagementType) => {
     setSelectedType(type);
@@ -226,6 +265,8 @@ export default function NewEngagementPage() {
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
       // Let members (not just the host) invite others to this engagement.
       allow_member_invites: allowMemberInvites,
+      // Surprise: hide it from these members until the reveal.
+      excluded_user_ids: makingNewGroup ? [] : excludedIds,
     });
 
     if (result.error) {
@@ -726,11 +767,49 @@ export default function NewEngagementPage() {
               )}
             </div>
 
+            {/* Surprise: hide from selected members until the reveal */}
+            {groupMembers.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-white p-3">
+                <div className="text-sm font-medium text-slate-700">
+                  🎁 Surprise — hide from… <span className="text-slate-400">(optional)</span>
+                </div>
+                <p className="text-xs text-slate-500 mb-2">
+                  Anyone you pick won&apos;t see it (or get emailed) until the reveal —
+                  then everyone gets it, including them. Great for a birthday card.
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {groupMembers.map((m) => {
+                    const on = excludedIds.includes(m.user_id);
+                    return (
+                      <button
+                        key={m.user_id}
+                        type="button"
+                        onClick={() =>
+                          setExcludedIds((prev) =>
+                            on ? prev.filter((id) => id !== m.user_id) : [...prev, m.user_id]
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                          on
+                            ? "border-rose-500 bg-rose-500 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:border-rose-300"
+                        }`}
+                      >
+                        {on ? "🙈 " : ""}
+                        {m.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Launch notifies the group — no toggle, so nobody gets left out. */}
             <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600">
               📧 This stays a private draft until you hit Launch. The moment you
-              launch, everyone in the group (and any pending invitees) gets an email
-              to respond — and again when the results reveal.
+              launch, everyone in the group{" "}
+              {excludedIds.length > 0 ? "(except your surprise picks) " : ""}
+              gets an email to respond — and again when the results reveal.
             </div>
 
             {/* Let members invite others to this engagement */}
