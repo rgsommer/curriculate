@@ -774,7 +774,7 @@ See you around the campfire! 🏕️`
                         title="They already joined (e.g. under a different email)? Mark them in."
                         className="text-green-600 hover:underline"
                       >
-                        ✓ mark joined
+                        ✓ Joined
                       </button>
                       <button
                         onClick={() => revokeOne(inv.email)}
