@@ -572,7 +572,7 @@ export default function EngagementDetailPage() {
     // Drop any blank picks before saving.
     const answers: Record<string, string> = {};
     Object.entries(mlVotes).forEach(([k, v]) => {
-      if (v) answers[k] = v;
+      if (v && v.trim()) answers[k] = v.trim();
     });
     setSubmitting(true);
     const { error: mlErr } = await submitResponse({ answers });
@@ -639,19 +639,19 @@ export default function EngagementDetailPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   🏆 {q}
                 </label>
-                <select
+                <input
+                  type="text"
+                  list={`roster-${i}`}
                   value={mlVotes[i] ?? ""}
                   onChange={(e) => setMlVotes({ ...mlVotes, [i]: e.target.value })}
+                  placeholder="Type a name…"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:border-orange-500 outline-none"
-                >
-                  <option value="">— pick someone —</option>
+                />
+                <datalist id={`roster-${i}`}>
                   {roster.map((m) => (
-                    <option key={m.user_id} value={m.user_id}>
-                      {m.name}
-                      {m.user_id === user?.id ? " (you)" : ""}
-                    </option>
+                    <option key={m.user_id} value={m.name} />
                   ))}
-                </select>
+                </datalist>
               </div>
             ))}
             <button
@@ -880,29 +880,32 @@ export default function EngagementDetailPage() {
   const renderMostLikelyResults = () => {
     if (!showResults || engagement.type !== "most_likely") return null;
     const qs = (engagement.config?.questions as string[]) ?? [];
-    const nameOf = (uid: string) =>
-      roster.find((m) => m.user_id === uid)?.name ?? "Someone";
 
     return (
       <div className="space-y-3">
         {qs.map((q, i) => {
-          const counts: Record<string, number> = {};
+          // Tally by normalized name so "Alex" and "alex " merge; keep a nice label.
+          const counts: Record<string, { label: string; n: number }> = {};
           responses.forEach((r) => {
-            const ans = (r.content as { answers?: Record<string, string> })?.answers?.[
+            const raw = (r.content as { answers?: Record<string, string> })?.answers?.[
               String(i)
             ];
-            if (ans) counts[ans] = (counts[ans] ?? 0) + 1;
+            const name = (raw ?? "").trim();
+            if (!name) return;
+            const key = name.toLowerCase();
+            if (!counts[key]) counts[key] = { label: name, n: 0 };
+            counts[key].n++;
           });
-          const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-          const top = entries.length ? entries[0][1] : 0;
-          const winners = entries.filter(([, c]) => c === top && top > 0).map(([uid]) => uid);
-          const runnersUp = entries.filter(([uid]) => !winners.includes(uid));
+          const entries = Object.values(counts).sort((a, b) => b.n - a.n);
+          const top = entries.length ? entries[0].n : 0;
+          const winners = entries.filter((e) => e.n === top && top > 0);
+          const runnersUp = entries.filter((e) => e.n < top);
           return (
             <div key={i} className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
               <div className="text-sm font-semibold text-slate-700 mb-1">🏆 {q}</div>
               {winners.length ? (
                 <div className="text-lg font-extrabold text-amber-700">
-                  {winners.map(nameOf).join(" & ")}{" "}
+                  {winners.map((w) => w.label).join(" & ")}{" "}
                   <span className="text-xs font-normal text-slate-500">
                     ({top} {top === 1 ? "vote" : "votes"})
                   </span>
@@ -912,12 +915,12 @@ export default function EngagementDetailPage() {
               )}
               {runnersUp.length > 0 && (
                 <div className="mt-1.5 flex flex-wrap gap-1">
-                  {runnersUp.slice(0, 5).map(([uid, c]) => (
+                  {runnersUp.slice(0, 5).map((e) => (
                     <span
-                      key={uid}
+                      key={e.label}
                       className="text-[11px] rounded-full bg-white border border-slate-200 text-slate-600 px-2 py-0.5"
                     >
-                      {nameOf(uid)} · {c}
+                      {e.label} · {e.n}
                     </span>
                   ))}
                 </div>
