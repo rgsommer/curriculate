@@ -188,6 +188,7 @@ export default function EngagementDetailPage() {
   const [editing, setEditing] = useState(false);
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [editRecurrence, setEditRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
@@ -313,6 +314,9 @@ export default function EngagementDetailPage() {
   const startEdit = () => {
     setEditTitle(engagement.title);
     setEditDesc(engagement.description ?? "");
+    setEditRecurrence(
+      (engagement.recurrence_rule as "daily" | "weekly" | "monthly" | null) ?? "none"
+    );
     setEditing(true);
   };
 
@@ -324,6 +328,7 @@ export default function EngagementDetailPage() {
       .update({
         title: editTitle.trim(),
         description: editDesc.trim() || null,
+        recurrence_rule: editRecurrence === "none" ? null : editRecurrence,
       })
       .eq("id", engagementId);
     setSavingEdit(false);
@@ -1754,6 +1759,43 @@ export default function EngagementDetailPage() {
                   rows={5}
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base leading-relaxed text-slate-700 focus:border-orange-500 outline-none resize-y"
                 />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-500 mb-1">
+                  Repeat
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {([
+                    { value: "none", label: "Once" },
+                    { value: "daily", label: "🔁 Daily" },
+                    { value: "weekly", label: "🔁 Weekly" },
+                    { value: "monthly", label: "🔁 Monthly" },
+                  ] as const).map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => setEditRecurrence(r.value)}
+                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                        editRecurrence === r.value
+                          ? "border-orange-500 bg-orange-50 text-slate-900"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+                {editRecurrence !== "none" && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    A fresh copy auto-posts every{" "}
+                    {editRecurrence === "daily"
+                      ? "day"
+                      : editRecurrence === "weekly"
+                      ? "week"
+                      : "month"}{" "}
+                    after this one wraps.
+                  </p>
+                )}
               </div>
               {responseCount > 0 && (
                 <p className="text-xs text-amber-700">
