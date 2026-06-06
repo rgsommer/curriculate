@@ -658,6 +658,13 @@ See you around the campfire! 🏕️`
                     ) : (
                       inv.email
                     )}
+                    {inv.invited_by && (
+                      <span className="text-slate-400">
+                        {" "}
+                        · added by{" "}
+                        {inv.invited_by === user?.id ? "you" : nameOf(inv.invited_by)}
+                      </span>
+                    )}
                   </span>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {inv.status === "joined" && (
