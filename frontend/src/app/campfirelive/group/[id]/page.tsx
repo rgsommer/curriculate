@@ -144,6 +144,7 @@ See you around the campfire! 🏕️`
   const nudgeOne = (email: string) => inviteAction("/api/campfire/invite/nudge", [email]);
   const nudgeAllPending = () => inviteAction("/api/campfire/invite/nudge");
   const revokeOne = (email: string) => inviteAction("/api/campfire/invite/revoke", [email]);
+  const markJoined = (email: string) => inviteAction("/api/campfire/invite/mark-joined", [email]);
 
   if (loading) {
     return (
@@ -506,6 +507,13 @@ See you around the campfire! 🏕️`
                           className="text-orange-600 hover:underline"
                         >
                           nudge
+                        </button>
+                        <button
+                          onClick={() => markJoined(inv.email)}
+                          title="They already joined (e.g. under a different email)? Mark them in."
+                          className="text-green-600 hover:underline"
+                        >
+                          mark joined
                         </button>
                         <button
                           onClick={() => revokeOne(inv.email)}
