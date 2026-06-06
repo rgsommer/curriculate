@@ -10,7 +10,7 @@ const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", 
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { profile, isTrialActive } = useAuth();
+  const { profile, isTrialActive, user } = useAuth();
   const { groups, loading, createGroup, joinGroup } = useGroups();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
@@ -202,26 +202,38 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {groups.map((g) => (
-            <Link
-              key={g.id}
-              href={`/campfirelive/group/${g.id}`}
-              className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-3xl">{g.avatar_emoji}</span>
-                <div>
-                  <h3 className="font-bold text-slate-900">{g.name}</h3>
-                  <p className="text-xs text-slate-500">
-                    {g.member_count} member{g.member_count === 1 ? "" : "s"}
-                  </p>
+          {groups.map((g) => {
+            const mine = g.creator_id === user?.id;
+            return (
+              <Link
+                key={g.id}
+                href={`/campfirelive/group/${g.id}`}
+                className={`rounded-2xl border p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition ${
+                  mine
+                    ? "border-slate-200 bg-white"
+                    : "border-sky-200 bg-sky-50/60"
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-3xl">{g.avatar_emoji}</span>
+                  <div className="min-w-0">
+                    <h3 className="font-bold text-slate-900">{g.name}</h3>
+                    <p className="text-xs text-slate-500">
+                      {g.member_count} member{g.member_count === 1 ? "" : "s"}
+                      {mine ? (
+                        <span className="ml-1.5 text-orange-600 font-medium">· yours</span>
+                      ) : (
+                        <span className="ml-1.5 text-sky-700 font-medium">· joined</span>
+                      )}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              {g.description && (
-                <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
-              )}
-            </Link>
-          ))}
+                {g.description && (
+                  <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
+                )}
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>
