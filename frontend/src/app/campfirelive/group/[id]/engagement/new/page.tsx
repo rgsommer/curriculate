@@ -9,6 +9,62 @@ import { supabase } from "@/lib/campfire/supabase";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
+// Plain-language "how it works" per type — { how it works, what each person sees }.
+const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> = {
+  poll: {
+    how: "Everyone votes on the options you set. Sealed until all respond, then the tally reveals together.",
+    sees: "Your question + tappable options. They pick one and lock it in.",
+  },
+  share: {
+    how: "Everyone answers your prompt. Nobody sees others' until everyone's in, then it all reveals at once.",
+    sees: "Your prompt + a text box to write their response.",
+  },
+  two_truths: {
+    how: "Each person writes 3 statements (2 true, 1 lie) and marks the lie. Once everyone's in, the group guesses each other's lie — answers unlock when all have guessed.",
+    sees: "3 boxes + a 🤥 to mark their lie. At the reveal, others' statements with a 'pick the lie' choice.",
+  },
+  baby_reveal: {
+    how: "You set the choices (Boy/Girl, name, date…). Everyone guesses. It stays sealed until the reveal date, then winners are crowned. Set the real answer before the date.",
+    sees: "Your question + choices to guess between.",
+  },
+  most_likely: {
+    how: "List your awards. Everyone votes a group-mate for each. Sealed until reveal, then each award's winner is shown.",
+    sees: "Each award + a name box (autocompletes group members).",
+  },
+  accountability: {
+    how: "List check-in questions. Each person rates themselves 1–5 and can add a note to share. Sealed; turn on Blind to keep answers anonymous.",
+    sees: "Each question with a 1–5 scale + an optional 'share with the group' box.",
+  },
+  scavenger_hunt: {
+    how: "List the items/clues. Players answer each with a photo or a typed answer, in any order. You reveal at the end of class.",
+    sees: "A numbered list; each item takes a photo upload or text.",
+  },
+  anonymous_judge: {
+    how: "Everyone submits an entry; the group rates them blind — no names attached. The best entry wins.",
+    sees: "Your prompt + a box to submit their entry. At the reveal, anonymous entries to rate.",
+  },
+  surprise: {
+    how: "Everyone adds a greeting/message. Use 'Hide from…' in the next step to keep it secret from the recipient — at the reveal it opens for everyone, including them. (Great for a birthday card.)",
+    sees: "Your prompt + a box for their greeting. The recipient sees nothing until the reveal.",
+  },
+  photo_pose: {
+    how: "Everyone snaps a photo for your prompt (plus an optional caption). All the photos drop together at the reveal.",
+    sees: "Your prompt + an upload button and caption box.",
+  },
+  challenge: {
+    how: "Everyone submits a photo or video for your challenge. Sealed until the reveal, then the group can rate the best.",
+    sees: "Your prompt + a photo/video upload.",
+  },
+  guess: {
+    how: "Post a mystery (photo or clue). Everyone submits a guess before the reveal.",
+    sees: "Your mystery + a box to guess.",
+  },
+  truth_or_dare: {
+    how: "Everyone answers your truth-or-dare prompt. Sealed until everyone's in, then all reveal together.",
+    sees: "Your prompt + a text box.",
+  },
+};
+
 export default function NewEngagementPage() {
   const params = useParams();
   const groupId = params.id as string;
@@ -355,6 +411,19 @@ export default function NewEngagementPage() {
                 Change type
               </button>
             </div>
+          </div>
+
+          {/* How this type works + what each person sees */}
+          <div className="mb-6 max-w-lg rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
+            <p className="text-sm text-slate-700">
+              {TYPE_HELP[selectedType]?.how ?? ENGAGEMENT_TYPES[selectedType].description}
+            </p>
+            {TYPE_HELP[selectedType]?.sees && (
+              <p className="mt-2 text-xs text-slate-500">
+                <span className="font-semibold text-slate-600">👀 Each person sees:</span>{" "}
+                {TYPE_HELP[selectedType]?.sees}
+              </p>
+            )}
           </div>
 
           <div className="space-y-4 max-w-lg">
