@@ -158,8 +158,13 @@ export async function GET(req: Request) {
       .eq("parent_id", e.id);
     if (childCount && childCount > 0) continue;
 
+    const DAY = 24 * 60 * 60 * 1000;
     const intervalMs =
-      e.recurrence_rule === "weekly" ? 7 * 24 * 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+      e.recurrence_rule === "weekly"
+        ? 7 * DAY
+        : e.recurrence_rule === "monthly"
+        ? 30 * DAY
+        : DAY;
     if (now < new Date(e.created_at as string).getTime() + intervalMs) continue;
 
     await admin.from("engagements").insert({
@@ -174,6 +179,9 @@ export async function GET(req: Request) {
       recurrence_rule: e.recurrence_rule,
       parent_id: e.id,
       status: "active",
+      // Auto-posted, so it's live immediately (not a draft) and members see it.
+      launched_at: new Date(now).toISOString(),
+      notify: true,
       deadline: new Date(now + intervalMs).toISOString(),
     });
     spawned++;

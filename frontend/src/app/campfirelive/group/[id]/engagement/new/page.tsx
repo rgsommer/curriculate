@@ -26,7 +26,7 @@ export default function NewEngagementPage() {
   const [waitForAllInvited, setWaitForAllInvited] = useState(false);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
-  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
+  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   // "Most Likely To…" awards (one engagement, many questions)
   const [questions, setQuestions] = useState<string[]>(["", "", ""]);
@@ -680,11 +680,12 @@ export default function NewEngagementPage() {
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Repeat <span className="text-slate-400">(optional)</span>
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
                   { value: "none" as const, label: "Once" },
                   { value: "daily" as const, label: "🔁 Daily" },
                   { value: "weekly" as const, label: "🔁 Weekly" },
+                  { value: "monthly" as const, label: "🔁 Monthly" },
                 ].map((r) => (
                   <button
                     key={r.value}
@@ -702,7 +703,8 @@ export default function NewEngagementPage() {
               {recurrence !== "none" && (
                 <p className="mt-1.5 text-xs text-slate-500">
                   A fresh copy auto-posts to the group every{" "}
-                  {recurrence === "daily" ? "day" : "week"} after this one wraps.
+                  {recurrence === "daily" ? "day" : recurrence === "weekly" ? "week" : "month"}{" "}
+                  after this one wraps.
                 </p>
               )}
             </div>
