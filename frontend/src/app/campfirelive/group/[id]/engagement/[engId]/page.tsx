@@ -1740,7 +1740,7 @@ export default function EngagementDetailPage() {
           <img
             src={engagement.cover_image_url}
             alt=""
-            className="w-full h-auto object-contain bg-slate-50"
+            className="w-full h-40 sm:h-52 object-cover bg-slate-100"
           />
         )}
         <div className="p-4 sm:p-6">
