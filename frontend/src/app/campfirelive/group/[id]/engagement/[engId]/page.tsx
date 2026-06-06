@@ -145,6 +145,9 @@ export default function EngagementDetailPage() {
   // Accountability: 1–5 self-rating per question + an optional note to the group
   const [acRatings, setAcRatings] = useState<Record<number, number>>({});
   const [acNote, setAcNote] = useState("");
+  // Scavenger Hunt: per-item { text, photo } + which item is uploading
+  const [shItems, setShItems] = useState<Record<number, { text?: string; photo?: string }>>({});
+  const [shUploading, setShUploading] = useState<number | null>(null);
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -585,6 +588,46 @@ export default function EngagementDetailPage() {
     if (acErr) alert("Couldn't submit: " + acErr);
   };
 
+  const handleScavengerUpload = async (i: number, file: File | undefined) => {
+    if (!file || !user) return;
+    setShUploading(i);
+    const ext = file.name.split(".").pop();
+    const path = `${user.id}/${engagementId}/${i}-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("campfire-media").upload(path, file);
+    if (upErr) {
+      alert("Upload failed: " + upErr.message);
+      setShUploading(null);
+      return;
+    }
+    const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
+    setShItems((prev) => ({ ...prev, [i]: { ...prev[i], photo: data.publicUrl } }));
+    setShUploading(null);
+  };
+
+  const handleScavengerSubmit = async () => {
+    const items = (engagement.config?.questions as string[]) ?? [];
+    const answers: Record<string, { text?: string; photo?: string }> = {};
+    for (let i = 0; i < items.length; i++) {
+      const it = shItems[i];
+      const text = it?.text?.trim();
+      if (text && hasProfanity(text)) {
+        alert("Let's keep it kind — please reword.");
+        return;
+      }
+      if (text || it?.photo) {
+        answers[i] = { ...(text ? { text } : {}), ...(it?.photo ? { photo: it.photo } : {}) };
+      }
+    }
+    if (Object.keys(answers).length === 0) {
+      alert("Answer at least one item (a photo or some text).");
+      return;
+    }
+    setSubmitting(true);
+    const { error: shErr } = await submitResponse({ answers });
+    setSubmitting(false);
+    if (shErr) alert("Couldn't submit: " + shErr);
+  };
+
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -632,6 +675,74 @@ export default function EngagementDetailPage() {
     if (hasResponded) return null;
 
     switch (engagement.type) {
+      case "scavenger_hunt": {
+        const items = (engagement.config?.questions as string[]) ?? [];
+        return (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Answer each with a photo or a typed answer — any order. Lock in when you&apos;re
+              done.
+            </p>
+            {items.map((item, i) => (
+              <div key={i} className="rounded-xl border border-slate-200 p-3">
+                <div className="text-sm font-medium text-slate-700 mb-1.5">
+                  {i + 1}. {item}
+                </div>
+                <textarea
+                  value={shItems[i]?.text ?? ""}
+                  onChange={(e) =>
+                    setShItems({ ...shItems, [i]: { ...shItems[i], text: e.target.value } })
+                  }
+                  rows={2}
+                  placeholder="Type your answer…"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-lime-500 outline-none resize-none"
+                />
+                <div className="mt-1.5 flex items-center gap-2">
+                  <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                    {shUploading === i
+                      ? "Uploading…"
+                      : shItems[i]?.photo
+                      ? "📷 Replace photo"
+                      : "📷 Add photo"}
+                    <input
+                      type="file"
+                      accept="image/*,video/*"
+                      className="hidden"
+                      onChange={(e) => handleScavengerUpload(i, e.target.files?.[0])}
+                    />
+                  </label>
+                  {shItems[i]?.photo && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setShItems((prev) => ({ ...prev, [i]: { ...prev[i], photo: undefined } }))
+                      }
+                      className="text-xs text-slate-400 hover:text-red-500"
+                    >
+                      remove
+                    </button>
+                  )}
+                </div>
+                {shItems[i]?.photo && (
+                  <img
+                    src={shItems[i].photo}
+                    alt=""
+                    className="mt-2 max-h-32 rounded-lg object-cover"
+                  />
+                )}
+              </div>
+            ))}
+            <button
+              onClick={handleScavengerSubmit}
+              disabled={submitting || shUploading !== null}
+              className="w-full rounded-xl bg-gradient-to-r from-lime-500 to-green-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock In My Hunt"}
+            </button>
+          </div>
+        );
+      }
+
       case "accountability": {
         const qs = (engagement.config?.questions as string[]) ?? [];
         return (
@@ -928,6 +1039,54 @@ export default function EngagementDetailPage() {
                   <span className="text-sm font-medium text-slate-900">{opt}</span>
                   <span className="text-sm font-bold text-slate-700">{pct}% ({count})</span>
                 </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderScavengerResults = () => {
+    if (!showResults || engagement.type !== "scavenger_hunt") return null;
+    const items = (engagement.config?.questions as string[]) ?? [];
+    return (
+      <div className="space-y-3">
+        {items.map((item, i) => {
+          const ans = responses
+            .map((r) => ({
+              r,
+              a: (r.content as { answers?: Record<string, { text?: string; photo?: string }> })
+                ?.answers?.[String(i)],
+            }))
+            .filter((x) => x.a);
+          return (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-800 mb-2">
+                {i + 1}. {item}{" "}
+                <span className="text-xs font-normal text-slate-400">({ans.length})</span>
+              </div>
+              <div className="space-y-2.5">
+                {ans.map(({ r, a }) => (
+                  <div key={r.id} className="border-l-2 border-lime-200 pl-3">
+                    <div className="text-xs font-semibold text-lime-700">
+                      {memberNameOf(r.user_id, r.profile?.display_name)}
+                    </div>
+                    {a?.text && (
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{a.text}</p>
+                    )}
+                    {a?.photo && (
+                      <img
+                        src={a.photo}
+                        alt=""
+                        className="mt-1 max-h-48 rounded-lg object-cover"
+                      />
+                    )}
+                  </div>
+                ))}
+                {ans.length === 0 && (
+                  <span className="text-xs text-slate-400">Nobody got this one.</span>
+                )}
               </div>
             </div>
           );
@@ -1307,7 +1466,8 @@ export default function EngagementDetailPage() {
       engagement.type === "two_truths" ||
       engagement.type === "baby_reveal" ||
       engagement.type === "most_likely" ||
-      engagement.type === "accountability"
+      engagement.type === "accountability" ||
+      engagement.type === "scavenger_hunt"
     )
       return null;
 
@@ -2061,6 +2221,9 @@ export default function EngagementDetailPage() {
 
           {/* Accountability — per-question ratings */}
           {renderAccountabilityResults()}
+
+          {/* Scavenger Hunt — per-item answers */}
+          {renderScavengerResults()}
 
           {/* Other response types */}
           {renderRevealedResponses()}

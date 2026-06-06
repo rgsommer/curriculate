@@ -18,7 +18,8 @@ export type EngagementType =
   | "voice_response"
   | "two_truths"
   | "baby_reveal"
-  | "most_likely";
+  | "most_likely"
+  | "scavenger_hunt";
 
 export type EngagementStatus = "active" | "sealed" | "revealed" | "expired";
 export type RevealMode = "sealed" | "all_at_once" | "first_in" | "as_they_come" | "instant";
@@ -213,6 +214,7 @@ export const ENGAGEMENT_TYPES: Record<
   two_truths: { icon: "🕵️", label: "Two Truths & a Lie", description: "Everyone shares 3 statements — 2 true, 1 lie — then the group guesses the lie", hook: "Two truths and a lie — can the group spot your fib?", color: "bg-purple-50 text-purple-700" },
   baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Set the choices (Boy/Girl, name, date…); everyone guesses, and it unseals on the big day with winners", hook: "Place your guess — all is revealed on the big day!", color: "bg-sky-50 text-sky-700" },
   most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
+  scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
 };
 
 // ── Supabase Database type (simplified — use supabase gen types for full version) ──

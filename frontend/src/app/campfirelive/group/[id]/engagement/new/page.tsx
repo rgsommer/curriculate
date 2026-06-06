@@ -91,6 +91,17 @@ export default function NewEngagementPage() {
       ]);
       setReveal("sealed");
     }
+    if (type === "scavenger_hunt") {
+      if (!title.trim()) setTitle("Scavenger Hunt 🔍");
+      if (!description.trim())
+        setDescription("Find each one — snap a photo or type your answer. Any order!");
+      setQuestions([
+        "Something that represents teamwork",
+        "The oldest thing you can find",
+        "A word that starts with Q",
+      ]);
+      setReveal("sealed");
+    }
     if (type === "accountability") {
       if (!title.trim()) setTitle("Accountability check-in 🙏");
       if (!description.trim())
@@ -145,12 +156,18 @@ export default function NewEngagementPage() {
       return;
     }
 
-    if (selectedType === "most_likely" || selectedType === "accountability") {
+    if (
+      selectedType === "most_likely" ||
+      selectedType === "accountability" ||
+      selectedType === "scavenger_hunt"
+    ) {
       const qs = questions.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
         setError(
           selectedType === "accountability"
             ? "Add at least one check-in question."
+            : selectedType === "scavenger_hunt"
+            ? "Add at least one item to find."
             : "Add at least one award (a “Most likely to…” question)."
         );
         setCreating(false);
@@ -191,7 +208,8 @@ export default function NewEngagementPage() {
         selectedType === "two_truths" ||
         selectedType === "baby_reveal" ||
         selectedType === "most_likely" ||
-        selectedType === "accountability"
+        selectedType === "accountability" ||
+        selectedType === "scavenger_hunt"
           ? "sealed"
           : reveal,
       is_blind: selectedType === "two_truths" ? false : isBlind,
@@ -406,18 +424,26 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Most Likely To… / Accountability — the list of questions */}
-            {(selectedType === "most_likely" || selectedType === "accountability") && (
+            {/* Most Likely To… / Accountability / Scavenger Hunt — list of items */}
+            {(selectedType === "most_likely" ||
+              selectedType === "accountability" ||
+              selectedType === "scavenger_hunt") && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   {selectedType === "accountability"
                     ? "The check-in questions (each rated 1–5)"
+                    : selectedType === "scavenger_hunt"
+                    ? "The items to find (each answered with a photo or text)"
                     : "The awards (each one becomes a vote)"}
                 </label>
                 {questions.map((q, i) => (
                   <div key={i} className="flex gap-2 mb-2 items-center">
                     <span className="text-slate-400 text-sm">
-                      {selectedType === "accountability" ? "🙏" : "🏆"}
+                      {selectedType === "accountability"
+                        ? "🙏"
+                        : selectedType === "scavenger_hunt"
+                        ? `${i + 1}.`
+                        : "🏆"}
                     </span>
                     <input
                       type="text"
@@ -428,7 +454,11 @@ export default function NewEngagementPage() {
                         setQuestions(next);
                       }}
                       placeholder={
-                        selectedType === "accountability" ? "Have you…?" : "Most likely to…"
+                        selectedType === "accountability"
+                          ? "Have you…?"
+                          : selectedType === "scavenger_hunt"
+                          ? "Find / answer…"
+                          : "Most likely to…"
                       }
                       className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
                     />
@@ -442,17 +472,23 @@ export default function NewEngagementPage() {
                     )}
                   </div>
                 ))}
-                {questions.length < 12 && (
+                {questions.length < 30 && (
                   <button
                     onClick={() => setQuestions([...questions, ""])}
                     className="text-sm text-orange-600 font-medium"
                   >
-                    {selectedType === "accountability" ? "+ Add question" : "+ Add award"}
+                    {selectedType === "accountability"
+                      ? "+ Add question"
+                      : selectedType === "scavenger_hunt"
+                      ? "+ Add item"
+                      : "+ Add award"}
                   </button>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
                   {selectedType === "accountability"
                     ? "Each person rates themselves 1–5 on every question. Turn on Blind below to keep answers anonymous."
+                    : selectedType === "scavenger_hunt"
+                    ? "Players answer each with a photo or a typed answer, in any order. Sealed until you reveal (use 🎬 Reveal now or a deadline)."
                     : "Everyone votes a group-mate for each award; winners are crowned at the reveal."}
                 </p>
               </div>
@@ -486,7 +522,8 @@ export default function NewEngagementPage() {
             {selectedType !== "two_truths" &&
               selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
-              selectedType !== "accountability" && (
+              selectedType !== "accountability" &&
+              selectedType !== "scavenger_hunt" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Reveal Mode
@@ -521,10 +558,11 @@ export default function NewEngagementPage() {
             </div>
             )}
 
-            {/* Blind mode — not relevant for Two Truths / Baby Reveal / Most Likely */}
+            {/* Blind mode — not relevant for Two Truths / Baby Reveal / Most Likely / Scavenger */}
             {selectedType !== "two_truths" &&
               selectedType !== "baby_reveal" &&
-              selectedType !== "most_likely" && (
+              selectedType !== "most_likely" &&
+              selectedType !== "scavenger_hunt" && (
               <div>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
