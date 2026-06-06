@@ -830,22 +830,32 @@ export default function EngagementDetailPage() {
           <span className="text-3xl">{meta?.icon ?? "📌"}</span>
           <div className="flex-1">
             {editing ? (
-              <div className="space-y-2">
-                <input
-                  type="text"
-                  value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
-                  placeholder="Prompt / question"
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-base font-semibold text-slate-900 focus:border-orange-500 outline-none"
-                  autoFocus
-                />
-                <textarea
-                  value={editDesc}
-                  onChange={(e) => setEditDesc(e.target.value)}
-                  placeholder="Add more detail (optional)"
-                  rows={2}
-                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 focus:border-orange-500 outline-none resize-none"
-                />
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Prompt / question
+                  </label>
+                  <textarea
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    placeholder="Prompt / question"
+                    rows={2}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-lg font-semibold leading-snug text-slate-900 focus:border-orange-500 outline-none resize-y"
+                    autoFocus
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Details <span className="text-slate-400">(optional)</span>
+                  </label>
+                  <textarea
+                    value={editDesc}
+                    onChange={(e) => setEditDesc(e.target.value)}
+                    placeholder="Add more detail (optional)"
+                    rows={5}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base leading-relaxed text-slate-700 focus:border-orange-500 outline-none resize-y"
+                  />
+                </div>
                 {responseCount > 0 && (
                   <p className="text-xs text-amber-700">
                     ⚠️ {responseCount}{" "}

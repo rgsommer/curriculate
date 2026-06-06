@@ -43,16 +43,28 @@ export async function POST(req: Request) {
     }
     const { admin } = auth;
 
-    // Members to notify (everyone but the creator).
+    // Members to notify: everyone in the group EXCEPT the person who created the
+    // engagement (you don't email yourself). De-duped by lowercased address.
     const allEmails = await getGroupMemberEmails(admin, eng.group_id);
     const { data: creatorUser } = await admin.auth.admin.getUserById(eng.creator_id);
     const creatorEmail = (creatorUser?.user?.email || "").toLowerCase();
-    const emails = allEmails.filter((e) => e.toLowerCase() !== creatorEmail);
+    const recipients = new Set(
+      allEmails.map((e) => e.toLowerCase()).filter((e) => e && e !== creatorEmail)
+    );
 
     const [{ data: group }, { data: profile }] = await Promise.all([
-      admin.from("groups").select("name, invite_code").eq("id", eng.group_id).single(),
+      admin.from("groups").select("name, invite_code, creator_id").eq("id", eng.group_id).single(),
       admin.from("profiles").select("display_name").eq("id", eng.creator_id).single(),
     ]);
+
+    // Guarantee the GROUP host is notified (unless they created this engagement),
+    // even in the unlikely case their membership row is missing.
+    if (group?.creator_id && group.creator_id !== eng.creator_id) {
+      const { data: hostUser } = await admin.auth.admin.getUserById(group.creator_id);
+      const hostEmail = (hostUser?.user?.email || "").toLowerCase();
+      if (hostEmail && hostEmail !== creatorEmail) recipients.add(hostEmail);
+    }
+    const emails = Array.from(recipients);
 
     const meta = ENGAGEMENT_TYPES[eng.type as keyof typeof ENGAGEMENT_TYPES];
     const base = (/^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
