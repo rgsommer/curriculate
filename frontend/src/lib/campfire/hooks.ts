@@ -276,6 +276,7 @@ export function useEngagement(engagementId: string) {
   const [lieGuesses, setLieGuesses] = useState<LieGuess[]>([]);
   const [lieAnswers, setLieAnswers] = useState<LieAnswer[]>([]);
   const [revealAnswer, setRevealAnswerState] = useState<RevealAnswer | null>(null);
+  const [views, setViews] = useState<{ user_id: string; seen_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchEngagement = useCallback(async () => {
@@ -336,6 +337,23 @@ export function useEngagement(engagementId: string) {
       setRevealAnswerState((ra as RevealAnswer) ?? null);
     } else {
       setRevealAnswerState(null);
+    }
+
+    // Read receipts: record this view + load who's seen it (revealed only).
+    if (eng?.status === "revealed") {
+      await supabase
+        .from("campfire_engagement_views")
+        .upsert(
+          { engagement_id: engagementId, user_id: user.id },
+          { onConflict: "engagement_id,user_id", ignoreDuplicates: true }
+        );
+      const { data: vw } = await supabase
+        .from("campfire_engagement_views")
+        .select("user_id, seen_at")
+        .eq("engagement_id", engagementId);
+      setViews((vw as { user_id: string; seen_at: string }[]) ?? []);
+    } else {
+      setViews([]);
     }
 
     // Reactions, comments & ratings (also RLS-gated to revealed engagements)
@@ -582,6 +600,7 @@ export function useEngagement(engagementId: string) {
     lieGuesses,
     lieAnswers,
     revealAnswer,
+    views,
     loading,
     submitResponse,
     submitTwoTruths,

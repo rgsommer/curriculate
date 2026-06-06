@@ -72,6 +72,7 @@ export default function EngagementDetailPage() {
     lieGuesses,
     lieAnswers,
     revealAnswer,
+    views,
     loading,
     submitResponse,
     submitTwoTruths,
@@ -2284,6 +2285,24 @@ export default function EngagementDetailPage() {
               {engagement.reveal === "instant"
                 ? "Instant mode — responses appear the moment they're in."
                 : "As-they-come — responses show up live."}
+            </p>
+          )}
+
+          {/* Read receipts — host sees who's looked at the results */}
+          {isCreator && isRevealed && (
+            <p className="-mt-2 mb-4 text-xs text-slate-500">
+              👀 Seen by {views.length} of {roster.length || views.length}
+              {views.length > 0 && (
+                <span className="text-slate-400">
+                  {" "}
+                  ·{" "}
+                  {views
+                    .map((v) => memberNameOf(v.user_id, "Someone"))
+                    .slice(0, 8)
+                    .join(", ")}
+                  {views.length > 8 ? "…" : ""}
+                </span>
+              )}
             </p>
           )}
 

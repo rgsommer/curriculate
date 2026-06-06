@@ -14,7 +14,8 @@ import {
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-const GRACE_MS = 24 * 60 * 60 * 1000; // nudge for 24h past the deadline, then reveal
+const GRACE_MS = 24 * 60 * 60 * 1000; // reveal this long past the deadline if not done
+const NUDGE_LEAD_MS = 2 * 24 * 60 * 60 * 1000; // start nudging ~2 days before the deadline
 const NUDGE_THROTTLE_MS = 20 * 60 * 60 * 1000; // at most ~once a day per engagement
 
 // Vercel strips inbound x-vercel-* headers from external callers, so its
@@ -66,9 +67,10 @@ export async function GET(req: Request) {
       continue;
     }
 
-    // Within the window (24h before deadline through grace): nudge the people we
-    // can reach — non-responding members + still-pending invitees. Throttled.
-    if (now > dl - GRACE_MS) {
+    // Within the window (~2 days before the deadline through grace): nudge the
+    // people we can reach — non-responding members + still-pending invitees.
+    // Throttled to ~once a day, so they get a heads-up 1–2 days out.
+    if (now > dl - NUDGE_LEAD_MS) {
       const lastNudge = e.deadline_nudged_at
         ? new Date(e.deadline_nudged_at as string).getTime()
         : 0;
