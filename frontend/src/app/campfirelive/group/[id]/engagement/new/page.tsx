@@ -24,6 +24,7 @@ export default function NewEngagementPage() {
   const [deadline, setDeadline] = useState("");
   const [holdUntilDeadline, setHoldUntilDeadline] = useState(false);
   const [waitForAllInvited, setWaitForAllInvited] = useState(false);
+  const [allowMemberInvites, setAllowMemberInvites] = useState(false);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
@@ -223,6 +224,8 @@ export default function NewEngagementPage() {
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
+      // Let members (not just the host) invite others to this engagement.
+      allow_member_invites: allowMemberInvites,
     });
 
     if (result.error) {
@@ -715,6 +718,25 @@ export default function NewEngagementPage() {
               launch, everyone in the group (and any pending invitees) gets an email
               to respond — and again when the results reveal.
             </div>
+
+            {/* Let members invite others to this engagement */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allowMemberInvites}
+                onChange={(e) => setAllowMemberInvites(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+              />
+              <div>
+                <div className="text-sm font-medium text-slate-700">
+                  👥 Let members invite others to this
+                </div>
+                <div className="text-xs text-slate-500">
+                  Anyone in the group (not just you) can invite people to this
+                  engagement. Off = only you can.
+                </div>
+              </div>
+            </label>
 
             {error && (
               <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>

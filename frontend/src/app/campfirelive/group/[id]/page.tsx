@@ -12,7 +12,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setAllowMemberInvites } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -223,6 +223,9 @@ See you around the campfire! 🏕️`
     tab === "active" ? activeEngagements : tab === "revealed" ? revealedEngagements : engagements;
 
   const isAdmin = members.find((m) => m.user_id === user?.id)?.role === "admin";
+  // Engagements a regular member is allowed to invite people to.
+  const memberInvitable = liveEngagements.filter((e) => e.allow_member_invites);
+  const canEmailInvite = isAdmin || memberInvitable.length > 0;
   const partRates = engagements
     .filter((e) => e.total_expected > 0)
     .map((e) => e.response_count / e.total_expected);
@@ -493,9 +496,16 @@ See you around the campfire! 🏕️`
           >
             {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy Invite"}
           </button>
-          {(isAdmin || group.allow_member_invites) && (
+          {canEmailInvite && (
             <button
-              onClick={() => setShowEmailInvite((v) => !v)}
+              onClick={() => {
+                const opening = !showEmailInvite;
+                // Members can only invite to specific engagements — default to one.
+                if (opening && !isAdmin && !inviteTarget && memberInvitable[0]) {
+                  setInviteTarget(memberInvitable[0].id);
+                }
+                setShowEmailInvite(opening);
+              }}
               className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
               ✉️ Add by email
@@ -520,17 +530,6 @@ See you around the campfire! 🏕️`
           with a peek at all the active engagements.
         </p>
 
-        {isAdmin && (
-          <label className="mt-2 flex items-center gap-2 cursor-pointer text-xs text-slate-600">
-            <input
-              type="checkbox"
-              checked={!!group.allow_member_invites}
-              onChange={(e) => setAllowMemberInvites(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-            />
-            Let members invite others too (not just you)
-          </label>
-        )}
 
         {/* Email-invite form — the one place to enter emails */}
         {showEmailInvite && (
@@ -544,8 +543,12 @@ See you around the campfire! 🏕️`
               onChange={(e) => setInviteTarget(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white focus:border-orange-500 outline-none mb-2"
             >
-              <option value="">📋 The whole group (sees all engagements)</option>
-              {liveEngagements.map((e) => (
+              {/* Host can invite to the whole group; members only to engagements
+                  whose creator turned on member invites. */}
+              {isAdmin && (
+                <option value="">📋 The whole group (sees all engagements)</option>
+              )}
+              {(isAdmin ? liveEngagements : memberInvitable).map((e) => (
                 <option key={e.id} value={e.id}>
                   {ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} {e.title}
                 </option>

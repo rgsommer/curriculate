@@ -590,6 +590,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     notify?: boolean;
     hold_until_deadline?: boolean;
     wait_for_all_invited?: boolean;
+    allow_member_invites?: boolean;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -612,6 +613,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
         notify: params.notify ?? false,
         hold_until_deadline: params.hold_until_deadline ?? false,
         wait_for_all_invited: params.wait_for_all_invited ?? false,
+        allow_member_invites: params.allow_member_invites ?? false,
       })
       .select()
       .single();

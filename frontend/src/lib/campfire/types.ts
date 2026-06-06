@@ -78,6 +78,7 @@ export interface Engagement {
   notify?: boolean; // email the group when launched
   hold_until_deadline?: boolean; // wait for the deadline to reveal (don't reveal early)
   wait_for_all_invited?: boolean; // wait until everyone invited has joined + responded
+  allow_member_invites?: boolean; // members (not just host) may invite others to this
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;

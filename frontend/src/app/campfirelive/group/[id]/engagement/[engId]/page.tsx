@@ -189,6 +189,7 @@ export default function EngagementDetailPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editRecurrence, setEditRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
@@ -317,6 +318,7 @@ export default function EngagementDetailPage() {
     setEditRecurrence(
       (engagement.recurrence_rule as "daily" | "weekly" | "monthly" | null) ?? "none"
     );
+    setEditAllowMemberInvites(!!engagement.allow_member_invites);
     setEditing(true);
   };
 
@@ -329,6 +331,7 @@ export default function EngagementDetailPage() {
         title: editTitle.trim(),
         description: editDesc.trim() || null,
         recurrence_rule: editRecurrence === "none" ? null : editRecurrence,
+        allow_member_invites: editAllowMemberInvites,
       })
       .eq("id", engagementId);
     setSavingEdit(false);
@@ -1797,6 +1800,22 @@ export default function EngagementDetailPage() {
                   </p>
                 )}
               </div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={editAllowMemberInvites}
+                  onChange={(e) => setEditAllowMemberInvites(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-slate-700">
+                    👥 Let members invite others to this
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Anyone in the group can invite people to this engagement (not just you).
+                  </div>
+                </div>
+              </label>
               {responseCount > 0 && (
                 <p className="text-xs text-amber-700">
                   ⚠️ {responseCount}{" "}
