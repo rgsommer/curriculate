@@ -193,6 +193,23 @@ export function useGroup(groupId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Creator deletes the whole group (cascades engagements, members, invites…).
+  const deleteGroup = async () => {
+    const { error } = await supabase.from("groups").delete().eq("id", groupId);
+    return { error: error?.message ?? null };
+  };
+
+  // Admin promotes/demotes a member (creator stays admin; enforced server-side).
+  const setMemberRole = async (userId: string, role: "admin" | "member") => {
+    const { error } = await supabase.rpc("set_member_role", {
+      _group_id: groupId,
+      _user_id: userId,
+      _role: role,
+    });
+    if (!error) await fetchGroup();
+    return { error: error?.message ?? null };
+  };
+
   // A member leaves the group (removes their own membership).
   const leaveGroup = async () => {
     if (!user) return { error: "Not signed in" };
@@ -240,6 +257,8 @@ export function useGroup(groupId: string) {
     setMyGroupName,
     setAllowMemberInvites,
     leaveGroup,
+    deleteGroup,
+    setMemberRole,
   };
 }
 

@@ -13,7 +13,7 @@ export default function GroupDetailPage() {
   const router = useRouter();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, leaveGroup } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, leaveGroup, deleteGroup, setMemberRole } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -716,27 +716,50 @@ See you around the campfire! 🏕️`
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
           <div className="grid gap-2">
             {members.map((m) => (
-              <div key={m.user_id} className="flex items-center gap-3 py-1">
-                <div className="relative">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-200 to-rose-200 flex items-center justify-center text-sm font-bold text-slate-700">
-                    {nameOf(m.user_id)[0]?.toUpperCase() ?? "?"}
+              <div key={m.user_id} className="flex items-center justify-between gap-3 py-1">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="relative">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-200 to-rose-200 flex items-center justify-center text-sm font-bold text-slate-700">
+                      {nameOf(m.user_id)[0]?.toUpperCase() ?? "?"}
+                    </div>
+                    {onlineUsers.includes(m.user_id) && (
+                      <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
+                    )}
                   </div>
-                  {onlineUsers.includes(m.user_id) && (
-                    <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
-                  )}
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium text-slate-900">
+                      {nameOf(m.user_id)}
+                      {m.user_id === user?.id && " (you)"}
+                    </span>
+                    {m.user_id === group.creator_id && (
+                      <span className="ml-2 text-xs text-orange-600 font-semibold">Host</span>
+                    )}
+                    {m.role === "spectator" && (
+                      <span className="ml-2 text-xs text-slate-400">Spectator</span>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <span className="text-sm font-medium text-slate-900">
-                    {nameOf(m.user_id)}
-                    {m.user_id === user?.id && " (you)"}
-                  </span>
-                  {m.role === "admin" && (
-                    <span className="ml-2 text-xs text-orange-600 font-semibold">Admin</span>
-                  )}
-                  {m.role === "spectator" && (
-                    <span className="ml-2 text-xs text-slate-400">Spectator</span>
-                  )}
-                </div>
+                {/* Admins can promote/demote (creator/host is locked as admin) */}
+                {isAdmin && m.user_id !== group.creator_id ? (
+                  <label className="flex items-center gap-1.5 text-xs text-slate-500 cursor-pointer flex-shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={m.role === "admin"}
+                      onChange={(e) =>
+                        setMemberRole(m.user_id, e.target.checked ? "admin" : "member")
+                      }
+                      className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                    />
+                    Admin
+                  </label>
+                ) : (
+                  m.role === "admin" &&
+                  m.user_id !== group.creator_id && (
+                    <span className="text-xs text-orange-600 font-semibold flex-shrink-0">
+                      Admin
+                    </span>
+                  )
+                )}
               </div>
             ))}
           </div>
@@ -968,6 +991,31 @@ See you around the campfire! 🏕️`
             </button>
           </div>
         )}
+
+      {/* Delete group — creator (owner) only */}
+      {group.creator_id === user?.id && (
+        <div className="mt-8 text-center">
+          <button
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  `Delete "${group.name}"? This permanently removes the group and ALL its engagements, responses, and members. This can't be undone.`
+                )
+              )
+                return;
+              const { error } = await deleteGroup();
+              if (error) {
+                alert("Couldn't delete: " + error);
+                return;
+              }
+              router.push("/campfirelive");
+            }}
+            className="text-xs text-slate-400 underline hover:text-red-600"
+          >
+            Delete this group
+          </button>
+        </div>
+      )}
 
       {qrUrl && (
         <div
