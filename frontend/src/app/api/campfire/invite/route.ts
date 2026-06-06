@@ -148,8 +148,10 @@ export async function POST(req: Request) {
     }
 
     // Persist the invitations (so they can be tracked, nudged, revoked, and
-    // emailed when an engagement is posted).
-    await admin.from("campfire_invitations").upsert(
+    // emailed when an engagement is posted). Surface failures instead of
+    // silently reporting success — otherwise a host sees "✓ Added" but the
+    // invite list stays empty (e.g. a missing column / RLS issue).
+    const { error: saveErr } = await admin.from("campfire_invitations").upsert(
       emails.map((email) => ({
         group_id: groupId,
         email,
@@ -160,6 +162,13 @@ export async function POST(req: Request) {
       })),
       { onConflict: "group_id,email" }
     );
+    if (saveErr) {
+      console.error("Campfire invite save error:", saveErr);
+      return NextResponse.json(
+        { error: "Couldn't save the invite list. Try again." },
+        { status: 500 }
+      );
+    }
 
     // Catch-up: if the group already has a live engagement, the newly-added
     // invitees shouldn't have to wait for the next one — email them about the
