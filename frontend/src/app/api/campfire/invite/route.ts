@@ -18,6 +18,9 @@ export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null);
     const groupId = typeof body?.groupId === "string" ? body.groupId : "";
+    // Accept either a structured [{name, email}] list (preferred) or a bare
+    // [email] list (legacy). Build an email->name map either way.
+    const rawInvites: unknown[] = Array.isArray(body?.invites) ? body.invites : [];
     const rawEmails: unknown[] = Array.isArray(body?.emails) ? body.emails : [];
     const originIn = typeof body?.origin === "string" ? body.origin : "";
     // Stage = add to the group's invite list now, but DON'T email yet. They get
@@ -34,13 +37,23 @@ export async function POST(req: Request) {
     }
     const { admin, requesterId } = auth;
 
-    // Normalize, validate, dedupe, cap.
+    // Normalize, validate, dedupe, cap — and remember each address's name.
+    const nameByEmail = new Map<string, string>();
+    const collected: string[] = [];
+    for (const it of rawInvites) {
+      const rec = it as { email?: unknown; name?: unknown };
+      const email = extractEmail(rec?.email ?? it);
+      if (!email) continue;
+      collected.push(email);
+      const nm = typeof rec?.name === "string" ? rec.name.trim() : "";
+      if (nm && !nameByEmail.get(email)) nameByEmail.set(email, nm);
+    }
+    for (const e of rawEmails) {
+      const email = extractEmail(e); // tolerates "Name <email@x.com>"
+      if (email) collected.push(email);
+    }
     let emails = Array.from(
-      new Set(
-        rawEmails
-          .map(extractEmail) // tolerates "Name <email@x.com>" entries
-          .filter((e) => EMAIL_RE.test(e))
-      )
+      new Set(collected.filter((e) => EMAIL_RE.test(e)))
     ).slice(0, MAX_INVITES);
 
     if (emails.length === 0) {
@@ -113,6 +126,7 @@ export async function POST(req: Request) {
             groupEmoji: group.avatar_emoji,
             inviteCode: group.invite_code,
             joinUrl,
+            recipientName: nameByEmail.get(to),
           });
           return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
         })
@@ -132,6 +146,7 @@ export async function POST(req: Request) {
       emails.map((email) => ({
         group_id: groupId,
         email,
+        name: nameByEmail.get(email) || null,
         invited_by: requesterId,
         status: "pending",
         last_nudged_at: null,

@@ -88,13 +88,13 @@ export async function POST(req: Request) {
     let invited = 0;
     const { data: pend } = await admin
       .from("campfire_invitations")
-      .select("email")
+      .select("email, name")
       .eq("group_id", eng.group_id)
       .eq("status", "pending");
     if (pend?.length && group?.invite_code) {
       const invMsgs = pend.map((p) => {
         const joinUrl = `${base}/campfirelive/join/${group.invite_code}?inv=${encodeURIComponent(p.email)}`;
-        const im = newEngagementEmail({ ...shared, url: joinUrl, invited: true });
+        const im = newEngagementEmail({ ...shared, url: joinUrl, invited: true, recipientName: p.name || undefined });
         return { from, to: [p.email], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
       });
       for (let i = 0; i < invMsgs.length; i += 100) {

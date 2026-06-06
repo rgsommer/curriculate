@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { firstName } from "./parseInvites";
 
 export const EMAIL_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/;
 export const MAX_INVITES = 50;
@@ -154,14 +155,18 @@ export function newEngagementEmail(opts: {
   deadline: string | null;
   url: string;
   invited?: boolean; // recipient isn't a member yet — frame it as an invite
+  recipientName?: string; // greet them by name if we have it
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url, invited } = opts;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url, invited, recipientName } = opts;
+  const hi = firstName(recipientName);
   const subject = invited
     ? `${creator} invited you to "${groupName}" on Campfire`
     : `${creator} started a ${typeLabel} in ${groupName}`;
-  const intro = invited
-    ? `${creator} invited you to join "${groupName}" on Campfire — and there's already a ${typeLabel} waiting for you:`
-    : `${creator} started a ${typeLabel} in ${groupName}:`;
+  const intro =
+    (hi ? `Hi ${hi}, ` : "") +
+    (invited
+      ? `${creator} invited you to join "${groupName}" on Campfire — and there's already a ${typeLabel} waiting for you:`
+      : `${creator} started a ${typeLabel} in ${groupName}:`);
   const cta = invited ? "Join & add your answer" : "Add your answer";
 
   const bits: string[] = [];
@@ -239,15 +244,19 @@ export function inviteEmail(opts: {
   inviteCode: string;
   joinUrl: string;
   nudge?: boolean;
+  recipientName?: string; // greet them by name if we have it
 }) {
-  const { inviter, groupName, groupEmoji, inviteCode, joinUrl, nudge } = opts;
+  const { inviter, groupName, groupEmoji, inviteCode, joinUrl, nudge, recipientName } = opts;
+  const hi = firstName(recipientName);
   const subject = nudge
     ? `Reminder: ${inviter} invited you to "${groupName}" on Campfire`
     : `${inviter} invited you to "${groupName}" on Campfire`;
 
-  const lead = nudge
-    ? `Just a friendly nudge — ${inviter} is still hoping you'll join "${groupName}" on Campfire. The group's waiting on you!`
-    : `${inviter} invited you to join "${groupName}" on Campfire.`;
+  const lead =
+    (hi ? `Hi ${hi}, ` : "") +
+    (nudge
+      ? `${inviter} is still hoping you'll join "${groupName}" on Campfire. The group's waiting on you!`
+      : `${inviter} invited you to join "${groupName}" on Campfire.`);
 
   const text = `${lead}
 

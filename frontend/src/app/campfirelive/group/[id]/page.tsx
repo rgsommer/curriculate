@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
   const params = useParams();
@@ -84,17 +85,11 @@ See you around the campfire! 🏕️`
 
   const sendEmailInvites = async () => {
     if (!group || !session) return;
-    // Pull addresses out of any format — bare emails OR "Name <email@x.com>"
-    // pasted from a contacts app. Angle brackets/commas/quotes are excluded from
-    // the match, so names are ignored and only the addresses survive.
-    const emails = Array.from(
-      new Set(
-        (emailInput.match(/[^\s<>,;"']+@[^\s<>,;"']+\.[^\s<>,;"']+/g) ?? []).map((e) =>
-          e.trim().toLowerCase()
-        )
-      )
-    );
-    if (emails.length === 0) {
+    // Parse into {name, email} pairs — handles bare emails AND "Name <email@x.com>"
+    // pasted from a contacts app. The name (when present) is kept and used to
+    // greet the person in their invite email.
+    const invites = parseInviteList(emailInput);
+    if (invites.length === 0) {
       setInviteResult("Enter at least one email address (names are fine too).");
       return;
     }
@@ -107,7 +102,7 @@ See you around the campfire! 🏕️`
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ groupId, emails, origin: window.location.origin, stage: true }),
+        body: JSON.stringify({ groupId, invites, origin: window.location.origin, stage: true }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -391,10 +386,10 @@ See you around the campfire! 🏕️`
             <label className="block text-xs font-medium text-slate-600 mb-1">
               Add people by email — one or more, separated by commas or spaces. You can
               paste straight from your contacts (e.g. <span className="font-mono">Alex
-              Lee &lt;alex@example.com&gt;</span>) — we&apos;ll pull out the addresses and
-              ignore the names. They aren&apos;t emailed yet: they get a friendly invite
-              the moment you post an engagement (so no one gets a dead &ldquo;join my
-              empty group&rdquo; email).
+              Lee &lt;alex@example.com&gt;</span>) — we&apos;ll keep each person&apos;s name
+              and greet them by it in the invite. They aren&apos;t emailed yet: they get a
+              friendly invite the moment you post an engagement (so no one gets a dead
+              &ldquo;join my empty group&rdquo; email).
             </label>
             <textarea
               value={emailInput}
@@ -478,7 +473,14 @@ See you around the campfire! 🏕️`
                       inv.status === "revoked" ? "text-slate-400 line-through" : "text-slate-700"
                     }`}
                   >
-                    {inv.email}
+                    {inv.name ? (
+                      <>
+                        <span className="font-medium">{inv.name}</span>{" "}
+                        <span className="text-slate-400">&lt;{inv.email}&gt;</span>
+                      </>
+                    ) : (
+                      inv.email
+                    )}
                   </span>
                   <div className="flex items-center gap-2 flex-shrink-0">
                     {inv.status === "joined" && (

@@ -155,6 +155,7 @@ export interface Invitation {
   id: string;
   group_id: string;
   email: string;
+  name: string | null;
   invited_by: string | null;
   status: "pending" | "joined" | "revoked";
   created_at: string;
