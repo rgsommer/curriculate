@@ -46,6 +46,7 @@ export interface Group {
   creator_id: string;
   avatar_emoji: string;
   created_at: string;
+  allow_member_invites?: boolean; // members (not just host) may invite others
 }
 
 export interface GroupMember {

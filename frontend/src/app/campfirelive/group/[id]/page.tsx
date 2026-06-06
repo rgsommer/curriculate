@@ -12,7 +12,7 @@ export default function GroupDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setAllowMemberInvites } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -493,7 +493,7 @@ See you around the campfire! 🏕️`
           >
             {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy Invite"}
           </button>
-          {isAdmin && (
+          {(isAdmin || group.allow_member_invites) && (
             <button
               onClick={() => setShowEmailInvite((v) => !v)}
               className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -519,6 +519,18 @@ See you around the campfire! 🏕️`
           <span className="font-semibold">📋 Copy Invite</span> — invite to this group,
           with a peek at all the active engagements.
         </p>
+
+        {isAdmin && (
+          <label className="mt-2 flex items-center gap-2 cursor-pointer text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={!!group.allow_member_invites}
+              onChange={(e) => setAllowMemberInvites(e.target.checked)}
+              className="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+            />
+            Let members invite others too (not just you)
+          </label>
+        )}
 
         {/* Email-invite form — the one place to enter emails */}
         {showEmailInvite && (

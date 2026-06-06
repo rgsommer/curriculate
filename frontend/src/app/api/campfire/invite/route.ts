@@ -33,11 +33,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing group." }, { status: 400 });
     }
 
-    const auth = await authorizeGroupRequester(req, groupId, { requireAdmin: true });
+    const auth = await authorizeGroupRequester(req, groupId);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    const { admin, requesterId } = auth;
+    const { admin, requesterId, role } = auth;
 
     // Normalize, validate, dedupe, cap — and remember each address's name.
     const nameByEmail = new Map<string, string>();
@@ -65,11 +65,18 @@ export async function POST(req: Request) {
     // Group + inviter details.
     const { data: group } = await admin
       .from("groups")
-      .select("name, invite_code, avatar_emoji")
+      .select("name, invite_code, avatar_emoji, allow_member_invites")
       .eq("id", groupId)
       .single();
     if (!group) {
       return NextResponse.json({ error: "Group not found." }, { status: 404 });
+    }
+    // Only the host invites, unless the host enabled member invites.
+    if (role !== "admin" && !group.allow_member_invites) {
+      return NextResponse.json(
+        { error: "Only the host can invite people to this group." },
+        { status: 403 }
+      );
     }
     const [{ data: profile }, { data: gm }] = await Promise.all([
       admin.from("profiles").select("display_name").eq("id", requesterId).single(),

@@ -43,11 +43,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Engagement not found." }, { status: 404 });
     }
 
-    const auth = await authorizeGroupRequester(req, eng.group_id, { requireAdmin: true });
+    const auth = await authorizeGroupRequester(req, eng.group_id);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
-    const { admin, requesterId } = auth;
+    const { admin, requesterId, role } = auth;
 
     // Build the email list (+ optional names) from either shape.
     const nameByEmail = new Map<string, string>();
@@ -85,7 +85,11 @@ export async function POST(req: Request) {
     }
 
     const [{ data: group }, { data: profile }, { data: gm }] = await Promise.all([
-      admin.from("groups").select("name, invite_code").eq("id", eng.group_id).single(),
+      admin
+        .from("groups")
+        .select("name, invite_code, allow_member_invites")
+        .eq("id", eng.group_id)
+        .single(),
       admin.from("profiles").select("display_name").eq("id", eng.creator_id).single(),
       admin
         .from("group_members")
@@ -94,6 +98,12 @@ export async function POST(req: Request) {
         .eq("user_id", eng.creator_id)
         .maybeSingle(),
     ]);
+    if (group && role !== "admin" && !group.allow_member_invites) {
+      return NextResponse.json(
+        { error: "Only the host can invite people to this group." },
+        { status: 403 }
+      );
+    }
     if (!group) {
       return NextResponse.json({ error: "Group not found." }, { status: 404 });
     }
