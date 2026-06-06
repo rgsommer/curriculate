@@ -69,8 +69,13 @@ export default function EngagementDetailPage() {
     ratings,
     myResponse,
     responseCount,
+    lieGuesses,
+    lieAnswers,
     loading,
     submitResponse,
+    submitTwoTruths,
+    submitLieGuess,
+    revealLiesNow,
     addReaction,
     addRating,
     addComment,
@@ -116,6 +121,9 @@ export default function EngagementDetailPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Two Truths & a Lie entry state
+  const [ttStatements, setTtStatements] = useState(["", "", ""]);
+  const [ttLie, setTtLie] = useState<number | null>(null);
   const [commentText, setCommentText] = useState("");
   const [showRevealAnimation, setShowRevealAnimation] = useState(false);
   const [justRevealed, setJustRevealed] = useState(false);
@@ -412,6 +420,26 @@ export default function EngagementDetailPage() {
     setTextInput("");
   };
 
+  const handleTwoTruthsSubmit = async () => {
+    const cleaned = ttStatements.map((s) => s.trim());
+    if (cleaned.some((s) => !s)) {
+      alert("Fill in all three statements.");
+      return;
+    }
+    if (ttLie === null) {
+      alert("Tap the circle next to the statement that's the lie.");
+      return;
+    }
+    if (cleaned.some((s) => hasProfanity(s))) {
+      alert("Let's keep it kind — please reword.");
+      return;
+    }
+    setSubmitting(true);
+    const { error: ttErr } = await submitTwoTruths(cleaned, ttLie);
+    setSubmitting(false);
+    if (ttErr) alert("Couldn't submit: " + ttErr);
+  };
+
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -459,6 +487,53 @@ export default function EngagementDetailPage() {
     if (hasResponded) return null;
 
     switch (engagement.type) {
+      case "two_truths":
+        return (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Write three statements about yourself — two true, one a lie. Tap the
+              circle on the one that&apos;s the lie. Everyone guesses it later.
+            </p>
+            {ttStatements.map((s, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setTtLie(i)}
+                  title="Mark this one as the lie"
+                  className={`flex-shrink-0 w-6 h-6 rounded-full border-2 flex items-center justify-center text-xs ${
+                    ttLie === i
+                      ? "border-rose-500 bg-rose-500 text-white"
+                      : "border-slate-300 text-transparent hover:border-rose-300"
+                  }`}
+                >
+                  {ttLie === i ? "🤥" : ""}
+                </button>
+                <input
+                  type="text"
+                  value={s}
+                  onChange={(e) => {
+                    const next = [...ttStatements];
+                    next[i] = e.target.value;
+                    setTtStatements(next);
+                  }}
+                  placeholder={`Statement ${i + 1}`}
+                  className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
+                />
+              </div>
+            ))}
+            <p className="text-xs text-slate-400">
+              {ttLie === null ? "Tap a circle to mark your lie 🤥" : `Statement ${ttLie + 1} is your lie.`}
+            </p>
+            <button
+              onClick={handleTwoTruthsSubmit}
+              disabled={submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock In My Three"}
+            </button>
+          </div>
+        );
+
       case "poll":
         return (
           <div className="space-y-2">
@@ -595,8 +670,158 @@ export default function EngagementDetailPage() {
     );
   };
 
+  const renderTwoTruthsResults = () => {
+    if (!showResults || engagement.type !== "two_truths") return null;
+    const liesRevealed = !!engagement.lies_revealed_at;
+    const R = responses.length;
+
+    const answerFor = (rid: string) =>
+      lieAnswers.find((a) => a.response_id === rid)?.lie_index;
+    const myGuessFor = (rid: string) =>
+      lieGuesses.find((g) => g.response_id === rid && g.guesser_id === user?.id)?.guess_index;
+
+    // How many players have finished guessing everyone else.
+    const completed = responses.filter(
+      (r) => lieGuesses.filter((g) => g.guesser_id === r.user_id).length >= R - 1
+    ).length;
+
+    // My score (after reveal).
+    let myCorrect = 0;
+    let myTotal = 0;
+    if (liesRevealed) {
+      responses.forEach((r) => {
+        if (r.user_id === user?.id) return;
+        const ans = answerFor(r.id);
+        const mg = myGuessFor(r.id);
+        if (ans !== undefined && mg !== undefined) {
+          myTotal++;
+          if (mg === ans) myCorrect++;
+        }
+      });
+    }
+
+    return (
+      <div className="space-y-3">
+        {!liesRevealed ? (
+          <div className="rounded-xl bg-purple-50 border border-purple-200 p-3 text-sm text-purple-800">
+            🕵️ Guessing phase — tap the statement you think is the lie on each entry.{" "}
+            <span className="font-semibold">
+              {completed} of {R}
+            </span>{" "}
+            {completed === 1 ? "player has" : "players have"} finished. The lies reveal
+            once everyone&apos;s guessed.
+          </div>
+        ) : (
+          <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+            🎉 Lies revealed! You spotted{" "}
+            <span className="font-bold">
+              {myCorrect} of {myTotal}
+            </span>{" "}
+            {myTotal === 1 ? "lie" : "lies"}.
+          </div>
+        )}
+
+        {responses.map((r) => {
+          const statements = ((r.content as { statements?: string[] })?.statements) ?? [];
+          const isMine = r.user_id === user?.id;
+          const ans = answerFor(r.id);
+          const mg = myGuessFor(r.id);
+          const name =
+            engagement.is_blind && !liesRevealed
+              ? "Anonymous"
+              : r.profile?.display_name ?? "Someone";
+          const guessesForR = lieGuesses.filter((g) => g.response_id === r.id);
+          const correctCount =
+            ans !== undefined ? guessesForR.filter((g) => g.guess_index === ans).length : 0;
+
+          return (
+            <div key={r.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-br from-purple-200 to-rose-200 flex items-center justify-center text-xs font-bold text-slate-700">
+                  {name[0]?.toUpperCase() ?? "?"}
+                </div>
+                <span className="text-sm font-medium text-slate-900">
+                  {name}
+                  {isMine ? " (you)" : ""}
+                </span>
+                {liesRevealed && !isMine && mg !== undefined && (
+                  <span
+                    className={`ml-auto text-xs font-semibold ${
+                      mg === ans ? "text-green-600" : "text-rose-600"
+                    }`}
+                  >
+                    {mg === ans ? "✓ You nailed it" : "✗ Fooled you"}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                {statements.map((s, i) => {
+                  const isLie = liesRevealed && ans === i;
+                  const iGuessed = mg === i;
+                  const canGuess = !liesRevealed && !isMine && hasResponded;
+                  let cls =
+                    "w-full text-left rounded-lg border px-3 py-2 text-sm transition ";
+                  if (isLie) cls += "border-rose-400 bg-rose-50 text-rose-900 font-semibold";
+                  else if (iGuessed) cls += "border-purple-400 bg-purple-50";
+                  else
+                    cls +=
+                      "border-slate-200 bg-white" +
+                      (canGuess ? " hover:border-purple-300 cursor-pointer" : "");
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      disabled={!canGuess}
+                      onClick={() => canGuess && submitLieGuess(r.id, i)}
+                      className={cls}
+                    >
+                      {s}
+                      {isLie && <span className="ml-2 text-xs">🤥 the lie</span>}
+                      {isMine && !liesRevealed && ans === i && (
+                        <span className="ml-2 text-xs text-rose-500">(your lie)</span>
+                      )}
+                      {iGuessed && !liesRevealed && (
+                        <span className="ml-2 text-xs text-purple-600">← your guess</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {!liesRevealed && !isMine && hasResponded && mg === undefined && (
+                <p className="mt-1.5 text-xs text-slate-400">Tap the one you think is the lie.</p>
+              )}
+              {liesRevealed && (
+                <p className="mt-2 text-xs text-slate-500">
+                  {correctCount} of {guessesForR.length} guessed right
+                  {guessesForR.length > 0 && correctCount === 0
+                    ? " — you fooled everyone! 😏"
+                    : ""}
+                </p>
+              )}
+            </div>
+          );
+        })}
+
+        {!liesRevealed && !hasResponded && (
+          <p className="text-xs text-slate-400">Only players who submitted can guess.</p>
+        )}
+        {!liesRevealed && isCreator && (
+          <button
+            onClick={revealLiesNow}
+            className="w-full rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+          >
+            🎬 Reveal the lies now (don&apos;t wait for stragglers)
+          </button>
+        )}
+      </div>
+    );
+  };
+
   const renderRevealedResponses = () => {
-    if (!showResults || engagement.type === "poll") return null;
+    if (!showResults || engagement.type === "poll" || engagement.type === "two_truths")
+      return null;
 
     // "Guess who" candidates = everyone who responded.
     const responderNames = Array.from(
@@ -1239,6 +1464,9 @@ export default function EngagementDetailPage() {
 
           {/* Poll results */}
           {renderPollResults()}
+
+          {/* Two Truths & a Lie — guess-the-lie + scored reveal */}
+          {renderTwoTruthsResults()}
 
           {/* Other response types */}
           {renderRevealedResponses()}

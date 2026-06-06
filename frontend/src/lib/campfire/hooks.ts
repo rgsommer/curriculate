@@ -16,6 +16,8 @@ import type {
   Rating,
   EngagementType,
   RevealMode,
+  LieGuess,
+  LieAnswer,
 } from "./types";
 
 // ── Groups ──
@@ -216,6 +218,8 @@ export function useEngagement(engagementId: string) {
   const [ratings, setRatings] = useState<Rating[]>([]);
   const [myResponse, setMyResponse] = useState<Response | null>(null);
   const [responseCount, setResponseCount] = useState(0);
+  const [lieGuesses, setLieGuesses] = useState<LieGuess[]>([]);
+  const [lieAnswers, setLieAnswers] = useState<LieAnswer[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchEngagement = useCallback(async () => {
@@ -252,6 +256,19 @@ export function useEngagement(engagementId: string) {
       .select("*, profile:profiles(*)")
       .eq("engagement_id", engagementId);
     if (resps) setResponses(resps as (Response & { profile: Profile })[]);
+
+    // Two Truths & a Lie: guesses (RLS: members) + answers (RLS: own + after reveal)
+    if (eng?.type === "two_truths") {
+      const [guessRes, ansRes] = await Promise.all([
+        supabase.from("campfire_lie_guesses").select("*").eq("engagement_id", engagementId),
+        supabase.from("campfire_lie_answers").select("*").eq("engagement_id", engagementId),
+      ]);
+      setLieGuesses((guessRes.data as LieGuess[]) ?? []);
+      setLieAnswers((ansRes.data as LieAnswer[]) ?? []);
+    } else {
+      setLieGuesses([]);
+      setLieAnswers([]);
+    }
 
     // Reactions, comments & ratings (also RLS-gated to revealed engagements)
     if (eng?.status === "revealed") {
@@ -295,6 +312,53 @@ export function useEngagement(engagementId: string) {
     if (error) return { error: error.message };
     await fetchEngagement();
     return { error: null };
+  };
+
+  // Two Truths & a Lie: submit 3 statements + the (hidden) lie index.
+  const submitTwoTruths = async (statements: string[], lieIndex: number) => {
+    if (!user || !engagementId) return { error: "Missing data" };
+    const { data: resp, error } = await supabase
+      .from("responses")
+      .insert({ engagement_id: engagementId, user_id: user.id, content: { statements } })
+      .select("id")
+      .single();
+    if (error || !resp) return { error: error?.message ?? "Couldn't submit" };
+    const { error: aErr } = await supabase.from("campfire_lie_answers").insert({
+      engagement_id: engagementId,
+      response_id: resp.id,
+      lie_index: lieIndex,
+    });
+    if (aErr) return { error: aErr.message };
+    await fetchEngagement();
+    return { error: null };
+  };
+
+  // Two Truths & a Lie: guess which statement is the lie on someone's entry.
+  const submitLieGuess = async (responseId: string, guessIndex: number) => {
+    if (!user || !engagementId) return { error: "Missing data" };
+    const { error } = await supabase.from("campfire_lie_guesses").upsert(
+      {
+        engagement_id: engagementId,
+        response_id: responseId,
+        guesser_id: user.id,
+        guess_index: guessIndex,
+      },
+      { onConflict: "response_id,guesser_id" }
+    );
+    if (error) return { error: error.message };
+    await fetchEngagement();
+    return { error: null };
+  };
+
+  // Creator force-reveals the lies (e.g. some players never guessed).
+  const revealLiesNow = async () => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ lies_revealed_at: new Date().toISOString() })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
   };
 
   // Add reaction
@@ -423,8 +487,13 @@ export function useEngagement(engagementId: string) {
     ratings,
     myResponse,
     responseCount,
+    lieGuesses,
+    lieAnswers,
     loading,
     submitResponse,
+    submitTwoTruths,
+    submitLieGuess,
+    revealLiesNow,
     addReaction,
     addRating,
     addComment,

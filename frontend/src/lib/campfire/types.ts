@@ -15,7 +15,8 @@ export type EngagementType =
   | "guess"
   | "surprise"
   | "advice"
-  | "voice_response";
+  | "voice_response"
+  | "two_truths";
 
 export type EngagementStatus = "active" | "sealed" | "revealed" | "expired";
 export type RevealMode = "sealed" | "all_at_once" | "first_in" | "as_they_come" | "instant";
@@ -71,6 +72,7 @@ export interface Engagement {
   launched_at?: string | null; // null = draft (only the creator can see it)
   notify?: boolean; // email the group when launched
   hold_until_deadline?: boolean; // wait for the deadline to reveal (don't reveal early)
+  lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
 }
@@ -152,6 +154,20 @@ export interface Rating {
   created_at: string;
 }
 
+export interface LieAnswer {
+  engagement_id: string;
+  response_id: string;
+  lie_index: number;
+}
+
+export interface LieGuess {
+  id: string;
+  engagement_id: string;
+  response_id: string;
+  guesser_id: string;
+  guess_index: number;
+}
+
 export interface Invitation {
   id: string;
   group_id: string;
@@ -185,6 +201,7 @@ export const ENGAGEMENT_TYPES: Record<
   surprise: { icon: "🎉", label: "Surprise", description: "Coordinate greetings hidden from the recipient", hook: "Add your bit to a surprise they'll never see coming. 🤫", color: "bg-yellow-50 text-yellow-700" },
   advice: { icon: "💡", label: "Advice", description: "Ask your group for counsel", hook: "Weigh in — the group wants your honest take.", color: "bg-teal-50 text-teal-700" },
   voice_response: { icon: "🎤", label: "Voice Response", description: "Leave voice notes instead of text", hook: "Say it out loud — drop a quick voice note.", color: "bg-rose-50 text-rose-700" },
+  two_truths: { icon: "🕵️", label: "Two Truths & a Lie", description: "Everyone shares 3 statements — 2 true, 1 lie — then the group guesses the lie", hook: "Two truths and a lie — can the group spot your fib?", color: "bg-purple-50 text-purple-700" },
 };
 
 // ── Supabase Database type (simplified — use supabase gen types for full version) ──

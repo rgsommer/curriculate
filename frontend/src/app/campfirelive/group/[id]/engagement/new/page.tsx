@@ -34,6 +34,12 @@ export default function NewEngagementPage() {
 
   const handleSelectType = (type: EngagementType) => {
     setSelectedType(type);
+    if (type === "two_truths") {
+      if (!title.trim()) setTitle("Two truths and a lie — what are yours?");
+      if (!description.trim())
+        setDescription("Share three statements about yourself — two true, one a lie. We'll all guess the lie!");
+      setReveal("sealed"); // statements stay sealed until everyone's in
+    }
     setStep("details");
   };
 
@@ -94,7 +100,7 @@ export default function NewEngagementPage() {
       description: description.trim() || undefined,
       config,
       deadline: deadline ? new Date(deadline) : undefined,
-      reveal,
+      reveal: selectedType === "two_truths" ? "sealed" : reveal,
       is_blind: isBlind,
       recurrence_rule: recurrence === "none" ? undefined : recurrence,
       notify: true, // launching always notifies the group
