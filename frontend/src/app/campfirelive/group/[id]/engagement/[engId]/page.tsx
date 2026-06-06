@@ -142,8 +142,9 @@ export default function EngagementDetailPage() {
   // "Most Likely To…" — the group roster (candidates) and this user's votes
   const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
   const [mlVotes, setMlVotes] = useState<Record<number, string>>({});
-  // Accountability: 1–5 self-rating per question
+  // Accountability: 1–5 self-rating per question + an optional note to the group
   const [acRatings, setAcRatings] = useState<Record<number, number>>({});
+  const [acNote, setAcNote] = useState("");
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -569,12 +570,17 @@ export default function EngagementDetailPage() {
       alert("Give each question a rating (1–5).");
       return;
     }
+    const note = acNote.trim();
+    if (note && hasProfanity(note)) {
+      alert("Let's keep it kind — please reword your note.");
+      return;
+    }
     const answers: Record<string, number> = {};
     qs.forEach((_, i) => {
       answers[i] = acRatings[i];
     });
     setSubmitting(true);
-    const { error: acErr } = await submitResponse({ answers });
+    const { error: acErr } = await submitResponse({ answers, note: note || undefined });
     setSubmitting(false);
     if (acErr) alert("Couldn't submit: " + acErr);
   };
@@ -656,6 +662,19 @@ export default function EngagementDetailPage() {
                 </div>
               </div>
             ))}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Share with the group{" "}
+                <span className="text-slate-400">(optional)</span>
+              </label>
+              <textarea
+                value={acNote}
+                onChange={(e) => setAcNote(e.target.value)}
+                rows={3}
+                placeholder="An encouragement, a verse, a prayer request… shown to everyone at the reveal."
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-violet-500 outline-none resize-none"
+              />
+            </div>
             <button
               onClick={handleAccountabilitySubmit}
               disabled={submitting}
@@ -920,6 +939,9 @@ export default function EngagementDetailPage() {
   const renderAccountabilityResults = () => {
     if (!showResults || engagement.type !== "accountability") return null;
     const qs = (engagement.config?.questions as string[]) ?? [];
+    const notes = responses
+      .map((r) => ({ r, note: (r.content as { note?: string })?.note }))
+      .filter((x) => x.note && x.note.trim());
     return (
       <div className="space-y-3">
         {qs.map((q, i) => {
@@ -961,6 +983,27 @@ export default function EngagementDetailPage() {
             </div>
           );
         })}
+
+        {/* Notes shared with the group (encouragements, verses, requests) */}
+        {notes.length > 0 && (
+          <div className="rounded-xl border border-violet-200 bg-white p-4">
+            <div className="text-sm font-semibold text-slate-700 mb-2">
+              💬 Shared with the group
+            </div>
+            <div className="space-y-2.5">
+              {notes.map(({ r, note }) => (
+                <div key={r.id} className="border-l-2 border-violet-200 pl-3">
+                  <div className="text-xs font-semibold text-violet-700">
+                    {engagement.is_blind
+                      ? "Anonymous"
+                      : memberNameOf(r.user_id, r.profile?.display_name)}
+                  </div>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{note}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   };
