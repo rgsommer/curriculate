@@ -185,7 +185,6 @@ export async function GET(req: Request) {
     .from("engagements")
     .select("id, group_id, title")
     .eq("status", "revealed")
-    .eq("notify", true)
     .is("reveal_notified_at", null);
 
   for (const e of toNotify ?? []) {

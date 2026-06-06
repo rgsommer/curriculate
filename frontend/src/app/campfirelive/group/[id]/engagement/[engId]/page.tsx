@@ -206,9 +206,22 @@ export default function EngagementDetailPage() {
       setShowRevealAnimation(true);
       setJustRevealed(true);
       setTimeout(() => setShowRevealAnimation(false), 3000);
+      // Email the results to members who have an email (guests have none, so
+      // they're skipped). Idempotent server-side, so multiple viewers firing
+      // this only sends once.
+      if (session) {
+        fetch("/api/campfire/engagement/notify-reveal", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ engagementId, origin: window.location.origin }),
+        }).catch(() => {});
+      }
     }
     prevStatusRef.current = engagement?.status ?? null;
-  }, [engagement?.status]);
+  }, [engagement?.status, session, engagementId]);
 
   if (loading) {
     return (
