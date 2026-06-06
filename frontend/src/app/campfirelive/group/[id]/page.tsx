@@ -360,7 +360,11 @@ See you around the campfire! 🏕️`
       {/* Invite + Members (collapsible) */}
       <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
         <button
-          onClick={() => setShowInvitePanel((v) => !v)}
+          onClick={() => {
+            // Collapsing the panel also hides the members list it controls.
+            if (showInvitePanel) setShowMembers(false);
+            setShowInvitePanel((v) => !v);
+          }}
           className="flex w-full items-center justify-between gap-2 text-left"
         >
           <span className="text-sm font-bold text-slate-800">
