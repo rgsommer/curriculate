@@ -2063,15 +2063,25 @@ export default function EngagementDetailPage() {
       </div>
 
       {/* ── Surprise: who it's hidden from until the reveal ── */}
-      {(engagement.excluded_user_ids?.length ?? 0) > 0 && !isRevealed && (
-        <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-xs text-rose-800">
-          🎁 <span className="font-semibold">Surprise</span> — hidden from{" "}
-          {(engagement.excluded_user_ids ?? [])
-            .map((uid) => memberNameOf(uid, "someone"))
-            .join(", ")}{" "}
-          until the reveal. Keep it under wraps! They&apos;ll get it the moment you reveal.
-        </div>
-      )}
+      {((engagement.excluded_user_ids?.length ?? 0) > 0 ||
+        (engagement.excluded_emails?.length ?? 0) > 0) &&
+        !isRevealed && (
+          <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-xs text-rose-800">
+            🎁 <span className="font-semibold">Surprise</span> — hidden from{" "}
+            <span className="font-semibold">
+              {[
+                ...(engagement.excluded_user_ids ?? []).map((uid) =>
+                  memberNameOf(uid, "someone")
+                ),
+                ...(engagement.excluded_emails ?? []).map((email) => {
+                  const inv = pendingInvitees.find((p) => p.email === email);
+                  return inv?.name || email;
+                }),
+              ].join(", ")}
+            </span>{" "}
+            until the reveal. Keep it under wraps! They&apos;ll get it the moment you reveal.
+          </div>
+        )}
 
       {/* ── Share a link that drops people straight into THIS engagement ──
           (To email people, use the group's invite form — one place for emails.) */}
