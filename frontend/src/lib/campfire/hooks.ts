@@ -644,6 +644,10 @@ export function useCreateEngagement(defaultGroupId?: string) {
     excluded_user_ids?: string[];
     excluded_emails?: string[];
     cover_image_url?: string;
+    scheduled_open_at?: string | null;
+    lead_days?: number;
+    birth_year?: number | null;
+    launched_at?: string | null;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -670,6 +674,10 @@ export function useCreateEngagement(defaultGroupId?: string) {
         excluded_user_ids: params.excluded_user_ids ?? [],
         excluded_emails: params.excluded_emails ?? [],
         cover_image_url: params.cover_image_url ?? null,
+        scheduled_open_at: params.scheduled_open_at ?? null,
+        lead_days: params.lead_days ?? 14,
+        birth_year: params.birth_year ?? null,
+        ...(params.launched_at !== undefined ? { launched_at: params.launched_at } : {}),
       })
       .select()
       .single();

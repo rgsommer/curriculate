@@ -19,7 +19,8 @@ export type EngagementType =
   | "two_truths"
   | "baby_reveal"
   | "most_likely"
-  | "scavenger_hunt";
+  | "scavenger_hunt"
+  | "birthday";
 
 export type EngagementStatus = "active" | "sealed" | "revealed" | "expired";
 export type RevealMode = "sealed" | "all_at_once" | "first_in" | "as_they_come" | "instant";
@@ -82,6 +83,9 @@ export interface Engagement {
   excluded_user_ids?: string[]; // surprise: hidden from these members until reveal
   excluded_emails?: string[]; // surprise: exclude not-yet-joined people by email
   cover_image_url?: string | null; // optional banner image (e.g. a birthday graphic)
+  scheduled_open_at?: string | null; // auto-launch a draft at this time (birthday)
+  lead_days?: number; // birthday: open this many days before the date
+  birth_year?: number | null; // birthday: for the {age} title token
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
@@ -220,7 +224,31 @@ export const ENGAGEMENT_TYPES: Record<
   baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Set the choices (Boy/Girl, name, date…); everyone guesses, and it unseals on the big day with winners", hook: "Place your guess — all is revealed on the big day!", color: "bg-sky-50 text-sky-700" },
   most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
   scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
+  birthday: { icon: "🎂", label: "Birthday", description: "A surprise card everyone signs — hidden from the birthday person, opens before the day and reveals on it. Runs every year", hook: "Sign the card — it opens on the big day! 🎂", color: "bg-pink-50 text-pink-700" },
 };
+
+// Ordinal: 28 -> "28th", 21 -> "21st".
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return `${n}${s[(v - 20) % 10] || s[v] || s[0]}`;
+}
+
+// Resolve a {age} token in a title from the stored birth year + the (reveal) date.
+// "Happy {age} Birthday, Dad!" -> "Happy 28th Birthday, Dad!". With no birth year,
+// the token is dropped cleanly ("Happy Birthday, Dad!").
+export function resolveTitle(
+  title: string,
+  birthYear?: number | null,
+  deadline?: string | null
+): string {
+  if (!title.includes("{age}")) return title;
+  if (birthYear && deadline) {
+    const age = new Date(deadline).getFullYear() - birthYear;
+    if (age > 0) return title.replace(/\{age\}/g, ordinal(age));
+  }
+  return title.replace(/\{age\}\s*/g, "").replace(/\s{2,}/g, " ").trim();
+}
 
 // ── Supabase Database type (simplified — use supabase gen types for full version) ──
 export interface Database {

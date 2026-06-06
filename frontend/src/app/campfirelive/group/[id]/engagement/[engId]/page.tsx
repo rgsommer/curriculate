@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 
@@ -1700,9 +1700,24 @@ export default function EngagementDetailPage() {
                     Only you can see this right now
                   </div>
                   <p className="mt-1 text-xs text-orange-800/80">
-                    Review the prompt below. When you hit launch, it goes live for the
-                    group and everyone (members + pending invitees) gets an email to
-                    respond.
+                    {engagement.scheduled_open_at ? (
+                      <>
+                        🎂 This auto-opens on{" "}
+                        {new Date(engagement.scheduled_open_at).toLocaleDateString("en-US", {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}{" "}
+                        and reveals on the birthday — runs every year. You can also hit
+                        Launch now to open it early.
+                      </>
+                    ) : (
+                      <>
+                        Review the prompt below. When you hit launch, it goes live for the
+                        group and everyone (members + pending invitees) gets an email to
+                        respond.
+                      </>
+                    )}
                   </p>
                 </>
               )}
@@ -1879,7 +1894,7 @@ export default function EngagementDetailPage() {
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
                   <h1 className="min-w-0 flex-1 text-xl font-extrabold leading-tight text-slate-900 break-words">
-                    {engagement.title}
+                    {resolveTitle(engagement.title, engagement.birth_year, engagement.deadline)}
                   </h1>
                   {canEdit && (
                     <button

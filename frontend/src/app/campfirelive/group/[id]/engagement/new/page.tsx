@@ -93,7 +93,9 @@ export default function NewEngagementPage() {
   const [coverUploading, setCoverUploading] = useState(false);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
-  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly" | "yearly">("none");
+  const [birthYear, setBirthYear] = useState("");
+  const [leadDays, setLeadDays] = useState(14);
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   // "Most Likely To…" awards (one engagement, many questions)
   const [questions, setQuestions] = useState<string[]>(["", "", ""]);
@@ -203,6 +205,12 @@ export default function NewEngagementPage() {
       ]);
       setReveal("sealed");
     }
+    if (type === "birthday") {
+      if (!title.trim()) setTitle("Happy {age} Birthday! 🎂");
+      if (!description.trim())
+        setDescription("Sign the card with your birthday wishes — it opens on the big day!");
+      setReveal("sealed");
+    }
     if (type === "scavenger_hunt") {
       if (!title.trim()) setTitle("Scavenger Hunt 🔍");
       if (!description.trim())
@@ -268,6 +276,19 @@ export default function NewEngagementPage() {
       return;
     }
 
+    // Birthday needs the date (the day it reveals).
+    if (selectedType === "birthday" && !deadline) {
+      setError("Set the birthday — that's the day it reveals.");
+      setCreating(false);
+      return;
+    }
+    // For a birthday, schedule it to auto-open `leadDays` before the date.
+    const isBirthday = selectedType === "birthday";
+    const scheduledOpenAt =
+      isBirthday && deadline
+        ? new Date(new Date(deadline).getTime() - (leadDays || 14) * 86400000).toISOString()
+        : null;
+
     if (
       selectedType === "most_likely" ||
       selectedType === "accountability" ||
@@ -321,17 +342,22 @@ export default function NewEngagementPage() {
         selectedType === "baby_reveal" ||
         selectedType === "most_likely" ||
         selectedType === "accountability" ||
-        selectedType === "scavenger_hunt"
+        selectedType === "scavenger_hunt" ||
+        isBirthday
           ? "sealed"
           : reveal,
       is_blind: selectedType === "two_truths" ? false : isBlind,
-      recurrence_rule: recurrence === "none" ? undefined : recurrence,
+      recurrence_rule: isBirthday ? "yearly" : recurrence === "none" ? undefined : recurrence,
       notify: true, // launching always notifies the group
-      // Baby Reveal always holds until the date; others only when opted in.
+      // Birthday + Baby Reveal always hold until the date; others only when opted in.
       hold_until_deadline:
-        selectedType === "baby_reveal"
+        isBirthday || selectedType === "baby_reveal"
           ? true
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
+      // Birthday: schedule the auto-open and store the age basis.
+      scheduled_open_at: scheduledOpenAt,
+      lead_days: isBirthday ? leadDays || 14 : undefined,
+      birth_year: isBirthday && birthYear.trim() ? parseInt(birthYear, 10) : null,
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
@@ -654,7 +680,8 @@ export default function NewEngagementPage() {
               selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
               selectedType !== "accountability" &&
-              selectedType !== "scavenger_hunt" && (
+              selectedType !== "scavenger_hunt" &&
+              selectedType !== "birthday" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Reveal Mode
@@ -693,7 +720,8 @@ export default function NewEngagementPage() {
             {selectedType !== "two_truths" &&
               selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
-              selectedType !== "scavenger_hunt" && (
+              selectedType !== "scavenger_hunt" &&
+              selectedType !== "birthday" && (
               <div>
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
@@ -721,6 +749,11 @@ export default function NewEngagementPage() {
                   <>
                     🍼 Reveal date <span className="text-rose-500">(required)</span>
                   </>
+                ) : selectedType === "birthday" ? (
+                  <>
+                    🎂 Birthday — reveals on this day{" "}
+                    <span className="text-rose-500">(required)</span>
+                  </>
                 ) : (
                   <>
                     Deadline <span className="text-slate-400">(optional)</span>
@@ -740,9 +773,49 @@ export default function NewEngagementPage() {
                 </p>
               )}
 
+              {/* Birthday extras: lead time + optional age */}
+              {selectedType === "birthday" && (
+                <div className="mt-2 space-y-2 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
+                  <p className="text-xs text-slate-600">
+                    Runs <span className="font-semibold">every year</span>. Pick the birthday
+                    person under &ldquo;hide from…&rdquo; so it stays a surprise.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-slate-600">Open</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={60}
+                      value={leadDays}
+                      onChange={(e) => setLeadDays(parseInt(e.target.value || "14", 10))}
+                      className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
+                    />
+                    <span className="text-slate-600">days before, so people can sign.</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <span className="text-slate-600">Birth year</span>
+                    <input
+                      type="number"
+                      min={1900}
+                      max={2025}
+                      value={birthYear}
+                      onChange={(e) => setBirthYear(e.target.value)}
+                      placeholder="optional"
+                      className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
+                    />
+                    <span className="text-xs text-slate-500">
+                      — put <span className="font-mono">{"{age}"}</span> in the title and
+                      it auto-fills (e.g. &ldquo;Happy 28th Birthday&rdquo;), bumping each year.
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {/* Hold the reveal until the deadline — only for sealed mode (baby
                   reveal already always holds, so don't show the toggle there) */}
-              {reveal === "sealed" && selectedType !== "baby_reveal" && (
+              {reveal === "sealed" &&
+                selectedType !== "baby_reveal" &&
+                selectedType !== "birthday" && (
                 <label
                   className={`mt-2 flex items-start gap-3 rounded-xl border p-3 ${
                     deadline
@@ -775,7 +848,8 @@ export default function NewEngagementPage() {
 
               {/* Wait for the whole invite list — only when NOT revealing on the date */}
               {(reveal === "sealed" || selectedType === "two_truths") &&
-                selectedType !== "baby_reveal" && (
+                selectedType !== "baby_reveal" &&
+                selectedType !== "birthday" && (
                 <label
                   className={`mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
                     holdUntilDeadline ? "opacity-50" : "cursor-pointer"
@@ -820,7 +894,8 @@ export default function NewEngagementPage() {
               )}
             </div>
 
-            {/* Repeat */}
+            {/* Repeat (birthday is always yearly, so hide it there) */}
+            {selectedType !== "birthday" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Repeat <span className="text-slate-400">(optional)</span>
@@ -853,6 +928,7 @@ export default function NewEngagementPage() {
                 </p>
               )}
             </div>
+            )}
 
             {/* Surprise: hide from selected members / invitees until the reveal */}
             {(groupMembers.length > 0 || pendingInvitees.length > 0) && (

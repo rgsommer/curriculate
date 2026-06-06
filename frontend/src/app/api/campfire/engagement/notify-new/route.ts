@@ -8,7 +8,7 @@ import {
   campfireFrom,
   mailDefaults,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, excluded_user_ids, excluded_emails")
+      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, excluded_user_ids, excluded_emails, birth_year")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -94,7 +94,7 @@ export async function POST(req: Request) {
     const shared = {
       creator: creatorName,
       groupName: group?.name || "your group",
-      title: eng.title,
+      title: resolveTitle(eng.title, eng.birth_year as number | null, eng.deadline as string | null),
       typeLabel: meta?.label || "engagement",
       typeIcon: meta?.icon || "🔥",
       isBlind: !!eng.is_blind,

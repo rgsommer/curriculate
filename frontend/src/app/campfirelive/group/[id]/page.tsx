@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
@@ -902,7 +902,9 @@ See you around the campfire! 🏕️`
                           : `${nameOf(eng.creator_id, eng.creator?.display_name)}'s`}{" "}
                         {meta?.label ?? eng.type}
                       </p>
-                      <h3 className="font-bold text-slate-900">{eng.title}</h3>
+                      <h3 className="font-bold text-slate-900">
+                        {resolveTitle(eng.title, eng.birth_year, eng.deadline)}
+                      </h3>
                       <p className="text-sm text-slate-600 mt-0.5">
                         {eng.description?.trim() || meta?.hook}
                       </p>

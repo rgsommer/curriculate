@@ -6,11 +6,13 @@ import {
   getGroupMemberEmails,
   reminderEmail,
   revealEmail,
+  newEngagementEmail,
   buildJoinUrl,
   inviteEmail,
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
+import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -142,12 +144,72 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── Auto-open scheduled drafts (e.g. a birthday opening 2 weeks before) ──
+  let opened = 0;
+  const { data: scheduled } = await admin
+    .from("engagements")
+    .select(
+      "id, group_id, creator_id, title, type, is_blind, reveal, deadline, birth_year, excluded_user_ids, excluded_emails"
+    )
+    .is("launched_at", null)
+    .not("scheduled_open_at", "is", null)
+    .lte("scheduled_open_at", new Date(now).toISOString());
+
+  for (const e of scheduled ?? []) {
+    await admin
+      .from("engagements")
+      .update({ launched_at: new Date(now).toISOString() })
+      .eq("id", e.id);
+    opened++;
+
+    // Email members (except the creator + any surprise recipients) to come sign it.
+    const excludedEmails = new Set<string>();
+    for (const uid of (e.excluded_user_ids as string[]) ?? []) {
+      const { data: u } = await admin.auth.admin.getUserById(uid);
+      const em = u?.user?.email?.toLowerCase();
+      if (em) excludedEmails.add(em);
+    }
+    for (const em of (e.excluded_emails as string[]) ?? [])
+      excludedEmails.add(em.toLowerCase());
+    const { data: cu } = await admin.auth.admin.getUserById(e.creator_id);
+    const creatorEmail = (cu?.user?.email || "").toLowerCase();
+    const memEmails = (await getGroupMemberEmails(admin, e.group_id)).filter(
+      (em) => em.toLowerCase() !== creatorEmail && !excludedEmails.has(em.toLowerCase())
+    );
+    if (memEmails.length) {
+      const { data: grp } = await admin
+        .from("groups")
+        .select("name")
+        .eq("id", e.group_id)
+        .single();
+      const meta = ENGAGEMENT_TYPES[e.type as keyof typeof ENGAGEMENT_TYPES];
+      const m = newEngagementEmail({
+        creator: grp?.name || "Your group",
+        groupName: grp?.name || "your group",
+        title: resolveTitle(e.title as string, e.birth_year as number | null, e.deadline as string | null),
+        typeLabel: meta?.label || "engagement",
+        typeIcon: meta?.icon || "🎂",
+        isBlind: !!e.is_blind,
+        reveal: e.reveal as string,
+        deadline: e.deadline as string | null,
+        url: `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`,
+      });
+      for (let i = 0; i < memEmails.length; i += 100) {
+        await resend.batch.send(
+          memEmails.slice(i, i + 100).map((to) => ({
+            from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults(),
+          }))
+        );
+      }
+    }
+  }
+
   // ── Recurring: spawn the next instance for completed recurring engagements ──
   let spawned = 0;
   const { data: recs } = await admin
     .from("engagements")
     .select(
-      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at"
+      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at, deadline, lead_days, birth_year, excluded_user_ids, excluded_emails, cover_image_url"
     )
     .not("recurrence_rule", "is", null)
     .in("status", ["revealed", "expired"]);
@@ -161,6 +223,40 @@ export async function GET(req: Request) {
     if (childCount && childCount > 0) continue;
 
     const DAY = 24 * 60 * 60 * 1000;
+
+    // Yearly (birthday/anniversary): anchor to the same day next year, and re-open
+    // a lead time before it as a draft (the auto-open step above launches it).
+    if (e.recurrence_rule === "yearly") {
+      const nextDeadline = new Date((e.deadline as string) ?? new Date(now).toISOString());
+      nextDeadline.setFullYear(nextDeadline.getFullYear() + 1);
+      const lead = ((e.lead_days as number) ?? 14) * DAY;
+      await admin.from("engagements").insert({
+        group_id: e.group_id,
+        creator_id: e.creator_id,
+        type: e.type,
+        title: e.title,
+        description: e.description,
+        config: e.config,
+        reveal: e.reveal,
+        is_blind: e.is_blind,
+        recurrence_rule: "yearly",
+        parent_id: e.id,
+        status: "active",
+        launched_at: null, // stays a draft until scheduled_open_at
+        notify: true,
+        hold_until_deadline: true,
+        deadline: nextDeadline.toISOString(),
+        scheduled_open_at: new Date(nextDeadline.getTime() - lead).toISOString(),
+        lead_days: e.lead_days,
+        birth_year: e.birth_year,
+        excluded_user_ids: e.excluded_user_ids,
+        excluded_emails: e.excluded_emails,
+        cover_image_url: e.cover_image_url,
+      });
+      spawned++;
+      continue;
+    }
+
     const intervalMs =
       e.recurrence_rule === "weekly"
         ? 7 * DAY
@@ -230,5 +326,5 @@ export async function GET(req: Request) {
     notifiedReveals++;
   }
 
-  return NextResponse.json({ ok: true, revealed, nudged, spawned, notifiedReveals });
+  return NextResponse.json({ ok: true, revealed, nudged, opened, spawned, notifiedReveals });
 }

@@ -8,6 +8,7 @@ import {
   campfireFrom,
   mailDefaults,
 } from "@/lib/campfire/serverInvites";
+import { resolveTitle } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("id, group_id, title, status, reveal_notified_at")
+      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -80,7 +81,7 @@ export async function POST(req: Request) {
     const from = campfireFrom();
     const m = revealEmail({
       groupName: group?.name ?? "your group",
-      title: eng.title,
+      title: resolveTitle(eng.title, eng.birth_year as number | null, eng.deadline as string | null),
       url: `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`,
     });
     for (let i = 0; i < emails.length; i += 100) {
