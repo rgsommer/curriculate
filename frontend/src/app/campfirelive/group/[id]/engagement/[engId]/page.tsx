@@ -89,6 +89,27 @@ export default function EngagementDetailPage() {
   }, [refresh]);
   useRealtimeEngagement(engagementId, handleRealtimeUpdate);
 
+  // Invite context for a truer progress picture (host-only — RLS limits reads
+  // to the group admin, so non-admins simply get zeros and see nothing extra).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("campfire_invitations")
+        .select("status")
+        .eq("group_id", groupId);
+      if (!cancelled && data) {
+        setInviteStats({
+          joined: data.filter((r) => r.status === "joined").length,
+          pending: data.filter((r) => r.status === "pending").length,
+        });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [groupId]);
+
   // Local UI state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
@@ -109,6 +130,9 @@ export default function EngagementDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
+  // Invite context for the host: how many were invited but haven't joined yet.
+  // (RLS lets only the group admin read invitations, so non-admins just get 0.)
+  const [inviteStats, setInviteStats] = useState({ joined: 0, pending: 0 });
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
@@ -930,7 +954,8 @@ export default function EngagementDetailPage() {
         <div className="mb-2">
           <div className="flex justify-between text-xs text-slate-500 mb-1">
             <span>
-              {responseCount} of {engagement.total_expected} responded
+              {responseCount} of {engagement.total_expected}{" "}
+              {engagement.total_expected === 1 ? "member" : "members"} responded
             </span>
             <span>
               {engagement.total_expected > 0
@@ -955,6 +980,22 @@ export default function EngagementDetailPage() {
               }}
             />
           </div>
+          {/* Host-only context: invited-but-not-joined don't count toward the
+              reveal (only members who've joined can respond). */}
+          {inviteStats.pending > 0 && (
+            <p className="mt-1.5 text-xs text-slate-500">
+              {engagement.total_expected}{" "}
+              {engagement.total_expected === 1 ? "person has" : "people have"} joined
+              and can respond ·{" "}
+              <span className="text-amber-700">
+                {inviteStats.pending} invited{" "}
+                {inviteStats.pending === 1 ? "person hasn't" : "people haven't"} joined
+                yet
+              </span>
+              . The reveal waits only on those who&apos;ve joined — nudge the rest to
+              pull them in before it unlocks.
+            </p>
+          )}
         </div>
 
         {/* Deadline */}
