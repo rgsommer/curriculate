@@ -553,9 +553,26 @@ export function useRealtimeGroup(groupId: string, onUpdate: () => void) {
       )
       .subscribe();
 
+    // Subscribe to invitation changes (so the host's invite list flips to
+    // "joined" / reflects new adds without a manual refresh).
+    const inviteSub = supabase
+      .channel(`group-invitations:${groupId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "campfire_invitations",
+          filter: `group_id=eq.${groupId}`,
+        },
+        () => onUpdate()
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(engSub);
       supabase.removeChannel(memberSub);
+      supabase.removeChannel(inviteSub);
     };
   }, [groupId, onUpdate]);
 }
