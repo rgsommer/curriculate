@@ -594,8 +594,8 @@ export default function EngagementDetailPage() {
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Add a caption (optional)"
-              rows={2}
+              placeholder="Add a caption, recipe, or details (optional)"
+              rows={3}
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
             />
             <input

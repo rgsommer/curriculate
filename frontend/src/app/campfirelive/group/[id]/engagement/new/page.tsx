@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useCreateEngagement, useGroups } from "@/lib/campfire/hooks";
+import { supabase } from "@/lib/campfire/supabase";
 import { ENGAGEMENT_TYPES, type EngagementType, type RevealMode } from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
@@ -23,6 +24,8 @@ export default function NewEngagementPage() {
   const [deadline, setDeadline] = useState("");
   const [holdUntilDeadline, setHoldUntilDeadline] = useState(false);
   const [waitForAllInvited, setWaitForAllInvited] = useState(false);
+  const [pendingForTarget, setPendingForTarget] = useState(0);
+  const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
@@ -32,6 +35,33 @@ export default function NewEngagementPage() {
   const [targetGroupId, setTargetGroupId] = useState<string>(groupId);
   const [makingNewGroup, setMakingNewGroup] = useState(false);
   const [newGroupName, setNewGroupName] = useState("");
+
+  // Smart default: if the destination group still has people pending on the
+  // invite list, default "wait for all invited" ON (you can still flip it). A
+  // brand-new group has no invites, so it stays off.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (makingNewGroup) {
+        if (!cancelled) {
+          setPendingForTarget(0);
+          if (!waitTouched.current) setWaitForAllInvited(false);
+        }
+        return;
+      }
+      const { data } = await supabase.rpc("pending_invite_count", {
+        _gid: targetGroupId,
+      });
+      if (!cancelled) {
+        const p = (data as number) ?? 0;
+        setPendingForTarget(p);
+        if (!waitTouched.current) setWaitForAllInvited(p > 0);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [targetGroupId, makingNewGroup]);
 
   const handleSelectType = (type: EngagementType) => {
     setSelectedType(type);
@@ -439,7 +469,10 @@ export default function NewEngagementPage() {
                   <input
                     type="checkbox"
                     checked={waitForAllInvited}
-                    onChange={(e) => setWaitForAllInvited(e.target.checked)}
+                    onChange={(e) => {
+                      waitTouched.current = true;
+                      setWaitForAllInvited(e.target.checked);
+                    }}
                     className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
                   />
                   <div>
@@ -447,9 +480,18 @@ export default function NewEngagementPage() {
                       ✉️ Wait until everyone invited has joined &amp; responded
                     </div>
                     <div className="text-xs text-slate-500">
+                      {waitForAllInvited && !waitTouched.current && pendingForTarget > 0 && (
+                        <span className="text-amber-700">
+                          On by default — {pendingForTarget} invited{" "}
+                          {pendingForTarget === 1 ? "person hasn't" : "people haven't"}{" "}
+                          joined yet.{" "}
+                        </span>
+                      )}
                       Don&apos;t reveal just because the joined members answered — hold it
                       until invited people join and respond too.{" "}
-                      {deadline ? "The deadline still acts as a backstop." : "Add a deadline as a backstop so it can't freeze if someone never joins."}
+                      {deadline
+                        ? "The deadline still acts as a backstop."
+                        : "⚠️ Add a deadline as a backstop so it can't freeze if someone never joins."}
                     </div>
                   </div>
                 </label>
