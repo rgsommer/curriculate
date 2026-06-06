@@ -33,7 +33,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing group." }, { status: 400 });
     }
 
-    const auth = await authorizeGroupRequester(req, groupId);
+    const auth = await authorizeGroupRequester(req, groupId, { requireAdmin: true });
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

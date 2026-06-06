@@ -364,12 +364,14 @@ See you around the campfire! 🏕️`
           >
             {copied ? "✓ Copied — paste it anywhere!" : "📋 Copy invite"}
           </button>
-          <button
-            onClick={() => setShowEmailInvite((v) => !v)}
-            className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            ✉️ Add by email
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowEmailInvite((v) => !v)}
+              className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              ✉️ Add by email
+            </button>
+          )}
           <button
             onClick={showQrCode}
             className="rounded-full border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
@@ -449,8 +451,8 @@ See you around the campfire! 🏕️`
           show the QR or share the link any time.
         </p>
 
-        {/* Tracked invitations */}
-        {invitations.length > 0 && (
+        {/* Tracked invitations — host-only (shows invitee emails + controls) */}
+        {isAdmin && invitations.length > 0 && (
           <div className="mt-3 border-t border-orange-100 pt-3">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs font-semibold text-slate-600">

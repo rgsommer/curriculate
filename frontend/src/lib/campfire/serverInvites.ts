@@ -40,14 +40,16 @@ export function escapeHtml(str: string) {
 
 type AuthResult =
   | { error: string; status: number }
-  | { admin: SupabaseClient; requesterId: string };
+  | { admin: SupabaseClient; requesterId: string; role: string };
 
 // Verify the caller's Supabase token and that they belong to the group.
-// On failure returns `{ error, status }`; on success `{ admin, requesterId }`.
+// On failure returns `{ error, status }`; on success `{ admin, requesterId, role }`.
+// Pass { requireAdmin: true } for host-only actions (managing invites, etc.).
 // Routes narrow with: if ("error" in auth) return NextResponse.json(...).
 export async function authorizeGroupRequester(
   req: Request,
-  groupId: string
+  groupId: string,
+  opts?: { requireAdmin?: boolean }
 ): Promise<AuthResult> {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return { error: "Not signed in.", status: 401 };
@@ -70,7 +72,10 @@ export async function authorizeGroupRequester(
   if (!membership) {
     return { error: "You're not a member of this group.", status: 403 };
   }
-  return { admin, requesterId: requester.id };
+  if (opts?.requireAdmin && membership.role !== "admin") {
+    return { error: "Only the group host can do that.", status: 403 };
+  }
+  return { admin, requesterId: requester.id, role: membership.role };
 }
 
 // Build the join link only from a verified curriculate origin (no injected links).
