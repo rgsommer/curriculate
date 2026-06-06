@@ -71,12 +71,17 @@ export async function POST(req: Request) {
     if (!group) {
       return NextResponse.json({ error: "Group not found." }, { status: 404 });
     }
-    const { data: profile } = await admin
-      .from("profiles")
-      .select("display_name")
-      .eq("id", requesterId)
-      .single();
-    const inviter = profile?.display_name || "A friend";
+    const [{ data: profile }, { data: gm }] = await Promise.all([
+      admin.from("profiles").select("display_name").eq("id", requesterId).single(),
+      admin
+        .from("group_members")
+        .select("display_name")
+        .eq("group_id", groupId)
+        .eq("user_id", requesterId)
+        .maybeSingle(),
+    ]);
+    // Prefer the inviter's per-group name (e.g. "Mr. Sommer" / "Dad").
+    const inviter = gm?.display_name || profile?.display_name || "A friend";
 
     // Don't invite people who are already in the group (incl. inviting yourself).
     const memberEmails = new Set(

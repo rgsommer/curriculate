@@ -91,6 +91,17 @@ export default function NewEngagementPage() {
       ]);
       setReveal("sealed");
     }
+    if (type === "accountability") {
+      if (!title.trim()) setTitle("Accountability check-in 🙏");
+      if (!description.trim())
+        setDescription("Answer honestly — set responses to blind if you'd like.");
+      setQuestions([
+        "Have you kept up with daily prayer/reading?",
+        "Have you guarded your heart and eyes this week?",
+        "Have you invested in your closest relationships?",
+      ]);
+      setReveal("sealed");
+    }
     setStep("details");
   };
 
@@ -134,10 +145,14 @@ export default function NewEngagementPage() {
       return;
     }
 
-    if (selectedType === "most_likely") {
+    if (selectedType === "most_likely" || selectedType === "accountability") {
       const qs = questions.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
-        setError("Add at least one award (a “Most likely to…” question).");
+        setError(
+          selectedType === "accountability"
+            ? "Add at least one check-in question."
+            : "Add at least one award (a “Most likely to…” question)."
+        );
         setCreating(false);
         return;
       }
@@ -175,7 +190,8 @@ export default function NewEngagementPage() {
       reveal:
         selectedType === "two_truths" ||
         selectedType === "baby_reveal" ||
-        selectedType === "most_likely"
+        selectedType === "most_likely" ||
+        selectedType === "accountability"
           ? "sealed"
           : reveal,
       is_blind: selectedType === "two_truths" ? false : isBlind,
@@ -390,15 +406,19 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Most Likely To… — the list of awards */}
-            {selectedType === "most_likely" && (
+            {/* Most Likely To… / Accountability — the list of questions */}
+            {(selectedType === "most_likely" || selectedType === "accountability") && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  The awards (each one becomes a vote)
+                  {selectedType === "accountability"
+                    ? "The check-in questions (each rated 1–5)"
+                    : "The awards (each one becomes a vote)"}
                 </label>
                 {questions.map((q, i) => (
                   <div key={i} className="flex gap-2 mb-2 items-center">
-                    <span className="text-slate-400 text-sm">🏆</span>
+                    <span className="text-slate-400 text-sm">
+                      {selectedType === "accountability" ? "🙏" : "🏆"}
+                    </span>
                     <input
                       type="text"
                       value={q}
@@ -407,7 +427,9 @@ export default function NewEngagementPage() {
                         next[i] = e.target.value;
                         setQuestions(next);
                       }}
-                      placeholder="Most likely to…"
+                      placeholder={
+                        selectedType === "accountability" ? "Have you…?" : "Most likely to…"
+                      }
                       className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
                     />
                     {questions.length > 1 && (
@@ -425,12 +447,13 @@ export default function NewEngagementPage() {
                     onClick={() => setQuestions([...questions, ""])}
                     className="text-sm text-orange-600 font-medium"
                   >
-                    + Add award
+                    {selectedType === "accountability" ? "+ Add question" : "+ Add award"}
                   </button>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
-                  Everyone votes a group-mate for each award; winners are crowned at
-                  the reveal.
+                  {selectedType === "accountability"
+                    ? "Each person rates themselves 1–5 on every question. Turn on Blind below to keep answers anonymous."
+                    : "Everyone votes a group-mate for each award; winners are crowned at the reveal."}
                 </p>
               </div>
             )}
@@ -462,7 +485,8 @@ export default function NewEngagementPage() {
             {/* Reveal Mode — hidden for types that are always sealed */}
             {selectedType !== "two_truths" &&
               selectedType !== "baby_reveal" &&
-              selectedType !== "most_likely" && (
+              selectedType !== "most_likely" &&
+              selectedType !== "accountability" && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Reveal Mode

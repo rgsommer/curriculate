@@ -142,6 +142,8 @@ export default function EngagementDetailPage() {
   // "Most Likely To…" — the group roster (candidates) and this user's votes
   const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
   const [mlVotes, setMlVotes] = useState<Record<number, string>>({});
+  // Accountability: 1–5 self-rating per question
+  const [acRatings, setAcRatings] = useState<Record<number, number>>({});
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -561,6 +563,22 @@ export default function EngagementDetailPage() {
     if (mlErr) alert("Couldn't submit: " + mlErr);
   };
 
+  const handleAccountabilitySubmit = async () => {
+    const qs = (engagement.config?.questions as string[]) ?? [];
+    if (qs.some((_, i) => !acRatings[i])) {
+      alert("Give each question a rating (1–5).");
+      return;
+    }
+    const answers: Record<string, number> = {};
+    qs.forEach((_, i) => {
+      answers[i] = acRatings[i];
+    });
+    setSubmitting(true);
+    const { error: acErr } = await submitResponse({ answers });
+    setSubmitting(false);
+    if (acErr) alert("Couldn't submit: " + acErr);
+  };
+
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -608,6 +626,47 @@ export default function EngagementDetailPage() {
     if (hasResponded) return null;
 
     switch (engagement.type) {
+      case "accountability": {
+        const qs = (engagement.config?.questions as string[]) ?? [];
+        return (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Rate yourself honestly, 1 (struggled) to 5 (strong).
+            </p>
+            {qs.map((q, i) => (
+              <div key={i}>
+                <div className="text-sm font-medium text-slate-700 mb-1.5">
+                  🙏 {q}
+                </div>
+                <div className="flex gap-1.5">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => setAcRatings({ ...acRatings, [i]: n })}
+                      className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition ${
+                        acRatings[i] === n
+                          ? "border-violet-500 bg-violet-500 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
+                      }`}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <button
+              onClick={handleAccountabilitySubmit}
+              disabled={submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock In My Check-in"}
+            </button>
+          </div>
+        );
+      }
+
       case "most_likely": {
         const qs = (engagement.config?.questions as string[]) ?? [];
         return (
@@ -850,6 +909,54 @@ export default function EngagementDetailPage() {
                   <span className="text-sm font-medium text-slate-900">{opt}</span>
                   <span className="text-sm font-bold text-slate-700">{pct}% ({count})</span>
                 </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderAccountabilityResults = () => {
+    if (!showResults || engagement.type !== "accountability") return null;
+    const qs = (engagement.config?.questions as string[]) ?? [];
+    return (
+      <div className="space-y-3">
+        {qs.map((q, i) => {
+          const rows = responses
+            .map((r) => ({
+              r,
+              val: (r.content as { answers?: Record<string, number> })?.answers?.[String(i)],
+            }))
+            .filter((x) => typeof x.val === "number");
+          const avg = rows.length
+            ? rows.reduce((a, b) => a + (b.val as number), 0) / rows.length
+            : 0;
+          return (
+            <div key={i} className="rounded-xl border border-violet-200 bg-violet-50/50 p-4">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-sm font-semibold text-slate-700">🙏 {q}</div>
+                {rows.length > 0 && (
+                  <span className="text-xs font-bold text-violet-700">
+                    {avg.toFixed(1)} avg
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {rows.map(({ r, val }) => (
+                  <span
+                    key={r.id}
+                    className="inline-flex items-center gap-1 rounded-full border border-violet-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                  >
+                    {engagement.is_blind
+                      ? "Anonymous"
+                      : memberNameOf(r.user_id, r.profile?.display_name)}
+                    <span className="font-bold text-violet-700">{val}/5</span>
+                  </span>
+                ))}
+                {rows.length === 0 && (
+                  <span className="text-xs text-slate-400">No answers.</span>
+                )}
               </div>
             </div>
           );
@@ -1156,7 +1263,8 @@ export default function EngagementDetailPage() {
       engagement.type === "poll" ||
       engagement.type === "two_truths" ||
       engagement.type === "baby_reveal" ||
-      engagement.type === "most_likely"
+      engagement.type === "most_likely" ||
+      engagement.type === "accountability"
     )
       return null;
 
@@ -1855,6 +1963,15 @@ export default function EngagementDetailPage() {
               </p>
             </div>
           )}
+          {engagement.is_blind && (
+            <div className="flex items-center gap-2 rounded-xl bg-violet-50 border border-violet-200 px-3 py-2 mb-4">
+              <span>🙈</span>
+              <p className="text-xs text-violet-800">
+                This is anonymous — your answer won&apos;t show who you are. Answer freely
+                and honestly.
+              </p>
+            </div>
+          )}
           {renderResponseForm()}
         </div>
       )}
@@ -1898,6 +2015,9 @@ export default function EngagementDetailPage() {
 
           {/* Most Likely To… — winner per award */}
           {renderMostLikelyResults()}
+
+          {/* Accountability — per-question ratings */}
+          {renderAccountabilityResults()}
 
           {/* Other response types */}
           {renderRevealedResponses()}
