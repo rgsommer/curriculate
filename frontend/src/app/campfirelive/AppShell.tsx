@@ -3,6 +3,7 @@
 import { AuthProvider, useAuth } from "@/lib/campfire/AuthProvider";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import GuestUpgrade from "./GuestUpgrade";
 
 function Shell({ children }: { children: React.ReactNode }) {
   const { user, profile, isTrialActive, trialDaysLeft, signOut, loading } = useAuth();
@@ -48,6 +49,9 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50">
+      {/* Guest: prompt to save the account for cross-device access */}
+      <GuestUpgrade />
+
       {/* Trial banner */}
       {!profile?.is_premium && isTrialActive && trialDaysLeft <= 14 && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800">

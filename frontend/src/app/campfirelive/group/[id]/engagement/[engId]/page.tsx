@@ -2034,21 +2034,31 @@ export default function EngagementDetailPage() {
             </button>
           </div>
 
-          {/* Birthday-surprise mode: hold the reveal until the deadline */}
+          {engagement.reveal === "sealed" && (
+            <div className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">
+              When does it open?
+            </div>
+          )}
+
+          {/* Option 1: reveal ON the date, regardless of who's responded */}
           {engagement.reveal === "sealed" && engagement.deadline && (
-            <label className="mt-3 flex items-start gap-3 border-t border-slate-100 pt-3 cursor-pointer">
+            <label className="mt-2 flex items-start gap-3 cursor-pointer">
               <input
                 type="checkbox"
                 checked={!!engagement.hold_until_deadline}
-                onChange={(e) => setHoldUntilDeadline(e.target.checked)}
+                onChange={(e) => {
+                  setHoldUntilDeadline(e.target.checked);
+                  // Revealing on the date overrides "wait for everyone".
+                  if (e.target.checked && waitAll) setWaitForAllInvited(false);
+                }}
                 className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
               />
               <div>
                 <div className="text-sm font-medium text-slate-700">
-                  ⏳ Wait until the deadline to reveal (surprise mode)
+                  ⏳ Reveal on the date — no matter who&apos;s responded (surprise mode)
                 </div>
                 <div className="text-xs text-slate-500">
-                  Keep it sealed until{" "}
+                  Opens{" "}
                   {new Date(engagement.deadline).toLocaleDateString("en-US", {
                     weekday: "short",
                     month: "short",
@@ -2056,18 +2066,24 @@ export default function EngagementDetailPage() {
                     hour: "numeric",
                     minute: "2-digit",
                   })}{" "}
-                  even if everyone responds early — like a gift that opens on the day.
+                  regardless — like a gift on the day. Off = reveals as soon as everyone
+                  who&apos;s in has responded.
                 </div>
               </div>
             </label>
           )}
 
-          {/* Wait until everyone INVITED has joined and responded */}
+          {/* Option 2: only matters when NOT revealing on the date */}
           {engagement.reveal === "sealed" && (
-            <label className="mt-3 flex items-start gap-3 border-t border-slate-100 pt-3 cursor-pointer">
+            <label
+              className={`mt-2 flex items-start gap-3 ${
+                engagement.hold_until_deadline ? "opacity-50" : "cursor-pointer"
+              }`}
+            >
               <input
                 type="checkbox"
-                checked={waitAll}
+                checked={waitAll && !engagement.hold_until_deadline}
+                disabled={!!engagement.hold_until_deadline}
                 onChange={(e) => setWaitForAllInvited(e.target.checked)}
                 className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
               />
@@ -2076,14 +2092,17 @@ export default function EngagementDetailPage() {
                   ✉️ Wait until everyone invited has joined &amp; responded
                 </div>
                 <div className="text-xs text-slate-500">
-                  Don&apos;t reveal just because the joined members answered — keep it
-                  sealed until invited people join and respond too.
-                  {pendingCount > 0
+                  {engagement.hold_until_deadline
+                    ? "Not used — it opens on the date regardless (uncheck the date option to use this)."
+                    : "Don't reveal just because the joined members answered — hold until invited people join and respond too."}
+                  {!engagement.hold_until_deadline && pendingCount > 0
                     ? ` ${pendingCount} invited ${
                         pendingCount === 1 ? "person hasn't" : "people haven't"
                       } joined yet.`
                     : ""}
-                  {engagement.deadline ? " (The deadline still acts as a backstop.)" : ""}
+                  {!engagement.hold_until_deadline && engagement.deadline
+                    ? " (The deadline still acts as a backstop.)"
+                    : ""}
                 </div>
               </div>
             </label>

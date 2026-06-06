@@ -16,6 +16,9 @@ interface AuthState {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: (next?: string) => Promise<void>;
   signInAsGuest: (displayName: string) => Promise<{ error: string | null }>;
+  isGuest: boolean;
+  linkGoogle: () => Promise<{ error: string | null }>;
+  upgradeWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 }
@@ -31,6 +34,9 @@ const AuthContext = createContext<AuthState>({
   signIn: async () => ({ error: null }),
   signInWithGoogle: async () => {},
   signInAsGuest: async () => ({ error: null }),
+  isGuest: false,
+  linkGoogle: async () => ({ error: null }),
+  upgradeWithEmail: async () => ({ error: null }),
   signOut: async () => {},
   refreshProfile: async () => {},
 });
@@ -124,6 +130,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error?.message ?? null };
   };
 
+  // Guest = anonymous account (device-bound, no email/password yet).
+  const isGuest = !!user?.is_anonymous;
+
+  // Upgrade a guest to a permanent account — keeps the SAME user id, so all
+  // group memberships and history carry over. They can then log in elsewhere.
+  const linkGoogle = async () => {
+    const { error } = await supabase.auth.linkIdentity({
+      provider: "google",
+      options: { redirectTo: callbackUrl() },
+    });
+    return { error: error?.message ?? null };
+  };
+
+  const upgradeWithEmail = async (email: string, password: string) => {
+    const { error } = await supabase.auth.updateUser({ email, password });
+    return { error: error?.message ?? null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
@@ -148,6 +172,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signInWithGoogle,
         signInAsGuest,
+        isGuest,
+        linkGoogle,
+        upgradeWithEmail,
         signOut,
         refreshProfile,
       }}

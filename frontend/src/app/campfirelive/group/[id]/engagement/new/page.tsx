@@ -626,29 +626,37 @@ export default function NewEngagementPage() {
                     type="checkbox"
                     checked={holdUntilDeadline}
                     disabled={!deadline}
-                    onChange={(e) => setHoldUntilDeadline(e.target.checked)}
+                    onChange={(e) => {
+                      setHoldUntilDeadline(e.target.checked);
+                      if (e.target.checked) setWaitForAllInvited(false);
+                    }}
                     className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      ⏳ Wait until the deadline to reveal (surprise mode)
+                      ⏳ Reveal on the date — no matter who&apos;s responded (surprise mode)
                     </div>
                     <div className="text-xs text-slate-500">
                       {deadline
-                        ? "Stay sealed until the deadline even if everyone responds early — like a birthday gift that opens on the day. Off = reveals as soon as everyone's in (or at the deadline, whichever comes first)."
+                        ? "Opens at the deadline regardless — like a birthday gift on the day. Off = reveals as soon as everyone who's in has responded (or at the deadline, whichever comes first)."
                         : "Set a deadline above to enable this."}
                     </div>
                   </div>
                 </label>
               )}
 
-              {/* Wait for the whole invite list to join + respond (sealed) */}
+              {/* Wait for the whole invite list — only when NOT revealing on the date */}
               {(reveal === "sealed" || selectedType === "two_truths") &&
                 selectedType !== "baby_reveal" && (
-                <label className="mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer">
+                <label
+                  className={`mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 ${
+                    holdUntilDeadline ? "opacity-50" : "cursor-pointer"
+                  }`}
+                >
                   <input
                     type="checkbox"
-                    checked={waitForAllInvited}
+                    checked={waitForAllInvited && !holdUntilDeadline}
+                    disabled={holdUntilDeadline}
                     onChange={(e) => {
                       waitTouched.current = true;
                       setWaitForAllInvited(e.target.checked);
@@ -660,18 +668,24 @@ export default function NewEngagementPage() {
                       ✉️ Wait until everyone invited has joined &amp; responded
                     </div>
                     <div className="text-xs text-slate-500">
-                      {waitForAllInvited && !waitTouched.current && pendingForTarget > 0 && (
-                        <span className="text-amber-700">
-                          On by default — {pendingForTarget} invited{" "}
-                          {pendingForTarget === 1 ? "person hasn't" : "people haven't"}{" "}
-                          joined yet.{" "}
-                        </span>
-                      )}
-                      Don&apos;t reveal just because the joined members answered — hold it
-                      until invited people join and respond too.{" "}
-                      {deadline
-                        ? "The deadline still acts as a backstop."
-                        : "⚠️ Add a deadline as a backstop so it can't freeze if someone never joins."}
+                      {holdUntilDeadline
+                        ? "Not used — the date option above opens it regardless. Uncheck that to use this."
+                        : (
+                          <>
+                            {waitForAllInvited && !waitTouched.current && pendingForTarget > 0 && (
+                              <span className="text-amber-700">
+                                On by default — {pendingForTarget} invited{" "}
+                                {pendingForTarget === 1 ? "person hasn't" : "people haven't"}{" "}
+                                joined yet.{" "}
+                              </span>
+                            )}
+                            Don&apos;t reveal just because the joined members answered —
+                            hold it until invited people join and respond too.{" "}
+                            {deadline
+                              ? "The deadline still acts as a backstop."
+                              : "⚠️ Add a deadline as a backstop so it can't freeze if someone never joins."}
+                          </>
+                        )}
                     </div>
                   </div>
                 </label>
