@@ -642,68 +642,78 @@ See you around the campfire! 🏕️`
                 </button>
               )}
             </div>
-            <div className="grid gap-1">
+            <div className="grid gap-1.5">
               {invitations.map((inv) => (
                 <div
                   key={inv.id}
-                  className="flex items-center justify-between gap-2 text-xs"
+                  className="rounded-lg bg-white/60 px-2.5 py-2 text-xs"
                 >
-                  <span
-                    className={`truncate ${
-                      inv.status === "revoked" ? "text-slate-400 line-through" : "text-slate-700"
-                    }`}
-                  >
-                    {inv.name ? (
-                      <>
-                        <span className="font-medium">{inv.name}</span>{" "}
-                        <span className="text-slate-400">&lt;{inv.email}&gt;</span>
-                      </>
-                    ) : (
-                      inv.email
-                    )}
-                    {inv.invited_by && (
-                      <span className="text-slate-400">
-                        {" "}
-                        · added by{" "}
-                        {inv.invited_by === user?.id ? "you" : nameOf(inv.invited_by)}
-                      </span>
-                    )}
-                  </span>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {inv.status === "joined" && (
-                      <span className="font-medium text-green-600">✓ joined</span>
-                    )}
-                    {inv.status === "revoked" && (
-                      <span className="text-slate-400">revoked</span>
-                    )}
-                    {inv.status === "pending" && (
-                      <>
-                        <span className="text-amber-600">
-                          pending
-                          {inv.nudge_count > 0 ? ` · nudged ${inv.nudge_count}×` : ""}
+                  {/* Top line: name + status badge — always visible, never truncated off */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`min-w-0 truncate font-medium ${
+                        inv.status === "revoked"
+                          ? "text-slate-400 line-through"
+                          : "text-slate-800"
+                      }`}
+                    >
+                      {inv.name || inv.email}
+                    </span>
+                    <span className="flex-shrink-0">
+                      {inv.status === "joined" && (
+                        <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">
+                          ✓ joined
                         </span>
-                        <button
-                          onClick={() => nudgeOne(inv.email)}
-                          className="text-orange-600 hover:underline"
-                        >
-                          nudge
-                        </button>
-                        <button
-                          onClick={() => markJoined(inv.email)}
-                          title="They already joined (e.g. under a different email)? Mark them in."
-                          className="text-green-600 hover:underline"
-                        >
-                          mark joined
-                        </button>
-                        <button
-                          onClick={() => revokeOne(inv.email)}
-                          className="text-slate-400 hover:text-red-600 hover:underline"
-                        >
-                          revoke
-                        </button>
-                      </>
-                    )}
+                      )}
+                      {inv.status === "revoked" && (
+                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">
+                          revoked
+                        </span>
+                      )}
+                      {inv.status === "pending" && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-semibold text-amber-700">
+                          pending
+                          {inv.nudge_count > 0 ? ` · ${inv.nudge_count}×` : ""}
+                        </span>
+                      )}
+                    </span>
                   </div>
+
+                  {/* Email (only when a name is shown above) + who added them */}
+                  <div className="mt-0.5 truncate text-slate-400">
+                    {inv.name ? inv.email : null}
+                    {inv.name && inv.invited_by ? " · " : ""}
+                    {inv.invited_by
+                      ? `added by ${
+                          inv.invited_by === user?.id ? "you" : nameOf(inv.invited_by)
+                        }`
+                      : null}
+                  </div>
+
+                  {/* Actions — only for pending; wrap freely on a narrow screen */}
+                  {inv.status === "pending" && (
+                    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+                      <button
+                        onClick={() => nudgeOne(inv.email)}
+                        className="text-orange-600 hover:underline"
+                      >
+                        👋 nudge
+                      </button>
+                      <button
+                        onClick={() => markJoined(inv.email)}
+                        title="They already joined (e.g. under a different email)? Mark them in."
+                        className="text-green-600 hover:underline"
+                      >
+                        ✓ mark joined
+                      </button>
+                      <button
+                        onClick={() => revokeOne(inv.email)}
+                        className="text-slate-400 hover:text-red-600 hover:underline"
+                      >
+                        ✕ revoke
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
