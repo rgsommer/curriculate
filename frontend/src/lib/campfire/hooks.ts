@@ -419,6 +419,17 @@ export function useEngagement(engagementId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Creator toggles "wait until everyone invited has joined + responded".
+  const setWaitForAllInvited = async (wait: boolean) => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ wait_for_all_invited: wait })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
   // Creator launches a draft engagement — makes it live (visible to the group).
   const launchEngagement = async () => {
     if (!engagementId) return { error: "Missing engagement" };
@@ -501,6 +512,7 @@ export function useEngagement(engagementId: string) {
     revealNow,
     unrevealEngagement,
     setHoldUntilDeadline,
+    setWaitForAllInvited,
     launchEngagement,
     deleteEngagement,
     removeResponse,
@@ -525,6 +537,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     recurrence_rule?: string;
     notify?: boolean;
     hold_until_deadline?: boolean;
+    wait_for_all_invited?: boolean;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -546,6 +559,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
         recurrence_rule: params.recurrence_rule ?? null,
         notify: params.notify ?? false,
         hold_until_deadline: params.hold_until_deadline ?? false,
+        wait_for_all_invited: params.wait_for_all_invited ?? false,
       })
       .select()
       .single();

@@ -22,6 +22,7 @@ export default function NewEngagementPage() {
   const [isBlind, setIsBlind] = useState(false);
   const [deadline, setDeadline] = useState("");
   const [holdUntilDeadline, setHoldUntilDeadline] = useState(false);
+  const [waitForAllInvited, setWaitForAllInvited] = useState(false);
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
@@ -106,6 +107,9 @@ export default function NewEngagementPage() {
       notify: true, // launching always notifies the group
       // Only meaningful for sealed + a deadline; ignore otherwise.
       hold_until_deadline: reveal === "sealed" && !!deadline && holdUntilDeadline,
+      // Wait for the full invite list to join + respond (sealed only).
+      wait_for_all_invited:
+        (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
     });
 
     if (result.error) {
@@ -424,6 +428,28 @@ export default function NewEngagementPage() {
                       {deadline
                         ? "Stay sealed until the deadline even if everyone responds early — like a birthday gift that opens on the day. Off = reveals as soon as everyone's in (or at the deadline, whichever comes first)."
                         : "Set a deadline above to enable this."}
+                    </div>
+                  </div>
+                </label>
+              )}
+
+              {/* Wait for the whole invite list to join + respond (sealed) */}
+              {(reveal === "sealed" || selectedType === "two_truths") && (
+                <label className="mt-2 flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={waitForAllInvited}
+                    onChange={(e) => setWaitForAllInvited(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">
+                      ✉️ Wait until everyone invited has joined &amp; responded
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      Don&apos;t reveal just because the joined members answered — hold it
+                      until invited people join and respond too.{" "}
+                      {deadline ? "The deadline still acts as a backstop." : "Add a deadline as a backstop so it can't freeze if someone never joins."}
                     </div>
                   </div>
                 </label>

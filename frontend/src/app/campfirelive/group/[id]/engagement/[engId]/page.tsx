@@ -83,6 +83,7 @@ export default function EngagementDetailPage() {
     revealNow,
     unrevealEngagement,
     setHoldUntilDeadline,
+    setWaitForAllInvited,
     launchEngagement,
     deleteEngagement,
     removeResponse,
@@ -105,17 +106,22 @@ export default function EngagementDetailPage() {
         .from("campfire_invitations")
         .select("status")
         .eq("group_id", groupId);
-      if (!cancelled && data) {
-        setInviteStats({
-          joined: data.filter((r) => r.status === "joined").length,
-          pending: data.filter((r) => r.status === "pending").length,
-        });
+      // Member-safe pending count (works for everyone, returns a number only).
+      const { data: pc } = await supabase.rpc("pending_invite_count", { _gid: groupId });
+      if (!cancelled) {
+        if (data) {
+          setInviteStats({
+            joined: data.filter((r) => r.status === "joined").length,
+            pending: data.filter((r) => r.status === "pending").length,
+          });
+        }
+        setPendingCount((pc as number) ?? 0);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [groupId]);
+  }, [groupId, responseCount]);
 
   // Local UI state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
@@ -143,6 +149,7 @@ export default function EngagementDetailPage() {
   // Invite context for the host: how many were invited but haven't joined yet.
   // (RLS lets only the group admin read invitations, so non-admins just get 0.)
   const [inviteStats, setInviteStats] = useState({ joined: 0, pending: 0 });
+  const [pendingCount, setPendingCount] = useState(0);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
@@ -187,11 +194,31 @@ export default function EngagementDetailPage() {
   const awaitingCreatorReveal =
     engagement.reveal === "all_at_once" && engagement.status === "active";
   const hasResponded = !!myResponse;
-  const allIn = responseCount >= engagement.total_expected;
+  // The count the reveal actually waits on. With "wait for all invited" the bar
+  // includes people invited but not yet joined (they must join + respond too).
+  const waitAll = !!engagement.wait_for_all_invited;
+  const displayExpected = engagement.total_expected + (waitAll ? pendingCount : 0);
+  const allIn = responseCount >= displayExpected;
   const isCreator = engagement.creator_id === user?.id;
   const isDraft = !engagement.launched_at;
   const pollOptions = (engagement.config?.options as string[]) ?? [];
   const canEdit = isCreator && engagement.status === "active";
+
+  // Human description of WHEN this will reveal — keeps the waiting copy honest.
+  const deadlineStr = engagement.deadline
+    ? new Date(engagement.deadline).toLocaleDateString("en-US", {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : null;
+  const revealRule = engagement.hold_until_deadline && deadlineStr
+    ? `Sealed until the deadline (${deadlineStr}) — it won't open early even if everyone answers.`
+    : waitAll
+    ? "Reveals once everyone invited has joined and responded."
+    : "Reveals the moment everyone who's joined has responded.";
 
   // ── Ratings / winner (non-poll, after reveal) ──
   const ratingFor = (responseId: string) => {
@@ -1181,12 +1208,13 @@ export default function EngagementDetailPage() {
         <div className="mb-2">
           <div className="flex justify-between text-xs text-slate-500 mb-1">
             <span>
-              {responseCount} of {engagement.total_expected}{" "}
-              {engagement.total_expected === 1 ? "member" : "members"} responded
+              {responseCount} of {displayExpected}{" "}
+              {displayExpected === 1 ? "person" : "people"} responded
+              {waitAll ? " (all invited)" : ""}
             </span>
             <span>
-              {engagement.total_expected > 0
-                ? Math.round((responseCount / engagement.total_expected) * 100)
+              {displayExpected > 0
+                ? Math.round((responseCount / displayExpected) * 100)
                 : 0}
               %
             </span>
@@ -1200,8 +1228,8 @@ export default function EngagementDetailPage() {
               }`}
               style={{
                 width: `${
-                  engagement.total_expected > 0
-                    ? Math.round((responseCount / engagement.total_expected) * 100)
+                  displayExpected > 0
+                    ? Math.round((responseCount / displayExpected) * 100)
                     : 0
                 }%`,
               }}
@@ -1292,6 +1320,33 @@ export default function EngagementDetailPage() {
               </div>
             </label>
           )}
+
+          {/* Wait until everyone INVITED has joined and responded */}
+          {engagement.reveal === "sealed" && (
+            <label className="mt-3 flex items-start gap-3 border-t border-slate-100 pt-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={waitAll}
+                onChange={(e) => setWaitForAllInvited(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+              />
+              <div>
+                <div className="text-sm font-medium text-slate-700">
+                  ✉️ Wait until everyone invited has joined &amp; responded
+                </div>
+                <div className="text-xs text-slate-500">
+                  Don&apos;t reveal just because the joined members answered — keep it
+                  sealed until invited people join and respond too.
+                  {pendingCount > 0
+                    ? ` ${pendingCount} invited ${
+                        pendingCount === 1 ? "person hasn't" : "people haven't"
+                      } joined yet.`
+                    : ""}
+                  {engagement.deadline ? " (The deadline still acts as a backstop.)" : ""}
+                </div>
+              </div>
+            </label>
+          )}
         </div>
       )}
 
@@ -1341,8 +1396,7 @@ export default function EngagementDetailPage() {
             <div>
               <h2 className="font-bold text-amber-900">Results are sealed</h2>
               <p className="text-sm text-amber-700">
-                {responseCount} of {engagement.total_expected} have responded. Results
-                will be revealed when everyone is in.
+                {responseCount} of {displayExpected} have responded. {revealRule}
               </p>
             </div>
           </div>
@@ -1350,7 +1404,7 @@ export default function EngagementDetailPage() {
           {/* Waiting animation */}
           <div className="flex items-center gap-2 mb-4">
             <div className="flex gap-1">
-              {Array.from({ length: engagement.total_expected }).map((_, i) => (
+              {Array.from({ length: Math.max(displayExpected, 1) }).map((_, i) => (
                 <div
                   key={i}
                   className={`w-3 h-3 rounded-full transition-all ${
@@ -1365,7 +1419,9 @@ export default function EngagementDetailPage() {
               ))}
             </div>
             <span className="text-xs text-amber-700">
-              Waiting for {engagement.total_expected - responseCount} more...
+              {engagement.hold_until_deadline && deadlineStr
+                ? `Sealed until ${deadlineStr}`
+                : `Waiting for ${Math.max(displayExpected - responseCount, 0)} more...`}
             </span>
           </div>
 
