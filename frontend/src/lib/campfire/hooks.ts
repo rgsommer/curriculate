@@ -642,6 +642,8 @@ export function useCreateEngagement(defaultGroupId?: string) {
     wait_for_all_invited?: boolean;
     allow_member_invites?: boolean;
     excluded_user_ids?: string[];
+    excluded_emails?: string[];
+    cover_image_url?: string;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -666,6 +668,8 @@ export function useCreateEngagement(defaultGroupId?: string) {
         wait_for_all_invited: params.wait_for_all_invited ?? false,
         allow_member_invites: params.allow_member_invites ?? false,
         excluded_user_ids: params.excluded_user_ids ?? [],
+        excluded_emails: params.excluded_emails ?? [],
+        cover_image_url: params.cover_image_url ?? null,
       })
       .select()
       .single();

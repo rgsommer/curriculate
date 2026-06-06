@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, excluded_user_ids")
+      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, excluded_user_ids, excluded_emails")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -116,11 +116,16 @@ export async function POST(req: Request) {
 
     // Still-pending invitees → this engagement IS their invite (join link, ?inv=…).
     let invited = 0;
-    const { data: pend } = await admin
+    const { data: pendRaw } = await admin
       .from("campfire_invitations")
       .select("email, name")
       .eq("group_id", eng.group_id)
       .eq("status", "pending");
+    // Surprise: don't email excluded invitees either (would spoil it).
+    const excludedLc = new Set(
+      ((eng.excluded_emails as string[]) ?? []).map((e) => e.toLowerCase())
+    );
+    const pend = (pendRaw ?? []).filter((p) => !excludedLc.has(p.email.toLowerCase()));
     if (pend?.length && group?.invite_code) {
       const invMsgs = pend.map((p) => {
         const joinUrl = `${base}/campfirelive/join/${group.invite_code}?inv=${encodeURIComponent(p.email)}`;

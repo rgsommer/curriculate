@@ -86,6 +86,11 @@ export default function NewEngagementPage() {
   // Surprise / "All Except": members hidden from it until the reveal.
   const [groupMembers, setGroupMembers] = useState<{ user_id: string; name: string }[]>([]);
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
+  const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
+  const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
+  // Cover image (e.g. a birthday graphic)
+  const [coverUrl, setCoverUrl] = useState("");
+  const [coverUploading, setCoverUploading] = useState(false);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
@@ -127,20 +132,30 @@ export default function NewEngagementPage() {
     };
   }, [targetGroupId, makingNewGroup]);
 
-  // Roster of the destination group (for the surprise "hide from" picker).
+  // Roster + pending invitees of the destination group (for the "hide from" picker).
   useEffect(() => {
     if (makingNewGroup) {
       setGroupMembers([]);
+      setPendingInvitees([]);
       setExcludedIds([]);
+      setExcludedEmails([]);
       return;
     }
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("group_members")
-        .select("user_id, display_name, profile:profiles(display_name)")
-        .eq("group_id", targetGroupId);
-      if (!cancelled && data) {
+      const [{ data }, { data: inv }] = await Promise.all([
+        supabase
+          .from("group_members")
+          .select("user_id, display_name, profile:profiles(display_name)")
+          .eq("group_id", targetGroupId),
+        supabase
+          .from("campfire_invitations")
+          .select("email, name")
+          .eq("group_id", targetGroupId)
+          .eq("status", "pending"),
+      ]);
+      if (cancelled) return;
+      if (data) {
         const list = (
           data as {
             user_id: string;
@@ -155,6 +170,7 @@ export default function NewEngagementPage() {
           });
         setGroupMembers(list);
       }
+      setPendingInvitees((inv as { email: string; name: string | null }[]) ?? []);
     })();
     return () => {
       cancelled = true;
@@ -321,8 +337,10 @@ export default function NewEngagementPage() {
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
       // Let members (not just the host) invite others to this engagement.
       allow_member_invites: allowMemberInvites,
-      // Surprise: hide it from these members until the reveal.
+      // Surprise: hide it from these members / invitees until the reveal.
       excluded_user_ids: makingNewGroup ? [] : excludedIds,
+      excluded_emails: makingNewGroup ? [] : excludedEmails,
+      cover_image_url: coverUrl.trim() || undefined,
     });
 
     if (result.error) {
@@ -836,8 +854,8 @@ export default function NewEngagementPage() {
               )}
             </div>
 
-            {/* Surprise: hide from selected members until the reveal */}
-            {groupMembers.length > 0 && (
+            {/* Surprise: hide from selected members / invitees until the reveal */}
+            {(groupMembers.length > 0 || pendingInvitees.length > 0) && (
               <div className="rounded-xl border border-slate-200 bg-white p-3">
                 <div className="text-sm font-medium text-slate-700">
                   🎁 Surprise — hide from… <span className="text-slate-400">(optional)</span>
@@ -869,9 +887,87 @@ export default function NewEngagementPage() {
                       </button>
                     );
                   })}
+                  {pendingInvitees.map((p) => {
+                    const on = excludedEmails.includes(p.email);
+                    return (
+                      <button
+                        key={p.email}
+                        type="button"
+                        title="Invited but not joined yet — they'll stay hidden when they join."
+                        onClick={() =>
+                          setExcludedEmails((prev) =>
+                            on ? prev.filter((e) => e !== p.email) : [...prev, p.email]
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                          on
+                            ? "border-rose-500 bg-rose-500 text-white"
+                            : "border-slate-200 bg-slate-50 text-slate-600 hover:border-rose-300"
+                        }`}
+                      >
+                        {on ? "🙈 " : ""}
+                        {p.name || p.email}{" "}
+                        <span className={on ? "text-rose-100" : "text-slate-400"}>· not joined</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}
+
+            {/* Cover image (e.g. a birthday graphic) */}
+            <div className="rounded-xl border border-slate-200 bg-white p-3">
+              <div className="text-sm font-medium text-slate-700">
+                🖼️ Cover image <span className="text-slate-400">(optional)</span>
+              </div>
+              <p className="text-xs text-slate-500 mb-2">
+                A banner shown at the top — e.g. a &ldquo;Happy Birthday&rdquo; image. Upload one,
+                or paste an image link.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                  {coverUploading ? "Uploading…" : "📷 Upload image"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !user) return;
+                      setCoverUploading(true);
+                      const ext = file.name.split(".").pop();
+                      const path = `${user.id}/covers/${Date.now()}.${ext}`;
+                      const { error: upErr } = await supabase.storage
+                        .from("campfire-media")
+                        .upload(path, file);
+                      if (upErr) {
+                        alert("Upload failed: " + upErr.message);
+                        setCoverUploading(false);
+                        return;
+                      }
+                      const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
+                      setCoverUrl(data.publicUrl);
+                      setCoverUploading(false);
+                    }}
+                  />
+                </label>
+                <input
+                  type="url"
+                  value={coverUrl}
+                  onChange={(e) => setCoverUrl(e.target.value)}
+                  placeholder="…or paste an image URL"
+                  className="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-orange-500 outline-none"
+                />
+              </div>
+              {coverUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={coverUrl}
+                  alt="Cover preview"
+                  className="mt-2 max-h-32 w-full rounded-lg object-cover"
+                />
+              )}
+            </div>
 
             {/* Launch notifies the group — no toggle, so nobody gets left out. */}
             <div className="rounded-xl bg-slate-50 border border-slate-200 px-4 py-3 text-xs text-slate-600">

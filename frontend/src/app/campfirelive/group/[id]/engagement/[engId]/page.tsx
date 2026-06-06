@@ -1734,7 +1734,16 @@ export default function EngagementDetailPage() {
       )}
 
       {/* ── Engagement Header ── */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm mb-6">
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm mb-6 overflow-hidden">
+        {engagement.cover_image_url && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={engagement.cover_image_url}
+            alt=""
+            className="w-full max-h-56 object-cover"
+          />
+        )}
+        <div className="p-4 sm:p-6">
         {editing ? (
           <div className="flex items-start gap-3 mb-3">
             <span className="text-2xl sm:text-3xl flex-shrink-0">{meta?.icon ?? "📌"}</span>
@@ -1961,6 +1970,7 @@ export default function EngagementDetailPage() {
               " — held until then, even if everyone responds early."}
           </p>
         )}
+        </div>
       </div>
 
       {/* ── Surprise: who it's hidden from until the reveal ── */}

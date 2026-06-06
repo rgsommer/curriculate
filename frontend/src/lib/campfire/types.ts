@@ -80,6 +80,8 @@ export interface Engagement {
   wait_for_all_invited?: boolean; // wait until everyone invited has joined + responded
   allow_member_invites?: boolean; // members (not just host) may invite others to this
   excluded_user_ids?: string[]; // surprise: hidden from these members until reveal
+  excluded_emails?: string[]; // surprise: exclude not-yet-joined people by email
+  cover_image_url?: string | null; // optional banner image (e.g. a birthday graphic)
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
