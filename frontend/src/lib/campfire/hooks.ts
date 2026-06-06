@@ -157,14 +157,15 @@ export function useGroup(groupId: string) {
     }
 
     if (engRes.data) {
-      // Get response counts for each engagement
+      // Get the TRUE response count per engagement. A plain count is limited by
+      // the "sealed" RLS policy to the viewer's own response, so it under-reports
+      // before the reveal — this SECURITY DEFINER function returns the real number.
       const enriched = await Promise.all(
         engRes.data.map(async (e) => {
-          const { count } = await supabase
-            .from("responses")
-            .select("*", { count: "exact", head: true })
-            .eq("engagement_id", e.id);
-          return { ...e, response_count: count ?? 0 } as Engagement & { response_count: number };
+          const { data: rc } = await supabase.rpc("engagement_response_count", {
+            _eid: e.id,
+          });
+          return { ...e, response_count: (rc as number) ?? 0 } as Engagement & { response_count: number };
         })
       );
       setEngagements(enriched);
@@ -229,12 +230,12 @@ export function useEngagement(engagementId: string) {
 
     if (eng) setEngagement(eng as Engagement);
 
-    // Get response count (always visible even when sealed)
-    const { count } = await supabase
-      .from("responses")
-      .select("*", { count: "exact", head: true })
-      .eq("engagement_id", engagementId);
-    setResponseCount(count ?? 0);
+    // True response count (the sealed RLS policy would otherwise limit a plain
+    // count to the viewer's own response, under-reporting before the reveal).
+    const { data: rc } = await supabase.rpc("engagement_response_count", {
+      _eid: engagementId,
+    });
+    setResponseCount((rc as number) ?? 0);
 
     // Get my response (RLS allows seeing own)
     const { data: mine } = await supabase
