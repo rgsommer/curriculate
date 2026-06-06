@@ -15,6 +15,7 @@ export default function GroupDetailPage() {
   const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
+  const [showInvitePanel, setShowInvitePanel] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
@@ -356,9 +357,27 @@ See you around the campfire! 🏕️`
         </div>
       )}
 
-      {/* Invite + Members */}
+      {/* Invite + Members (collapsible) */}
       <div className="mb-6 rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
-        <div className="flex flex-wrap items-center gap-3">
+        <button
+          onClick={() => setShowInvitePanel((v) => !v)}
+          className="flex w-full items-center justify-between gap-2 text-left"
+        >
+          <span className="text-sm font-bold text-slate-800">
+            👥 Invite &amp; members
+            <span className="ml-2 font-normal text-slate-500">
+              {members.length} in
+              {invitesTotal > 0 ? ` · ${invitesJoined}/${invitesTotal} invited joined` : ""}
+            </span>
+          </span>
+          <span className="flex-shrink-0 text-slate-400">
+            {showInvitePanel ? "▲ Hide" : "▼ Manage"}
+          </span>
+        </button>
+
+        {showInvitePanel && (
+        <>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <button
             onClick={copyInvite}
             className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:opacity-90"
@@ -528,6 +547,8 @@ See you around the campfire! 🏕️`
               ))}
             </div>
           </div>
+        )}
+        </>
         )}
       </div>
 
