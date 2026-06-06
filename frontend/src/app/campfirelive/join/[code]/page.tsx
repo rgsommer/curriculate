@@ -10,11 +10,15 @@ export default function JoinGroupPage() {
   const params = useParams();
   const code = params.code as string;
   const router = useRouter();
-  const { user, session, loading: authLoading } = useAuth();
+  const { user, session, loading: authLoading, signInAsGuest } = useAuth();
   const { joinGroup } = useGroups();
   const [status, setStatus] = useState<"loading" | "joining" | "success" | "error">("loading");
   const [error, setError] = useState("");
-  const [groupId, setGroupId] = useState<string | null>(null);
+
+  // Guest-join form
+  const [guestName, setGuestName] = useState("");
+  const [guestBusy, setGuestBusy] = useState(false);
+  const [guestErr, setGuestErr] = useState("");
 
   // The invited address (?inv=…) and an optional target engagement (?e=…) so we
   // can drop the joiner straight into the engagement they were invited to.
@@ -23,20 +27,10 @@ export default function JoinGroupPage() {
   const invEmail = params2?.get("inv") ?? null;
   const engId = params2?.get("e") ?? null;
 
+  // Once we have a signed-in user (guest or email), do the actual join.
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || !user) return;
 
-    if (!user) {
-      // Send them to sign in, then back here (preserving ?inv and ?e) to finish.
-      const qs = new URLSearchParams();
-      if (invEmail) qs.set("inv", invEmail);
-      if (engId) qs.set("e", engId);
-      const joinPath = `/campfirelive/join/${code}${qs.toString() ? `?${qs}` : ""}`;
-      router.push(`/campfirelive/auth?next=${encodeURIComponent(joinPath)}`);
-      return;
-    }
-
-    // Auto-join
     setStatus("joining");
     joinGroup(code).then((result) => {
       if (result.error && !result.groupId) {
@@ -44,8 +38,6 @@ export default function JoinGroupPage() {
         setError(result.error);
       } else {
         setStatus("success");
-        setGroupId(result.groupId ?? null);
-        // Mark the email-invitation joined (handles sign-in with a different email).
         if (invEmail && session && result.groupId) {
           fetch("/api/campfire/invite/accept", {
             method: "POST",
@@ -58,7 +50,6 @@ export default function JoinGroupPage() {
         }
         setTimeout(() => {
           if (result.groupId && engId) {
-            // Jump straight into the engagement they were invited to.
             router.push(`/campfirelive/group/${result.groupId}/engagement/${engId}`);
           } else {
             router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
@@ -68,22 +59,58 @@ export default function JoinGroupPage() {
     });
   }, [user, session, authLoading, code, invEmail, engId, joinGroup, router]);
 
+  const handleGuest = async () => {
+    const name = guestName.trim();
+    if (!name) {
+      setGuestErr("Please enter your name.");
+      return;
+    }
+    setGuestErr("");
+    setGuestBusy(true);
+    const { error: gErr } = await signInAsGuest(name);
+    if (gErr) {
+      // Most likely anonymous sign-ins aren't enabled on the project.
+      setGuestErr(
+        /anonymous|disabled|not enabled/i.test(gErr)
+          ? "Guest join isn't switched on yet — use email below, or ask whoever invited you."
+          : gErr
+      );
+      setGuestBusy(false);
+    }
+    // On success: the auth state change sets `user`, and the effect above joins.
+  };
+
+  const goEmail = () => {
+    const qs = new URLSearchParams();
+    if (invEmail) qs.set("inv", invEmail);
+    if (engId) qs.set("e", engId);
+    const joinPath = `/campfirelive/join/${code}${qs.toString() ? `?${qs}` : ""}`;
+    router.push(`/campfirelive/auth?next=${encodeURIComponent(joinPath)}`);
+  };
+
+  const joining = guestBusy || (!!user && (status === "loading" || status === "joining"));
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 flex items-center justify-center p-6">
       <div className="max-w-md w-full text-center">
-        {status === "loading" || status === "joining" ? (
+        {authLoading ? (
           <>
             <div className="text-5xl mb-4 animate-pulse">🔥</div>
-            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Joining group...</h1>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">One sec…</h1>
+          </>
+        ) : joining ? (
+          <>
+            <div className="text-5xl mb-4 animate-pulse">🔥</div>
+            <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Joining…</h1>
             <p className="text-slate-500">Invite code: {code}</p>
           </>
         ) : status === "success" ? (
           <>
             <div className="text-5xl mb-4">🎉</div>
             <h1 className="text-2xl font-extrabold text-slate-900 mb-2">You&apos;re in!</h1>
-            <p className="text-slate-500">Redirecting to your new group...</p>
+            <p className="text-slate-500">Taking you there…</p>
           </>
-        ) : (
+        ) : status === "error" ? (
           <>
             <div className="text-5xl mb-4">😕</div>
             <h1 className="text-2xl font-extrabold text-slate-900 mb-2">Couldn&apos;t join</h1>
@@ -95,6 +122,58 @@ export default function JoinGroupPage() {
               Go to Dashboard
             </Link>
           </>
+        ) : (
+          // Not signed in → offer the two ways to join.
+          <div className="text-left">
+            <div className="text-center mb-5">
+              <div className="text-5xl mb-2">🔥</div>
+              <h1 className="text-2xl font-extrabold text-slate-900">You&apos;re invited!</h1>
+              <p className="text-slate-500 text-sm mt-1">
+                Join the Campfire group (code <span className="font-mono">{code}</span>)
+              </p>
+            </div>
+
+            {/* Guest join — fastest for a class */}
+            <div className="rounded-2xl border border-orange-200 bg-white p-4 shadow-sm">
+              <div className="text-sm font-bold text-slate-900 mb-1">
+                Join as guest
+              </div>
+              <p className="text-xs text-slate-500 mb-2">
+                Just your name — no email, no password. Best on the one device you&apos;ll
+                keep using.
+              </p>
+              <input
+                type="text"
+                value={guestName}
+                onChange={(e) => setGuestName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleGuest()}
+                placeholder="Your name (e.g. Alex S.)"
+                maxLength={40}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none"
+              />
+              {guestErr && <p className="mt-1.5 text-xs text-red-600">{guestErr}</p>}
+              <button
+                onClick={handleGuest}
+                disabled={guestBusy || !guestName.trim()}
+                className="mt-2 w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {guestBusy ? "Joining…" : "🔥 Join as guest"}
+              </button>
+            </div>
+
+            {/* Email / Google join — keeps your spot across devices */}
+            <div className="mt-3 text-center">
+              <button
+                onClick={goEmail}
+                className="text-sm font-medium text-slate-600 underline hover:text-slate-800"
+              >
+                Or join with email / Google
+              </button>
+              <p className="mt-1 text-xs text-slate-400">
+                Pick this if you&apos;ll log in from more than one device.
+              </p>
+            </div>
+          </div>
         )}
       </div>
     </div>
