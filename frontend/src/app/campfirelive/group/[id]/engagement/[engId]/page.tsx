@@ -142,24 +142,25 @@ export default function EngagementDetailPage() {
   // "Most Likely To…" — the group roster (candidates) and this user's votes
   const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
   const [mlVotes, setMlVotes] = useState<Record<number, string>>({});
-  // "Most Likely To…" roster (candidate list + winner names).
+  // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
+  // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
-    if (engagement?.type !== "most_likely") return;
     let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from("group_members")
-        .select("user_id, profile:profiles(display_name)")
+        .select("user_id, display_name, profile:profiles(display_name)")
         .eq("group_id", groupId);
       if (!cancelled && data) {
         const list = (
           data as {
             user_id: string;
+            display_name: string | null;
             profile: { display_name: string } | { display_name: string }[] | null;
           }[]
         ).map((m) => {
           const p = Array.isArray(m.profile) ? m.profile[0] : m.profile;
-          return { user_id: m.user_id, name: p?.display_name ?? "Someone" };
+          return { user_id: m.user_id, name: m.display_name || p?.display_name || "Someone" };
         });
         setRoster(list);
       }
@@ -167,7 +168,7 @@ export default function EngagementDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [engagement?.type, groupId]);
+  }, [groupId]);
   const [commentText, setCommentText] = useState("");
   const [showRevealAnimation, setShowRevealAnimation] = useState(false);
   const [justRevealed, setJustRevealed] = useState(false);
@@ -254,6 +255,9 @@ export default function EngagementDetailPage() {
   const allIn = responseCount >= displayExpected;
   const isCreator = engagement.creator_id === user?.id;
   const isDraft = !engagement.launched_at;
+  // Resolve a member's per-group name (falls back to their global/profile name).
+  const memberNameOf = (userId: string | null | undefined, fallback?: string | null) =>
+    roster.find((m) => m.user_id === userId)?.name || fallback || "Someone";
   const pollOptions = (engagement.config?.options as string[]) ?? [];
   const canEdit = isCreator && engagement.status === "active";
 
@@ -933,7 +937,7 @@ export default function EngagementDetailPage() {
               {winners.length === 0
                 ? "Nobody guessed it!"
                 : `${winners.length} guessed right: ${winners
-                    .map((w) => w.profile?.display_name ?? "Someone")
+                    .map((w) => memberNameOf(w.user_id, w.profile?.display_name))
                     .join(", ")}`}
             </p>
           </div>
@@ -985,7 +989,7 @@ export default function EngagementDetailPage() {
                           : "bg-slate-100 text-slate-600"
                       }`}
                     >
-                      {r.profile?.display_name ?? "Someone"}
+                      {memberNameOf(r.user_id, r.profile?.display_name)}
                       {r.user_id === user?.id ? " (you)" : ""}
                     </span>
                   ))}
@@ -1056,7 +1060,7 @@ export default function EngagementDetailPage() {
           const name =
             engagement.is_blind && !liesRevealed
               ? "Anonymous"
-              : r.profile?.display_name ?? "Someone";
+              : memberNameOf(r.user_id, r.profile?.display_name);
           const guessesForR = lieGuesses.filter((g) => g.response_id === r.id);
           const correctCount =
             ans !== undefined ? guessesForR.filter((g) => g.guess_index === ans).length : 0;
@@ -1158,7 +1162,7 @@ export default function EngagementDetailPage() {
 
     // "Guess who" candidates = everyone who responded.
     const responderNames = Array.from(
-      new Set(responses.map((x) => x.profile?.display_name).filter(Boolean))
+      new Set(responses.map((x) => memberNameOf(x.user_id, x.profile?.display_name)).filter(Boolean))
     ) as string[];
 
     return (
@@ -1175,10 +1179,10 @@ export default function EngagementDetailPage() {
               {/* Author */}
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-7 h-7 rounded-full bg-gradient-to-br from-orange-200 to-rose-200 flex items-center justify-center text-xs font-bold text-slate-700">
-                  {engagement.is_blind ? "?" : r.profile?.display_name?.[0]?.toUpperCase() ?? "?"}
+                  {engagement.is_blind ? "?" : memberNameOf(r.user_id, r.profile?.display_name)[0]?.toUpperCase() ?? "?"}
                 </div>
                 <span className="text-sm font-medium text-slate-900">
-                  {engagement.is_blind ? "Anonymous" : r.profile?.display_name ?? "Unknown"}
+                  {engagement.is_blind ? "Anonymous" : memberNameOf(r.user_id, r.profile?.display_name)}
                 </span>
                 {r.id === winnerResponseId && (
                   <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
@@ -1191,13 +1195,14 @@ export default function EngagementDetailPage() {
               {isRevealed && engagement.is_blind && r.user_id !== user?.id && responderNames.length > 1 && (
                 <div className="mb-2 text-xs">
                   {guesses[r.id] ? (
-                    guesses[r.id] === (r.profile?.display_name ?? "") ? (
+                    guesses[r.id] === memberNameOf(r.user_id, r.profile?.display_name) ? (
                       <span className="font-medium text-green-600">
-                        ✓ Nailed it — it was {r.profile?.display_name}!
+                        ✓ Nailed it — it was {memberNameOf(r.user_id, r.profile?.display_name)}!
                       </span>
                     ) : (
                       <span className="text-slate-600">
-                        It was <b>{r.profile?.display_name}</b> — you guessed {guesses[r.id]}.
+                        It was <b>{memberNameOf(r.user_id, r.profile?.display_name)}</b> — you
+                        guessed {guesses[r.id]}.
                       </span>
                     )
                   ) : (
@@ -1470,7 +1475,7 @@ export default function EngagementDetailPage() {
               <p className="min-w-0 truncate text-xs font-semibold text-orange-600">
                 {isCreator
                   ? "Your"
-                  : `${engagement.creator?.display_name ?? "Someone"}'s`}{" "}
+                  : `${memberNameOf(engagement.creator_id, engagement.creator?.display_name)}'s`}{" "}
                 {meta?.label ?? engagement.type}
               </p>
               <div className="flex-shrink-0">
@@ -1911,7 +1916,7 @@ export default function EngagementDetailPage() {
                 </div>
                 <div>
                   <span className="text-xs font-medium text-slate-700">
-                    {c.profile?.display_name ?? "Unknown"}
+                    {memberNameOf(c.user_id, c.profile?.display_name)}
                   </span>
                   <p className="text-sm text-slate-600">{c.content}</p>
                 </div>

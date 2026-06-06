@@ -12,10 +12,13 @@ export default function GroupDetailPage() {
   const params = useParams();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
+  const [editingMyName, setEditingMyName] = useState(false);
+  const [myNameInput, setMyNameInput] = useState("");
+  const [savingMyName, setSavingMyName] = useState(false);
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
@@ -205,6 +208,14 @@ See you around the campfire! 🏕️`
     );
   }
 
+  // Per-group names: a member's name in THIS group overrides their global one.
+  const nameOf = (userId: string | null | undefined, fallback?: string | null) => {
+    const m = members.find((mm) => mm.user_id === userId);
+    return m?.display_name || m?.profile?.display_name || fallback || "Someone";
+  };
+  const myMembership = members.find((m) => m.user_id === user?.id);
+  const myGroupName = myMembership?.display_name || "";
+
   const myStreak = streaks.find((s) => s.user_id === user?.id);
   const activeEngagements = engagements.filter((e) => e.status === "active");
   const revealedEngagements = engagements.filter((e) => e.status === "revealed");
@@ -223,8 +234,7 @@ See you around the campfire! 🏕️`
   const streakBoard = [...streaks]
     .sort((a, b) => b.current_streak - a.current_streak)
     .slice(0, 5);
-  const nameFor = (uid: string) =>
-    members.find((m) => m.user_id === uid)?.profile?.display_name ?? "Member";
+  const nameFor = (uid: string) => nameOf(uid, "Member");
 
   // Your earned badges (client-computed from group activity).
   const myCurrentStreak = myStreak?.current_streak ?? 0;
@@ -310,6 +320,62 @@ See you around the campfire! 🏕️`
           </div>
         </div>
       </div>
+
+      {/* Your name in THIS group (e.g. "Dad" in Family, "Mr. Sommer" in class) */}
+      {myMembership && (
+        <div className="mb-4 -mt-2 text-xs text-slate-500">
+          {editingMyName ? (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={myNameInput}
+                onChange={(e) => setMyNameInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setEditingMyName(false)}
+                placeholder="Your name in this group"
+                maxLength={40}
+                autoFocus
+                className="rounded-lg border border-slate-300 px-2.5 py-1 text-sm text-slate-800 outline-none focus:border-orange-500"
+              />
+              <button
+                disabled={savingMyName}
+                onClick={async () => {
+                  setSavingMyName(true);
+                  const { error } = await setMyGroupName(myNameInput);
+                  setSavingMyName(false);
+                  if (error) {
+                    alert("Couldn't save: " + error);
+                    return;
+                  }
+                  setEditingMyName(false);
+                }}
+                className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3 py-1 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {savingMyName ? "Saving…" : "Save"}
+              </button>
+              <button
+                onClick={() => setEditingMyName(false)}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                Cancel
+              </button>
+            </span>
+          ) : (
+            <>
+              You appear here as{" "}
+              <span className="font-semibold text-slate-700">{nameOf(user?.id)}</span>
+              <button
+                onClick={() => {
+                  setMyNameInput(myGroupName);
+                  setEditingMyName(true);
+                }}
+                className="ml-1.5 text-orange-600 hover:underline"
+              >
+                change
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Fresh-group onboarding — make the two next steps obvious */}
       {engagements.length === 0 && (
@@ -630,7 +696,7 @@ See you around the campfire! 🏕️`
               <div key={m.user_id} className="flex items-center gap-3 py-1">
                 <div className="relative">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-200 to-rose-200 flex items-center justify-center text-sm font-bold text-slate-700">
-                    {m.profile?.display_name?.[0]?.toUpperCase() ?? "?"}
+                    {nameOf(m.user_id)[0]?.toUpperCase() ?? "?"}
                   </div>
                   {onlineUsers.includes(m.user_id) && (
                     <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-green-500 border-2 border-white" />
@@ -638,7 +704,7 @@ See you around the campfire! 🏕️`
                 </div>
                 <div>
                   <span className="text-sm font-medium text-slate-900">
-                    {m.profile?.display_name}
+                    {nameOf(m.user_id)}
                     {m.user_id === user?.id && " (you)"}
                   </span>
                   {m.role === "admin" && (
@@ -787,7 +853,7 @@ See you around the campfire! 🏕️`
                       <p className="text-xs font-semibold text-orange-600">
                         {eng.creator_id === user?.id
                           ? "Your"
-                          : `${eng.creator?.display_name ?? "Someone"}'s`}{" "}
+                          : `${nameOf(eng.creator_id, eng.creator?.display_name)}'s`}{" "}
                         {meta?.label ?? eng.type}
                       </p>
                       <h3 className="font-bold text-slate-900">{eng.title}</h3>

@@ -84,13 +84,20 @@ export async function POST(req: Request) {
       );
     }
 
-    const [{ data: group }, { data: profile }] = await Promise.all([
+    const [{ data: group }, { data: profile }, { data: gm }] = await Promise.all([
       admin.from("groups").select("name, invite_code").eq("id", eng.group_id).single(),
       admin.from("profiles").select("display_name").eq("id", eng.creator_id).single(),
+      admin
+        .from("group_members")
+        .select("display_name")
+        .eq("group_id", eng.group_id)
+        .eq("user_id", eng.creator_id)
+        .maybeSingle(),
     ]);
     if (!group) {
       return NextResponse.json({ error: "Group not found." }, { status: 404 });
     }
+    const creatorName = gm?.display_name || profile?.display_name || "Someone";
 
     const meta = ENGAGEMENT_TYPES[eng.type as keyof typeof ENGAGEMENT_TYPES];
     const base = (/^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
@@ -99,7 +106,7 @@ export async function POST(req: Request) {
     ).replace(/\/$/, "");
     const from = campfireFrom();
     const shared = {
-      creator: profile?.display_name || "Someone",
+      creator: creatorName,
       groupName: group.name,
       title: eng.title,
       typeLabel: meta?.label || "engagement",

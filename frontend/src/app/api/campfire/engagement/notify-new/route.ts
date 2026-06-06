@@ -52,10 +52,18 @@ export async function POST(req: Request) {
       allEmails.map((e) => e.toLowerCase()).filter((e) => e && e !== creatorEmail)
     );
 
-    const [{ data: group }, { data: profile }] = await Promise.all([
+    const [{ data: group }, { data: profile }, { data: gm }] = await Promise.all([
       admin.from("groups").select("name, invite_code, creator_id").eq("id", eng.group_id).single(),
       admin.from("profiles").select("display_name").eq("id", eng.creator_id).single(),
+      admin
+        .from("group_members")
+        .select("display_name")
+        .eq("group_id", eng.group_id)
+        .eq("user_id", eng.creator_id)
+        .maybeSingle(),
     ]);
+    // Prefer the creator's per-group name (e.g. "Mr. Sommer") in this group.
+    const creatorName = gm?.display_name || profile?.display_name || "Someone";
 
     // Guarantee the GROUP host is notified (unless they created this engagement),
     // even in the unlikely case their membership row is missing.
@@ -74,7 +82,7 @@ export async function POST(req: Request) {
     const engUrl = `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
     const from = campfireFrom();
     const shared = {
-      creator: profile?.display_name || "Someone",
+      creator: creatorName,
       groupName: group?.name || "your group",
       title: eng.title,
       typeLabel: meta?.label || "engagement",

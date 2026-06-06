@@ -183,6 +183,16 @@ export function useGroup(groupId: string) {
     fetchGroup();
   }, [fetchGroup]);
 
+  // Set the current user's name *in this group* (e.g. "Dad" / "Mr. Sommer").
+  const setMyGroupName = async (name: string) => {
+    const { error } = await supabase.rpc("set_group_display_name", {
+      _group_id: groupId,
+      _name: name,
+    });
+    if (!error) await fetchGroup();
+    return { error: error?.message ?? null };
+  };
+
   // Admin renames the group (RLS allows only the creator/admin to update).
   const renameGroup = async (name: string) => {
     const trimmed = name.trim();
@@ -205,6 +215,7 @@ export function useGroup(groupId: string) {
     loading,
     refresh: fetchGroup,
     renameGroup,
+    setMyGroupName,
   };
 }
 

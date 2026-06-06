@@ -52,6 +52,7 @@ export interface GroupMember {
   user_id: string;
   role: MemberRole;
   joined_at: string;
+  display_name?: string | null; // per-group name override (falls back to profile)
 }
 
 export interface Engagement {
