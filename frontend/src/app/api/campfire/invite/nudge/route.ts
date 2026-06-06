@@ -4,9 +4,11 @@ import {
   authorizeGroupRequester,
   buildJoinUrl,
   inviteEmail,
+  newEngagementEmail,
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
+import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -33,7 +35,7 @@ export async function POST(req: Request) {
 
     let q = admin
       .from("campfire_invitations")
-      .select("id, email, nudge_count")
+      .select("id, email, name, nudge_count")
       .eq("group_id", groupId)
       .eq("status", "pending");
     if (only && only.length) q = q.in("email", only);
@@ -58,26 +60,63 @@ export async function POST(req: Request) {
       .single();
     const inviter = profile?.display_name || "A friend";
 
-    const joinUrl = buildJoinUrl(originIn, group.invite_code);
-    const { subject, text, html } = inviteEmail({
-      inviter,
-      groupName: group.name,
-      groupEmoji: group.avatar_emoji,
-      inviteCode: group.invite_code,
-      joinUrl,
-      nudge: true,
-    });
+    const baseJoinUrl = buildJoinUrl(originIn, group.invite_code);
     const from = campfireFrom();
 
-    const { error: sendErr } = await resend.batch.send(
-      pending.map((p) => ({ from, to: [p.email], subject, text, html, ...mailDefaults() }))
-    );
-    if (sendErr) {
-      console.error("Campfire nudge send error:", sendErr);
-      return NextResponse.json(
-        { error: "Couldn't send the nudges. Try again." },
-        { status: 502 }
-      );
+    // If the group has a live engagement, the nudge points straight at it
+    // (that's the real draw). Otherwise fall back to the generic invite.
+    const { data: activeEng } = await admin
+      .from("engagements")
+      .select("title, type, is_blind, reveal, deadline")
+      .eq("group_id", groupId)
+      .eq("status", "active")
+      .not("launched_at", "is", null)
+      .order("launched_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const meta = activeEng
+      ? ENGAGEMENT_TYPES[activeEng.type as keyof typeof ENGAGEMENT_TYPES]
+      : null;
+
+    // Per-recipient so we can carry their address (?inv=…) and greet by name.
+    const messages = pending.map((p) => {
+      const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(p.email)}`;
+      const m = activeEng
+        ? newEngagementEmail({
+            creator: inviter,
+            groupName: group.name,
+            title: activeEng.title,
+            typeLabel: meta?.label || "engagement",
+            typeIcon: meta?.icon || "🔥",
+            isBlind: !!activeEng.is_blind,
+            reveal: activeEng.reveal as string,
+            deadline: activeEng.deadline as string | null,
+            url: joinUrl,
+            invited: true,
+            recipientName: p.name || undefined,
+          })
+        : inviteEmail({
+            inviter,
+            groupName: group.name,
+            groupEmoji: group.avatar_emoji,
+            inviteCode: group.invite_code,
+            joinUrl: baseJoinUrl,
+            nudge: true,
+            recipientName: p.name || undefined,
+          });
+      return { from, to: [p.email], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
+    });
+
+    for (let i = 0; i < messages.length; i += 100) {
+      const { error: sendErr } = await resend.batch.send(messages.slice(i, i + 100));
+      if (sendErr) {
+        console.error("Campfire nudge send error:", sendErr);
+        return NextResponse.json(
+          { error: "Couldn't send the nudges. Try again." },
+          { status: 502 }
+        );
+      }
     }
 
     const now = new Date().toISOString();
