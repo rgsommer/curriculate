@@ -21,6 +21,7 @@ export default function NewEngagementPage() {
   const [reveal, setReveal] = useState<RevealMode>("sealed");
   const [isBlind, setIsBlind] = useState(false);
   const [deadline, setDeadline] = useState("");
+  const [holdUntilDeadline, setHoldUntilDeadline] = useState(false);
   const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly">("none");
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   const [creating, setCreating] = useState(false);
@@ -97,6 +98,8 @@ export default function NewEngagementPage() {
       is_blind: isBlind,
       recurrence_rule: recurrence === "none" ? undefined : recurrence,
       notify: true, // launching always notifies the group
+      // Only meaningful for sealed + a deadline; ignore otherwise.
+      hold_until_deadline: reveal === "sealed" && !!deadline && holdUntilDeadline,
     });
 
     if (result.error) {
@@ -387,6 +390,35 @@ export default function NewEngagementPage() {
                 onChange={(e) => setDeadline(e.target.value)}
                 className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
               />
+
+              {/* Hold the reveal until the deadline — only for sealed mode */}
+              {reveal === "sealed" && (
+                <label
+                  className={`mt-2 flex items-start gap-3 rounded-xl border p-3 ${
+                    deadline
+                      ? "border-slate-200 bg-white cursor-pointer"
+                      : "border-slate-100 bg-slate-50 opacity-60"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={holdUntilDeadline}
+                    disabled={!deadline}
+                    onChange={(e) => setHoldUntilDeadline(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">
+                      ⏳ Wait until the deadline to reveal
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {deadline
+                        ? "Hold the reveal until the deadline even if everyone responds early — gives invited people time to join first."
+                        : "Set a deadline above to enable this."}
+                    </div>
+                  </div>
+                </label>
+              )}
             </div>
 
             {/* Repeat */}

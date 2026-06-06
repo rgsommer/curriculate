@@ -1001,7 +1001,7 @@ export default function EngagementDetailPage() {
         {/* Deadline */}
         {engagement.deadline && engagement.status === "active" && (
           <p className="text-xs text-slate-400 mt-2">
-            Deadline:{" "}
+            {engagement.hold_until_deadline ? "⏳ Reveals" : "Deadline"}:{" "}
             {new Date(engagement.deadline).toLocaleDateString("en-US", {
               weekday: "short",
               month: "short",
@@ -1009,6 +1009,8 @@ export default function EngagementDetailPage() {
               hour: "numeric",
               minute: "2-digit",
             })}
+            {engagement.hold_until_deadline &&
+              " — held until then, even if everyone responds early."}
           </p>
         )}
       </div>

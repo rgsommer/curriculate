@@ -431,6 +431,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     is_blind?: boolean;
     recurrence_rule?: string;
     notify?: boolean;
+    hold_until_deadline?: boolean;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -451,6 +452,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
         is_blind: params.is_blind ?? false,
         recurrence_rule: params.recurrence_rule ?? null,
         notify: params.notify ?? false,
+        hold_until_deadline: params.hold_until_deadline ?? false,
       })
       .select()
       .single();

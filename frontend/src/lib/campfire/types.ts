@@ -70,6 +70,7 @@ export interface Engagement {
   created_at: string;
   launched_at?: string | null; // null = draft (only the creator can see it)
   notify?: boolean; // email the group when launched
+  hold_until_deadline?: boolean; // wait for the deadline to reveal (don't reveal early)
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
 }

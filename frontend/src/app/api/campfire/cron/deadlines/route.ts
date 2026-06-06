@@ -41,7 +41,7 @@ export async function GET(req: Request) {
 
   const { data: engs } = await admin
     .from("engagements")
-    .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at")
+    .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at, hold_until_deadline")
     .eq("status", "active")
     .not("deadline", "is", null);
 
@@ -50,6 +50,14 @@ export async function GET(req: Request) {
 
   for (const e of engs ?? []) {
     const dl = new Date(e.deadline as string).getTime();
+
+    // "Hold until deadline" engagements reveal AT the deadline regardless of how
+    // many responded — that's the whole point of waiting for the date.
+    if (e.hold_until_deadline && now >= dl) {
+      await admin.from("engagements").update({ status: "revealed" }).eq("id", e.id);
+      revealed++;
+      continue;
+    }
 
     // Past the grace window → reveal with whoever's in, so it never freezes.
     if (now > dl + GRACE_MS) {
