@@ -209,7 +209,7 @@ export async function GET(req: Request) {
   const { data: recs } = await admin
     .from("engagements")
     .select(
-      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at, deadline, lead_days, birth_year, excluded_user_ids, excluded_emails, cover_image_url"
+      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at, deadline, lead_days, birth_year, excluded_user_ids, excluded_emails, cover_image_url, cover_image_urls"
     )
     .not("recurrence_rule", "is", null)
     .in("status", ["revealed", "expired"]);
@@ -251,7 +251,14 @@ export async function GET(req: Request) {
         birth_year: e.birth_year,
         excluded_user_ids: e.excluded_user_ids,
         excluded_emails: e.excluded_emails,
-        cover_image_url: e.cover_image_url,
+        cover_image_urls: e.cover_image_urls,
+        // Pick a fresh random cover from the pool for this year.
+        cover_image_url:
+          ((e.cover_image_urls as string[]) ?? []).length > 0
+            ? (e.cover_image_urls as string[])[
+                Math.floor(Math.random() * (e.cover_image_urls as string[]).length)
+              ]
+            : (e.cover_image_url as string | null),
       });
       spawned++;
       continue;

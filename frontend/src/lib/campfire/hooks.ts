@@ -644,6 +644,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     excluded_user_ids?: string[];
     excluded_emails?: string[];
     cover_image_url?: string;
+    cover_image_urls?: string[];
     scheduled_open_at?: string | null;
     lead_days?: number;
     birth_year?: number | null;
@@ -674,6 +675,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
         excluded_user_ids: params.excluded_user_ids ?? [],
         excluded_emails: params.excluded_emails ?? [],
         cover_image_url: params.cover_image_url ?? null,
+        cover_image_urls: params.cover_image_urls ?? [],
         scheduled_open_at: params.scheduled_open_at ?? null,
         lead_days: params.lead_days ?? 14,
         birth_year: params.birth_year ?? null,

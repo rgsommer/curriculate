@@ -106,6 +106,13 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         title: "What's for dinner this weekend?",
         options: ["Pizza", "Tacos", "Pasta", "BBQ"],
       },
+      {
+        id: "birthday-card",
+        name: "Birthday Card 🎂",
+        type: "birthday",
+        title: "Happy {age} Birthday! 🎂",
+        description: "Sign the card with your birthday wishes — it opens on the big day!",
+      },
     ],
   },
   {

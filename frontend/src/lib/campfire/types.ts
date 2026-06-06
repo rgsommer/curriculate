@@ -82,7 +82,8 @@ export interface Engagement {
   allow_member_invites?: boolean; // members (not just host) may invite others to this
   excluded_user_ids?: string[]; // surprise: hidden from these members until reveal
   excluded_emails?: string[]; // surprise: exclude not-yet-joined people by email
-  cover_image_url?: string | null; // optional banner image (e.g. a birthday graphic)
+  cover_image_url?: string | null; // the currently-shown cover (random from the pool)
+  cover_image_urls?: string[]; // pool of covers — a random one is shown
   scheduled_open_at?: string | null; // auto-launch a draft at this time (birthday)
   lead_days?: number; // birthday: open this many days before the date
   birth_year?: number | null; // birthday: for the {age} title token

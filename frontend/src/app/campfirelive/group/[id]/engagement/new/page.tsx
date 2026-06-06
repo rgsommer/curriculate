@@ -88,8 +88,9 @@ export default function NewEngagementPage() {
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
   const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
-  // Cover image (e.g. a birthday graphic)
-  const [coverUrl, setCoverUrl] = useState("");
+  // Cover images (a pool — Campfire shows a random one)
+  const [coverUrls, setCoverUrls] = useState<string[]>([]);
+  const [coverPaste, setCoverPaste] = useState("");
   const [coverUploading, setCoverUploading] = useState(false);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
@@ -366,7 +367,12 @@ export default function NewEngagementPage() {
       // Surprise: hide it from these members / invitees until the reveal.
       excluded_user_ids: makingNewGroup ? [] : excludedIds,
       excluded_emails: makingNewGroup ? [] : excludedEmails,
-      cover_image_url: coverUrl.trim() || undefined,
+      cover_image_urls: coverUrls,
+      // Show a random one from the pool (a fresh pick each year for a birthday).
+      cover_image_url:
+        coverUrls.length > 0
+          ? coverUrls[Math.floor(Math.random() * coverUrls.length)]
+          : undefined,
     });
 
     if (result.error) {
@@ -991,57 +997,87 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Cover image (e.g. a birthday graphic) */}
+            {/* Cover images — a pool; Campfire shows a random one */}
             <div className="rounded-xl border border-slate-200 bg-white p-3">
               <div className="text-sm font-medium text-slate-700">
-                🖼️ Cover image <span className="text-slate-400">(optional)</span>
+                🖼️ Cover image(s) <span className="text-slate-400">(optional)</span>
               </div>
               <p className="text-xs text-slate-500 mb-2">
-                A banner shown at the top — e.g. a &ldquo;Happy Birthday&rdquo; image. Upload one,
-                or paste an image link.
+                A banner at the top. Add as many as you like — Campfire shows a{" "}
+                <span className="font-semibold">random one</span> (a fresh pick each year
+                for a birthday).
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                  {coverUploading ? "Uploading…" : "📷 Upload image"}
+                  {coverUploading ? "Uploading…" : "📷 Upload image(s)"}
                   <input
                     type="file"
                     accept="image/*"
+                    multiple
                     className="hidden"
                     onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file || !user) return;
+                      const files = Array.from(e.target.files ?? []);
+                      if (!files.length || !user) return;
                       setCoverUploading(true);
-                      const ext = file.name.split(".").pop();
-                      const path = `${user.id}/covers/${Date.now()}.${ext}`;
-                      const { error: upErr } = await supabase.storage
-                        .from("campfire-media")
-                        .upload(path, file);
-                      if (upErr) {
-                        alert("Upload failed: " + upErr.message);
-                        setCoverUploading(false);
-                        return;
+                      for (const file of files) {
+                        const ext = file.name.split(".").pop();
+                        const path = `${user.id}/covers/${Date.now()}-${Math.random()
+                          .toString(36)
+                          .slice(2, 7)}.${ext}`;
+                        const { error: upErr } = await supabase.storage
+                          .from("campfire-media")
+                          .upload(path, file);
+                        if (upErr) {
+                          alert("Upload failed: " + upErr.message);
+                          continue;
+                        }
+                        const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
+                        setCoverUrls((prev) => [...prev, data.publicUrl]);
                       }
-                      const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
-                      setCoverUrl(data.publicUrl);
                       setCoverUploading(false);
                     }}
                   />
                 </label>
                 <input
                   type="url"
-                  value={coverUrl}
-                  onChange={(e) => setCoverUrl(e.target.value)}
-                  placeholder="…or paste an image URL"
+                  value={coverPaste}
+                  onChange={(e) => setCoverPaste(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && coverPaste.trim()) {
+                      e.preventDefault();
+                      setCoverUrls((prev) => [...prev, coverPaste.trim()]);
+                      setCoverPaste("");
+                    }
+                  }}
+                  placeholder="…or paste an image URL + Enter"
                   className="flex-1 min-w-[180px] rounded-lg border border-slate-300 px-3 py-1.5 text-xs focus:border-orange-500 outline-none"
                 />
               </div>
-              {coverUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={coverUrl}
-                  alt="Cover preview"
-                  className="mt-2 w-full h-40 sm:h-52 rounded-lg object-contain bg-slate-100"
-                />
+              {coverUrls.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {coverUrls.map((u, i) => (
+                    <div key={i} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={u}
+                        alt=""
+                        className="h-20 w-28 rounded-lg object-cover border border-slate-200"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setCoverUrls((prev) => prev.filter((_, j) => j !== i))}
+                        className="absolute -top-1.5 -right-1.5 rounded-full bg-white border border-slate-300 w-5 h-5 text-xs text-slate-500 hover:text-red-600 shadow"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {coverUrls.length > 1 && (
+                <p className="mt-1 text-[11px] text-slate-400">
+                  {coverUrls.length} images — one is shown at random.
+                </p>
               )}
             </div>
 
