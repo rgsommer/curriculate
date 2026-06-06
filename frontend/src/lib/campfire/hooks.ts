@@ -610,10 +610,28 @@ export function useRealtimeEngagement(engagementId: string, onUpdate: () => void
       )
       .subscribe();
 
+    // Two Truths & a Lie: subscribe to guesses so the "X of Y guessed" progress
+    // ticks up live for everyone (the reveal flip itself rides on the engagement
+    // UPDATE subscription above).
+    const guessSub = supabase
+      .channel(`lie-guesses:${engagementId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "campfire_lie_guesses",
+          filter: `engagement_id=eq.${engagementId}`,
+        },
+        () => onUpdate()
+      )
+      .subscribe();
+
     return () => {
       supabase.removeChannel(responseSub);
       supabase.removeChannel(engSub);
       supabase.removeChannel(nudgeSub);
+      supabase.removeChannel(guessSub);
     };
   }, [engagementId, onUpdate]);
 }
