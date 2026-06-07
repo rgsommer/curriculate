@@ -214,23 +214,69 @@ export default function EngagementDetailPage() {
   // Is the viewer a full member of this group, or just a guest of this one card?
   // null = still checking (treat as member to avoid flashing guest UI to members).
   const [isMember, setIsMember] = useState<boolean | null>(null);
+  const [isGroupAdmin, setIsGroupAdmin] = useState(false);
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
     supabase
       .from("group_members")
-      .select("user_id")
+      .select("role")
       .eq("group_id", groupId)
       .eq("user_id", user.id)
       .maybeSingle()
       .then(({ data }) => {
-        if (!cancelled) setIsMember(!!data);
+        if (!cancelled) {
+          setIsMember(!!data);
+          setIsGroupAdmin(data?.role === "admin");
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [user, groupId]);
   const isGuest = isMember === false;
+
+  // Guests on THIS card (host-only) + the ability to bring one into the group.
+  const [engagementGuests, setEngagementGuests] = useState<
+    { user_id: string; name: string }[]
+  >([]);
+  const loadGuests = useCallback(async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from("engagement_guests")
+      .select("user_id, profile:profiles(display_name)")
+      .eq("engagement_id", engagementId);
+    if (!data) return;
+    setEngagementGuests(
+      (
+        data as {
+          user_id: string;
+          profile: { display_name: string } | { display_name: string }[] | null;
+        }[]
+      ).map((g) => {
+        const p = Array.isArray(g.profile) ? g.profile[0] : g.profile;
+        return { user_id: g.user_id, name: p?.display_name || "Guest" };
+      })
+    );
+  }, [user, engagementId]);
+  useEffect(() => {
+    loadGuests();
+  }, [loadGuests, responseCount]);
+  const [promotingGuest, setPromotingGuest] = useState<string | null>(null);
+  const promoteGuest = async (uid: string) => {
+    setPromotingGuest(uid);
+    const { error } = await supabase.rpc("promote_guest_to_member", {
+      _eid: engagementId,
+      _uid: uid,
+    });
+    if (error) {
+      alert("Couldn't add to the group: " + error.message);
+    } else {
+      await loadGuests();
+      refresh();
+    }
+    setPromotingGuest(null);
+  };
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
   const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
@@ -2135,6 +2181,37 @@ export default function EngagementDetailPage() {
           >
             {sharedEng ? "✓ Copied — paste it anywhere!" : "📨 Copy invite"}
           </button>
+        </div>
+      )}
+
+      {/* ── Guests on this card (host/admin only): people invited to just this
+          engagement, with the option to bring them into the whole group. ── */}
+      {(isCreator || isGroupAdmin) && engagementGuests.length > 0 && (
+        <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/50 px-4 py-3">
+          <div className="text-xs font-semibold text-slate-600 mb-2">
+            🎟️ Guests on this card ({engagementGuests.length}) — here for just this
+            one, not in {groupInfo?.name || "the group"}.
+          </div>
+          <div className="grid gap-1.5">
+            {engagementGuests.map((g) => (
+              <div
+                key={g.user_id}
+                className="flex items-center justify-between gap-2 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs"
+              >
+                <span className="min-w-0 truncate font-medium text-slate-800">
+                  {g.name}
+                </span>
+                <button
+                  onClick={() => promoteGuest(g.user_id)}
+                  disabled={promotingGuest === g.user_id}
+                  title={`Add ${g.name} to ${groupInfo?.name || "the group"} as a full member`}
+                  className="flex-shrink-0 rounded-full border border-orange-300 bg-orange-50 px-3 py-1 font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+                >
+                  {promotingGuest === g.user_id ? "Adding…" : "+ Add to group"}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
