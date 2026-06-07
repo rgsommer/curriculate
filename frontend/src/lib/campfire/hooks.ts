@@ -566,9 +566,12 @@ export function useEngagement(engagementId: string) {
   // Creator launches a draft engagement — makes it live (visible to the group).
   const launchEngagement = async () => {
     if (!engagementId) return { error: "Missing engagement" };
+    // Launching = open it NOW. Clear any future open-schedule so the card is
+    // genuinely open to sign (and so the "new engagement" email is appropriate);
+    // a card left unlaunched stays scheduled and auto-opens + emails on its date.
     const { error } = await supabase
       .from("engagements")
-      .update({ launched_at: new Date().toISOString() })
+      .update({ launched_at: new Date().toISOString(), scheduled_open_at: null })
       .eq("id", engagementId);
     if (!error) await fetchEngagement();
     return { error: error?.message ?? null };

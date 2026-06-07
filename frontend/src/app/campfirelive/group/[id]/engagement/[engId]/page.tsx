@@ -1895,7 +1895,13 @@ export default function EngagementDetailPage() {
                   : "bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 disabled:opacity-50"
               }`}
             >
-              {justLaunched ? "✓ Launched" : launching ? "Launching…" : "🚀 Launch to the group"}
+              {justLaunched
+                ? "✓ Launched"
+                : launching
+                ? "Launching…"
+                : engagement.scheduled_open_at
+                ? "🚀 Open early & notify now"
+                : "🚀 Launch to the group"}
             </button>
           </div>
         </div>
