@@ -203,6 +203,7 @@ export default function EngagementDetailPage() {
   const [editRecurrence, setEditRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
   const [editDeadline, setEditDeadline] = useState(""); // YYYY-MM-DD (birthday date)
   const [editBirthYear, setEditBirthYear] = useState("");
+  const [editDeadlineTime, setEditDeadlineTime] = useState(""); // datetime-local (reveal/deadline)
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
   const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
@@ -445,13 +446,17 @@ export default function EngagementDetailPage() {
     // date in LOCAL time so the day doesn't shift across time zones.
     if (engagement.deadline) {
       const d = new Date(engagement.deadline);
-      setEditDeadline(
-        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-          d.getDate()
-        ).padStart(2, "0")}`
+      const p = (n: number) => String(n).padStart(2, "0");
+      setEditDeadline(`${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`);
+      // Full local datetime for the non-birthday reveal/deadline editor.
+      setEditDeadlineTime(
+        `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(
+          d.getMinutes()
+        )}`
       );
     } else {
       setEditDeadline("");
+      setEditDeadlineTime("");
     }
     setEditBirthYear(engagement.birth_year ? String(engagement.birth_year) : "");
     setEditing(true);
@@ -483,6 +488,11 @@ export default function EngagementDetailPage() {
       }
       birthdayFields.birth_year = editBirthYear.trim()
         ? parseInt(editBirthYear, 10)
+        : null;
+    } else {
+      // Non-birthday: let the host change the reveal/deadline date & time (or clear it).
+      birthdayFields.deadline = editDeadlineTime
+        ? new Date(editDeadlineTime).toISOString()
         : null;
     }
     const { error } = await supabase
@@ -2076,42 +2086,61 @@ export default function EngagementDetailPage() {
                   )}
                 </div>
               ) : (
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">
-                    Repeat
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {([
-                      { value: "none", label: "Once" },
-                      { value: "daily", label: "🔁 Daily" },
-                      { value: "weekly", label: "🔁 Weekly" },
-                      { value: "monthly", label: "🔁 Monthly" },
-                    ] as const).map((r) => (
-                      <button
-                        key={r.value}
-                        type="button"
-                        onClick={() => setEditRecurrence(r.value)}
-                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                          editRecurrence === r.value
-                            ? "border-orange-500 bg-orange-50 text-slate-900"
-                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                        }`}
-                      >
-                        {r.label}
-                      </button>
-                    ))}
-                  </div>
-                  {editRecurrence !== "none" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      {engagement.hold_until_deadline ? "Reveal date & time" : "Deadline"}{" "}
+                      <span className="text-slate-400">(optional)</span>
+                    </label>
+                    <input
+                      type="datetime-local"
+                      value={editDeadlineTime}
+                      onChange={(e) => setEditDeadlineTime(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                    />
                     <p className="mt-1 text-xs text-slate-500">
-                      A fresh copy auto-posts every{" "}
-                      {editRecurrence === "daily"
-                        ? "day"
-                        : editRecurrence === "weekly"
-                        ? "week"
-                        : "month"}{" "}
-                      after this one wraps.
+                      {engagement.hold_until_deadline
+                        ? "It stays sealed and reveals at this moment. Leave blank to remove the date."
+                        : "Responses close and the reveal fires after this. Leave blank for no deadline."}
                     </p>
-                  )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Repeat
+                    </label>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      {([
+                        { value: "none", label: "Once" },
+                        { value: "daily", label: "🔁 Daily" },
+                        { value: "weekly", label: "🔁 Weekly" },
+                        { value: "monthly", label: "🔁 Monthly" },
+                      ] as const).map((r) => (
+                        <button
+                          key={r.value}
+                          type="button"
+                          onClick={() => setEditRecurrence(r.value)}
+                          className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                            editRecurrence === r.value
+                              ? "border-orange-500 bg-orange-50 text-slate-900"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                          }`}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                    {editRecurrence !== "none" && (
+                      <p className="mt-1 text-xs text-slate-500">
+                        A fresh copy auto-posts every{" "}
+                        {editRecurrence === "daily"
+                          ? "day"
+                          : editRecurrence === "weekly"
+                          ? "week"
+                          : "month"}{" "}
+                        after this one wraps.
+                      </p>
+                    )}
+                  </div>
                 </div>
               )}
               <label className="flex items-start gap-3 cursor-pointer">
