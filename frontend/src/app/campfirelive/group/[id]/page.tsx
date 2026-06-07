@@ -259,15 +259,22 @@ See you around the campfire! 🏕️`
     const tb = b.deadline ? new Date(b.deadline).getTime() : Infinity;
     return ta - tb;
   };
-  // "Active" = open to sign RIGHT NOW (launched & still active) — including a
-  // recurring card that's currently open for signing.
-  const activeEngagements = engagements
-    .filter((e) => e.status === "active" && e.launched_at)
-    .sort(byNextReveal);
-  // "Upcoming" = scheduled but not open yet (a draft waiting to auto-open, e.g.
-  // next year's birthday card before its lead date).
+  // Open to sign RIGHT NOW = active, launched, and its scheduled open date (if any)
+  // has actually arrived. A card scheduled to open later isn't signable yet even
+  // if it's been "launched", so it belongs in Upcoming, not Active.
+  const nowMs = Date.now();
+  const isOpenToSign = (e: { status: string; launched_at?: string | null; scheduled_open_at?: string | null }) =>
+    e.status === "active" &&
+    !!e.launched_at &&
+    (!e.scheduled_open_at || new Date(e.scheduled_open_at).getTime() <= nowMs);
+
+  // "Active" = open to sign right now — including a recurring card whose signing
+  // window is currently open.
+  const activeEngagements = engagements.filter(isOpenToSign).sort(byNextReveal);
+  // "Upcoming" = active but not open to sign yet (a draft waiting to auto-open, or
+  // launched with a future open date — e.g. a birthday card before its lead date).
   const upcomingEngagements = engagements
-    .filter((e) => e.status === "active" && !e.launched_at)
+    .filter((e) => e.status === "active" && !isOpenToSign(e))
     .sort(byNextReveal);
   // "Recurring" = the repeating series (yearly/weekly/…), shown as their own group
   // whether they're open now or scheduled. Revealed past instances stay in Revealed.
