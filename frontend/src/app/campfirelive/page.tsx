@@ -92,18 +92,35 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {/* Trending across all of Campfire */}
-      {trendingMeta && (
-        <div
-          className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800"
-          title="The most-created engagement type across Campfire right now"
-        >
-          <span className="font-semibold">🔥 Trending now</span>
-          <span className="text-orange-300">·</span>
-          <span>
-            {trendingMeta.icon} {trendingMeta.label}
-          </span>
-        </div>
+      {/* Trending across all of Campfire — click to start one in a group */}
+      {trendingMeta && trending && (
+        groups.length > 0 ? (
+          <Link
+            href={`/campfirelive/group/${groups[0].id}/engagement/new?type=${trending.type}`}
+            className="group mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800 hover:bg-orange-100"
+            title={`Start a ${trendingMeta.label} — the most-created type across Campfire right now`}
+          >
+            <span className="font-semibold">🔥 Trending now</span>
+            <span className="text-orange-300">·</span>
+            <span>
+              {trendingMeta.icon} {trendingMeta.label}
+            </span>
+            <span className="text-orange-400 group-hover:translate-x-0.5 transition-transform">
+              → Try it
+            </span>
+          </Link>
+        ) : (
+          <div
+            className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800"
+            title="The most-created engagement type across Campfire right now"
+          >
+            <span className="font-semibold">🔥 Trending now</span>
+            <span className="text-orange-300">·</span>
+            <span>
+              {trendingMeta.icon} {trendingMeta.label}
+            </span>
+          </div>
+        )
       )}
 
       {/* Actions */}

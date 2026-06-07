@@ -259,6 +259,18 @@ export default function NewEngagementPage() {
     setStep("details");
   };
 
+  // Pre-select a type from ?type=… (e.g. the dashboard's "Trending now" chip).
+  const preselected = useRef(false);
+  useEffect(() => {
+    if (preselected.current || typeof window === "undefined") return;
+    const t = new URLSearchParams(window.location.search).get("type");
+    if (t && Object.prototype.hasOwnProperty.call(ENGAGEMENT_TYPES, t)) {
+      preselected.current = true;
+      handleSelectType(t as EngagementType);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const applyTemplate = (t: EngagementTemplate) => {
     setSelectedType(t.type);
     setTitle(t.title);
