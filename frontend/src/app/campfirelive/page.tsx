@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
+import { supabase } from "@/lib/campfire/supabase";
+import { ENGAGEMENT_TYPES, type EngagementType } from "@/lib/campfire/types";
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
@@ -20,6 +22,21 @@ export default function DashboardPage() {
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
+  // The most popular engagement type across all of Campfire right now.
+  const [trending, setTrending] = useState<{ type: string; cnt: number } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc("trending_engagement_type").then(({ data }) => {
+      const row = Array.isArray(data) ? data[0] : null;
+      if (!cancelled && row?.type) setTrending({ type: row.type, cnt: Number(row.cnt) });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const trendingMeta = trending
+    ? ENGAGEMENT_TYPES[trending.type as EngagementType]
+    : null;
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -74,6 +91,20 @@ export default function DashboardPage() {
             : `You're in ${groups.length} group${groups.length === 1 ? "" : "s"}.`}
         </p>
       </div>
+
+      {/* Trending across all of Campfire */}
+      {trendingMeta && (
+        <div
+          className="mb-6 inline-flex items-center gap-2 rounded-full border border-orange-200 bg-orange-50/70 px-3.5 py-1.5 text-xs font-medium text-orange-800"
+          title="The most-created engagement type across Campfire right now"
+        >
+          <span className="font-semibold">🔥 Trending now</span>
+          <span className="text-orange-300">·</span>
+          <span>
+            {trendingMeta.icon} {trendingMeta.label}
+          </span>
+        </div>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3 mb-8">
