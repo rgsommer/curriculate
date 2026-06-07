@@ -159,6 +159,7 @@ export async function POST(req: Request) {
     const { error: saveErr } = await admin.from("campfire_invitations").upsert(
       emails.map((email) => ({
         group_id: groupId,
+        engagement_id: null, // explicit whole-group invite (shows in the group list)
         email,
         name: nameByEmail.get(email) || null,
         invited_by: requesterId,

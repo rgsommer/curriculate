@@ -11,7 +11,7 @@ export default function JoinGroupPage() {
   const code = params.code as string;
   const router = useRouter();
   const { user, session, loading: authLoading, signInAsGuest } = useAuth();
-  const { joinGroup } = useGroups();
+  const { joinGroup, joinEngagementAsGuest } = useGroups();
   const [status, setStatus] = useState<"loading" | "joining" | "success" | "error">("loading");
   const [error, setError] = useState("");
 
@@ -32,6 +32,27 @@ export default function JoinGroupPage() {
     if (authLoading || !user) return;
 
     setStatus("joining");
+
+    // A link scoped to a single engagement (?e=…) joins as a GUEST of just that
+    // card — no group membership. A plain group link joins as a full member.
+    if (engId) {
+      // Guest of just this card. The invited email (if any) is passed to the RPC,
+      // which marks that engagement-scoped invitation joined — without touching
+      // group membership or the group's invitation list.
+      joinEngagementAsGuest(engId, invEmail).then((result) => {
+        if (result.error && !result.groupId) {
+          setStatus("error");
+          setError(result.error);
+        } else {
+          setStatus("success");
+          setTimeout(() => {
+            router.push(`/campfirelive/group/${result.groupId}/engagement/${engId}`);
+          }, 1500);
+        }
+      });
+      return;
+    }
+
     joinGroup(code).then((result) => {
       if (result.error && !result.groupId) {
         setStatus("error");
@@ -49,15 +70,11 @@ export default function JoinGroupPage() {
           }).catch(() => {});
         }
         setTimeout(() => {
-          if (result.groupId && engId) {
-            router.push(`/campfirelive/group/${result.groupId}/engagement/${engId}`);
-          } else {
-            router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
-          }
+          router.push(result.groupId ? `/campfirelive/group/${result.groupId}` : "/campfirelive");
         }, 1500);
       }
     });
-  }, [user, session, authLoading, code, invEmail, engId, joinGroup, router]);
+  }, [user, session, authLoading, code, invEmail, engId, joinGroup, joinEngagementAsGuest, router]);
 
   const handleGuest = async () => {
     const name = guestName.trim();

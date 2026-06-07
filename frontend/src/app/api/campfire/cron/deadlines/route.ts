@@ -87,7 +87,10 @@ export async function GET(req: Request) {
         .from("campfire_invitations")
         .select("email")
         .eq("group_id", e.group_id)
-        .eq("status", "pending");
+        .eq("status", "pending")
+        // Whole-group invites only — engagement-scoped guests get a card-specific
+        // flow, not the group join nudge.
+        .is("engagement_id", null);
       const { data: group } = await admin
         .from("groups")
         .select("name, invite_code, avatar_emoji")

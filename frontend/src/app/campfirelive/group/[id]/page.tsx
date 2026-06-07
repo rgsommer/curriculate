@@ -590,7 +590,7 @@ See you around the campfire! 🏕️`
               Email addresses — commas or spaces; paste from contacts too (e.g.{" "}
               <span className="font-mono">Alex Lee &lt;alex@example.com&gt;</span>).
               {inviteTarget
-                ? " They get a link straight into that engagement (and can step back to the group for the rest)."
+                ? " They get a link to sign just that one engagement as a guest — they won't join the group or see anything else."
                 : " They're added to the list and emailed the moment you post an engagement."}
             </label>
             <textarea

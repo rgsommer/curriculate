@@ -137,6 +137,7 @@ export async function POST(req: Request) {
         ...shared,
         url: joinUrl,
         invited: true,
+        cardGuest: true, // access to just this engagement — they don't join the group
         recipientName: nameByEmail.get(to),
       });
       return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
@@ -149,10 +150,13 @@ export async function POST(req: Request) {
       }
     }
 
-    // Track them on the group's invite list.
+    // Track them as guests of THIS engagement (engagement_id set) — these are
+    // kept out of the group's whole-group invitation list; they only ever get
+    // access to this one card, never group membership.
     await admin.from("campfire_invitations").upsert(
       emails.map((email) => ({
         group_id: eng.group_id,
+        engagement_id: engagementId,
         email,
         name: nameByEmail.get(email) || null,
         invited_by: requesterId,

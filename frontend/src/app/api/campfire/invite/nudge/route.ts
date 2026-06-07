@@ -37,7 +37,10 @@ export async function POST(req: Request) {
       .from("campfire_invitations")
       .select("id, email, name, nudge_count")
       .eq("group_id", groupId)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      // Whole-group invites only — engagement-scoped guest invites are nudged
+      // from their own card, not via the group's "nudge all pending".
+      .is("engagement_id", null);
     if (only && only.length) q = q.in("email", only);
     const { data: pending } = await q;
 

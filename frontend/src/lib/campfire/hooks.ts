@@ -113,7 +113,20 @@ export function useGroups() {
     return { error: null, groupId: gid as string };
   };
 
-  return { groups, loading, createGroup, joinGroup, refresh: fetchGroups };
+  // Join a SINGLE engagement as a guest — access to just that card, NOT the group.
+  // Used when an invite link is scoped to an engagement (carries ?e=<id>).
+  const joinEngagementAsGuest = async (engagementId: string, invitedEmail?: string | null) => {
+    if (!user) return { error: "Not logged in" };
+    const { data: gid, error } = await supabase.rpc("join_engagement_as_guest", {
+      _eid: engagementId,
+      _email: invitedEmail ?? null,
+    });
+    if (error) return { error: error.message };
+    if (!gid) return { error: "This card isn't available." };
+    return { error: null, groupId: gid as string };
+  };
+
+  return { groups, loading, createGroup, joinGroup, joinEngagementAsGuest, refresh: fetchGroups };
 }
 
 // ── Single Group Detail ──
@@ -150,6 +163,9 @@ export function useGroup(groupId: string) {
         .from("campfire_invitations")
         .select("*")
         .eq("group_id", groupId)
+        // Only whole-group invites belong here — engagement-scoped guest invites
+        // (engagement_id set) are tracked on their own card, not in the group.
+        .is("engagement_id", null)
         .order("created_at", { ascending: true }),
     ]);
 

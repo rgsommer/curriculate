@@ -160,19 +160,24 @@ export function newEngagementEmail(opts: {
   deadline: string | null;
   url: string;
   invited?: boolean; // recipient isn't a member yet — frame it as an invite
+  cardGuest?: boolean; // invited to ONLY this engagement (a guest, not the group)
   recipientName?: string; // greet them by name if we have it
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url, invited, recipientName } = opts;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url, invited, cardGuest, recipientName } = opts;
   const hi = firstName(recipientName);
-  const subject = invited
+  const subject = cardGuest
+    ? `${creator} invited you to a ${typeLabel} on Campfire`
+    : invited
     ? `${creator} invited you to "${groupName}" on Campfire`
     : `${creator} started a ${typeLabel} in ${groupName}`;
   const intro =
     (hi ? `Hi ${hi}, ` : "") +
-    (invited
+    (cardGuest
+      ? `${creator} invited you to add to a ${typeLabel} on Campfire — just this one, no account or group to join:`
+      : invited
       ? `${creator} invited you to join "${groupName}" on Campfire — and there's already a ${typeLabel} waiting for you:`
       : `${creator} started a ${typeLabel} in ${groupName}:`);
-  const cta = invited ? "Join & add your answer" : "Add your answer";
+  const cta = cardGuest ? "Add your answer" : invited ? "Join & add your answer" : "Add your answer";
 
   const bits: string[] = [];
   if (reveal === "as_they_come" || reveal === "instant") {

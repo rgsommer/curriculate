@@ -108,7 +108,9 @@ export default function EngagementDetailPage() {
       const { data } = await supabase
         .from("campfire_invitations")
         .select("email, name, status")
-        .eq("group_id", groupId);
+        .eq("group_id", groupId)
+        // Whole-group invites (engagement_id null) + this card's own guest invites.
+        .or(`engagement_id.is.null,engagement_id.eq.${engagementId}`);
       // Member-safe pending count (works for everyone, returns a number only).
       const { data: pc } = await supabase.rpc("pending_invite_count", { _gid: groupId });
       // Group name + code for the per-engagement invite link (members can read).
@@ -209,6 +211,26 @@ export default function EngagementDetailPage() {
   const [groupInfo, setGroupInfo] = useState<{ name: string; invite_code: string } | null>(null);
   const [sharedEng, setSharedEng] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
+  // Is the viewer a full member of this group, or just a guest of this one card?
+  // null = still checking (treat as member to avoid flashing guest UI to members).
+  const [isMember, setIsMember] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    supabase
+      .from("group_members")
+      .select("user_id")
+      .eq("group_id", groupId)
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (!cancelled) setIsMember(!!data);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, groupId]);
+  const isGuest = isMember === false;
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
   const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
@@ -1677,12 +1699,21 @@ export default function EngagementDetailPage() {
 
   return (
     <div>
-      <Link
-        href={`/campfirelive/group/${groupId}`}
-        className="text-sm text-slate-500 hover:text-slate-700 mb-4 inline-block"
-      >
-        ← Back to group
-      </Link>
+      {isGuest ? (
+        // A card guest isn't a group member — no group to go "back" to. Give them
+        // a gentle bit of context instead of a dead-end link into a group they
+        // can't see.
+        <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-orange-50 px-3 py-1 text-xs font-medium text-orange-700">
+          🔥 You&apos;re invited to this {meta?.label?.toLowerCase() || "card"} — just sign below.
+        </div>
+      ) : (
+        <Link
+          href={`/campfirelive/group/${groupId}`}
+          className="text-sm text-slate-500 hover:text-slate-700 mb-4 inline-block"
+        >
+          ← Back to group
+        </Link>
+      )}
 
       {/* ── DRAFT: not live yet — only the creator can see it until launch ── */}
       {(isDraft || justLaunched) && isCreator && (
@@ -2088,17 +2119,18 @@ export default function EngagementDetailPage() {
         )}
 
       {/* ── Share a link that drops people straight into THIS engagement ──
+          Recipients become guests of just this card — they do NOT join the group.
           (To email people, use the group's invite form — one place for emails.) */}
-      {!isDraft && groupInfo && (
+      {!isDraft && groupInfo && !isGuest && (
         <div className="mb-6 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
           <p className="text-xs text-slate-500">
-            <span className="font-semibold text-slate-700">Invite to this engagement.</span>{" "}
-            Drops them straight in — and they&apos;ll have the whole group&apos;s
-            engagements at their fingertips once they join.
+            <span className="font-semibold text-slate-700">Invite to just this card.</span>{" "}
+            Drops them straight in to sign — they get access to <em>only</em> this
+            engagement and won&apos;t join {groupInfo.name || "your group"}.
           </p>
           <button
             onClick={shareEngagement}
-            title="Invite to this engagement — they'll see all the group's engagements once they join"
+            title="Invite to just this card — they can sign it without joining your group"
             className="flex-shrink-0 rounded-full border border-orange-300 bg-orange-50 px-4 py-1.5 text-sm font-semibold text-orange-700 hover:bg-orange-100"
           >
             {sharedEng ? "✓ Copied — paste it anywhere!" : "📨 Copy invite"}
