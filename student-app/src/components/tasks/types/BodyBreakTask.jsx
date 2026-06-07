@@ -497,19 +497,23 @@ if (!Number.isFinite(totalSeconds) && Number.isFinite(promptSeconds) && promptSe
               {/* Honor-system reminder — addresses tester feedback:
                   "What will prevent kids from just saying Done? maybe just
                   honor system". Setting the expectation in copy is cheaper
-                  than any anti-cheat we could build. */}
+                  than any anti-cheat we could build.
+                  Contrast bumped (tester Richard 2026-06-05: "contrast on
+                  '🤝 Honor system…' was off") — switched from low-alpha
+                  green-on-green to solid green badge with white text. */}
               <div
                 style={{
                   marginTop: 8,
-                  padding: "8px 12px",
+                  padding: "8px 14px",
                   borderRadius: 10,
-                  background: "rgba(34,197,94,0.10)",
-                  border: "1px solid rgba(34,197,94,0.30)",
-                  color: "#bbf7d0",
+                  background: "linear-gradient(135deg, #16a34a, #15803d)",
+                  border: "1px solid #166534",
+                  color: "#ffffff",
                   fontSize: "0.8rem",
                   lineHeight: 1.4,
                   textAlign: "center",
-                  fontWeight: 600,
+                  fontWeight: 800,
+                  boxShadow: "0 2px 6px rgba(22,163,74,0.35)",
                 }}
               >
                 🤝 Honor system — your team trusts you to actually do the moves before tapping Done.

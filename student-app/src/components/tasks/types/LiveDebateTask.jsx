@@ -553,25 +553,29 @@ export default function LiveDebateTask({
         </div>
       ) : (
         <div className="p-4 border-t bg-gray-50">
-          {/* Instructions (first turn only) */}
+          {/* Instructions (first turn only).  Steps render as ① ② ③ —
+              tester Richard 2026-06-05: "steps should be separated by ① ②
+              etc". Numbered glyphs make the sequence obvious without the
+              user having to read the prose. */}
           {responses.length === 0 && (
             <div className="mb-3 p-3 rounded-xl border border-slate-200 bg-white">
               <div className="font-extrabold">How this works</div>
-              <div className="text-sm text-slate-700 mt-1">
+              <div className="text-sm text-slate-700 mt-1" style={{ display: "grid", gap: 4 }}>
                 {isSolo ? (
                   <>
-                    Your team is split into <span className="font-bold text-green-700">FOR</span> and{" "}
-                    <span className="font-bold text-red-700">AGAINST</span> sides.
-                    Take <span className="font-bold">alternating turns</span> —
-                    each person speaks once per turn. {turnsPerSide} arguments per side.
-                    Hand the device to whoever's up!
+                    <div>
+                      ① Your team is split into{" "}
+                      <span className="font-bold text-green-700">FOR</span> and{" "}
+                      <span className="font-bold text-red-700">AGAINST</span> sides.
+                    </div>
+                    <div>② Take <span className="font-bold">alternating turns</span> — each person speaks once per turn.</div>
+                    <div>③ {turnsPerSide} arguments per side. Hand the device to whoever's up!</div>
                   </>
                 ) : (
                   <>
-                    Teams take <span className="font-bold">alternating turns</span>.
-                    Each team gets {turnsPerSide} arguments. A different team member
-                    speaks each turn — no skipping! After each argument, read the
-                    other team's response on screen before your next speaker goes.
+                    <div>① Teams take <span className="font-bold">alternating turns</span> — each team gets {turnsPerSide} arguments.</div>
+                    <div>② A different team member speaks each turn — no skipping!</div>
+                    <div>③ After each argument, read the other team's response on screen before your next speaker goes.</div>
                   </>
                 )}
               </div>

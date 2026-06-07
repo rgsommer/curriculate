@@ -199,9 +199,10 @@ export default function SequenceTask({
       <div className="mb-3">
         <div className="p-3 rounded-xl" style={{ background: cardBg, border: `1px solid ${borderColor}` }}>
           <div className="font-bold mb-1">How to do this task</div>
-          <div className="text-sm" style={{ color: subtextColor }}>
-            1) Read the items. 2) Use the arrows to move them up or down.
-            3) When you are happy with the order, press <b>Submit</b>.
+          <div className="text-sm" style={{ color: subtextColor, display: "grid", gap: 2 }}>
+            <div>① Read the items.</div>
+            <div>② Use the arrows to move them up or down.</div>
+            <div>③ When you are happy with the order, press <b>Submit</b>.</div>
           </div>
         </div>
       </div>

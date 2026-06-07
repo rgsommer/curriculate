@@ -253,8 +253,8 @@ export default function CollaborationTask({
       title="Each Idea, Each Voice"
       subtitle={
         showPartnerReply
-          ? "Step 2: Read the other team's answer and reply."
-          : "Step 1: Add bullets, then drag (or tap) names to mark who contributed each point."
+          ? "② Read the other team's answer and reply."
+          : "① Add bullets, then drag (or tap) names to mark who contributed each point."
       }
       right={right}
     >
@@ -279,9 +279,9 @@ export default function CollaborationTask({
             }}
           >
             <div style={{ fontWeight: 950, marginBottom: 6 }}>How this works</div>
-            <div>1. Type each idea on its own line (use <b>+ Add point</b>).</div>
-            <div>2. Whoever said it: drag your name bubble onto that line — or tap your bubble, then tap the line.</div>
-            <div>3. The more voices contribute, the higher the team's engagement score.</div>
+            <div>① Type each idea on its own line (use <b>+ Add point</b>).</div>
+            <div>② Whoever said it: drag your name bubble onto that line — or tap your bubble, then tap the line.</div>
+            <div>③ The more voices contribute, the higher the team's engagement score.</div>
           </div>
 
           {/* Player bubbles */}
