@@ -2125,6 +2125,33 @@ export default function EngagementDetailPage() {
           )}
         </div>
 
+        {/* When the card opened (became visible to sign). For a recurring birthday
+            it re-opens automatically a set time before each birthday. */}
+        {(engagement.scheduled_open_at || engagement.launched_at) &&
+          engagement.status === "active" &&
+          (() => {
+            const openTs = new Date(
+              (engagement.scheduled_open_at || engagement.launched_at) as string
+            ).getTime();
+            const future = openTs > Date.now();
+            const dateStr = new Date(openTs).toLocaleDateString("en-US", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+            });
+            const lead = engagement.lead_days ?? 14;
+            const recurringNote =
+              engagement.recurrence_rule === "yearly"
+                ? ` · re-opens ~${lead} day${lead === 1 ? "" : "s"} before each birthday`
+                : "";
+            return (
+              <p className="text-xs text-slate-400 mt-2">
+                👁️ {future ? "Opens for signing" : "Open to sign since"}: {dateStr}
+                {recurringNote}
+              </p>
+            );
+          })()}
+
         {/* Deadline */}
         {engagement.deadline && engagement.status === "active" && (
           <p className="text-xs text-slate-400 mt-2">
