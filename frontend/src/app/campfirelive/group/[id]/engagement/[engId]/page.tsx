@@ -144,6 +144,10 @@ export default function EngagementDetailPage() {
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // Editing an already-submitted answer (before the reveal).
+  const [editingResponse, setEditingResponse] = useState(false);
+  // Host view: user_ids that have responded so far (names resolved below).
+  const [responders, setResponders] = useState<string[]>([]);
   // Two Truths & a Lie entry state
   const [ttStatements, setTtStatements] = useState(["", "", ""]);
   const [ttLie, setTtLie] = useState<number | null>(null);
@@ -262,6 +266,27 @@ export default function EngagementDetailPage() {
   useEffect(() => {
     loadGuests();
   }, [loadGuests, responseCount]);
+
+  // Host view: who has responded so far (user_ids only — sealed content stays
+  // hidden). Loaded only for the creator / a group admin.
+  useEffect(() => {
+    if (!user) return;
+    const isHost = engagement?.creator_id === user.id || isGroupAdmin;
+    if (!isHost) {
+      setResponders([]);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .rpc("engagement_responders", { _eid: engagementId })
+      .then(({ data }) => {
+        if (!cancelled) setResponders((data as string[]) ?? []);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, engagement?.creator_id, isGroupAdmin, engagementId, responseCount]);
+
   const [promotingGuest, setPromotingGuest] = useState<string | null>(null);
   const promoteGuest = async (uid: string) => {
     setPromotingGuest(uid);
@@ -618,10 +643,38 @@ export default function EngagementDetailPage() {
 
   // ── Submit handlers ──
 
+  // Save a response (first time or an edit) and close edit mode on success.
+  const saveResponse = async (content: Record<string, unknown>) => {
+    const r = await submitResponse(content);
+    if (!r?.error) setEditingResponse(false);
+    return r;
+  };
+
+  // Editing isn't wired for Two Truths (its hidden lie + others' guesses make an
+  // in-place edit messy); every other type re-opens its form pre-filled.
+  const canEditResponse = engagement.type !== "two_truths";
+
+  // Re-open the response form pre-filled with the current answer.
+  const startEditResponse = () => {
+    const c = (myResponse?.content ?? {}) as Record<string, unknown>;
+    if (typeof c.option === "string") setSelectedOption(c.option);
+    if (typeof c.text === "string") setTextInput(c.text);
+    if (typeof c.caption === "string") setTextInput(c.caption);
+    if (engagement.type === "most_likely" && c.answers)
+      setMlVotes(c.answers as Record<number, string>);
+    if (engagement.type === "accountability" && c.answers) {
+      setAcRatings(c.answers as Record<number, number>);
+      setAcNote(typeof c.note === "string" ? c.note : "");
+    }
+    if (engagement.type === "scavenger_hunt" && c.answers)
+      setShItems(c.answers as Record<number, { text?: string; photo?: string }>);
+    setEditingResponse(true);
+  };
+
   const handlePollSubmit = async () => {
     if (!selectedOption) return;
     setSubmitting(true);
-    await submitResponse({ option: selectedOption });
+    await saveResponse({ option: selectedOption });
     setSubmitting(false);
   };
 
@@ -632,7 +685,7 @@ export default function EngagementDetailPage() {
       return;
     }
     setSubmitting(true);
-    await submitResponse({ text: textInput.trim() });
+    await saveResponse({ text: textInput.trim() });
     setSubmitting(false);
     setTextInput("");
   };
@@ -669,7 +722,7 @@ export default function EngagementDetailPage() {
       if (v && v.trim()) answers[k] = v.trim();
     });
     setSubmitting(true);
-    const { error: mlErr } = await submitResponse({ answers });
+    const { error: mlErr } = await saveResponse({ answers });
     setSubmitting(false);
     if (mlErr) alert("Couldn't submit: " + mlErr);
   };
@@ -690,7 +743,7 @@ export default function EngagementDetailPage() {
       answers[i] = acRatings[i];
     });
     setSubmitting(true);
-    const { error: acErr } = await submitResponse({ answers, note: note || undefined });
+    const { error: acErr } = await saveResponse({ answers, note: note || undefined });
     setSubmitting(false);
     if (acErr) alert("Couldn't submit: " + acErr);
   };
@@ -730,7 +783,7 @@ export default function EngagementDetailPage() {
       return;
     }
     setSubmitting(true);
-    const { error: shErr } = await submitResponse({ answers });
+    const { error: shErr } = await saveResponse({ answers });
     setSubmitting(false);
     if (shErr) alert("Couldn't submit: " + shErr);
   };
@@ -757,7 +810,7 @@ export default function EngagementDetailPage() {
       .from("campfire-media")
       .getPublicUrl(filePath);
 
-    await submitResponse({
+    await saveResponse({
       media_url: urlData.publicUrl,
       media_type: file.type.startsWith("video") ? "video" : "photo",
       caption: textInput.trim() || undefined,
@@ -779,7 +832,7 @@ export default function EngagementDetailPage() {
   // ── Render helpers ──
 
   const renderResponseForm = () => {
-    if (hasResponded) return null;
+    if (hasResponded && !editingResponse) return null;
 
     switch (engagement.type) {
       case "scavenger_hunt": {
@@ -2464,7 +2517,9 @@ export default function EngagementDetailPage() {
           <div className="rounded-xl bg-white/60 border border-amber-200 p-3 mb-3">
             <div className="flex items-center gap-2 text-sm text-amber-900">
               <span>✓</span>
-              <span className="font-medium">Your response is locked in</span>
+              <span className="font-medium">
+                Your response is in{!isRevealed ? " — you can still change it until the reveal" : ""}
+              </span>
             </div>
             {myResponse?.content && (
               <p className="text-xs text-amber-700 mt-1">
@@ -2509,10 +2564,60 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {/* ── RESPONSE FORM (not yet responded) ── */}
-      {engagement.status === "active" && !hasResponded && (
+      {/* ── Host view: who's responded so far (names only, content stays sealed) ── */}
+      {(isCreator || isGroupAdmin) &&
+        engagement.status === "active" &&
+        (() => {
+          const respondedSet = new Set(responders);
+          const excludedSet = new Set(engagement.excluded_user_ids ?? []);
+          const nameForUser = (uid: string) =>
+            roster.find((m) => m.user_id === uid)?.name ||
+            engagementGuests.find((g) => g.user_id === uid)?.name ||
+            "Someone";
+          const expectedPeople = [
+            ...roster.filter((m) => !excludedSet.has(m.user_id)),
+            ...engagementGuests,
+          ];
+          const waiting = expectedPeople.filter((p) => !respondedSet.has(p.user_id));
+          return (
+            <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              <div className="text-xs font-semibold text-slate-600 mb-2">
+                👀 Who&apos;s responded ({responders.length}/{displayExpected})
+              </div>
+              {responders.length > 0 ? (
+                <p className="text-xs text-slate-700">
+                  <span className="font-medium text-green-700">✓ In:</span>{" "}
+                  {responders.map((uid) => nameForUser(uid)).join(", ")}
+                </p>
+              ) : (
+                <p className="text-xs text-slate-400">No responses yet.</p>
+              )}
+              {waiting.length > 0 && (
+                <p className="mt-1 text-xs text-slate-500">
+                  <span className="font-medium text-amber-700">⏳ Waiting on:</span>{" "}
+                  {waiting.map((p) => p.name).join(", ")}
+                </p>
+              )}
+            </div>
+          );
+        })()}
+
+      {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
+      {engagement.status === "active" && (!hasResponded || editingResponse) && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6">
-          <h2 className="font-bold text-slate-900 mb-4">Your Response</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-bold text-slate-900">
+              {editingResponse ? "Edit your response" : "Your Response"}
+            </h2>
+            {editingResponse && (
+              <button
+                onClick={() => setEditingResponse(false)}
+                className="text-xs font-medium text-slate-400 hover:text-slate-600"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
           {engagement.reveal === "sealed" && (
             <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
               <span>🔒</span>
@@ -2533,6 +2638,21 @@ export default function EngagementDetailPage() {
           {renderResponseForm()}
         </div>
       )}
+
+      {/* ── Edit my answer (responded, still active, not already editing) ── */}
+      {engagement.status === "active" &&
+        hasResponded &&
+        !editingResponse &&
+        canEditResponse && (
+          <div className="mb-6 -mt-2 text-center">
+            <button
+              onClick={startEditResponse}
+              className="text-xs font-medium text-slate-500 underline hover:text-orange-600"
+            >
+              ✏️ Edit my answer{!isRevealed ? " — you can still change it until the reveal" : ""}
+            </button>
+          </div>
+        )}
 
       {/* ── RESULTS (revealed, or live as-they-come / instant) ── */}
       {showResults && (

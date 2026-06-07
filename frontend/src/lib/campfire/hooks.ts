@@ -413,15 +413,21 @@ export function useEngagement(engagementId: string) {
     fetchEngagement();
   }, [fetchEngagement]);
 
-  // Submit a response
+  // Submit (or edit) a response. Upsert so re-submitting before the reveal updates
+  // the existing answer instead of failing the unique (engagement_id, user_id).
+  // On first submit this inserts (firing the all-responded check); an edit is an
+  // ON CONFLICT update, which doesn't re-fire that trigger — so counts stay right.
   const submitResponse = async (content: Record<string, unknown>) => {
     if (!user || !engagementId) return { error: "Missing data" };
 
-    const { error } = await supabase.from("responses").insert({
-      engagement_id: engagementId,
-      user_id: user.id,
-      content,
-    });
+    const { error } = await supabase.from("responses").upsert(
+      {
+        engagement_id: engagementId,
+        user_id: user.id,
+        content,
+      },
+      { onConflict: "engagement_id,user_id" }
+    );
 
     if (error) return { error: error.message };
     await fetchEngagement();
