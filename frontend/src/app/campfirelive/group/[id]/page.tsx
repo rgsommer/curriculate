@@ -25,7 +25,7 @@ export default function GroupDetailPage() {
   const [editingInviteEmail, setEditingInviteEmail] = useState<string | null>(null);
   const [inviteNameInput, setInviteNameInput] = useState("");
   const [copied, setCopied] = useState(false);
-  const [tab, setTab] = useState<"active" | "revealed" | "all">("active");
+  const [tab, setTab] = useState<"active" | "recurring" | "revealed" | "all">("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
   const [inviteTarget, setInviteTarget] = useState(""); // "" = whole group, else engagement id
   const [emailInput, setEmailInput] = useState("");
@@ -257,8 +257,14 @@ See you around the campfire! 🏕️`
     const tb = b.deadline ? new Date(b.deadline).getTime() : Infinity;
     return ta - tb;
   };
+  // "Active" = open to sign RIGHT NOW (launched & still active). Scheduled cards
+  // that haven't opened yet (e.g. next year's recurring birthday draft) live in
+  // their own "Recurring" group until they auto-open.
   const activeEngagements = engagements
-    .filter((e) => e.status === "active")
+    .filter((e) => e.status === "active" && e.launched_at)
+    .sort(byNextReveal);
+  const recurringEngagements = engagements
+    .filter((e) => e.status === "active" && !e.launched_at)
     .sort(byNextReveal);
   const revealedEngagements = engagements
     .filter((e) => e.status === "revealed")
@@ -266,6 +272,8 @@ See you around the campfire! 🏕️`
   const filteredEngagements =
     tab === "active"
       ? activeEngagements
+      : tab === "recurring"
+      ? recurringEngagements
       : tab === "revealed"
       ? revealedEngagements
       : [...engagements].sort(byNextReveal);
@@ -999,32 +1007,48 @@ See you around the campfire! 🏕️`
         </div>
       )}
 
-      {/* Engagement Tabs */}
+      {/* Engagement Tabs — the Recurring tab only shows when there's something in it */}
       <div className="flex gap-1 mb-4 bg-slate-100 rounded-xl p-1 w-fit">
-        {(["active", "revealed", "all"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
-              tab === t
-                ? "bg-white text-slate-900 shadow-sm"
-                : "text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {t === "active" ? `Active (${activeEngagements.length})` : t === "revealed" ? `Revealed (${revealedEngagements.length})` : `All (${engagements.length})`}
-          </button>
-        ))}
+        {(["active", "recurring", "revealed", "all"] as const)
+          .filter((t) => t !== "recurring" || recurringEngagements.length > 0)
+          .map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`rounded-lg px-4 py-1.5 text-sm font-medium transition ${
+                tab === t
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700"
+              }`}
+            >
+              {t === "active"
+                ? `Active (${activeEngagements.length})`
+                : t === "recurring"
+                ? `Recurring (${recurringEngagements.length})`
+                : t === "revealed"
+                ? `Revealed (${revealedEngagements.length})`
+                : `All (${engagements.length})`}
+            </button>
+          ))}
       </div>
 
       {/* Engagement List */}
       {filteredEngagements.length === 0 ? (
         <div className="text-center py-12 text-slate-400">
           <div className="text-4xl mb-3">
-            {tab === "active" ? "🔒" : tab === "revealed" ? "📭" : "🏕️"}
+            {tab === "active"
+              ? "🔒"
+              : tab === "recurring"
+              ? "🔁"
+              : tab === "revealed"
+              ? "📭"
+              : "🏕️"}
           </div>
           <p>
             {tab === "active"
               ? "No active engagements. Start one!"
+              : tab === "recurring"
+              ? "No recurring cards scheduled to open yet."
               : tab === "revealed"
               ? "No revealed engagements yet."
               : "No engagements yet. Be the first to start one!"}
