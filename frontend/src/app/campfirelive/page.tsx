@@ -311,7 +311,7 @@ export default function DashboardPage() {
                 href={`/campfirelive/group/${g.id}`}
                 className={`rounded-2xl border p-5 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition ${
                   mine
-                    ? "border-slate-200 bg-white"
+                    ? "border-orange-200 bg-orange-50/50"
                     : "border-sky-200 bg-sky-50/60"
                 }`}
               >
@@ -321,11 +321,6 @@ export default function DashboardPage() {
                     <h3 className="font-bold text-slate-900">{g.name}</h3>
                     <p className="text-xs text-slate-500">
                       {g.member_count} member{g.member_count === 1 ? "" : "s"}
-                      {mine ? (
-                        <span className="ml-1.5 text-orange-600 font-medium">· yours</span>
-                      ) : (
-                        <span className="ml-1.5 text-sky-700 font-medium">· joined</span>
-                      )}
                     </p>
                   </div>
                 </div>
