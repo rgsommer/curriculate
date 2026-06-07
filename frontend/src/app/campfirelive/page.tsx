@@ -91,6 +91,37 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey]);
 
+  // Names of the hosts of groups you JOINED (so the card can say "by <host>").
+  const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const ids = Array.from(
+      new Set(
+        groups
+          .filter((g) => g.creator_id && g.creator_id !== user?.id)
+          .map((g) => g.creator_id as string)
+      )
+    );
+    if (ids.length === 0) {
+      setCreatorNames({});
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from("profiles")
+      .select("id, display_name")
+      .in("id", ids)
+      .then(({ data }) => {
+        if (cancelled || !data) return;
+        const m: Record<string, string> = {};
+        for (const p of data) m[p.id as string] = (p.display_name as string) || "the host";
+        setCreatorNames(m);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupIdsKey, user?.id]);
+
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
@@ -321,6 +352,11 @@ export default function DashboardPage() {
                     <h3 className="font-bold text-slate-900">{g.name}</h3>
                     <p className="text-xs text-slate-500">
                       {g.member_count} member{g.member_count === 1 ? "" : "s"}
+                      {!mine && (
+                        <span className="ml-1.5 text-sky-700 font-medium">
+                          · by {creatorNames[g.creator_id] ?? "the host"}
+                        </span>
+                      )}
                     </p>
                   </div>
                 </div>
