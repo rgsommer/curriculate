@@ -38,6 +38,59 @@ export default function DashboardPage() {
     ? ENGAGEMENT_TYPES[trending.type as EngagementType]
     : null;
 
+  // Per-group activity: open-to-sign "active", recurring series, and pending invites.
+  const [groupStats, setGroupStats] = useState<
+    Record<string, { invited: number; active: number; recurring: number }>
+  >({});
+  const groupIdsKey = groups.map((g) => g.id).join(",");
+  useEffect(() => {
+    const ids = groupIdsKey ? groupIdsKey.split(",") : [];
+    if (ids.length === 0) {
+      setGroupStats({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const nowMs = Date.now();
+      const [engRes, invRes] = await Promise.all([
+        supabase
+          .from("engagements")
+          .select("group_id, status, launched_at, scheduled_open_at, recurrence_rule")
+          .in("group_id", ids),
+        supabase
+          .from("campfire_invitations")
+          .select("group_id")
+          .eq("status", "pending")
+          .is("engagement_id", null)
+          .in("group_id", ids),
+      ]);
+      if (cancelled) return;
+      const stats: Record<string, { invited: number; active: number; recurring: number }> = {};
+      ids.forEach((id) => (stats[id] = { invited: 0, active: 0, recurring: 0 }));
+      for (const e of engRes.data ?? []) {
+        const s = stats[e.group_id as string];
+        if (!s || e.status !== "active") continue;
+        if (e.recurrence_rule) {
+          s.recurring++;
+        } else if (
+          e.launched_at &&
+          (!e.scheduled_open_at || new Date(e.scheduled_open_at as string).getTime() <= nowMs)
+        ) {
+          s.active++;
+        }
+      }
+      for (const inv of invRes.data ?? []) {
+        const s = stats[inv.group_id as string];
+        if (s) s.invited++;
+      }
+      setGroupStats(stats);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupIdsKey]);
+
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
@@ -279,6 +332,17 @@ export default function DashboardPage() {
                 {g.description && (
                   <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
                 )}
+                {(() => {
+                  const s = groupStats[g.id];
+                  if (!s || s.active + s.recurring + s.invited === 0) return null;
+                  return (
+                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-medium text-slate-500">
+                      {s.active > 0 && <span>🔥 {s.active} active</span>}
+                      {s.recurring > 0 && <span>🔁 {s.recurring} recurring</span>}
+                      {s.invited > 0 && <span>✉️ {s.invited} invited</span>}
+                    </div>
+                  );
+                })()}
               </Link>
             );
           })}
