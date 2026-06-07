@@ -252,10 +252,13 @@ export default function AboutCampfirePage() {
             featureList: [
               "Sealed results — nobody sees answers until everyone responds",
               "12 engagement types: polls, challenges, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
+              "Celebration Cards — private surprise cards for birthdays, anniversaries, Mother's/Father's Day",
+              "Guest signing — sign a single card with just your name, no account",
+              "Edit your response any time before the reveal",
               "Voice responses",
               "Blind/anonymous mode",
               "Group streaks and health scores",
-              "Recurring scheduled engagements",
+              "Recurring engagements — daily, weekly, monthly, yearly, and floating holidays",
               "Template packs: Icebreaker, Bible Study, Family Game Night, Party, Youth Group, Couples",
               "Themed seasons: Summer, Advent, March Madness, Spooky Season",
               "Real-time nudges and presence",
@@ -552,6 +555,7 @@ export default function AboutCampfirePage() {
           <EngCard icon="⚖️" name="Anonymous Judge" desc="Submit entries anonymously. Group rates blind." />
           <EngCard icon="🔍" name="Guess" desc="Post a mystery photo for the group to guess." />
           <EngCard icon="🎉" name="Surprise" desc="Coordinate greetings or video mash-ups, hidden from the recipient." />
+          <EngCard icon="🎂" name="Celebration Card" desc="A surprise card everyone signs — birthday, anniversary, Mother's/Father's Day. Each wish stays private to the recipient; it opens on the special day and recurs yearly." />
           <EngCard icon="💡" name="Advice" desc="Ask your group or filtered random users for counsel." />
           <EngCard icon="🎤" name="Voice Response" desc="Leave voice notes instead of text. Lower friction, higher personality." />
         </div>
@@ -637,7 +641,24 @@ export default function AboutCampfirePage() {
           />
           <Card
             title="🔄 Recurring Engagements"
-            desc="Set a poll, check-in, or challenge to repeat daily or weekly — a fresh copy auto-posts to the group each cycle."
+            desc="Repeat daily, weekly, monthly, or yearly — including floating holidays like Mother's Day (2nd Sunday of May). A fresh copy auto-posts each cycle; yearly cards re-open a couple of weeks before the date."
+          />
+          <Card
+            title="🎂 Celebration Cards"
+            desc="A surprise card everyone signs for someone — birthday, anniversary, Mother's/Father's Day. Each wish is private to the recipient (even after it opens), it reveals on the special day, and it comes back every year on its own."
+            bullets={[
+              "Hidden from the recipient until the big day",
+              "Every wish private to them — the rest of the group never sees it",
+              "On open, everyone learns it was delivered + how many wishes",
+            ]}
+          />
+          <Card
+            title="✉️ Guest Signing"
+            desc="Invite anyone to sign one card with just their name — no account, no app, and they never join your group. A host can later promote a guest to a full member."
+          />
+          <Card
+            title="✏️ Edit Before Reveal"
+            desc="Changed your mind? Edit your answer any time before the reveal — your response re-opens pre-filled."
           />
           <Card
             title="📤 Share Card"
