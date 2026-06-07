@@ -157,7 +157,7 @@ export async function GET(req: Request) {
   const { data: scheduled } = await admin
     .from("engagements")
     .select(
-      "id, group_id, creator_id, title, type, is_blind, reveal, deadline, birth_year, excluded_user_ids, excluded_emails"
+      "id, group_id, creator_id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_user_ids, excluded_emails"
     )
     .is("launched_at", null)
     .not("scheduled_open_at", "is", null)
@@ -208,6 +208,7 @@ export async function GET(req: Request) {
         isBlind: !!e.is_blind,
         reveal: e.reveal as string,
         deadline: e.deadline as string | null,
+        holdUntilDeadline: !!e.hold_until_deadline,
         url: engUrl,
       });
       for (let i = 0; i < memEmails.length; i += 100) {

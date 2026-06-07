@@ -74,7 +74,7 @@ export async function POST(req: Request) {
     // (that's the real draw). Otherwise fall back to the generic invite.
     const { data: activeEng } = await admin
       .from("engagements")
-      .select("title, type, is_blind, reveal, deadline, birth_year")
+      .select("title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year")
       .eq("group_id", groupId)
       .eq("status", "active")
       .not("launched_at", "is", null)
@@ -103,6 +103,7 @@ export async function POST(req: Request) {
             isBlind: !!activeEng.is_blind,
             reveal: activeEng.reveal as string,
             deadline: activeEng.deadline as string | null,
+            holdUntilDeadline: !!activeEng.hold_until_deadline,
             url: joinUrl,
             invited: true,
             recipientName: p.name || undefined,

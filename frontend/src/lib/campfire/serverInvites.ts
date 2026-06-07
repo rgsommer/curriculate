@@ -158,12 +158,13 @@ export function newEngagementEmail(opts: {
   isBlind: boolean;
   reveal: string;
   deadline: string | null;
+  holdUntilDeadline?: boolean; // reveals ON the date (e.g. a birthday), not when all answer
   url: string;
   invited?: boolean; // recipient isn't a member yet — frame it as an invite
   cardGuest?: boolean; // invited to ONLY this engagement (a guest, not the group)
   recipientName?: string; // greet them by name if we have it
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, url, invited, cardGuest, recipientName } = opts;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName } = opts;
   const hi = firstName(recipientName);
   const subject = cardGuest
     ? `${creator} invited you to a ${typeLabel} on Campfire`
@@ -180,7 +181,18 @@ export function newEngagementEmail(opts: {
   const cta = cardGuest ? "Add your answer" : invited ? "Join & add your answer" : "Add your answer";
 
   const bits: string[] = [];
-  if (reveal === "as_they_come" || reveal === "instant") {
+  // "Hold until the date" (birthdays, baby reveals) opens ON the day regardless of
+  // who's answered — so don't claim it unlocks "once everyone has answered".
+  if (holdUntilDeadline && deadline) {
+    const dayStr = new Date(deadline).toLocaleDateString(undefined, {
+      weekday: "long",
+      month: "long",
+      day: "numeric",
+    });
+    bits.push(
+      `🎁 It stays sealed and opens on ${dayStr} — a surprise on the day. Add yours before then!`
+    );
+  } else if (reveal === "as_they_come" || reveal === "instant") {
     bits.push("⚡ Answers show up live as they land — no waiting.");
   } else if (reveal === "all_at_once") {
     bits.push("🎬 Everyone answers in secret, then the host reveals it all at once.");
@@ -192,7 +204,8 @@ export function newEngagementEmail(opts: {
       "🙈 And it's anonymous — nobody sees whose answer is whose. Half the fun is trying to guess who wrote what once it's revealed!"
     );
   }
-  if (deadline) {
+  // Skip the generic "answer by" line when we've already given the open date above.
+  if (deadline && !holdUntilDeadline) {
     bits.push(`⏰ Get your answer in by ${new Date(deadline).toLocaleString()}.`);
   }
 

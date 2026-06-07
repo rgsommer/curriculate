@@ -185,7 +185,7 @@ export async function POST(req: Request) {
     if (newlyAdded.length) {
       const { data: activeEng } = await admin
         .from("engagements")
-        .select("id, title, type, is_blind, reveal, deadline, birth_year")
+        .select("id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year")
         .eq("group_id", groupId)
         .eq("status", "active")
         .not("launched_at", "is", null)
@@ -208,6 +208,7 @@ export async function POST(req: Request) {
           isBlind: !!activeEng.is_blind,
           reveal: activeEng.reveal as string,
           deadline: activeEng.deadline as string | null,
+          holdUntilDeadline: !!activeEng.hold_until_deadline,
         };
         const msgs = newlyAdded.map((to) => {
           const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;

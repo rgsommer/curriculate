@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year")
+      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -110,6 +110,7 @@ export async function POST(req: Request) {
       isBlind: !!eng.is_blind,
       reveal: eng.reveal as string,
       deadline: eng.deadline as string | null,
+      holdUntilDeadline: !!eng.hold_until_deadline,
     };
 
     // Members → notification that links straight to the engagement.
