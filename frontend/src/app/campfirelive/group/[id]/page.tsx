@@ -247,10 +247,28 @@ See you around the campfire! 🏕️`
   const myGroupName = myMembership?.display_name || "";
 
   const myStreak = streaks.find((s) => s.user_id === user?.id);
-  const activeEngagements = engagements.filter((e) => e.status === "active");
-  const revealedEngagements = engagements.filter((e) => e.status === "revealed");
+  // Order active cards by which reveals next (soonest deadline first); cards with
+  // no set reveal date fall to the end. Revealed cards show most-recent first.
+  const byNextReveal = (
+    a: { deadline: string | null },
+    b: { deadline: string | null }
+  ) => {
+    const ta = a.deadline ? new Date(a.deadline).getTime() : Infinity;
+    const tb = b.deadline ? new Date(b.deadline).getTime() : Infinity;
+    return ta - tb;
+  };
+  const activeEngagements = engagements
+    .filter((e) => e.status === "active")
+    .sort(byNextReveal);
+  const revealedEngagements = engagements
+    .filter((e) => e.status === "revealed")
+    .sort((a, b) => byNextReveal(b, a));
   const filteredEngagements =
-    tab === "active" ? activeEngagements : tab === "revealed" ? revealedEngagements : engagements;
+    tab === "active"
+      ? activeEngagements
+      : tab === "revealed"
+      ? revealedEngagements
+      : [...engagements].sort(byNextReveal);
 
   const isAdmin = members.find((m) => m.user_id === user?.id)?.role === "admin";
   // Engagements a regular member is allowed to invite people to.
