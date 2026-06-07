@@ -108,10 +108,11 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
       },
       {
         id: "birthday-card",
-        name: "Birthday Card 🎂",
+        name: "Celebration Card 🎉",
         type: "birthday",
         title: "Happy {age} Birthday! 🎂",
-        description: "Sign the card with your birthday wishes — it opens on the big day!",
+        description:
+          "A surprise card everyone signs — birthday, anniversary, Mother's/Father's Day. Hidden from the recipient, opens on the special day.",
       },
     ],
   },

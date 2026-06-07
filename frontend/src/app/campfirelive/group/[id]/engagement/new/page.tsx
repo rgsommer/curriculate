@@ -894,7 +894,8 @@ export default function NewEngagementPage() {
                           setNthWeek(p.nth.week);
                           setNthDow(p.nth.weekday);
                           setNthMonth(p.nth.month);
-                          if (!title.trim()) setTitle(p.titleHint);
+                          // Swap a blank or leftover-birthday default title for the preset.
+                          if (!title.trim() || title.includes("{age}")) setTitle(p.titleHint);
                         }
                       }}
                       className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
