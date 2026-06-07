@@ -656,7 +656,9 @@ export default function EngagementDetailPage() {
     }
   };
 
-  const launch = async () => {
+  // notify=true emails the group; notify=false opens it quietly (no email — e.g.
+  // you want next year's card available to sign now without a notification yet).
+  const launch = async (notify = true) => {
     if (launching) return;
     setLaunching(true);
     const { error } = await launchEngagement();
@@ -666,9 +668,7 @@ export default function EngagementDetailPage() {
       return;
     }
     setJustLaunched(true);
-    // Launching always notifies the group (+ pending invitees) so nobody is left
-    // out when a member posts. Non-fatal if the email send hiccups.
-    if (session) {
+    if (notify && session) {
       try {
         await fetch("/api/campfire/engagement/notify-new", {
           method: "POST",
@@ -1946,23 +1946,34 @@ export default function EngagementDetailPage() {
                 </>
               )}
             </div>
-            <button
-              onClick={launch}
-              disabled={launching || justLaunched}
-              className={`rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-100 ${
-                justLaunched
-                  ? "bg-green-600"
-                  : "bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 disabled:opacity-50"
-              }`}
-            >
-              {justLaunched
-                ? "✓ Launched"
-                : launching
-                ? "Launching…"
-                : engagement.scheduled_open_at
-                ? "🚀 Open early & notify now"
-                : "🚀 Launch to the group"}
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={() => launch(true)}
+                disabled={launching || justLaunched}
+                className={`rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-100 ${
+                  justLaunched
+                    ? "bg-green-600"
+                    : "bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 disabled:opacity-50"
+                }`}
+              >
+                {justLaunched
+                  ? "✓ Launched"
+                  : launching
+                  ? "Launching…"
+                  : engagement.scheduled_open_at
+                  ? "🚀 Open early & notify now"
+                  : "🚀 Launch to the group"}
+              </button>
+              {!justLaunched && (
+                <button
+                  onClick={() => launch(false)}
+                  disabled={launching}
+                  className="text-xs font-medium text-slate-500 underline hover:text-slate-700 disabled:opacity-50"
+                >
+                  Open quietly — no email
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
