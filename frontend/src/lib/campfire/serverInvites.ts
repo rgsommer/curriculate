@@ -13,7 +13,9 @@ export function extractEmail(raw: unknown): string {
 // Campfire-branded sender (overrides the shared CONTACT_FROM so the name reads
 // "Campfire"). noreply@curriculate.net is on the DKIM-verified domain.
 export function campfireFrom() {
-  return process.env.CAMPFIRE_FROM || "Campfire <noreply@curriculate.net>";
+  // Recognizable sender: the "(Curriculate)" ties the unfamiliar "Campfire" brand
+  // to the curriculate.net domain recipients see, which helps inbox placement.
+  return process.env.CAMPFIRE_FROM || "Campfire (Curriculate) <noreply@curriculate.net>";
 }
 
 // Deliverability defaults applied to every Campfire email: a real Reply-To (not
