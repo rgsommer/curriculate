@@ -201,6 +201,8 @@ export default function EngagementDetailPage() {
   const [editTitle, setEditTitle] = useState("");
   const [editDesc, setEditDesc] = useState("");
   const [editRecurrence, setEditRecurrence] = useState<"none" | "daily" | "weekly" | "monthly">("none");
+  const [editDeadline, setEditDeadline] = useState(""); // YYYY-MM-DD (birthday date)
+  const [editBirthYear, setEditBirthYear] = useState("");
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
   const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
@@ -423,21 +425,64 @@ export default function EngagementDetailPage() {
     setEditAllowMemberInvites(!!engagement.allow_member_invites);
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
+    // Birthday: the deadline IS the birthday (the day it reveals). Pre-fill the
+    // date in LOCAL time so the day doesn't shift across time zones.
+    if (engagement.deadline) {
+      const d = new Date(engagement.deadline);
+      setEditDeadline(
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+          d.getDate()
+        ).padStart(2, "0")}`
+      );
+    } else {
+      setEditDeadline("");
+    }
+    setEditBirthYear(engagement.birth_year ? String(engagement.birth_year) : "");
     setEditing(true);
   };
 
   const saveEdit = async () => {
     if (!editTitle.trim()) return;
     setSavingEdit(true);
+    const isBirthday = engagement.type === "birthday";
+    // Birthday: let the host fix the date / birth year. The deadline is the
+    // birthday (reveal day); re-derive the auto-open date from it + the lead time.
+    const birthdayFields: Record<string, unknown> = {};
+    if (isBirthday) {
+      if (editDeadline) {
+        const old = engagement.deadline ? new Date(engagement.deadline) : null;
+        const [y, m, dd] = editDeadline.split("-").map(Number);
+        const nd = new Date(
+          y,
+          m - 1,
+          dd,
+          old ? old.getHours() : 8,
+          old ? old.getMinutes() : 0,
+          0,
+          0
+        );
+        const lead = (engagement.lead_days ?? 14) * 86400000;
+        birthdayFields.deadline = nd.toISOString();
+        birthdayFields.scheduled_open_at = new Date(nd.getTime() - lead).toISOString();
+      }
+      birthdayFields.birth_year = editBirthYear.trim()
+        ? parseInt(editBirthYear, 10)
+        : null;
+    }
     const { error } = await supabase
       .from("engagements")
       .update({
         title: editTitle.trim(),
         description: editDesc.trim() || null,
-        recurrence_rule: editRecurrence === "none" ? null : editRecurrence,
+        recurrence_rule: isBirthday
+          ? engagement.recurrence_rule
+          : editRecurrence === "none"
+          ? null
+          : editRecurrence,
         allow_member_invites: editAllowMemberInvites,
         excluded_user_ids: editExcludedIds,
         excluded_emails: editExcludedEmails,
+        ...birthdayFields,
       })
       .eq("id", engagementId);
     setSavingEdit(false);
@@ -1958,43 +2003,85 @@ export default function EngagementDetailPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base leading-relaxed text-slate-700 focus:border-orange-500 outline-none resize-y"
                 />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-500 mb-1">
-                  Repeat
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {([
-                    { value: "none", label: "Once" },
-                    { value: "daily", label: "🔁 Daily" },
-                    { value: "weekly", label: "🔁 Weekly" },
-                    { value: "monthly", label: "🔁 Monthly" },
-                  ] as const).map((r) => (
-                    <button
-                      key={r.value}
-                      type="button"
-                      onClick={() => setEditRecurrence(r.value)}
-                      className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
-                        editRecurrence === r.value
-                          ? "border-orange-500 bg-orange-50 text-slate-900"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                      }`}
-                    >
-                      {r.label}
-                    </button>
-                  ))}
+              {engagement.type === "birthday" ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Birthday (the day it reveals)
+                    </label>
+                    <input
+                      type="date"
+                      value={editDeadline}
+                      onChange={(e) => setEditDeadline(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Birth year <span className="text-slate-400">(for the age)</span>
+                    </label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editBirthYear}
+                      onChange={(e) => setEditBirthYear(e.target.value)}
+                      placeholder="e.g. 1998"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                    />
+                  </div>
+                  {editDeadline && (
+                    <p className="col-span-2 text-xs text-slate-500">
+                      Shows as:{" "}
+                      <span className="font-medium text-slate-700">
+                        {resolveTitle(
+                          editTitle,
+                          editBirthYear.trim() ? parseInt(editBirthYear, 10) : null,
+                          new Date(editDeadline).toISOString()
+                        )}
+                      </span>{" "}
+                      · opens ~{engagement.lead_days ?? 14} days before, reveals on the day, runs yearly.
+                    </p>
+                  )}
                 </div>
-                {editRecurrence !== "none" && (
-                  <p className="mt-1 text-xs text-slate-500">
-                    A fresh copy auto-posts every{" "}
-                    {editRecurrence === "daily"
-                      ? "day"
-                      : editRecurrence === "weekly"
-                      ? "week"
-                      : "month"}{" "}
-                    after this one wraps.
-                  </p>
-                )}
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Repeat
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {([
+                      { value: "none", label: "Once" },
+                      { value: "daily", label: "🔁 Daily" },
+                      { value: "weekly", label: "🔁 Weekly" },
+                      { value: "monthly", label: "🔁 Monthly" },
+                    ] as const).map((r) => (
+                      <button
+                        key={r.value}
+                        type="button"
+                        onClick={() => setEditRecurrence(r.value)}
+                        className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                          editRecurrence === r.value
+                            ? "border-orange-500 bg-orange-50 text-slate-900"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        {r.label}
+                      </button>
+                    ))}
+                  </div>
+                  {editRecurrence !== "none" && (
+                    <p className="mt-1 text-xs text-slate-500">
+                      A fresh copy auto-posts every{" "}
+                      {editRecurrence === "daily"
+                        ? "day"
+                        : editRecurrence === "weekly"
+                        ? "week"
+                        : "month"}{" "}
+                      after this one wraps.
+                    </p>
+                  )}
+                </div>
+              )}
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"
@@ -2574,39 +2661,59 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {/* ── Host view: who's responded so far (names only, content stays sealed) ── */}
+      {/* ── Host view: who's responded so far (names only, content stays sealed),
+          broken out into Members and Guests so the host sees both groups. ── */}
       {(isCreator || isGroupAdmin) &&
         engagement.status === "active" &&
         (() => {
           const respondedSet = new Set(responders);
           const excludedSet = new Set(engagement.excluded_user_ids ?? []);
-          const nameForUser = (uid: string) =>
-            roster.find((m) => m.user_id === uid)?.name ||
-            engagementGuests.find((g) => g.user_id === uid)?.name ||
-            "Someone";
-          const expectedPeople = [
-            ...roster.filter((m) => !excludedSet.has(m.user_id)),
-            ...engagementGuests,
-          ];
-          const waiting = expectedPeople.filter((p) => !respondedSet.has(p.user_id));
+          const members = roster
+            .filter((m) => !excludedSet.has(m.user_id))
+            .map((m) => ({ ...m, responded: respondedSet.has(m.user_id) }))
+            .sort((a, b) => Number(b.responded) - Number(a.responded));
+          const guests = engagementGuests
+            .map((g) => ({ ...g, responded: respondedSet.has(g.user_id) }))
+            .sort((a, b) => Number(b.responded) - Number(a.responded));
+          const Person = ({ name, responded }: { name: string; responded: boolean }) => (
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${
+                responded
+                  ? "bg-green-50 text-green-700"
+                  : "bg-slate-50 text-slate-500"
+              }`}
+            >
+              {responded ? "✓" : "⏳"} {name}
+            </span>
+          );
           return (
             <div className="mb-6 rounded-2xl border border-slate-200 bg-white px-4 py-3">
               <div className="text-xs font-semibold text-slate-600 mb-2">
                 👀 Who&apos;s responded ({responders.length}/{displayExpected})
               </div>
-              {responders.length > 0 ? (
-                <p className="text-xs text-slate-700">
-                  <span className="font-medium text-green-700">✓ In:</span>{" "}
-                  {responders.map((uid) => nameForUser(uid)).join(", ")}
-                </p>
+              <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Members ({members.filter((m) => m.responded).length}/{members.length})
+              </div>
+              {members.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {members.map((m) => (
+                    <Person key={m.user_id} name={m.name} responded={m.responded} />
+                  ))}
+                </div>
               ) : (
-                <p className="text-xs text-slate-400">No responses yet.</p>
+                <p className="text-xs text-slate-400">No members yet.</p>
               )}
-              {waiting.length > 0 && (
-                <p className="mt-1 text-xs text-slate-500">
-                  <span className="font-medium text-amber-700">⏳ Waiting on:</span>{" "}
-                  {waiting.map((p) => p.name).join(", ")}
-                </p>
+              {guests.length > 0 && (
+                <>
+                  <div className="mt-3 mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                    Guests ({guests.filter((g) => g.responded).length}/{guests.length})
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {guests.map((g) => (
+                      <Person key={g.user_id} name={g.name} responded={g.responded} />
+                    ))}
+                  </div>
+                </>
               )}
             </div>
           );
