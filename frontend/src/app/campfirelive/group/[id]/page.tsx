@@ -1013,7 +1013,11 @@ See you around the campfire! 🏕️`
           </p>
         </div>
       ) : (
-        <div className="grid gap-3">
+        <div
+          className={`grid gap-3 ${
+            filteredEngagements.length > 4 ? "lg:grid-cols-2" : ""
+          }`}
+        >
           {filteredEngagements.map((eng) => {
             const meta = ENGAGEMENT_TYPES[eng.type];
             const isDraft = !eng.launched_at; // creator-only until launched (RLS hides from others)
