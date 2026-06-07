@@ -221,6 +221,42 @@ ${cta}: ${url}`;
   return { subject, text, html };
 }
 
+// Sent to the HOST when a scheduled engagement auto-opens (e.g. next year's
+// birthday card re-opening on its own). Frames it as "yours just went live — sign
+// it and make sure everyone's invited", since the host didn't do anything today.
+export function cardLiveEmail(opts: {
+  groupName: string;
+  title: string;
+  typeLabel: string;
+  typeIcon: string;
+  deadline: string | null;
+  url: string;
+}) {
+  const { groupName, title, typeLabel, typeIcon, deadline, url } = opts;
+  const subject = `Your ${typeLabel} just opened: "${title}"`;
+  const when = deadline
+    ? ` It reveals on ${new Date(deadline).toLocaleDateString()}, so there's time to round everyone up.`
+    : "";
+  const intro = `Heads up — the ${typeLabel} you set up in ${groupName} just opened automatically. Add yours and make sure everyone's invited before the big day.${when}`;
+  const text = `${intro}
+
+"${title}"
+
+Open it: ${url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">${typeIcon}</div>
+  <h1 style="font-size:20px; margin:8px 0;">Your ${escapeHtml(typeLabel)} just opened</h1>
+  <p style="color:#475569; margin:0 0 6px;">${escapeHtml(intro)}</p>
+  <h2 style="font-size:18px; margin:8px 0 14px;">"${escapeHtml(title)}"</h2>
+  <p style="text-align:center; margin:24px 0;">
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open it</a>
+  </p>
+  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function reminderEmail(opts: {
   groupName: string;
   title: string;

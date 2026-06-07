@@ -7,6 +7,7 @@ import {
   reminderEmail,
   revealEmail,
   newEngagementEmail,
+  cardLiveEmail,
   buildJoinUrl,
   inviteEmail,
   mailDefaults,
@@ -183,23 +184,31 @@ export async function GET(req: Request) {
     const memEmails = (await getGroupMemberEmails(admin, e.group_id)).filter(
       (em) => em.toLowerCase() !== creatorEmail && !excludedEmails.has(em.toLowerCase())
     );
+
+    const { data: grp } = await admin
+      .from("groups")
+      .select("name")
+      .eq("id", e.group_id)
+      .single();
+    const meta = ENGAGEMENT_TYPES[e.type as keyof typeof ENGAGEMENT_TYPES];
+    const engTitle = resolveTitle(
+      e.title as string,
+      e.birth_year as number | null,
+      e.deadline as string | null
+    );
+    const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+
     if (memEmails.length) {
-      const { data: grp } = await admin
-        .from("groups")
-        .select("name")
-        .eq("id", e.group_id)
-        .single();
-      const meta = ENGAGEMENT_TYPES[e.type as keyof typeof ENGAGEMENT_TYPES];
       const m = newEngagementEmail({
         creator: grp?.name || "Your group",
         groupName: grp?.name || "your group",
-        title: resolveTitle(e.title as string, e.birth_year as number | null, e.deadline as string | null),
+        title: engTitle,
         typeLabel: meta?.label || "engagement",
         typeIcon: meta?.icon || "🎂",
         isBlind: !!e.is_blind,
         reveal: e.reveal as string,
         deadline: e.deadline as string | null,
-        url: `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`,
+        url: engUrl,
       });
       for (let i = 0; i < memEmails.length; i += 100) {
         await resend.batch.send(
@@ -208,6 +217,29 @@ export async function GET(req: Request) {
           }))
         );
       }
+    }
+
+    // Notify the creator too — for a recurring card that re-opened on its own,
+    // they did nothing today and need to know it's live (to sign + round people up).
+    if (creatorEmail) {
+      const hostMail = cardLiveEmail({
+        groupName: grp?.name || "your group",
+        title: engTitle,
+        typeLabel: meta?.label || "engagement",
+        typeIcon: meta?.icon || "🎂",
+        deadline: e.deadline as string | null,
+        url: engUrl,
+      });
+      await resend.batch.send([
+        {
+          from,
+          to: [creatorEmail],
+          subject: hostMail.subject,
+          text: hostMail.text,
+          html: hostMail.html,
+          ...mailDefaults(),
+        },
+      ]);
     }
   }
 
