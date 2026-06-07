@@ -25,7 +25,9 @@ export default function GroupDetailPage() {
   const [editingInviteEmail, setEditingInviteEmail] = useState<string | null>(null);
   const [inviteNameInput, setInviteNameInput] = useState("");
   const [copied, setCopied] = useState(false);
-  const [tab, setTab] = useState<"active" | "recurring" | "revealed" | "all">("active");
+  const [tab, setTab] = useState<
+    "active" | "upcoming" | "recurring" | "revealed" | "all"
+  >("active");
   const [showEmailInvite, setShowEmailInvite] = useState(false);
   const [inviteTarget, setInviteTarget] = useState(""); // "" = whole group, else engagement id
   const [emailInput, setEmailInput] = useState("");
@@ -257,14 +259,18 @@ See you around the campfire! 🏕️`
     const tb = b.deadline ? new Date(b.deadline).getTime() : Infinity;
     return ta - tb;
   };
-  // "Active" = open to sign RIGHT NOW (launched & still active), and NOT a recurring
-  // card — those get their own "Recurring" group so long-running yearly cards don't
-  // crowd out the short-term engagements.
+  // "Active" = open to sign RIGHT NOW (launched & still active) — including a
+  // recurring card that's currently open for signing.
   const activeEngagements = engagements
-    .filter((e) => e.status === "active" && e.launched_at && !e.recurrence_rule)
+    .filter((e) => e.status === "active" && e.launched_at)
     .sort(byNextReveal);
-  // Recurring = the yearly/repeating series (currently open ones + scheduled drafts
-  // waiting to auto-open). Revealed past instances stay under Revealed.
+  // "Upcoming" = scheduled but not open yet (a draft waiting to auto-open, e.g.
+  // next year's birthday card before its lead date).
+  const upcomingEngagements = engagements
+    .filter((e) => e.status === "active" && !e.launched_at)
+    .sort(byNextReveal);
+  // "Recurring" = the repeating series (yearly/weekly/…), shown as their own group
+  // whether they're open now or scheduled. Revealed past instances stay in Revealed.
   const recurringEngagements = engagements
     .filter((e) => e.status === "active" && e.recurrence_rule)
     .sort(byNextReveal);
@@ -274,6 +280,8 @@ See you around the campfire! 🏕️`
   const filteredEngagements =
     tab === "active"
       ? activeEngagements
+      : tab === "upcoming"
+      ? upcomingEngagements
       : tab === "recurring"
       ? recurringEngagements
       : tab === "revealed"
@@ -1011,7 +1019,8 @@ See you around the campfire! 🏕️`
 
       {/* Engagement Tabs — the Recurring tab only shows when there's something in it */}
       <div className="flex gap-1 mb-4 bg-slate-100 rounded-xl p-1 w-fit">
-        {(["active", "recurring", "revealed", "all"] as const)
+        {(["active", "upcoming", "recurring", "revealed", "all"] as const)
+          .filter((t) => t !== "upcoming" || upcomingEngagements.length > 0)
           .filter((t) => t !== "recurring" || recurringEngagements.length > 0)
           .map((t) => (
             <button
@@ -1025,6 +1034,8 @@ See you around the campfire! 🏕️`
             >
               {t === "active"
                 ? `Active (${activeEngagements.length})`
+                : t === "upcoming"
+                ? `Upcoming (${upcomingEngagements.length})`
                 : t === "recurring"
                 ? `Recurring (${recurringEngagements.length})`
                 : t === "revealed"
@@ -1040,6 +1051,8 @@ See you around the campfire! 🏕️`
           <div className="text-4xl mb-3">
             {tab === "active"
               ? "🔒"
+              : tab === "upcoming"
+              ? "📅"
               : tab === "recurring"
               ? "🔁"
               : tab === "revealed"
@@ -1049,6 +1062,8 @@ See you around the campfire! 🏕️`
           <p>
             {tab === "active"
               ? "No active engagements. Start one!"
+              : tab === "upcoming"
+              ? "Nothing scheduled to open yet."
               : tab === "recurring"
               ? "No recurring cards yet."
               : tab === "revealed"
