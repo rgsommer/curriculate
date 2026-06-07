@@ -210,6 +210,7 @@ export default function EngagementDetailPage() {
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
+  const [justLaunchedQuiet, setJustLaunchedQuiet] = useState(false);
   // Invite context for the host: how many were invited but haven't joined yet.
   // (RLS lets only the group admin read invitations, so non-admins just get 0.)
   const [inviteStats, setInviteStats] = useState({ joined: 0, pending: 0 });
@@ -668,6 +669,7 @@ export default function EngagementDetailPage() {
       return;
     }
     setJustLaunched(true);
+    setJustLaunchedQuiet(!notify);
     if (notify && session) {
       try {
         await fetch("/api/campfire/engagement/notify-new", {
@@ -1909,10 +1911,14 @@ export default function EngagementDetailPage() {
                     <span className="rounded-full bg-green-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
                       Live
                     </span>
-                    It&apos;s launched — the group can see it now
+                    {justLaunchedQuiet
+                      ? "It's live — opened quietly, no email sent"
+                      : "It's launched — the group can see it now"}
                   </div>
                   <p className="mt-1 text-xs text-green-800/80">
-                    We emailed everyone in the group and any pending invitees to respond.
+                    {justLaunchedQuiet
+                      ? "No notification went out. Share the link or nudge the group whenever you're ready."
+                      : "We emailed everyone in the group and any pending invitees to respond."}
                   </p>
                 </>
               ) : (
