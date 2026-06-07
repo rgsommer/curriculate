@@ -260,14 +260,16 @@ export function useGroup(groupId: string) {
   };
 
   // Admin renames the group (RLS allows only the creator/admin to update).
-  const renameGroup = async (name: string) => {
+  const renameGroup = async (name: string, description?: string) => {
     const trimmed = name.trim();
     if (!trimmed) return { error: "Name can't be empty" };
-    setGroup((g) => (g ? { ...g, name: trimmed } : g)); // optimistic
-    const { error } = await supabase
-      .from("groups")
-      .update({ name: trimmed })
-      .eq("id", groupId);
+    const desc = description !== undefined ? description.trim() || null : undefined;
+    const fields: { name: string; description?: string | null } = { name: trimmed };
+    if (desc !== undefined) fields.description = desc;
+    setGroup((g) =>
+      g ? { ...g, name: trimmed, ...(desc !== undefined ? { description: desc } : {}) } : g
+    ); // optimistic
+    const { error } = await supabase.from("groups").update(fields).eq("id", groupId);
     if (error) await fetchGroup(); // revert on failure
     return { error: error?.message ?? null };
   };

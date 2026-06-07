@@ -104,7 +104,8 @@ export default function CampfireFeedback() {
                   </button>
                 </div>
                 <p className="text-xs text-slate-500 mb-3">
-                  What would make Campfire better? Bugs, ideas, anything.
+                  What would make Campfire better? Bugs, ideas, anything. Leave your
+                  email and a real person will get back to you. 💬
                 </p>
                 <textarea
                   value={message}
@@ -118,7 +119,7 @@ export default function CampfireFeedback() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Email (optional — if you'd like a reply)"
+                  placeholder="Your email (we'll reply here)"
                   className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
                 />
                 {error && <p className="mt-2 text-xs text-red-600">{error}</p>}

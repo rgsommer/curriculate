@@ -527,8 +527,8 @@ export default function EngagementDetailPage() {
       else
         setNudgeMsg(
           data.nudged > 0
-            ? `✓ Nudged ${data.nudged} ${data.nudged === 1 ? "person" : "people"}`
-            : "Everyone has already responded!"
+            ? `✓ Nudged ${data.nudged} ${data.nudged === 1 ? "person" : "people"} (members + anyone invited who hasn't joined)`
+            : "No one left to nudge — everyone's responded or isn't invited yet."
         );
     } catch {
       setNudgeMsg("Couldn't send nudges.");

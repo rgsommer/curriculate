@@ -1,6 +1,6 @@
 === CURRICULATE SUBS (substitute staffing) FEEDBACK REPORT ===
-Generated: 2026-06-05T20:26:17.345Z
-Total: 50 (0 problems, 0 ideas, 50 errors)
+Generated: 2026-06-07T16:32:14.730Z
+Total: 66 (0 problems, 0 ideas, 66 errors)
 Status filter: (all)
 Since:         (all time)
 
@@ -12,8 +12,56 @@ Since:         (all time)
 
   (none)
 
---- ⚠️ ERRORS (auto-reported) (50) ---
+--- ⚠️ ERRORS (auto-reported) (66) ---
 
+  [a92f83] 2026-06-07T15:37:12.660Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/schools/6a21978950f8025d4fe7689f/requests  status=open
+    Network error on GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests: Failed to fetch
+      context: {"trail":["14:43:19 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:01:57 GET /api/subs-admin/dashboard","15:01:57 GET /api/subs-admin/approvals","15:01:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:02:57 GET /api/subs-admin/dashboard","15:02:57 GET /api/subs-admin/approvals","15:02:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:03:
+  [a92f81] 2026-06-07T15:37:12.567Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/approvals  status=open
+    Network error on GET /api/subs-admin/approvals: Failed to fetch
+      context: {"trail":["14:43:19 GET /api/subs-admin/approvals","14:43:19 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:01:57 GET /api/subs-admin/dashboard","15:01:57 GET /api/subs-admin/approvals","15:01:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:02:57 GET /api/subs-admin/dashboard","15:02:57 GET /api/subs-admin/approvals","15:02:57 GET /api/subs-admin/schools/6
+  [a92f7f] 2026-06-07T15:37:12.565Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/schools/6a21978950f8025d4fe7689f/requests  status=open
+    Network error on GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests: Failed to fetch
+      context: {"trail":["14:27:06 GET /api/subs-admin/approvals","14:27:06 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","14:43:19 GET /api/subs-admin/dashboard","14:43:19 GET /api/subs-admin/approvals","14:43:19 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:01:57 GET /api/subs-admin/dashboard","15:01:57 GET /api/subs-admin/approvals","15:01:57 GET /api/subs-admin/schools/6
+  [a92f7d] 2026-06-07T15:37:12.563Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/dashboard  status=open
+    Network error on GET /api/subs-admin/dashboard: Failed to fetch
+      context: {"trail":["14:27:06 GET /api/subs-admin/dashboard","14:27:06 GET /api/subs-admin/approvals","14:27:06 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","14:43:19 GET /api/subs-admin/dashboard","14:43:19 GET /api/subs-admin/approvals","14:43:19 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:01:57 GET /api/subs-admin/dashboard","15:01:57 GET /api/subs-admin/approvals
+  [a92f78] 2026-06-07T15:37:12.471Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/approvals  status=open
+    Network error on GET /api/subs-admin/approvals: Failed to fetch
+      context: {"trail":["14:27:06 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","14:43:19 GET /api/subs-admin/dashboard","14:43:19 GET /api/subs-admin/approvals","14:43:19 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:01:57 GET /api/subs-admin/dashboard","15:01:57 GET /api/subs-admin/approvals","15:01:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:02:
+  [a92f76] 2026-06-07T15:37:12.465Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/dashboard  status=open
+    Network error on GET /api/subs-admin/dashboard: Failed to fetch
+      context: {"trail":["14:43:19 GET /api/subs-admin/dashboard","14:43:19 GET /api/subs-admin/approvals","14:43:19 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:01:57 GET /api/subs-admin/dashboard","15:01:57 GET /api/subs-admin/approvals","15:01:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","15:02:57 GET /api/subs-admin/dashboard","15:02:57 GET /api/subs-admin/approvals
+  [85be6e] 2026-06-07T09:50:35.530Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/dashboard  status=open
+    Network error on GET /api/subs-admin/dashboard: Failed to fetch
+      context: {"trail":["08:25:02 GET /api/subs-admin/dashboard","08:25:02 GET /api/subs-admin/approvals","08:25:02 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:41:52 GET /api/subs-admin/dashboard","08:41:52 GET /api/subs-admin/approvals","08:41:52 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:58:55 GET /api/subs-admin/dashboard","08:58:55 GET /api/subs-admin/approvals
+  [85be69] 2026-06-07T09:50:35.522Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/schools/6a21978950f8025d4fe7689f/requests  status=open
+    Network error on GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests: Failed to fetch
+      context: {"trail":["08:25:02 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:41:52 GET /api/subs-admin/dashboard","08:41:52 GET /api/subs-admin/approvals","08:41:52 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:58:55 GET /api/subs-admin/dashboard","08:58:55 GET /api/subs-admin/approvals","08:58:55 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","09:16:
+  [85be67] 2026-06-07T09:50:35.520Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/schools/6a21978950f8025d4fe7689f/requests  status=open
+    Network error on GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests: Failed to fetch
+      context: {"trail":["08:16:36 GET /api/subs-admin/approvals","08:16:36 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:25:02 GET /api/subs-admin/dashboard","08:25:02 GET /api/subs-admin/approvals","08:25:02 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:41:52 GET /api/subs-admin/dashboard","08:41:52 GET /api/subs-admin/approvals","08:41:52 GET /api/subs-admin/schools/6
+  [85be65] 2026-06-07T09:50:35.433Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/approvals  status=open
+    Network error on GET /api/subs-admin/approvals: Failed to fetch
+      context: {"trail":["08:16:36 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:25:02 GET /api/subs-admin/dashboard","08:25:02 GET /api/subs-admin/approvals","08:25:02 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:41:52 GET /api/subs-admin/dashboard","08:41:52 GET /api/subs-admin/approvals","08:41:52 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:58:
+  [85be63] 2026-06-07T09:50:35.431Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/dashboard  status=open
+    Network error on GET /api/subs-admin/dashboard: Failed to fetch
+      context: {"trail":["08:16:36 GET /api/subs-admin/dashboard","08:16:36 GET /api/subs-admin/approvals","08:16:36 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:25:02 GET /api/subs-admin/dashboard","08:25:02 GET /api/subs-admin/approvals","08:25:02 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:41:52 GET /api/subs-admin/dashboard","08:41:52 GET /api/subs-admin/approvals
+  [85be5e] 2026-06-07T09:50:35.424Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/approvals  status=open
+    Network error on GET /api/subs-admin/approvals: Failed to fetch
+      context: {"trail":["08:25:02 GET /api/subs-admin/approvals","08:25:02 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:41:52 GET /api/subs-admin/dashboard","08:41:52 GET /api/subs-admin/approvals","08:41:52 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","08:58:55 GET /api/subs-admin/dashboard","08:58:55 GET /api/subs-admin/approvals","08:58:55 GET /api/subs-admin/schools/6
+  [c12546] 2026-06-07T06:04:47.644Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/dashboard  status=open
+    Network error on GET /api/subs-admin/dashboard: Failed to fetch
+      context: {"trail":["05:25:23 GET /api/subs-admin/dashboard","05:25:23 GET /api/subs-admin/approvals","05:25:23 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","05:26:23 GET /api/subs-admin/dashboard","05:26:23 GET /api/subs-admin/approvals","05:26:23 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","05:27:23 GET /api/subs-admin/dashboard","05:27:23 GET /api/subs-admin/approvals
+  [c12544] 2026-06-07T06:04:47.632Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/schools/6a21978950f8025d4fe7689f/requests  status=open
+    Network error on GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests: Failed to fetch
+      context: {"trail":["05:25:23 GET /api/subs-admin/approvals","05:25:23 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","05:26:23 GET /api/subs-admin/dashboard","05:26:23 GET /api/subs-admin/approvals","05:26:23 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","05:27:23 GET /api/subs-admin/dashboard","05:27:23 GET /api/subs-admin/approvals","05:27:23 GET /api/subs-admin/schools/6
+  [c05e53] 2026-06-06T22:54:35.753Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/dashboard  status=open
+    Network error on GET /api/subs-admin/dashboard: Failed to fetch
+      context: {"trail":["22:45:55 GET /api/subs-admin/approvals","22:45:55 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","22:46:55 GET /api/subs-admin/dashboard","22:46:55 GET /api/subs-admin/approvals","22:46:55 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","22:49:28 GET /api/subs-admin/dashboard","22:49:28 GET /api/subs-admin/approvals","22:49:28 GET /api/subs-admin/schools/6
+  [c05e51] 2026-06-06T22:54:35.536Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/schools/6a21978950f8025d4fe7689f/requests  status=open
+    Network error on GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests: Failed to fetch
+      context: {"trail":["22:45:55 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","22:46:55 GET /api/subs-admin/dashboard","22:46:55 GET /api/subs-admin/approvals","22:46:55 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","22:49:28 GET /api/subs-admin/dashboard","22:49:28 GET /api/subs-admin/approvals","22:49:28 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","22:50:
   [cc3119] 2026-06-05T19:54:01.088Z  Richard <rsommer@bramptoncs.org>  surface=/api/subs-admin/approvals  status=open
     Network error on GET /api/subs-admin/approvals: Failed to fetch
       context: {"trail":["19:46:57 GET /api/subs-admin/approvals","19:46:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","19:47:57 GET /api/subs-admin/dashboard","19:47:57 GET /api/subs-admin/approvals","19:47:57 GET /api/subs-admin/schools/6a21978950f8025d4fe7689f/requests","19:48:57 GET /api/subs-admin/dashboard","19:48:57 GET /api/subs-admin/approvals","19:48:57 GET /api/subs-admin/schools/6

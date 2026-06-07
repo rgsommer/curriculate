@@ -43,6 +43,11 @@ export default function SiteHeader() {
   const pathname = usePathname();
   const isGrading = pathname?.startsWith("/grading");
 
+  // Campfire has its own header (AppShell). Hiding the Curriculate top nav here
+  // stops people mistaking the "Get Started" CTA for how to sign into Campfire.
+  // The footer stays, so they can still reach the other Curriculate products.
+  if (pathname?.startsWith("/campfirelive")) return null;
+
   return (
     <header className="site-header sticky top-0 z-50 border-b bg-white/75 backdrop-blur">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">

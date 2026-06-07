@@ -37,6 +37,7 @@ export default function GroupDetailPage() {
   const [qrUrl, setQrUrl] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [descInput, setDescInput] = useState("");
   const [savingName, setSavingName] = useState(false);
 
   // Real-time updates
@@ -338,60 +339,74 @@ See you around the campfire! 🏕️`
           <span className="text-5xl">{group.avatar_emoji}</span>
           <div className="flex-1">
             {renaming ? (
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="space-y-2">
                 <input
                   type="text"
                   value={nameInput}
                   onChange={(e) => setNameInput(e.target.value)}
                   maxLength={60}
                   autoFocus
+                  placeholder="Group name"
                   onKeyDown={(e) => {
                     if (e.key === "Escape") setRenaming(false);
                   }}
-                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-xl font-extrabold text-slate-900 outline-none focus:border-orange-500"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-xl font-extrabold text-slate-900 outline-none focus:border-orange-500"
                 />
-                <button
-                  disabled={savingName || !nameInput.trim()}
-                  onClick={async () => {
-                    setSavingName(true);
-                    const { error } = await renameGroup(nameInput);
-                    setSavingName(false);
-                    if (error) {
-                      alert("Couldn't rename: " + error);
-                      return;
-                    }
-                    setRenaming(false);
-                  }}
-                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-                >
-                  {savingName ? "Saving…" : "Save"}
-                </button>
-                <button
-                  onClick={() => setRenaming(false)}
-                  className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-700"
-                >
-                  Cancel
-                </button>
+                <textarea
+                  value={descInput}
+                  onChange={(e) => setDescInput(e.target.value)}
+                  maxLength={200}
+                  rows={2}
+                  placeholder="Description (optional)"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 outline-none focus:border-orange-500 resize-y"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    disabled={savingName || !nameInput.trim()}
+                    onClick={async () => {
+                      setSavingName(true);
+                      const { error } = await renameGroup(nameInput, descInput);
+                      setSavingName(false);
+                      if (error) {
+                        alert("Couldn't save: " + error);
+                        return;
+                      }
+                      setRenaming(false);
+                    }}
+                    className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    {savingName ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    onClick={() => setRenaming(false)}
+                    className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-500 hover:text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl font-extrabold text-slate-900">{group.name}</h1>
-                {isAdmin && (
-                  <button
-                    onClick={() => {
-                      setNameInput(group.name);
-                      setRenaming(true);
-                    }}
-                    title="Rename group"
-                    className="text-slate-400 hover:text-orange-600"
-                  >
-                    ✏️
-                  </button>
+              <>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-2xl font-extrabold text-slate-900">{group.name}</h1>
+                  {isAdmin && (
+                    <button
+                      onClick={() => {
+                        setNameInput(group.name);
+                        setDescInput(group.description ?? "");
+                        setRenaming(true);
+                      }}
+                      title="Edit name & description"
+                      className="text-slate-400 hover:text-orange-600"
+                    >
+                      ✏️
+                    </button>
+                  )}
+                </div>
+                {group.description && (
+                  <p className="text-sm text-slate-500">{group.description}</p>
                 )}
-              </div>
-            )}
-            {group.description && (
-              <p className="text-sm text-slate-500">{group.description}</p>
+              </>
             )}
           </div>
         </div>

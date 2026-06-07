@@ -1,11 +1,13 @@
 === CAMPFIRE (group engagement) FEEDBACK REPORT ===
-Generated: 2026-06-05T20:26:17.624Z
-Total: 2
+Generated: 2026-06-07T16:32:14.958Z
+Total: 4
 Since:  (all time)
 
-  [cc3663] 2026-06-05T20:24:33.322Z  (anon)  page=/campfirelive/group/e3aff061-8148-491d-ba91-5ae0a80e8485/engagement/f3c9efa3-6eda-4177-acc9-333e875e4466
-    I created engagement and then it prompted me to put my response in, so I did. And then it immediately revealed the results that was not expected. Behavior it should wait until the deadline. Also when the results are revealed if it's an anonymous group I mean the results are anonymous let the users guess who the contributors are
-    Make that a fun way to engage once the results are revealed.
-    Maybe with a drop down of all the users, the following each response.
-  [cc35ad] 2026-06-05T20:20:08.388Z  (anon)  page=/campfirelive/group/a80d50a5-0db4-458d-8cb5-84c2e01e2f5e
-    Hi joined from an email invitation, and then I signed in through Google, and the invitation still shows us pending. Also, is there a way to edit the username instead of just using the google username
+  [a93692] 2026-06-07T16:22:54.642Z  <Rgsommer@me.com>  page=/campfirelive/group/22466b5c-3204-412d-9a5a-33c2c7416faf
+    I can edit a group name but I should also be able to edit the group description
+  [a93493] 2026-06-07T16:10:11.232Z  <Rgsommer@me.com>  page=/campfirelive
+    When I went to press the button, which is nudge, the group stragglers or whatever it's called, it said that everyone in the list had already joined. Which I know is not true. So I went and individually, nudged them, and that worked
+  [a9346d] 2026-06-07T16:09:29.051Z  <Rgsommer@me.com>  page=/campfirelive
+    I think people's invitations to campfire are ending up in their junk folder. Could you do something to make that less likely to happen? I know it's possible because my other apps like start brief and a few other ones go right to the inbox.
+  [a93447] 2026-06-07T16:08:20.419Z  <Rgsommer@me.com>  page=/campfirelive
+    Is there somehow that we can render the campfire page without the top section? Referring to curiculate? Because I've noticed that some people get confused and they think they have to sign in using the curriculate get started. But so I would say, for campfire, leave off the top navigation. We can still leave the bottom, so they have an access to the other curricular features. But for campfire, let's leave the top off. If I leave an email, do you actually respond, let's add that
