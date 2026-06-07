@@ -560,7 +560,11 @@ export default function EngagementDetailPage() {
     if (!engagement || !groupInfo) return;
     const origin =
       typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net";
-    const url = `${origin}/campfirelive/join/${groupInfo.invite_code}?e=${engagement.id}`;
+    // Prefer the short, friendly link (/c/<code>); fall back to the full join URL
+    // for any older engagement that doesn't have a share code yet.
+    const url = engagement.share_code
+      ? `${origin}/c/${engagement.share_code}`
+      : `${origin}/campfirelive/join/${groupInfo.invite_code}?e=${engagement.id}`;
     const blurb = engagement.description?.trim() || meta?.hook || "";
     const title = resolveTitle(engagement.title, engagement.birth_year, engagement.deadline);
     const what = meta?.label ? `a group ${meta.label.toLowerCase()}` : "a group activity";

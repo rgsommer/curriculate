@@ -87,6 +87,7 @@ export interface Engagement {
   scheduled_open_at?: string | null; // auto-launch a draft at this time (birthday)
   lead_days?: number; // birthday: open this many days before the date
   birth_year?: number | null; // birthday: for the {age} title token
+  share_code?: string | null; // short code for the friendly /c/<code> card link
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;

@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, creator_id, title, type, is_blind, reveal, deadline, birth_year, launched_at, allow_member_invites"
+        "group_id, creator_id, title, type, is_blind, reveal, deadline, birth_year, share_code, launched_at, allow_member_invites"
       )
       .eq("id", engagementId)
       .single();
@@ -130,9 +130,12 @@ export async function POST(req: Request) {
     };
 
     const msgs = emails.map((to) => {
-      const joinUrl = `${base}/campfirelive/join/${group.invite_code}?inv=${encodeURIComponent(
-        to
-      )}&e=${engagementId}`;
+      // Short, friendly link when available; full join URL as a fallback.
+      const joinUrl = eng.share_code
+        ? `${base}/c/${eng.share_code}?inv=${encodeURIComponent(to)}`
+        : `${base}/campfirelive/join/${group.invite_code}?inv=${encodeURIComponent(
+            to
+          )}&e=${engagementId}`;
       const m = newEngagementEmail({
         ...shared,
         url: joinUrl,
