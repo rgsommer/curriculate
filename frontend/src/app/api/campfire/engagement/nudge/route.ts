@@ -8,6 +8,7 @@ import {
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
+import { resolveTitle } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -30,7 +31,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, title, total_expected")
+      .select("group_id, title, total_expected, birth_year, deadline")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -63,7 +64,11 @@ export async function POST(req: Request) {
     const from = campfireFrom();
     const m = reminderEmail({
       groupName: group?.name ?? "your group",
-      title: eng.title,
+      title: resolveTitle(
+        eng.title,
+        eng.birth_year as number | null,
+        eng.deadline as string | null
+      ),
       url: engUrl,
       responded: count ?? 0,
       total: eng.total_expected ?? 0,

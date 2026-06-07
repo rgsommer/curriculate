@@ -55,7 +55,14 @@ export default function GroupDetailPage() {
   const happeningBlock =
     liveEngagements.length > 0
       ? `\n\nHappening right now:\n${liveEngagements
-          .map((e) => `• ${ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} ${e.title}`)
+          .map(
+            (e) =>
+              `• ${ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} ${resolveTitle(
+                e.title,
+                e.birth_year,
+                e.deadline
+              )}`
+          )
           .join("\n")}`
       : "";
 
@@ -573,7 +580,8 @@ See you around the campfire! 🏕️`
               )}
               {(isAdmin ? liveEngagements : memberInvitable).map((e) => (
                 <option key={e.id} value={e.id}>
-                  {ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} {e.title}
+                  {ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"}{" "}
+                  {resolveTitle(e.title, e.birth_year, e.deadline)}
                 </option>
               ))}
             </select>

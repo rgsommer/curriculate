@@ -469,7 +469,11 @@ export default function EngagementDetailPage() {
       typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net";
     const url = `${origin}/campfirelive/join/${groupInfo.invite_code}?e=${engagement.id}`;
     const blurb = engagement.description?.trim() || meta?.hook || "";
-    const msg = `You're invited to "${engagement.title}" in ${groupInfo.name} on Campfire! 🔥${
+    const msg = `You're invited to "${resolveTitle(
+      engagement.title,
+      engagement.birth_year,
+      engagement.deadline
+    )}" in ${groupInfo.name} on Campfire! 🔥${
       blurb ? `\n\n${blurb}` : ""
     }\n\nTap to join & jump straight in:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)`;
     try {

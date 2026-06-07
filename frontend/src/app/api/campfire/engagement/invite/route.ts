@@ -11,7 +11,7 @@ import {
   EMAIL_RE,
   MAX_INVITES,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, creator_id, title, type, is_blind, reveal, deadline, launched_at, allow_member_invites"
+        "group_id, creator_id, title, type, is_blind, reveal, deadline, birth_year, launched_at, allow_member_invites"
       )
       .eq("id", engagementId)
       .single();
@@ -117,7 +117,11 @@ export async function POST(req: Request) {
     const shared = {
       creator: creatorName,
       groupName: group.name,
-      title: eng.title,
+      title: resolveTitle(
+        eng.title,
+        eng.birth_year as number | null,
+        eng.deadline as string | null
+      ),
       typeLabel: meta?.label || "engagement",
       typeIcon: meta?.icon || "🔥",
       isBlind: !!eng.is_blind,

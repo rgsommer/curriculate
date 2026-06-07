@@ -8,7 +8,7 @@ import {
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -71,7 +71,7 @@ export async function POST(req: Request) {
     // (that's the real draw). Otherwise fall back to the generic invite.
     const { data: activeEng } = await admin
       .from("engagements")
-      .select("title, type, is_blind, reveal, deadline")
+      .select("title, type, is_blind, reveal, deadline, birth_year")
       .eq("group_id", groupId)
       .eq("status", "active")
       .not("launched_at", "is", null)
@@ -90,7 +90,11 @@ export async function POST(req: Request) {
         ? newEngagementEmail({
             creator: inviter,
             groupName: group.name,
-            title: activeEng.title,
+            title: resolveTitle(
+              activeEng.title,
+              activeEng.birth_year as number | null,
+              activeEng.deadline as string | null
+            ),
             typeLabel: meta?.label || "engagement",
             typeIcon: meta?.icon || "🔥",
             isBlind: !!activeEng.is_blind,

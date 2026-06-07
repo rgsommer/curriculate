@@ -44,7 +44,7 @@ export async function GET(req: Request) {
 
   const { data: engs } = await admin
     .from("engagements")
-    .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at, hold_until_deadline")
+    .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at, hold_until_deadline, birth_year")
     .eq("status", "active")
     .not("deadline", "is", null);
 
@@ -106,7 +106,11 @@ export async function GET(req: Request) {
       if (memberEmails.length) {
         const m = reminderEmail({
           groupName: group?.name ?? "your group",
-          title: e.title as string,
+          title: resolveTitle(
+            e.title as string,
+            e.birth_year as number | null,
+            e.deadline as string | null
+          ),
           url: engUrl,
           responded: count ?? 0,
           total: (e.total_expected as number) ?? 0,
@@ -298,7 +302,7 @@ export async function GET(req: Request) {
   let notifiedReveals = 0;
   const { data: toNotify } = await admin
     .from("engagements")
-    .select("id, group_id, title")
+    .select("id, group_id, title, birth_year, deadline")
     .eq("status", "revealed")
     .is("reveal_notified_at", null);
 
@@ -312,7 +316,11 @@ export async function GET(req: Request) {
         .single();
       const m = revealEmail({
         groupName: group?.name ?? "your group",
-        title: e.title,
+        title: resolveTitle(
+          e.title as string,
+          e.birth_year as number | null,
+          e.deadline as string | null
+        ),
         url: `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`,
       });
       for (let i = 0; i < emails.length; i += 100) {
