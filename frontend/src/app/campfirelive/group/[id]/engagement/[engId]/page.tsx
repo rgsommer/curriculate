@@ -373,6 +373,21 @@ export default function EngagementDetailPage() {
   const pollOptions = (engagement.config?.options as string[]) ?? [];
   const canEdit = isCreator && engagement.status === "active";
 
+  // Birthday card = private to the recipient. Each wish is seen only by its author
+  // and the birthday person — never the rest of the group, even after the reveal.
+  const isBirthdayCard = engagement.type === "birthday";
+  const recipientLabel =
+    [
+      ...(engagement.excluded_user_ids ?? []).map((uid) =>
+        memberNameOf(uid, "the recipient")
+      ),
+      ...(engagement.excluded_emails ?? []).map(
+        (email) => pendingInvitees.find((p) => p.email === email)?.name || email
+      ),
+    ].join(", ") || "the birthday person";
+  const isRecipient =
+    !!user && (engagement.excluded_user_ids ?? []).includes(user.id);
+
   // Human description of WHEN this will reveal — keeps the waiting copy honest.
   const deadlineStr = engagement.deadline
     ? new Date(engagement.deadline).toLocaleDateString("en-US", {
@@ -2735,13 +2750,26 @@ export default function EngagementDetailPage() {
               </button>
             )}
           </div>
-          {engagement.reveal === "sealed" && (
-            <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
+          {isBirthdayCard ? (
+            <div className="flex items-start gap-2 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 mb-4">
               <span>🔒</span>
-              <p className="text-xs text-amber-800">
-                Results are sealed. Nobody will see your response until everyone has responded.
+              <p className="text-xs text-rose-800">
+                Just between you and{" "}
+                <span className="font-semibold">{recipientLabel}</span> —{" "}
+                <span className="font-semibold">only they</span> will ever see your
+                message, even after the card opens. The rest of the group never sees
+                it. Write freely! 💛
               </p>
             </div>
+          ) : (
+            engagement.reveal === "sealed" && (
+              <div className="flex items-center gap-2 rounded-xl bg-amber-50 border border-amber-200 px-3 py-2 mb-4">
+                <span>🔒</span>
+                <p className="text-xs text-amber-800">
+                  Results are sealed. Nobody will see your response until everyone has responded.
+                </p>
+              </div>
+            )
           )}
           {engagement.is_blind && (
             <div className="flex items-center gap-2 rounded-xl bg-violet-50 border border-violet-200 px-3 py-2 mb-4">
@@ -2774,9 +2802,24 @@ export default function EngagementDetailPage() {
       {/* ── RESULTS (revealed, or live as-they-come / instant) ── */}
       {showResults && (
         <div className="mb-6">
+          {/* Birthday card: it's private to the recipient. The recipient sees all
+              the wishes; a signer only ever sees their own. */}
+          {isBirthdayCard && isRevealed && (
+            <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-xs text-rose-800">
+              {isRecipient ? (
+                <>🎂 <span className="font-semibold">Your card!</span> Here are the wishes everyone wrote just for you — nobody else can see them.</>
+              ) : (
+                <>🔒 Your wish is <span className="font-semibold">private to {recipientLabel}</span> — they&apos;re the only one who sees the messages. Below is just your own.</>
+              )}
+            </div>
+          )}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-900">
-              {justRevealed
+              {isBirthdayCard
+                ? isRecipient
+                  ? "🎂 Your wishes"
+                  : "Your wish"
+                : justRevealed
                 ? "🎉 Results Are In!"
                 : isRevealed
                 ? "Results"
