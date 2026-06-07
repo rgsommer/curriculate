@@ -1932,7 +1932,7 @@ export default function EngagementDetailPage() {
                           month: "short",
                           day: "numeric",
                         })}{" "}
-                        and reveals on the birthday — runs every year. You can also hit
+                        and reveals on the special day — runs every year. You can also hit
                         Launch now to open it early.
                       </>
                     ) : (
