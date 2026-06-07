@@ -257,14 +257,16 @@ See you around the campfire! 🏕️`
     const tb = b.deadline ? new Date(b.deadline).getTime() : Infinity;
     return ta - tb;
   };
-  // "Active" = open to sign RIGHT NOW (launched & still active). Scheduled cards
-  // that haven't opened yet (e.g. next year's recurring birthday draft) live in
-  // their own "Recurring" group until they auto-open.
+  // "Active" = open to sign RIGHT NOW (launched & still active), and NOT a recurring
+  // card — those get their own "Recurring" group so long-running yearly cards don't
+  // crowd out the short-term engagements.
   const activeEngagements = engagements
-    .filter((e) => e.status === "active" && e.launched_at)
+    .filter((e) => e.status === "active" && e.launched_at && !e.recurrence_rule)
     .sort(byNextReveal);
+  // Recurring = the yearly/repeating series (currently open ones + scheduled drafts
+  // waiting to auto-open). Revealed past instances stay under Revealed.
   const recurringEngagements = engagements
-    .filter((e) => e.status === "active" && !e.launched_at)
+    .filter((e) => e.status === "active" && e.recurrence_rule)
     .sort(byNextReveal);
   const revealedEngagements = engagements
     .filter((e) => e.status === "revealed")
@@ -1048,7 +1050,7 @@ See you around the campfire! 🏕️`
             {tab === "active"
               ? "No active engagements. Start one!"
               : tab === "recurring"
-              ? "No recurring cards scheduled to open yet."
+              ? "No recurring cards yet."
               : tab === "revealed"
               ? "No revealed engagements yet."
               : "No engagements yet. Be the first to start one!"}
