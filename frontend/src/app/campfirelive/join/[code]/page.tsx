@@ -140,24 +140,33 @@ export default function JoinGroupPage() {
             </Link>
           </>
         ) : (
-          // Not signed in → offer the two ways to join.
+          // Not signed in → offer the two ways to join. An engagement-scoped invite
+          // (?e=…) is framed as "sign this one card", NOT "join the group".
           <div className="text-left">
             <div className="text-center mb-5">
-              <div className="text-5xl mb-2">🔥</div>
+              <div className="text-5xl mb-2">{engId ? "🎉" : "🔥"}</div>
               <h1 className="text-2xl font-extrabold text-slate-900">You&apos;re invited!</h1>
               <p className="text-slate-500 text-sm mt-1">
-                Join the Campfire group (code <span className="font-mono">{code}</span>)
+                {engId
+                  ? "Add your message to a Campfire card — just your name, no account, and you're only signing this one card."
+                  : (
+                    <>
+                      Join the Campfire group (code{" "}
+                      <span className="font-mono">{code}</span>)
+                    </>
+                  )}
               </p>
             </div>
 
-            {/* Guest join — fastest for a class */}
+            {/* Guest join — fastest, no account */}
             <div className="rounded-2xl border border-orange-200 bg-white p-4 shadow-sm">
               <div className="text-sm font-bold text-slate-900 mb-1">
-                Join as guest
+                {engId ? "Sign with your name" : "Join as guest"}
               </div>
               <p className="text-xs text-slate-500 mb-2">
-                Just your name — no email, no password. Best on the one device you&apos;ll
-                keep using.
+                {engId
+                  ? "Just your name — no email, no password, no app to install."
+                  : "Just your name — no email, no password. Best on the one device you'll keep using."}
               </p>
               <input
                 type="text"
@@ -174,7 +183,7 @@ export default function JoinGroupPage() {
                 disabled={guestBusy || !guestName.trim()}
                 className="mt-2 w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
               >
-                {guestBusy ? "Joining…" : "🔥 Join as guest"}
+                {guestBusy ? "One sec…" : engId ? "✍️ Sign the card" : "🔥 Join as guest"}
               </button>
             </div>
 
@@ -184,10 +193,10 @@ export default function JoinGroupPage() {
                 onClick={goEmail}
                 className="text-sm font-medium text-slate-600 underline hover:text-slate-800"
               >
-                Or join with email / Google
+                {engId ? "Or sign in with email / Google" : "Or join with email / Google"}
               </button>
               <p className="mt-1 text-xs text-slate-400">
-                Pick this for more results.
+                {engId ? "Use this to keep access across devices." : "Pick this for more results."}
               </p>
             </div>
           </div>

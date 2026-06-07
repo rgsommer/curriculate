@@ -537,13 +537,27 @@ export default function EngagementDetailPage() {
       typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net";
     const url = `${origin}/campfirelive/join/${groupInfo.invite_code}?e=${engagement.id}`;
     const blurb = engagement.description?.trim() || meta?.hook || "";
-    const msg = `You're invited to "${resolveTitle(
-      engagement.title,
-      engagement.birth_year,
-      engagement.deadline
-    )}" in ${groupInfo.name} on Campfire! 🔥${
+    const title = resolveTitle(engagement.title, engagement.birth_year, engagement.deadline);
+    const what = meta?.label ? `a group ${meta.label.toLowerCase()}` : "a group activity";
+    // A clear date line so the recipient knows what they're opening and by when.
+    const dateLine = engagement.deadline
+      ? engagement.hold_until_deadline
+        ? `🎉 It opens ${new Date(engagement.deadline).toLocaleDateString(undefined, {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          })}.`
+        : `⏰ Add yours by ${new Date(engagement.deadline).toLocaleString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+            hour: "numeric",
+            minute: "2-digit",
+          })}.`
+      : "";
+    const msg = `You're invited to "${title}" — ${what} in ${groupInfo.name} on Campfire 🔥${
       blurb ? `\n\n${blurb}` : ""
-    }\n\nTap to join & jump straight in:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)`;
+    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)`;
     try {
       await navigator.clipboard.writeText(msg);
       setSharedEng(true);
