@@ -349,6 +349,7 @@ export default function DashboardPage() {
         <div className="grid gap-4 sm:grid-cols-2">
           {groups.map((g) => {
             const mine = g.creator_id === user?.id;
+            const s = groupStats[g.id];
             return (
               <Link
                 key={g.id}
@@ -363,30 +364,28 @@ export default function DashboardPage() {
                   <span className="text-3xl">{g.avatar_emoji}</span>
                   <div className="min-w-0">
                     <h3 className="font-bold text-slate-900">{g.name}</h3>
-                    <p className="text-xs text-slate-500">
-                      {g.member_count} member{g.member_count === 1 ? "" : "s"}
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-slate-500">
+                      <span>
+                        {g.member_count} member{g.member_count === 1 ? "" : "s"}
+                      </span>
                       {!mine && (
-                        <span className="ml-1.5 text-sky-700 font-medium">
+                        <span className="text-sky-700 font-medium">
                           · by {creatorNames[g.id] ?? "the host"}
                         </span>
                       )}
-                    </p>
+                      {s && s.invited > 0 && <span>· {s.invited} pending</span>}
+                      {s && (s.active > 0 || s.recurring > 0) && (
+                        <span className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white/80 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                          {s.active > 0 && <span>🔥 {s.active} active</span>}
+                          {s.recurring > 0 && <span>🔁 {s.recurring} recurring</span>}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
                 {g.description && (
                   <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
                 )}
-                {(() => {
-                  const s = groupStats[g.id];
-                  if (!s || s.active + s.recurring + s.invited === 0) return null;
-                  return (
-                    <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] font-medium text-slate-500">
-                      {s.active > 0 && <span>🔥 {s.active} active</span>}
-                      {s.recurring > 0 && <span>🔁 {s.recurring} recurring</span>}
-                      {s.invited > 0 && <span>✉️ {s.invited} invited</span>}
-                    </div>
-                  );
-                })()}
               </Link>
             );
           })}
