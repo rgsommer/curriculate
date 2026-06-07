@@ -91,31 +91,44 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey]);
 
-  // Names of the hosts of groups you JOINED (so the card can say "by <host>").
+  // Host name for groups you JOINED — keyed by GROUP id, preferring the host's
+  // per-group display name ("Dad" in Family) over their global profile name.
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
   useEffect(() => {
-    const ids = Array.from(
-      new Set(
-        groups
-          .filter((g) => g.creator_id && g.creator_id !== user?.id)
-          .map((g) => g.creator_id as string)
-      )
-    );
-    if (ids.length === 0) {
+    const joined = groups.filter((g) => g.creator_id && g.creator_id !== user?.id);
+    if (joined.length === 0) {
       setCreatorNames({});
       return;
     }
+    const groupIds = joined.map((g) => g.id);
+    const creatorIds = Array.from(new Set(joined.map((g) => g.creator_id as string)));
     let cancelled = false;
-    supabase
-      .from("profiles")
-      .select("id, display_name")
-      .in("id", ids)
-      .then(({ data }) => {
-        if (cancelled || !data) return;
-        const m: Record<string, string> = {};
-        for (const p of data) m[p.id as string] = (p.display_name as string) || "the host";
-        setCreatorNames(m);
-      });
+    (async () => {
+      const [gmRes, profRes] = await Promise.all([
+        supabase
+          .from("group_members")
+          .select("group_id, user_id, display_name")
+          .in("group_id", groupIds)
+          .in("user_id", creatorIds),
+        supabase.from("profiles").select("id, display_name").in("id", creatorIds),
+      ]);
+      if (cancelled) return;
+      // per-group host name (group_id+creator) and global fallback (creator id)
+      const perGroup: Record<string, string | null> = {};
+      for (const r of gmRes.data ?? [])
+        perGroup[`${r.group_id}:${r.user_id}`] = (r.display_name as string | null) ?? null;
+      const global: Record<string, string> = {};
+      for (const p of profRes.data ?? [])
+        global[p.id as string] = (p.display_name as string) || "the host";
+      const m: Record<string, string> = {};
+      for (const g of joined) {
+        m[g.id] =
+          perGroup[`${g.id}:${g.creator_id}`] ||
+          global[g.creator_id as string] ||
+          "the host";
+      }
+      setCreatorNames(m);
+    })();
     return () => {
       cancelled = true;
     };
@@ -354,7 +367,7 @@ export default function DashboardPage() {
                       {g.member_count} member{g.member_count === 1 ? "" : "s"}
                       {!mine && (
                         <span className="ml-1.5 text-sky-700 font-medium">
-                          · by {creatorNames[g.creator_id] ?? "the host"}
+                          · by {creatorNames[g.id] ?? "the host"}
                         </span>
                       )}
                     </p>
