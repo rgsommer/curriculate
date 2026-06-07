@@ -6,7 +6,19 @@ import Link from "next/link";
 import { useCreateEngagement, useGroups } from "@/lib/campfire/hooks";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, resolveTitle, type EngagementType, type RevealMode } from "@/lib/campfire/types";
+import {
+  ENGAGEMENT_TYPES,
+  resolveTitle,
+  nextNthWeekday,
+  describeNthWeekday,
+  HOLIDAY_PRESETS,
+  ORDINAL_WEEK,
+  WEEKDAY_NAMES,
+  MONTH_NAMES,
+  type NthWeekday,
+  type EngagementType,
+  type RevealMode,
+} from "@/lib/campfire/types";
 import { TEMPLATE_PACKS, type EngagementTemplate } from "@/lib/campfire/templates";
 
 // Plain-language "how it works" per type — { how it works, what each person sees }.
@@ -94,9 +106,19 @@ export default function NewEngagementPage() {
   const [coverUploading, setCoverUploading] = useState(false);
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
-  const [recurrence, setRecurrence] = useState<"none" | "daily" | "weekly" | "monthly" | "yearly">("none");
+  const [recurrence, setRecurrence] = useState<
+    "none" | "daily" | "weekly" | "monthly" | "yearly" | "yearly_nth"
+  >("none");
   const [birthYear, setBirthYear] = useState("");
   const [leadDays, setLeadDays] = useState(14);
+  // Occasion for a card: a real birthday (date + age) or a floating holiday.
+  const [occasion, setOccasion] = useState<"birthday" | "mothers_day" | "fathers_day" | "custom">(
+    "birthday"
+  );
+  // "Nth weekday of a month" pattern (Mother's Day = 2nd Sun May, etc.)
+  const [nthWeek, setNthWeek] = useState(2); // 1-4, or 5 = last
+  const [nthDow, setNthDow] = useState(0); // 0=Sun … 6=Sat
+  const [nthMonth, setNthMonth] = useState(5); // 1-12
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   // "Most Likely To…" awards (one engagement, many questions)
   const [questions, setQuestions] = useState<string[]>(["", "", ""]);
@@ -277,17 +299,36 @@ export default function NewEngagementPage() {
       return;
     }
 
-    // Birthday needs the date (the day it reveals).
-    if (selectedType === "birthday" && !deadline) {
+    const isBirthday = selectedType === "birthday";
+    const isHolidayCard = isBirthday && occasion !== "birthday";
+    // A floating "Nth weekday" pattern, from a holiday card OR a general yearly_nth pick.
+    const nthPattern: NthWeekday | null = isHolidayCard
+      ? occasion === "custom"
+        ? { week: nthWeek, weekday: nthDow, month: nthMonth }
+        : HOLIDAY_PRESETS[occasion].nth
+      : !isBirthday && recurrence === "yearly_nth"
+      ? { week: nthWeek, weekday: nthDow, month: nthMonth }
+      : null;
+
+    // A real (fixed-date) birthday still needs the date; a holiday computes its own.
+    if (isBirthday && !isHolidayCard && !deadline) {
       setError("Set the birthday — that's the day it reveals.");
       setCreating(false);
       return;
     }
-    // For a birthday, schedule it to auto-open `leadDays` before the date.
-    const isBirthday = selectedType === "birthday";
+
+    // Effective reveal date: a floating pattern resolves to its next occurrence.
+    const effectiveDeadline = nthPattern
+      ? nextNthWeekday(nthPattern)
+      : deadline
+      ? new Date(deadline)
+      : undefined;
+
+    // Cards + yearly events auto-open a lead time before the date.
+    const schedulesOpen = isBirthday || recurrence === "yearly_nth";
     const scheduledOpenAt =
-      isBirthday && deadline
-        ? new Date(new Date(deadline).getTime() - (leadDays || 14) * 86400000).toISOString()
+      schedulesOpen && effectiveDeadline
+        ? new Date(effectiveDeadline.getTime() - (leadDays || 14) * 86400000).toISOString()
         : null;
 
     if (
@@ -314,6 +355,18 @@ export default function NewEngagementPage() {
       config.media_type = "photo"; // Default, could be made selectable
     }
 
+    // Floating recurrence (Nth weekday) — store the pattern so the cron rolls it
+    // forward to next year's date, plus an occasion label for holiday cards.
+    if (nthPattern) {
+      config.recurrence_nth = nthPattern;
+      if (isHolidayCard) {
+        config.occasion =
+          occasion === "custom"
+            ? describeNthWeekday(nthPattern)
+            : HOLIDAY_PRESETS[occasion].label;
+      }
+    }
+
     // Resolve the destination group — make a new one first if requested.
     let destGroupId = targetGroupId;
     if (makingNewGroup) {
@@ -337,7 +390,7 @@ export default function NewEngagementPage() {
       title: title.trim(),
       description: description.trim() || undefined,
       config,
-      deadline: deadline ? new Date(deadline) : undefined,
+      deadline: effectiveDeadline,
       reveal:
         selectedType === "two_truths" ||
         selectedType === "baby_reveal" ||
@@ -348,7 +401,13 @@ export default function NewEngagementPage() {
           ? "sealed"
           : reveal,
       is_blind: selectedType === "two_truths" ? false : isBlind,
-      recurrence_rule: isBirthday ? "yearly" : recurrence === "none" ? undefined : recurrence,
+      recurrence_rule: isBirthday
+        ? "yearly"
+        : recurrence === "yearly_nth"
+        ? "yearly"
+        : recurrence === "none"
+        ? undefined
+        : recurrence,
       notify: true, // launching always notifies the group
       // Birthday + Baby Reveal always hold until the date; others only when opted in.
       hold_until_deadline:
@@ -357,8 +416,12 @@ export default function NewEngagementPage() {
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
       // Birthday: schedule the auto-open and store the age basis.
       scheduled_open_at: scheduledOpenAt,
-      lead_days: isBirthday ? leadDays || 14 : undefined,
-      birth_year: isBirthday && birthYear.trim() ? parseInt(birthYear, 10) : null,
+      lead_days: schedulesOpen ? leadDays || 14 : undefined,
+      // Only a real birthday carries an age; a holiday/anniversary doesn't.
+      birth_year:
+        occasion === "birthday" && isBirthday && birthYear.trim()
+          ? parseInt(birthYear, 10)
+          : null,
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
@@ -382,6 +445,64 @@ export default function NewEngagementPage() {
       // Created as a DRAFT — the creator reviews it and hits Launch when ready.
       router.push(`/campfirelive/group/${destGroupId}/engagement/${result.engagement.id}`);
     }
+  };
+
+  // Shared "[2nd] [Sunday] of [May]" picker + a live next-occurrence preview.
+  const renderNthPicker = () => {
+    const pattern: NthWeekday = { week: nthWeek, weekday: nthDow, month: nthMonth };
+    const next = nextNthWeekday(pattern);
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <select
+            value={nthWeek}
+            onChange={(e) => setNthWeek(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          >
+            {[1, 2, 3, 4, 5].map((w) => (
+              <option key={w} value={w}>
+                {ORDINAL_WEEK[w] || `${w}th`}
+              </option>
+            ))}
+          </select>
+          <select
+            value={nthDow}
+            onChange={(e) => setNthDow(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          >
+            {WEEKDAY_NAMES.map((d, i) => (
+              <option key={i} value={i}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <span className="text-slate-500">of</span>
+          <select
+            value={nthMonth}
+            onChange={(e) => setNthMonth(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          >
+            {MONTH_NAMES.slice(1).map((m, i) => (
+              <option key={i + 1} value={i + 1}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+        <p className="text-xs text-slate-500">
+          Next:{" "}
+          <span className="font-medium text-slate-700">
+            {next.toLocaleDateString(undefined, {
+              weekday: "long",
+              year: "numeric",
+              month: "long",
+              day: "numeric",
+            })}
+          </span>{" "}
+          · repeats every year.
+        </p>
+      </div>
+    );
   };
 
   return (
@@ -748,8 +869,53 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Deadline */}
-            <div>
+            {/* Card occasion: a real birthday (date + age) or a floating holiday */}
+            {selectedType === "birthday" && (
+              <div className="mb-3">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  What&apos;s the occasion?
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(
+                    [
+                      { value: "birthday", label: "🎂 Birthday" },
+                      { value: "mothers_day", label: "💐 Mother's Day" },
+                      { value: "fathers_day", label: "👔 Father's Day" },
+                      { value: "custom", label: "🗓️ Holiday" },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => {
+                        setOccasion(o.value);
+                        if (o.value === "mothers_day" || o.value === "fathers_day") {
+                          const p = HOLIDAY_PRESETS[o.value];
+                          setNthWeek(p.nth.week);
+                          setNthDow(p.nth.weekday);
+                          setNthMonth(p.nth.month);
+                          if (!title.trim()) setTitle(p.titleHint);
+                        }
+                      }}
+                      className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
+                        occasion === o.value
+                          ? "border-orange-500 bg-orange-50 text-slate-900"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Deadline (hidden for a holiday card — its date is computed) */}
+            <div
+              className={
+                selectedType === "birthday" && occasion !== "birthday" ? "hidden" : ""
+              }
+            >
               <label className="block text-sm font-medium text-slate-700 mb-1">
                 {selectedType === "baby_reveal" ? (
                   <>
@@ -783,9 +949,26 @@ export default function NewEngagementPage() {
               {selectedType === "birthday" && (
                 <div className="mt-2 space-y-2 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
                   <p className="text-xs text-slate-600">
-                    Runs <span className="font-semibold">every year</span>. Pick the birthday
-                    person under &ldquo;hide from…&rdquo; so it stays a surprise.
+                    Runs <span className="font-semibold">every year</span>. Pick the
+                    recipient under &ldquo;hide from…&rdquo; so it stays a surprise.
                   </p>
+
+                  {/* Holiday: show the floating date (preset summary or custom picker) */}
+                  {occasion === "custom" && renderNthPicker()}
+                  {(occasion === "mothers_day" || occasion === "fathers_day") && (
+                    <p className="text-xs text-slate-600">
+                      📅 <span className="font-semibold">{HOLIDAY_PRESETS[occasion].label}</span> —{" "}
+                      {describeNthWeekday(HOLIDAY_PRESETS[occasion].nth)}. Next:{" "}
+                      <span className="font-medium text-slate-700">
+                        {nextNthWeekday(HOLIDAY_PRESETS[occasion].nth).toLocaleDateString(
+                          undefined,
+                          { weekday: "long", year: "numeric", month: "long", day: "numeric" }
+                        )}
+                      </span>
+                      .
+                    </p>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-2 text-sm">
                     <span className="text-slate-600">Open</span>
                     <input
@@ -798,35 +981,41 @@ export default function NewEngagementPage() {
                     />
                     <span className="text-slate-600">days before, so people can sign.</span>
                   </div>
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <span className="text-slate-600">Birth year</span>
-                    <input
-                      type="number"
-                      min={1900}
-                      max={2025}
-                      value={birthYear}
-                      onChange={(e) => setBirthYear(e.target.value)}
-                      placeholder="optional"
-                      className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
-                    />
-                    <span className="text-xs text-slate-500">
-                      — put <span className="font-mono">{"{age}"}</span> in the title and
-                      it auto-fills the ordinal (1st, 2nd, 3rd, 28th…), bumping each year.
-                    </span>
-                  </div>
-                  {title.includes("{age}") && (
-                    <div className="rounded-lg bg-white border border-pink-200 px-3 py-1.5 text-sm">
-                      <span className="text-xs text-slate-400">Shows as: </span>
-                      <span className="font-semibold text-slate-800">
-                        {deadline
-                          ? resolveTitle(
-                              title,
-                              birthYear.trim() ? parseInt(birthYear, 10) : null,
-                              new Date(deadline).toISOString()
-                            )
-                          : "set the birthday date to preview"}
-                      </span>
-                    </div>
+
+                  {/* Age is only for a real birthday */}
+                  {occasion === "birthday" && (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-slate-600">Birth year</span>
+                        <input
+                          type="number"
+                          min={1900}
+                          max={2025}
+                          value={birthYear}
+                          onChange={(e) => setBirthYear(e.target.value)}
+                          placeholder="optional"
+                          className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
+                        />
+                        <span className="text-xs text-slate-500">
+                          — put <span className="font-mono">{"{age}"}</span> in the title and
+                          it auto-fills the ordinal (1st, 2nd, 3rd, 28th…), bumping each year.
+                        </span>
+                      </div>
+                      {title.includes("{age}") && (
+                        <div className="rounded-lg bg-white border border-pink-200 px-3 py-1.5 text-sm">
+                          <span className="text-xs text-slate-400">Shows as: </span>
+                          <span className="font-semibold text-slate-800">
+                            {deadline
+                              ? resolveTitle(
+                                  title,
+                                  birthYear.trim() ? parseInt(birthYear, 10) : null,
+                                  new Date(deadline).toISOString()
+                                )
+                              : "set the birthday date to preview"}
+                          </span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -920,17 +1109,20 @@ export default function NewEngagementPage() {
               <label className="block text-sm font-medium text-slate-700 mb-2">
                 Repeat <span className="text-slate-400">(optional)</span>
               </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {[
                   { value: "none" as const, label: "Once" },
                   { value: "daily" as const, label: "🔁 Daily" },
                   { value: "weekly" as const, label: "🔁 Weekly" },
                   { value: "monthly" as const, label: "🔁 Monthly" },
+                  { value: "yearly_nth" as const, label: "🗓️ Yearly (a date like 2nd Sun May)" },
                 ].map((r) => (
                   <button
                     key={r.value}
                     onClick={() => setRecurrence(r.value)}
                     className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                      r.value === "yearly_nth" ? "col-span-2 sm:col-span-3" : ""
+                    } ${
                       recurrence === r.value
                         ? "border-orange-500 bg-orange-50 text-slate-900"
                         : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
@@ -940,12 +1132,18 @@ export default function NewEngagementPage() {
                   </button>
                 ))}
               </div>
-              {recurrence !== "none" && (
-                <p className="mt-1.5 text-xs text-slate-500">
-                  A fresh copy auto-posts to the group every{" "}
-                  {recurrence === "daily" ? "day" : recurrence === "weekly" ? "week" : "month"}{" "}
-                  after this one wraps.
-                </p>
+              {recurrence === "yearly_nth" ? (
+                <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3">
+                  {renderNthPicker()}
+                </div>
+              ) : (
+                recurrence !== "none" && (
+                  <p className="mt-1.5 text-xs text-slate-500">
+                    A fresh copy auto-posts to the group every{" "}
+                    {recurrence === "daily" ? "day" : recurrence === "weekly" ? "week" : "month"}{" "}
+                    after this one wraps.
+                  </p>
+                )
               )}
             </div>
             )}

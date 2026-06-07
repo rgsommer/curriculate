@@ -252,6 +252,85 @@ export function resolveTitle(
   return title.replace(/\{age\}\s*/g, "").replace(/\s{2,}/g, " ").trim();
 }
 
+// ── "Nth weekday of a month" dates (Mother's Day = 2nd Sun May, etc.) ──
+// week: 1-4, or 5/-1 = "last". weekday: 0=Sun … 6=Sat. month: 1-12.
+export type NthWeekday = { week: number; weekday: number; month: number };
+
+export function nthWeekdayOfMonth(
+  year: number,
+  week: number,
+  weekday: number,
+  month: number,
+  hour = 8
+): Date {
+  if (week === 5 || week === -1) {
+    // Last <weekday> of the month.
+    const last = new Date(year, month, 0); // day 0 of next month = last day
+    const offset = (last.getDay() - weekday + 7) % 7;
+    return new Date(year, month - 1, last.getDate() - offset, hour, 0, 0, 0);
+  }
+  const firstDow = new Date(year, month - 1, 1).getDay();
+  const day = 1 + ((weekday - firstDow + 7) % 7) + (week - 1) * 7;
+  return new Date(year, month - 1, day, hour, 0, 0, 0);
+}
+
+// The next occurrence on or after `from` (this year if it hasn't passed, else next).
+export function nextNthWeekday(p: NthWeekday, from: Date = new Date(), hour = 8): Date {
+  const thisYear = nthWeekdayOfMonth(from.getFullYear(), p.week, p.weekday, p.month, hour);
+  return thisYear.getTime() >= from.getTime()
+    ? thisYear
+    : nthWeekdayOfMonth(from.getFullYear() + 1, p.week, p.weekday, p.month, hour);
+}
+
+export const ORDINAL_WEEK = ["", "1st", "2nd", "3rd", "4th", "last"];
+export const WEEKDAY_NAMES = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+export const MONTH_NAMES = [
+  "",
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+export function describeNthWeekday(p: NthWeekday): string {
+  return `${ORDINAL_WEEK[p.week] || `${p.week}th`} ${WEEKDAY_NAMES[p.weekday]} of ${MONTH_NAMES[p.month]}`;
+}
+
+// Built-in floating holidays (US/Canada).
+export const HOLIDAY_PRESETS: Record<
+  string,
+  { label: string; emoji: string; nth: NthWeekday; titleHint: string }
+> = {
+  mothers_day: {
+    label: "Mother's Day",
+    emoji: "💐",
+    nth: { week: 2, weekday: 0, month: 5 },
+    titleHint: "Happy Mother's Day, Mom! 💐",
+  },
+  fathers_day: {
+    label: "Father's Day",
+    emoji: "👔",
+    nth: { week: 3, weekday: 0, month: 6 },
+    titleHint: "Happy Father's Day, Dad! 👔",
+  },
+};
+
 // ── Supabase Database type (simplified — use supabase gen types for full version) ──
 export interface Database {
   public: {

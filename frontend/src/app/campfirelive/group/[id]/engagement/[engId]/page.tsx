@@ -2204,10 +2204,15 @@ export default function EngagementDetailPage() {
             {/* Eyebrow + status badge on one row so the title gets full width */}
             <div className="flex items-center justify-between gap-2 mb-1.5">
               <p className="min-w-0 truncate text-xs font-semibold text-orange-600">
-                {isCreator
-                  ? "Your"
-                  : `${memberNameOf(engagement.creator_id, engagement.creator?.display_name)}'s`}{" "}
-                {meta?.label ?? engagement.type}
+                {(engagement.config?.occasion as string) ||
+                  `${
+                    isCreator
+                      ? "Your"
+                      : `${memberNameOf(
+                          engagement.creator_id,
+                          engagement.creator?.display_name
+                        )}'s`
+                  } ${meta?.label ?? engagement.type}`}
               </p>
               <div className="flex-shrink-0">
                 {isSealed && (

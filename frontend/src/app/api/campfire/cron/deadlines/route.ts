@@ -13,7 +13,7 @@ import {
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, nthWeekdayOfMonth, type NthWeekday } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -264,11 +264,26 @@ export async function GET(req: Request) {
 
     const DAY = 24 * 60 * 60 * 1000;
 
-    // Yearly (birthday/anniversary): anchor to the same day next year, and re-open
-    // a lead time before it as a draft (the auto-open step above launches it).
+    // Yearly (birthday/anniversary/holiday): re-open a lead time before next year's
+    // date as a draft (the auto-open step above launches it). A fixed-date birthday
+    // anchors to the same calendar day; a floating holiday (config.recurrence_nth,
+    // e.g. Mother's Day = 2nd Sun May) recomputes next year's Nth-weekday date.
     if (e.recurrence_rule === "yearly") {
-      const nextDeadline = new Date((e.deadline as string) ?? new Date(now).toISOString());
-      nextDeadline.setFullYear(nextDeadline.getFullYear() + 1);
+      const prev = new Date((e.deadline as string) ?? new Date(now).toISOString());
+      const nth = (e.config as { recurrence_nth?: NthWeekday } | null)?.recurrence_nth;
+      const nextDeadline = nth
+        ? nthWeekdayOfMonth(
+            prev.getFullYear() + 1,
+            nth.week,
+            nth.weekday,
+            nth.month,
+            prev.getHours()
+          )
+        : (() => {
+            const d = new Date(prev);
+            d.setFullYear(d.getFullYear() + 1);
+            return d;
+          })();
       const lead = ((e.lead_days as number) ?? 14) * DAY;
       await admin.from("engagements").insert({
         group_id: e.group_id,
