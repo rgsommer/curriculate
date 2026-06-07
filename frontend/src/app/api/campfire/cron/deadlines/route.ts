@@ -4,8 +4,10 @@ import { createClient } from "@supabase/supabase-js";
 import {
   getNonResponderEmails,
   getGroupMemberEmails,
+  getCardRecipients,
   reminderEmail,
   revealEmail,
+  cardRevealEmail,
   newEngagementEmail,
   cardLiveEmail,
   buildJoinUrl,
@@ -353,7 +355,7 @@ export async function GET(req: Request) {
   let notifiedReveals = 0;
   const { data: toNotify } = await admin
     .from("engagements")
-    .select("id, group_id, title, birth_year, deadline")
+    .select("id, group_id, title, birth_year, deadline, type, excluded_user_ids")
     .eq("status", "revealed")
     .is("reveal_notified_at", null);
 
@@ -365,26 +367,56 @@ export async function GET(req: Request) {
         .select("name")
         .eq("id", e.group_id)
         .single();
-      const m = revealEmail({
-        groupName: group?.name ?? "your group",
-        title: resolveTitle(
-          e.title as string,
-          e.birth_year as number | null,
-          e.deadline as string | null
-        ),
-        url: `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`,
-      });
-      for (let i = 0; i < emails.length; i += 100) {
-        await resend.batch.send(
-          emails.slice(i, i + 100).map((to) => ({
-            from,
-            to: [to],
-            subject: m.subject,
-            text: m.text,
-            html: m.html,
-            ...mailDefaults(),
-          }))
+      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+      const engTitle = resolveTitle(
+        e.title as string,
+        e.birth_year as number | null,
+        e.deadline as string | null
+      );
+
+      if (e.type === "birthday") {
+        // Card delivered: everyone learns the recipient got it + how many wishes.
+        const { count } = await admin
+          .from("responses")
+          .select("*", { count: "exact", head: true })
+          .eq("engagement_id", e.id);
+        const { label, emails: recipientEmails } = await getCardRecipients(
+          admin,
+          e.group_id as string,
+          (e.excluded_user_ids as string[]) ?? []
         );
+        const msgs = emails.map((to) => {
+          const cm = cardRevealEmail({
+            groupName: group?.name ?? "your group",
+            title: engTitle,
+            recipientName: label,
+            count: count ?? 0,
+            url: engUrl,
+            forRecipient: recipientEmails.has(to.toLowerCase()),
+          });
+          return { from, to: [to], subject: cm.subject, text: cm.text, html: cm.html, ...mailDefaults() };
+        });
+        for (let i = 0; i < msgs.length; i += 100) {
+          await resend.batch.send(msgs.slice(i, i + 100));
+        }
+      } else {
+        const m = revealEmail({
+          groupName: group?.name ?? "your group",
+          title: engTitle,
+          url: engUrl,
+        });
+        for (let i = 0; i < emails.length; i += 100) {
+          await resend.batch.send(
+            emails.slice(i, i + 100).map((to) => ({
+              from,
+              to: [to],
+              subject: m.subject,
+              text: m.text,
+              html: m.html,
+              ...mailDefaults(),
+            }))
+          );
+        }
       }
     }
     await admin

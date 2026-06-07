@@ -130,6 +130,77 @@ export async function getGroupMemberEmails(
   return emails;
 }
 
+// Resolve a card's recipient(s) from the excluded surprise user ids: a display
+// label ("Mom" / "Mom & Dad") plus the set of their lowercased emails.
+export async function getCardRecipients(
+  admin: SupabaseClient,
+  groupId: string,
+  excludedUserIds: string[]
+): Promise<{ label: string; emails: Set<string> }> {
+  const emails = new Set<string>();
+  const names: string[] = [];
+  for (const uid of excludedUserIds ?? []) {
+    const { data: u } = await admin.auth.admin.getUserById(uid);
+    const em = u?.user?.email?.toLowerCase();
+    if (em) emails.add(em);
+    const { data: gm } = await admin
+      .from("group_members")
+      .select("display_name")
+      .eq("group_id", groupId)
+      .eq("user_id", uid)
+      .maybeSingle();
+    let name = (gm?.display_name as string | null) ?? null;
+    if (!name) {
+      const { data: p } = await admin
+        .from("profiles")
+        .select("display_name")
+        .eq("id", uid)
+        .maybeSingle();
+      name = (p?.display_name as string | null) ?? null;
+    }
+    if (name) names.push(name);
+  }
+  return { label: names.join(" & ") || "The birthday person", emails };
+}
+
+// Birthday card just opened. The wishes are private to the recipient, but everyone
+// who signed gets told the card was delivered + how many wishes went in.
+export function cardRevealEmail(opts: {
+  groupName: string;
+  title: string;
+  recipientName: string;
+  count: number;
+  url: string;
+  forRecipient: boolean;
+}) {
+  const { groupName, title, recipientName, count, url, forRecipient } = opts;
+  const wishes = `${count} ${count === 1 ? "wish" : "wishes"}`;
+  const subject = forRecipient
+    ? `🎂 Your card is here — ${wishes} inside!`
+    : `💌 ${recipientName} just got the card (${wishes})`;
+  const headline = forRecipient ? "Your card is here! 🎂" : `${recipientName} got the card! 💌`;
+  const lead = forRecipient
+    ? `Open "${escapeHtml(title)}" in ${escapeHtml(groupName)} — ${wishes} written just for you.`
+    : `"${escapeHtml(title)}" just opened in ${escapeHtml(groupName)}. <strong>${escapeHtml(
+        recipientName
+      )}</strong> received the card with <strong>${wishes}</strong> — each message is private to them.`;
+  const cta = forRecipient ? "Open my card" : "See the card";
+  const text = forRecipient
+    ? `Your card is here! Open "${title}" in ${groupName} — ${wishes} written just for you.\n\n${cta}: ${url}`
+    : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">🎂</div>
+  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
+  <p style="color:#475569; margin:0 0 12px;">${lead}</p>
+  <p style="text-align:center; margin:24px 0;">
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${cta}</a>
+  </p>
+  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function revealEmail(opts: { groupName: string; title: string; url: string }) {
   const { groupName, title, url } = opts;
   const subject = `Results are in: "${title}" (${groupName})`;

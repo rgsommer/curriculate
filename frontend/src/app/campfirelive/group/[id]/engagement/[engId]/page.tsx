@@ -2812,9 +2812,11 @@ export default function EngagementDetailPage() {
           {isBirthdayCard && isRevealed && (
             <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-xs text-rose-800">
               {isRecipient ? (
-                <>🎂 <span className="font-semibold">Your card!</span> Here are the wishes everyone wrote just for you — nobody else can see them.</>
+                <>🎂 <span className="font-semibold">Your card!</span> Here are the {responseCount} {responseCount === 1 ? "wish" : "wishes"} everyone wrote just for you — nobody else can see them.</>
               ) : (
-                <>🔒 Your wish is <span className="font-semibold">private to {recipientLabel}</span> — they&apos;re the only one who sees the messages. Below is just your own.</>
+                <>
+                  🎉 <span className="font-semibold">{recipientLabel} received the card</span> with {responseCount} {responseCount === 1 ? "wish" : "wishes"}! Each message is private to them — below is just your own. 💛
+                </>
               )}
             </div>
           )}

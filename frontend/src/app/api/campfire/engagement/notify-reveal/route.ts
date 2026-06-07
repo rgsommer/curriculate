@@ -4,7 +4,9 @@ import { createClient } from "@supabase/supabase-js";
 import {
   authorizeGroupRequester,
   getGroupMemberEmails,
+  getCardRecipients,
   revealEmail,
+  cardRevealEmail,
   campfireFrom,
   mailDefaults,
 } from "@/lib/campfire/serverInvites";
@@ -32,7 +34,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline")
+      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline, type, excluded_user_ids")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -79,10 +81,46 @@ export async function POST(req: Request) {
       .eq("id", eng.group_id)
       .single();
     const from = campfireFrom();
+    const engUrl = `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
+    const engTitle = resolveTitle(
+      eng.title,
+      eng.birth_year as number | null,
+      eng.deadline as string | null
+    );
+
+    // Birthday card: the wishes are private to the recipient, but everyone learns
+    // the card was delivered + how many wishes — recipient gets a tailored note.
+    if (eng.type === "birthday") {
+      const { count } = await admin
+        .from("responses")
+        .select("*", { count: "exact", head: true })
+        .eq("engagement_id", engagementId);
+      const { label, emails: recipientEmails } = await getCardRecipients(
+        admin,
+        eng.group_id,
+        (eng.excluded_user_ids as string[]) ?? []
+      );
+      const msgs = emails.map((to) => {
+        const m = cardRevealEmail({
+          groupName: group?.name ?? "your group",
+          title: engTitle,
+          recipientName: label,
+          count: count ?? 0,
+          url: engUrl,
+          forRecipient: recipientEmails.has(to.toLowerCase()),
+        });
+        return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
+      });
+      for (let i = 0; i < msgs.length; i += 100) {
+        await resend.batch.send(msgs.slice(i, i + 100));
+      }
+      return NextResponse.json({ ok: true, sent: emails.length, card: true });
+    }
+
     const m = revealEmail({
       groupName: group?.name ?? "your group",
-      title: resolveTitle(eng.title, eng.birth_year as number | null, eng.deadline as string | null),
-      url: `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`,
+      title: engTitle,
+      url: engUrl,
     });
     for (let i = 0; i < emails.length; i += 100) {
       await resend.batch.send(
