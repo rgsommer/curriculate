@@ -2037,16 +2037,30 @@ export default function EngagementDetailPage() {
               </div>
               {engagement.type === "birthday" ? (
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
+                  <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-500 mb-1">
                       Reveals on (date &amp; time)
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={editDeadlineTime}
-                      onChange={(e) => setEditDeadlineTime(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={editDeadlineTime.split("T")[0] || ""}
+                        onChange={(e) => {
+                          const t = editDeadlineTime.split("T")[1] || "08:00";
+                          setEditDeadlineTime(e.target.value ? `${e.target.value}T${t}` : "");
+                        }}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                      />
+                      <input
+                        type="time"
+                        value={editDeadlineTime.split("T")[1] || ""}
+                        onChange={(e) => {
+                          const d = editDeadlineTime.split("T")[0];
+                          if (d) setEditDeadlineTime(`${d}T${e.target.value || "08:00"}`);
+                        }}
+                        className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">
@@ -2082,12 +2096,26 @@ export default function EngagementDetailPage() {
                       {engagement.hold_until_deadline ? "Reveal date & time" : "Deadline"}{" "}
                       <span className="text-slate-400">(optional)</span>
                     </label>
-                    <input
-                      type="datetime-local"
-                      value={editDeadlineTime}
-                      onChange={(e) => setEditDeadlineTime(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
-                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="date"
+                        value={editDeadlineTime.split("T")[0] || ""}
+                        onChange={(e) => {
+                          const t = editDeadlineTime.split("T")[1] || "08:00";
+                          setEditDeadlineTime(e.target.value ? `${e.target.value}T${t}` : "");
+                        }}
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                      />
+                      <input
+                        type="time"
+                        value={editDeadlineTime.split("T")[1] || ""}
+                        onChange={(e) => {
+                          const d = editDeadlineTime.split("T")[0];
+                          if (d) setEditDeadlineTime(`${d}T${e.target.value || "08:00"}`);
+                        }}
+                        className="w-28 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                      />
+                    </div>
                     <p className="mt-1 text-xs text-slate-500">
                       {engagement.hold_until_deadline
                         ? "It stays sealed and reveals at this moment. Leave blank to remove the date."
