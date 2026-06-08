@@ -126,6 +126,9 @@ export interface Response {
   // Per-response visibility override: true = share with the group, false = keep
   // host-only, null/undefined = follow the engagement's private_to_host default.
   share_to_group?: boolean | null;
+  // When shared to the group, hide the author's name from other members (the host
+  // still sees it). UI-level only, like is_blind.
+  anonymous?: boolean | null;
 }
 
 export interface Reaction {

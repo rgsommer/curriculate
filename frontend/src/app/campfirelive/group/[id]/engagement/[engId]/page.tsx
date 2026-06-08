@@ -166,6 +166,8 @@ export default function EngagementDetailPage() {
   // Care Check-in: this person's own visibility choice. null until they've decided;
   // initialized from the host default (private_to_host) when the form opens.
   const [careShareToGroup, setCareShareToGroup] = useState<boolean | null>(null);
+  // Care Check-in: when sharing to the group, hide my name from other members.
+  const [careAnonymous, setCareAnonymous] = useState(false);
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -775,6 +777,7 @@ export default function EngagementDetailPage() {
           ? myResponse.share_to_group
           : null
       );
+      setCareAnonymous(myResponse?.anonymous === true);
     }
     setEditingResponse(true);
   };
@@ -922,7 +925,8 @@ export default function EngagementDetailPage() {
     const share = careShareToGroup ?? !engagement.private_to_host;
     const { error: cErr } = await saveResponse(
       { answers },
-      { share_to_group: share }
+      // Anonymity only applies when actually shared with the group.
+      { share_to_group: share, anonymous: share && careAnonymous }
     );
     setSubmitting(false);
     if (cErr) alert("Couldn't submit: " + cErr);
@@ -1140,43 +1144,50 @@ export default function EngagementDetailPage() {
             {/* Each person picks their own visibility, overriding the host default. */}
             {(() => {
               const share = careShareToGroup ?? !engagement.private_to_host;
+              // Three mutually-exclusive choices: host-only / shared+named / shared+anon.
+              const mode = !share ? "host" : careAnonymous ? "anon" : "group";
+              const pick = (m: "host" | "group" | "anon") => {
+                setCareShareToGroup(m !== "host");
+                setCareAnonymous(m === "anon");
+              };
+              const opt = (
+                m: "host" | "group" | "anon",
+                emoji: string,
+                title: string,
+                sub: string
+              ) => {
+                const on = mode === m;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => pick(m)}
+                    className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                      on
+                        ? "border-teal-500 bg-teal-500 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
+                    }`}
+                  >
+                    {emoji} {title}
+                    <span className={`block text-[11px] ${on ? "text-teal-50" : "text-slate-400"}`}>
+                      {sub}
+                    </span>
+                  </button>
+                );
+              };
               return (
                 <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                   <div className="mb-2 text-xs font-medium text-slate-600">
                     Who sees your check-in?
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setCareShareToGroup(false)}
-                      className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
-                        !share
-                          ? "border-teal-500 bg-teal-500 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
-                      }`}
-                    >
-                      🔒 Just the host
-                      <span className={`block text-[11px] ${!share ? "text-teal-50" : "text-slate-400"}`}>
-                        Only you &amp; the host see it
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setCareShareToGroup(true)}
-                      className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
-                        share
-                          ? "border-teal-500 bg-teal-500 text-white"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
-                      }`}
-                    >
-                      👥 The whole group
-                      <span className={`block text-[11px] ${share ? "text-teal-50" : "text-slate-400"}`}>
-                        Shared with everyone at the reveal
-                      </span>
-                    </button>
+                  <div className="grid gap-2">
+                    {opt("host", "🔒", "Just the host", "Only you & the host see it")}
+                    {opt("group", "👥", "Share with the group", "Everyone sees it — with your name")}
+                    {opt("anon", "🙈", "Share anonymously", "The group sees it, but not your name")}
                   </div>
                   <div className="mt-2 text-[11px] text-slate-400">
-                    {engagement.private_to_host
+                    {mode === "anon"
+                      ? "Your name is hidden from the group. The host can still see it's you."
+                      : engagement.private_to_host
                       ? "The host set this to private — but you can choose to share."
                       : "The host set this to group-visible — but you can keep it private."}
                   </div>
@@ -1497,6 +1508,19 @@ export default function EngagementDetailPage() {
   const careHostOnly = (r: { share_to_group?: boolean | null }) =>
     engagement.private_to_host ? r.share_to_group !== true : r.share_to_group === false;
 
+  // An anonymous share is masked for other group members, but NOT for the author
+  // themselves or the host (who follows up pastorally).
+  const careMasked = (r: { anonymous?: boolean | null; user_id: string }) =>
+    !!r.anonymous && !isCreator && r.user_id !== user?.id;
+  const careAuthorName = (r: {
+    anonymous?: boolean | null;
+    user_id: string;
+    profile?: { display_name?: string };
+  }) =>
+    careMasked(r)
+      ? "🙈 Anonymous"
+      : memberNameOf(r.user_id, r.profile?.display_name);
+
   const renderCareResults = () => {
     if (!showResults || engagement.type !== "care") return null;
     const qs = parseCareQuestions(engagement.config);
@@ -1537,8 +1561,9 @@ export default function EngagementDetailPage() {
                       key={r.id}
                       className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
                     >
-                      {memberNameOf(r.user_id, r.profile?.display_name)}
+                      {careAuthorName(r)}
                       {isCreator && careHostOnly(r) && <span title="Private to you">🔒</span>}
+                      {isCreator && r.anonymous && <span title="Shared anonymously to the group">🙈</span>}
                       <span className="font-bold text-teal-700">{Number(v)}/5</span>
                     </span>
                   ))}
@@ -1548,9 +1573,12 @@ export default function EngagementDetailPage() {
                   {rows.map(({ r, v }) => (
                     <div key={r.id} className="border-l-2 border-teal-200 pl-3">
                       <div className="text-xs font-semibold text-teal-700">
-                        {memberNameOf(r.user_id, r.profile?.display_name)}
+                        {careAuthorName(r)}
                         {isCreator && careHostOnly(r) && (
                           <span title="Private to you"> 🔒</span>
+                        )}
+                        {isCreator && r.anonymous && (
+                          <span title="Shared anonymously to the group"> 🙈</span>
                         )}
                       </div>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{String(v)}</p>
