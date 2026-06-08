@@ -146,15 +146,15 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
     ],
   },
   {
-    id: "shepherding",
-    name: "Shepherding",
-    emoji: "🐑",
+    id: "group-care",
+    name: "Group Care",
+    emoji: "🤝",
     templates: [
       {
         id: "shepherding-checkin",
         name: "Weekly Check-in",
         type: "accountability",
-        title: "Shepherding check-in 🐑",
+        title: "Weekly care check-in 🤝",
         description:
           "How are you really doing this week? Rate each area honestly (1 = struggling, 5 = thriving), and use the note to share anything you'd value prayer or support for. Set to blind if you'd prefer.",
         questions: [

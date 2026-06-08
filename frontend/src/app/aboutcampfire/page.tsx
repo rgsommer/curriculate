@@ -259,7 +259,7 @@ export default function AboutCampfirePage() {
               "Blind/anonymous mode",
               "Group streaks and health scores",
               "Recurring engagements — daily, weekly, monthly, yearly, and floating holidays",
-              "Template packs: Icebreaker, Bible Study, Family Game Night, Party, Youth Group, Couples",
+              "Template packs: Icebreaker, Classroom, Family Night, Bible Study, Group Care (pastoral check-ins, prayer requests)",
               "Themed seasons: Summer, Advent, March Madness, Spooky Season",
               "Real-time nudges and presence",
               "Export to social media with Campfire branding",
@@ -578,6 +578,11 @@ export default function AboutCampfirePage() {
             icon="📖"
             name="Bible Study Pack"
             desc="Reflection prompts, verse discussion, and faith-based accountability check-ins."
+          />
+          <EngCard
+            icon="🤝"
+            name="Group Care Pack"
+            desc="Pastoral & small-group care: a weekly wellbeing check-in, prayer/support requests, praise reports, and a quick wellness pulse — built for groups up to 30+."
           />
           <EngCard
             icon="🎮"
