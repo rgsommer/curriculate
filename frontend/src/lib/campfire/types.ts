@@ -131,6 +131,23 @@ export interface Response {
   anonymous?: boolean | null;
 }
 
+// Care Check-in: one row per answered question, each with its own visibility so a
+// single prompt can be kept host-only while another is shared with the group.
+export interface CareAnswer {
+  id: string;
+  engagement_id: string;
+  response_id: string;
+  user_id: string;
+  q_index: number;
+  value: string;
+  // true = group-visible, false = host-only, null = follow engagement default.
+  share_to_group?: boolean | null;
+  // UI-level name mask for other group members (host + author still see the name).
+  anonymous?: boolean | null;
+  created_at: string;
+  profile?: { display_name?: string };
+}
+
 export interface Reaction {
   id: string;
   response_id: string;

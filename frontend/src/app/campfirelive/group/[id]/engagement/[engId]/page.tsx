@@ -73,8 +73,10 @@ export default function EngagementDetailPage() {
     lieAnswers,
     revealAnswer,
     views,
+    careAnswers: careAnswerRows,
     loading,
     submitResponse,
+    submitCareAnswers,
     submitTwoTruths,
     submitLieGuess,
     submitAuthorGuess,
@@ -161,13 +163,12 @@ export default function EngagementDetailPage() {
   // Scavenger Hunt: per-item { text, photo } + which item is uploading
   const [shItems, setShItems] = useState<Record<number, { text?: string; photo?: string }>>({});
   const [shUploading, setShUploading] = useState<number | null>(null);
-  // Care Check-in: free text per section (fill any/all)
+  // Care Check-in: free text / star per section (fill any/all)
   const [careAnswers, setCareAnswers] = useState<Record<number, string | number>>({});
-  // Care Check-in: this person's own visibility choice. null until they've decided;
-  // initialized from the host default (private_to_host) when the form opens.
-  const [careShareToGroup, setCareShareToGroup] = useState<boolean | null>(null);
-  // Care Check-in: when sharing to the group, hide my name from other members.
-  const [careAnonymous, setCareAnonymous] = useState(false);
+  // Care Check-in: per-question visibility — each prompt is host-only / shared / anon.
+  // Empty until the person picks; a question with no entry follows the host default.
+  type CareVis = "host" | "group" | "anon";
+  const [careVis, setCareVis] = useState<Record<number, CareVis>>({});
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -769,15 +770,27 @@ export default function EngagementDetailPage() {
     }
     if (engagement.type === "scavenger_hunt" && c.answers)
       setShItems(c.answers as Record<number, { text?: string; photo?: string }>);
-    if (engagement.type === "care" && c.answers) {
-      setCareAnswers(c.answers as Record<number, string | number>);
-      // Restore their saved visibility choice (null → host default).
-      setCareShareToGroup(
-        typeof myResponse?.share_to_group === "boolean"
-          ? myResponse.share_to_group
-          : null
-      );
-      setCareAnonymous(myResponse?.anonymous === true);
+    if (engagement.type === "care") {
+      // Pre-fill from this person's saved per-question answer rows.
+      const mine = careAnswerRows.filter((a) => a.user_id === user?.id);
+      const qs = parseCareQuestions(engagement.config);
+      const vals: Record<number, string | number> = {};
+      const vis: Record<number, "host" | "group" | "anon"> = {};
+      for (const a of mine) {
+        vals[a.q_index] =
+          qs[a.q_index]?.kind === "star" ? Number(a.value) : a.value;
+        vis[a.q_index] = a.anonymous
+          ? "anon"
+          : a.share_to_group === false
+          ? "host"
+          : a.share_to_group === true
+          ? "group"
+          : engagement.private_to_host
+          ? "host"
+          : "group";
+      }
+      setCareAnswers(vals);
+      setCareVis(vis);
     }
     setEditingResponse(true);
   };
@@ -901,35 +914,50 @@ export default function EngagementDetailPage() {
 
   const handleCareSubmit = async () => {
     const qs = parseCareQuestions(engagement.config);
-    const answers: Record<string, string | number> = {};
+    const defVis: "host" | "group" | "anon" = engagement.private_to_host
+      ? "host"
+      : "group";
+    // One row per answered question, each carrying its own visibility.
+    const rows: {
+      q_index: number;
+      value: string;
+      share_to_group: boolean;
+      anonymous: boolean;
+    }[] = [];
     for (let i = 0; i < qs.length; i++) {
       const v = careAnswers[i];
+      let value = "";
       if (qs[i].kind === "star") {
-        if (typeof v === "number" && v >= 1) answers[i] = v;
+        if (typeof v === "number" && v >= 1) value = String(v);
       } else {
         const text = typeof v === "string" ? v.trim() : "";
-        if (!text) continue;
-        if (hasProfanity(text)) {
+        if (text && hasProfanity(text)) {
           alert("Let's keep it kind — please reword.");
           return;
         }
-        answers[i] = text;
+        value = text;
       }
+      if (!value) continue;
+      const mode = careVis[i] ?? defVis;
+      rows.push({
+        q_index: i,
+        value,
+        share_to_group: mode !== "host",
+        anonymous: mode === "anon",
+      });
     }
-    if (Object.keys(answers).length === 0) {
+    if (rows.length === 0) {
       alert("Fill in at least one question.");
       return;
     }
     setSubmitting(true);
-    // Persist this person's own visibility choice (falls back to the host default).
-    const share = careShareToGroup ?? !engagement.private_to_host;
-    const { error: cErr } = await saveResponse(
-      { answers },
-      // Anonymity only applies when actually shared with the group.
-      { share_to_group: share, anonymous: share && careAnonymous }
-    );
+    const { error: cErr } = await submitCareAnswers(rows);
     setSubmitting(false);
-    if (cErr) alert("Couldn't submit: " + cErr);
+    if (cErr) {
+      alert("Couldn't submit: " + cErr);
+    } else {
+      setEditingResponse(false);
+    }
   };
 
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1103,16 +1131,46 @@ export default function EngagementDetailPage() {
 
       case "care": {
         const qs = parseCareQuestions(engagement.config);
+        const defVis: CareVis = engagement.private_to_host ? "host" : "group";
+        const visOf = (i: number): CareVis => careVis[i] ?? defVis;
+        const setVis = (i: number, m: CareVis) =>
+          setCareVis((v) => ({ ...v, [i]: m }));
+        const VIS: { m: CareVis; icon: string; label: string }[] = [
+          { m: "host", icon: "🔒", label: "Only the host sees this" },
+          { m: "group", icon: "👥", label: "Share with the group" },
+          { m: "anon", icon: "🙈", label: "Share with the group, anonymously" },
+        ];
         return (
           <div className="space-y-4">
             <p className="text-xs text-slate-500">
-              Fill in any or all — share as much or as little as you&apos;d like.
+              Fill in any or all. On each, tap who sees it — 🔒 just the host · 👥 the
+              group · 🙈 the group, but not your name.
             </p>
             {qs.map((q, i) => (
               <div key={i}>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {q.prompt}
-                </label>
+                <div className="mb-1 flex items-center justify-between gap-2">
+                  <label className="text-sm font-medium text-slate-700">
+                    {q.prompt}
+                  </label>
+                  <div className="flex shrink-0 items-center gap-0.5 rounded-full border border-slate-200 bg-white p-0.5">
+                    {VIS.map((o) => (
+                      <button
+                        key={o.m}
+                        type="button"
+                        title={o.label}
+                        aria-label={o.label}
+                        onClick={() => setVis(i, o.m)}
+                        className={`rounded-full px-1.5 py-0.5 text-xs leading-none transition ${
+                          visOf(i) === o.m
+                            ? "bg-teal-500/15 ring-1 ring-teal-400"
+                            : "opacity-35 hover:opacity-90"
+                        }`}
+                      >
+                        {o.icon}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 {q.kind === "star" ? (
                   <div className="flex gap-1.5">
                     {[1, 2, 3, 4, 5].map((n) => (
@@ -1141,59 +1199,6 @@ export default function EngagementDetailPage() {
                 )}
               </div>
             ))}
-            {/* Each person picks their own visibility, overriding the host default. */}
-            {(() => {
-              const share = careShareToGroup ?? !engagement.private_to_host;
-              // Three mutually-exclusive choices: host-only / shared+named / shared+anon.
-              const mode = !share ? "host" : careAnonymous ? "anon" : "group";
-              const pick = (m: "host" | "group" | "anon") => {
-                setCareShareToGroup(m !== "host");
-                setCareAnonymous(m === "anon");
-              };
-              const opt = (
-                m: "host" | "group" | "anon",
-                emoji: string,
-                title: string,
-                sub: string
-              ) => {
-                const on = mode === m;
-                return (
-                  <button
-                    type="button"
-                    onClick={() => pick(m)}
-                    className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
-                      on
-                        ? "border-teal-500 bg-teal-500 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
-                    }`}
-                  >
-                    {emoji} {title}
-                    <span className={`block text-[11px] ${on ? "text-teal-50" : "text-slate-400"}`}>
-                      {sub}
-                    </span>
-                  </button>
-                );
-              };
-              return (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                  <div className="mb-2 text-xs font-medium text-slate-600">
-                    Who sees your check-in?
-                  </div>
-                  <div className="grid gap-2">
-                    {opt("host", "🔒", "Just the host", "Only you & the host see it")}
-                    {opt("group", "👥", "Share with the group", "Everyone sees it — with your name")}
-                    {opt("anon", "🙈", "Share anonymously", "The group sees it, but not your name")}
-                  </div>
-                  <div className="mt-2 text-[11px] text-slate-400">
-                    {mode === "anon"
-                      ? "Your name is hidden from the group. The host can still see it's you."
-                      : engagement.private_to_host
-                      ? "The host set this to private — but you can choose to share."
-                      : "The host set this to group-visible — but you can keep it private."}
-                  </div>
-                </div>
-              );
-            })()}
             <button
               onClick={handleCareSubmit}
               disabled={submitting}
@@ -1524,20 +1529,39 @@ export default function EngagementDetailPage() {
   const renderCareResults = () => {
     if (!showResults || engagement.type !== "care") return null;
     const qs = parseCareQuestions(engagement.config);
+    // New model: one row per (person, question) with its own visibility (RLS-filtered
+    // server-side). Legacy fallback: pre-048 engagements still have answers inline on
+    // the response content, with no per-question rows.
+    const usingRows = careAnswerRows.length > 0;
     return (
       <div className="space-y-3">
         <div className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-2.5 text-xs text-teal-800">
           🔒 {isCreator
-            ? "Each person chose who sees their check-in. As the host you see everyone's — 🔒 marks the ones kept private to you."
-            : "Each person picks their own visibility — share with the group, or keep it just between you and the host."}
+            ? "Each person chose who sees each answer. As the host you see everyone's — 🔒 marks answers kept private to you."
+            : "Each answer has its own visibility — 🔒 just the host, 👥 the group, or 🙈 the group without a name."}
         </div>
         {qs.map((q, i) => {
-          const rows = responses
-            .map((r) => ({
-              r,
-              v: (r.content as { answers?: Record<string, string | number> })?.answers?.[String(i)],
-            }))
-            .filter((x) => x.v !== undefined && x.v !== null && x.v !== "");
+          const rows: {
+            key: string;
+            r: {
+              user_id: string;
+              anonymous?: boolean | null;
+              share_to_group?: boolean | null;
+              profile?: { display_name?: string };
+            };
+            v: string | number;
+          }[] = usingRows
+            ? careAnswerRows
+                .filter((a) => a.q_index === i && a.value !== "")
+                .map((a) => ({ key: a.id, r: a, v: a.value }))
+            : responses
+                .map((r) => ({
+                  key: r.id,
+                  r,
+                  v: (r.content as { answers?: Record<string, string | number> })
+                    ?.answers?.[String(i)] as string | number,
+                }))
+                .filter((x) => x.v !== undefined && x.v !== null && x.v !== "");
           if (rows.length === 0) return null;
           const stars = q.kind === "star";
           const avg = stars
@@ -1556,9 +1580,9 @@ export default function EngagementDetailPage() {
               </div>
               {stars ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {rows.map(({ r, v }) => (
+                  {rows.map(({ key, r, v }) => (
                     <span
-                      key={r.id}
+                      key={key}
                       className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
                     >
                       {careAuthorName(r)}
@@ -1570,8 +1594,8 @@ export default function EngagementDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {rows.map(({ r, v }) => (
-                    <div key={r.id} className="border-l-2 border-teal-200 pl-3">
+                  {rows.map(({ key, r, v }) => (
+                    <div key={key} className="border-l-2 border-teal-200 pl-3">
                       <div className="text-xs font-semibold text-teal-700">
                         {careAuthorName(r)}
                         {isCreator && careHostOnly(r) && (

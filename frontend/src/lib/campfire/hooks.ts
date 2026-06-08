@@ -19,6 +19,7 @@ import type {
   LieGuess,
   LieAnswer,
   RevealAnswer,
+  CareAnswer,
 } from "./types";
 
 // ── Groups ──
@@ -307,6 +308,7 @@ export function useEngagement(engagementId: string) {
   const [lieAnswers, setLieAnswers] = useState<LieAnswer[]>([]);
   const [revealAnswer, setRevealAnswerState] = useState<RevealAnswer | null>(null);
   const [views, setViews] = useState<{ user_id: string; seen_at: string }[]>([]);
+  const [careAnswers, setCareAnswers] = useState<CareAnswer[]>([]);
   const [loading, setLoading] = useState(true);
 
   const fetchEngagement = useCallback(async () => {
@@ -343,6 +345,18 @@ export function useEngagement(engagementId: string) {
       .select("*, profile:profiles(*)")
       .eq("engagement_id", engagementId);
     if (resps) setResponses(resps as (Response & { profile: Profile })[]);
+
+    // Care Check-in: per-question answers (RLS returns only what the viewer may see —
+    // own always, shared to the group, and host-only to the host).
+    if (eng?.type === "care") {
+      const { data: ca } = await supabase
+        .from("campfire_care_answers")
+        .select("*, profile:profiles(display_name)")
+        .eq("engagement_id", engagementId);
+      setCareAnswers((ca as CareAnswer[]) ?? []);
+    } else {
+      setCareAnswers([]);
+    }
 
     // Two Truths & a Lie: guesses (RLS: members) + answers (RLS: own + after reveal)
     if (eng?.type === "two_truths") {
@@ -438,6 +452,55 @@ export function useEngagement(engagementId: string) {
     );
 
     if (error) return { error: error.message };
+    await fetchEngagement();
+    return { error: null };
+  };
+
+  // Care Check-in: upsert the umbrella response (the "checked in" marker, host-only —
+  // it carries no answer content), then replace this person's per-question answer rows.
+  // Each answer carries its own visibility (share_to_group / anonymous).
+  const submitCareAnswers = async (
+    rows: {
+      q_index: number;
+      value: string;
+      share_to_group: boolean;
+      anonymous: boolean;
+    }[]
+  ) => {
+    if (!user || !engagementId) return { error: "Missing data" };
+
+    const { data: resp, error: rErr } = await supabase
+      .from("responses")
+      .upsert(
+        {
+          engagement_id: engagementId,
+          user_id: user.id,
+          content: { care: true },
+          share_to_group: false,
+        },
+        { onConflict: "engagement_id,user_id" }
+      )
+      .select("id")
+      .single();
+    if (rErr || !resp) return { error: rErr?.message ?? "Could not save" };
+
+    // Replace prior answers (handles edits and cleared questions).
+    await supabase.from("campfire_care_answers").delete().eq("response_id", resp.id);
+    if (rows.length) {
+      const { error: iErr } = await supabase.from("campfire_care_answers").insert(
+        rows.map((r) => ({
+          engagement_id: engagementId,
+          response_id: resp.id,
+          user_id: user.id,
+          q_index: r.q_index,
+          value: r.value,
+          share_to_group: r.share_to_group,
+          anonymous: r.anonymous,
+        }))
+      );
+      if (iErr) return { error: iErr.message };
+    }
+
     await fetchEngagement();
     return { error: null };
   };
@@ -664,8 +727,10 @@ export function useEngagement(engagementId: string) {
     lieAnswers,
     revealAnswer,
     views,
+    careAnswers,
     loading,
     submitResponse,
+    submitCareAnswers,
     submitTwoTruths,
     submitLieGuess,
     submitAuthorGuess,
