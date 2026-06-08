@@ -185,7 +185,9 @@ export async function POST(req: Request) {
     if (newlyAdded.length) {
       const { data: activeEng } = await admin
         .from("engagements")
-        .select("id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year")
+        .select(
+          "id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_emails"
+        )
         .eq("group_id", groupId)
         .eq("status", "active")
         .eq("paused", false) // a paused engagement stays quiet — don't catch-up-email it
@@ -199,6 +201,17 @@ export async function POST(req: Request) {
         .maybeSingle();
 
       if (activeEng) {
+        // Never catch-up-email a surprise card's own recipient — that would spoil
+        // it. They still got the neutral group-join invite above; they just don't
+        // hear about the card they're the surprise target of.
+        const surprised = new Set(
+          ((activeEng.excluded_emails as string[] | null) ?? []).map((e) =>
+            e.toLowerCase()
+          )
+        );
+        const catchupTargets = newlyAdded.filter(
+          (to) => !surprised.has(to.toLowerCase())
+        );
         const meta = ENGAGEMENT_TYPES[activeEng.type as keyof typeof ENGAGEMENT_TYPES];
         const shared = {
           creator: inviter,
@@ -215,7 +228,7 @@ export async function POST(req: Request) {
           deadline: activeEng.deadline as string | null,
           holdUntilDeadline: !!activeEng.hold_until_deadline,
         };
-        const msgs = newlyAdded.map((to) => {
+        const msgs = catchupTargets.map((to) => {
           const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;
           const im = newEngagementEmail({
             ...shared,
@@ -238,7 +251,7 @@ export async function POST(req: Request) {
             .from("campfire_invitations")
             .update({ last_emailed_at: new Date().toISOString() })
             .eq("group_id", groupId)
-            .in("email", newlyAdded);
+            .in("email", catchupTargets);
         }
       }
     }

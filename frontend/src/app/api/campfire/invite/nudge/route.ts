@@ -74,7 +74,9 @@ export async function POST(req: Request) {
     // (that's the real draw). Otherwise fall back to the generic invite.
     const { data: activeEng } = await admin
       .from("engagements")
-      .select("title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year")
+      .select(
+        "title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_emails"
+      )
       .eq("group_id", groupId)
       .eq("status", "active")
       .eq("paused", false) // paused → don't feature it in a nudge
@@ -90,10 +92,18 @@ export async function POST(req: Request) {
       ? ENGAGEMENT_TYPES[activeEng.type as keyof typeof ENGAGEMENT_TYPES]
       : null;
 
+    // A surprise card's own recipient must never be nudged about that card — fall
+    // back to the neutral group nudge for them so the surprise survives.
+    const surprised = new Set(
+      ((activeEng?.excluded_emails as string[] | null) ?? []).map((e) =>
+        e.toLowerCase()
+      )
+    );
+
     // Per-recipient so we can carry their address (?inv=…) and greet by name.
     const messages = pending.map((p) => {
       const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(p.email)}`;
-      const m = activeEng
+      const m = activeEng && !surprised.has(p.email.toLowerCase())
         ? newEngagementEmail({
             creator: inviter,
             groupName: group.name,
