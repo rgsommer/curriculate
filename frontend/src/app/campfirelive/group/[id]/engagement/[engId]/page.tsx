@@ -190,6 +190,7 @@ export default function EngagementDetailPage() {
     };
   }, [groupId]);
   const [commentText, setCommentText] = useState("");
+  const [commentAnon, setCommentAnon] = useState(false);
   const [showRevealAnimation, setShowRevealAnimation] = useState(false);
   const [justRevealed, setJustRevealed] = useState(false);
   const prevStatusRef = useRef<string | null>(null);
@@ -917,7 +918,7 @@ export default function EngagementDetailPage() {
       alert("Let's keep it kind — please reword your comment.");
       return;
     }
-    await addComment(commentText.trim());
+    await addComment(commentText.trim(), undefined, engagement.allow_anon_replies && commentAnon);
     setCommentText("");
   };
 
@@ -3057,21 +3058,24 @@ export default function EngagementDetailPage() {
           {/* Other response types */}
           {renderRevealedResponses()}
 
-          {/* Comments section (post-reveal only) */}
-          {isRevealed && (
+          {/* Comments / replies — on release; not for host-private engagements */}
+          {(isRevealed || (engagement.type === "care" && showResults)) &&
+            !engagement.private_to_host && (
           <div className="mt-6">
             <h3 className="font-bold text-slate-900 mb-3">
-              Comments ({comments.length})
+              {engagement.type === "care" ? "Replies" : "Comments"} ({comments.length})
             </h3>
 
             {comments.map((c) => (
               <div key={c.id} className="flex gap-2 mb-3">
                 <div className="w-6 h-6 rounded-full bg-gradient-to-br from-orange-200 to-rose-200 flex items-center justify-center text-xs font-bold text-slate-700 flex-shrink-0">
-                  {c.profile?.display_name?.[0]?.toUpperCase() ?? "?"}
+                  {c.anonymous ? "🕊️" : (c.profile?.display_name?.[0]?.toUpperCase() ?? "?")}
                 </div>
                 <div>
                   <span className="text-xs font-medium text-slate-700">
-                    {memberNameOf(c.user_id, c.profile?.display_name)}
+                    {c.anonymous
+                      ? "Anonymous"
+                      : memberNameOf(c.user_id, c.profile?.display_name)}
                   </span>
                   <p className="text-sm text-slate-600">{c.content}</p>
                 </div>
@@ -3084,7 +3088,11 @@ export default function EngagementDetailPage() {
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleCommentSubmit()}
-                placeholder="Add a comment..."
+                placeholder={
+                  engagement.allow_anon_replies && commentAnon
+                    ? "Add an anonymous reply…"
+                    : "Add a reply…"
+                }
                 className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 outline-none"
               />
               <button
@@ -3095,6 +3103,17 @@ export default function EngagementDetailPage() {
                 Send
               </button>
             </div>
+            {engagement.allow_anon_replies && (
+              <label className="mt-2 flex items-center gap-2 text-xs text-slate-500 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={commentAnon}
+                  onChange={(e) => setCommentAnon(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                />
+                🕊️ Post this reply anonymously
+              </label>
+            )}
           </div>
           )}
         </div>

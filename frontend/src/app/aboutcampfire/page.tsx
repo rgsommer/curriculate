@@ -253,6 +253,9 @@ export default function AboutCampfirePage() {
               "Sealed results — nobody sees answers until everyone responds",
               "12 engagement types: polls, challenges, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
               "Celebration Cards — private surprise cards for birthdays, anniversaries, Mother's/Father's Day",
+              "Care Check-in — multi-section pastoral check-ins (how you're doing, prayer requests, praise)",
+              "Leader-private responses — answers visible only to the host",
+              "Anonymous replies — encourage each other without a name attached",
               "Guest signing — sign a single card with just your name, no account",
               "Edit your response any time before the reveal",
               "Voice responses",
@@ -556,6 +559,7 @@ export default function AboutCampfirePage() {
           <EngCard icon="🔍" name="Guess" desc="Post a mystery photo for the group to guess." />
           <EngCard icon="🎉" name="Surprise" desc="Coordinate greetings or video mash-ups, hidden from the recipient." />
           <EngCard icon="🎂" name="Celebration Card" desc="A surprise card everyone signs — birthday, anniversary, Mother's/Father's Day. Each wish stays private to the recipient; it opens on the special day and recurs yearly." />
+          <EngCard icon="🤝" name="Care Check-in" desc="One form, several optional sections (how you're doing, prayer/support, praise, reflection). Fill any or all. Can be kept private to the host, with optional anonymous replies." />
           <EngCard icon="💡" name="Advice" desc="Ask your group or filtered random users for counsel." />
           <EngCard icon="🎤" name="Voice Response" desc="Leave voice notes instead of text. Lower friction, higher personality." />
         </div>
@@ -664,6 +668,14 @@ export default function AboutCampfirePage() {
           <Card
             title="✏️ Edit Before Reveal"
             desc="Changed your mind? Edit your answer any time before the reveal — your response re-opens pre-filled."
+          />
+          <Card
+            title="🔒 Leader-Private Responses"
+            desc="Flip a toggle and each person's response is seen only by them and the host — never the rest of the group, even after the reveal. Built for sensitive pastoral or small-group care."
+          />
+          <Card
+            title="🕊️ Anonymous Replies"
+            desc="Let members leave each other encouraging replies without their name attached once an engagement is released — honest support, no spotlight."
           />
           <Card
             title="📤 Share Card"

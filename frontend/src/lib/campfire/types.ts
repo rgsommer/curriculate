@@ -90,6 +90,7 @@ export interface Engagement {
   birth_year?: number | null; // birthday: for the {age} title token
   share_code?: string | null; // short code for the friendly /c/<code> card link
   private_to_host?: boolean; // responses visible only to the author + the host
+  allow_anon_replies?: boolean; // members may post replies/comments anonymously
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
@@ -118,6 +119,7 @@ export interface Comment {
   response_id: string | null;
   user_id: string;
   content: string;
+  anonymous?: boolean;
   created_at: string;
 }
 

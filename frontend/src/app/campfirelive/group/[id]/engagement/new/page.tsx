@@ -113,6 +113,8 @@ export default function NewEngagementPage() {
   const [leadDays, setLeadDays] = useState(14);
   // Keep each person's response visible only to them + the host (default off).
   const [privateToHost, setPrivateToHost] = useState(false);
+  // Let members reply to each other anonymously after release (default off).
+  const [allowAnonReplies, setAllowAnonReplies] = useState(false);
   // Occasion for a card: a real birthday (date + age) or a floating holiday.
   const [occasion, setOccasion] = useState<"birthday" | "mothers_day" | "fathers_day" | "custom">(
     "birthday"
@@ -463,6 +465,8 @@ export default function NewEngagementPage() {
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
       // Keep responses visible only to each author + the host.
       private_to_host: privateToHost,
+      // Let members reply to each other anonymously after release.
+      allow_anon_replies: allowAnonReplies,
       // Let members (not just the host) invite others to this engagement.
       allow_member_invites: allowMemberInvites,
       // Surprise: hide it from these members / invitees until the reveal.
@@ -1378,6 +1382,27 @@ export default function NewEngagementPage() {
                 </div>
               </div>
             </label>
+
+            {/* Let members reply anonymously after release */}
+            {!privateToHost && (
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={allowAnonReplies}
+                  onChange={(e) => setAllowAnonReplies(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-slate-700">
+                    🕊️ Let members reply anonymously
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    After it&apos;s released, members can leave each other a reply
+                    without their name attached. Good for honest encouragement.
+                  </div>
+                </div>
+              </label>
+            )}
 
             {error && (
               <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>

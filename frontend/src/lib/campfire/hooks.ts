@@ -607,13 +607,14 @@ export function useEngagement(engagementId: string) {
   };
 
   // Add comment
-  const addComment = async (text: string, responseId?: string) => {
+  const addComment = async (text: string, responseId?: string, anonymous?: boolean) => {
     if (!user || !engagementId) return;
     await supabase.from("comments").insert({
       engagement_id: engagementId,
       response_id: responseId ?? null,
       user_id: user.id,
       content: text,
+      anonymous: !!anonymous,
     });
     await fetchEngagement();
   };
@@ -689,6 +690,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     birth_year?: number | null;
     launched_at?: string | null;
     private_to_host?: boolean;
+    allow_anon_replies?: boolean;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -720,6 +722,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
         lead_days: params.lead_days ?? 14,
         birth_year: params.birth_year ?? null,
         private_to_host: params.private_to_host ?? false,
+        allow_anon_replies: params.allow_anon_replies ?? false,
         ...(params.launched_at !== undefined ? { launched_at: params.launched_at } : {}),
       })
       .select()
