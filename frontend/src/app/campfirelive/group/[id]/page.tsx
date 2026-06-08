@@ -842,6 +842,26 @@ See you around the campfire! 🏕️`
                       : null}
                   </div>
 
+                  {/* Whether the invite email has actually been sent yet */}
+                  {inv.status === "pending" && (
+                    <div className="mt-0.5 text-[11px]">
+                      {inv.last_emailed_at ? (
+                        <span className="text-green-600">
+                          ✉️ Emailed{" "}
+                          {new Date(inv.last_emailed_at).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      ) : (
+                        <span className="text-amber-600">
+                          ✉️ Not emailed yet — they&apos;ll get it when you post/launch an
+                          engagement, or nudge.
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Actions — only for pending; wrap freely on a narrow screen */}
                   {inv.status === "pending" && (
                     <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">

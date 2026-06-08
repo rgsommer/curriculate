@@ -139,7 +139,7 @@ export async function POST(req: Request) {
       pending.map((p) =>
         admin
           .from("campfire_invitations")
-          .update({ last_nudged_at: now, nudge_count: (p.nudge_count ?? 0) + 1 })
+          .update({ last_nudged_at: now, last_emailed_at: now, nudge_count: (p.nudge_count ?? 0) + 1 })
           .eq("id", p.id)
       )
     );

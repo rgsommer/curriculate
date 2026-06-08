@@ -223,6 +223,7 @@ export interface Invitation {
   created_at: string;
   joined_at: string | null;
   last_nudged_at: string | null;
+  last_emailed_at?: string | null;
   nudge_count: number;
 }
 

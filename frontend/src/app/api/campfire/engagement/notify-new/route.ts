@@ -149,6 +149,12 @@ export async function POST(req: Request) {
       for (let i = 0; i < invMsgs.length; i += 100) {
         await resend.batch.send(invMsgs.slice(i, i + 100));
       }
+      // Record that these invitees were emailed (the host can see who's been reached).
+      await admin
+        .from("campfire_invitations")
+        .update({ last_emailed_at: new Date().toISOString() })
+        .eq("group_id", eng.group_id)
+        .in("email", pend.map((p) => p.email));
       invited = invMsgs.length;
     }
 

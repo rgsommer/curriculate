@@ -137,7 +137,7 @@ export async function POST(req: Request) {
       for (const p of invitees) {
         await admin
           .from("campfire_invitations")
-          .update({ last_nudged_at: nowIso, nudge_count: ((p.nudge_count as number) ?? 0) + 1 })
+          .update({ last_nudged_at: nowIso, last_emailed_at: nowIso, nudge_count: ((p.nudge_count as number) ?? 0) + 1 })
           .eq("id", p.id);
       }
       nudged += invitees.length;

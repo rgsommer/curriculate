@@ -232,6 +232,13 @@ export async function POST(req: Request) {
           }
           emailedNow += msgs.slice(i, i + 100).length;
         }
+        if (emailedNow > 0) {
+          await admin
+            .from("campfire_invitations")
+            .update({ last_emailed_at: new Date().toISOString() })
+            .eq("group_id", groupId)
+            .in("email", newlyAdded);
+        }
       }
     }
 

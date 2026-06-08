@@ -210,6 +210,7 @@ export default function EngagementDetailPage() {
   const [editCareQuestions, setEditCareQuestions] = useState<
     { prompt: string; kind: "text" | "star" }[]
   >([]);
+  const [editLeadDays, setEditLeadDays] = useState(14); // how many days before it opens
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
   const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
@@ -449,6 +450,7 @@ export default function EngagementDetailPage() {
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
     setEditCareQuestions(parseCareQuestions(engagement.config));
+    setEditLeadDays(engagement.lead_days ?? 14);
     // Birthday: the deadline IS the birthday (the day it reveals). Pre-fill the
     // date in LOCAL time so the day doesn't shift across time zones.
     if (engagement.deadline) {
@@ -477,11 +479,14 @@ export default function EngagementDetailPage() {
     // birthday (reveal day); re-derive the auto-open date from it + the lead time.
     const birthdayFields: Record<string, unknown> = {};
     if (isBirthday) {
+      const leadN = Math.max(0, editLeadDays || 14);
+      birthdayFields.lead_days = leadN;
       if (editDeadlineTime) {
         const nd = new Date(editDeadlineTime); // full local date & time
-        const lead = (engagement.lead_days ?? 14) * 86400000;
         birthdayFields.deadline = nd.toISOString();
-        birthdayFields.scheduled_open_at = new Date(nd.getTime() - lead).toISOString();
+        birthdayFields.scheduled_open_at = new Date(
+          nd.getTime() - leadN * 86400000
+        ).toISOString();
       }
       birthdayFields.birth_year = editBirthYear.trim()
         ? parseInt(editBirthYear, 10)
@@ -2319,6 +2324,24 @@ export default function EngagementDetailPage() {
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
                     />
                   </div>
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      Opens this many days before (auto-emails the group then)
+                    </label>
+                    <div className="flex items-center gap-2 text-sm">
+                      <input
+                        type="number"
+                        min={0}
+                        max={120}
+                        value={editLeadDays}
+                        onChange={(e) => setEditLeadDays(parseInt(e.target.value || "14", 10))}
+                        className="w-20 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                      />
+                      <span className="text-slate-500">
+                        days before — opens &amp; sends the &ldquo;it&apos;s open&rdquo; email then.
+                      </span>
+                    </div>
+                  </div>
                   {editDeadlineTime && (
                     <p className="col-span-2 text-xs text-slate-500">
                       Shows as:{" "}
@@ -2329,7 +2352,16 @@ export default function EngagementDetailPage() {
                           new Date(editDeadlineTime).toISOString()
                         )}
                       </span>{" "}
-                      · opens ~{engagement.lead_days ?? 14} days before, reveals on the day, runs yearly.
+                      · opens ~{editLeadDays || 14} days before (
+                      {new Date(
+                        new Date(editDeadlineTime).getTime() -
+                          (editLeadDays || 14) * 86400000
+                      ).toLocaleDateString(undefined, {
+                        weekday: "short",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                      ), reveals on the day, runs yearly.
                     </p>
                   )}
                 </div>
