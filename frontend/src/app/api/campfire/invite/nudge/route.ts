@@ -78,7 +78,8 @@ export async function POST(req: Request) {
       .eq("group_id", groupId)
       .eq("status", "active")
       .not("launched_at", "is", null)
-      // Only an engagement that's actually open to sign now (not scheduled later).
+      // A one-off engagement open to sign now — not a recurring card or a scheduled one.
+      .is("recurrence_rule", null)
       .or(`scheduled_open_at.is.null,scheduled_open_at.lte.${new Date().toISOString()}`)
       .order("launched_at", { ascending: false })
       .limit(1)

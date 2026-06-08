@@ -62,6 +62,7 @@ export default function GroupDetailPage() {
     (e) =>
       e.status === "active" &&
       e.launched_at &&
+      !e.recurrence_rule && // recurring cards (birthdays/holidays) aren't "happening now"
       (!e.scheduled_open_at || new Date(e.scheduled_open_at).getTime() <= inviteNow)
   );
   const peekCreatorLabel = (e: { creator_id: string | null; creator?: { display_name?: string } | null }) => {
