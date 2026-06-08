@@ -279,6 +279,9 @@ export default function NewEngagementPage() {
       const opts = t.options ?? [];
       setPollOptions(opts.length >= 2 ? opts : [...opts, "", ""].slice(0, 3));
     }
+    // Pre-fill check-in / most-likely / scavenger items and any reveal override.
+    if (t.questions && t.questions.length) setQuestions(t.questions);
+    if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };
 

@@ -1,4 +1,4 @@
-import type { EngagementType } from "./types";
+import type { EngagementType, RevealMode } from "./types";
 
 // Ready-made engagements so a host can start one in a tap.
 export interface EngagementTemplate {
@@ -8,6 +8,8 @@ export interface EngagementTemplate {
   title: string;
   description?: string;
   options?: string[]; // poll choices
+  questions?: string[]; // accountability / most-likely / scavenger items
+  reveal?: RevealMode; // override the default reveal mode (e.g. host-triggered)
 }
 
 export interface TemplatePack {
@@ -140,6 +142,60 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         name: "Gratitude",
         type: "share",
         title: "What are you thankful for this week?",
+      },
+    ],
+  },
+  {
+    id: "shepherding",
+    name: "Shepherding",
+    emoji: "🐑",
+    templates: [
+      {
+        id: "shepherding-checkin",
+        name: "Weekly Check-in",
+        type: "accountability",
+        title: "Shepherding check-in 🐑",
+        description:
+          "How are you really doing this week? Rate each area honestly (1 = struggling, 5 = thriving), and use the note to share anything you'd value prayer or support for. Set to blind if you'd prefer.",
+        questions: [
+          "My walk with the Lord this week",
+          "My time in prayer & the Word",
+          "My emotional & spiritual health",
+          "My closest relationships",
+        ],
+        // Host-triggered reveal so one quiet member can't stall a 30-person group.
+        reveal: "all_at_once",
+      },
+      {
+        id: "prayer-requests",
+        name: "Prayer Requests",
+        type: "share",
+        title: "What can we pray for you this week? 🙏",
+        description:
+          "Share a request — for you or someone you love. We'll lift these up together.",
+        reveal: "as_they_come",
+      },
+      {
+        id: "praise-report",
+        name: "Praise Report",
+        type: "share",
+        title: "Where have you seen God at work? 🙌",
+        description:
+          "A praise, an answered prayer, or something you're grateful for this week.",
+        reveal: "as_they_come",
+      },
+      {
+        id: "shepherding-verse",
+        name: "Verse Reflection",
+        type: "share",
+        title: "What stood out to you in this week's passage?",
+      },
+      {
+        id: "wellness-pulse",
+        name: "Wellness Pulse",
+        type: "poll",
+        title: "How are you doing this week?",
+        options: ["🔥 Thriving", "🙂 Good", "😐 Surviving", "😔 Struggling", "🆘 Need support"],
       },
     ],
   },
