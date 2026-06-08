@@ -188,6 +188,7 @@ export async function POST(req: Request) {
         .select("id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year")
         .eq("group_id", groupId)
         .eq("status", "active")
+        .eq("paused", false) // a paused engagement stays quiet — don't catch-up-email it
         .not("launched_at", "is", null)
         // Feature a one-off engagement that's open to sign now — not a recurring
         // card (birthday/holiday) or one scheduled to open later.

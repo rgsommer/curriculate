@@ -92,6 +92,7 @@ export default function EngagementDetailPage() {
     sendNudge,
     revealNow,
     unrevealEngagement,
+    setPaused,
     setHoldUntilDeadline,
     setWaitForAllInvited,
     launchEngagement,
@@ -808,6 +809,15 @@ export default function EngagementDetailPage() {
       return;
     }
     router.push(`/campfirelive/group/${groupId}/engagement/${copy.id}`);
+  };
+
+  const [pausing, setPausing] = useState(false);
+  const togglePause = async () => {
+    if (pausing) return;
+    setPausing(true);
+    const { error } = await setPaused(!engagement.paused);
+    setPausing(false);
+    if (error) alert("Couldn't update: " + error);
   };
 
   // ── Submit handlers ──
@@ -2371,6 +2381,24 @@ export default function EngagementDetailPage() {
         </Link>
       )}
 
+      {/* ── PAUSED: host froze it to make changes — nothing goes out until resumed ── */}
+      {engagement.paused && isCreator && (
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-amber-300 bg-amber-50 p-4">
+          <div className="text-sm text-amber-900">
+            ⏸️ <span className="font-bold">Paused.</span> No emails are going out and
+            the schedule is on hold — add or hide people freely, then resume. (Anyone
+            you add now won&apos;t be emailed until you resume.)
+          </div>
+          <button
+            onClick={togglePause}
+            disabled={pausing}
+            className="shrink-0 rounded-full bg-amber-600 px-4 py-2 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-50"
+          >
+            {pausing ? "Saving…" : "▶️ Resume"}
+          </button>
+        </div>
+      )}
+
       {/* ── DRAFT: not live yet — only the creator can see it until launch ── */}
       {(isDraft || justLaunched) && isCreator && (
         <div
@@ -3640,9 +3668,30 @@ export default function EngagementDetailPage() {
         </Link>
       )}
 
-      {/* Creator: duplicate (reuse config + images) or cancel the engagement */}
+      {/* Creator: pause, duplicate, or cancel the engagement */}
       {isCreator && (
-        <div className="mt-2 flex items-center justify-center gap-4">
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-4">
+          {!isRevealed && (
+            <>
+              <button
+                onClick={togglePause}
+                disabled={pausing}
+                title={
+                  engagement.paused
+                    ? "Resume — emails and the schedule start working again"
+                    : "Pause — stops all emails & the schedule so you can make changes safely"
+                }
+                className="text-xs font-medium text-slate-500 underline hover:text-orange-600 disabled:opacity-50"
+              >
+                {pausing
+                  ? "Saving…"
+                  : engagement.paused
+                  ? "▶️ Resume"
+                  : "⏸️ Pause"}
+              </button>
+              <span className="text-slate-300">·</span>
+            </>
+          )}
           <button
             onClick={duplicateEngagement}
             disabled={duplicating}

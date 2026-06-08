@@ -112,6 +112,7 @@ export interface Engagement {
   private_to_host?: boolean; // responses visible only to the author + the host
   allow_anon_replies?: boolean; // members may post replies/comments anonymously
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
+  paused?: boolean; // host paused it: no emails go out + cron skips it until resumed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
 }

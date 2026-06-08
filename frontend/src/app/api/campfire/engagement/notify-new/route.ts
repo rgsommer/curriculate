@@ -30,11 +30,16 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year")
+      .select("group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year, paused")
       .eq("id", engagementId)
       .single();
     if (!eng) {
       return NextResponse.json({ error: "Engagement not found." }, { status: 404 });
+    }
+
+    // Paused → stay quiet (no launch/"it's open" email goes out).
+    if (eng.paused) {
+      return NextResponse.json({ ok: true, sent: 0, invited: 0, paused: true });
     }
 
     // Don't notify the group about a card that isn't open to sign yet — a card

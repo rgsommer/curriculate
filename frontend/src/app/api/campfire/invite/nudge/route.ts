@@ -77,6 +77,7 @@ export async function POST(req: Request) {
       .select("title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year")
       .eq("group_id", groupId)
       .eq("status", "active")
+      .eq("paused", false) // paused → don't feature it in a nudge
       .not("launched_at", "is", null)
       // A one-off engagement open to sign now — not a recurring card or a scheduled one.
       .is("recurrence_rule", null)

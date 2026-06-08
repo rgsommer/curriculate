@@ -49,6 +49,7 @@ export async function GET(req: Request) {
     .from("engagements")
     .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at, hold_until_deadline, birth_year")
     .eq("status", "active")
+    .eq("paused", false) // paused → no auto-reveal / auto-nudge
     .not("deadline", "is", null);
 
   let revealed = 0;
@@ -162,6 +163,7 @@ export async function GET(req: Request) {
       "id, group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_user_ids, excluded_emails"
     )
     .is("launched_at", null)
+    .eq("paused", false) // paused → don't auto-open
     .not("scheduled_open_at", "is", null)
     .lte("scheduled_open_at", new Date(now).toISOString());
 
@@ -260,6 +262,7 @@ export async function GET(req: Request) {
       "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at, deadline, lead_days, birth_year, excluded_user_ids, excluded_emails, cover_image_url, cover_image_urls"
     )
     .not("recurrence_rule", "is", null)
+    .eq("paused", false) // paused → don't roll the next occurrence forward
     .in("status", ["revealed", "expired"]);
 
   for (const e of recs ?? []) {
@@ -363,6 +366,7 @@ export async function GET(req: Request) {
     .from("engagements")
     .select("id, group_id, title, birth_year, deadline, type, config, excluded_user_ids")
     .eq("status", "revealed")
+    .eq("paused", false) // paused → hold the reveal email too
     .is("reveal_notified_at", null);
 
   for (const e of toNotify ?? []) {

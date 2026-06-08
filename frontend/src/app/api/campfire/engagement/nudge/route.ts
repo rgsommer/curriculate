@@ -34,12 +34,17 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, title, total_expected, birth_year, deadline, hold_until_deadline, type, is_blind, reveal, share_code, excluded_emails"
+        "group_id, title, total_expected, birth_year, deadline, hold_until_deadline, type, is_blind, reveal, share_code, excluded_emails, paused"
       )
       .eq("id", engagementId)
       .single();
     if (!eng) {
       return NextResponse.json({ error: "Engagement not found." }, { status: 404 });
+    }
+
+    // Paused → no nudges go out.
+    if (eng.paused) {
+      return NextResponse.json({ ok: true, sent: 0, paused: true });
     }
 
     const auth = await authorizeGroupRequester(req, eng.group_id);

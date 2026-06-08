@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, share_code, launched_at, allow_member_invites"
+        "group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, share_code, launched_at, allow_member_invites, paused"
       )
       .eq("id", engagementId)
       .single();
@@ -149,11 +149,15 @@ export async function POST(req: Request) {
       });
       return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
     });
-    for (let i = 0; i < msgs.length; i += 100) {
-      const { error: sendErr } = await resend.batch.send(msgs.slice(i, i + 100));
-      if (sendErr) {
-        console.error("Campfire engagement-invite send error:", sendErr);
-        return NextResponse.json({ error: "Couldn't send. Try again." }, { status: 502 });
+    // Paused → add them to the guest list, but DON'T email yet (so the host can
+    // line up a surprise recipient first). They get emailed when it resumes.
+    if (!eng.paused) {
+      for (let i = 0; i < msgs.length; i += 100) {
+        const { error: sendErr } = await resend.batch.send(msgs.slice(i, i + 100));
+        if (sendErr) {
+          console.error("Campfire engagement-invite send error:", sendErr);
+          return NextResponse.json({ error: "Couldn't send. Try again." }, { status: 502 });
+        }
       }
     }
 
@@ -173,7 +177,7 @@ export async function POST(req: Request) {
       { onConflict: "group_id,email" }
     );
 
-    return NextResponse.json({ ok: true, sent: emails.length });
+    return NextResponse.json({ ok: true, sent: eng.paused ? 0 : emails.length, paused: !!eng.paused });
   } catch (err) {
     console.error("Campfire engagement-invite route error:", err);
     return NextResponse.json({ error: "Server error." }, { status: 500 });

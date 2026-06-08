@@ -642,6 +642,18 @@ export function useEngagement(engagementId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Creator pauses/resumes: while paused, no emails go out and the cron skips it,
+  // so the host can safely add the surprise recipient + mark them "hide from".
+  const setPaused = async (paused: boolean) => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ paused })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
   // Creator toggles "hold until the deadline" on an existing engagement.
   const setHoldUntilDeadline = async (hold: boolean) => {
     if (!engagementId) return { error: "Missing engagement" };
@@ -755,6 +767,7 @@ export function useEngagement(engagementId: string) {
     sendNudge,
     revealNow,
     unrevealEngagement,
+    setPaused,
     setHoldUntilDeadline,
     setWaitForAllInvited,
     launchEngagement,
