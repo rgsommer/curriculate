@@ -221,6 +221,26 @@ See the reveal: ${url}`;
   return { subject, text, html };
 }
 
+// Emails render server-side (UTC), so format reveal times in the app's timezone
+// (default Eastern; override with CAMPFIRE_TZ) and show the zone so it's unambiguous.
+const APP_TZ = process.env.CAMPFIRE_TZ || "America/Toronto";
+function formatRevealWhen(iso: string): string {
+  const d = new Date(iso);
+  const day = d.toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    timeZone: APP_TZ,
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: APP_TZ,
+    timeZoneName: "short",
+  });
+  return `${day} at ${time}`;
+}
+
 // Sent when a new engagement is posted (if the creator opted into emailing the
 // group). Describes what makes THIS engagement fun, in plain, inviting language.
 export function newEngagementEmail(opts: {
@@ -258,13 +278,10 @@ export function newEngagementEmail(opts: {
   // "Hold until the date" (birthdays, baby reveals) opens ON the day regardless of
   // who's answered — so don't claim it unlocks "once everyone has answered".
   if (holdUntilDeadline && deadline) {
-    const dayStr = new Date(deadline).toLocaleDateString(undefined, {
-      weekday: "long",
-      month: "long",
-      day: "numeric",
-    });
     bits.push(
-      `🎁 It stays sealed and opens on ${dayStr} — a surprise on the day. Add yours before then!`
+      `🎁 It stays sealed and opens on ${formatRevealWhen(
+        deadline
+      )} — a surprise on the day. Add yours before then!`
     );
   } else if (reveal === "as_they_come" || reveal === "instant") {
     bits.push("⚡ Answers show up live as they land — no waiting.");
