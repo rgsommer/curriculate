@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
@@ -55,16 +55,31 @@ export default function GroupDetailPage() {
   const liveEngagements = engagements.filter(
     (e) => e.status === "active" && e.launched_at
   );
+  // The invite peek shows ONLY engagements that are open to sign RIGHT NOW (not
+  // scheduled-but-unopened), and credits the maker if it wasn't the group host.
+  const inviteNow = Date.now();
+  const peekEngagements = engagements.filter(
+    (e) =>
+      e.status === "active" &&
+      e.launched_at &&
+      (!e.scheduled_open_at || new Date(e.scheduled_open_at).getTime() <= inviteNow)
+  );
+  const peekCreatorLabel = (e: { creator_id: string | null; creator?: { display_name?: string } | null }) => {
+    if (!group || !e.creator_id || e.creator_id === group.creator_id) return "";
+    const m = members.find((mm) => mm.user_id === e.creator_id);
+    const name = m?.display_name || m?.profile?.display_name || e.creator?.display_name;
+    return name ? ` (by ${name})` : "";
+  };
   const happeningBlock =
-    liveEngagements.length > 0
-      ? `\n\nHappening right now:\n${liveEngagements
+    peekEngagements.length > 0
+      ? `\n\nHappening right now:\n${peekEngagements
           .map(
             (e) =>
-              `• ${ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"} ${resolveTitle(
+              `• ${engagementIcon(e)} ${resolveTitle(
                 e.title,
                 e.birth_year,
                 e.deadline
-              )}`
+              )}${peekCreatorLabel(e)}`
           )
           .join("\n")}`
       : "";
@@ -638,7 +653,7 @@ See you around the campfire! 🏕️`
               )}
               {(isAdmin ? liveEngagements : memberInvitable).map((e) => (
                 <option key={e.id} value={e.id}>
-                  {ENGAGEMENT_TYPES[e.type]?.icon ?? "🔥"}{" "}
+                  {engagementIcon(e)}{" "}
                   {resolveTitle(e.title, e.birth_year, e.deadline)}
                 </option>
               ))}
@@ -1116,7 +1131,7 @@ See you around the campfire! 🏕️`
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
-                    <span className="text-2xl">{meta?.icon ?? "📌"}</span>
+                    <span className="text-2xl">{engagementIcon(eng)}</span>
                     <div>
                       <p className="text-xs font-semibold text-orange-600">
                         {eng.creator_id === user?.id

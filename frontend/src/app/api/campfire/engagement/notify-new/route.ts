@@ -8,7 +8,7 @@ import {
   campfireFrom,
   mailDefaults,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("group_id, creator_id, title, type, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year")
+      .select("group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, scheduled_open_at, excluded_user_ids, excluded_emails, birth_year")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -106,7 +106,10 @@ export async function POST(req: Request) {
       groupName: group?.name || "your group",
       title: resolveTitle(eng.title, eng.birth_year as number | null, eng.deadline as string | null),
       typeLabel: meta?.label || "engagement",
-      typeIcon: meta?.icon || "🔥",
+      typeIcon: engagementIcon({
+        type: eng.type as string,
+        config: eng.config as { occasion?: string } | null,
+      }),
       isBlind: !!eng.is_blind,
       reveal: eng.reveal as string,
       deadline: eng.deadline as string | null,

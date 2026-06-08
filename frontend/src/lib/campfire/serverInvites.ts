@@ -172,13 +172,14 @@ export function cardRevealEmail(opts: {
   count: number;
   url: string;
   forRecipient: boolean;
+  icon?: string; // 🎂 for a birthday; 💐/👔/🎉 for other celebration cards
 }) {
-  const { groupName, title, recipientName, count, url, forRecipient } = opts;
+  const { groupName, title, recipientName, count, url, forRecipient, icon = "🎂" } = opts;
   const wishes = `${count} ${count === 1 ? "wish" : "wishes"}`;
   const subject = forRecipient
-    ? `🎂 Your card is here — ${wishes} inside!`
+    ? `${icon} Your card is here — ${wishes} inside!`
     : `💌 ${recipientName} just got the card (${wishes})`;
-  const headline = forRecipient ? "Your card is here! 🎂" : `${recipientName} got the card! 💌`;
+  const headline = forRecipient ? `Your card is here! ${icon}` : `${recipientName} got the card! 💌`;
   const lead = forRecipient
     ? `Open "${escapeHtml(title)}" in ${escapeHtml(groupName)} — ${wishes} written just for you.`
     : `"${escapeHtml(title)}" just opened in ${escapeHtml(groupName)}. <strong>${escapeHtml(
@@ -190,7 +191,7 @@ export function cardRevealEmail(opts: {
     : `"${title}" just opened in ${groupName}. ${recipientName} received the card with ${wishes} — each message is private to them.\n\n${cta}: ${url}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
-  <div style="font-size:40px;">🎂</div>
+  <div style="font-size:40px;">${icon}</div>
   <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(headline)}</h1>
   <p style="color:#475569; margin:0 0 12px;">${lead}</p>
   <p style="text-align:center; margin:24px 0;">

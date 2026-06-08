@@ -312,6 +312,23 @@ export function describeNthWeekday(p: NthWeekday): string {
   return `${ORDINAL_WEEK[p.week] || `${p.week}th`} ${WEEKDAY_NAMES[p.weekday]} of ${MONTH_NAMES[p.month]}`;
 }
 
+// The right emoji for an engagement: 🎂 only for an actual birthday; a holiday
+// celebration card uses its preset emoji (💐/👔) or a generic 🎉.
+export function engagementIcon(e: {
+  type: string;
+  config?: { occasion?: string } | null;
+}): string {
+  if (e.type === "birthday") {
+    const occ = e.config?.occasion;
+    if (!occ) return "🎂"; // a real birthday
+    const preset = Object.values(HOLIDAY_PRESETS).find((p) => p.label === occ);
+    return preset ? preset.emoji : "🎉";
+  }
+  return (
+    (ENGAGEMENT_TYPES as Record<string, { icon: string }>)[e.type]?.icon ?? "🔥"
+  );
+}
+
 // Built-in floating holidays (US/Canada).
 export const HOLIDAY_PRESETS: Record<
   string,

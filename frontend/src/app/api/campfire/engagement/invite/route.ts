@@ -11,7 +11,7 @@ import {
   EMAIL_RE,
   MAX_INVITES,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, creator_id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year, share_code, launched_at, allow_member_invites"
+        "group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, share_code, launched_at, allow_member_invites"
       )
       .eq("id", engagementId)
       .single();
@@ -123,7 +123,10 @@ export async function POST(req: Request) {
         eng.deadline as string | null
       ),
       typeLabel: meta?.label || "engagement",
-      typeIcon: meta?.icon || "🔥",
+      typeIcon: engagementIcon({
+        type: eng.type as string,
+        config: eng.config as { occasion?: string } | null,
+      }),
       isBlind: !!eng.is_blind,
       reveal: eng.reveal as string,
       deadline: eng.deadline as string | null,

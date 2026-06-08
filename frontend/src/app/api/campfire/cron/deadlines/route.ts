@@ -15,7 +15,7 @@ import {
   mailDefaults,
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle, nthWeekdayOfMonth, type NthWeekday } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, type NthWeekday } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -159,7 +159,7 @@ export async function GET(req: Request) {
   const { data: scheduled } = await admin
     .from("engagements")
     .select(
-      "id, group_id, creator_id, title, type, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_user_ids, excluded_emails"
+      "id, group_id, creator_id, title, type, config, is_blind, reveal, deadline, hold_until_deadline, birth_year, excluded_user_ids, excluded_emails"
     )
     .is("launched_at", null)
     .not("scheduled_open_at", "is", null)
@@ -206,7 +206,10 @@ export async function GET(req: Request) {
         groupName: grp?.name || "your group",
         title: engTitle,
         typeLabel: meta?.label || "engagement",
-        typeIcon: meta?.icon || "🎂",
+        typeIcon: engagementIcon({
+          type: e.type as string,
+          config: e.config as { occasion?: string } | null,
+        }),
         isBlind: !!e.is_blind,
         reveal: e.reveal as string,
         deadline: e.deadline as string | null,
@@ -229,7 +232,10 @@ export async function GET(req: Request) {
         groupName: grp?.name || "your group",
         title: engTitle,
         typeLabel: meta?.label || "engagement",
-        typeIcon: meta?.icon || "🎂",
+        typeIcon: engagementIcon({
+          type: e.type as string,
+          config: e.config as { occasion?: string } | null,
+        }),
         deadline: e.deadline as string | null,
         url: engUrl,
       });
@@ -355,7 +361,7 @@ export async function GET(req: Request) {
   let notifiedReveals = 0;
   const { data: toNotify } = await admin
     .from("engagements")
-    .select("id, group_id, title, birth_year, deadline, type, excluded_user_ids")
+    .select("id, group_id, title, birth_year, deadline, type, config, excluded_user_ids")
     .eq("status", "revealed")
     .is("reveal_notified_at", null);
 
@@ -393,6 +399,10 @@ export async function GET(req: Request) {
             count: count ?? 0,
             url: engUrl,
             forRecipient: recipientEmails.has(to.toLowerCase()),
+            icon: engagementIcon({
+              type: e.type as string,
+              config: e.config as { occasion?: string } | null,
+            }),
           });
           return { from, to: [to], subject: cm.subject, text: cm.text, html: cm.html, ...mailDefaults() };
         });

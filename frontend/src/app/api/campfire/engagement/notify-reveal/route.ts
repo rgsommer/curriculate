@@ -10,7 +10,7 @@ import {
   campfireFrom,
   mailDefaults,
 } from "@/lib/campfire/serverInvites";
-import { resolveTitle } from "@/lib/campfire/types";
+import { resolveTitle, engagementIcon } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline, type, excluded_user_ids")
+      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline, type, config, excluded_user_ids")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -108,6 +108,10 @@ export async function POST(req: Request) {
           count: count ?? 0,
           url: engUrl,
           forRecipient: recipientEmails.has(to.toLowerCase()),
+          icon: engagementIcon({
+            type: eng.type as string,
+            config: eng.config as { occasion?: string } | null,
+          }),
         });
         return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
       });

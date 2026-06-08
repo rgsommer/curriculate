@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 
@@ -2018,7 +2018,7 @@ export default function EngagementDetailPage() {
         <div className="p-4 sm:p-6">
         {editing ? (
           <div className="flex items-start gap-3 mb-3">
-            <span className="text-2xl sm:text-3xl flex-shrink-0">{meta?.icon ?? "📌"}</span>
+            <span className="text-2xl sm:text-3xl flex-shrink-0">{engagementIcon(engagement)}</span>
             <div className="flex-1 min-w-0 space-y-3">
               <div>
                 <label className="block text-xs font-medium text-slate-500 mb-1">
@@ -2275,7 +2275,7 @@ export default function EngagementDetailPage() {
             </div>
             {/* Icon + title (no badge competing → wraps normally) */}
             <div className="flex items-start gap-3">
-              <span className="text-2xl sm:text-3xl flex-shrink-0">{meta?.icon ?? "📌"}</span>
+              <span className="text-2xl sm:text-3xl flex-shrink-0">{engagementIcon(engagement)}</span>
               <div className="min-w-0 flex-1">
                 <div className="flex items-start gap-2">
                   <h1 className="min-w-0 flex-1 text-xl font-extrabold leading-tight text-slate-900 break-words">
