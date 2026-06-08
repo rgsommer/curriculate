@@ -106,6 +106,22 @@ export default function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <head>
+        {/* Canonical-host guard. Vercel serves www.curriculate.net as the
+            primary domain and 307-redirects the apex (curriculate.net) to it —
+            including API routes. A document loaded on the apex origin (e.g. an
+            old browser serving a cached apex page) makes every authenticated
+            relative fetch('/api/…') cross-origin-redirect to www, which drops
+            the Authorization header and trips CORS, surfacing as "Failed to
+            fetch". Server redirects can't fix an already-loaded apex document —
+            only this in-page guard can. Runs synchronously during head parse,
+            before the app issues any request. Skipped for the native app shell
+            (?app=1) so the Capacitor WebView is untouched. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{if(location.hostname==='curriculate.net'&&location.search.indexOf('app=1')===-1){location.replace('https://www.curriculate.net'+location.pathname+location.search+location.hash);}}catch(e){}})();",
+          }}
+        />
         {/* Google tag (gtag.js) */}
         <Script
           src="https://www.googletagmanager.com/gtag/js?id=G-PV7DD848BT"
