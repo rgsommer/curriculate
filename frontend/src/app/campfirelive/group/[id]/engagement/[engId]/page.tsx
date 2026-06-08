@@ -157,6 +157,8 @@ export default function EngagementDetailPage() {
   // Local UI state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
+  // Truth or Dare: which one the responder picked.
+  const [todMode, setTodMode] = useState<"truth" | "dare" | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // Editing an already-submitted answer (before the reveal).
   const [editingResponse, setEditingResponse] = useState(false);
@@ -842,6 +844,7 @@ export default function EngagementDetailPage() {
     if (typeof c.option === "string") setSelectedOption(c.option);
     if (typeof c.text === "string") setTextInput(c.text);
     if (typeof c.caption === "string") setTextInput(c.caption);
+    if (c.mode === "truth" || c.mode === "dare") setTodMode(c.mode);
     if (engagement.type === "most_likely" && c.answers)
       setMlVotes(c.answers as Record<number, string>);
     if (engagement.type === "accountability" && c.answers) {
@@ -890,6 +893,23 @@ export default function EngagementDetailPage() {
     }
     setSubmitting(true);
     await saveResponse({ text: textInput.trim() });
+    setSubmitting(false);
+    setTextInput("");
+  };
+
+  // Truth or Dare: store which one they picked alongside their answer.
+  const handleTruthOrDareSubmit = async () => {
+    if (!todMode) {
+      alert("Pick Truth or Dare first.");
+      return;
+    }
+    if (!textInput.trim()) return;
+    if (hasProfanity(textInput)) {
+      alert("Let's keep it kind — please reword your response.");
+      return;
+    }
+    setSubmitting(true);
+    await saveResponse({ mode: todMode, text: textInput.trim() });
     setSubmitting(false);
     setTextInput("");
   };
@@ -1482,8 +1502,66 @@ export default function EngagementDetailPage() {
           </div>
         );
 
+      case "truth_or_dare":
+        return (
+          <div className="space-y-3">
+            {/* Pick which one you're doing — shown as a badge at the reveal */}
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { v: "truth", emoji: "🤐", label: "Truth", hint: "Answer honestly" },
+                  { v: "dare", emoji: "🔥", label: "Dare", hint: "Take it on" },
+                ] as const
+              ).map((o) => {
+                const on = todMode === o.v;
+                return (
+                  <button
+                    key={o.v}
+                    type="button"
+                    onClick={() => setTodMode(o.v)}
+                    className={`rounded-xl border px-3 py-2.5 text-left transition ${
+                      on
+                        ? o.v === "truth"
+                          ? "border-sky-500 bg-sky-500 text-white"
+                          : "border-rose-500 bg-rose-500 text-white"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="text-sm font-bold">
+                      {o.emoji} {o.label}
+                    </div>
+                    <div className={`text-[11px] ${on ? "text-white/80" : "text-slate-400"}`}>
+                      {o.hint}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <textarea
+              value={textInput}
+              onChange={(e) => setTextInput(e.target.value)}
+              placeholder={
+                todMode === "dare"
+                  ? "Describe your dare (and how it went)…"
+                  : todMode === "truth"
+                  ? "Your truth…"
+                  : "Pick Truth or Dare above, then answer…"
+              }
+              rows={4}
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
+            />
+            <button
+              onClick={handleTruthOrDareSubmit}
+              disabled={!todMode || !textInput.trim() || submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock in my answer"}
+            </button>
+          </div>
+        );
+
       default:
-        // Generic text response (share, accountability, advice, truth_or_dare, etc.)
+        // Generic text response (share, accountability, advice, etc.)
         return (
           <div className="space-y-3">
             <textarea
@@ -2208,6 +2286,17 @@ export default function EngagementDetailPage() {
                 <span className="text-sm font-medium text-slate-900">
                   {engagement.is_blind ? "Anonymous" : memberNameOf(r.user_id, r.profile?.display_name)}
                 </span>
+                {engagement.type === "truth_or_dare" && (content.mode === "truth" || content.mode === "dare") && (
+                  <span
+                    className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-bold ${
+                      content.mode === "truth"
+                        ? "bg-sky-100 text-sky-700"
+                        : "bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {content.mode === "truth" ? "🤐 Truth" : "🔥 Dare"}
+                  </span>
+                )}
                 {r.id === winnerResponseId && (
                   <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
                     🏆 Winner
