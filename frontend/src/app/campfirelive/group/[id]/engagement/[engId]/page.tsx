@@ -112,6 +112,7 @@ export default function EngagementDetailPage() {
   // For the "Duplicate" action — create a copy in this same group.
   const { create: createEngagement } = useCreateEngagement(groupId);
   const [duplicating, setDuplicating] = useState(false);
+  const [pausing, setPausing] = useState(false);
 
   // Invite context for a truer progress picture (host-only — RLS limits reads
   // to the group admin, so non-admins simply get zeros and see nothing extra).
@@ -811,7 +812,6 @@ export default function EngagementDetailPage() {
     router.push(`/campfirelive/group/${groupId}/engagement/${copy.id}`);
   };
 
-  const [pausing, setPausing] = useState(false);
   const togglePause = async () => {
     if (pausing) return;
     setPausing(true);
