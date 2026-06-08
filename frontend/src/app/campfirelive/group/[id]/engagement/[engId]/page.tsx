@@ -470,18 +470,8 @@ export default function EngagementDetailPage() {
     // birthday (reveal day); re-derive the auto-open date from it + the lead time.
     const birthdayFields: Record<string, unknown> = {};
     if (isBirthday) {
-      if (editDeadline) {
-        const old = engagement.deadline ? new Date(engagement.deadline) : null;
-        const [y, m, dd] = editDeadline.split("-").map(Number);
-        const nd = new Date(
-          y,
-          m - 1,
-          dd,
-          old ? old.getHours() : 8,
-          old ? old.getMinutes() : 0,
-          0,
-          0
-        );
+      if (editDeadlineTime) {
+        const nd = new Date(editDeadlineTime); // full local date & time
         const lead = (engagement.lead_days ?? 14) * 86400000;
         birthdayFields.deadline = nd.toISOString();
         birthdayFields.scheduled_open_at = new Date(nd.getTime() - lead).toISOString();
@@ -2049,12 +2039,12 @@ export default function EngagementDetailPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-slate-500 mb-1">
-                      Birthday (the day it reveals)
+                      Reveals on (date &amp; time)
                     </label>
                     <input
-                      type="date"
-                      value={editDeadline}
-                      onChange={(e) => setEditDeadline(e.target.value)}
+                      type="datetime-local"
+                      value={editDeadlineTime}
+                      onChange={(e) => setEditDeadlineTime(e.target.value)}
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
                     />
                   </div>
@@ -2071,14 +2061,14 @@ export default function EngagementDetailPage() {
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
                     />
                   </div>
-                  {editDeadline && (
+                  {editDeadlineTime && (
                     <p className="col-span-2 text-xs text-slate-500">
                       Shows as:{" "}
                       <span className="font-medium text-slate-700">
                         {resolveTitle(
                           editTitle,
                           editBirthYear.trim() ? parseInt(editBirthYear, 10) : null,
-                          new Date(editDeadline).toISOString()
+                          new Date(editDeadlineTime).toISOString()
                         )}
                       </span>{" "}
                       · opens ~{engagement.lead_days ?? 14} days before, reveals on the day, runs yearly.
