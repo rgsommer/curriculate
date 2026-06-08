@@ -210,7 +210,8 @@ export interface LieGuess {
   engagement_id: string;
   response_id: string;
   guesser_id: string;
-  guess_index: number;
+  guess_index: number | null;
+  author_guess?: string | null; // guessed author (user_id) — anonymous mode
 }
 
 export interface Invitation {

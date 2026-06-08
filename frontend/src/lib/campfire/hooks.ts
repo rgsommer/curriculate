@@ -472,6 +472,23 @@ export function useEngagement(engagementId: string) {
     return { error: null };
   };
 
+  // Two Truths (anonymous): guess WHO wrote a given entry.
+  const submitAuthorGuess = async (responseId: string, authorUserId: string) => {
+    if (!user || !engagementId) return { error: "Missing data" };
+    const { error } = await supabase.from("campfire_lie_guesses").upsert(
+      {
+        engagement_id: engagementId,
+        response_id: responseId,
+        guesser_id: user.id,
+        author_guess: authorUserId,
+      },
+      { onConflict: "response_id,guesser_id" }
+    );
+    if (error) return { error: error.message };
+    await fetchEngagement();
+    return { error: null };
+  };
+
   // Baby Reveal: host sets/changes the secret answer (hidden until reveal).
   const setRevealAnswer = async (answer: string) => {
     if (!engagementId) return { error: "Missing engagement" };
@@ -645,6 +662,7 @@ export function useEngagement(engagementId: string) {
     submitResponse,
     submitTwoTruths,
     submitLieGuess,
+    submitAuthorGuess,
     revealLiesNow,
     setRevealAnswer,
     addReaction,

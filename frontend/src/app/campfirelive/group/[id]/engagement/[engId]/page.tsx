@@ -77,6 +77,7 @@ export default function EngagementDetailPage() {
     submitResponse,
     submitTwoTruths,
     submitLieGuess,
+    submitAuthorGuess,
     revealLiesNow,
     setRevealAnswer,
     addReaction,
@@ -1712,23 +1713,23 @@ export default function EngagementDetailPage() {
     if (!showResults || engagement.type !== "two_truths") return null;
     const liesRevealed = !!engagement.lies_revealed_at;
     const R = responses.length;
-    // Anonymous mode: candidate names for the "guess who wrote this" game.
-    const ttResponderNames = Array.from(
-      new Set(
-        responses
-          .map((x) => memberNameOf(x.user_id, x.profile?.display_name))
-          .filter(Boolean)
-      )
-    ) as string[];
+    // Anonymous mode: candidate players (user_id + name) for "who wrote this?".
+    const ttCandidates = responses.map((x) => ({
+      user_id: x.user_id,
+      name: memberNameOf(x.user_id, x.profile?.display_name),
+    }));
 
     const answerFor = (rid: string) =>
       lieAnswers.find((a) => a.response_id === rid)?.lie_index;
     const myGuessFor = (rid: string) =>
       lieGuesses.find((g) => g.response_id === rid && g.guesser_id === user?.id)?.guess_index;
+    const myAuthorGuessFor = (rid: string) =>
+      lieGuesses.find((g) => g.response_id === rid && g.guesser_id === user?.id)?.author_guess ??
+      null;
 
     // How many players have finished guessing everyone else.
     const completed = responses.filter(
-      (r) => lieGuesses.filter((g) => g.guesser_id === r.user_id).length >= R - 1
+      (r) => lieGuesses.filter((g) => g.guesser_id === r.user_id && g.guess_index != null).length >= R - 1
     ).length;
 
     // My score (after reveal).
@@ -1739,11 +1740,35 @@ export default function EngagementDetailPage() {
         if (r.user_id === user?.id) return;
         const ans = answerFor(r.id);
         const mg = myGuessFor(r.id);
-        if (ans !== undefined && mg !== undefined) {
+        if (ans !== undefined && mg != null) {
           myTotal++;
           if (mg === ans) myCorrect++;
         }
       });
+    }
+
+    // Winners (at the reveal): the Best Liar (fooled the most on the lie) and the
+    // Most Carefully Concealed (whose authorship was guessed wrong the most).
+    let bestLiar: { name: string; fooled: number } | null = null;
+    let mostConcealed: { name: string; missed: number } | null = null;
+    if (liesRevealed && R > 1) {
+      for (const r of responses) {
+        const ans = answerFor(r.id);
+        const lieRows = lieGuesses.filter((g) => g.response_id === r.id && g.guess_index != null);
+        const fooled = ans === undefined ? 0 : lieRows.filter((g) => g.guess_index !== ans).length;
+        if (!bestLiar || fooled > bestLiar.fooled) {
+          bestLiar = { name: memberNameOf(r.user_id, r.profile?.display_name), fooled };
+        }
+        if (engagement.is_blind) {
+          const authRows = lieGuesses.filter((g) => g.response_id === r.id && g.author_guess);
+          const missed = authRows.filter((g) => g.author_guess !== r.user_id).length;
+          if (!mostConcealed || missed > mostConcealed.missed) {
+            mostConcealed = { name: memberNameOf(r.user_id, r.profile?.display_name), missed };
+          }
+        }
+      }
+      if (bestLiar && bestLiar.fooled === 0) bestLiar = null;
+      if (mostConcealed && mostConcealed.missed === 0) mostConcealed = null;
     }
 
     return (
@@ -1764,6 +1789,39 @@ export default function EngagementDetailPage() {
               {myCorrect} of {myTotal}
             </span>{" "}
             {myTotal === 1 ? "lie" : "lies"}.
+          </div>
+        )}
+
+        {/* Winners — proclaimed once the lies (and any who-guesses) are revealed */}
+        {liesRevealed && (bestLiar || mostConcealed) && (
+          <div className="rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 p-4">
+            <div className="text-sm font-extrabold text-amber-900 mb-2">🏆 And the winners are…</div>
+            <div className="space-y-2">
+              {bestLiar && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-xl">🤥</span>
+                  <div>
+                    <span className="font-bold text-slate-900">Best Liar: {bestLiar.name}</span>
+                    <div className="text-xs text-slate-600">
+                      Fooled {bestLiar.fooled} {bestLiar.fooled === 1 ? "person" : "people"} with their lie.
+                    </div>
+                  </div>
+                </div>
+              )}
+              {mostConcealed && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-xl">🥷</span>
+                  <div>
+                    <span className="font-bold text-slate-900">
+                      Most Carefully Concealed: {mostConcealed.name}
+                    </span>
+                    <div className="text-xs text-slate-600">
+                      {mostConcealed.missed} {mostConcealed.missed === 1 ? "person" : "people"} guessed the wrong author.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1790,7 +1848,7 @@ export default function EngagementDetailPage() {
                   {name}
                   {isMine ? " (you)" : ""}
                 </span>
-                {liesRevealed && !isMine && mg !== undefined && (
+                {liesRevealed && !isMine && mg != null && (
                   <span
                     className={`ml-auto text-xs font-semibold ${
                       mg === ans ? "text-green-600" : "text-rose-600"
@@ -1805,53 +1863,46 @@ export default function EngagementDetailPage() {
               {engagement.is_blind &&
                 !isMine &&
                 hasResponded &&
-                ttResponderNames.length > 1 && (
-                  <div className="mb-2 text-xs">
-                    {!liesRevealed ? (
-                      guesses[r.id] ? (
-                        <span className="text-purple-600">
-                          🕵️ You guessed <b>{guesses[r.id]}</b> wrote this.{" "}
-                          <button
-                            onClick={() =>
-                              setGuesses((g) => {
-                                const n = { ...g };
-                                delete n[r.id];
-                                return n;
-                              })
-                            }
-                            className="underline text-slate-400 hover:text-slate-600"
-                          >
-                            change
-                          </button>
-                        </span>
-                      ) : (
+                ttCandidates.length > 1 &&
+                (() => {
+                  const myAuth = myAuthorGuessFor(r.id); // a user_id
+                  const myAuthName = myAuth
+                    ? memberNameOf(myAuth, undefined)
+                    : null;
+                  return (
+                    <div className="mb-2 text-xs">
+                      {!liesRevealed ? (
                         <div className="flex flex-wrap items-center gap-1.5">
                           <span className="text-slate-500">🕵️ Who wrote this?</span>
-                          {ttResponderNames.map((n) => (
+                          {ttCandidates.map((c) => (
                             <button
-                              key={n}
-                              onClick={() => setGuesses((g) => ({ ...g, [r.id]: n }))}
-                              className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+                              key={c.user_id}
+                              onClick={() => submitAuthorGuess(r.id, c.user_id)}
+                              className={`rounded-full border px-2 py-0.5 ${
+                                myAuth === c.user_id
+                                  ? "border-purple-400 bg-purple-50 text-purple-700 font-semibold"
+                                  : "border-slate-200 text-slate-700 hover:bg-slate-50"
+                              }`}
                             >
-                              {n}
+                              {c.name}
                             </button>
                           ))}
                         </div>
-                      )
-                    ) : guesses[r.id] ? (
-                      guesses[r.id] === memberNameOf(r.user_id, r.profile?.display_name) ? (
-                        <span className="font-medium text-green-600">
-                          ✓ Right — {memberNameOf(r.user_id, r.profile?.display_name)} wrote it!
-                        </span>
-                      ) : (
-                        <span className="text-slate-600">
-                          You guessed {guesses[r.id]} — it was{" "}
-                          <b>{memberNameOf(r.user_id, r.profile?.display_name)}</b>.
-                        </span>
-                      )
-                    ) : null}
-                  </div>
-                )}
+                      ) : myAuth ? (
+                        myAuth === r.user_id ? (
+                          <span className="font-medium text-green-600">
+                            ✓ Right — {memberNameOf(r.user_id, r.profile?.display_name)} wrote it!
+                          </span>
+                        ) : (
+                          <span className="text-slate-600">
+                            You guessed {myAuthName} — it was{" "}
+                            <b>{memberNameOf(r.user_id, r.profile?.display_name)}</b>.
+                          </span>
+                        )
+                      ) : null}
+                    </div>
+                  );
+                })()}
 
               <div className="space-y-1.5">
                 {statements.map((s, i) => {
@@ -1887,7 +1938,7 @@ export default function EngagementDetailPage() {
                 })}
               </div>
 
-              {!liesRevealed && !isMine && hasResponded && mg === undefined && (
+              {!liesRevealed && !isMine && hasResponded && mg == null && (
                 <p className="mt-1.5 text-xs text-slate-400">Tap the one you think is the lie.</p>
               )}
               {liesRevealed && (
