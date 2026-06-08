@@ -688,6 +688,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     lead_days?: number;
     birth_year?: number | null;
     launched_at?: string | null;
+    private_to_host?: boolean;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -718,6 +719,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
         scheduled_open_at: params.scheduled_open_at ?? null,
         lead_days: params.lead_days ?? 14,
         birth_year: params.birth_year ?? null,
+        private_to_host: params.private_to_host ?? false,
         ...(params.launched_at !== undefined ? { launched_at: params.launched_at } : {}),
       })
       .select()

@@ -160,6 +160,8 @@ export default function EngagementDetailPage() {
   // Scavenger Hunt: per-item { text, photo } + which item is uploading
   const [shItems, setShItems] = useState<Record<number, { text?: string; photo?: string }>>({});
   const [shUploading, setShUploading] = useState<number | null>(null);
+  // Care Check-in: free text per section (fill any/all)
+  const [careAnswers, setCareAnswers] = useState<Record<number, string>>({});
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -734,6 +736,8 @@ export default function EngagementDetailPage() {
     }
     if (engagement.type === "scavenger_hunt" && c.answers)
       setShItems(c.answers as Record<number, { text?: string; photo?: string }>);
+    if (engagement.type === "care" && c.answers)
+      setCareAnswers(c.answers as Record<number, string>);
     setEditingResponse(true);
   };
 
@@ -852,6 +856,28 @@ export default function EngagementDetailPage() {
     const { error: shErr } = await saveResponse({ answers });
     setSubmitting(false);
     if (shErr) alert("Couldn't submit: " + shErr);
+  };
+
+  const handleCareSubmit = async () => {
+    const sections = (engagement.config?.questions as string[]) ?? [];
+    const answers: Record<string, string> = {};
+    for (let i = 0; i < sections.length; i++) {
+      const text = careAnswers[i]?.trim();
+      if (!text) continue;
+      if (hasProfanity(text)) {
+        alert("Let's keep it kind — please reword.");
+        return;
+      }
+      answers[i] = text;
+    }
+    if (Object.keys(answers).length === 0) {
+      alert("Fill in at least one section.");
+      return;
+    }
+    setSubmitting(true);
+    const { error: cErr } = await saveResponse({ answers });
+    setSubmitting(false);
+    if (cErr) alert("Couldn't submit: " + cErr);
   };
 
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1018,6 +1044,38 @@ export default function EngagementDetailPage() {
               className="w-full rounded-xl bg-gradient-to-r from-violet-500 to-purple-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
               {submitting ? "Submitting..." : "🔒 Lock In My Check-in"}
+            </button>
+          </div>
+        );
+      }
+
+      case "care": {
+        const sections = (engagement.config?.questions as string[]) ?? [];
+        return (
+          <div className="space-y-4">
+            <p className="text-xs text-slate-500">
+              Fill in any or all — share as much or as little as you&apos;d like.
+            </p>
+            {sections.map((q, i) => (
+              <div key={i}>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  {q}
+                </label>
+                <textarea
+                  value={careAnswers[i] ?? ""}
+                  onChange={(e) => setCareAnswers({ ...careAnswers, [i]: e.target.value })}
+                  rows={3}
+                  placeholder="(optional)"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-teal-500 outline-none resize-y"
+                />
+              </div>
+            ))}
+            <button
+              onClick={handleCareSubmit}
+              disabled={submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-teal-500 to-emerald-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "Send my check-in"}
             </button>
           </div>
         );
@@ -1313,6 +1371,49 @@ export default function EngagementDetailPage() {
                 {ans.length === 0 && (
                   <span className="text-xs text-slate-400">Nobody got this one.</span>
                 )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const renderCareResults = () => {
+    if (!showResults || engagement.type !== "care") return null;
+    const sections = (engagement.config?.questions as string[]) ?? [];
+    return (
+      <div className="space-y-3">
+        {engagement.private_to_host && (
+          <div className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-2.5 text-xs text-teal-800">
+            🔒 {isCreator
+              ? "Private check-in — only you (the host) can see these responses."
+              : "Your responses are private — only the host sees them. Below is just your own."}
+          </div>
+        )}
+        {sections.map((q, i) => {
+          const ans = responses
+            .map((r) => ({
+              r,
+              text: (r.content as { answers?: Record<string, string> })?.answers?.[String(i)],
+            }))
+            .filter((x) => x.text && x.text.trim());
+          if (ans.length === 0) return null;
+          return (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="text-sm font-semibold text-slate-800 mb-2">
+                {q}{" "}
+                <span className="text-xs font-normal text-slate-400">({ans.length})</span>
+              </div>
+              <div className="space-y-2.5">
+                {ans.map(({ r, text }) => (
+                  <div key={r.id} className="border-l-2 border-teal-200 pl-3">
+                    <div className="text-xs font-semibold text-teal-700">
+                      {memberNameOf(r.user_id, r.profile?.display_name)}
+                    </div>
+                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{text}</p>
+                  </div>
+                ))}
               </div>
             </div>
           );
@@ -1693,7 +1794,8 @@ export default function EngagementDetailPage() {
       engagement.type === "baby_reveal" ||
       engagement.type === "most_likely" ||
       engagement.type === "accountability" ||
-      engagement.type === "scavenger_hunt"
+      engagement.type === "scavenger_hunt" ||
+      engagement.type === "care"
     )
       return null;
 
@@ -2948,6 +3050,9 @@ export default function EngagementDetailPage() {
 
           {/* Scavenger Hunt — per-item answers */}
           {renderScavengerResults()}
+
+          {/* Care Check-in — per-section responses */}
+          {renderCareResults()}
 
           {/* Other response types */}
           {renderRevealedResponses()}

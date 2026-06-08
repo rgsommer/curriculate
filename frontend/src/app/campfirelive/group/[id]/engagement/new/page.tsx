@@ -111,6 +111,8 @@ export default function NewEngagementPage() {
   >("none");
   const [birthYear, setBirthYear] = useState("");
   const [leadDays, setLeadDays] = useState(14);
+  // Keep each person's response visible only to them + the host (default off).
+  const [privateToHost, setPrivateToHost] = useState(false);
   // Occasion for a card: a real birthday (date + age) or a floating holiday.
   const [occasion, setOccasion] = useState<"birthday" | "mothers_day" | "fathers_day" | "custom">(
     "birthday"
@@ -256,6 +258,22 @@ export default function NewEngagementPage() {
       ]);
       setReveal("sealed");
     }
+    if (type === "care") {
+      if (!title.trim()) setTitle("Weekly care check-in 🤝");
+      if (!description.trim())
+        setDescription(
+          "Fill in any or all of the sections below — share as much or as little as you'd like."
+        );
+      setQuestions([
+        "How are you doing this week?",
+        "Anything you'd value prayer or support for?",
+        "A praise — where have you seen God at work?",
+        "A thought from this week's passage (optional)",
+      ]);
+      // Responses surface as they come, so the host can follow up right away (and
+      // a big group never stalls waiting on everyone).
+      setReveal("as_they_come");
+    }
     setStep("details");
   };
 
@@ -349,7 +367,8 @@ export default function NewEngagementPage() {
     if (
       selectedType === "most_likely" ||
       selectedType === "accountability" ||
-      selectedType === "scavenger_hunt"
+      selectedType === "scavenger_hunt" ||
+      selectedType === "care"
     ) {
       const qs = questions.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
@@ -358,6 +377,8 @@ export default function NewEngagementPage() {
             ? "Add at least one check-in question."
             : selectedType === "scavenger_hunt"
             ? "Add at least one item to find."
+            : selectedType === "care"
+            ? "Add at least one section for people to fill in."
             : "Add at least one award (a “Most likely to…” question)."
         );
         setCreating(false);
@@ -440,6 +461,8 @@ export default function NewEngagementPage() {
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
+      // Keep responses visible only to each author + the host.
+      private_to_host: privateToHost,
       // Let members (not just the host) invite others to this engagement.
       allow_member_invites: allowMemberInvites,
       // Surprise: hide it from these members / invitees until the reveal.
@@ -1332,6 +1355,26 @@ export default function NewEngagementPage() {
                 <div className="text-xs text-slate-500">
                   Anyone in the group (not just you) can invite people to this
                   engagement. Off = only you can.
+                </div>
+              </div>
+            </label>
+
+            {/* Keep responses private to the host */}
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={privateToHost}
+                onChange={(e) => setPrivateToHost(e.target.checked)}
+                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+              />
+              <div>
+                <div className="text-sm font-medium text-slate-700">
+                  🔒 Keep responses private to me (the host)
+                </div>
+                <div className="text-xs text-slate-500">
+                  Only you see each person&apos;s response — never the rest of the
+                  group, even after the reveal. Good for sensitive sharing. Off = the
+                  group sees responses at the reveal.
                 </div>
               </div>
             </label>

@@ -151,44 +151,20 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
     emoji: "🤝",
     templates: [
       {
-        id: "shepherding-checkin",
-        name: "Weekly Check-in",
-        type: "accountability",
+        id: "care-checkin",
+        name: "Care Check-in",
+        type: "care",
         title: "Weekly care check-in 🤝",
         description:
-          "How are you really doing this week? Rate each area honestly (1 = struggling, 5 = thriving), and use the note to share anything you'd value prayer or support for. Set to blind if you'd prefer.",
+          "Fill in any or all of the sections below — share as much or as little as you'd like.",
         questions: [
-          "My walk with the Lord this week",
-          "My time in prayer & the Word",
-          "My emotional & spiritual health",
-          "My closest relationships",
+          "How are you doing this week?",
+          "Anything you'd value prayer or support for?",
+          "A praise — where have you seen God at work?",
+          "A thought from this week's passage (optional)",
         ],
-        // Host-triggered reveal so one quiet member can't stall a 30-person group.
-        reveal: "all_at_once",
-      },
-      {
-        id: "prayer-requests",
-        name: "Prayer Requests",
-        type: "share",
-        title: "What can we pray for you this week? 🙏",
-        description:
-          "Share a request — for you or someone you love. We'll lift these up together.",
+        // Surfaces as people respond so the host can follow up right away.
         reveal: "as_they_come",
-      },
-      {
-        id: "praise-report",
-        name: "Praise Report",
-        type: "share",
-        title: "Where have you seen God at work? 🙌",
-        description:
-          "A praise, an answered prayer, or something you're grateful for this week.",
-        reveal: "as_they_come",
-      },
-      {
-        id: "shepherding-verse",
-        name: "Verse Reflection",
-        type: "share",
-        title: "What stood out to you in this week's passage?",
       },
       {
         id: "wellness-pulse",

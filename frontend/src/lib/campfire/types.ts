@@ -20,7 +20,8 @@ export type EngagementType =
   | "baby_reveal"
   | "most_likely"
   | "scavenger_hunt"
-  | "birthday";
+  | "birthday"
+  | "care";
 
 export type EngagementStatus = "active" | "sealed" | "revealed" | "expired";
 export type RevealMode = "sealed" | "all_at_once" | "first_in" | "as_they_come" | "instant";
@@ -88,6 +89,7 @@ export interface Engagement {
   lead_days?: number; // birthday: open this many days before the date
   birth_year?: number | null; // birthday: for the {age} title token
   share_code?: string | null; // short code for the friendly /c/<code> card link
+  private_to_host?: boolean; // responses visible only to the author + the host
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   // Joined: the originator's display name (for "Name's Type" headers)
   creator?: { display_name: string } | null;
@@ -227,6 +229,7 @@ export const ENGAGEMENT_TYPES: Record<
   most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
   scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
   birthday: { icon: "🎂", label: "Birthday", description: "A surprise card everyone signs — hidden from the birthday person, opens before the day and reveals on it. Runs every year", hook: "Sign the card — it opens on the big day! 🎂", color: "bg-pink-50 text-pink-700" },
+  care: { icon: "🤝", label: "Care Check-in", description: "One form with several sections — how you're doing, prayer requests, praise, reflection. Fill in any or all. Can be kept private to the host", hook: "Share what you'd like — fill any or all sections.", color: "bg-teal-50 text-teal-700" },
 };
 
 // Ordinal: 28 -> "28th", 21 -> "21st".
