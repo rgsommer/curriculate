@@ -419,7 +419,12 @@ export function useEngagement(engagementId: string) {
   // the existing answer instead of failing the unique (engagement_id, user_id).
   // On first submit this inserts (firing the all-responded check); an edit is an
   // ON CONFLICT update, which doesn't re-fire that trigger — so counts stay right.
-  const submitResponse = async (content: Record<string, unknown>) => {
+  const submitResponse = async (
+    content: Record<string, unknown>,
+    // Optional row-level fields (e.g. a per-response visibility choice). Omitted
+    // keys are left untouched on edit, so we don't clobber a prior choice.
+    extra?: Record<string, unknown>
+  ) => {
     if (!user || !engagementId) return { error: "Missing data" };
 
     const { error } = await supabase.from("responses").upsert(
@@ -427,6 +432,7 @@ export function useEngagement(engagementId: string) {
         engagement_id: engagementId,
         user_id: user.id,
         content,
+        ...(extra ?? {}),
       },
       { onConflict: "engagement_id,user_id" }
     );

@@ -163,6 +163,9 @@ export default function EngagementDetailPage() {
   const [shUploading, setShUploading] = useState<number | null>(null);
   // Care Check-in: free text per section (fill any/all)
   const [careAnswers, setCareAnswers] = useState<Record<number, string | number>>({});
+  // Care Check-in: this person's own visibility choice. null until they've decided;
+  // initialized from the host default (private_to_host) when the form opens.
+  const [careShareToGroup, setCareShareToGroup] = useState<boolean | null>(null);
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -737,8 +740,11 @@ export default function EngagementDetailPage() {
   // ── Submit handlers ──
 
   // Save a response (first time or an edit) and close edit mode on success.
-  const saveResponse = async (content: Record<string, unknown>) => {
-    const r = await submitResponse(content);
+  const saveResponse = async (
+    content: Record<string, unknown>,
+    extra?: Record<string, unknown>
+  ) => {
+    const r = await submitResponse(content, extra);
     if (!r?.error) setEditingResponse(false);
     return r;
   };
@@ -761,8 +767,15 @@ export default function EngagementDetailPage() {
     }
     if (engagement.type === "scavenger_hunt" && c.answers)
       setShItems(c.answers as Record<number, { text?: string; photo?: string }>);
-    if (engagement.type === "care" && c.answers)
+    if (engagement.type === "care" && c.answers) {
       setCareAnswers(c.answers as Record<number, string | number>);
+      // Restore their saved visibility choice (null → host default).
+      setCareShareToGroup(
+        typeof myResponse?.share_to_group === "boolean"
+          ? myResponse.share_to_group
+          : null
+      );
+    }
     setEditingResponse(true);
   };
 
@@ -905,7 +918,12 @@ export default function EngagementDetailPage() {
       return;
     }
     setSubmitting(true);
-    const { error: cErr } = await saveResponse({ answers });
+    // Persist this person's own visibility choice (falls back to the host default).
+    const share = careShareToGroup ?? !engagement.private_to_host;
+    const { error: cErr } = await saveResponse(
+      { answers },
+      { share_to_group: share }
+    );
     setSubmitting(false);
     if (cErr) alert("Couldn't submit: " + cErr);
   };
@@ -1119,6 +1137,52 @@ export default function EngagementDetailPage() {
                 )}
               </div>
             ))}
+            {/* Each person picks their own visibility, overriding the host default. */}
+            {(() => {
+              const share = careShareToGroup ?? !engagement.private_to_host;
+              return (
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                  <div className="mb-2 text-xs font-medium text-slate-600">
+                    Who sees your check-in?
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCareShareToGroup(false)}
+                      className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                        !share
+                          ? "border-teal-500 bg-teal-500 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
+                      }`}
+                    >
+                      🔒 Just the host
+                      <span className={`block text-[11px] ${!share ? "text-teal-50" : "text-slate-400"}`}>
+                        Only you &amp; the host see it
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCareShareToGroup(true)}
+                      className={`rounded-lg border px-3 py-2 text-left text-xs transition ${
+                        share
+                          ? "border-teal-500 bg-teal-500 text-white"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
+                      }`}
+                    >
+                      👥 The whole group
+                      <span className={`block text-[11px] ${share ? "text-teal-50" : "text-slate-400"}`}>
+                        Shared with everyone at the reveal
+                      </span>
+                    </button>
+                  </div>
+                  <div className="mt-2 text-[11px] text-slate-400">
+                    {engagement.private_to_host
+                      ? "The host set this to private — but you can choose to share."
+                      : "The host set this to group-visible — but you can keep it private."}
+                  </div>
+                </div>
+              );
+            })()}
             <button
               onClick={handleCareSubmit}
               disabled={submitting}
@@ -1428,18 +1492,21 @@ export default function EngagementDetailPage() {
     );
   };
 
+  // A response is host-only when, given the host default, this person didn't share
+  // to the group (private default + not opted-in, or group default + opted-out).
+  const careHostOnly = (r: { share_to_group?: boolean | null }) =>
+    engagement.private_to_host ? r.share_to_group !== true : r.share_to_group === false;
+
   const renderCareResults = () => {
     if (!showResults || engagement.type !== "care") return null;
     const qs = parseCareQuestions(engagement.config);
     return (
       <div className="space-y-3">
-        {engagement.private_to_host && (
-          <div className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-2.5 text-xs text-teal-800">
-            🔒 {isCreator
-              ? "Private check-in — only you (the host) can see these responses."
-              : "Your responses are private — only the host sees them. Below is just your own."}
-          </div>
-        )}
+        <div className="rounded-xl border border-teal-200 bg-teal-50/60 px-4 py-2.5 text-xs text-teal-800">
+          🔒 {isCreator
+            ? "Each person chose who sees their check-in. As the host you see everyone's — 🔒 marks the ones kept private to you."
+            : "Each person picks their own visibility — share with the group, or keep it just between you and the host."}
+        </div>
         {qs.map((q, i) => {
           const rows = responses
             .map((r) => ({
@@ -1471,6 +1538,7 @@ export default function EngagementDetailPage() {
                       className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
                     >
                       {memberNameOf(r.user_id, r.profile?.display_name)}
+                      {isCreator && careHostOnly(r) && <span title="Private to you">🔒</span>}
                       <span className="font-bold text-teal-700">{Number(v)}/5</span>
                     </span>
                   ))}
@@ -1481,6 +1549,9 @@ export default function EngagementDetailPage() {
                     <div key={r.id} className="border-l-2 border-teal-200 pl-3">
                       <div className="text-xs font-semibold text-teal-700">
                         {memberNameOf(r.user_id, r.profile?.display_name)}
+                        {isCreator && careHostOnly(r) && (
+                          <span title="Private to you"> 🔒</span>
+                        )}
                       </div>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{String(v)}</p>
                     </div>

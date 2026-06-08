@@ -123,6 +123,9 @@ export interface Response {
   content: Record<string, unknown>;
   rating: number | null;
   created_at: string;
+  // Per-response visibility override: true = share with the group, false = keep
+  // host-only, null/undefined = follow the engagement's private_to_host default.
+  share_to_group?: boolean | null;
 }
 
 export interface Reaction {
