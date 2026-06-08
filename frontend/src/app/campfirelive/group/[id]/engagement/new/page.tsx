@@ -115,10 +115,14 @@ export default function NewEngagementPage() {
   const [privateToHost, setPrivateToHost] = useState(false);
   // Let members reply to each other anonymously after release (default off).
   const [allowAnonReplies, setAllowAnonReplies] = useState(false);
-  // Occasion for a card: a real birthday (date + age) or a floating holiday.
-  const [occasion, setOccasion] = useState<"birthday" | "mothers_day" | "fathers_day" | "custom">(
-    "birthday"
-  );
+  // Occasion for a card. Recurring-by-nature ones: birthday, anniversary (fixed
+  // dates that repeat yearly) and the floating holidays. A "once" card is a one-off
+  // celebration (Retirement, Graduation, Farewell…) — fixed date, NO recurrence.
+  const [occasion, setOccasion] = useState<
+    "birthday" | "anniversary" | "mothers_day" | "fathers_day" | "custom" | "once"
+  >("birthday");
+  // Free-text name for a one-off celebration (e.g. "Retirement").
+  const [onceLabel, setOnceLabel] = useState("");
   // "Nth weekday of a month" pattern (Mother's Day = 2nd Sun May, etc.)
   const [nthWeek, setNthWeek] = useState(2); // 1-4, or 5 = last
   const [nthDow, setNthDow] = useState(0); // 0=Sun … 6=Sat
@@ -347,19 +351,35 @@ export default function NewEngagementPage() {
     }
 
     const isBirthday = selectedType === "birthday";
-    const isHolidayCard = isBirthday && occasion !== "birthday";
+    // Floating-date holiday cards (Mother's/Father's Day, custom) compute their date
+    // from an Nth-weekday pattern. Birthday / anniversary / one-time use a fixed date.
+    const isNthCard =
+      isBirthday &&
+      (occasion === "mothers_day" ||
+        occasion === "fathers_day" ||
+        occasion === "custom");
+    const isFixedDateCard =
+      isBirthday &&
+      (occasion === "birthday" || occasion === "anniversary" || occasion === "once");
     // A floating "Nth weekday" pattern, from a holiday card OR a general yearly_nth pick.
-    const nthPattern: NthWeekday | null = isHolidayCard
+    const nthPattern: NthWeekday | null = isNthCard
       ? occasion === "custom"
         ? { week: nthWeek, weekday: nthDow, month: nthMonth }
-        : HOLIDAY_PRESETS[occasion].nth
+        : HOLIDAY_PRESETS[occasion as "mothers_day" | "fathers_day"].nth
       : !isBirthday && recurrence === "yearly_nth"
       ? { week: nthWeek, weekday: nthDow, month: nthMonth }
       : null;
 
-    // A real (fixed-date) birthday still needs the date; a holiday computes its own.
-    if (isBirthday && !isHolidayCard && !deadline) {
-      setError("Set the birthday — that's the day it reveals.");
+    // A fixed-date card (birthday/anniversary/one-time) needs its date; a holiday
+    // computes its own.
+    if (isFixedDateCard && !deadline) {
+      setError(
+        occasion === "anniversary"
+          ? "Set the anniversary date — that's the day it reveals."
+          : occasion === "once"
+          ? "Set the date — that's the day it reveals."
+          : "Set the birthday — that's the day it reveals."
+      );
       setCreating(false);
       return;
     }
@@ -416,12 +436,17 @@ export default function NewEngagementPage() {
     // forward to next year's date, plus an occasion label for holiday cards.
     if (nthPattern) {
       config.recurrence_nth = nthPattern;
-      if (isHolidayCard) {
+      if (isNthCard) {
         config.occasion =
           occasion === "custom"
             ? describeNthWeekday(nthPattern)
-            : HOLIDAY_PRESETS[occasion].label;
+            : HOLIDAY_PRESETS[occasion as "mothers_day" | "fathers_day"].label;
       }
+    } else if (occasion === "anniversary") {
+      config.occasion = "Anniversary";
+    } else if (occasion === "once") {
+      // The free-text name (Retirement, etc.) — also drives the 🎉 icon + copy.
+      config.occasion = onceLabel.trim() || "Celebration";
     }
 
     // Resolve the destination group — make a new one first if requested.
@@ -458,8 +483,11 @@ export default function NewEngagementPage() {
           ? "sealed"
           : reveal,
       is_blind: isBlind,
+      // A one-time card never recurs; every other card occasion repeats yearly.
       recurrence_rule: isBirthday
-        ? "yearly"
+        ? occasion === "once"
+          ? undefined
+          : "yearly"
         : recurrence === "yearly_nth"
         ? "yearly"
         : recurrence === "none"
@@ -1013,10 +1041,12 @@ export default function NewEngagementPage() {
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   What&apos;s the occasion?
                 </label>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {(
                     [
                       { value: "birthday", label: "🎂 Birthday" },
+                      { value: "anniversary", label: "💍 Anniversary" },
+                      { value: "once", label: "🎉 One-time" },
                       { value: "mothers_day", label: "💐 Mother's Day" },
                       { value: "fathers_day", label: "👔 Father's Day" },
                       { value: "custom", label: "🗓️ Holiday" },
@@ -1049,10 +1079,17 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Deadline (hidden for a holiday card — its date is computed) */}
+            {/* Deadline (hidden for a holiday card — its date is computed from the
+                Nth-weekday pattern). Fixed-date cards (birthday/anniversary/one-time)
+                show it. */}
             <div
               className={
-                selectedType === "birthday" && occasion !== "birthday" ? "hidden" : ""
+                selectedType === "birthday" &&
+                (occasion === "mothers_day" ||
+                  occasion === "fathers_day" ||
+                  occasion === "custom")
+                  ? "hidden"
+                  : ""
               }
             >
               <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -1062,7 +1099,11 @@ export default function NewEngagementPage() {
                   </>
                 ) : selectedType === "birthday" ? (
                   <>
-                    🎂 Birthday — reveals on this day{" "}
+                    {occasion === "anniversary"
+                      ? "💍 Anniversary"
+                      : occasion === "once"
+                      ? "🎉 Reveals on this day"
+                      : "🎂 Birthday — reveals on this day"}{" "}
                     <span className="text-rose-500">(required)</span>
                   </>
                 ) : (
@@ -1088,9 +1129,33 @@ export default function NewEngagementPage() {
               {selectedType === "birthday" && (
                 <div className="mt-2 space-y-2 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
                   <p className="text-xs text-slate-600">
-                    Runs <span className="font-semibold">every year</span>. Pick the
-                    recipient under &ldquo;hide from…&rdquo; so it stays a surprise.
+                    {occasion === "once" ? (
+                      <>
+                        A <span className="font-semibold">one-time</span> card — it
+                        won&apos;t repeat.
+                      </>
+                    ) : (
+                      <>
+                        Runs <span className="font-semibold">every year</span>.
+                      </>
+                    )}{" "}
+                    Pick the recipient under &ldquo;hide from…&rdquo; so it stays a
+                    surprise.
                   </p>
+
+                  {/* One-time: name the occasion (Retirement, Graduation, …) */}
+                  {occasion === "once" && (
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="text-slate-600">Occasion</span>
+                      <input
+                        type="text"
+                        value={onceLabel}
+                        onChange={(e) => setOnceLabel(e.target.value)}
+                        placeholder="Retirement, Graduation, Welcome…"
+                        className="flex-1 min-w-[160px] rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
+                      />
+                    </div>
+                  )}
 
                   {/* Holiday: show the floating date (preset summary or custom picker) */}
                   {occasion === "custom" && renderNthPicker()}

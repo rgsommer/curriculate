@@ -371,8 +371,9 @@ export function engagementIcon(e: {
   if (e.type === "birthday") {
     const occ = e.config?.occasion;
     if (!occ) return "🎂"; // a real birthday
+    if (occ === "Anniversary") return "💍";
     const preset = Object.values(HOLIDAY_PRESETS).find((p) => p.label === occ);
-    return preset ? preset.emoji : "🎉";
+    return preset ? preset.emoji : "🎉"; // preset holiday, else a generic celebration
   }
   return (
     (ENGAGEMENT_TYPES as Record<string, { icon: string }>)[e.type]?.icon ?? "🔥"

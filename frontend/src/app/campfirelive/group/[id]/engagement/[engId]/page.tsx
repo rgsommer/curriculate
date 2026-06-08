@@ -4,7 +4,11 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
-import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
+import {
+  useEngagement,
+  useRealtimeEngagement,
+  useCreateEngagement,
+} from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
@@ -103,6 +107,10 @@ export default function EngagementDetailPage() {
     refresh({ silent: true });
   }, [refresh]);
   useRealtimeEngagement(engagementId, handleRealtimeUpdate);
+
+  // For the "Duplicate" action — create a copy in this same group.
+  const { create: createEngagement } = useCreateEngagement(groupId);
+  const [duplicating, setDuplicating] = useState(false);
 
   // Invite context for a truer progress picture (host-only — RLS limits reads
   // to the group admin, so non-admins simply get zeros and see nothing extra).
@@ -748,6 +756,44 @@ export default function EngagementDetailPage() {
       return;
     }
     router.push(`/campfirelive/group/${groupId}`);
+  };
+
+  // Duplicate this engagement into a fresh DRAFT, reusing its config + uploaded
+  // images so the host doesn't re-do that work (great for repeat birthday cards).
+  // Person/date-specific bits are cleared so the copy is a clean template.
+  const duplicateEngagement = async () => {
+    if (!engagement || duplicating) return;
+    setDuplicating(true);
+    const e = engagement;
+    const { error, engagement: copy } = await createEngagement({
+      groupId,
+      type: e.type,
+      title: `${e.title} (copy)`,
+      description: e.description ?? undefined,
+      config: JSON.parse(JSON.stringify(e.config ?? {})),
+      reveal: e.reveal,
+      is_blind: e.is_blind,
+      recurrence_rule: e.recurrence_rule ?? undefined,
+      lead_days: e.lead_days,
+      private_to_host: e.private_to_host,
+      allow_anon_replies: e.allow_anon_replies,
+      allow_member_invites: e.allow_member_invites,
+      // Reuse the uploaded image pool verbatim — no re-upload needed.
+      cover_image_urls: e.cover_image_urls ?? [],
+      cover_image_url: e.cover_image_url ?? undefined,
+      // Cleared on purpose — the copy is for a new recipient / date:
+      deadline: undefined,
+      scheduled_open_at: null,
+      birth_year: null,
+      excluded_user_ids: [],
+      excluded_emails: [],
+    });
+    setDuplicating(false);
+    if (error || !copy) {
+      alert("Couldn't duplicate: " + (error ?? "unknown error"));
+      return;
+    }
+    router.push(`/campfirelive/group/${groupId}/engagement/${copy.id}`);
   };
 
   // ── Submit handlers ──
@@ -3577,9 +3623,18 @@ export default function EngagementDetailPage() {
         </Link>
       )}
 
-      {/* Creator: cancel (delete) the engagement */}
+      {/* Creator: duplicate (reuse config + images) or cancel the engagement */}
       {isCreator && (
-        <div className="mt-2 text-center">
+        <div className="mt-2 flex items-center justify-center gap-4">
+          <button
+            onClick={duplicateEngagement}
+            disabled={duplicating}
+            title="Make a copy — reuses the questions, settings, and uploaded images"
+            className="text-xs font-medium text-slate-500 underline hover:text-orange-600 disabled:opacity-50"
+          >
+            {duplicating ? "Duplicating…" : "📄 Duplicate"}
+          </button>
+          <span className="text-slate-300">·</span>
           <button
             onClick={cancelEngagement}
             className="text-xs text-slate-400 underline hover:text-red-600"
