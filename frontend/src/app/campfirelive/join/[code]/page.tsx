@@ -45,6 +45,19 @@ export default function JoinGroupPage() {
           setError(result.error);
         } else {
           setStatus("success");
+          // Also mark any WHOLE-GROUP invitation for this email as joined — so if
+          // they were invited to the group at this address but reached it via a
+          // card link (and/or already joined under another email), it flips too.
+          if (invEmail && session && result.groupId) {
+            fetch("/api/campfire/invite/accept", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${session.access_token}`,
+              },
+              body: JSON.stringify({ groupId: result.groupId, email: invEmail }),
+            }).catch(() => {});
+          }
           setTimeout(() => {
             router.push(`/campfirelive/group/${result.groupId}/engagement/${engId}`);
           }, 1500);

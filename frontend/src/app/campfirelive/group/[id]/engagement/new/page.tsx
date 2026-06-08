@@ -304,12 +304,14 @@ export default function NewEngagementPage() {
       setPollOptions(opts.length >= 2 ? opts : [...opts, "", ""].slice(0, 3));
     }
     // Pre-fill check-in / most-likely / scavenger items and any reveal override.
-    if (t.questions && t.questions.length) {
-      if (t.type === "care") {
+    if (t.type === "care") {
+      if (t.careQuestions && t.careQuestions.length) {
+        setCareQuestions(t.careQuestions.map((q) => ({ ...q })));
+      } else if (t.questions && t.questions.length) {
         setCareQuestions(t.questions.map((q) => ({ prompt: q, kind: "text" as const })));
-      } else {
-        setQuestions(t.questions);
       }
+    } else if (t.questions && t.questions.length) {
+      setQuestions(t.questions);
     }
     if (t.reveal) setReveal(t.reveal);
     setStep("details");

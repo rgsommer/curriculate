@@ -1,4 +1,4 @@
-import type { EngagementType, RevealMode } from "./types";
+import type { EngagementType, RevealMode, CareQuestion } from "./types";
 
 // Ready-made engagements so a host can start one in a tap.
 export interface EngagementTemplate {
@@ -9,6 +9,7 @@ export interface EngagementTemplate {
   description?: string;
   options?: string[]; // poll choices
   questions?: string[]; // accountability / most-likely / scavenger items
+  careQuestions?: CareQuestion[]; // Care Check-in: prompt + response type per question
   reveal?: RevealMode; // override the default reveal mode (e.g. host-triggered)
 }
 
@@ -156,12 +157,13 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         type: "care",
         title: "Weekly care check-in 🤝",
         description:
-          "Fill in any or all of the sections below — share as much or as little as you'd like.",
-        questions: [
-          "How are you doing this week?",
-          "Anything you'd value prayer or support for?",
-          "A praise — where have you seen God at work?",
-          "A thought from this week's passage (optional)",
+          "Fill in any or all below — a quick rating plus space to share as much or as little as you'd like.",
+        // A mix: a star rating + free-text sections.
+        careQuestions: [
+          { prompt: "How are you doing this week? (1 = struggling, 5 = thriving)", kind: "star" },
+          { prompt: "How is your walk with the Lord? (1–5)", kind: "star" },
+          { prompt: "Anything you'd value prayer or support for?", kind: "text" },
+          { prompt: "A praise — where have you seen God at work?", kind: "text" },
         ],
         // Surfaces as people respond so the host can follow up right away.
         reveal: "as_they_come",
