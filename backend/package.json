@@ -9,6 +9,7 @@
     "build": "npm run build-all",
     "build-all": "cd ../student-app && npm install && npm run build && cd ../teacher-app && npm install && npm run build",
     "start": "node index.js",
+    "test:behavior": "node --test behavior/tests/*.test.mjs",
     "dev": "nodemon index.js",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --runInBand",
     "start:prod": "node index.js",

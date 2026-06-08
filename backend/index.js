@@ -84,6 +84,7 @@ import { authRequired } from "./middleware/authRequired.js";
 
 // 10) Routes
 import authRoutes from "./routes/auth.js";
+import behaviorRoutes from "./behavior/routes.js";
 import stripeRoutes from "./routes/stripe.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
@@ -600,6 +601,8 @@ app.use("/api/subs-admin", subsAdminRouter);
 app.use("/api/subs-teacher", subsTeacherRouter);
 app.use("/api/subs-feedback", subsFeedbackRouter);
 app.use("/api/campfire", campfireFeedbackRouter);
+// Behaviours app (curriculate.net/behavior) — cross-teacher behaviour tracking.
+app.use("/api/behavior", behaviorRoutes);
 // Sequential escalation sweep — contacts preferred subs in rank order and
 // advances when an offer's interval elapses, even if nobody responds.
 startSubsEscalation();

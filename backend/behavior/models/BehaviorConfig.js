@@ -1,0 +1,63 @@
+// backend/behavior/models/BehaviorConfig.js
+//
+// The single shared division configuration per school (brief §5b/§5c, §6).
+// Editable only by originator/admin; treated as a division agreement. One
+// document per school.
+
+import mongoose from "mongoose";
+
+const BehaviorConfigSchema = new mongoose.Schema(
+  {
+    schoolId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorSchool", required: true, unique: true, index: true },
+
+    // ── Division thresholds (§5b) ───────────────────────────────────────────
+    triggerCount: { type: Number, default: 3 }, // THRESHOLD incidents that fire a notice
+    fadeWindowDays: { type: Number, default: 30 }, // older incidents stop counting
+
+    // ── VP / CC rule (§5b, §7) ──────────────────────────────────────────────
+    vp: {
+      name: { type: String, default: "" },
+      email: { type: String, default: "", lowercase: true, trim: true },
+      phone: { type: String, default: "" },
+    },
+
+    // ── Branding / identity (§5c) ───────────────────────────────────────────
+    branding: {
+      schoolName: { type: String, default: "" },
+      signatureBlock: { type: String, default: "" }, // division-level default signature
+      toneGuidance: { type: String, default: "" }, // fed to the AI note composer
+    },
+
+    // ── Notification channels (§4) ──────────────────────────────────────────
+    // School default/preference; a teacher may override per notice. A notice is
+    // delivered on every enabled channel.
+    channels: {
+      email: { type: Boolean, default: true },
+      edsby: { type: Boolean, default: false },
+    },
+
+    // ── AI note send behaviour (§8) ─────────────────────────────────────────
+    // "auto"  → compose + send automatically on trigger (this school's choice).
+    // "draft" → compose, hold for one-tap teacher send (toggle for later).
+    aiSendMode: { type: String, enum: ["auto", "draft"], default: "auto" },
+    // Cancellable window (seconds) after an auto notice is queued, during which
+    // a teacher can cancel before it dispatches. 0 = send immediately.
+    cancelWindowSeconds: { type: Number, default: 60 },
+    // Provider + model are configurable, never hardcoded (§8). Key lives in
+    // server-side env only — never in this document.
+    aiProvider: { type: String, default: "openai" }, // "openai" | "anthropic"
+    aiModel: { type: String, default: "gpt-4o-mini" },
+
+    // ── Notices-home counter reset mode (§6) ────────────────────────────────
+    // Drives the CC-VP rule. Division default: start of year.
+    noticesResetMode: { type: String, enum: ["year", "fade", "term"], default: "year" },
+    termStartDates: { type: [Date], default: [] }, // required only when mode = "term"
+
+    // Repeat-escalation scope for the per-behaviour consequence doubling (§5a).
+    // Defaults to the same window as the strike count.
+    repeatScopeDays: { type: Number, default: 30 },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.models.BehaviorConfig || mongoose.model("BehaviorConfig", BehaviorConfigSchema);

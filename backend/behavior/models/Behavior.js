@@ -1,0 +1,47 @@
+// backend/behavior/models/Behavior.js
+//
+// A behaviour definition (brief §5a). Two scopes:
+//   standard → defined by the originator, shared to ALL teachers in the school.
+//   custom   → added by one teacher, PRIVATE to that teacher (ownerTeacherId).
+//              It still counts toward the student's shared cross-teacher total
+//              when logged, but its DEFINITION is visible only to its author.
+//
+// Each behaviour carries its consequence and a follow-up type that drives the
+// Phase-2 follow-up tasks + morning reminders. Editing a behaviour does NOT
+// rewrite history: every incident snapshots the wording at log time, so edits
+// apply only going forward (see BehaviorIncident.behaviorSnapshot).
+
+import mongoose from "mongoose";
+
+const BehaviorSchema = new mongoose.Schema(
+  {
+    schoolId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorSchool", required: true, index: true },
+
+    name: { type: String, required: true, trim: true },
+    description: { type: String, default: "" }, // standard description / expectation wording
+
+    // THRESHOLD → counts toward the shared strike count.
+    // IMMEDIATE → notifies the parent on a single occurrence, regardless of count.
+    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE"], default: "THRESHOLD" },
+
+    // Consequence wording included in the note home automatically (§5a).
+    consequenceText: { type: String, default: "" },
+
+    // Drives Phase-2 follow-up tasks + morning reminders.
+    followUpType: { type: String, enum: ["none", "next_school_day", "custom_deadline"], default: "none" },
+
+    scope: { type: String, enum: ["standard", "custom"], default: "standard", index: true },
+    // Null for standard behaviours; the BehaviorTeacher._id for custom ones.
+    ownerTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null, index: true },
+
+    // Repeat-escalation cap (§5a): consequence scales ×1 → ×2 → ×3 then holds
+    // at ×3. Stored per-behaviour so admin can tune later if needed.
+    escalationCapMultiplier: { type: Number, default: 3 },
+
+    active: { type: Boolean, default: true, index: true },
+    sortOrder: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
+
+export default mongoose.models.Behavior || mongoose.model("Behavior", BehaviorSchema);

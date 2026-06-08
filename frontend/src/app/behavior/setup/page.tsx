@@ -1,0 +1,301 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { api, getToken, loginHref, type Me } from "../_lib/api";
+
+export default function SetupPage() {
+  const [me, setMe] = useState<Me | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function refresh() {
+    const data = await api<Me>("/me");
+    setMe(data);
+  }
+
+  useEffect(() => {
+    if (!getToken()) {
+      setLoading(false);
+      return;
+    }
+    refresh().catch((e) => setErr(e.message)).finally(() => setLoading(false));
+  }, []);
+
+  if (!getToken()) {
+    return <p>Please <Link className="underline" href={loginHref("/behavior/setup")}>sign in</Link>.</p>;
+  }
+  if (loading) return <p className="text-slate-500">Loading…</p>;
+
+  // No school yet → create one (this caller becomes the originator).
+  if (!me?.membership) return <CreateSchool onCreated={refresh} />;
+
+  const isAdmin = me.membership.role === "originator" || me.membership.role === "admin";
+  if (!isAdmin) {
+    return (
+      <Card>
+        <h1 className="text-xl font-semibold">Division setup</h1>
+        <p className="mt-2 text-slate-600">
+          Only an admin can edit the shared division configuration. You can still log incidents and
+          view student status.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      <ConfigSection config={me.config} />
+      <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
+      <RosterSection />
+    </div>
+  );
+}
+
+function CreateSchool({ onCreated }: { onCreated: () => Promise<void> }) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Card>
+      <h1 className="text-xl font-semibold">Create your school</h1>
+      <p className="mt-1 text-sm text-slate-500">
+        You&apos;ll be the originator — invites will be restricted to your email domain.
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="School / division name"
+        className="mt-3 w-full rounded-lg border border-slate-300 px-4 py-2.5"
+      />
+      <button
+        disabled={!name.trim() || busy}
+        onClick={async () => {
+          setBusy(true);
+          setErr(null);
+          try {
+            await api("/setup", { body: { schoolName: name.trim() } });
+            await onCreated();
+          } catch (e: any) {
+            setErr(e.message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+        className="mt-3 rounded-lg bg-slate-900 px-4 py-2.5 text-white disabled:opacity-40"
+      >
+        {busy ? "Creating…" : "Create school"}
+      </button>
+    </Card>
+  );
+}
+
+function ConfigSection({ config }: { config: any }) {
+  const [c, setC] = useState(() => ({
+    triggerCount: config?.triggerCount ?? 3,
+    fadeWindowDays: config?.fadeWindowDays ?? 30,
+    vpName: config?.vp?.name ?? "",
+    vpEmail: config?.vp?.email ?? "",
+    schoolName: config?.branding?.schoolName ?? "",
+    signatureBlock: config?.branding?.signatureBlock ?? "",
+    email: config?.channels?.email ?? true,
+    edsby: config?.channels?.edsby ?? false,
+    aiSendMode: config?.aiSendMode ?? "auto",
+  }));
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setErr(null);
+    try {
+      await api("/config", {
+        method: "PUT",
+        body: {
+          triggerCount: Number(c.triggerCount),
+          fadeWindowDays: Number(c.fadeWindowDays),
+          vp: { name: c.vpName, email: c.vpEmail },
+          branding: { schoolName: c.schoolName, signatureBlock: c.signatureBlock },
+          channels: { email: c.email, edsby: c.edsby },
+          aiSendMode: c.aiSendMode,
+        },
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Division thresholds & branding</h2>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-3 grid grid-cols-2 gap-3">
+        <Field label="Trigger count">
+          <input type="number" min={1} value={c.triggerCount}
+            onChange={(e) => setC({ ...c, triggerCount: e.target.value as any })} className={inputCls} />
+        </Field>
+        <Field label="Fade window (days)">
+          <input type="number" min={1} value={c.fadeWindowDays}
+            onChange={(e) => setC({ ...c, fadeWindowDays: e.target.value as any })} className={inputCls} />
+        </Field>
+        <Field label="VP name">
+          <input value={c.vpName} onChange={(e) => setC({ ...c, vpName: e.target.value })} className={inputCls} />
+        </Field>
+        <Field label="VP email (CC on 2nd+ notice)">
+          <input value={c.vpEmail} onChange={(e) => setC({ ...c, vpEmail: e.target.value })} className={inputCls} />
+        </Field>
+        <Field label="School name (on notices)">
+          <input value={c.schoolName} onChange={(e) => setC({ ...c, schoolName: e.target.value })} className={inputCls} />
+        </Field>
+        <Field label="AI send mode">
+          <select value={c.aiSendMode} onChange={(e) => setC({ ...c, aiSendMode: e.target.value })} className={inputCls}>
+            <option value="auto">Automatic on trigger</option>
+            <option value="draft">Draft (one-tap send)</option>
+          </select>
+        </Field>
+      </div>
+      <Field label="Default signature block">
+        <textarea value={c.signatureBlock} onChange={(e) => setC({ ...c, signatureBlock: e.target.value })}
+          rows={2} className={inputCls} />
+      </Field>
+      <div className="mt-3 flex gap-4 text-sm">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={c.email} onChange={(e) => setC({ ...c, email: e.target.checked })} /> Email
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={c.edsby} onChange={(e) => setC({ ...c, edsby: e.target.checked })} /> Edsby (Phase 3)
+        </label>
+      </div>
+      <button onClick={save} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-white">
+        {saved ? "Saved ✓" : "Save configuration"}
+      </button>
+    </Card>
+  );
+}
+
+function InviteSection({ domain, isOriginator }: { domain: string; isOriginator: boolean }) {
+  const [emails, setEmails] = useState("");
+  const [role, setRole] = useState("teacher");
+  const [result, setResult] = useState<any>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function send() {
+    setErr(null);
+    setResult(null);
+    const list = emails.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
+    try {
+      const r = await api("/invite", { body: { emails: list, role } });
+      setResult(r);
+      setEmails("");
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 id="invite" className="font-semibold">Invite teachers</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Only <span className="font-medium">@{domain}</span> addresses can be invited.
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <textarea value={emails} onChange={(e) => setEmails(e.target.value)}
+        rows={2} placeholder="emails, separated by commas or spaces" className={`mt-2 ${inputCls}`} />
+      <div className="mt-2 flex items-center gap-2">
+        <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
+          <option value="teacher">Teacher</option>
+          <option value="principal">Principal (read-only)</option>
+          {isOriginator && <option value="admin">Admin</option>}
+        </select>
+        <button onClick={send} className="rounded-lg bg-slate-900 px-4 py-2 text-white">Invite</button>
+      </div>
+      {result && (
+        <div className="mt-2 text-sm">
+          <p className="text-green-700">Invited: {result.invited?.map((i: any) => i.email).join(", ") || "none"}</p>
+          {result.rejected?.length > 0 && (
+            <p className="text-red-600">
+              Rejected: {result.rejected.map((r: any) => `${r.email} (${r.reason})`).join(", ")}
+            </p>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function RosterSection() {
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function upload() {
+    if (!file) return;
+    setBusy(true);
+    setErr(null);
+    setResult(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await api("/roster/import", { body: fd });
+      setResult(r);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 id="roster" className="font-semibold">Import roster (CSV or XLSX)</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Columns: Last name, First name, Common/preferred name, Gender, Class/Group, Grade, DOB,
+        Parent 1/2 name + email + Edsby ID. The ethnicity field is dropped automatically.
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <input
+        type="file"
+        accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+        className="mt-2 block text-sm"
+      />
+      <button onClick={upload} disabled={!file || busy}
+        className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+        {busy ? "Importing…" : "Import"}
+      </button>
+      {result && (
+        <div className="mt-3 text-sm">
+          <p className="text-green-700">
+            Imported {result.imported}, updated {result.updated}, skipped {result.skipped?.length || 0}.
+          </p>
+          {result.skipped?.length > 0 && (
+            <ul className="mt-1 list-inside list-disc text-slate-500">
+              {result.skipped.slice(0, 10).map((s: any, i: number) => (
+                <li key={i}>Row {s.row}: {s.reason}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
+}
