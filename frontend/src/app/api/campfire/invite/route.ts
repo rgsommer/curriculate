@@ -189,6 +189,9 @@ export async function POST(req: Request) {
         .eq("group_id", groupId)
         .eq("status", "active")
         .not("launched_at", "is", null)
+        // Only an engagement that's actually OPEN to sign now — not one scheduled
+        // to open later (e.g. next year's Mother's Day card).
+        .or(`scheduled_open_at.is.null,scheduled_open_at.lte.${new Date().toISOString()}`)
         .order("launched_at", { ascending: false })
         .limit(1)
         .maybeSingle();
