@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "./supabase";
 import { useAuth } from "./AuthProvider";
 import type {
@@ -141,9 +141,11 @@ export function useGroup(groupId: string) {
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchGroup = useCallback(async () => {
+  const fetchGroup = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !groupId) return;
-    setLoading(true);
+    // Realtime-triggered refreshes run "silent" so the page doesn't flash its
+    // full-screen loading state on every incoming change.
+    if (!opts?.silent) setLoading(true);
 
     const [groupRes, membersRes, engRes, streakRes, invRes] = await Promise.all([
       supabase.from("groups").select("*").eq("id", groupId).single(),
@@ -179,16 +181,26 @@ export function useGroup(groupId: string) {
     if (engRes.data) {
       // Get the TRUE response count per engagement. A plain count is limited by
       // the "sealed" RLS policy to the viewer's own response, so it under-reports
-      // before the reveal — this SECURITY DEFINER function returns the real number.
-      const enriched = await Promise.all(
-        engRes.data.map(async (e) => {
-          const { data: rc } = await supabase.rpc("engagement_response_count", {
-            _eid: e.id,
-          });
-          return { ...e, response_count: (rc as number) ?? 0 } as Engagement & { response_count: number };
-        })
+      // before the reveal. One batched SECURITY DEFINER call returns every count at
+      // once (was N+1: one RPC per engagement).
+      const ids = engRes.data.map((e) => e.id);
+      const counts = new Map<string, number>();
+      if (ids.length) {
+        const { data: rows } = await supabase.rpc("engagement_response_counts", {
+          _eids: ids,
+        });
+        for (const row of (rows as { engagement_id: string; n: number }[]) ?? []) {
+          counts.set(row.engagement_id, row.n);
+        }
+      }
+      setEngagements(
+        engRes.data.map(
+          (e) =>
+            ({ ...e, response_count: counts.get(e.id) ?? 0 } as Engagement & {
+              response_count: number;
+            })
+        )
       );
-      setEngagements(enriched);
     }
 
     if (streakRes.data) setStreaks(streakRes.data as Streak[]);
@@ -311,9 +323,10 @@ export function useEngagement(engagementId: string) {
   const [careAnswers, setCareAnswers] = useState<CareAnswer[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchEngagement = useCallback(async () => {
+  const fetchEngagement = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !engagementId) return;
-    setLoading(true);
+    // Realtime-triggered refreshes run "silent" — no loading flip, no page blank.
+    if (!opts?.silent) setLoading(true);
 
     const { data: eng } = await supabase
       .from("engagements")
@@ -829,8 +842,25 @@ export function useCreateEngagement(defaultGroupId?: string) {
 // ── Real-time Subscriptions ──
 
 export function useRealtimeEngagement(engagementId: string, onUpdate: () => void) {
+  // Keep the latest callback in a ref so a new onUpdate identity doesn't tear down
+  // and re-create all the channels every render.
+  const cbRef = useRef(onUpdate);
+  cbRef.current = onUpdate;
+
   useEffect(() => {
     if (!engagementId) return;
+
+    // Coalesce bursts: many rows can change at once (e.g. everyone submitting), and
+    // each one used to trigger a full page reload. Debounce so a burst becomes ONE
+    // refresh instead of N.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const fire = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        cbRef.current();
+      }, 250);
+    };
 
     // Subscribe to new responses on this engagement
     const responseSub = supabase
@@ -843,7 +873,7 @@ export function useRealtimeEngagement(engagementId: string, onUpdate: () => void
           table: "responses",
           filter: `engagement_id=eq.${engagementId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
@@ -858,7 +888,7 @@ export function useRealtimeEngagement(engagementId: string, onUpdate: () => void
           table: "engagements",
           filter: `id=eq.${engagementId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
@@ -873,7 +903,7 @@ export function useRealtimeEngagement(engagementId: string, onUpdate: () => void
           table: "nudges",
           filter: `engagement_id=eq.${engagementId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
@@ -890,22 +920,36 @@ export function useRealtimeEngagement(engagementId: string, onUpdate: () => void
           table: "campfire_lie_guesses",
           filter: `engagement_id=eq.${engagementId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
     return () => {
+      if (timer) clearTimeout(timer);
       supabase.removeChannel(responseSub);
       supabase.removeChannel(engSub);
       supabase.removeChannel(nudgeSub);
       supabase.removeChannel(guessSub);
     };
-  }, [engagementId, onUpdate]);
+  }, [engagementId]);
 }
 
 export function useRealtimeGroup(groupId: string, onUpdate: () => void) {
+  const cbRef = useRef(onUpdate);
+  cbRef.current = onUpdate;
+
   useEffect(() => {
     if (!groupId) return;
+
+    // Coalesce bursts (e.g. a batch of invites or joins) into one refresh.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const fire = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        cbRef.current();
+      }, 250);
+    };
 
     // Subscribe to new engagements in this group
     const engSub = supabase
@@ -918,7 +962,7 @@ export function useRealtimeGroup(groupId: string, onUpdate: () => void) {
           table: "engagements",
           filter: `group_id=eq.${groupId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
@@ -933,7 +977,7 @@ export function useRealtimeGroup(groupId: string, onUpdate: () => void) {
           table: "group_members",
           filter: `group_id=eq.${groupId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
@@ -949,16 +993,17 @@ export function useRealtimeGroup(groupId: string, onUpdate: () => void) {
           table: "campfire_invitations",
           filter: `group_id=eq.${groupId}`,
         },
-        () => onUpdate()
+        fire
       )
       .subscribe();
 
     return () => {
+      if (timer) clearTimeout(timer);
       supabase.removeChannel(engSub);
       supabase.removeChannel(memberSub);
       supabase.removeChannel(inviteSub);
     };
-  }, [groupId, onUpdate]);
+  }, [groupId]);
 }
 
 // ── Presence (who's online in a group) ──

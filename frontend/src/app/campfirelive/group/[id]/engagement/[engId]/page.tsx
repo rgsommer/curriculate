@@ -97,9 +97,10 @@ export default function EngagementDetailPage() {
     refresh,
   } = useEngagement(engagementId);
 
-  // Real-time: auto-refresh when anything changes
+  // Real-time: refresh quietly (no loading flash) when anything changes. The
+  // realtime hook already debounces bursts into a single call.
   const handleRealtimeUpdate = useCallback(() => {
-    refresh();
+    refresh({ silent: true });
   }, [refresh]);
   useRealtimeEngagement(engagementId, handleRealtimeUpdate);
 

@@ -40,9 +40,10 @@ export default function GroupDetailPage() {
   const [descInput, setDescInput] = useState("");
   const [savingName, setSavingName] = useState(false);
 
-  // Real-time updates
+  // Real-time updates — refresh quietly (no full-screen loading flash); the
+  // realtime hook debounces bursts into one call.
   const handleUpdate = useCallback(() => {
-    refresh();
+    refresh({ silent: true });
   }, [refresh]);
   useRealtimeGroup(groupId, handleUpdate);
 
