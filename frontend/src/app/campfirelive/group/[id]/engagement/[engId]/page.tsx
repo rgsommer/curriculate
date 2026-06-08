@@ -698,6 +698,9 @@ export default function EngagementDetailPage() {
             weekday: "long",
             month: "long",
             day: "numeric",
+          })} at ${new Date(engagement.deadline).toLocaleTimeString(undefined, {
+            hour: "numeric",
+            minute: "2-digit",
           })}.`
         : `⏰ Add yours by ${new Date(engagement.deadline).toLocaleString(undefined, {
             weekday: "short",
