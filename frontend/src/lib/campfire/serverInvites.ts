@@ -135,7 +135,10 @@ export async function getGroupMemberEmails(
 export async function getCardRecipients(
   admin: SupabaseClient,
   groupId: string,
-  excludedUserIds: string[]
+  excludedUserIds: string[],
+  // Used only when no recipient name resolves. Celebration cards (Retirement, etc.)
+  // pass a non-birthday fallback so the copy never says "birthday".
+  fallback = "The birthday person"
 ): Promise<{ label: string; emails: Set<string> }> {
   const emails = new Set<string>();
   const names: string[] = [];
@@ -160,7 +163,7 @@ export async function getCardRecipients(
     }
     if (name) names.push(name);
   }
-  return { label: names.join(" & ") || "The birthday person", emails };
+  return { label: names.join(" & ") || fallback, emails };
 }
 
 // Birthday card just opened. The wishes are private to the recipient, but everyone

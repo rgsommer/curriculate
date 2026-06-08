@@ -391,8 +391,17 @@ export default function EngagementDetailPage() {
   const canEdit = isCreator && engagement.status === "active";
 
   // Birthday card = private to the recipient. Each wish is seen only by its author
-  // and the birthday person — never the rest of the group, even after the reveal.
+  // and the recipient — never the rest of the group, even after the reveal. The same
+  // card type is reused for other celebrations (Retirement, Mother's Day, …) via
+  // config.occasion, so the copy adapts: a real birthday vs. a generic celebration.
   const isBirthdayCard = engagement.type === "birthday";
+  const cardOccasion =
+    (engagement.config?.occasion as string | undefined)?.trim() || undefined;
+  const isCelebrationCard = isBirthdayCard && !!cardOccasion;
+  // Emoji for the card: 🎂 for a real birthday, the preset/🎉 for a celebration.
+  const cardEmoji = engagementIcon(engagement);
+  // What to call the recipient when nobody's named: avoid "birthday" for celebrations.
+  const recipientNoun = isCelebrationCard ? "the guest of honor" : "the birthday person";
   const recipientLabel =
     [
       ...(engagement.excluded_user_ids ?? []).map((uid) =>
@@ -401,7 +410,7 @@ export default function EngagementDetailPage() {
       ...(engagement.excluded_emails ?? []).map(
         (email) => pendingInvitees.find((p) => p.email === email)?.name || email
       ),
-    ].join(", ") || "the birthday person";
+    ].join(", ") || recipientNoun;
   const isRecipient =
     !!user && (engagement.excluded_user_ids ?? []).includes(user.id);
 
@@ -2901,7 +2910,9 @@ export default function EngagementDetailPage() {
             const lead = engagement.lead_days ?? 14;
             const recurringNote =
               engagement.recurrence_rule === "yearly"
-                ? ` · re-opens ~${lead} day${lead === 1 ? "" : "s"} before each birthday`
+                ? ` · re-opens ~${lead} day${lead === 1 ? "" : "s"} before each ${
+                    isCelebrationCard ? cardOccasion : "birthday"
+                  }`
                 : "";
             return (
               <p className="text-xs text-slate-400 mt-2">
@@ -3387,7 +3398,7 @@ export default function EngagementDetailPage() {
           {isBirthdayCard && isRevealed && (
             <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/60 px-4 py-3 text-xs text-rose-800">
               {isRecipient ? (
-                <>🎂 <span className="font-semibold">Your card!</span> Here are the {responseCount} {responseCount === 1 ? "wish" : "wishes"} everyone wrote just for you — nobody else can see them.</>
+                <>{cardEmoji} <span className="font-semibold">Your card!</span> Here are the {responseCount} {responseCount === 1 ? "wish" : "wishes"} everyone wrote just for you — nobody else can see them.</>
               ) : (
                 <>
                   🎉 <span className="font-semibold">{recipientLabel} received the card</span> with {responseCount} {responseCount === 1 ? "wish" : "wishes"}! Each message is private to them — below is just your own. 💛
@@ -3399,7 +3410,7 @@ export default function EngagementDetailPage() {
             <h2 className="text-lg font-bold text-slate-900">
               {isBirthdayCard
                 ? isRecipient
-                  ? "🎂 Your wishes"
+                  ? `${cardEmoji} Your wishes`
                   : "Your wish"
                 : justRevealed
                 ? "🎉 Results Are In!"

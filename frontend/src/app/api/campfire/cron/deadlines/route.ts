@@ -389,7 +389,10 @@ export async function GET(req: Request) {
         const { label, emails: recipientEmails } = await getCardRecipients(
           admin,
           e.group_id as string,
-          (e.excluded_user_ids as string[]) ?? []
+          (e.excluded_user_ids as string[]) ?? [],
+          (e.config as { occasion?: string } | null)?.occasion
+            ? "the guest of honor"
+            : "The birthday person"
         );
         const msgs = emails.map((to) => {
           const cm = cardRevealEmail({

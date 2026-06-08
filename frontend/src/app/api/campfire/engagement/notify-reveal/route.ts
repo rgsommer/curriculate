@@ -98,7 +98,10 @@ export async function POST(req: Request) {
       const { label, emails: recipientEmails } = await getCardRecipients(
         admin,
         eng.group_id,
-        (eng.excluded_user_ids as string[]) ?? []
+        (eng.excluded_user_ids as string[]) ?? [],
+        (eng.config as { occasion?: string } | null)?.occasion
+          ? "the guest of honor"
+          : "The birthday person"
       );
       const msgs = emails.map((to) => {
         const m = cardRevealEmail({
