@@ -126,6 +126,10 @@ export default function NewEngagementPage() {
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
   // "Most Likely To…" awards (one engagement, many questions)
   const [questions, setQuestions] = useState<string[]>(["", "", ""]);
+  // Care Check-in: each question has a prompt + a response kind (text or star).
+  const [careQuestions, setCareQuestions] = useState<
+    { prompt: string; kind: "text" | "star" }[]
+  >([{ prompt: "", kind: "text" }]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -266,11 +270,11 @@ export default function NewEngagementPage() {
         setDescription(
           "Fill in any or all of the sections below — share as much or as little as you'd like."
         );
-      setQuestions([
-        "How are you doing this week?",
-        "Anything you'd value prayer or support for?",
-        "A praise — where have you seen God at work?",
-        "A thought from this week's passage (optional)",
+      setCareQuestions([
+        { prompt: "How are you doing this week?", kind: "text" },
+        { prompt: "Anything you'd value prayer or support for?", kind: "text" },
+        { prompt: "A praise — where have you seen God at work?", kind: "text" },
+        { prompt: "A thought from this week's passage (optional)", kind: "text" },
       ]);
       // Responses surface as they come, so the host can follow up right away (and
       // a big group never stalls waiting on everyone).
@@ -300,7 +304,13 @@ export default function NewEngagementPage() {
       setPollOptions(opts.length >= 2 ? opts : [...opts, "", ""].slice(0, 3));
     }
     // Pre-fill check-in / most-likely / scavenger items and any reveal override.
-    if (t.questions && t.questions.length) setQuestions(t.questions);
+    if (t.questions && t.questions.length) {
+      if (t.type === "care") {
+        setCareQuestions(t.questions.map((q) => ({ prompt: q, kind: "text" as const })));
+      } else {
+        setQuestions(t.questions);
+      }
+    }
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };
@@ -366,11 +376,20 @@ export default function NewEngagementPage() {
         ? new Date(effectiveDeadline.getTime() - (leadDays || 14) * 86400000).toISOString()
         : null;
 
-    if (
+    if (selectedType === "care") {
+      const cqs = careQuestions
+        .map((q) => ({ prompt: q.prompt.trim(), kind: q.kind }))
+        .filter((q) => q.prompt);
+      if (cqs.length < 1) {
+        setError("Add at least one question for people to answer.");
+        setCreating(false);
+        return;
+      }
+      config.questions = cqs;
+    } else if (
       selectedType === "most_likely" ||
       selectedType === "accountability" ||
-      selectedType === "scavenger_hunt" ||
-      selectedType === "care"
+      selectedType === "scavenger_hunt"
     ) {
       const qs = questions.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
@@ -379,8 +398,6 @@ export default function NewEngagementPage() {
             ? "Add at least one check-in question."
             : selectedType === "scavenger_hunt"
             ? "Add at least one item to find."
-            : selectedType === "care"
-            ? "Add at least one section for people to fill in."
             : "Add at least one award (a “Most likely to…” question)."
         );
         setCreating(false);
@@ -747,6 +764,82 @@ export default function NewEngagementPage() {
                     + Add option
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Care Check-in — questions with a prompt + response type each */}
+            {selectedType === "care" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Questions — set each prompt and how people answer it
+                </label>
+                {careQuestions.map((q, i) => (
+                  <div key={i} className="mb-2 rounded-xl border border-slate-200 p-2.5">
+                    <div className="flex gap-2 items-start">
+                      <span className="text-slate-400 text-sm pt-2">{i + 1}.</span>
+                      <input
+                        type="text"
+                        value={q.prompt}
+                        onChange={(e) => {
+                          const next = [...careQuestions];
+                          next[i] = { ...next[i], prompt: e.target.value };
+                          setCareQuestions(next);
+                        }}
+                        placeholder="Your question / prompt…"
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+                      />
+                      {careQuestions.length > 1 && (
+                        <button
+                          onClick={() =>
+                            setCareQuestions(careQuestions.filter((_, j) => j !== i))
+                          }
+                          className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                    <div className="mt-2 ml-5 flex gap-1.5">
+                      {(
+                        [
+                          { k: "text", label: "Aa Text box" },
+                          { k: "star", label: "⭐ Stars (1–5)" },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.k}
+                          type="button"
+                          onClick={() => {
+                            const next = [...careQuestions];
+                            next[i] = { ...next[i], kind: opt.k };
+                            setCareQuestions(next);
+                          }}
+                          className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
+                            q.kind === opt.k
+                              ? "border-teal-500 bg-teal-50 text-teal-700"
+                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+                {careQuestions.length < 20 && (
+                  <button
+                    onClick={() =>
+                      setCareQuestions([...careQuestions, { prompt: "", kind: "text" }])
+                    }
+                    className="text-sm text-orange-600 font-medium"
+                  >
+                    + Add question
+                  </button>
+                )}
+                <p className="mt-1 text-xs text-slate-500">
+                  People fill in any or all. <strong>Text</strong> = a free-form box;{" "}
+                  <strong>Stars</strong> = a quick 1–5 rating.
+                </p>
               </div>
             )}
 

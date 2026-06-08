@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useEngagement, useRealtimeEngagement } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 
@@ -161,7 +161,7 @@ export default function EngagementDetailPage() {
   const [shItems, setShItems] = useState<Record<number, { text?: string; photo?: string }>>({});
   const [shUploading, setShUploading] = useState<number | null>(null);
   // Care Check-in: free text per section (fill any/all)
-  const [careAnswers, setCareAnswers] = useState<Record<number, string>>({});
+  const [careAnswers, setCareAnswers] = useState<Record<number, string | number>>({});
   // Group roster with per-group names ("Dad" / "Mr. Sommer") — used as the
   // Most Likely candidate list AND to resolve everyone's name on this page.
   useEffect(() => {
@@ -207,6 +207,9 @@ export default function EngagementDetailPage() {
   const [editDeadline, setEditDeadline] = useState(""); // YYYY-MM-DD (birthday date)
   const [editBirthYear, setEditBirthYear] = useState("");
   const [editDeadlineTime, setEditDeadlineTime] = useState(""); // datetime-local (reveal/deadline)
+  const [editCareQuestions, setEditCareQuestions] = useState<
+    { prompt: string; kind: "text" | "star" }[]
+  >([]);
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
   const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
@@ -445,6 +448,7 @@ export default function EngagementDetailPage() {
     setEditAllowMemberInvites(!!engagement.allow_member_invites);
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
+    setEditCareQuestions(parseCareQuestions(engagement.config));
     // Birthday: the deadline IS the birthday (the day it reveals). Pre-fill the
     // date in LOCAL time so the day doesn't shift across time zones.
     if (engagement.deadline) {
@@ -488,6 +492,19 @@ export default function EngagementDetailPage() {
         ? new Date(editDeadlineTime).toISOString()
         : null;
     }
+    // Care Check-in: persist the edited question list (prompt + response type).
+    const careFields: Record<string, unknown> = {};
+    if (engagement.type === "care") {
+      const cqs = editCareQuestions
+        .map((q) => ({ prompt: q.prompt.trim(), kind: q.kind }))
+        .filter((q) => q.prompt);
+      if (cqs.length < 1) {
+        alert("Keep at least one question.");
+        setSavingEdit(false);
+        return;
+      }
+      careFields.config = { ...(engagement.config ?? {}), questions: cqs };
+    }
     const { error } = await supabase
       .from("engagements")
       .update({
@@ -502,6 +519,7 @@ export default function EngagementDetailPage() {
         excluded_user_ids: editExcludedIds,
         excluded_emails: editExcludedEmails,
         ...birthdayFields,
+        ...careFields,
       })
       .eq("id", engagementId);
     setSavingEdit(false);
@@ -738,7 +756,7 @@ export default function EngagementDetailPage() {
     if (engagement.type === "scavenger_hunt" && c.answers)
       setShItems(c.answers as Record<number, { text?: string; photo?: string }>);
     if (engagement.type === "care" && c.answers)
-      setCareAnswers(c.answers as Record<number, string>);
+      setCareAnswers(c.answers as Record<number, string | number>);
     setEditingResponse(true);
   };
 
@@ -860,19 +878,24 @@ export default function EngagementDetailPage() {
   };
 
   const handleCareSubmit = async () => {
-    const sections = (engagement.config?.questions as string[]) ?? [];
-    const answers: Record<string, string> = {};
-    for (let i = 0; i < sections.length; i++) {
-      const text = careAnswers[i]?.trim();
-      if (!text) continue;
-      if (hasProfanity(text)) {
-        alert("Let's keep it kind — please reword.");
-        return;
+    const qs = parseCareQuestions(engagement.config);
+    const answers: Record<string, string | number> = {};
+    for (let i = 0; i < qs.length; i++) {
+      const v = careAnswers[i];
+      if (qs[i].kind === "star") {
+        if (typeof v === "number" && v >= 1) answers[i] = v;
+      } else {
+        const text = typeof v === "string" ? v.trim() : "";
+        if (!text) continue;
+        if (hasProfanity(text)) {
+          alert("Let's keep it kind — please reword.");
+          return;
+        }
+        answers[i] = text;
       }
-      answers[i] = text;
     }
     if (Object.keys(answers).length === 0) {
-      alert("Fill in at least one section.");
+      alert("Fill in at least one question.");
       return;
     }
     setSubmitting(true);
@@ -1051,24 +1074,43 @@ export default function EngagementDetailPage() {
       }
 
       case "care": {
-        const sections = (engagement.config?.questions as string[]) ?? [];
+        const qs = parseCareQuestions(engagement.config);
         return (
           <div className="space-y-4">
             <p className="text-xs text-slate-500">
               Fill in any or all — share as much or as little as you&apos;d like.
             </p>
-            {sections.map((q, i) => (
+            {qs.map((q, i) => (
               <div key={i}>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {q}
+                  {q.prompt}
                 </label>
-                <textarea
-                  value={careAnswers[i] ?? ""}
-                  onChange={(e) => setCareAnswers({ ...careAnswers, [i]: e.target.value })}
-                  rows={3}
-                  placeholder="(optional)"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-teal-500 outline-none resize-y"
-                />
+                {q.kind === "star" ? (
+                  <div className="flex gap-1.5">
+                    {[1, 2, 3, 4, 5].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => setCareAnswers({ ...careAnswers, [i]: n })}
+                        className={`flex-1 rounded-lg border py-2 text-sm font-semibold transition ${
+                          careAnswers[i] === n
+                            ? "border-teal-500 bg-teal-500 text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-teal-300"
+                        }`}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea
+                    value={typeof careAnswers[i] === "string" ? (careAnswers[i] as string) : ""}
+                    onChange={(e) => setCareAnswers({ ...careAnswers, [i]: e.target.value })}
+                    rows={3}
+                    placeholder="(optional)"
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-teal-500 outline-none resize-y"
+                  />
+                )}
               </div>
             ))}
             <button
@@ -1382,7 +1424,7 @@ export default function EngagementDetailPage() {
 
   const renderCareResults = () => {
     if (!showResults || engagement.type !== "care") return null;
-    const sections = (engagement.config?.questions as string[]) ?? [];
+    const qs = parseCareQuestions(engagement.config);
     return (
       <div className="space-y-3">
         {engagement.private_to_host && (
@@ -1392,30 +1434,53 @@ export default function EngagementDetailPage() {
               : "Your responses are private — only the host sees them. Below is just your own."}
           </div>
         )}
-        {sections.map((q, i) => {
-          const ans = responses
+        {qs.map((q, i) => {
+          const rows = responses
             .map((r) => ({
               r,
-              text: (r.content as { answers?: Record<string, string> })?.answers?.[String(i)],
+              v: (r.content as { answers?: Record<string, string | number> })?.answers?.[String(i)],
             }))
-            .filter((x) => x.text && x.text.trim());
-          if (ans.length === 0) return null;
+            .filter((x) => x.v !== undefined && x.v !== null && x.v !== "");
+          if (rows.length === 0) return null;
+          const stars = q.kind === "star";
+          const avg = stars
+            ? rows.reduce((a, b) => a + Number(b.v), 0) / rows.length
+            : 0;
           return (
             <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
-              <div className="text-sm font-semibold text-slate-800 mb-2">
-                {q}{" "}
-                <span className="text-xs font-normal text-slate-400">({ans.length})</span>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="text-sm font-semibold text-slate-800">
+                  {q.prompt}{" "}
+                  <span className="text-xs font-normal text-slate-400">({rows.length})</span>
+                </div>
+                {stars && (
+                  <span className="text-xs font-bold text-teal-700">{avg.toFixed(1)} avg</span>
+                )}
               </div>
-              <div className="space-y-2.5">
-                {ans.map(({ r, text }) => (
-                  <div key={r.id} className="border-l-2 border-teal-200 pl-3">
-                    <div className="text-xs font-semibold text-teal-700">
+              {stars ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {rows.map(({ r, v }) => (
+                    <span
+                      key={r.id}
+                      className="inline-flex items-center gap-1 rounded-full border border-teal-200 bg-white px-2 py-0.5 text-[11px] text-slate-700"
+                    >
                       {memberNameOf(r.user_id, r.profile?.display_name)}
+                      <span className="font-bold text-teal-700">{Number(v)}/5</span>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {rows.map(({ r, v }) => (
+                    <div key={r.id} className="border-l-2 border-teal-200 pl-3">
+                      <div className="text-xs font-semibold text-teal-700">
+                        {memberNameOf(r.user_id, r.profile?.display_name)}
+                      </div>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{String(v)}</p>
                     </div>
-                    <p className="text-sm text-slate-700 whitespace-pre-wrap">{text}</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -2138,6 +2203,82 @@ export default function EngagementDetailPage() {
                   className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-base leading-relaxed text-slate-700 focus:border-orange-500 outline-none resize-y"
                 />
               </div>
+
+              {/* Care Check-in: edit prompts + response type, add/remove questions */}
+              {engagement.type === "care" && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Questions
+                  </label>
+                  {editCareQuestions.map((q, i) => (
+                    <div key={i} className="mb-2 rounded-lg border border-slate-200 p-2.5">
+                      <div className="flex gap-2 items-start">
+                        <span className="text-slate-400 text-sm pt-2">{i + 1}.</span>
+                        <input
+                          type="text"
+                          value={q.prompt}
+                          onChange={(e) => {
+                            const next = [...editCareQuestions];
+                            next[i] = { ...next[i], prompt: e.target.value };
+                            setEditCareQuestions(next);
+                          }}
+                          placeholder="Your question / prompt…"
+                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+                        />
+                        {editCareQuestions.length > 1 && (
+                          <button
+                            onClick={() =>
+                              setEditCareQuestions(editCareQuestions.filter((_, j) => j !== i))
+                            }
+                            className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                      <div className="mt-2 ml-5 flex gap-1.5">
+                        {(
+                          [
+                            { k: "text", label: "Aa Text box" },
+                            { k: "star", label: "⭐ Stars (1–5)" },
+                          ] as const
+                        ).map((opt) => (
+                          <button
+                            key={opt.k}
+                            type="button"
+                            onClick={() => {
+                              const next = [...editCareQuestions];
+                              next[i] = { ...next[i], kind: opt.k };
+                              setEditCareQuestions(next);
+                            }}
+                            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                              q.kind === opt.k
+                                ? "border-teal-500 bg-teal-50 text-teal-700"
+                                : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {editCareQuestions.length < 20 && (
+                    <button
+                      onClick={() =>
+                        setEditCareQuestions([
+                          ...editCareQuestions,
+                          { prompt: "", kind: "text" },
+                        ])
+                      }
+                      className="text-sm text-orange-600 font-medium"
+                    >
+                      + Add question
+                    </button>
+                  )}
+                </div>
+              )}
+
               {engagement.type === "birthday" ? (
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2">

@@ -23,6 +23,26 @@ export type EngagementType =
   | "birthday"
   | "care";
 
+// A Care Check-in question: a prompt + how people answer it.
+export type CareQuestion = { prompt: string; kind: "text" | "star" };
+
+// config.questions for a Care Check-in may be the new {prompt,kind} objects or a
+// legacy string[] (treated as text). Normalise to CareQuestion[].
+export function parseCareQuestions(config: unknown): CareQuestion[] {
+  const raw = (config as { questions?: unknown })?.questions;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((q): CareQuestion =>
+      typeof q === "string"
+        ? { prompt: q, kind: "text" }
+        : {
+            prompt: String((q as { prompt?: unknown })?.prompt ?? ""),
+            kind: (q as { kind?: unknown })?.kind === "star" ? "star" : "text",
+          }
+    )
+    .filter((q) => q.prompt.trim());
+}
+
 export type EngagementStatus = "active" | "sealed" | "revealed" | "expired";
 export type RevealMode = "sealed" | "all_at_once" | "first_in" | "as_they_come" | "instant";
 export type MemberRole = "admin" | "member" | "spectator";
