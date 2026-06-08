@@ -483,12 +483,12 @@ export default function NewEngagementPage() {
           ? "sealed"
           : reveal,
       is_blind: isBlind,
-      // Only birthdays and anniversaries repeat yearly. Holidays and one-time cards
-      // are created fresh each time (they open on their next date, then don't recur).
+      // Every card occasion repeats yearly (birthday, anniversary, Mother's/Father's
+      // Day, custom holiday) EXCEPT a one-time card, which never recurs.
       recurrence_rule: isBirthday
-        ? occasion === "birthday" || occasion === "anniversary"
-          ? "yearly"
-          : undefined
+        ? occasion === "once"
+          ? undefined
+          : "yearly"
         : recurrence === "yearly_nth"
         ? "yearly"
         : recurrence === "none"
@@ -1135,14 +1135,14 @@ export default function NewEngagementPage() {
               {selectedType === "birthday" && (
                 <div className="mt-2 space-y-2 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
                   <p className="text-xs text-slate-600">
-                    {occasion === "birthday" || occasion === "anniversary" ? (
-                      <>
-                        Runs <span className="font-semibold">every year</span>.
-                      </>
-                    ) : (
+                    {occasion === "once" ? (
                       <>
                         A <span className="font-semibold">one-time</span> card — it
                         won&apos;t repeat.
+                      </>
+                    ) : (
+                      <>
+                        Runs <span className="font-semibold">every year</span>.
                       </>
                     )}{" "}
                     Pick the recipient under &ldquo;hide from…&rdquo; so it stays a
