@@ -502,9 +502,14 @@ export default function NewEngagementPage() {
       // Birthday: schedule the auto-open and store the age basis.
       scheduled_open_at: scheduledOpenAt,
       lead_days: schedulesOpen ? leadDays || 14 : undefined,
-      // Only a real birthday carries an age; a holiday/anniversary doesn't.
+      // The anchor year for {age}: a birthday's birth year, or an anniversary /
+      // one-time card's start year. Floating holidays don't carry one.
       birth_year:
-        occasion === "birthday" && isBirthday && birthYear.trim()
+        isBirthday &&
+        (occasion === "birthday" ||
+          occasion === "anniversary" ||
+          occasion === "once") &&
+        birthYear.trim()
           ? parseInt(birthYear, 10)
           : null,
       // Wait for the full invite list to join + respond (sealed only).
@@ -1186,23 +1191,45 @@ export default function NewEngagementPage() {
                     <span className="text-slate-600">days before, so people can sign.</span>
                   </div>
 
-                  {/* Age is only for a real birthday */}
-                  {occasion === "birthday" && (
+                  {/* An anchor year drives the {age} count. For a birthday that's the
+                      age; for an anniversary/one-time it's a year count (e.g. years of
+                      service from a start-of-employment year). Skip it for holidays. */}
+                  {(occasion === "birthday" ||
+                    occasion === "anniversary" ||
+                    occasion === "once") && (
                     <>
                       <div className="flex flex-wrap items-center gap-2 text-sm">
-                        <span className="text-slate-600">Birth year</span>
+                        <span className="text-slate-600">
+                          {occasion === "birthday" ? "Birth year" : "Start year"}
+                        </span>
                         <input
                           type="number"
                           min={1900}
-                          max={2025}
+                          max={2100}
                           value={birthYear}
                           onChange={(e) => setBirthYear(e.target.value)}
                           placeholder="optional"
                           className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
                         />
                         <span className="text-xs text-slate-500">
-                          — put <span className="font-mono">{"{age}"}</span> in the title and
-                          it auto-fills the ordinal (1st, 2nd, 3rd, 28th…), bumping each year.
+                          {occasion === "birthday" ? (
+                            <>
+                              — put <span className="font-mono">{"{age}"}</span> in the
+                              title and it auto-fills the age (1st, 2nd, 28th…).
+                            </>
+                          ) : occasion === "anniversary" ? (
+                            <>
+                              — the year it began. Put{" "}
+                              <span className="font-mono">{"{age}"}</span> in the title for
+                              the # of years (10th, 25th…).
+                            </>
+                          ) : (
+                            <>
+                              — optional (e.g. start of employment). Put{" "}
+                              <span className="font-mono">{"{age}"}</span> in the title for
+                              the # of years.
+                            </>
+                          )}
                         </span>
                       </div>
                       {title.includes("{age}") && (

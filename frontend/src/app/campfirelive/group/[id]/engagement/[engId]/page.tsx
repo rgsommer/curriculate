@@ -410,6 +410,17 @@ export default function EngagementDetailPage() {
   const cardEmoji = engagementIcon(engagement);
   // What to call the recipient when nobody's named: avoid "birthday" for celebrations.
   const recipientNoun = isCelebrationCard ? "the guest of honor" : "the birthday person";
+  // The anchor-year field: only a real birthday is a "Birth year". Celebrations get an
+  // optional "Start year" (e.g. start of employment → years of service); preset holidays
+  // (Mother's/Father's Day) don't use a year at all.
+  const isRealBirthday = isBirthdayCard && !cardOccasion;
+  const isPresetHolidayCard =
+    cardOccasion === "Mother's Day" || cardOccasion === "Father's Day";
+  const showYearField = isBirthdayCard && !isPresetHolidayCard;
+  const yearFieldLabel = isRealBirthday ? "Birth year" : "Start year";
+  const yearFieldHint = isRealBirthday
+    ? "(for the age)"
+    : "(optional — e.g. start of employment)";
   const recipientLabel =
     [
       ...(engagement.excluded_user_ids ?? []).map((uid) =>
@@ -2601,19 +2612,22 @@ export default function EngagementDetailPage() {
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-medium text-slate-500 mb-1">
-                      Birth year <span className="text-slate-400">(for the age)</span>
-                    </label>
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      value={editBirthYear}
-                      onChange={(e) => setEditBirthYear(e.target.value)}
-                      placeholder="e.g. 1998"
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
-                    />
-                  </div>
+                  {showYearField && (
+                    <div>
+                      <label className="block text-xs font-medium text-slate-500 mb-1">
+                        {yearFieldLabel}{" "}
+                        <span className="text-slate-400">{yearFieldHint}</span>
+                      </label>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={editBirthYear}
+                        onChange={(e) => setEditBirthYear(e.target.value)}
+                        placeholder={isRealBirthday ? "e.g. 1998" : "e.g. 2005"}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none"
+                      />
+                    </div>
+                  )}
                   <div className="col-span-2">
                     <label className="block text-xs font-medium text-slate-500 mb-1">
                       Opens this many days before (auto-emails the group then)
