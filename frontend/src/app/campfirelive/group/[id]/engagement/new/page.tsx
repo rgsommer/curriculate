@@ -457,7 +457,7 @@ export default function NewEngagementPage() {
         isBirthday
           ? "sealed"
           : reveal,
-      is_blind: selectedType === "two_truths" ? false : isBlind,
+      is_blind: isBlind,
       recurrence_rule: isBirthday
         ? "yearly"
         : recurrence === "yearly_nth"
@@ -980,9 +980,8 @@ export default function NewEngagementPage() {
             </div>
             )}
 
-            {/* Blind mode — not relevant for Two Truths / Baby Reveal / Most Likely / Scavenger */}
-            {selectedType !== "two_truths" &&
-              selectedType !== "baby_reveal" &&
+            {/* Blind mode — Two Truths adds a "guess who wrote it" layer when on */}
+            {selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
               selectedType !== "scavenger_hunt" &&
               selectedType !== "birthday" && (
@@ -996,10 +995,12 @@ export default function NewEngagementPage() {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      🙈 Blind Responses
+                      🙈 {selectedType === "two_truths" ? "Anonymous (guess who too!)" : "Blind Responses"}
                     </div>
                     <div className="text-xs text-slate-500">
-                      Hide identities — no one knows whose response is whose
+                      {selectedType === "two_truths"
+                        ? "Hide who wrote each set — players guess the lie AND who wrote it. Names reveal at the end."
+                        : "Hide identities — no one knows whose response is whose"}
                     </div>
                   </div>
                 </label>

@@ -1712,6 +1712,14 @@ export default function EngagementDetailPage() {
     if (!showResults || engagement.type !== "two_truths") return null;
     const liesRevealed = !!engagement.lies_revealed_at;
     const R = responses.length;
+    // Anonymous mode: candidate names for the "guess who wrote this" game.
+    const ttResponderNames = Array.from(
+      new Set(
+        responses
+          .map((x) => memberNameOf(x.user_id, x.profile?.display_name))
+          .filter(Boolean)
+      )
+    ) as string[];
 
     const answerFor = (rid: string) =>
       lieAnswers.find((a) => a.response_id === rid)?.lie_index;
@@ -1792,6 +1800,58 @@ export default function EngagementDetailPage() {
                   </span>
                 )}
               </div>
+
+              {/* Anonymous mode: guess WHO wrote this (before names are revealed) */}
+              {engagement.is_blind &&
+                !isMine &&
+                hasResponded &&
+                ttResponderNames.length > 1 && (
+                  <div className="mb-2 text-xs">
+                    {!liesRevealed ? (
+                      guesses[r.id] ? (
+                        <span className="text-purple-600">
+                          🕵️ You guessed <b>{guesses[r.id]}</b> wrote this.{" "}
+                          <button
+                            onClick={() =>
+                              setGuesses((g) => {
+                                const n = { ...g };
+                                delete n[r.id];
+                                return n;
+                              })
+                            }
+                            className="underline text-slate-400 hover:text-slate-600"
+                          >
+                            change
+                          </button>
+                        </span>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-slate-500">🕵️ Who wrote this?</span>
+                          {ttResponderNames.map((n) => (
+                            <button
+                              key={n}
+                              onClick={() => setGuesses((g) => ({ ...g, [r.id]: n }))}
+                              className="rounded-full border border-slate-200 px-2 py-0.5 text-slate-700 hover:bg-slate-50"
+                            >
+                              {n}
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    ) : guesses[r.id] ? (
+                      guesses[r.id] === memberNameOf(r.user_id, r.profile?.display_name) ? (
+                        <span className="font-medium text-green-600">
+                          ✓ Right — {memberNameOf(r.user_id, r.profile?.display_name)} wrote it!
+                        </span>
+                      ) : (
+                        <span className="text-slate-600">
+                          You guessed {guesses[r.id]} — it was{" "}
+                          <b>{memberNameOf(r.user_id, r.profile?.display_name)}</b>.
+                        </span>
+                      )
+                    ) : null}
+                  </div>
+                )}
 
               <div className="space-y-1.5">
                 {statements.map((s, i) => {
