@@ -103,6 +103,9 @@ export default function BehaviorDashboard() {
             <Link href="/behavior/setup#invite" className="rounded-lg border border-slate-300 px-3 py-1.5">
               Invite teachers
             </Link>
+            <Link href="/behavior/team" className="rounded-lg border border-slate-300 px-3 py-1.5">
+              Team &amp; usage
+            </Link>
           </div>
         </Card>
       )}

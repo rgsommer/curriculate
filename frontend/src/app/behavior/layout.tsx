@@ -25,6 +25,9 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
             <Link href="/behavior/reports" className="text-slate-600 hover:text-slate-900">
               Reports
             </Link>
+            <Link href="/behavior/team" className="text-slate-600 hover:text-slate-900">
+              Team
+            </Link>
             <Link href="/behavior/setup" className="text-slate-600 hover:text-slate-900">
               Setup
             </Link>

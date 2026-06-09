@@ -548,6 +548,78 @@ router.get("/invites", authAny, loadMembership, requireAdmin, async (req, res, n
   }
 });
 
+// Team & usage overview (admins + principal): who's a member, who was invited
+// but hasn't joined, and per-teacher activity. "Last active" is the most recent
+// of a logged incident or an audited action (we don't track raw logins).
+router.get("/team", authAny, loadMembership, async (req, res, next) => {
+  try {
+    if (!["originator", "admin", "principal"].includes(req.membership.role)) {
+      return res.status(403).json({ ok: false, error: "Admins and principals only" });
+    }
+    const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
+      .select("name email role status createdAt userId")
+      .lean();
+
+    const incAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId } },
+      { $group: { _id: "$teacherId", n: { $sum: 1 }, last: { $max: "$timestamp" } } },
+    ]);
+    const incById = Object.fromEntries(incAgg.map((a) => [String(a._id), a]));
+
+    const notAgg = await BehaviorNotice.aggregate([
+      { $match: { schoolId: req.schoolId } },
+      { $group: { _id: "$sentByTeacherId", n: { $sum: 1 } } },
+    ]);
+    const notById = Object.fromEntries(notAgg.map((a) => [String(a._id), a.n]));
+
+    const auditAgg = await BehaviorAuditLog.aggregate([
+      { $match: { schoolId: req.schoolId, actorUserId: { $ne: null } } },
+      { $group: { _id: "$actorUserId", last: { $max: "$createdAt" } } },
+    ]);
+    const auditByUser = Object.fromEntries(auditAgg.map((a) => [String(a._id), a.last]));
+
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const rows = teachers
+      .map((t) => {
+        const inc = incById[String(t._id)];
+        const lastIncident = inc?.last ? new Date(inc.last).getTime() : 0;
+        const lastAudit = auditByUser[String(t.userId)] ? new Date(auditByUser[String(t.userId)]).getTime() : 0;
+        const lastActive = Math.max(lastIncident, lastAudit);
+        return {
+          _id: String(t._id),
+          name: t.name,
+          email: t.email,
+          role: t.role,
+          status: t.status,
+          joinedAt: t.createdAt,
+          incidents: inc?.n || 0,
+          notices: notById[String(t._id)] || 0,
+          lastActiveAt: lastActive ? new Date(lastActive) : null,
+        };
+      })
+      .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
+
+    const pendingInvites = await BehaviorInvite.find({ schoolId: req.schoolId, status: "pending" })
+      .select("email role invitedByEmail createdAt")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const activeLast30 = rows.filter((r) => r.lastActiveAt && now - new Date(r.lastActiveAt).getTime() < 30 * DAY).length;
+    const totalIncidents = incAgg.reduce((s, a) => s + a.n, 0);
+    const totalNotices = notAgg.reduce((s, a) => s + a.n, 0);
+
+    res.json({
+      ok: true,
+      teachers: rows,
+      pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt })),
+      stats: { members: rows.length, pending: pendingInvites.length, activeLast30, totalIncidents, totalNotices },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Accept an invite: the signed-in user (who set a password via the existing
 // signup flow) becomes a member. Their email must match the invite.
 router.post("/invite/accept", authAny, async (req, res, next) => {
