@@ -253,7 +253,19 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
       </p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <textarea value={emails} onChange={(e) => setEmails(e.target.value)}
-        rows={2} placeholder="emails, separated by commas or spaces" className={`mt-2 ${inputCls}`} />
+        rows={2} placeholder="emails, or 'Name <email>' — commas, spaces or new lines" className={`mt-2 ${inputCls}`} />
+      {(() => {
+        const parsed = emails.match(/[\w.+-]+@[\w.-]+\.\w{2,}/g) || [];
+        if (!parsed.length) return null;
+        const ok = parsed.filter((e) => e.toLowerCase().split("@")[1] === domain.toLowerCase());
+        const outside = parsed.filter((e) => e.toLowerCase().split("@")[1] !== domain.toLowerCase());
+        return (
+          <p className="mt-1 text-xs text-slate-500">
+            <span className="text-green-700">{ok.length} valid</span>
+            {outside.length > 0 && <span className="text-red-600"> · {outside.length} outside @{domain}: {outside.join(", ")}</span>}
+          </p>
+        );
+      })()}
       <div className="mt-2 flex items-center gap-2">
         <select value={role} onChange={(e) => setRole(e.target.value)} className={inputCls}>
           <option value="teacher">Teacher</option>
