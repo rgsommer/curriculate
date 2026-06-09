@@ -23,6 +23,8 @@ export default function LogIncidentPage() {
 
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<NoticeResult>(null);
+  const [trigger, setTrigger] = useState<{ date: string; teacher: string; offense: string; comment: string }[]>([]);
+  const [triggerCount, setTriggerCount] = useState(3);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,10 +72,12 @@ export default function LogIncidentPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await api<{ notice: NoticeResult }>("/incidents", {
+      const res = await api<{ notice: NoticeResult; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
         body: { studentId: student._id, behaviorIds: [behaviorId], detailText: note.trim() },
       });
       setNotice(res.notice);
+      setTrigger(res.triggerIncidents || []);
+      setTriggerCount(res.triggerCount || 3);
       setDone(true);
     } catch (e: any) {
       setError(e.message);
@@ -97,6 +101,7 @@ export default function LogIncidentPage() {
     setBehaviorId("");
     setNote("");
     setNotice(null);
+    setTrigger([]);
     setDone(false);
     setQuery("");
   }
@@ -111,6 +116,36 @@ export default function LogIncidentPage() {
             Recorded for {student?.preferredName || student?.firstName} {student?.lastName}.
           </p>
         </div>
+
+        {trigger.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <div className="flex items-baseline justify-between">
+              <h2 className="font-semibold">
+                {notice ? "Incidents in this notice" : "Strikes so far (all teachers)"}
+              </h2>
+              <span className="text-sm text-slate-400">
+                {trigger.length}
+                {!notice && ` / ${triggerCount}`}
+              </span>
+            </div>
+            <ul className="mt-2 divide-y divide-slate-100">
+              {trigger.map((t, i) => (
+                <li key={i} className="py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium">{t.offense}</span>
+                    <span className="text-slate-400">
+                      {new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                  </div>
+                  <div className="text-slate-500">
+                    {t.teacher || "—"}
+                    {t.comment ? ` · ${t.comment}` : ""}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {notice && notice.status !== "cancelled" && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
             <h2 className="font-semibold text-amber-900">Notice home triggered</h2>

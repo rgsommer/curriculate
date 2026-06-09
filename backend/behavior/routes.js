@@ -26,7 +26,7 @@ import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
 
-import { evaluateIncident } from "./lib/triggerLogic.js";
+import { evaluateIncident, activeThresholdIncidents } from "./lib/triggerLogic.js";
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
 import { encrypt } from "./lib/secretBox.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
@@ -619,10 +619,39 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       }
     }
 
+    // The incidents that make up the CURRENT trigger, for the teacher to review:
+    // if a notice just fired, the incidents that fed it; otherwise the running
+    // set still accumulating toward the threshold (cross-teacher). Enriched with
+    // teacher name so the teacher sees who logged each one.
+    let triggerRaw;
+    if (notice) {
+      triggerRaw = await BehaviorIncident.find({ studentId: student._id, countedInNoticeId: notice._id })
+        .sort({ timestamp: 1 })
+        .lean();
+    } else {
+      const all = await BehaviorIncident.find({ studentId: student._id }).lean();
+      triggerRaw = activeThresholdIncidents(all, {
+        fadeWindowDays: config?.fadeWindowDays ?? 30,
+        thresholdResetAt: student.thresholdResetAt,
+        asOf: new Date(),
+      });
+    }
+    const tIds = [...new Set(triggerRaw.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
+    const triggerIncidents = triggerRaw.map((i) => ({
+      date: i.timestamp,
+      teacher: tName[String(i.teacherId)] || "",
+      offense: i.behaviorSnapshot?.name || "",
+      comment: i.detailText || "",
+    }));
+
     res.json({
       ok: true,
       incidents: createdIncidents.map((i) => ({ _id: i._id, behaviorName: i.behaviorSnapshot.name })),
       notice: notice ? { _id: notice._id, status: notice.status, cancelUntil: notice.cancelUntil, ccVp: notice.ccVp } : null,
+      triggerIncidents,
+      triggerCount: config?.triggerCount ?? 3,
     });
   } catch (err) {
     next(err);
