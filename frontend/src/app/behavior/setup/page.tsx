@@ -47,6 +47,7 @@ export default function SetupPage() {
     <div className="space-y-5">
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
       <ConfigSection config={me.config} />
+      <BehaviorsSection />
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
@@ -297,6 +298,107 @@ function RosterSection() {
         </div>
       )}
     </Card>
+  );
+}
+
+const FOLLOWUPS = [
+  { v: "none", label: "No follow-up" },
+  { v: "next_school_day", label: "Due next school day" },
+  { v: "custom_deadline", label: "Custom deadline" },
+];
+
+function BehaviorsSection() {
+  const [items, setItems] = useState<any[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  function load() {
+    api<{ behaviors: any[] }>("/behaviors")
+      .then((d) => setItems(d.behaviors || []))
+      .catch((e) => setErr(e.message));
+  }
+  useEffect(() => { load(); }, []);
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Behaviours (division list)</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Set each offense&apos;s trigger mode (counts toward the strike total, or notifies immediately), its consequence, and
+        whether it creates a follow-up. Edits don&apos;t change already-logged incidents.
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      {items === null && <p className="mt-2 text-sm text-slate-400">Loading…</p>}
+
+      <div className="mt-3 space-y-2">
+        {items?.map((b) => (
+          <BehaviorRow key={b._id} b={b} onChanged={load} />
+        ))}
+      </div>
+
+      <BehaviorRow add onChanged={load} />
+    </Card>
+  );
+}
+
+function BehaviorRow({ b, add, onChanged }: { b?: any; add?: boolean; onChanged: () => void }) {
+  const [name, setName] = useState(b?.name || "");
+  const [triggerMode, setTriggerMode] = useState(b?.triggerMode || "THRESHOLD");
+  const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
+  const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    if (!name.trim()) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      if (add) {
+        await api("/behaviors", { body: { name, triggerMode, consequenceText, followUpType, scope: "standard" } });
+        setName(""); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none");
+      } else {
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, triggerMode, consequenceText, followUpType } });
+      }
+      onChanged();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    if (!window.confirm(`Remove "${b.name}" from the list?`)) return;
+    try {
+      await api(`/behaviors/${b._id}`, { method: "DELETE" });
+      onChanged();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  return (
+    <div className={`rounded-lg border p-3 ${add ? "border-dashed border-slate-300" : "border-slate-200"}`}>
+      {err && <p className="mb-1 text-xs text-red-600">{err}</p>}
+      <div className="grid grid-cols-2 gap-2">
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? "New behaviour name…" : "Name"} className={inputCls} />
+        <select value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)} className={inputCls}>
+          <option value="THRESHOLD">Counts toward strikes</option>
+          <option value="IMMEDIATE">Notify immediately</option>
+        </select>
+        <input value={consequenceText} onChange={(e) => setConsequenceText(e.target.value)} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
+        <select value={followUpType} onChange={(e) => setFollowUpType(e.target.value)} className={inputCls}>
+          {FOLLOWUPS.map((f) => <option key={f.v} value={f.v}>{f.label}</option>)}
+        </select>
+        <div className="flex items-center justify-end gap-2">
+          <button onClick={save} disabled={!name.trim() || busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+            {add ? "Add" : busy ? "Saving…" : "Save"}
+          </button>
+          {!add && (
+            <button onClick={remove} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700">Remove</button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

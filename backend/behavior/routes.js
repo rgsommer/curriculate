@@ -583,6 +583,54 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
   }
 });
 
+// Can the caller manage this behaviour? Admin/originator for standard; the owner
+// for a custom one. (Edits don't rewrite history — incidents snapshot at log time.)
+function canManageBehavior(membership, beh) {
+  if (beh.scope === "standard") return ["originator", "admin"].includes(membership.role);
+  return String(beh.ownerTeacherId) === String(membership._id);
+}
+
+// Edit a behaviour (name, mode, consequence, follow-up, description).
+router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const beh = await Behavior.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!beh) return res.status(404).json({ ok: false, error: "Behaviour not found" });
+    if (!canManageBehavior(req.membership, beh)) {
+      return res.status(403).json({ ok: false, error: "Not allowed to edit this behaviour" });
+    }
+    const b = req.body || {};
+    if ("name" in b) beh.name = String(b.name || "").trim();
+    if ("description" in b) beh.description = String(b.description || "");
+    if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
+    if (b.triggerMode === "IMMEDIATE" || b.triggerMode === "THRESHOLD") beh.triggerMode = b.triggerMode;
+    if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
+    if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
+    if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
+    await beh.save();
+    await audit(req.schoolId, "behavior.updated", req, { meta: { name: beh.name, scope: beh.scope } });
+    res.json({ ok: true, behavior: beh });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Remove a behaviour (soft delete — keeps history snapshots intact).
+router.delete("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const beh = await Behavior.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!beh) return res.status(404).json({ ok: false, error: "Behaviour not found" });
+    if (!canManageBehavior(req.membership, beh)) {
+      return res.status(403).json({ ok: false, error: "Not allowed to remove this behaviour" });
+    }
+    beh.active = false;
+    await beh.save();
+    await audit(req.schoolId, "behavior.removed", req, { meta: { name: beh.name, scope: beh.scope } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Incident logging + trigger (§6, §7) ──────────────────────────────────────
 
 router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next) => {
