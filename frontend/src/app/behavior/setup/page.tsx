@@ -598,7 +598,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
         </div>
         <ol className="mt-2 list-decimal space-y-1 pl-4">
           <li>Generate the token above and copy it.</li>
-          <li><a href="/edsby-cookie-sync.zip" download className="text-slate-700 underline">Download the extension</a>, unzip it, then in <code className="rounded bg-slate-100 px-1">chrome://extensions</code> turn on Developer mode → <span className="font-medium">Load unpacked</span> → pick the folder.</li>
+          <li><a href="/behaviours-edsby-cookie-sync.zip" download className="text-slate-700 underline">Download the extension</a>, unzip it (you&apos;ll get a <code className="rounded bg-slate-100 px-1">behaviours-edsby-cookie-sync</code> folder), then in <code className="rounded bg-slate-100 px-1">chrome://extensions</code> turn on Developer mode → <span className="font-medium">Load unpacked</span> → pick that folder.</li>
           <li>Open the extension&apos;s Options, enter <span className="font-medium">your Edsby host</span> and paste the token, then <span className="font-medium">Push current cookie now</span>.</li>
         </ol>
         <p className="mt-2 text-slate-400">The token is the credential — keep it secret. Regenerating it here revokes the old one (update the extension afterwards).</p>
