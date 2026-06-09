@@ -81,6 +81,56 @@ async function setLast(result) {
   return result;
 }
 
+// ---- jver/cver capture -----------------------------------------------------
+//
+// Edsby keeps the bundle version inside its engine and never exposes it on the
+// page, but it stamps every XHR with x-xds-jver / x-xds-cver request headers.
+// We observe those (read-only) and remember them, pushing when they change so
+// the app's stored versions stay current across Edsby releases. Opportunistically
+// we also grab the _formkey from broadcast/form POST bodies.
+
+async function remember(fields) {
+  const { pageCreds } = await chrome.storage.local.get("pageCreds");
+  const cur = pageCreds || {};
+  let changed = false;
+  const merged = { ...cur };
+  for (const k of Object.keys(fields)) {
+    if (fields[k] && fields[k] !== cur[k]) { merged[k] = fields[k]; changed = true; }
+  }
+  if (changed) {
+    await chrome.storage.local.set({ pageCreds: merged });
+    pushNow(); // get the fresh values to the app promptly (deduped, so rare)
+  }
+}
+
+chrome.webRequest.onSendHeaders.addListener(
+  (details) => {
+    let jver = "", cver = "";
+    for (const h of details.requestHeaders || []) {
+      const n = h.name.toLowerCase();
+      if (n === "x-xds-jver") jver = h.value;
+      else if (n === "x-xds-cver") cver = h.value;
+    }
+    if (jver || cver) remember({ jver, cver });
+  },
+  { urls: ["*://*.edsby.com/*"] },
+  ["requestHeaders"]
+);
+
+chrome.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    try {
+      const fd = details.requestBody && details.requestBody.formData;
+      const fk = fd && fd._formkey && fd._formkey[0];
+      if (fk) remember({ formkey: fk });
+    } catch (e) {
+      /* ignore */
+    }
+  },
+  { urls: ["*://*.edsby.com/*"], types: ["xmlhttprequest"] },
+  ["requestBody"]
+);
+
 // ---- listeners -------------------------------------------------------------
 
 // Push immediately when the Edsby session cookie changes.
@@ -112,20 +162,10 @@ chrome.action.onClicked.addListener(async () => {
   setTimeout(() => chrome.action.setBadgeText({ text: "" }), 4000);
 });
 
-// Messages: a manual push from the options page, and page identifiers captured
-// by the content script (which we persist, then push with the cookie).
+// Options page → manual push for testing.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "pushNow") {
     pushNow().then(sendResponse);
     return true; // async response
-  }
-  if (msg && msg.type === "pageCreds" && msg.data) {
-    chrome.storage.local.get("pageCreds").then(({ pageCreds }) => {
-      const merged = { ...(pageCreds || {}) };
-      for (const k of ["jver", "cver", "userNid", "formkey"]) {
-        if (msg.data[k]) merged[k] = msg.data[k];
-      }
-      chrome.storage.local.set({ pageCreds: merged }).then(() => pushNow());
-    });
   }
 });
