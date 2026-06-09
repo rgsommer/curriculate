@@ -263,7 +263,14 @@ function extractEdsbyVersions(html) {
       html.match(/[?&]_i=([A-Za-z0-9._-]{6,})/i);
     if (m) jver = m[1];
   }
-  return { jver, cver };
+  // The formkey is often embedded in a logged-in page (window._cf.formkey /
+  // _formkey). Scraping it from the authenticated HTML beats the openSesame call.
+  let formkey = "";
+  const fm =
+    html.match(/["']?_?formkey["']?\s*[:=]\s*["']([A-Za-z0-9._\-]+)["']/i) ||
+    html.match(/name=["']_formkey["'][^>]*value=["']([^"']+)["']/i);
+  if (fm) formkey = fm[1];
+  return { jver, cver, formkey };
 }
 
 // One-tap "Refresh from Edsby": auto-detects jver/cver from the public bootstrap
@@ -279,15 +286,26 @@ router.post("/edsby/refresh", authAny, loadMembership, requireAdmin, async (req,
     const notes = [];
     let jver = e.jver || "";
     let cver = e.cver || "";
+    const cookie = e.cookieEnc ? decrypt(e.cookieEnc) : "";
 
-    // 1) Auto-detect jver/cver from the base URL's public bootstrap.
+    // 1) Read jver/cver (and maybe the formkey) from the Edsby page. Fetch it
+    // WITH the cookie when we have one — the anonymous landing page is just a
+    // login shell, but the authenticated page embeds the bundle hash + formkey.
+    let scrapedFormkey = "";
     if (/^https:\/\//i.test(baseUrl)) {
       try {
-        const r = await fetch(baseUrl, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html" } });
+        const headers = { "User-Agent": "Mozilla/5.0", Accept: "text/html" };
+        if (cookie) headers.Cookie = cookie;
+        const r = await fetch(baseUrl, { redirect: "follow", headers });
         const found = extractEdsbyVersions(await r.text());
         if (found.jver) jver = found.jver;
         if (found.cver) cver = found.cver;
-        if (!found.jver && !found.cver) notes.push("couldn't read jver/cver from the page — copy them from a request's x-xds-jver / x-xds-cver headers");
+        if (found.formkey) scrapedFormkey = found.formkey;
+        if (!found.jver && !found.cver) {
+          notes.push(cookie
+            ? "couldn't read jver/cver even when signed in — copy them from a request's x-xds-jver / x-xds-cver headers"
+            : "couldn't read jver/cver from the public page — save the cookie first, then Refresh again");
+        }
       } catch (err) {
         notes.push(`version fetch failed: ${err?.message || err}`);
       }
@@ -299,12 +317,17 @@ router.post("/edsby/refresh", authAny, loadMembership, requireAdmin, async (req,
     if (jver && jver !== e.jver) { set["edsby.jver"] = jver; updated.push("jver"); }
     if (cver && cver !== e.cver) { set["edsby.cver"] = cver; updated.push("cver"); }
 
-    // 2) Refresh the formkey if a cookie is stored.
+    // 2) Formkey: prefer the one scraped from the authenticated page; otherwise
+    // fall back to the openSesame refresh (needs a cookie + correct jver/cver).
     let formkeyOk = null;
     let formkeyError = "";
-    if (e.cookieEnc) {
+    if (scrapedFormkey) {
+      set["edsby.formkeyEnc"] = encrypt(scrapedFormkey);
+      updated.push("formkey");
+      formkeyOk = true;
+    } else if (cookie) {
       const provider = new EdsbyProvider({
-        baseUrl, cookie: decrypt(e.cookieEnc), formkey: decrypt(e.formkeyEnc), jver, cver, userNid: e.userNid,
+        baseUrl, cookie, formkey: decrypt(e.formkeyEnc), jver, cver, userNid: e.userNid,
       });
       const r = await provider.testConnection(e.zoomId);
       formkeyOk = r.ok;

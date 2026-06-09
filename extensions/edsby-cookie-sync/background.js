@@ -55,11 +55,19 @@ async function pushNow() {
     return setLast({ ok: false, error: "No Edsby session cookie found — open https://" + cfg.edsbyHost + "/ and sign in." });
   }
 
+  // Merge in any page identifiers the content script captured (jver/cver/
+  // userNid/formkey from window._cf) so the app gets everything in one push.
+  const { pageCreds } = await chrome.storage.local.get("pageCreds");
+  const payload = { cookie: cookieHeader, baseUrl: "https://" + cfg.edsbyHost };
+  for (const k of ["jver", "cver", "userNid", "formkey"]) {
+    if (pageCreds && pageCreds[k]) payload[k] = pageCreds[k];
+  }
+
   try {
     const resp = await fetch(cfg.ingestUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify({ cookie: cookieHeader, baseUrl: "https://" + cfg.edsbyHost }),
+      body: JSON.stringify(payload),
     });
     const text = await resp.text();
     return setLast({ ok: resp.ok, status: resp.status, body: text.slice(0, 200) });
@@ -104,10 +112,20 @@ chrome.action.onClicked.addListener(async () => {
   setTimeout(() => chrome.action.setBadgeText({ text: "" }), 4000);
 });
 
-// Options page → manual push for testing.
+// Messages: a manual push from the options page, and page identifiers captured
+// by the content script (which we persist, then push with the cookie).
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "pushNow") {
     pushNow().then(sendResponse);
     return true; // async response
+  }
+  if (msg && msg.type === "pageCreds" && msg.data) {
+    chrome.storage.local.get("pageCreds").then(({ pageCreds }) => {
+      const merged = { ...(pageCreds || {}) };
+      for (const k of ["jver", "cver", "userNid", "formkey"]) {
+        if (msg.data[k]) merged[k] = msg.data[k];
+      }
+      chrome.storage.local.set({ pageCreds: merged }).then(() => pushNow());
+    });
   }
 });

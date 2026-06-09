@@ -38,11 +38,14 @@ tell it. The cookie is sent **only** to the ingest URL you configure.
 ## What it does
 
 - Pushes the cookie immediately whenever Edsby refreshes it (login / renewal).
+- A content script also reads the page's `window._cf` bundle identifiers
+  (jver, cver, your user nid, and the formkey when present) and sends them with
+  the cookie — so the app gets everything in one push, no manual jver/cver.
 - Re-pushes every 30 minutes as a safety net.
 - Click the toolbar icon any time to push on demand (badge shows OK/ERR).
 
-After the cookie lands, the Behaviours app's **Refresh from Edsby** button takes
-care of jver/cver and the short-lived formkey.
+If a browser doesn't support reading the page globals, the cookie still syncs and
+the app's **Refresh from Edsby** button fills in jver/cver + formkey.
 
 ## Privacy / security
 
