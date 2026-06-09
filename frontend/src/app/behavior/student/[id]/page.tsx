@@ -14,6 +14,7 @@ type StudentDetail = {
     _id: string;
     behaviorSnapshot: { name: string; triggerMode: string };
     detailText?: string;
+    teacherName?: string;
     timestamp: string;
     countedInNoticeId?: string | null;
   }>;
@@ -140,9 +141,12 @@ export default function StudentPage() {
                 {inc.behaviorSnapshot.triggerMode === "IMMEDIATE" && (
                   <span className="ml-2 text-xs text-amber-600">immediate</span>
                 )}
+                {inc.teacherName ? <span className="text-slate-400"> · {inc.teacherName}</span> : null}
                 {inc.detailText ? <span className="text-slate-400"> — {inc.detailText}</span> : null}
               </span>
-              <span className="text-slate-400">{new Date(inc.timestamp).toLocaleDateString()}</span>
+              <span className="shrink-0 pl-2 text-slate-400">
+                {new Date(inc.timestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </span>
             </li>
           ))}
           {data.incidents.length === 0 && <li className="py-2 text-slate-400">No incidents.</li>}

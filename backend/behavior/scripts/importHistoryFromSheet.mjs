@@ -160,7 +160,7 @@ for (const { stu, incidents, notices, sources } of byStudent.values()) {
         triggerMode: beh.triggerMode || "THRESHOLD", consequenceText: beh.consequenceText || "",
       },
       detailText: inc.comment || "", immediateFlag: beh.triggerMode === "IMMEDIATE",
-      timestamp: new Date(inc.date), legacyImport: true,
+      timestamp: new Date(inc.at || inc.date), legacyImport: true,
     };
   });
   if (incidentDocs.length) { await BehaviorIncident.insertMany(incidentDocs); insIncidents += incidentDocs.length; }

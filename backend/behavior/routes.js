@@ -573,6 +573,9 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       ? [req.body.behaviorId]
       : [];
     const detailText = String(req.body?.detailText || "");
+    // Optional event time (teacher may set/adjust when the incident occurred).
+    const occurredAt = req.body?.occurredAt ? new Date(req.body.occurredAt) : null;
+    const timestamp = occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : new Date();
     if (!studentId || !behaviorIds.length) {
       return res.status(400).json({ ok: false, error: "studentId and behaviorIds required" });
     }
@@ -601,6 +604,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
+        timestamp,
       });
       createdIncidents.push(inc.toObject());
     }

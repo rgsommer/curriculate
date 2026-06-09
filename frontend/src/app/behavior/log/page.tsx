@@ -11,6 +11,18 @@ function gradeLabel(g?: string) {
   return v ? `Grade ${v}` : "";
 }
 
+// Current local time formatted for a <input type="datetime-local"> value.
+function nowLocal() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// "Jun 7, 11:47 am" style date+time.
+function fmtDateTime(d: string | number | Date) {
+  return new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
 export default function LogIncidentPage() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
@@ -19,6 +31,7 @@ export default function LogIncidentPage() {
 
   const [student, setStudent] = useState<StudentSummary | null>(null);
   const [behaviorId, setBehaviorId] = useState("");
+  const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
 
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
@@ -46,6 +59,7 @@ export default function LogIncidentPage() {
       setStatus(null);
       return;
     }
+    setOccurredAt(nowLocal()); // default the event time to now; teacher can adjust
     api<{ activeCount: number; triggerCount: number; incidents: any[] }>(`/students/${student._id}`)
       .then((d) => setStatus({ activeCount: d.activeCount, triggerCount: d.triggerCount, incidents: d.incidents || [] }))
       .catch(() => setStatus(null));
@@ -86,7 +100,12 @@ export default function LogIncidentPage() {
     setError(null);
     try {
       const res = await api<{ notice: NoticeResult; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
-        body: { studentId: student._id, behaviorIds: [behaviorId], detailText: note.trim() },
+        body: {
+          studentId: student._id,
+          behaviorIds: [behaviorId],
+          detailText: note.trim(),
+          occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
+        },
       });
       setNotice(res.notice);
       setTrigger(res.triggerIncidents || []);
@@ -112,6 +131,7 @@ export default function LogIncidentPage() {
   function reset() {
     setStudent(null);
     setBehaviorId("");
+    setOccurredAt("");
     setNote("");
     setNotice(null);
     setTrigger([]);
@@ -146,9 +166,7 @@ export default function LogIncidentPage() {
                 <li key={i} className="py-2 text-sm">
                   <div className="flex items-center justify-between">
                     <span className="font-medium">{t.offense}</span>
-                    <span className="text-slate-400">
-                      {new Date(t.date).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                    </span>
+                    <span className="text-slate-400">{fmtDateTime(t.date)}</span>
                   </div>
                   <div className="text-slate-500">
                     {t.teacher || "—"}
@@ -228,9 +246,7 @@ export default function LogIncidentPage() {
                   <li key={idx} className="py-1.5 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="font-medium">{i.behaviorSnapshot?.name}</span>
-                      <span className="text-slate-400">
-                        {new Date(i.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
-                      </span>
+                      <span className="text-slate-400">{fmtDateTime(i.timestamp)}</span>
                     </div>
                     <div className="text-slate-500">
                       {i.teacherName || "—"}
@@ -261,6 +277,16 @@ export default function LogIncidentPage() {
               </option>
             ))}
           </select>
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-sm font-medium text-slate-600">Date &amp; time of incident</span>
+          <input
+            type="datetime-local"
+            value={occurredAt}
+            onChange={(e) => setOccurredAt(e.target.value)}
+            className="w-full rounded-xl border border-slate-300 px-4 py-3"
+          />
         </label>
 
         <textarea

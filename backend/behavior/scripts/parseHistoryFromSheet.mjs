@@ -45,6 +45,19 @@ function stripHtml(s) {
     .trim();
 }
 
+// Combine a date string ("Dec 8, 2025") + 12h time ("11:55 am") into a Date.
+function combineDateTime(dateStr, timeStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const m = String(timeStr || "").match(/(\d{1,2}):(\d{2})\s*([ap]m)?/i);
+  if (m) {
+    let h = Number(m[1]) % 12;
+    if (/pm/i.test(m[3] || "")) h += 12;
+    d.setHours(h, Number(m[2]), 0, 0);
+  }
+  return d;
+}
+
 // Parse the Details cell into individual incidents.
 // Each entry: "⚡ <Weekday>, <Mon DD, YYYY> (<time>):  <Behaviour>: <comment>"
 function parseIncidents(detailsRaw) {
@@ -55,10 +68,16 @@ function parseIncidents(detailsRaw) {
     // <Weekday>, <Mon DD, YYYY> (<time>):  <Behaviour>: <rest>
     const m = chunk.match(/^[A-Za-z]+,\s*([A-Za-z]+ \d{1,2},\s*\d{4})\s*\(([^)]*)\):\s*([^:]+):\s*([\s\S]*)$/);
     if (!m) continue;
-    const date = new Date(m[1]);
     const offense = stripHtml(m[3]).trim();
     const comment = stripHtml(m[4]).trim();
-    out.push({ date: isoDate(date) || m[1], time: m[2].trim(), offense, comment });
+    const at = combineDateTime(m[1], m[2]); // full Date with clock time
+    out.push({
+      date: at ? isoDate(at) : m[1],
+      time: m[2].trim(),
+      at: at ? at.toISOString() : "",
+      offense,
+      comment,
+    });
   }
   return out;
 }
