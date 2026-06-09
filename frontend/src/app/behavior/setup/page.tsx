@@ -485,15 +485,26 @@ function TestToolsSection({ email }: { email: string }) {
   async function search() {
     setErr(null);
     try {
-      const d = await api<{ students: any[] }>(`/students?query=${encodeURIComponent(q.trim())}`);
+      // includeInactive so deactivated students show up (to reactivate them).
+      const d = await api<{ students: any[] }>(`/students?includeInactive=1&query=${encodeURIComponent(q.trim())}`);
       setResults(d.students || []);
     } catch (e: any) {
       setErr(e.message);
     }
   }
 
+  async function setActive(s: any, active: boolean) {
+    try {
+      await api(`/students/${s._id}`, { method: "PATCH", body: { active } });
+      setResults(results.map((x) => (x._id === s._id ? { ...x, active } : x)));
+      setMsg(`${active ? "Reactivated" : "Deactivated"} ${s.firstName} ${s.lastName}.`);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
   async function del(s: any) {
-    if (!window.confirm(`Delete ${s.firstName} ${s.lastName} and ALL their incidents/notices? This cannot be undone.`)) return;
+    if (!window.confirm(`PERMANENTLY delete ${s.firstName} ${s.lastName} and ALL their incidents/notices? This cannot be undone. (To just remove a student who left, use Deactivate instead.)`)) return;
     try {
       const r = await api<{ incidentsRemoved: number; noticesRemoved: number }>(`/students/${s._id}`, { method: "DELETE" });
       setResults(results.filter((x) => x._id !== s._id));
@@ -525,7 +536,8 @@ function TestToolsSection({ email }: { email: string }) {
       </div>
 
       <div className="mt-5 border-t border-slate-100 pt-4">
-        <p className="text-sm font-medium text-slate-700">Remove a student</p>
+        <p className="text-sm font-medium text-slate-700">Manage / remove a student</p>
+        <p className="text-xs text-slate-400">Deactivate hides a student who left (keeps their history). Delete is permanent.</p>
         {msg && <p className="mt-1 text-sm text-green-700">{msg}</p>}
         <div className="mt-2 flex gap-2">
           <input
@@ -539,13 +551,19 @@ function TestToolsSection({ email }: { email: string }) {
         </div>
         <ul className="mt-2 divide-y divide-slate-100">
           {results.map((s) => (
-            <li key={s._id} className="flex items-center justify-between py-2 text-sm">
+            <li key={s._id} className="flex items-center justify-between gap-2 py-2 text-sm">
               <span>
                 {s.lastName}, {s.firstName} <span className="text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</span>
+                {s.active === false && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs text-slate-500">deactivated</span>}
               </span>
-              <button onClick={() => del(s)} className="rounded-lg border border-red-300 px-3 py-1 text-xs text-red-700">
-                Delete
-              </button>
+              <span className="flex shrink-0 gap-1.5">
+                {s.active === false ? (
+                  <button onClick={() => setActive(s, true)} className="rounded-lg border border-green-300 px-3 py-1 text-xs text-green-700">Reactivate</button>
+                ) : (
+                  <button onClick={() => setActive(s, false)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Deactivate</button>
+                )}
+                <button onClick={() => del(s)} className="rounded-lg border border-red-300 px-3 py-1 text-xs text-red-700">Delete</button>
+              </span>
             </li>
           ))}
         </ul>

@@ -50,6 +50,10 @@ function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 }
 
+function escapeHtml(s) {
+  return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Load the caller's school membership; 404 if they have none yet. */
 async function loadMembership(req, res, next) {
   try {
@@ -260,12 +264,31 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
         { upsert: true, new: true }
       );
       const link = `${appBase()}/behavior/accept?token=${token}`;
+      const inviter = (req.user?.name || "").trim();
+      const inviterEmail = req.user?.email || "";
+      const by = inviter ? `${inviter}${inviterEmail ? ` (${inviterEmail})` : ""}` : "Your school";
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
         await mailer.sendMail({
-          from: process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER,
+          from: fromAddr ? { name: `Behaviours · ${school.name}`, address: fromAddr } : undefined,
           to: email,
-          subject: `You're invited to ${school.name} on Behaviours`,
-          text: `You have been invited to join ${school.name} on the Behaviours app.\n\nAccept your invitation and set your password:\n${link}\n`,
+          replyTo: inviterEmail || undefined,
+          subject: `${inviter || "You're"} invited you to Behaviours at ${school.name}`,
+          text:
+            `Hi,\n\n` +
+            `${by} has added you to Behaviours — ${school.name}'s behaviour-tracking app. ` +
+            `You'll be able to log incidents against any student and see each student's cross-teacher status.\n\n` +
+            `Set your password and get started:\n${link}\n\n` +
+            `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
+          html:
+            `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;color:#0f172a">` +
+            `<h2 style="margin:0 0 8px">You're invited to Behaviours</h2>` +
+            `<p style="color:#475569;line-height:1.5"><strong>${escapeHtml(by)}</strong> has added you to <strong>${escapeHtml(school.name)}</strong>'s behaviour-tracking app. ` +
+            `You'll be able to log incidents against any student and see each student's cross-teacher status.</p>` +
+            `<p style="margin:20px 0"><a href="${link}" style="background:#0f172a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Accept &amp; set your password</a></p>` +
+            `<p style="color:#94a3b8;font-size:13px;word-break:break-all">Or paste this link: ${link}</p>` +
+            `<p style="color:#94a3b8;font-size:13px">If you didn't expect this, you can ignore this email.</p>` +
+            `</div>`,
         });
       } catch (mailErr) {
         console.warn("[behavior] invite email failed:", mailErr?.message || mailErr);
@@ -387,7 +410,8 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
   try {
     const q = String(req.query.query || "").trim();
     const cls = String(req.query.class || "").trim();
-    const filter = { schoolId: req.schoolId, active: true };
+    const filter = { schoolId: req.schoolId };
+    if (req.query.includeInactive !== "1") filter.active = true; // mgmt view can see deactivated
     if (cls) filter.classGroup = cls;
     if (q) {
       const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -396,7 +420,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     // Sorted grade → class → name so the client can group by grade directly.
     // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
-      .select("lastName firstName preferredName classGroup grade")
+      .select("lastName firstName preferredName classGroup grade active")
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
@@ -513,8 +537,27 @@ router.post("/students", authAny, loadMembership, requireAdmin, async (req, res,
   }
 });
 
-// Delete a student (admin). Hard delete + cascade their incidents and notices —
-// intended for cleaning up test data. The audit entry of the deletion is kept.
+// Deactivate / reactivate a student (admin). Deactivating keeps the record +
+// history but hides them from rosters/search — the safe default for a student
+// who has left. Reversible.
+router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const active = !!req.body?.active;
+    const student = await BehaviorStudent.findOneAndUpdate(
+      { _id: req.params.id, schoolId: req.schoolId },
+      { $set: { active } },
+      { new: true }
+    ).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    await audit(req.schoolId, active ? "student.reactivated" : "student.deactivated", req, { studentId: student._id });
+    res.json({ ok: true, active: student.active });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PERMANENTLY delete a student (admin) + cascade their incidents and notices.
+// Irreversible — prefer PATCH deactivate for a student who simply left.
 router.delete("/students/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });
