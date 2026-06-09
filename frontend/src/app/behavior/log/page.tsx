@@ -182,7 +182,10 @@ export default function LogIncidentPage() {
             </p>
             <p className="text-sm text-slate-400">{[student.classGroup, gradeLabel(student.grade)].filter(Boolean).join(" · ")}</p>
           </div>
-          <button type="button" onClick={() => setStudent(null)} className="text-sm text-slate-500 underline">change</button>
+          <div className="flex items-center gap-4">
+            <Link href={`/behavior/student/${student._id}`} className="text-sm text-slate-500 underline">history</Link>
+            <button type="button" onClick={() => setStudent(null)} className="text-sm text-slate-500 underline">change</button>
+          </div>
         </div>
 
         <label className="block">
@@ -256,10 +259,10 @@ export default function LogIncidentPage() {
 
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
-          <li key={s._id}>
+          <li key={s._id} className="flex items-center">
             <button
               onClick={() => setStudent(s)}
-              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
+              className="flex flex-1 items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
             >
               <span className="font-medium">
                 {s.lastName}, {s.firstName}
@@ -267,6 +270,13 @@ export default function LogIncidentPage() {
               </span>
               <span className="text-sm text-slate-400">{s.classGroup}</span>
             </button>
+            <Link
+              href={`/behavior/student/${s._id}`}
+              className="shrink-0 border-l border-slate-100 px-4 py-3 text-sm text-slate-500 hover:text-slate-900"
+              title="View this student's history"
+            >
+              history →
+            </Link>
           </li>
         ))}
         {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">No students yet — import a roster in Setup.</li>}
