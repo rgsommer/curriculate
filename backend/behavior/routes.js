@@ -1045,10 +1045,10 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
   try {
     const notice = await BehaviorNotice.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!notice) return res.status(404).json({ ok: false, error: "Notice not found" });
-    if (notice.status !== "queued") {
+    if (!["queued", "failed"].includes(notice.status)) {
       return res.status(409).json({ ok: false, error: `Notice is already ${notice.status}` });
     }
-    const result = await dispatchNotice(notice._id);
+    const result = await dispatchNotice(notice._id); // re-attempts delivery (e.g. after fixing Edsby)
     await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
     res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
   } catch (err) {
@@ -1205,8 +1205,8 @@ router.put("/notices/:id", authAny, loadMembership, canLog, async (req, res, nex
   try {
     const notice = await BehaviorNotice.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!notice) return res.status(404).json({ ok: false, error: "Notice not found" });
-    if (notice.status !== "queued") {
-      return res.status(409).json({ ok: false, error: `Only queued notices can be edited (this one is ${notice.status})` });
+    if (!["queued", "failed"].includes(notice.status)) {
+      return res.status(409).json({ ok: false, error: `Only queued or failed notices can be edited (this one is ${notice.status})` });
     }
     if (typeof req.body?.renderedText === "string") notice.renderedText = req.body.renderedText;
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
@@ -1421,6 +1421,98 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
 
     await audit(req.schoolId, "executive_summary.generated", req, { meta: { scope, months, aiUsed, emailed } });
     res.json({ ok: true, summary, aiUsed, scope, months, emailed, emailError });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Aggregated stats for the in-app reports/charts (Phase 4).
+router.get("/stats", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const months = [6, 12, 24].includes(Number(req.query.months)) ? Number(req.query.months) : 12;
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
+    cutoff.setDate(1);
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const triggerCount = config?.triggerCount ?? 3;
+    const fadeDays = config?.fadeWindowDays ?? 30;
+    const pad = (n) => String(n).padStart(2, "0");
+
+    const incidents = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gt: cutoff } })
+      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode timestamp studentId")
+      .lean();
+    const studentsAll = await BehaviorStudent.find({ schoolId: req.schoolId }).select("classGroup").lean();
+    const classById = Object.fromEntries(studentsAll.map((s) => [String(s._id), s.classGroup || "—"]));
+
+    const incByMonth = {};
+    const byType = {};
+    const byClass = {};
+    const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
+    for (const i of incidents) {
+      const mk = new Date(i.timestamp).toISOString().slice(0, 7);
+      incByMonth[mk] = (incByMonth[mk] || 0) + 1;
+      const nm = i.behaviorSnapshot?.name || "Other";
+      byType[nm] = (byType[nm] || 0) + 1;
+      const cls = classById[String(i.studentId)] || "—";
+      byClass[cls] = (byClass[cls] || 0) + 1;
+      const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
+      byMode[mode] = (byMode[mode] || 0) + 1;
+    }
+
+    const notices = await BehaviorNotice.find({ schoolId: req.schoolId, createdAt: { $gt: cutoff } }).select("createdAt status").lean();
+    const notByMonth = {};
+    let noticesSent = 0;
+    for (const n of notices) {
+      notByMonth[new Date(n.createdAt).toISOString().slice(0, 7)] = (notByMonth[new Date(n.createdAt).toISOString().slice(0, 7)] || 0) + 1;
+      if (n.status === "sent") noticesSent++;
+    }
+
+    // Continuous month axis (fill gaps with zeros).
+    const axis = [];
+    const d = new Date(cutoff);
+    const now = new Date();
+    while (d <= now) {
+      axis.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
+      d.setMonth(d.getMonth() + 1);
+    }
+    const monthly = axis.map((mk) => ({ month: mk, incidents: incByMonth[mk] || 0, notices: notByMonth[mk] || 0 }));
+
+    // Current strike load (shared count).
+    const agg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, countedInNoticeId: null, "behaviorSnapshot.triggerMode": "THRESHOLD", timestamp: { $gt: new Date(Date.now() - fadeDays * DAY_MS) } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 } } },
+    ]);
+    const strikeBuckets = [];
+    for (let k = 1; k <= triggerCount; k++) {
+      strikeBuckets.push({
+        strikes: k >= triggerCount ? `${triggerCount}+` : String(k),
+        students: agg.filter((a) => (k >= triggerCount ? a.n >= triggerCount : a.n === k)).length,
+      });
+    }
+    const activeStudents = await BehaviorStudent.countDocuments({ schoolId: req.schoolId, active: true });
+
+    res.json({
+      ok: true,
+      months,
+      triggerCount,
+      totals: {
+        incidents: incidents.length,
+        notices: notices.length,
+        noticesSent,
+        students: activeStudents,
+        atOrNearThreshold: agg.filter((a) => a.n >= triggerCount - 1).length,
+        interactions: byMode.INTERACTION,
+      },
+      monthly,
+      topTypes: Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10).map(([type, count]) => ({ type, count })),
+      classCounts: Object.entries(byClass).sort((a, b) => a[0].localeCompare(b[0])).map(([cls, count]) => ({ class: cls, count })),
+      modePie: [
+        { name: "Threshold", value: byMode.THRESHOLD },
+        { name: "Immediate", value: byMode.IMMEDIATE },
+        { name: "Interaction", value: byMode.INTERACTION },
+      ],
+      strikeBuckets,
+    });
   } catch (err) {
     next(err);
   }

@@ -32,6 +32,7 @@ type StudentDetail = {
     createdAt: string;
     cancelUntil?: string;
     autoDispatch?: boolean;
+    deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
 };
@@ -224,12 +225,19 @@ export default function StudentPage() {
                   ) : (
                     <>
                       <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-slate-700">{n.renderedText}</pre>
-                      {n.status === "queued" && (
+                      {(n.status === "queued" || n.status === "failed") && (
                         <div className="mt-2 flex flex-wrap gap-2">
-                          <button onClick={() => sendNotice(n._id)} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">Send now</button>
+                          <button onClick={() => sendNotice(n._id)} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
+                            {n.status === "failed" ? "Retry send" : "Send now"}
+                          </button>
                           <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
                           <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
                         </div>
+                      )}
+                      {n.status === "failed" && (
+                        <p className="mt-1 text-xs text-red-600">
+                          Delivery failed{n.deliveries?.some((d: any) => !d.ok) ? `: ${n.deliveries.find((d: any) => !d.ok)?.error || ""}` : ""}. Fix the channel (e.g. re-paste the Edsby cookie + Test connection in Setup) and Retry send.
+                        </p>
                       )}
                     </>
                   )}
