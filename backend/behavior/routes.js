@@ -684,10 +684,14 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       })
       .sort((a, b) => new Date(b.lastActiveAt || 0).getTime() - new Date(a.lastActiveAt || 0).getTime());
 
-    const pendingInvites = await BehaviorInvite.find({ schoolId: req.schoolId, status: "pending" })
+    // Pending invites — exclude anyone who has already joined (e.g. the
+    // originator, or someone invited then created/accepted separately).
+    const memberEmails = new Set(teachers.map((t) => (t.email || "").toLowerCase()));
+    const pendingInvites = (await BehaviorInvite.find({ schoolId: req.schoolId, status: "pending" })
       .select("email role invitedByEmail createdAt")
       .sort({ createdAt: -1 })
-      .lean();
+      .lean()
+    ).filter((p) => !memberEmails.has((p.email || "").toLowerCase()));
 
     const activeLast30 = rows.filter((r) => r.lastActiveAt && now - new Date(r.lastActiveAt).getTime() < 30 * DAY).length;
     const totalIncidents = incAgg.reduce((s, a) => s + a.n, 0);
