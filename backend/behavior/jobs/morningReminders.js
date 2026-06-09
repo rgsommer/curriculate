@@ -13,6 +13,7 @@ import BehaviorFollowup from "../models/BehaviorFollowup.js";
 import BehaviorTeacher from "../models/BehaviorTeacher.js";
 import BehaviorStudent from "../models/BehaviorStudent.js";
 import { sendEmail } from "../lib/sendEmail.js";
+import { emailShell, emailButton, escapeHtml } from "../lib/emailTemplate.js";
 
 function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
@@ -55,21 +56,38 @@ async function sendSchoolDigests(cfg, now) {
   for (const t of teachers) {
     if (!t.morningReminderPrefs?.email) continue; // email-digest opt-in (in-app is separate)
     const list = byTeacher.get(String(t._id)) || [];
-    const lines = list.map((f) => {
+    const items = list.map((f) => {
       const s = sById[String(f.studentId)];
       const name = s ? `${s.preferredName || s.firstName} ${s.lastName}` : "student";
-      return `• ${name} — ${f.behaviorName}: ${f.consequenceText}`;
+      return { name, behaviorName: f.behaviorName, consequenceText: f.consequenceText };
     });
+    const lines = items.map((i) => `• ${i.name} — ${i.behaviorName}: ${i.consequenceText}`);
     const body =
       `Reminder for today — ${list.length} consequence(s) to check:\n\n` +
       `${lines.join("\n")}\n\n` +
       `Mark each Done / Not done / Waived in the app:\n${appBase()}/behavior`;
+    const rowsHtml = items
+      .map(
+        (i) =>
+          `<li style="margin:6px 0;line-height:1.5"><strong>${escapeHtml(i.name)}</strong> — ${escapeHtml(i.behaviorName)}` +
+          `${i.consequenceText ? `: <span style="color:#475569">${escapeHtml(i.consequenceText)}</span>` : ""}</li>`
+      )
+      .join("");
+    const html = emailShell({
+      title: `Today's follow-ups (${list.length})`,
+      preheader: `${list.length} consequence(s) to check today.`,
+      contentHtml:
+        `<p style="margin:0 0 10px;color:#334155;line-height:1.6">A quick reminder of the consequences to check today:</p>` +
+        `<ul style="margin:0 0 16px;padding-left:20px;color:#0f172a">${rowsHtml}</ul>` +
+        emailButton("Open the app", `${appBase()}/behavior`),
+    });
     try {
       await sendEmail({
         from: process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER,
         to: t.email,
         subject: "Reminder for today — behaviour follow-ups",
         text: body,
+        html,
       });
     } catch (err) {
       console.warn("[behavior/reminders] mail failed for", t.email, err?.message || err);

@@ -35,6 +35,7 @@ import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient } from "./lib/aiNote.js";
+import { emailShell, emailButton } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
 const router = express.Router();
@@ -409,6 +410,12 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
         to,
         subject: "Behaviours — test email ✓",
         text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString()}.`,
+        html: emailShell({
+          title: "Email delivery is working ✓",
+          contentHtml:
+            `<p style="margin:0 0 10px;color:#334155;line-height:1.6">This is a test from Behaviours. If you can read this, your email delivery is set up correctly.</p>` +
+            `<p style="margin:0;color:#94a3b8;font-size:13px">Sent ${escapeHtml(new Date().toLocaleString())}.</p>`,
+        }),
       });
       await audit(req.schoolId, "email.test_sent", req, { meta: { to } });
       return res.json({ ok: true, to, fromConfigured: !!fromAddr });
@@ -517,15 +524,17 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
             `You'll be able to log incidents against any student and see each student's cross-teacher status.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
             `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
-          html:
-            `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;color:#0f172a">` +
-            `<h2 style="margin:0 0 8px">You're invited to Behaviours</h2>` +
-            `<p style="color:#475569;line-height:1.5"><strong>${escapeHtml(by)}</strong> has invited you to Behaviours — a tool for tracking student behaviour across teachers and keeping parents in the loop. ` +
-            `You'll be able to log incidents against any student and see each student's cross-teacher status.</p>` +
-            `<p style="margin:20px 0"><a href="${link}" style="background:#0f172a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Accept &amp; set your password</a></p>` +
-            `<p style="color:#94a3b8;font-size:13px;word-break:break-all">Or paste this link: ${link}</p>` +
-            `<p style="color:#94a3b8;font-size:13px">If you didn't expect this, you can ignore this email.</p>` +
-            `</div>`,
+          html: emailShell({
+            title: "You're invited to Behaviours",
+            schoolName: school?.name || "Behaviours",
+            preheader: `${by} invited you to Behaviours.`,
+            contentHtml:
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> has invited you to Behaviours — a tool for tracking student behaviour across teachers and keeping parents in the loop. ` +
+              `You'll be able to log incidents against any student and see each student's cross-teacher status.</p>` +
+              emailButton("Accept & set your password", link) +
+              `<p style="color:#94a3b8;font-size:13px;word-break:break-all;margin:8px 0 0">Or paste this link: ${escapeHtml(link)}</p>` +
+              `<p style="color:#94a3b8;font-size:13px;margin:12px 0 0">If you didn't expect this, you can ignore this email.</p>`,
+          }),
         });
       } catch (mailErr) {
         console.warn("[behavior] invite email failed:", mailErr?.message || mailErr);
@@ -1838,14 +1847,16 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
           return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:62px;color:#64748b;font-size:12px">${k}</span><span style="background:#0f172a;height:14px;width:${w}%;border-radius:3px;display:inline-block;min-width:2px"></span><span style="font-size:12px;color:#475569">${v}</span></div>`;
         })
         .join("");
-      const html =
-        `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">` +
-        `<h2 style="margin:0 0 4px">Executive summary</h2>` +
-        `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
-        `<h3 style="margin:16px 0 6px;font-size:15px">Monthly incident volume</h3>${bars || "<p style='color:#94a3b8'>No incidents in this window.</p>"}` +
-        `<h3 style="margin:20px 0 6px;font-size:15px">Summary</h3>` +
-        `<div style="white-space:pre-wrap;line-height:1.55;color:#334155">${escapeHtml(summary)}</div>` +
-        `</div>`;
+      const html = emailShell({
+        title: "Executive summary",
+        schoolName: config?.branding?.schoolName || "Behaviours",
+        preheader: `${who} · last ${months} months`,
+        contentHtml:
+          `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
+          `<h3 style="margin:16px 0 6px;font-size:15px;color:#0f172a">Monthly incident volume</h3>${bars || "<p style='color:#94a3b8'>No incidents in this window.</p>"}` +
+          `<h3 style="margin:20px 0 6px;font-size:15px;color:#0f172a">Summary</h3>` +
+          `<div style="white-space:pre-wrap;line-height:1.6;color:#334155">${escapeHtml(summary)}</div>`,
+      });
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
         await sendEmail({
@@ -2131,12 +2142,13 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
         );
       })
       .join("");
-    const html =
-      `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">` +
-      `<h2 style="margin:0 0 4px">House standings</h2>` +
-      `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(config?.branding?.schoolName || "")}</p>` +
-      `${rows || "<p style='color:#94a3b8'>No houses defined yet.</p>"}` +
-      `</div>`;
+    const html = emailShell({
+      title: "House standings",
+      schoolName: config?.branding?.schoolName || "Behaviours",
+      preheader: "Current house point standings.",
+      accent: "#16a34a",
+      contentHtml: rows || "<p style='color:#94a3b8'>No houses defined yet.</p>",
+    });
 
     let emailed = false;
     let emailError = "";

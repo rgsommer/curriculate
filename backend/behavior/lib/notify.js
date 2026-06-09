@@ -11,6 +11,7 @@ import BehaviorStudent from "../models/BehaviorStudent.js";
 import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
 import { EmailProvider } from "./providers/EmailProvider.js";
+import { emailShell, noteToHtml } from "./emailTemplate.js";
 import { EdsbyProvider } from "./providers/EdsbyProvider.js";
 import { decrypt } from "./secretBox.js";
 
@@ -25,7 +26,7 @@ export function getDefaultProviders(edsby = {}) {
  *
  * @returns {Promise<Array>} delivery records { channel, ok, error, at, failover? }
  */
-export async function sendWithFailover({ recipient, channels, subject, body, providers }) {
+export async function sendWithFailover({ recipient, channels, subject, body, html, providers }) {
   const results = [];
   for (const ch of channels) {
     const provider = providers[ch];
@@ -33,13 +34,13 @@ export async function sendWithFailover({ recipient, channels, subject, body, pro
       results.push({ channel: ch, ok: false, error: "no provider configured", at: new Date() });
       continue;
     }
-    const r = await provider.send({ recipient, subject, body });
+    const r = await provider.send({ recipient, subject, body, html });
     results.push({ channel: ch, ok: !!r.ok, error: r.error || "", at: new Date() });
 
     // Edsby failover: only when edsby failed, email wasn't already requested,
     // and we have an email address to fall back to.
     if (ch === "edsby" && !r.ok && !channels.includes("email") && recipient.email && providers.email) {
-      const fb = await providers.email.send({ recipient, subject, body });
+      const fb = await providers.email.send({ recipient, subject, body, html });
       results.push({
         channel: "email",
         ok: !!fb.ok,
@@ -84,7 +85,19 @@ export async function dispatchNotice(noticeId, { providers } = {}) {
     prov = getDefaultProviders(edsby);
   }
   const studentName = student?.preferredName || student?.firstName || "your child";
-  const subject = `Behaviour notice — ${studentName}`;
+  const positive = notice.reason === "positive";
+  const subject = positive ? `Good news about ${studentName} 🎉` : `Behaviour notice — ${studentName}`;
+
+  // Branded HTML version of the note (Edsby still uses the plain text body).
+  const brand = await BehaviorConfig.findOne({ schoolId: notice.schoolId }).select("branding").lean();
+  const schoolName = brand?.branding?.schoolName || "";
+  const html = emailShell({
+    title: positive ? "A note of good news" : "A note from school",
+    schoolName,
+    preheader: positive ? `Some good news about ${studentName}.` : `A behaviour notice about ${studentName}.`,
+    accent: positive ? "#16a34a" : "#0f172a",
+    contentHtml: noteToHtml(notice.renderedText),
+  });
 
   const allDeliveries = [];
   for (const recipient of notice.recipients) {
@@ -93,6 +106,7 @@ export async function dispatchNotice(noticeId, { providers } = {}) {
       channels: notice.channels,
       subject,
       body: notice.renderedText,
+      html,
       providers: prov,
     });
     allDeliveries.push(...deliveries.map((d) => ({ ...d, recipient: recipient.email || recipient.edsbyParentId })));
