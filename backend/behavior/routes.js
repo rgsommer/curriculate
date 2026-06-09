@@ -241,6 +241,47 @@ router.put("/config/edsby", authAny, loadMembership, requireAdmin, async (req, r
   }
 });
 
+// Best-effort auto-detect of Edsby's jver/cver from the public bootstrap served
+// on the base URL, so admins don't have to harvest them by hand. The cookie +
+// formkey CANNOT be auto-fetched (they're login-gated / HttpOnly) — manual.
+router.post("/edsby/fetch-versions", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.baseUrl").lean();
+    const baseUrl = String(req.body?.baseUrl || config?.edsby?.baseUrl || "").trim().replace(/\/+$/, "");
+    if (!/^https:\/\/[^/]+\.edsby\.com/i.test(baseUrl) && !/^https:\/\//i.test(baseUrl)) {
+      return res.status(400).json({ ok: false, error: "Set the Edsby base URL (https://…) first." });
+    }
+    let text = "";
+    try {
+      const r = await fetch(baseUrl, {
+        redirect: "follow",
+        headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html,application/xhtml+xml" },
+      });
+      text = await r.text();
+    } catch (e) {
+      return res.json({ ok: false, error: `Could not reach ${baseUrl}: ${e?.message || e}` });
+    }
+    const grab = (k) => {
+      for (const re of [
+        new RegExp(`["']?${k}["']?\\s*[:=]\\s*["']([A-Za-z0-9._-]+)["']`, "i"), // jver:"abc"
+        new RegExp(`[?&]${k}=([A-Za-z0-9._-]+)`, "i"), // ...?jver=abc
+      ]) {
+        const m = text.match(re);
+        if (m && m[1]) return m[1];
+      }
+      return "";
+    };
+    const jver = grab("jver");
+    const cver = grab("cver");
+    if (!jver && !cver) {
+      return res.json({ ok: false, error: "Couldn't find jver/cver on that page — paste them from DevTools instead." });
+    }
+    res.json({ ok: true, jver, cver });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Send a test email (admin) to verify SMTP delivery. Returns the SMTP error in
 // the body (still 200) so the UI can show exactly why it failed.
 router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, res, next) => {

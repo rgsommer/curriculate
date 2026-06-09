@@ -397,8 +397,34 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const [err, setErr] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState("");
   const [testBusy, setTestBusy] = useState(false);
-  const cookieSet = !!edsby?.cookieConfigured;
-  const formkeySet = !!edsby?.formkeyConfigured;
+  // Reflect "stored ✓" immediately after a save without needing a reload.
+  const [cookieStored, setCookieStored] = useState(!!edsby?.cookieConfigured);
+  const [formkeyStored, setFormkeyStored] = useState(!!edsby?.formkeyConfigured);
+  const [detectMsg, setDetectMsg] = useState("");
+  const [detectBusy, setDetectBusy] = useState(false);
+  const cookieSet = cookieStored;
+  const formkeySet = formkeyStored;
+
+  async function detectVersions() {
+    setDetectBusy(true);
+    setDetectMsg("");
+    try {
+      const r = await api<{ ok: boolean; jver?: string; cver?: string; error?: string }>("/edsby/fetch-versions", {
+        body: { baseUrl: baseUrl.trim() },
+      });
+      if (r.ok) {
+        if (r.jver) setJver(r.jver);
+        if (r.cver) setCver(r.cver);
+        setDetectMsg(`✓ Found${r.jver ? ` jver` : ""}${r.cver ? `${r.jver ? " &" : ""} cver` : ""} — review, then Save.`);
+      } else {
+        setDetectMsg(`✗ ${r.error || "Couldn't auto-detect"}`);
+      }
+    } catch (e: any) {
+      setDetectMsg(`✗ ${e.message}`);
+    } finally {
+      setDetectBusy(false);
+    }
+  }
 
   async function testEdsby() {
     setTestBusy(true);
@@ -430,11 +456,15 @@ function EdsbySection({ edsby }: { edsby: any }) {
     setErr(null);
     try {
       const body: any = { baseUrl: baseUrl.trim(), userNid: userNid.trim(), jver: jver.trim(), cver: cver.trim(), zoomId: zoomId.trim(), enabled };
-      if (cookie.trim()) body.cookie = cookie.trim();
-      if (formkey.trim()) body.formkey = formkey.trim();
+      const sentCookie = !!cookie.trim();
+      const sentFormkey = !!formkey.trim();
+      if (sentCookie) body.cookie = cookie.trim();
+      if (sentFormkey) body.formkey = formkey.trim();
       await api("/config/edsby", { method: "PUT", body });
       setCookie("");
       setFormkey("");
+      if (sentCookie) setCookieStored(true);
+      if (sentFormkey) setFormkeyStored(true);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e: any) {
@@ -448,6 +478,8 @@ function EdsbySection({ edsby }: { edsby: any }) {
       <p className="mt-1 text-sm text-slate-500">
         Edsby has no public API, so notices are posted using your school&apos;s signed-in session — each
         parent messaged separately via their Edsby nid. The cookie + formkey are stored <span className="font-medium">encrypted</span> and never shown again.
+        Set the base URL, then <span className="font-medium">Auto-detect jver/cver</span>. The cookie can&apos;t be fetched
+        for you (browsers block reading another site&apos;s session) — grab it once from DevTools.
       </p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -466,6 +498,13 @@ function EdsbySection({ edsby }: { edsby: any }) {
         <Field label="Zoom/class id (for formkey refresh)">
           <input value={zoomId} onChange={(e) => setZoomId(e.target.value)} className={inputCls} />
         </Field>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={detectVersions} disabled={detectBusy || !baseUrl.trim()}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
+          {detectBusy ? "Detecting…" : "Auto-detect jver/cver from Edsby"}
+        </button>
+        {detectMsg && <span className={`text-xs ${detectMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{detectMsg}</span>}
       </div>
       <Field label={`Session cookie ${cookieSet ? "(stored ✓ — blank keeps it)" : ""}`}>
         <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={2}
