@@ -57,6 +57,19 @@ test("builds parent contacts, handling a missing parent 2", () => {
   assert.equal(patel.parents.length, 1);
 });
 
+test("reads a House column into houseName when present", () => {
+  const withHouse = [
+    "Last name,First name,Class/Group,Grade,House",
+    "Lee,Mara,7A,7,Phoenix",
+    "Kim,Noah,7A,7,",
+  ].join("\n");
+  const { students } = parseRoster(withHouse);
+  const lee = students.find((s) => s.lastName === "Lee");
+  const kim = students.find((s) => s.lastName === "Kim");
+  assert.equal(lee.houseName, "Phoenix");
+  assert.equal(kim.houseName, ""); // blank house → empty, never assigned
+});
+
 // ── XLSX ─────────────────────────────────────────────────────────────────────
 
 async function makeXlsx(rows2d) {

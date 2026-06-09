@@ -39,6 +39,7 @@ function rowNameColor(count: number, trigger: number) {
 export default function LogIncidentPage() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
+  const [mode, setMode] = useState<"single" | "batch">("single");
   const [query, setQuery] = useState("");
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [rosterTrigger, setRosterTrigger] = useState(3);
@@ -130,6 +131,11 @@ export default function LogIncidentPage() {
         Please <Link className="underline" href={loginHref("/behavior/log")}>sign in</Link> to log incidents.
       </p>
     );
+  }
+
+  // Reverse flow: one behaviour → several students at once.
+  if (mode === "batch") {
+    return <BatchLog students={students} behaviors={behaviors} rosterTrigger={rosterTrigger} onExit={() => setMode("single")} />;
   }
 
   async function submit(e?: React.FormEvent) {
@@ -396,7 +402,15 @@ export default function LogIncidentPage() {
   // ── Step 1: pick a class (button row), then a student ────────────────────────
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Log an incident</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Log an incident</h1>
+        <button
+          onClick={() => setMode("batch")}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600"
+        >
+          Several students →
+        </button>
+      </div>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
       {/* Class buttons */}
@@ -455,6 +469,206 @@ export default function LogIncidentPage() {
           </li>
         )}
       </ul>
+    </div>
+  );
+}
+
+// Reverse flow: choose ONE behaviour, then tap several students (e.g. "not
+// ready for class — these 5"). Each gets its own incident + trigger evaluation.
+function BatchLog({
+  students,
+  behaviors,
+  rosterTrigger,
+  onExit,
+}: {
+  students: StudentSummary[];
+  behaviors: Behavior[];
+  rosterTrigger: number;
+  onExit: () => void;
+}) {
+  const [behaviorId, setBehaviorId] = useState("");
+  const [keywordFilter, setKeywordFilter] = useState("");
+  const [selectedClass, setSelectedClass] = useState("");
+  const [query, setQuery] = useState("");
+  const [picked, setPicked] = useState<Record<string, boolean>>({});
+  const [occurredAt, setOccurredAt] = useState(nowLocal());
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<{ logged: number; behaviorName: string; results: any[] } | null>(null);
+
+  const keywords = useMemo(
+    () => Array.from(new Set(behaviors.map((b) => b.keyword).filter((k): k is string => !!k))).sort((a, b) => a.localeCompare(b)),
+    [behaviors]
+  );
+  const offenseOptions = useMemo(
+    () =>
+      [...behaviors]
+        .filter((b) => !keywordFilter || b.keyword === keywordFilter)
+        .sort((a, b) => {
+          const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
+          const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
+          if (ai !== bi) return ai - bi;
+          return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
+        }),
+    [behaviors, keywordFilter]
+  );
+  const classes = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of students) if ((s.classGroup || "").trim()) set.add(s.classGroup!.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [students]);
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q) return students.filter((s) => `${s.firstName} ${s.lastName} ${s.preferredName || ""}`.toLowerCase().includes(q));
+    if (selectedClass) return students.filter((s) => (s.classGroup || "").trim() === selectedClass);
+    return [];
+  }, [students, query, selectedClass]);
+
+  const pickedIds = Object.keys(picked).filter((id) => picked[id]);
+  const pickedStudents = students.filter((s) => picked[s._id]);
+  const behavior = behaviors.find((b) => b._id === behaviorId);
+
+  function toggle(id: string) {
+    setPicked((p) => ({ ...p, [id]: !p[id] }));
+  }
+
+  async function submit() {
+    if (!behaviorId || pickedIds.length === 0) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const r = await api<{ logged: number; behaviorName: string; results: any[] }>("/incidents/batch", {
+        body: {
+          behaviorId,
+          studentIds: pickedIds,
+          detailText: note.trim(),
+          occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
+        },
+      });
+      setResult(r);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Confirmation ─────────────────────────────────────────────────────────
+  if (result) {
+    const notified = result.results.filter((r) => r.notice);
+    return (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-green-200 bg-green-50 p-5">
+          <h1 className="text-lg font-semibold text-green-800">Logged for {result.logged} {result.logged === 1 ? "student" : "students"} ✓</h1>
+          <p className="mt-1 text-sm text-green-700">{result.behaviorName}</p>
+        </div>
+        {notified.length > 0 && (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
+            <h2 className="font-semibold text-amber-900">{notified.length} reached the threshold</h2>
+            <p className="mt-1 text-sm text-amber-800">A parent notice is queued for each — review and send on their page.</p>
+            <ul className="mt-2 space-y-1">
+              {notified.map((r) => (
+                <li key={r.studentId} className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-amber-900">{r.name}{r.notice.ccVp ? " (VP CC’d)" : ""}</span>
+                  <Link href={`/behavior/student/${r.studentId}`} className="rounded-lg border border-amber-400 px-3 py-1 text-amber-900">Review / send</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <button onClick={onExit} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-white">Done</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-semibold">Log for several students</h1>
+        <button onClick={onExit} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">← single</button>
+      </div>
+      {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+
+      {/* Step 1: the behaviour */}
+      <div>
+        <span className="mb-1 block text-sm font-medium text-slate-600">1. Choose the behaviour</span>
+        {keywords.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            <button type="button" onClick={() => setKeywordFilter("")}
+              className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === "" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>All</button>
+            {keywords.map((k) => (
+              <button key={k} type="button" onClick={() => { setKeywordFilter(k); setBehaviorId(""); }}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === k ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>{k}</button>
+            ))}
+          </div>
+        )}
+        <select value={behaviorId} onChange={(e) => setBehaviorId(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg">
+          <option value="">Choose an incident…</option>
+          {offenseOptions.map((b) => (
+            <option key={b._id} value={b._id}>
+              {b.name}
+              {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : ""}
+            </option>
+          ))}
+        </select>
+        {behavior?.triggerMode === "IMMEDIATE" && (
+          <p className="mt-1 text-xs text-amber-600">Heads up: this behaviour notifies home immediately — a notice will be queued for every student you select.</p>
+        )}
+      </div>
+
+      {/* Step 2: the students */}
+      <div>
+        <span className="mb-1 block text-sm font-medium text-slate-600">
+          2. Tap the students {pickedIds.length > 0 && <span className="text-slate-400">· {pickedIds.length} selected</span>}
+        </span>
+        <div className="mb-2 flex flex-wrap gap-2">
+          {classes.map((c) => (
+            <button key={c} onClick={() => { setQuery(""); setSelectedClass(selectedClass === c ? "" : c); }}
+              className={`rounded-lg px-4 py-2 text-sm font-semibold ${selectedClass === c && !query ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"}`}>{c}</button>
+          ))}
+        </div>
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="…or search any student by name"
+          className="w-full rounded-xl border border-slate-300 px-4 py-3" inputMode="search" />
+
+        {pickedStudents.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {pickedStudents.map((s) => (
+              <button key={s._id} onClick={() => toggle(s._id)}
+                className="rounded-full bg-slate-900 px-3 py-1 text-xs font-medium text-white">
+                {s.firstName} {s.lastName} ✕
+              </button>
+            ))}
+          </div>
+        )}
+
+        <ul className="mt-2 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+          {visible.map((s) => (
+            <li key={s._id}>
+              <button onClick={() => toggle(s._id)} className={`flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 ${picked[s._id] ? "bg-slate-50" : ""}`}>
+                <span className={`flex items-center gap-2 font-medium ${rowNameColor(s.activeCount || 0, rosterTrigger)}`}>
+                  <span className={`flex h-5 w-5 items-center justify-center rounded border text-xs ${picked[s._id] ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>{picked[s._id] ? "✓" : ""}</span>
+                  {s.lastName}, {s.firstName}{s.preferredName ? ` (${s.preferredName})` : ""}
+                  {s.activeCount ? <span className="text-xs font-normal">({s.activeCount})</span> : null}
+                </span>
+                <span className="text-sm text-slate-400">{s.classGroup}</span>
+              </button>
+            </li>
+          ))}
+          {visible.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">Pick a class above, or search by name.</li>}
+        </ul>
+      </div>
+
+      <label className="block">
+        <span className="mb-1 block text-sm font-medium text-slate-600">Date &amp; time</span>
+        <input type="datetime-local" value={occurredAt} onChange={(e) => setOccurredAt(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+      </label>
+      <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional note (applied to all)…" rows={2} className="w-full rounded-xl border border-slate-300 px-4 py-3" />
+
+      <button onClick={submit} disabled={!behaviorId || pickedIds.length === 0 || submitting}
+        className="w-full rounded-xl bg-slate-900 px-4 py-4 text-lg font-semibold text-white disabled:opacity-40">
+        {submitting ? "Logging…" : `Log for ${pickedIds.length || ""} ${pickedIds.length === 1 ? "student" : "students"}`.trim()}
+      </button>
     </div>
   );
 }

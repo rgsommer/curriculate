@@ -256,7 +256,7 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
       <textarea value={emails} onChange={(e) => setEmails(e.target.value)}
         rows={2} placeholder="emails, or 'Name <email>' — commas, spaces or new lines" className={`mt-2 ${inputCls}`} />
       {(() => {
-        const parsed = emails.match(/[\w.+-]+@[\w.-]+\.\w{2,}/g) || [];
+        const parsed: string[] = emails.match(/[\w.+-]+@[\w.-]+\.\w{2,}/g) || [];
         if (!parsed.length) return null;
         const ok = parsed.filter((e) => e.toLowerCase().split("@")[1] === domain.toLowerCase());
         const outside = parsed.filter((e) => e.toLowerCase().split("@")[1] !== domain.toLowerCase());
@@ -342,7 +342,8 @@ function RosterSection() {
       {result && (
         <div className="mt-3 text-sm">
           <p className="text-green-700">
-            Imported {result.imported}, updated {result.updated}, skipped {result.skipped?.length || 0}.
+            Imported {result.imported}, updated {result.updated}, skipped {result.skipped?.length || 0}
+            {result.housesCreated ? `, created ${result.housesCreated} house${result.housesCreated === 1 ? "" : "s"}` : ""}.
           </p>
           {result.skipped?.length > 0 && (
             <ul className="mt-1 list-inside list-disc text-slate-500">

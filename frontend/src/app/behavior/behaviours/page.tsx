@@ -57,6 +57,7 @@ export default function BehavioursPage() {
         <p className="text-sm text-slate-400">
           <span className="rounded bg-green-100 px-1.5 text-green-800">green</span> = shared/standard ·{" "}
           <span className="rounded bg-blue-100 px-1.5 text-blue-800">blue</span> = your own. Sorted by keyword; “Interaction” logs without a note home.
+          Set <span className="font-medium">house points</span> on any behaviour — negative deducts for an offence, positive rewards a good one.
         </p>
       </div>
 
@@ -100,6 +101,7 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
           <span className="font-medium">
             {b.name}
             {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
+            {b.points ? <PointsBadge points={b.points} /> : null}
           </span>
           <span className="text-xs text-slate-400">{MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
@@ -154,10 +156,13 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
             </select>
           </>
         )}
-        <label className={`flex items-center gap-2 text-xs text-slate-500 ${interaction ? "col-span-2" : ""}`}>
+        <label className={`flex flex-wrap items-center gap-2 text-xs text-slate-500 col-span-2`}>
           House points
           <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          <span className="text-slate-400">(negative deducts from the student&apos;s house)</span>
+          <span className="text-slate-400">
+            positive rewards the student&apos;s house, negative deducts.
+            {interaction ? " Good for positive behaviours — won’t count as a strike or notify home." : " For a positive behaviour, set the mode to “Interaction” so it doesn’t count as a strike."}
+          </span>
         </label>
         <div className={`flex items-center justify-end gap-2 ${interaction ? "col-span-2" : ""}`}>
           {add && allowStandard && (
@@ -172,6 +177,15 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
         </div>
       </div>
     </div>
+  );
+}
+
+function PointsBadge({ points }: { points: number }) {
+  const positive = points > 0;
+  return (
+    <span className={`ml-2 rounded px-1.5 text-xs font-medium ${positive ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+      {positive ? `+${points}` : points} pts
+    </span>
   );
 }
 

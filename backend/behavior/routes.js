@@ -455,31 +455,54 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
     }
     const { students, skipped, headerMap } = parsed;
 
+    // Resolve any "House" column to a houseId, matching existing houses by name
+    // (case-insensitive) and creating any that are new to this school.
+    const existingHouses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name active").lean();
+    const houseByName = new Map(existingHouses.map((h) => [h.name.trim().toLowerCase(), h]));
+    let housesCreated = 0;
+    async function resolveHouseId(name) {
+      const key = String(name || "").trim().toLowerCase();
+      if (!key) return null;
+      let h = houseByName.get(key);
+      if (!h) {
+        h = (await BehaviorHouse.create({ schoolId: req.schoolId, name: String(name).trim() })).toObject();
+        houseByName.set(key, h);
+        housesCreated += 1;
+      } else if (h.active === false) {
+        await BehaviorHouse.updateOne({ _id: h._id }, { $set: { active: true } });
+      }
+      return h._id;
+    }
+
     let imported = 0;
     let updated = 0;
     for (const s of students) {
+      // Resolve + strip the parsed house name into a real houseId.
+      const { houseName, ...fields } = s;
+      if (houseName) fields.houseId = await resolveHouseId(houseName);
+
       // Match an existing student on externalId (preferred) or full name.
-      const match = s.externalId
-        ? { schoolId: req.schoolId, externalId: s.externalId }
-        : { schoolId: req.schoolId, lastName: s.lastName, firstName: s.firstName };
-      const existing = s.externalId || (s.lastName && s.firstName)
+      const match = fields.externalId
+        ? { schoolId: req.schoolId, externalId: fields.externalId }
+        : { schoolId: req.schoolId, lastName: fields.lastName, firstName: fields.firstName };
+      const existing = fields.externalId || (fields.lastName && fields.firstName)
         ? await BehaviorStudent.findOne(match)
         : null;
 
       if (existing) {
-        Object.assign(existing, s, { schoolId: req.schoolId, active: true });
+        Object.assign(existing, fields, { schoolId: req.schoolId, active: true });
         await existing.save();
         updated += 1;
       } else {
-        await BehaviorStudent.create({ ...s, schoolId: req.schoolId });
+        await BehaviorStudent.create({ ...fields, schoolId: req.schoolId });
         imported += 1;
       }
     }
 
     await audit(req.schoolId, "roster.imported", req, {
-      meta: { imported, updated, skippedCount: skipped.length, headerMap },
+      meta: { imported, updated, skippedCount: skipped.length, housesCreated, headerMap },
     });
-    res.json({ ok: true, imported, updated, skipped, headerMap });
+    res.json({ ok: true, imported, updated, skipped, housesCreated, headerMap });
   } catch (err) {
     next(err);
   }
@@ -896,6 +919,79 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       triggerIncidents,
       triggerCount: config?.triggerCount ?? 3,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Reverse/batch flow (§6): one behaviour applied to several students at once
+// ("not ready for class — these 5"). Each student gets their own append-only
+// incident, house-point deduction, and independent trigger evaluation; a notice
+// that fires is queued for review on that student's page (no inline send dance).
+router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const behaviorId = req.body?.behaviorId;
+    const studentIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
+    const detailText = String(req.body?.detailText || "");
+    const occurredAt = req.body?.occurredAt ? new Date(req.body.occurredAt) : null;
+    const timestamp = occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : new Date();
+    if (!behaviorId || !studentIds.length) {
+      return res.status(400).json({ ok: false, error: "behaviorId and studentIds required" });
+    }
+
+    const behavior = await Behavior.findOne({ _id: behaviorId, schoolId: req.schoolId }).lean();
+    if (!behavior) return res.status(404).json({ ok: false, error: "Behaviour not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+
+    const results = [];
+    for (const sid of studentIds) {
+      const student = await BehaviorStudent.findOne({ _id: sid, schoolId: req.schoolId });
+      if (!student) continue;
+
+      const inc = await BehaviorIncident.create({
+        schoolId: req.schoolId,
+        studentId: student._id,
+        teacherId: req.membership._id,
+        behaviorId: behavior._id,
+        behaviorSnapshot: {
+          name: behavior.name,
+          description: behavior.description,
+          triggerMode: behavior.triggerMode,
+          consequenceText: behavior.consequenceText,
+        },
+        detailText,
+        immediateFlag: behavior.triggerMode === "IMMEDIATE",
+        timestamp,
+      });
+
+      if (behavior.points && student.houseId) {
+        await HousePointEvent.create({
+          schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
+          points: behavior.points, reason: behavior.name, behaviorId: behavior._id,
+          incidentId: inc._id, awardedByTeacherId: req.membership._id, at: timestamp,
+        });
+      }
+
+      const priorIncidents = await BehaviorIncident.find({ studentId: student._id }).lean();
+      const others = priorIncidents.filter((p) => String(p._id) !== String(inc._id));
+      const decision = evaluateIncident({
+        newIncident: inc.toObject(),
+        priorIncidents: others,
+        config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
+        student,
+      });
+      let notice = null;
+      if (decision.shouldNotify) notice = await fireNotice({ req, student, config, decision });
+
+      results.push({
+        studentId: String(student._id),
+        name: `${student.preferredName || student.firstName} ${student.lastName}`.trim(),
+        notice: notice ? { _id: notice._id, status: notice.status, ccVp: notice.ccVp } : null,
+      });
+    }
+
+    await audit(req.schoolId, "incident.batch", req, { meta: { behavior: behavior.name, count: results.length } });
+    res.json({ ok: true, logged: results.length, behaviorName: behavior.name, points: behavior.points || 0, results });
   } catch (err) {
     next(err);
   }
