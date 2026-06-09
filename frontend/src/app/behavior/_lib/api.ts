@@ -99,7 +99,8 @@ export type StudentSummary = {
 export type Behavior = {
   _id: string;
   name: string;
-  triggerMode: "THRESHOLD" | "IMMEDIATE";
+  keyword?: string;
+  triggerMode: "THRESHOLD" | "IMMEDIATE" | "INTERACTION";
   consequenceText?: string;
   scope: "standard" | "custom";
 };

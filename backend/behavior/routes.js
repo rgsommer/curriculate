@@ -564,7 +564,8 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       schoolId: req.schoolId,
       name: String(req.body?.name || "").trim(),
       description: String(req.body?.description || ""),
-      triggerMode: req.body?.triggerMode === "IMMEDIATE" ? "IMMEDIATE" : "THRESHOLD",
+      keyword: String(req.body?.keyword || "").trim(),
+      triggerMode: ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD",
       consequenceText: String(req.body?.consequenceText || ""),
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
         ? req.body.followUpType
@@ -601,8 +602,9 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     const b = req.body || {};
     if ("name" in b) beh.name = String(b.name || "").trim();
     if ("description" in b) beh.description = String(b.description || "");
+    if ("keyword" in b) beh.keyword = String(b.keyword || "").trim();
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
-    if (b.triggerMode === "IMMEDIATE" || b.triggerMode === "THRESHOLD") beh.triggerMode = b.triggerMode;
+    if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });

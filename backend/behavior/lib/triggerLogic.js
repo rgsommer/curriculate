@@ -72,6 +72,11 @@ export function evaluateIncident({ newIncident, priorIncidents, config, student,
   const mode =
     newIncident.behaviorSnapshot?.triggerMode || (newIncident.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
 
+  // INTERACTION: documented only — never notifies, never counts.
+  if (mode === "INTERACTION") {
+    return { shouldNotify: false, reason: null, contributingIncidents: [], sequenceNo: 0, ccVp: false };
+  }
+
   // Next notice's sequence number this period drives tone + the CC-VP rule.
   const sequenceNo = (student?.noticesHomeCount || 0) + 1;
   const ccVp = sequenceNo >= 2;

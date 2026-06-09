@@ -20,9 +20,15 @@ const BehaviorSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "" }, // standard description / expectation wording
 
-    // THRESHOLD → counts toward the shared strike count.
-    // IMMEDIATE → notifies the parent on a single occurrence, regardless of count.
-    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE"], default: "THRESHOLD" },
+    // Short teacher-defined category/keyword (e.g. "disrespect", "class time")
+    // used to sort + group the merged behaviour list.
+    keyword: { type: String, default: "", trim: true },
+
+    // THRESHOLD   → counts toward the shared strike count.
+    // IMMEDIATE   → notifies the parent on a single occurrence, regardless of count.
+    // INTERACTION → documentable interaction; never notifies and never counts,
+    //               but IS included in the AI Admin Summary.
+    triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION"], default: "THRESHOLD" },
 
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },

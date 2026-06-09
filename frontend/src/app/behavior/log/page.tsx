@@ -309,14 +309,22 @@ export default function LogIncidentPage() {
             className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
           >
             <option value="">Choose an incident…</option>
-            {behaviors.map((b) => (
-              <option key={b._id} value={b._id}>
-                {b.name}
-                {b.triggerMode === "IMMEDIATE" ? " — immediate" : ""}
-              </option>
-            ))}
+            {[...behaviors]
+              .sort((a, b) => {
+                const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
+                const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
+                if (ai !== bi) return ai - bi;
+                return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
+              })
+              .map((b) => (
+                <option key={b._id} value={b._id}>
+                  {b.name}
+                  {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : ""}
+                </option>
+              ))}
           </select>
         </label>
+        <Link href="/behavior/behaviours" className="text-xs text-slate-400 underline">manage behaviours</Link>
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-slate-600">Date &amp; time of incident</span>

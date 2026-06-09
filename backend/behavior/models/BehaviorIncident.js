@@ -23,7 +23,7 @@ const BehaviorIncidentSchema = new mongoose.Schema(
     behaviorSnapshot: {
       name: { type: String, default: "" },
       description: { type: String, default: "" },
-      triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE"], default: "THRESHOLD" },
+      triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION"], default: "THRESHOLD" },
       consequenceText: { type: String, default: "" },
     },
 
