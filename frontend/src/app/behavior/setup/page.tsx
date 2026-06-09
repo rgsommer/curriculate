@@ -682,20 +682,24 @@ function HousesSection({ config }: { config?: any }) {
   }
   useEffect(() => { load(); }, []);
 
-  async function backfill() {
-    if (!window.confirm("Create Alpha/Beta/Delta/Gamma and assign ALL active students into a balanced mix (siblings by last name stay together)? This replaces any current house assignments and turns Houses on.")) return;
+  async function backfill(mode: "full" | "unassigned") {
+    const confirmMsg = mode === "unassigned"
+      ? "Assign only students who don't have a house yet, fitting them into the existing houses (siblings join their family's house)? Current assignments stay."
+      : "Create Alpha/Beta/Delta/Gamma and assign ALL active students into a balanced mix (siblings by last name stay together)? This replaces any current house assignments and turns Houses on.";
+    if (!window.confirm(confirmMsg)) return;
     setBackfillBusy(true);
     setBackfillMsg("");
     try {
-      const r = await api<{ assigned: number; houses: { name: string; total: number; byGrade: Record<string, number>; byGender: Record<string, number> }[] }>(
-        "/houses/backfill", { body: {} }
+      const r = await api<{ assigned: number; skipped: number; houses: { name: string; total: number; byGrade: Record<string, number>; byGender: Record<string, number> }[] }>(
+        "/houses/backfill", { body: mode === "unassigned" ? { mode: "unassigned" } : {} }
       );
       setEnabled(true);
       const lines = r.houses.map((h) => {
         const g = Object.entries(h.byGender).map(([k, v]) => `${k}:${v}`).join(" ");
         return `${h.name}: ${h.total} (${g})`;
       });
-      setBackfillMsg(`✓ Assigned ${r.assigned} students — ${lines.join(" · ")}`);
+      const head = mode === "unassigned" ? `Placed ${r.assigned} new students (${r.skipped} already assigned)` : `Assigned ${r.assigned} students`;
+      setBackfillMsg(`✓ ${head} — ${lines.join(" · ")}`);
       load();
     } catch (e: any) {
       setBackfillMsg(`✗ ${e.message}`);
@@ -782,10 +786,17 @@ function HousesSection({ config }: { config?: any }) {
           Creates Alpha / Beta / Delta / Gamma and sorts all students into a balanced mix of grade and gender, keeping
           same-last-name students (siblings) together. Replaces current assignments — you can hand-tune after.
         </p>
-        <button onClick={backfill} disabled={backfillBusy}
-          className="mt-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
-          {backfillBusy ? "Assigning…" : "Auto-assign all students to 4 houses"}
-        </button>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button onClick={() => backfill("full")} disabled={backfillBusy}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            {backfillBusy ? "Working…" : "Auto-assign all students to 4 houses"}
+          </button>
+          <button onClick={() => backfill("unassigned")} disabled={backfillBusy}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            Rebalance only unassigned
+          </button>
+        </div>
+        <p className="mt-1 text-xs text-slate-400">Use “Rebalance only unassigned” after a mid-year roster import to slot new students into the existing houses without reshuffling everyone.</p>
         {backfillMsg && <p className={`mt-2 text-xs ${backfillMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{backfillMsg}</p>}
       </div>
 

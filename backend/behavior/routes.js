@@ -2152,49 +2152,56 @@ function variance(arr) {
   return arr.reduce((a, b) => a + (b - mean) * (b - mean), 0) / n;
 }
 
-// One-click balanced backfill: (re)create the four starter houses, keep
-// same-last-name students together (a sibling/family proxy), and distribute the
-// family groups across the houses to balance total size, grade spread, and
-// gender mix. Greedy: largest families first, each placed in the house that
-// minimises overall imbalance. Reassigns ALL active students.
+// Balanced house assignment. Two modes:
+//   full (default)     — (re)create the four starter houses, deactivate others,
+//                        and reassign ALL active students from scratch.
+//   mode:"unassigned"  — keep current assignments + houses; only place students
+//                        who have no house, fitting them into the existing
+//                        houses to keep things balanced. Siblings (same surname)
+//                        join the house their family is already in.
+// In both modes families (same last name) stay together and placement greedily
+// minimises imbalance across total size, grade spread, and gender mix.
 router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
+    const onlyUnassigned = req.body?.mode === "unassigned" || req.body?.onlyUnassigned === true;
     const NAMES = Array.isArray(req.body?.names) && req.body.names.length
       ? req.body.names.map((n) => String(n).trim()).filter(Boolean)
       : ["Alpha", "Beta", "Delta", "Gamma"];
     const COLORS = ["#2563eb", "#dc2626", "#16a34a", "#d97706", "#7c3aed", "#0891b2"];
 
-    // Ensure the named houses exist + active; soft-deactivate any others so the
-    // school starts clean with exactly these houses.
-    const houses = [];
-    for (let i = 0; i < NAMES.length; i++) {
-      const name = NAMES[i];
-      let h = await BehaviorHouse.findOne({ schoolId: req.schoolId, name });
-      if (!h) h = await BehaviorHouse.create({ schoolId: req.schoolId, name, color: COLORS[i % COLORS.length], sortOrder: i });
-      else if (!h.active) { h.active = true; await h.save(); }
-      houses.push(h);
+    // Choose the houses to assign into.
+    let houses = [];
+    let deactivatedCount = 0;
+    if (onlyUnassigned) {
+      houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 });
+      if (!houses.length) {
+        for (let i = 0; i < NAMES.length; i++) {
+          houses.push(await BehaviorHouse.create({ schoolId: req.schoolId, name: NAMES[i], color: COLORS[i % COLORS.length], sortOrder: i }));
+        }
+      }
+    } else {
+      for (let i = 0; i < NAMES.length; i++) {
+        const name = NAMES[i];
+        let h = await BehaviorHouse.findOne({ schoolId: req.schoolId, name });
+        if (!h) h = await BehaviorHouse.create({ schoolId: req.schoolId, name, color: COLORS[i % COLORS.length], sortOrder: i });
+        else if (!h.active) { h.active = true; await h.save(); }
+        houses.push(h);
+      }
+      const r = await BehaviorHouse.updateMany(
+        { schoolId: req.schoolId, active: true, name: { $nin: NAMES } },
+        { $set: { active: false } }
+      );
+      deactivatedCount = r.modifiedCount;
     }
-    const keepNames = new Set(NAMES.map((n) => n.toLowerCase()));
-    const deactivated = await BehaviorHouse.updateMany(
-      { schoolId: req.schoolId, active: true, name: { $nin: NAMES } },
-      { $set: { active: false } }
-    );
     const houseIds = houses.map((h) => h._id);
+    const idxById = Object.fromEntries(houseIds.map((id, i) => [String(id), i]));
     const K = houseIds.length;
 
     const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
-      .select("lastName grade gender")
+      .select("lastName grade gender houseId")
       .lean();
 
-    // Group by last name (families/siblings together). Blank surnames go solo.
-    const fam = new Map();
-    for (const s of students) {
-      const key = (s.lastName || "").trim().toLowerCase() || `__solo_${s._id}`;
-      if (!fam.has(key)) fam.set(key, []);
-      fam.get(key).push(s);
-    }
-    const groups = [...fam.values()].sort((a, b) => b.length - a.length);
-
+    const surnameKey = (s) => (s.lastName || "").trim().toLowerCase() || `__solo_${s._id}`;
     const gradeKey = (s) => (String(s.grade || "").trim() || "?");
     const sexKey = (s) => {
       const g = String(s.gender || "").trim().toLowerCase();
@@ -2203,9 +2210,41 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
       return "U";
     };
     const allGrades = [...new Set(students.map(gradeKey))];
+    const tally = (h, s) => {
+      h.total++;
+      h.grade[gradeKey(s)] = (h.grade[gradeKey(s)] || 0) + 1;
+      h.gender[sexKey(s)] = (h.gender[sexKey(s)] || 0) + 1;
+    };
 
-    // Per-house running tallies.
+    // Per-house tallies; seed with already-assigned students in unassigned mode
+    // so balancing accounts for the current distribution.
     const H = houseIds.map(() => ({ total: 0, grade: {}, gender: {} }));
+    const familyHouse = {}; // surname -> house index a family is already in
+    if (onlyUnassigned) {
+      for (const s of students) {
+        const hi = s.houseId ? idxById[String(s.houseId)] : undefined;
+        if (hi != null) {
+          tally(H[hi], s);
+          const key = surnameKey(s);
+          if (familyHouse[key] == null) familyHouse[key] = hi;
+        }
+      }
+    }
+
+    const toAssign = onlyUnassigned
+      ? students.filter((s) => !(s.houseId && idxById[String(s.houseId)] != null))
+      : students;
+    const skipped = students.length - toAssign.length;
+
+    // Group the students-to-assign by surname (families together).
+    const fam = new Map();
+    for (const s of toAssign) {
+      const key = surnameKey(s);
+      if (!fam.has(key)) fam.set(key, []);
+      fam.get(key).push(s);
+    }
+    const groups = [...fam.values()].sort((a, b) => b.length - a.length);
+
     const scoreIfAdded = (hi, group) => {
       const sim = H.map((h) => ({ total: h.total, grade: { ...h.grade }, gender: { ...h.gender } }));
       for (const s of group) {
@@ -2213,7 +2252,7 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
         sim[hi].grade[gradeKey(s)] = (sim[hi].grade[gradeKey(s)] || 0) + 1;
         sim[hi].gender[sexKey(s)] = (sim[hi].gender[sexKey(s)] || 0) + 1;
       }
-      let score = variance(sim.map((x) => x.total)) * 3; // size balance weighted highest
+      let score = variance(sim.map((x) => x.total)) * 3;
       for (const g of allGrades) score += variance(sim.map((x) => x.grade[g] || 0));
       for (const sx of ["M", "F", "U"]) score += variance(sim.map((x) => x.gender[sx] || 0));
       return score;
@@ -2221,25 +2260,32 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
 
     const assignments = [];
     for (const group of groups) {
-      let best = 0;
-      let bestScore = Infinity;
-      for (let hi = 0; hi < K; hi++) {
-        const sc = scoreIfAdded(hi, group);
-        if (sc < bestScore) { bestScore = sc; best = hi; }
+      const key = surnameKey(group[0]);
+      let best;
+      if (onlyUnassigned && familyHouse[key] != null) {
+        best = familyHouse[key]; // join siblings already placed
+      } else {
+        best = 0;
+        let bestScore = Infinity;
+        for (let hi = 0; hi < K; hi++) {
+          const sc = scoreIfAdded(hi, group);
+          if (sc < bestScore) { bestScore = sc; best = hi; }
+        }
       }
       for (const s of group) {
         assignments.push({ updateOne: { filter: { _id: s._id }, update: { $set: { houseId: houseIds[best] } } } });
-        H[best].total++;
-        H[best].grade[gradeKey(s)] = (H[best].grade[gradeKey(s)] || 0) + 1;
-        H[best].gender[sexKey(s)] = (H[best].gender[sexKey(s)] || 0) + 1;
+        tally(H[best], s);
       }
     }
+
     if (assignments.length) await BehaviorStudent.bulkWrite(assignments);
     await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { housesEnabled: true } });
 
     const summary = houses.map((h, i) => ({ name: h.name, total: H[i].total, byGrade: H[i].grade, byGender: H[i].gender }));
-    await audit(req.schoolId, "houses.backfilled", req, { meta: { assigned: assignments.length, houses: NAMES, deactivated: deactivated.modifiedCount } });
-    res.json({ ok: true, assigned: assignments.length, deactivated: deactivated.modifiedCount, houses: summary });
+    await audit(req.schoolId, "houses.backfilled", req, {
+      meta: { mode: onlyUnassigned ? "unassigned" : "full", assigned: assignments.length, skipped, deactivated: deactivatedCount },
+    });
+    res.json({ ok: true, mode: onlyUnassigned ? "unassigned" : "full", assigned: assignments.length, skipped, deactivated: deactivatedCount, houses: summary });
   } catch (err) {
     next(err);
   }
