@@ -532,9 +532,13 @@ router.post("/test-edsby-send", authAny, loadMembership, requireAdmin, async (re
     const e = config?.edsby || {};
     const toNid = String(req.body?.toNid || "").trim() || String(e.userNid || "").trim();
     if (!toNid) return res.json({ ok: false, error: "No target nid — set your Edsby user nid, or enter one." });
+    // Edsby links the broadcast to a student context (Panorama Referer). Default
+    // to the recipient nid, but a real test should pass the STUDENT's nid here
+    // and the PARENT's nid as the recipient.
+    const studentNid = String(req.body?.studentNid || "").trim() || toNid;
     const provider = new EdsbyProvider({
       baseUrl: e.baseUrl, cookie: decrypt(e.cookieEnc), formkey: decrypt(e.formkeyEnc),
-      jver: e.jver, cver: e.cver, userNid: e.userNid, studentNid: toNid,
+      jver: e.jver, cver: e.cver, userNid: e.userNid, studentNid,
     });
     const message = String(req.body?.message || "").trim() ||
       "Test broadcast from Behaviours — if you can see this in Edsby, posting works.";

@@ -180,6 +180,13 @@ async function postBroadcast(p, parentNid, body) {
   if (/"error"\s*:\s*1011\b/.test(text)) {
     return { ok: false, error: "Edsby formkey expired (error 1011) — refresh the formkey in Setup" };
   }
+  if (/"error"\s*:\s*1042\b/.test(text) || /cannot link nodes/i.test(text)) {
+    return {
+      ok: false,
+      error:
+        "Edsby couldn't link the message to that recipient (error 1042 “Cannot link nodes”). The target must be a real parent/student you're connected to — not your own teacher nid. Use a parent's Edsby nid, with the student's nid as the context.",
+    };
+  }
   if (/login/i.test(text) && /<form/i.test(text)) {
     return { ok: false, error: "Edsby session cookie expired — re-paste it in Setup" };
   }

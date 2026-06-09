@@ -425,6 +425,8 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const [err, setErr] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState("");
   const [testBusy, setTestBusy] = useState(false);
+  const [testToNid, setTestToNid] = useState("");
+  const [testStudentNid, setTestStudentNid] = useState("");
   // Reflect "stored ✓" immediately after a save without needing a reload.
   const [cookieStored, setCookieStored] = useState(!!edsby?.cookieConfigured);
   const [formkeyStored, setFormkeyStored] = useState(!!edsby?.formkeyConfigured);
@@ -493,8 +495,11 @@ function EdsbySection({ edsby }: { edsby: any }) {
     setTestBusy(true);
     setTestMsg("");
     try {
-      const r = await api<{ ok: boolean; error?: string }>("/test-edsby-send", { body: {} });
-      setTestMsg(r.ok ? "✓ Test broadcast posted — check your Edsby messages." : `✗ ${r.error || "Failed"}`);
+      const body: any = {};
+      if (testToNid.trim()) body.toNid = testToNid.trim();
+      if (testStudentNid.trim()) body.studentNid = testStudentNid.trim();
+      const r = await api<{ ok: boolean; error?: string }>("/test-edsby-send", { body });
+      setTestMsg(r.ok ? "✓ Test broadcast posted — check Edsby messages." : `✗ ${r.error || "Failed"}`);
     } catch (e: any) {
       setTestMsg(`✗ ${e.message}`);
     } finally {
@@ -642,6 +647,19 @@ function EdsbySection({ edsby }: { edsby: any }) {
         </button>
       </div>
       {testMsg && <p className={`mt-2 text-sm ${testMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testMsg}</p>}
+      <details className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <summary className="cursor-pointer font-medium text-slate-700">Test broadcast to a real recipient</summary>
+        <p className="mt-2">
+          Edsby won&apos;t let you message your own teacher nid (error 1042 “Cannot link nodes”). To truly test a send, use a
+          real <span className="font-medium">parent nid</span> as the recipient and that <span className="font-medium">student&apos;s nid</span> as the context
+          (e.g. your own child, or a willing colleague&apos;s student/parent pair).
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <input value={testToNid} onChange={(e) => setTestToNid(e.target.value)} placeholder="Recipient (parent) nid" className={inputCls} />
+          <input value={testStudentNid} onChange={(e) => setTestStudentNid(e.target.value)} placeholder="Student nid (context)" className={inputCls} />
+        </div>
+        <p className="mt-1 text-slate-400">Leave blank to send to yourself (will return 1042 — that&apos;s expected, not a connection problem).</p>
+      </details>
       <p className="mt-2 text-xs text-amber-700">
         The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
         Parent Edsby nids still need harvesting from Edsby (next step).
