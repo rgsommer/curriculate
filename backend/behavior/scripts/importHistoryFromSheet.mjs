@@ -129,8 +129,24 @@ for (const name of missingOffenses) {
   behIdx.set(norm(name), doc.toObject());
 }
 
-let insIncidents = 0, insNotices = 0;
+// Group by DB student so two parsed sources mapping to one student MERGE
+// rather than overwrite each other.
+const byStudent = new Map();
 for (const { stu, parsed } of plan) {
+  const k = String(stu._id);
+  if (!byStudent.has(k)) byStudent.set(k, { stu, incidents: [], notices: [], sources: [] });
+  const g = byStudent.get(k);
+  g.incidents.push(...parsed.incidents);
+  g.notices.push(...parsed.notices);
+  g.sources.push(parsed.name);
+}
+
+let insIncidents = 0, insNotices = 0;
+for (const { stu, incidents, notices, sources } of byStudent.values()) {
+  if (sources.length > 1) {
+    console.log(`  ⚠ merged ${sources.length} sources onto ${stu.firstName} ${stu.lastName}: ${sources.join(" + ")} (verify this is one student)`);
+  }
+  const parsed = { incidents, notices };
   // Idempotency: clear any prior legacy rows for this student.
   await BehaviorIncident.deleteMany({ studentId: stu._id, legacyImport: true });
   await BehaviorNotice.deleteMany({ studentId: stu._id, legacyImport: true });
