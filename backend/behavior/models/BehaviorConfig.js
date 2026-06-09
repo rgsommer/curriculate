@@ -81,6 +81,14 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Admin-specified non-school days (YYYY-MM-DD) on top of weekends + Ontario
     // statutory holidays — PA days, March break, etc. Used for "next school day".
     manualNonSchoolDays: { type: [String], default: [] },
+
+    // ── House points report (opt-in) ───────────────────────────────────────
+    // A standings email with each house's total + its top-3 contributing
+    // students. Off by default; admins enable + send it from Setup.
+    houseReport: {
+      enabled: { type: Boolean, default: false },
+      recipientEmail: { type: String, default: "", lowercase: true, trim: true },
+    },
   },
   { timestamps: true }
 );

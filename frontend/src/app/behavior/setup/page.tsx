@@ -44,7 +44,7 @@ export default function SetupPage() {
           Manage behaviours →
         </Link>
       </Card>
-      <HousesSection />
+      <HousesSection config={me.config} />
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
@@ -498,16 +498,41 @@ function EdsbySection({ edsby }: { edsby: any }) {
   );
 }
 
-function HousesSection() {
+function HousesSection({ config }: { config?: any }) {
   const [houses, setHouses] = useState<any[] | null>(null);
   const [name, setName] = useState("");
   const [color, setColor] = useState("#0f172a");
   const [err, setErr] = useState<string | null>(null);
 
+  // House standings report (opt-in).
+  const [reportOn, setReportOn] = useState(!!config?.houseReport?.enabled);
+  const [recipient, setRecipient] = useState(config?.houseReport?.recipientEmail || "");
+  const [reportMsg, setReportMsg] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+
   function load() {
     api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch((e) => setErr(e.message));
   }
   useEffect(() => { load(); }, []);
+
+  async function saveReportConfig(next: { enabled?: boolean; recipientEmail?: string }) {
+    const houseReport = { enabled: reportOn, recipientEmail: recipient, ...next };
+    setReportOn(houseReport.enabled);
+    setRecipient(houseReport.recipientEmail);
+    try { await api("/config", { method: "PUT", body: { houseReport } }); } catch (e: any) { setErr(e.message); }
+  }
+  async function sendReport() {
+    setReportBusy(true);
+    setReportMsg("");
+    try {
+      const r = await api<{ emailed: boolean; emailError?: string; report: any[] }>("/house-report", { body: { email: true } });
+      setReportMsg(r.emailed ? `Sent to ${recipient || "you"}.` : `Send failed: ${r.emailError || "check email settings"}`);
+    } catch (e: any) {
+      setReportMsg(e.message);
+    } finally {
+      setReportBusy(false);
+    }
+  }
 
   async function add() {
     if (!name.trim()) return;
@@ -546,6 +571,32 @@ function HousesSection() {
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-10 rounded border border-slate-300" />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New house name…" className={`${inputCls} flex-1`} />
         <button onClick={add} disabled={!name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">Add house</button>
+      </div>
+
+      {/* House standings report */}
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={reportOn} onChange={(e) => saveReportConfig({ enabled: e.target.checked })} className="mt-0.5" />
+          <span>
+            <span className="font-medium">House standings report</span> — an email with each house&apos;s total and its
+            top&nbsp;3 contributing students. Send it on demand below.
+          </span>
+        </label>
+        {reportOn && (
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              value={recipient}
+              onChange={(e) => setRecipient(e.target.value)}
+              onBlur={(e) => saveReportConfig({ recipientEmail: e.target.value })}
+              placeholder="Send to (defaults to you)"
+              className={`${inputCls} flex-1`}
+            />
+            <button onClick={sendReport} disabled={reportBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+              {reportBusy ? "Sending…" : "Send report now"}
+            </button>
+          </div>
+        )}
+        {reportMsg && <p className="mt-2 text-sm text-green-700">{reportMsg}</p>}
       </div>
     </Card>
   );

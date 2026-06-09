@@ -199,7 +199,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "triggerCount", "fadeWindowDays", "vp", "branding", "channels",
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
-      "reminderTime", "manualNonSchoolDays",
+      "reminderTime", "manualNonSchoolDays", "houseReport",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -1813,6 +1813,110 @@ router.post("/house-points", authAny, loadMembership, canLog, async (req, res, n
     });
     await audit(req.schoolId, "house.points", req, { studentId, meta: { houseId: String(houseId), points } });
     res.json({ ok: true, event });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// House standings report: each house's running total + its TOP 3 contributing
+// students (by positive points earned). Returns the data for an in-app preview
+// and, when { email: true }, sends it as an HTML standings email.
+router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).lean();
+
+    // House totals (all events, +/-).
+    const totals = await HousePointEvent.aggregate([
+      { $match: { schoolId: req.schoolId } },
+      { $group: { _id: "$houseId", points: { $sum: "$points" } } },
+    ]);
+    const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
+
+    // Top contributors: POSITIVE points only, summed per (house, student),
+    // globally sorted so the first 3 seen per house are its top 3.
+    const contribAgg = await HousePointEvent.aggregate([
+      { $match: { schoolId: req.schoolId, points: { $gt: 0 }, studentId: { $ne: null } } },
+      { $group: { _id: { houseId: "$houseId", studentId: "$studentId" }, points: { $sum: "$points" } } },
+      { $sort: { points: -1 } },
+    ]);
+    const studentIds = [...new Set(contribAgg.map((c) => String(c._id.studentId)))];
+    const students = await BehaviorStudent.find({ _id: { $in: studentIds } })
+      .select("firstName lastName preferredName")
+      .lean();
+    const nameById = Object.fromEntries(
+      students.map((s) => [String(s._id), `${s.preferredName || s.firstName} ${s.lastName}`.trim()])
+    );
+    const topByHouse = {};
+    for (const c of contribAgg) {
+      const hid = String(c._id.houseId);
+      topByHouse[hid] = topByHouse[hid] || [];
+      if (topByHouse[hid].length < 3) {
+        topByHouse[hid].push({ name: nameById[String(c._id.studentId)] || "Student", points: c.points });
+      }
+    }
+
+    const report = houses
+      .map((h) => ({
+        _id: String(h._id),
+        name: h.name,
+        color: h.color || "#0f172a",
+        points: totalById[String(h._id)] || 0,
+        top: topByHouse[String(h._id)] || [],
+      }))
+      .sort((a, b) => b.points - a.points);
+
+    const max = Math.max(1, ...report.map((h) => Math.abs(h.points)));
+    const rows = report
+      .map((h, i) => {
+        const w = Math.max(2, Math.round((Math.abs(h.points) / max) * 100));
+        const top = h.top.length
+          ? h.top.map((t, j) => `${j + 1}. ${escapeHtml(t.name)} (${t.points})`).join(" &middot; ")
+          : "&mdash;";
+        return (
+          `<div style="margin:12px 0">` +
+          `<div style="display:flex;align-items:center;gap:8px">` +
+          `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${h.color}"></span>` +
+          `<strong>${i + 1}. ${escapeHtml(h.name)}</strong>` +
+          `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:#0f172a">${h.points} pts</span>` +
+          `</div>` +
+          `<div style="background:#f1f5f9;border-radius:4px;height:8px;margin:5px 0"><div style="background:${h.color};height:8px;border-radius:4px;width:${w}%"></div></div>` +
+          `<div style="font-size:12px;color:#475569">Top contributors: ${top}</div>` +
+          `</div>`
+        );
+      })
+      .join("");
+    const html =
+      `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">` +
+      `<h2 style="margin:0 0 4px">House standings</h2>` +
+      `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(config?.branding?.schoolName || "")}</p>` +
+      `${rows || "<p style='color:#94a3b8'>No houses defined yet.</p>"}` +
+      `</div>`;
+
+    let emailed = false;
+    let emailError = "";
+    if (req.body?.email) {
+      const to = config?.houseReport?.recipientEmail || req.user.email;
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      const text = report
+        .map((h, i) => `${i + 1}. ${h.name}: ${h.points} pts — top: ${h.top.map((t) => `${t.name} (${t.points})`).join(", ") || "—"}`)
+        .join("\n");
+      try {
+        await sendEmail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to,
+          subject: `House standings — ${config?.branding?.schoolName || "Behaviours"}`,
+          text,
+          html,
+        });
+        emailed = true;
+      } catch (e) {
+        emailError = e?.message || String(e);
+      }
+    }
+
+    await audit(req.schoolId, "house_report.generated", req, { meta: { emailed } });
+    res.json({ ok: true, report, emailed, emailError });
   } catch (err) {
     next(err);
   }

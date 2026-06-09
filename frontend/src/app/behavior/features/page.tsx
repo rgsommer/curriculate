@@ -60,6 +60,26 @@ const FEATURES = [
     title: "Roles, invites & privacy",
     body: "Invite staff by email (locked to your school's domain). Teachers log and view; only admins edit setup; the principal gets a read-only view. Every send and change is audit-logged.",
   },
+  {
+    title: "Houses & points",
+    body: "Define houses, assign students (by import or in Setup), and attach a point value to any behaviour — negative to deduct for an offence, positive to reward a good one. The dashboard shows a live house leaderboard, and you can award points to a whole house at once.",
+  },
+  {
+    title: "Positive behaviours, properly separated",
+    body: "Positives never touch the strike count — they don't add to it and never subtract from it. They earn house points, are documented, and are warmly acknowledged in a note home rather than weighed against the student.",
+  },
+  {
+    title: "Good-news notes home",
+    body: "When a student racks up enough positives within the window (3 within 3× the fade range), a celebratory note home is queued automatically — no concerns, no points mentioned, just good news for the parents.",
+  },
+  {
+    title: "Log several students at once",
+    body: "For 'these five weren't ready for class' moments, flip to the reverse flow: pick one behaviour, tap the students, log them all in one go. Each still gets their own record and trigger check.",
+  },
+  {
+    title: "House standings report",
+    body: "Turn on an email report in Setup that ranks the houses by total points and names the top 3 contributing students for each — send it on demand for assemblies or newsletters.",
+  },
 ];
 
 const STEPS = [
@@ -75,6 +95,8 @@ const TEACHER_STEPS = [
   { t: "Pick the behaviour(s) and submit", d: "Tap one or more behaviours, add an optional note, and submit. Most behaviours add to the student's shared strike count; ones marked “immediate” notify the parent on the spot." },
   { t: "Watch the result", d: "If that incident reaches the threshold, you'll see a notice was triggered — with a short window to cancel the send if it was a mistake." },
   { t: "Check status & history", d: "Open a student any time to see their current strikes across all teachers and every note that's gone home." },
+  { t: "Catch the good too", d: "Log positive behaviours the same way — they earn the student's house points and are documented, but never count as a strike. Enough of them triggers a good-news note home on their own." },
+  { t: "Log a group in one go", d: "On the Log screen, tap “Several students” to apply one behaviour to a whole group at once — handy for a quick “not ready for class.”" },
   { t: "Clear your morning follow-ups", d: "Each morning you'll get a “Reminder for today” list of consequences to check off — mark each Done, Not done, or Waived." },
 ];
 
