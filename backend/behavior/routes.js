@@ -303,8 +303,12 @@ router.post("/edsby/refresh", authAny, loadMembership, requireAdmin, async (req,
         if (found.formkey) scrapedFormkey = found.formkey;
         if (!found.jver && !found.cver) {
           notes.push(cookie
-            ? "couldn't read jver/cver even when signed in — copy them from a request's x-xds-jver / x-xds-cver headers"
+            ? "couldn't read jver/cver even when signed in — copy them from a request's x-xds-jver / x-xds-cver headers, or run the Cookie Sync extension"
             : "couldn't read jver/cver from the public page — save the cookie first, then Refresh again");
+        } else if (!cver) {
+          // cver lives only in the x-xds-cver request header, never the HTML —
+          // the formkey call 403s without it.
+          notes.push("got jver but cver isn't on the page — paste x-xds-cver from a request header (DevTools), or run the Cookie Sync extension to capture it");
         }
       } catch (err) {
         notes.push(`version fetch failed: ${err?.message || err}`);
