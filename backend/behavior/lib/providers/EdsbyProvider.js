@@ -45,9 +45,43 @@ export class EdsbyProvider extends NotificationProvider {
   async testConnection(zoomId) {
     if (!this.baseUrl || !this.cookie) return { ok: false, error: "Edsby not connected — set base URL + session cookie." };
     if (!this.userNid) return { ok: false, error: "Edsby user nid not set." };
-    const zid = String(zoomId || "").trim();
-    if (!zid) return { ok: false, error: "A Zoom/class id is needed for the connection test — set it in the Edsby connection." };
 
+    // 1) Plain authenticated GET of the bootstrap — Edsby returns a fresh
+    // _formkey here WITHOUT needing one, so it avoids the CSRF chicken-and-egg
+    // that makes the POST below 403 on first setup (no formkey yet). Try a few
+    // GET endpoints that are known to carry the formkey.
+    const getUrls = [
+      `${this.baseUrl}/core/node.json/?xds=bootstrap`,
+      `${this.baseUrl}/core/node.json/${this.userNid}?xds=Home`,
+      `${this.baseUrl}/core/node.json/${this.userNid}`,
+    ];
+    for (const gurl of getUrls) {
+      try {
+        const r0 = await fetch(gurl, {
+          headers: { Cookie: this.cookie, "x-xds-jver": this.jver, "x-xds-cver": this.cver, Accept: "application/json, text/plain, */*" },
+          redirect: "manual",
+        });
+        const t0 = await r0.text().catch(() => "");
+        if (/login/i.test(t0) && /<form/i.test(t0)) {
+          return { ok: false, error: "Edsby session cookie has expired — re-paste it in Setup (or run the Cookie Sync extension)." };
+        }
+        const m0 = t0.match(/_formkey"?\s*[:=]\s*"([^"]+)"/);
+        if (m0) return { ok: true, message: "Edsby session is valid — fetched a fresh formkey.", formkey: m0[1] };
+      } catch {
+        /* try the next endpoint */
+      }
+    }
+
+    // 2) Fallback: the openSesame POST. Needs a Zoom id AND an existing formkey
+    // (it rotates the current one), so it only works once you already have a
+    // formkey saved.
+    const zid = String(zoomId || "").trim();
+    if (!zid) {
+      return {
+        ok: false,
+        error: "Couldn't fetch a formkey from the bootstrap. Paste a formkey from a logged-in page (or run the Cookie Sync extension), then Test again.",
+      };
+    }
     const url = `${this.baseUrl}/core/node.json/${zid}?xds=ZoomMyStudents&_method=GET`;
     const boundary = "----CurriculateTest" + Date.now();
     const payload =
@@ -72,7 +106,12 @@ export class EdsbyProvider extends NotificationProvider {
     }
     const m = text.match(/"_formkey"\s*:\s*"([^"]+)"/);
     if (m) return { ok: true, message: "Edsby session is valid — authenticated and refreshed the formkey.", formkey: m[1] };
-    return { ok: false, error: `Edsby responded ${res.status}; could not read a formkey (check user nid / Zoom id / jver / cver / cookie).` };
+    return {
+      ok: false,
+      error: this.formkey
+        ? `Edsby responded ${res.status}; could not read a formkey (check user nid / Zoom id / jver / cver / cookie).`
+        : `Edsby responded ${res.status}. Edsby needs an initial formkey to refresh — paste one from a logged-in page (or run the Cookie Sync extension), then Test again.`,
+    };
   }
 
   async send({ recipient, body }) {
