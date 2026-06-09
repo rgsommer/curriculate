@@ -106,7 +106,12 @@ function sanitizeConfig(config) {
     c.edsby = {
       enabled: !!c.edsby.enabled,
       baseUrl: c.edsby.baseUrl || "",
-      configured: !!c.edsby.cookieEnc,
+      userNid: c.edsby.userNid || "",
+      jver: c.edsby.jver || "",
+      cver: c.edsby.cver || "",
+      zoomId: c.edsby.zoomId || "",
+      cookieConfigured: !!c.edsby.cookieEnc,
+      formkeyConfigured: !!c.edsby.formkeyEnc,
       updatedAt: c.edsby.updatedAt || null,
     };
   }
@@ -204,16 +209,20 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
 // the EdsbyProvider once channels.edsby is enabled.
 router.put("/config/edsby", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
+    const b = req.body || {};
     const update = { "edsby.updatedAt": new Date() };
-    if ("enabled" in (req.body || {})) update["edsby.enabled"] = !!req.body.enabled;
-    if ("baseUrl" in (req.body || {})) {
-      update["edsby.baseUrl"] = String(req.body.baseUrl || "").trim().replace(/\/+$/, "");
+    if ("enabled" in b) update["edsby.enabled"] = !!b.enabled;
+    if ("baseUrl" in b) update["edsby.baseUrl"] = String(b.baseUrl || "").trim().replace(/\/+$/, "");
+    // Non-secret identifiers stored plainly.
+    for (const k of ["userNid", "jver", "cver", "zoomId"]) {
+      if (k in b) update[`edsby.${k}`] = String(b[k] || "").trim();
     }
-    const cookie = String(req.body?.cookie || "");
-    if (cookie) update["edsby.cookieEnc"] = encrypt(cookie);
+    // Secrets encrypted; only updated when a fresh value is supplied.
+    if (b.cookie) update["edsby.cookieEnc"] = encrypt(String(b.cookie));
+    if (b.formkey) update["edsby.formkeyEnc"] = encrypt(String(b.formkey));
     await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: update });
     await audit(req.schoolId, "config.edsby_updated", req, {
-      meta: { enabled: update["edsby.enabled"], baseUrl: update["edsby.baseUrl"], cookieSet: !!cookie },
+      meta: { enabled: update["edsby.enabled"], baseUrl: update["edsby.baseUrl"], cookieSet: !!b.cookie, formkeySet: !!b.formkey },
     });
     res.json({ ok: true });
   } catch (err) {

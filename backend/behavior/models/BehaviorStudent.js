@@ -33,6 +33,9 @@ const BehaviorStudentSchema = new mongoose.Schema(
 
     // School's own identifier when present in the CSV (for re-import matching).
     externalId: { type: String, default: "", trim: true, index: true },
+    // The student's Edsby/Panorama nid — used as the Referer when broadcasting a
+    // notice to their parents via Edsby (harvested from Edsby, not the roster).
+    edsbyStudentId: { type: String, default: "", trim: true },
 
     lastName: { type: String, default: "", trim: true },
     firstName: { type: String, default: "", trim: true },

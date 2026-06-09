@@ -302,19 +302,27 @@ function RosterSection() {
 
 function EdsbySection({ edsby }: { edsby: any }) {
   const [baseUrl, setBaseUrl] = useState(edsby?.baseUrl || "");
+  const [userNid, setUserNid] = useState(edsby?.userNid || "");
+  const [jver, setJver] = useState(edsby?.jver || "");
+  const [cver, setCver] = useState(edsby?.cver || "");
+  const [zoomId, setZoomId] = useState(edsby?.zoomId || "");
   const [cookie, setCookie] = useState("");
+  const [formkey, setFormkey] = useState("");
   const [enabled, setEnabled] = useState(!!edsby?.enabled);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const configured = !!edsby?.configured;
+  const cookieSet = !!edsby?.cookieConfigured;
+  const formkeySet = !!edsby?.formkeyConfigured;
 
   async function save() {
     setErr(null);
     try {
-      const body: any = { baseUrl: baseUrl.trim(), enabled };
+      const body: any = { baseUrl: baseUrl.trim(), userNid: userNid.trim(), jver: jver.trim(), cver: cver.trim(), zoomId: zoomId.trim(), enabled };
       if (cookie.trim()) body.cookie = cookie.trim();
+      if (formkey.trim()) body.formkey = formkey.trim();
       await api("/config/edsby", { method: "PUT", body });
       setCookie("");
+      setFormkey("");
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e: any) {
@@ -326,29 +334,44 @@ function EdsbySection({ edsby }: { edsby: any }) {
     <Card>
       <h2 className="font-semibold">Edsby connection</h2>
       <p className="mt-1 text-sm text-slate-500">
-        Edsby has no public API, so notices are posted using your school&apos;s signed-in session.
-        Paste your Edsby <span className="font-medium">session cookie</span> — it&apos;s stored encrypted,
-        never shown again, and each parent is messaged separately via their Edsby ID.
+        Edsby has no public API, so notices are posted using your school&apos;s signed-in session — each
+        parent messaged separately via their Edsby nid. The cookie + formkey are stored <span className="font-medium">encrypted</span> and never shown again.
       </p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
-      <div className="mt-3 space-y-2">
+      <div className="mt-3 grid grid-cols-2 gap-3">
         <Field label="Edsby base URL">
           <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://yourschool.edsby.com" className={inputCls} />
         </Field>
-        <Field label={`Session cookie ${configured ? "(stored ✓ — leave blank to keep)" : ""}`}>
-          <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={2}
-            placeholder={configured ? "•••••••• (already saved)" : "paste the Edsby session cookie"} className={inputCls} />
+        <Field label="Your Edsby user nid">
+          <input value={userNid} onChange={(e) => setUserNid(e.target.value)} placeholder="window._cf.user.nid" className={inputCls} />
         </Field>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Send notices via Edsby
-        </label>
+        <Field label="jver (bundle compiled hash)">
+          <input value={jver} onChange={(e) => setJver(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="cver (bundle version)">
+          <input value={cver} onChange={(e) => setCver(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Zoom/class id (for formkey refresh)">
+          <input value={zoomId} onChange={(e) => setZoomId(e.target.value)} className={inputCls} />
+        </Field>
       </div>
+      <Field label={`Session cookie ${cookieSet ? "(stored ✓ — blank keeps it)" : ""}`}>
+        <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={2}
+          placeholder={cookieSet ? "•••••••• (already saved)" : "paste the Edsby session cookie"} className={inputCls} />
+      </Field>
+      <Field label={`Formkey (CSRF) ${formkeySet ? "(stored ✓ — blank keeps it)" : ""}`}>
+        <input value={formkey} onChange={(e) => setFormkey(e.target.value)}
+          placeholder={formkeySet ? "•••••••• (already saved)" : "the _formkey from a logged-in page"} className={inputCls} />
+      </Field>
+      <label className="mt-1 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Send notices via Edsby
+      </label>
       <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white">
         {saved ? "Saved ✓" : "Save Edsby connection"}
       </button>
       <p className="mt-2 text-xs text-amber-700">
-        Note: the exact Edsby send endpoint is set server-side from your existing Edsby script. Until that&apos;s
-        configured, Edsby sends fail over to email automatically.
+        The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
+        Parent Edsby nids still need harvesting from Edsby (next step).
       </p>
     </Card>
   );

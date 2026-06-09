@@ -83,11 +83,15 @@ test("EdsbyProvider with no connection fails (so it fails over to email)", async
   assert.match(r.error, /not connected/i);
 });
 
-test("EdsbyProvider connected but with no send endpoint configured fails over", async () => {
-  const prev = process.env.BEHAVIOR_EDSBY_SEND_PATH;
-  delete process.env.BEHAVIOR_EDSBY_SEND_PATH;
-  const r = await new EdsbyProvider({ baseUrl: "https://x.edsby.com", cookie: "sess=abc" }).send({ recipient });
+test("EdsbyProvider with cookie but no formkey/userNid fails over", async () => {
+  const r = await new EdsbyProvider({ baseUrl: "https://x.edsby.com", cookie: "sess=abc" }).send({ recipient, body: "hi" });
   assert.equal(r.ok, false);
-  assert.match(r.error, /endpoint not configured/i);
-  if (prev) process.env.BEHAVIOR_EDSBY_SEND_PATH = prev;
+  assert.match(r.error, /formkey/i);
+});
+
+test("EdsbyProvider fully configured but recipient has no nid fails over", async () => {
+  const p = new EdsbyProvider({ baseUrl: "https://x.edsby.com", cookie: "s=1", formkey: "fk", userNid: "123" });
+  const r = await p.send({ recipient: { role: "parent", email: "p@e.com" }, body: "hi" });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /nid/i);
 });

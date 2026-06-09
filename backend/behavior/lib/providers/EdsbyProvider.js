@@ -1,54 +1,54 @@
 // backend/behavior/lib/providers/EdsbyProvider.js
 //
-// Edsby implementation of NotificationProvider (brief §4).
+// Edsby implementation of NotificationProvider (brief §4), ported from the
+// school's working Apps Script (missing-work-complete.gs) — the request shape is
+// DevTools-verified, not a guess.
 //
-// ⚠️ RISK (flagged to the school): Edsby has NO official public API. Delivery is
-// authenticated cookie/session posting. ALL Edsby-specific logic lives in THIS
-// module so the fragility is quarantined. The session cookie is held only in
-// memory here (decrypted from BehaviorConfig.edsby.cookieEnc by the caller) —
-// never logged, never returned to a client.
+// ⚠️ Edsby has NO public API. Delivery is an authenticated "broadcast" POST:
+//   POST <base>/core/create/<userNid>?xds=broadcastNewFanOutTeacher&nodetype=4.19
+//   multipart/form-data: _formkey, to (recipient nids CSV), body-body-body (msg),
+//   _nids (recipient nids dot-joined), + empty addresources fields.
+//   Headers: Cookie (session), x-xds-jver, x-xds-cver,
+//            x-edsby-client-request-queue: net::post, Referer /p/Panorama/<studentNid>.
+//
+// ALL Edsby specifics live here. Secrets (cookie, formkey) are held only in
+// memory, decrypted by the caller from BehaviorConfig — never logged or
+// returned to a client.
 //
 // The orchestrator (notify.js) calls send() ONCE PER RECIPIENT, so each parent
-// is posted to separately — using their own edsbyParentId.
-//
-// The one Edsby-specific unknown is the exact send request (URL + payload +
-// CSRF/nonce handling), which differs per Edsby deployment and isn't publicly
-// documented. It's isolated in postEdsbyMessage() and driven by env so it can be
-// filled in from the school's existing login/post script without touching the
-// rest of the app:
-//   BEHAVIOR_EDSBY_SEND_PATH  — path appended to baseUrl for the send request
-//   BEHAVIOR_EDSBY_CSRF_PATH  — (optional) path to GET a CSRF/nonce token first
-//   BEHAVIOR_EDSBY_CSRF_FIELD — (optional) form/JSON field name for that token
+// is broadcast to separately, addressed by their own Edsby nid (edsbyParentId).
 
 import { NotificationProvider } from "./NotificationProvider.js";
 
 export class EdsbyProvider extends NotificationProvider {
-  constructor({ baseUrl = "", cookie = "" } = {}) {
+  constructor({ baseUrl = "", cookie = "", formkey = "", jver = "", cver = "", userNid = "", studentNid = "" } = {}) {
     super();
     this.baseUrl = String(baseUrl || "").replace(/\/+$/, "");
     this.cookie = cookie || "";
+    this.formkey = formkey || "";
+    this.jver = jver || "";
+    this.cver = cver || "";
+    this.userNid = String(userNid || "").trim();
+    this.studentNid = String(studentNid || "").trim(); // for the Panorama Referer
   }
 
   get key() {
     return "edsby";
   }
 
-  async send({ recipient, subject, body }) {
+  async send({ recipient, body }) {
     if (!this.baseUrl || !this.cookie) {
       return { ok: false, error: "Edsby not connected (set base URL + session cookie in Setup)", channel: this.key };
     }
-    const target = recipient?.edsbyParentId;
-    if (!target) {
-      return { ok: false, error: "recipient has no Edsby parent id", channel: this.key };
+    if (!this.userNid || !this.formkey) {
+      return { ok: false, error: "Edsby user nid / formkey not set (refresh from a logged-in Edsby page)", channel: this.key };
+    }
+    const parentNid = recipient?.edsbyParentId;
+    if (!parentNid) {
+      return { ok: false, error: "recipient has no Edsby parent nid (harvest parent nids first)", channel: this.key };
     }
     try {
-      const r = await postEdsbyMessage({
-        baseUrl: this.baseUrl,
-        cookie: this.cookie,
-        edsbyParentId: target,
-        subject,
-        body,
-      });
+      const r = await postBroadcast(this, parentNid, body);
       return r.ok ? { ok: true, channel: this.key } : { ok: false, error: r.error, channel: this.key };
     } catch (err) {
       return { ok: false, error: err?.message || String(err), channel: this.key };
@@ -56,60 +56,56 @@ export class EdsbyProvider extends NotificationProvider {
   }
 }
 
-/**
- * Post a single message to one parent in Edsby using the session cookie.
- *
- * The structure (optional CSRF fetch → authenticated POST) is real; the exact
- * endpoint + payload come from the school's existing Edsby script via env. Until
- * BEHAVIOR_EDSBY_SEND_PATH is provided we return a clear not-configured error so
- * the orchestrator fails over to email — we never silently "succeed".
- */
-async function postEdsbyMessage({ baseUrl, cookie, edsbyParentId, subject, body }) {
-  const sendPath = process.env.BEHAVIOR_EDSBY_SEND_PATH;
-  if (!sendPath) {
-    return {
-      ok: false,
-      error:
-        "Edsby send endpoint not configured — provide the send request from your Edsby script (set BEHAVIOR_EDSBY_SEND_PATH).",
-    };
+/** POST one broadcast to a single parent nid. Mirrors edsbyPostBroadcast_. */
+async function postBroadcast(p, parentNid, body) {
+  const url =
+    `${p.baseUrl}/core/create/${p.userNid}` +
+    `?xds=broadcastNewFanOutTeacher&nodetype=${encodeURIComponent("4.19")}`;
+
+  const recipients = [String(parentNid)]; // one parent per broadcast
+  const boundary = "----CurriculateBoundary" + Date.now();
+  const fields = [
+    ["_formkey", p.formkey],
+    ["to", recipients.join(",")],
+    ["body-nodetype", "4"],
+    ["body-nodesubtype", "0"],
+    ["body-body-body", String(body || "")],
+    ["body-url", ""],
+    ["body-addresources-integrations-integrationfiledata", ""],
+    ["body-addresources-integrations-integrationfiles", ""],
+    ["body-addresources-linkFiles", ""],
+    ["body-addresources-linkRich", ""],
+    ["_nids", recipients.join(".")],
+  ];
+  let payload = "";
+  for (const [name, value] of fields) {
+    payload += `--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${String(value)}\r\n`;
   }
+  payload += `--${boundary}--\r\n`;
 
   const headers = {
-    Cookie: cookie,
-    "Content-Type": "application/json",
-    Accept: "application/json, text/plain, */*",
+    Cookie: p.cookie,
+    "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    "x-edsby-client-request-queue": "net::post",
+    "x-xds-jver": p.jver,
+    "x-xds-cver": p.cver,
+    Origin: p.baseUrl,
   };
+  if (p.studentNid) headers.Referer = `${p.baseUrl}/p/Panorama/${p.studentNid}`;
 
-  // Optional: fetch a CSRF/nonce token first (many Edsby actions require one).
-  let csrf = "";
-  const csrfPath = process.env.BEHAVIOR_EDSBY_CSRF_PATH;
-  if (csrfPath) {
-    const cr = await fetch(`${baseUrl}${csrfPath}`, { headers: { Cookie: cookie } });
-    const ct = cr.headers.get("content-type") || "";
-    if (ct.includes("application/json")) {
-      const j = await cr.json().catch(() => ({}));
-      csrf = j.csrf || j.token || j.nonce || "";
-    } else {
-      const txt = await cr.text();
-      const m = txt.match(/name=["']?(?:csrf|_token|nonce)["']?[^>]*value=["']([^"']+)["']/i);
-      csrf = m ? m[1] : "";
-    }
+  const res = await fetch(url, { method: "POST", headers, body: payload, redirect: "manual" });
+  const text = await res.text().catch(() => "");
+
+  if (res.status >= 200 && res.status < 300 && !/<form[^>]*login/i.test(text)) {
+    return { ok: true };
   }
-
-  const payload = { to: edsbyParentId, subject, body };
-  const csrfField = process.env.BEHAVIOR_EDSBY_CSRF_FIELD;
-  if (csrf && csrfField) payload[csrfField] = csrf;
-  if (csrf && csrfField) headers["X-CSRF-Token"] = csrf;
-
-  const res = await fetch(`${baseUrl}${sendPath}`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    return { ok: false, error: `Edsby responded ${res.status} ${res.statusText}` };
+  if (/"error"\s*:\s*1011\b/.test(text)) {
+    return { ok: false, error: "Edsby formkey expired (error 1011) — refresh the formkey in Setup" };
   }
-  return { ok: true };
+  if (/login/i.test(text) && /<form/i.test(text)) {
+    return { ok: false, error: "Edsby session cookie expired — re-paste it in Setup" };
+  }
+  return { ok: false, error: `Edsby responded ${res.status} ${res.statusText}` };
 }
 
 export default EdsbyProvider;

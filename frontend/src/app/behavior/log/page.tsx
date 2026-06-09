@@ -8,14 +8,14 @@ type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: 
 
 function gradeLabel(g?: string) {
   const v = (g || "").trim();
-  return v ? `Grade ${v}` : "Other";
+  return v ? `Grade ${v}` : "";
 }
 
 export default function LogIncidentPage() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
   const [query, setQuery] = useState("");
-  const [openGrades, setOpenGrades] = useState<Set<string>>(new Set());
+  const [selectedClass, setSelectedClass] = useState<string>("");
 
   const [student, setStudent] = useState<StudentSummary | null>(null);
   const [behaviorId, setBehaviorId] = useState("");
@@ -26,7 +26,6 @@ export default function LogIncidentPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Load the whole roster + behaviour list once.
   useEffect(() => {
     if (!getToken()) return;
     api<{ students: StudentSummary[] }>("/students")
@@ -37,22 +36,25 @@ export default function LogIncidentPage() {
       .catch((e) => setError(e.message));
   }, []);
 
-  // Filter by the quick search, then group by grade (ascending; "Other" last).
-  const groups = useMemo(() => {
+  // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
+  const classes = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of students) if ((s.classGroup || "").trim()) set.add(s.classGroup!.trim());
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  }, [students]);
+
+  // What to show: search matches (across all classes) take priority; otherwise
+  // the students in the selected class.
+  const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const filtered = q
-      ? students.filter((s) =>
-          `${s.firstName} ${s.lastName} ${s.preferredName || ""}`.toLowerCase().includes(q)
-        )
-      : students;
-    const byGrade = new Map<string, StudentSummary[]>();
-    for (const s of filtered) {
-      const key = (s.grade || "").trim() || "~"; // "~" sorts last → "Other"
-      if (!byGrade.has(key)) byGrade.set(key, []);
-      byGrade.get(key)!.push(s);
+    if (q) {
+      return students.filter((s) =>
+        `${s.firstName} ${s.lastName} ${s.preferredName || ""}`.toLowerCase().includes(q)
+      );
     }
-    return Array.from(byGrade.entries()).sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }));
-  }, [students, query]);
+    if (selectedClass) return students.filter((s) => (s.classGroup || "").trim() === selectedClass);
+    return [];
+  }, [students, query, selectedClass]);
 
   if (!getToken()) {
     return (
@@ -60,14 +62,6 @@ export default function LogIncidentPage() {
         Please <Link className="underline" href={loginHref("/behavior/log")}>sign in</Link> to log incidents.
       </p>
     );
-  }
-
-  function toggleGrade(g: string) {
-    setOpenGrades((prev) => {
-      const next = new Set(prev);
-      next.has(g) ? next.delete(g) : next.add(g);
-      return next;
-    });
   }
 
   async function submit(e?: React.FormEvent) {
@@ -193,58 +187,60 @@ export default function LogIncidentPage() {
     );
   }
 
-  // ── Step 1: pick a student from collapsible grade groups ─────────────────────
+  // ── Step 1: pick a class (button row), then a student ────────────────────────
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Log an incident</h1>
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
+      {/* Class buttons */}
+      <div className="flex flex-wrap gap-2">
+        {classes.map((c) => (
+          <button
+            key={c}
+            onClick={() => {
+              setQuery("");
+              setSelectedClass(selectedClass === c ? "" : c);
+            }}
+            className={`rounded-lg px-4 py-2 text-sm font-semibold ${
+              selectedClass === c && !query ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700"
+            }`}
+          >
+            {c}
+          </button>
+        ))}
+      </div>
+
       <input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Jump to a student by name…"
+        placeholder="…or search any student by name"
         className="w-full rounded-xl border border-slate-300 px-4 py-3"
         inputMode="search"
       />
 
-      <div className="space-y-2">
-        {groups.map(([key, list]) => {
-          const open = query.trim() !== "" || openGrades.has(key);
-          return (
-            <div key={key} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
-              <button
-                onClick={() => toggleGrade(key)}
-                className="flex w-full items-center justify-between px-4 py-3 text-left font-semibold"
-              >
-                <span>{gradeLabel(key === "~" ? "" : key)}</span>
-                <span className="text-sm font-normal text-slate-400">
-                  {list.length} {open ? "▲" : "▼"}
-                </span>
-              </button>
-              {open && (
-                <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                  {list.map((s) => (
-                    <li key={s._id}>
-                      <button
-                        onClick={() => setStudent(s)}
-                        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
-                      >
-                        <span className="font-medium">
-                          {s.lastName}, {s.firstName}
-                          {s.preferredName ? ` (${s.preferredName})` : ""}
-                        </span>
-                        <span className="text-sm text-slate-400">{s.classGroup}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          );
-        })}
-        {students.length === 0 && <p className="text-sm text-slate-400">No students yet — import a roster in Setup.</p>}
-        {students.length > 0 && groups.length === 0 && <p className="text-sm text-slate-400">No matches.</p>}
-      </div>
+      <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        {visible.map((s) => (
+          <li key={s._id}>
+            <button
+              onClick={() => setStudent(s)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
+            >
+              <span className="font-medium">
+                {s.lastName}, {s.firstName}
+                {s.preferredName ? ` (${s.preferredName})` : ""}
+              </span>
+              <span className="text-sm text-slate-400">{s.classGroup}</span>
+            </button>
+          </li>
+        ))}
+        {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">No students yet — import a roster in Setup.</li>}
+        {students.length > 0 && visible.length === 0 && (
+          <li className="px-4 py-3 text-sm text-slate-400">
+            {query ? "No matches." : "Pick a class above, or search by name."}
+          </li>
+        )}
+      </ul>
     </div>
   );
 }

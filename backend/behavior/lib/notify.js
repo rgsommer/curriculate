@@ -61,17 +61,27 @@ export async function dispatchNotice(noticeId, { providers } = {}) {
   if (notice.status === "cancelled") return { ok: false, error: "cancelled" };
   if (notice.status === "sent") return { ok: true, alreadySent: true };
 
+  const student = await BehaviorStudent.findById(notice.studentId).lean();
+
   // Build providers with the school's Edsby connection (decrypted in memory).
+  // The student's Edsby nid is the Panorama Referer for their parents' broadcasts.
   let prov = providers;
   if (!prov) {
     const config = await BehaviorConfig.findOne({ schoolId: notice.schoolId }).lean();
-    const edsby = config?.edsby?.enabled
-      ? { baseUrl: config.edsby.baseUrl, cookie: decrypt(config.edsby.cookieEnc) }
+    const e = config?.edsby;
+    const edsby = e?.enabled
+      ? {
+          baseUrl: e.baseUrl,
+          cookie: decrypt(e.cookieEnc),
+          formkey: decrypt(e.formkeyEnc),
+          jver: e.jver,
+          cver: e.cver,
+          userNid: e.userNid,
+          studentNid: student?.edsbyStudentId || "",
+        }
       : {};
     prov = getDefaultProviders(edsby);
   }
-
-  const student = await BehaviorStudent.findById(notice.studentId).lean();
   const studentName = student?.preferredName || student?.firstName || "your child";
   const subject = `Behaviour notice — ${studentName}`;
 

@@ -43,7 +43,14 @@ const BehaviorConfigSchema = new mongoose.Schema(
     edsby: {
       enabled: { type: Boolean, default: false },
       baseUrl: { type: String, default: "" }, // e.g. https://yourschool.edsby.com
-      cookieEnc: { type: String, default: "" }, // AES-256-GCM via secretBox
+      cookieEnc: { type: String, default: "" }, // session cookie, AES-256-GCM
+      formkeyEnc: { type: String, default: "" }, // CSRF token (short-lived), encrypted
+      // Non-secret bundle/account identifiers (from a logged-in Edsby page's
+      // openSesame call + your user nid). jver/cver change each Edsby release.
+      userNid: { type: String, default: "" }, // your Edsby user/teacher nid
+      jver: { type: String, default: "" },
+      cver: { type: String, default: "" },
+      zoomId: { type: String, default: "" }, // a class/zoom id, used to refresh formkey
       updatedAt: { type: Date, default: null },
     },
 
