@@ -42,6 +42,7 @@
     "papaparse": "^5.5.3",
     "pdfkit": "^0.15.0",
     "react-confetti": "^6.4.0",
+    "resend": "^6.12.4",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
     "stripe": "^20.1.0",

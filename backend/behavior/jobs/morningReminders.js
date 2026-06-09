@@ -12,7 +12,7 @@ import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorFollowup from "../models/BehaviorFollowup.js";
 import BehaviorTeacher from "../models/BehaviorTeacher.js";
 import BehaviorStudent from "../models/BehaviorStudent.js";
-import { mailer } from "../../email/mailer.js";
+import { sendEmail } from "../lib/sendEmail.js";
 
 function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
@@ -65,7 +65,7 @@ async function sendSchoolDigests(cfg, now) {
       `${lines.join("\n")}\n\n` +
       `Mark each Done / Not done / Waived in the app:\n${appBase()}/behavior`;
     try {
-      await mailer.sendMail({
+      await sendEmail({
         from: process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER,
         to: t.email,
         subject: "Reminder for today — behaviour follow-ups",

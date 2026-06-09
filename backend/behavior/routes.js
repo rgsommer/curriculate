@@ -13,7 +13,7 @@ import crypto from "crypto";
 import multer from "multer";
 
 import authAny from "../middleware/authAny.js";
-import { mailer } from "../email/mailer.js";
+import { sendEmail } from "./lib/sendEmail.js";
 
 import BehaviorSchool from "./models/BehaviorSchool.js";
 import BehaviorTeacher from "./models/BehaviorTeacher.js";
@@ -247,7 +247,7 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
     if (!to) return res.status(400).json({ ok: false, error: "No recipient address" });
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
     try {
-      await mailer.sendMail({
+      await sendEmail({
         from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
         to,
         subject: "Behaviours — test email ✓",
@@ -349,7 +349,7 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
       const by = inviter ? `${inviter}${inviterEmail ? ` (${inviterEmail})` : ""}` : "A colleague";
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
-        await mailer.sendMail({
+        await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to: email,
           replyTo: inviterEmail || undefined,
@@ -1410,7 +1410,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         `</div>`;
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
-        await mailer.sendMail({
+        await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to: req.user.email,
           subject: `Behaviours executive summary — ${who} (last ${months} months)`,

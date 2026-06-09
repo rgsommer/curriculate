@@ -5,7 +5,7 @@
 // and also the failover target when an Edsby post fails.
 
 import { NotificationProvider } from "./NotificationProvider.js";
-import { mailer } from "../../../email/mailer.js";
+import { sendEmail } from "../sendEmail.js";
 
 export class EmailProvider extends NotificationProvider {
   get key() {
@@ -19,7 +19,7 @@ export class EmailProvider extends NotificationProvider {
     }
     try {
       const from = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
-      await mailer.sendMail({
+      await sendEmail({
         from,
         to,
         subject,
