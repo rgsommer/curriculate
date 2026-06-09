@@ -49,6 +49,7 @@ export default function SetupPage() {
       <ConfigSection config={me.config} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
+      <TestToolsSection email={me.membership.email} />
     </div>
   );
 }
@@ -256,6 +257,13 @@ function RosterSection() {
         Columns: Last name, First name, Common/preferred name, Gender, Class/Group, Grade, DOB,
         Parent 1/2 name + email + Edsby ID. The ethnicity field is dropped automatically.
       </p>
+      <a
+        href="/behavior-roster-template.csv"
+        download
+        className="mt-2 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
+      >
+        ⬇ Download template (CSV)
+      </a>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <input
         type="file"
@@ -281,6 +289,122 @@ function RosterSection() {
           )}
         </div>
       )}
+    </Card>
+  );
+}
+
+function TestToolsSection({ email }: { email: string }) {
+  const [created, setCreated] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [q, setQ] = useState("");
+  const [results, setResults] = useState<any[]>([]);
+  const [msg, setMsg] = useState("");
+
+  // Build a "+alias" of the signed-in admin's email so test notices land in
+  // their own inbox (Google Workspace delivers +tags to the base address).
+  function alias(tag: string) {
+    const at = email.indexOf("@");
+    return at === -1 ? email : `${email.slice(0, at)}+${tag}${email.slice(at)}`;
+  }
+
+  async function addTestStudent() {
+    setBusy(true);
+    setErr(null);
+    setCreated(null);
+    try {
+      const r = await api("/students", {
+        body: {
+          lastName: "ZTEST",
+          firstName: "Alpha",
+          preferredName: "Al",
+          gender: "M",
+          classGroup: "ZTEST",
+          grade: "7",
+          dob: "2013-01-01",
+          parents: [
+            { name: "Test Mom (you)", email: alias("mom") },
+            { name: "Test Dad (you)", email: alias("dad") },
+          ],
+          test: true,
+        },
+      });
+      setCreated(r.student);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function search() {
+    setErr(null);
+    try {
+      const d = await api<{ students: any[] }>(`/students?query=${encodeURIComponent(q.trim())}`);
+      setResults(d.students || []);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  async function del(s: any) {
+    if (!window.confirm(`Delete ${s.firstName} ${s.lastName} and ALL their incidents/notices? This cannot be undone.`)) return;
+    try {
+      const r = await api<{ incidentsRemoved: number; noticesRemoved: number }>(`/students/${s._id}`, { method: "DELETE" });
+      setResults(results.filter((x) => x._id !== s._id));
+      setMsg(`Deleted ${s.firstName} ${s.lastName} — removed ${r.incidentsRemoved} incident(s), ${r.noticesRemoved} notice(s).`);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Test &amp; cleanup</h2>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+
+      <div className="mt-3">
+        <button onClick={addTestStudent} disabled={busy} className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+          {busy ? "Adding…" : "Add test student"}
+        </button>
+        <p className="mt-1 text-xs text-slate-500">
+          Creates “ZTEST Alpha” whose parent emails route to <span className="font-mono">{alias("mom")}</span> /{" "}
+          <span className="font-mono">{alias("dad")}</span> — so test notices come to you, never a real parent.
+        </p>
+        {created && (
+          <p className="mt-1 text-sm text-green-700">
+            Added {created.firstName} {created.lastName}.{" "}
+            <Link href="/behavior/log" className="underline">Log an incident →</Link>
+          </p>
+        )}
+      </div>
+
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <p className="text-sm font-medium text-slate-700">Remove a student</p>
+        {msg && <p className="mt-1 text-sm text-green-700">{msg}</p>}
+        <div className="mt-2 flex gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && search()}
+            placeholder="Search by name…"
+            className={inputCls}
+          />
+          <button onClick={search} className="rounded-lg border border-slate-300 px-4 py-2 text-sm">Search</button>
+        </div>
+        <ul className="mt-2 divide-y divide-slate-100">
+          {results.map((s) => (
+            <li key={s._id} className="flex items-center justify-between py-2 text-sm">
+              <span>
+                {s.lastName}, {s.firstName} <span className="text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</span>
+              </span>
+              <button onClick={() => del(s)} className="rounded-lg border border-red-300 px-3 py-1 text-xs text-red-700">
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
     </Card>
   );
 }

@@ -6,7 +6,12 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, type EngagementType } from "@/lib/campfire/types";
+import {
+  ENGAGEMENT_TYPES,
+  engagementIcon,
+  resolveTitle,
+  type EngagementType,
+} from "@/lib/campfire/types";
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
@@ -90,6 +95,85 @@ export default function DashboardPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey]);
+
+  // "Your turn": active engagements across your groups that YOU haven't responded
+  // to yet — so a freshly-logged-in user immediately sees what to do, instead of a
+  // wall of groups. Surprise cards you're the recipient of are skipped.
+  type TodoEng = {
+    id: string;
+    group_id: string;
+    title: string;
+    type: string;
+    config: { occasion?: string } | null;
+    deadline: string | null;
+    birth_year: number | null;
+  };
+  const [todo, setTodo] = useState<TodoEng[]>([]);
+  useEffect(() => {
+    const ids = groupIdsKey ? groupIdsKey.split(",") : [];
+    if (ids.length === 0 || !user?.id) {
+      setTodo([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const nowMs = Date.now();
+      const { data: engs } = await supabase
+        .from("engagements")
+        .select(
+          "id, group_id, title, type, config, deadline, birth_year, launched_at, scheduled_open_at, paused, excluded_user_ids, created_at"
+        )
+        .in("group_id", ids)
+        .eq("status", "active");
+      if (cancelled) return;
+      // Open to sign now, not paused, and not a card you're the surprise target of.
+      const open = (engs ?? []).filter(
+        (e) =>
+          e.launched_at &&
+          !e.paused &&
+          (!e.scheduled_open_at ||
+            new Date(e.scheduled_open_at as string).getTime() <= nowMs) &&
+          !((e.excluded_user_ids as string[] | null) ?? []).includes(user.id)
+      );
+      if (open.length === 0) {
+        setTodo([]);
+        return;
+      }
+      // RLS lets you read your OWN responses — anything missing is awaiting you.
+      const { data: mine } = await supabase
+        .from("responses")
+        .select("engagement_id")
+        .eq("user_id", user.id)
+        .in(
+          "engagement_id",
+          open.map((e) => e.id)
+        );
+      if (cancelled) return;
+      const responded = new Set((mine ?? []).map((r) => r.engagement_id as string));
+      setTodo(
+        open
+          .filter((e) => !responded.has(e.id as string))
+          .sort(
+            (a, b) =>
+              new Date(b.created_at as string).getTime() -
+              new Date(a.created_at as string).getTime()
+          )
+          .map((e) => ({
+            id: e.id as string,
+            group_id: e.group_id as string,
+            title: e.title as string,
+            type: e.type as string,
+            config: (e.config as { occasion?: string } | null) ?? null,
+            deadline: (e.deadline as string | null) ?? null,
+            birth_year: (e.birth_year as number | null) ?? null,
+          }))
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupIdsKey, user?.id]);
 
   // Host name for groups you JOINED — keyed by GROUP id, preferring the host's
   // per-group display name ("Dad" in Family) over their global profile name.
@@ -185,9 +269,55 @@ export default function DashboardPage() {
         <p className="text-slate-500 mt-1">
           {groups.length === 0
             ? "Create your first group or join one with an invite code."
+            : todo.length > 0
+            ? `You have ${todo.length} thing${todo.length === 1 ? "" : "s"} to respond to 👇`
             : `You're in ${groups.length} group${groups.length === 1 ? "" : "s"}.`}
         </p>
       </div>
+
+      {/* Your turn — the single most important thing on this page. Active
+          engagements awaiting THIS user's response, each a one-tap deep link. */}
+      {todo.length > 0 && (
+        <div className="mb-8 rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xl">👉</span>
+            <h2 className="text-base font-extrabold text-slate-900">
+              Your turn
+              <span className="ml-2 rounded-full bg-orange-500 px-2 py-0.5 text-xs font-bold text-white align-middle">
+                {todo.length}
+              </span>
+            </h2>
+            <span className="text-xs text-slate-500">tap to respond</span>
+          </div>
+          <div className="space-y-2">
+            {todo.map((e) => {
+              const g = groups.find((gr) => gr.id === e.group_id);
+              const meta = ENGAGEMENT_TYPES[e.type as EngagementType];
+              return (
+                <Link
+                  key={e.id}
+                  href={`/campfirelive/group/${e.group_id}/engagement/${e.id}`}
+                  className="group flex items-center gap-3 rounded-xl border border-orange-200 bg-white px-4 py-3 transition hover:border-orange-400 hover:shadow-sm"
+                >
+                  <span className="flex-shrink-0 text-2xl">{engagementIcon(e)}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-slate-900">
+                      {resolveTitle(e.title, e.birth_year, e.deadline)}
+                    </div>
+                    <div className="truncate text-xs text-slate-500">
+                      {meta?.label ?? "Activity"}
+                      {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
+                    </div>
+                  </div>
+                  <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3.5 py-1.5 text-xs font-bold text-white group-hover:opacity-90">
+                    Respond →
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Trending across all of Campfire — click to start one in a group */}
       {trendingMeta && trending && (

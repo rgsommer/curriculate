@@ -68,6 +68,16 @@ const STEPS = [
   { n: "3", t: "Notices go home automatically", d: "When a student hits the threshold (or an immediate behaviour is logged), a clear, history-aware note goes to the parents — and the VP when it's a repeat." },
 ];
 
+const TEACHER_STEPS = [
+  { t: "Sign in", d: "Use your school account. If you were invited, open the invite email, set your password, and you're in." },
+  { t: "Tap “Log an incident”", d: "From your dashboard, hit the big Log button — it's built to work one-handed on a phone while you're still in the room." },
+  { t: "Find the student", d: "Search by name (any student in the school) and tap them. No need to teach them — if you saw it, you can log it." },
+  { t: "Pick the behaviour(s) and submit", d: "Tap one or more behaviours, add an optional note, and submit. Most behaviours add to the student's shared strike count; ones marked “immediate” notify the parent on the spot." },
+  { t: "Watch the result", d: "If that incident reaches the threshold, you'll see a notice was triggered — with a short window to cancel the send if it was a mistake." },
+  { t: "Check status & history", d: "Open a student any time to see their current strikes across all teachers and every note that's gone home." },
+  { t: "Clear your morning follow-ups", d: "Each morning you'll get a “Reminder for today” list of consequences to check off — mark each Done, Not done, or Waived." },
+];
+
 export default function FeaturesPage() {
   return (
     <div className="space-y-10">
@@ -118,6 +128,33 @@ export default function FeaturesPage() {
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{f.body}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* For teachers */}
+      <section>
+        <h2 className="text-xl font-semibold text-slate-900">For teachers — how to use it</h2>
+        <ol className="mt-4 space-y-3">
+          {TEACHER_STEPS.map((s, i) => (
+            <li key={i} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-4">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
+                {i + 1}
+              </span>
+              <div>
+                <p className="font-semibold text-slate-900">{s.t}</p>
+                <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{s.d}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-semibold">Good to know</p>
+          <ul className="mt-1 list-inside list-disc space-y-1">
+            <li>You can log <span className="font-medium">any</span> student in the school — not just your own class.</li>
+            <li>The count is <span className="font-medium">shared</span>: your strike adds to whatever other teachers have logged today.</li>
+            <li>When a notice fires you get a brief window to <span className="font-medium">cancel</span> before it sends.</li>
+            <li>Open a student to see their full cross-teacher status and every past notice.</li>
+          </ul>
         </div>
       </section>
 

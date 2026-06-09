@@ -24,8 +24,10 @@ import BehaviorIncident from "./models/BehaviorIncident.js";
 import BehaviorNotice from "./models/BehaviorNotice.js";
 import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
+import BehaviorFollowup from "./models/BehaviorFollowup.js";
 
 import { evaluateIncident } from "./lib/triggerLogic.js";
+import { nextSchoolDay } from "./lib/schoolCalendar.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { composeNotice, makeDefaultAiClient } from "./lib/aiNote.js";
@@ -165,6 +167,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "triggerCount", "fadeWindowDays", "vp", "branding", "channels",
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
+      "reminderTime", "manualNonSchoolDays",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -397,6 +400,66 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
   }
 });
 
+// Add a single student (admin) — used by the Setup "Add test student" button
+// and any one-off addition outside a bulk import.
+router.post("/students", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    if (!b.lastName && !b.firstName && !b.preferredName) {
+      return res.status(400).json({ ok: false, error: "A name is required" });
+    }
+    const parents = (Array.isArray(b.parents) ? b.parents : [])
+      .filter((p) => p && (p.email || p.name || p.edsbyParentId))
+      .map((p) => ({
+        name: String(p.name || "").trim(),
+        email: String(p.email || "").trim().toLowerCase(),
+        edsbyParentId: String(p.edsbyParentId || "").trim(),
+      }));
+    const student = await BehaviorStudent.create({
+      schoolId: req.schoolId,
+      externalId: String(b.externalId || "").trim(),
+      lastName: String(b.lastName || "").trim(),
+      firstName: String(b.firstName || "").trim(),
+      preferredName: String(b.preferredName || "").trim(),
+      gender: String(b.gender || "").trim(),
+      classGroup: String(b.classGroup || "").trim(),
+      grade: String(b.grade || "").trim(),
+      dob: b.dob ? new Date(b.dob) : null,
+      parents,
+    });
+    await audit(req.schoolId, "student.created", req, {
+      studentId: student._id,
+      meta: { name: `${student.firstName} ${student.lastName}`.trim(), test: !!b.test },
+    });
+    res.json({ ok: true, student });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Delete a student (admin). Hard delete + cascade their incidents and notices —
+// intended for cleaning up test data. The audit entry of the deletion is kept.
+router.delete("/students/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const inc = await BehaviorIncident.deleteMany({ studentId: student._id });
+    const not = await BehaviorNotice.deleteMany({ studentId: student._id });
+    await BehaviorStudent.deleteOne({ _id: student._id });
+    await audit(req.schoolId, "student.deleted", req, {
+      studentId: student._id,
+      meta: {
+        name: `${student.firstName} ${student.lastName}`.trim(),
+        incidentsRemoved: inc.deletedCount,
+        noticesRemoved: not.deletedCount,
+      },
+    });
+    res.json({ ok: true, incidentsRemoved: inc.deletedCount, noticesRemoved: not.deletedCount });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Behaviours (§5a) ─────────────────────────────────────────────────────────
 
 // Standard behaviours + this teacher's own custom ones (custom is private).
@@ -517,107 +580,139 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
   }
 });
 
-/**
- * Build, persist (queued), and schedule a notice home. Marks the contributing
- * incidents as spent and resets the student's shared threshold counter while
- * keeping history. Composes the note via AI with deterministic fallback.
- */
-async function fireNotice({ req, student, config, decision }) {
-  const contributing = decision.contributingIncidents;
-  const contribIds = contributing.map((i) => i._id);
-
-  // Resolve "from teachers" — the teachers whose incidents make up the strikes.
-  const teacherIds = [...new Set(contributing.map((i) => String(i.teacherId)))];
-  const teachers = await BehaviorTeacher.find({ _id: { $in: teacherIds } }).lean();
-  const teacherById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
-  const fromTeachers = contributing.map((i) => ({
-    teacherId: i.teacherId,
-    name: teacherById[String(i.teacherId)]?.name || "",
-    behaviorName: i.behaviorSnapshot?.name || "",
-  }));
-
-  const consequenceTexts = [
-    ...new Set(contributing.map((i) => i.behaviorSnapshot?.consequenceText).filter(Boolean)),
-  ];
-
-  // Channels: school default (enabled) unless the teacher overrode per notice.
-  let channels = [];
-  if (Array.isArray(req.body?.channelOverride) && req.body.channelOverride.length) {
-    channels = req.body.channelOverride.filter((c) => ["email", "edsby"].includes(c));
-  } else {
-    if (config?.channels?.edsby) channels.push("edsby");
-    if (config?.channels?.email) channels.push("email");
+// Resolve the channels for a send: per-notice override, else the school default.
+function resolveChannels(config, override) {
+  if (Array.isArray(override) && override.length) {
+    const c = override.filter((x) => ["email", "edsby"].includes(x));
+    if (c.length) return c;
   }
-  if (!channels.length) channels = ["email"];
+  const c = [];
+  if (config?.channels?.edsby) c.push("edsby");
+  if (config?.channels?.email) c.push("email");
+  return c.length ? c : ["email"];
+}
 
-  // Recipients: parents (+ VP if CC rule applies).
+// Double the first integer in a consequence string ("10× lines" -> "20× lines").
+// Returns { text, changed } — changed=false for non-countable consequences.
+function doubleConsequence(text) {
+  const s = String(text || "");
+  const m = s.match(/\d+/);
+  if (!m) return { text: s, changed: false };
+  const doubled = String(Number(m[0]) * 2);
+  return { text: s.slice(0, m.index) + doubled + s.slice(m.index + m[0].length), changed: true };
+}
+
+/**
+ * Shared core: compose the AI (or template) note, persist a queued notice, and
+ * schedule its dispatch after the cancellable window. Used by both the incident
+ * trigger path and the missed-consequence escalation.
+ */
+async function composeAndCreateNotice({
+  schoolId, student, config, reason, sequenceNo, ccVp, sentByTeacherId,
+  channels, consequenceTexts, fromTeachers, contextIncidents, triggeringIncidentIds,
+}) {
   const recipients = (student.parents || [])
     .filter((p) => p.email || p.edsbyParentId)
     .map((p) => ({ role: "parent", name: p.name, email: p.email, edsbyParentId: p.edsbyParentId }));
-  if (decision.ccVp && config?.vp?.email) {
+  if (ccVp && config?.vp?.email) {
     recipients.push({ role: "vp", name: config.vp.name, email: config.vp.email });
   }
 
-  // Compose the note (AI with fail-safe fallback).
-  const firstTs = contributing.length ? new Date(contributing[0].timestamp).getTime() : Date.now();
+  const firstTs = contextIncidents.length ? new Date(contextIncidents[0].timestamp).getTime() : Date.now();
   const daysSinceFirst = Math.max(0, Math.round((Date.now() - firstTs) / DAY_MS));
-  const me = teacherById[String(req.membership._id)] || (await BehaviorTeacher.findById(req.membership._id).lean());
-  const signature = (me?.signature || config?.branding?.signatureBlock || "").trim();
+  const sender = await BehaviorTeacher.findById(sentByTeacherId).lean();
+  const signature = (sender?.signature || config?.branding?.signatureBlock || "").trim();
 
   const ctx = {
     studentName: student.preferredName || student.firstName || "your child",
     pronoun: student.pronoun || "",
-    incidents: contributing.map((i) => ({
+    incidents: contextIncidents.map((i) => ({
       behaviorName: i.behaviorSnapshot?.name,
-      teacherName: teacherById[String(i.teacherId)]?.name || "",
+      teacherName: i.__teacherName || "",
       date: i.timestamp,
       detail: i.detailText || "",
     })),
     consequences: consequenceTexts,
-    sequenceNo: decision.sequenceNo,
+    sequenceNo,
     daysSinceFirst,
     schoolName: config?.branding?.schoolName || "",
     signature,
     toneGuidance: config?.branding?.toneGuidance || "",
-    ccVp: decision.ccVp,
+    ccVp,
   };
   const { text, aiUsed } = await composeNotice(ctx, { aiClient: makeDefaultAiClient(config || {}) });
 
   const cancelWindow = config?.cancelWindowSeconds ?? 60;
   const notice = await BehaviorNotice.create({
-    schoolId: req.schoolId,
-    studentId: student._id,
-    periodNo: 1,
-    sequenceNo: decision.sequenceNo,
-    reason: decision.reason,
-    fromTeachers,
-    triggeringIncidentIds: contribIds,
-    consequenceTexts,
-    channels,
-    recipients,
-    ccVp: decision.ccVp,
-    renderedText: text,
-    aiUsed,
-    status: "queued",
-    sentByTeacherId: req.membership._id,
+    schoolId, studentId: student._id, periodNo: 1, sequenceNo, reason,
+    fromTeachers, triggeringIncidentIds, consequenceTexts, channels, recipients, ccVp,
+    renderedText: text, aiUsed, status: "queued", sentByTeacherId,
     cancelUntil: new Date(Date.now() + cancelWindow * 1000),
   });
+  if (config?.aiSendMode !== "draft") scheduleDispatch(notice._id, cancelWindow);
+  return notice;
+}
 
-  // Mark contributing incidents as spent (keep history) and reset the shared
-  // counter — only the still-unspent ones, so parallel notices don't double-spend.
+// Create open follow-up tasks for the behaviours in a notice that carry a
+// follow-up type (brief §8b). Due = next school day at 9am.
+async function createFollowups({ schoolId, student, config, contributingIncidents, sentByTeacherId, noticeId, multiplier = 1, missLevel = 0 }) {
+  const byBehavior = new Map();
+  for (const inc of contributingIncidents) if (inc.behaviorId) byBehavior.set(String(inc.behaviorId), inc);
+  const due = nextSchoolDay(new Date(), { manualNonSchoolDays: config?.manualNonSchoolDays || [] });
+  const created = [];
+  for (const [bid, inc] of byBehavior) {
+    const beh = await Behavior.findById(bid).lean();
+    if (!beh || beh.followUpType === "none") continue;
+    created.push(
+      await BehaviorFollowup.create({
+        schoolId, studentId: student._id, behaviorId: bid, behaviorName: beh.name,
+        consequenceText: inc.behaviorSnapshot?.consequenceText || beh.consequenceText,
+        multiplier, missLevel, assignedByTeacherId: sentByTeacherId, noticeId, dueDate: due, status: "open",
+      })
+    );
+  }
+  return created;
+}
+
+/**
+ * Fire a notice home from a trigger decision. Composes + queues the note, marks
+ * contributing incidents spent, resets the shared threshold counter (threshold
+ * notices only), and opens follow-up tasks for any consequence with a follow-up.
+ */
+async function fireNotice({ req, student, config, decision }) {
+  const contributing = decision.contributingIncidents;
+  const contribIds = contributing.map((i) => i._id);
+
+  const teacherIds = [...new Set(contributing.map((i) => String(i.teacherId)))];
+  const teachers = await BehaviorTeacher.find({ _id: { $in: teacherIds } }).lean();
+  const teacherById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
+  for (const i of contributing) i.__teacherName = teacherById[String(i.teacherId)]?.name || "";
+  const fromTeachers = contributing.map((i) => ({
+    teacherId: i.teacherId,
+    name: teacherById[String(i.teacherId)]?.name || "",
+    behaviorName: i.behaviorSnapshot?.name || "",
+  }));
+  const consequenceTexts = [...new Set(contributing.map((i) => i.behaviorSnapshot?.consequenceText).filter(Boolean))];
+  const channels = resolveChannels(config, req.body?.channelOverride);
+
+  const notice = await composeAndCreateNotice({
+    schoolId: req.schoolId, student, config, reason: decision.reason, sequenceNo: decision.sequenceNo,
+    ccVp: decision.ccVp, sentByTeacherId: req.membership._id, channels, consequenceTexts, fromTeachers,
+    contextIncidents: contributing, triggeringIncidentIds: contribIds,
+  });
+
   await BehaviorIncident.updateMany(
     { _id: { $in: contribIds }, countedInNoticeId: null },
     { $set: { countedInNoticeId: notice._id } }
   );
-  await BehaviorStudent.updateOne(
-    { _id: student._id },
-    { $set: { thresholdResetAt: new Date(), lastNoticeAt: new Date() }, $inc: { noticesHomeCount: 1 } }
-  );
+  const counter = { $set: { lastNoticeAt: new Date() }, $inc: { noticesHomeCount: 1 } };
+  if (decision.reason === "threshold") counter.$set.thresholdResetAt = new Date();
+  await BehaviorStudent.updateOne({ _id: student._id }, counter);
 
-  // Schedule dispatch after the cancellable window (auto-send mode).
-  if (config?.aiSendMode !== "draft") {
-    scheduleDispatch(notice._id, cancelWindow);
-  }
+  await createFollowups({
+    schoolId: req.schoolId, student, config, contributingIncidents: contributing,
+    sentByTeacherId: req.membership._id, noticeId: notice._id,
+  });
   return notice;
 }
 
@@ -648,5 +743,120 @@ router.get("/notices/:id", authAny, loadMembership, async (req, res, next) => {
     next(err);
   }
 });
+
+// ── Consequence follow-ups + morning reminders (§8b) ─────────────────────────
+
+// A teacher's open follow-ups (default: mine). ?due=today limits to due-by-today.
+router.get("/followups", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const filter = { schoolId: req.schoolId, status: "open" };
+    if (req.query.mine !== "0") filter.assignedByTeacherId = req.membership._id;
+    if (req.query.due === "today") {
+      const end = new Date();
+      end.setHours(23, 59, 59, 999);
+      filter.dueDate = { $lte: end };
+    }
+    const followups = await BehaviorFollowup.find(filter).sort({ dueDate: 1 }).limit(200).lean();
+    const sIds = [...new Set(followups.map((f) => String(f.studentId)))];
+    const students = await BehaviorStudent.find({ _id: { $in: sIds } })
+      .select("firstName lastName preferredName classGroup")
+      .lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    res.json({ ok: true, followups: followups.map((f) => ({ ...f, student: sById[String(f.studentId)] || null })) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Mark a follow-up Done / Not done / Waived. "Not done" escalates (§8b).
+router.post("/followups/:id/status", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const status = req.body?.status;
+    if (!["done", "not_done", "waived"].includes(status)) {
+      return res.status(400).json({ ok: false, error: "status must be done | not_done | waived" });
+    }
+    const fu = await BehaviorFollowup.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!fu) return res.status(404).json({ ok: false, error: "Follow-up not found" });
+    if (fu.status !== "open") return res.status(409).json({ ok: false, error: `Already ${fu.status}` });
+
+    fu.status = status;
+    fu.resolvedAt = new Date();
+    fu.resolvedByTeacherId = req.membership._id;
+    await fu.save();
+
+    let escalation = null;
+    if (status === "not_done") escalation = await escalateMissedConsequence(fu, req);
+    await audit(req.schoolId, "followup.resolved", req, { studentId: fu.studentId, meta: { status, escalated: !!escalation } });
+    res.json({ ok: true, escalation });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Missed-consequence escalation (§8b): log a new incident, re-issue the
+ * consequence doubled (once, capped at 2×), and send a new note home. A first
+ * miss goes to parents; a second-or-later miss also CCs the VP. A fresh
+ * follow-up is opened so the loop can be tracked.
+ */
+async function escalateMissedConsequence(fu, req) {
+  const config = await BehaviorConfig.findOne({ schoolId: fu.schoolId }).lean();
+  const student = await BehaviorStudent.findOne({ _id: fu.studentId });
+  if (!student) return null;
+  const beh = fu.behaviorId ? await Behavior.findById(fu.behaviorId).lean() : null;
+  const sender = await BehaviorTeacher.findById(fu.assignedByTeacherId).lean();
+
+  const newMissLevel = (fu.missLevel || 0) + 1;
+  const firstMiss = newMissLevel === 1;
+
+  // (a) Log a new (system-generated) incident for the missed consequence.
+  const snapshot = {
+    name: fu.behaviorName || beh?.name || "Missed consequence",
+    description: beh?.description || "",
+    triggerMode: "THRESHOLD",
+    consequenceText: fu.consequenceText,
+  };
+  const sysInc = await BehaviorIncident.create({
+    schoolId: fu.schoolId, studentId: student._id, teacherId: fu.assignedByTeacherId,
+    behaviorId: fu.behaviorId || undefined, behaviorSnapshot: snapshot,
+    detailText: `Missed consequence: ${fu.behaviorName}`, immediateFlag: false, systemGenerated: true,
+  });
+
+  // (b) Re-issue the consequence: double once (cap 2×); don't double again.
+  let consequenceText = fu.consequenceText;
+  let multiplier = fu.multiplier || 1;
+  if (firstMiss) {
+    const dbl = doubleConsequence(fu.consequenceText);
+    consequenceText = dbl.text;
+    if (dbl.changed) multiplier = Math.min(2, multiplier * 2);
+  }
+
+  // First miss → parents; second-or-later → parent + VP.
+  const ccVp = newMissLevel >= 2;
+  const sequenceNo = (student.noticesHomeCount || 0) + 1;
+  const incObj = sysInc.toObject();
+  incObj.__teacherName = sender?.name || "";
+
+  const notice = await composeAndCreateNotice({
+    schoolId: fu.schoolId, student, config, reason: "missed_consequence", sequenceNo, ccVp,
+    sentByTeacherId: fu.assignedByTeacherId, channels: resolveChannels(config, null),
+    consequenceTexts: [consequenceText],
+    fromTeachers: [{ teacherId: fu.assignedByTeacherId, name: sender?.name || "", behaviorName: fu.behaviorName }],
+    contextIncidents: [incObj], triggeringIncidentIds: [sysInc._id],
+  });
+
+  await BehaviorIncident.updateOne({ _id: sysInc._id }, { $set: { countedInNoticeId: notice._id } });
+  await BehaviorStudent.updateOne({ _id: student._id }, { $inc: { noticesHomeCount: 1 }, $set: { lastNoticeAt: new Date() } });
+
+  // (c) Open a fresh follow-up so the re-issued consequence is tracked too.
+  const newFu = await BehaviorFollowup.create({
+    schoolId: fu.schoolId, studentId: student._id, behaviorId: fu.behaviorId, behaviorName: fu.behaviorName,
+    consequenceText, multiplier, missLevel: newMissLevel, assignedByTeacherId: fu.assignedByTeacherId,
+    noticeId: notice._id, dueDate: nextSchoolDay(new Date(), { manualNonSchoolDays: config?.manualNonSchoolDays || [] }),
+    status: "open",
+  });
+
+  return { noticeId: notice._id, followupId: newFu._id, missLevel: newMissLevel, multiplier, ccVp, consequenceText };
+}
 
 export default router;

@@ -56,6 +56,13 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Repeat-escalation scope for the per-behaviour consequence doubling (§5a).
     // Defaults to the same window as the strike count.
     repeatScopeDays: { type: Number, default: 30 },
+
+    // ── Morning reminders + school calendar (§8b) ──────────────────────────
+    // Local HH:MM the daily follow-up digest is sent. Division-wide.
+    reminderTime: { type: String, default: "07:30" },
+    // Admin-specified non-school days (YYYY-MM-DD) on top of weekends + Ontario
+    // statutory holidays — PA days, March break, etc. Used for "next school day".
+    manualNonSchoolDays: { type: [String], default: [] },
   },
   { timestamps: true }
 );
