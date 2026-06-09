@@ -844,8 +844,27 @@ function TestToolsSection({ email }: { email: string }) {
   const [houses, setHouses] = useState<any[]>([]);
   const [testEmailMsg, setTestEmailMsg] = useState("");
   const [testBusy, setTestBusy] = useState(false);
+  const [sampleHtml, setSampleHtml] = useState("");
+  const [sampleKind, setSampleKind] = useState<"negative" | "positive">("negative");
+  const [sampleMsg, setSampleMsg] = useState("");
+  const [sampleBusy, setSampleBusy] = useState(false);
 
   useEffect(() => { api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch(() => {}); }, []);
+
+  async function previewSample(kind: "negative" | "positive", email = false) {
+    setSampleBusy(true);
+    setSampleMsg("");
+    setSampleKind(kind);
+    try {
+      const r = await api<{ html: string; emailed: boolean; emailError?: string }>("/test-notice", { body: { kind, email } });
+      setSampleHtml(r.html || "");
+      if (email) setSampleMsg(r.emailed ? "✓ Sample emailed to you — check your inbox." : `✗ ${r.emailError || "send failed"}`);
+    } catch (e: any) {
+      setSampleMsg(`✗ ${e.message}`);
+    } finally {
+      setSampleBusy(false);
+    }
+  }
 
   async function setHouse(s: any, houseId: string) {
     try {
@@ -969,6 +988,35 @@ function TestToolsSection({ email }: { email: string }) {
           {testBusy ? "Sending…" : `Send test email to ${email}`}
         </button>
         {testEmailMsg && <p className={`mt-2 text-sm ${testEmailMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testEmailMsg}</p>}
+      </div>
+
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <p className="text-sm font-medium text-slate-700">Preview a sample notice</p>
+        <p className="mt-0.5 text-xs text-slate-500">See exactly what a family receives, with your branding &amp; signature. Nothing is logged or sent to a parent.</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button onClick={() => previewSample("negative")} disabled={sampleBusy}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            {sampleBusy && sampleKind === "negative" ? "…" : "Preview notice"}
+          </button>
+          <button onClick={() => previewSample("positive")} disabled={sampleBusy}
+            className="rounded-lg border border-green-300 px-3 py-1.5 text-sm text-green-700 disabled:opacity-40">
+            {sampleBusy && sampleKind === "positive" ? "…" : "Preview good-news note"}
+          </button>
+          {sampleHtml && (
+            <button onClick={() => previewSample(sampleKind, true)} disabled={sampleBusy}
+              className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+              Email this sample to me
+            </button>
+          )}
+        </div>
+        {sampleMsg && <p className={`mt-2 text-sm ${sampleMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{sampleMsg}</p>}
+        {sampleHtml && (
+          <iframe
+            title="Sample notice preview"
+            srcDoc={sampleHtml}
+            className="mt-3 h-[460px] w-full rounded-lg border border-slate-200 bg-white"
+          />
+        )}
       </div>
 
       <div className="mt-5 border-t border-slate-100 pt-4">

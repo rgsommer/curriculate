@@ -34,8 +34,8 @@ import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
-import { composeNotice, composePositiveNotice, makeDefaultAiClient } from "./lib/aiNote.js";
-import { emailShell, emailButton } from "./lib/emailTemplate.js";
+import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
+import { emailShell, emailButton, noteToHtml } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
 const router = express.Router();
@@ -422,6 +422,77 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
     } catch (mailErr) {
       return res.json({ ok: false, to, fromConfigured: !!fromAddr, error: mailErr?.message || String(mailErr) });
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Build a SAMPLE parent notice (with your branding + signature) so you can see
+// exactly what families receive. Returns the rendered HTML for an in-app preview
+// and, when { email:true }, sends it to you. Uses the deterministic template
+// (no AI cost) and made-up incidents — nothing is logged or sent to a parent.
+router.post("/test-notice", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const kind = req.body?.kind === "positive" ? "positive" : "negative";
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding").lean();
+    const schoolName = config?.branding?.schoolName || "";
+    const signature = (req.membership?.signature || config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim();
+    const studentName = "Alex";
+    const DAY = 24 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    let text;
+    if (kind === "positive") {
+      text = deterministicPositiveNote({
+        studentName, schoolName, signature,
+        incidents: [
+          { behaviorName: "Helped a classmate", teacherName: "Ms. Lee", date: new Date(now - 6 * DAY) },
+          { behaviorName: "Great effort in math", teacherName: "Mr. Patel", date: new Date(now - 3 * DAY) },
+          { behaviorName: "Showed leadership at recess", teacherName: "Ms. Lee", date: new Date(now - 1 * DAY) },
+        ],
+      });
+    } else {
+      text = deterministicNote({
+        studentName, schoolName, signature, sequenceNo: 1, daysSinceFirst: 3,
+        consequences: ["Write out the expectation 10× and return it signed."],
+        incidents: [
+          { behaviorName: "Talking during instruction", teacherName: "Ms. Lee", date: new Date(now - 3 * DAY) },
+          { behaviorName: "Disrupting the lesson", teacherName: "Mr. Patel", date: new Date(now - 1 * DAY) },
+          { behaviorName: "Out of seat repeatedly", teacherName: "Ms. Lee", date: new Date(now) },
+        ],
+        positives: [],
+      });
+    }
+
+    const subject = kind === "positive" ? `Good news about ${studentName} 🎉 (sample)` : `Behaviour notice — ${studentName} (sample)`;
+    const html = emailShell({
+      title: kind === "positive" ? "A note of good news" : "A note from school",
+      schoolName,
+      preheader: "Sample notice — preview only.",
+      accent: kind === "positive" ? "#16a34a" : "#0f172a",
+      footnote: "This is a SAMPLE preview — no incident was logged and no parent was contacted.",
+      contentHtml: noteToHtml(text),
+    });
+
+    let emailed = false;
+    let emailError = "";
+    if (req.body?.email) {
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      try {
+        await sendEmail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to: req.user.email,
+          subject,
+          text,
+          html,
+        });
+        emailed = true;
+      } catch (e) {
+        emailError = e?.message || String(e);
+      }
+    }
+
+    res.json({ ok: true, kind, subject, html, emailed, emailError });
   } catch (err) {
     next(err);
   }
