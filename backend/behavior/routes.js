@@ -826,6 +826,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           description: behavior.description,
           triggerMode: behavior.triggerMode,
           consequenceText: behavior.consequenceText,
+          points: behavior.points || 0,
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
@@ -958,6 +959,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           description: behavior.description,
           triggerMode: behavior.triggerMode,
           consequenceText: behavior.consequenceText,
+          points: behavior.points || 0,
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
@@ -1056,6 +1058,24 @@ async function composeAndCreateNotice({
     lastBeforeDays: lastPriorTs ? Math.round((Date.now() - lastPriorTs) / DAY_MS) : null,
   };
 
+  // Recent POSITIVE behaviours (points > 0) to acknowledge in the note as a
+  // balancing, encouraging note — within a generous window so a good week still
+  // shows up alongside a threshold notice.
+  const positiveWindowDays = Math.max(30, (config?.fadeWindowDays ?? 30) * 2);
+  const positiveInc = await BehaviorIncident.find({
+    studentId: student._id,
+    "behaviorSnapshot.points": { $gt: 0 },
+    timestamp: { $gt: new Date(Date.now() - positiveWindowDays * DAY_MS) },
+  })
+    .sort({ timestamp: -1 })
+    .limit(5)
+    .lean();
+  const positives = positiveInc.map((i) => ({
+    behaviorName: i.behaviorSnapshot?.name || "",
+    date: i.timestamp,
+    detail: i.detailText || "",
+  }));
+
   // Replace the legacy "nnn" name placeholder with the student's name; the AI
   // otherwise handles naming/pronouns naturally from studentName + pronoun.
   const studentName = student.preferredName || student.firstName || "your child";
@@ -1065,6 +1085,7 @@ async function composeAndCreateNotice({
     studentName,
     pronoun: student.pronoun || "",
     history,
+    positives: positives.map((p) => ({ ...p, detail: personalize(p.detail) })),
     incidents: contextIncidents.map((i) => ({
       behaviorName: i.behaviorSnapshot?.name,
       teacherName: i.__teacherName || "",

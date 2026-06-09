@@ -23,6 +23,7 @@ const DEFAULT_TIMEOUT_MS = 12_000;
  * @property {string} studentName      preferred name (or first name)
  * @property {string} pronoun          e.g. "they/them" (optional)
  * @property {Array}  incidents        [{ behaviorName, teacherName, date, detail }]
+ * @property {Array}  positives        recent positive behaviours to acknowledge [{ behaviorName, date, detail }]
  * @property {string[]} consequences   consequence text(s) for the triggering behaviour(s)
  * @property {number} sequenceNo       1 = first notice this period
  * @property {number} daysSinceFirst   days since the first incident this period
@@ -73,6 +74,17 @@ export function deterministicNote(ctx) {
     for (const c of ctx.consequences) lines.push(`  • ${c}`);
     lines.push("");
   }
+  // A balancing positive note — positive behaviours are acknowledged, never
+  // counted against the student.
+  if ((ctx.positives || []).length) {
+    const names = [...new Set(ctx.positives.map((p) => p.behaviorName).filter(Boolean))];
+    if (names.length) {
+      lines.push(
+        `On a positive note, we also want to recognise ${name} for ${names.slice(0, 3).join(", ")} recently — thank you for encouraging that at home too.`
+      );
+      lines.push("");
+    }
+  }
   lines.push(
     isFirst
       ? `Please take a moment to talk with ${name} about these expectations. Thank you for your partnership.`
@@ -107,6 +119,13 @@ export function buildPrompt(ctx) {
         .join("\n")
     : "";
 
+  // Recent positive behaviours to acknowledge — included as a genuine, balancing
+  // note, never weighed against the student.
+  const positives = (ctx.positives || []).map((p) => p.behaviorName).filter(Boolean);
+  const positivesBlock = positives.length
+    ? `POSITIVES TO ACKNOWLEDGE: this student was recently recognised for: ${[...new Set(positives)].slice(0, 4).join(", ")}. Include ONE brief, warm sentence near the end acknowledging this positive — frame it as genuine encouragement, NOT as offsetting or excusing the concerns above, and do not assign or mention points.`
+    : "";
+
   return [
     `You are a teacher writing a brief, respectful note home to a parent about a student's behaviour.`,
     ctx.toneGuidance ? `Division tone guidance: ${ctx.toneGuidance}` : "",
@@ -120,6 +139,7 @@ export function buildPrompt(ctx) {
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,
     historyBlock,
+    positivesBlock,
     (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}.` : "",
     ctx.ccVp ? `Mention that the Vice-Principal has been copied.` : "",
     `Sign off with this signature block exactly:\n${ctx.signature || ""}`,

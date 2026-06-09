@@ -70,6 +70,28 @@ test("buildPrompt omits the background block when there's no history", () => {
   assert.doesNotMatch(p, /BACKGROUND/);
 });
 
+test("Positives are acknowledged in the note and prompt, never as offset", () => {
+  const withPositives = {
+    ...ctx,
+    positives: [
+      { behaviorName: "Helped a classmate", date: "2026-06-06", detail: "" },
+      { behaviorName: "Great effort in math", date: "2026-06-07", detail: "" },
+    ],
+  };
+  const note = deterministicNote(withPositives);
+  assert.match(note, /positive note/i);
+  assert.match(note, /Helped a classmate/);
+
+  const p = buildPrompt({ ...withPositives, history: { priorNotices: 0, priorIncidentCount: 0, behaviourTypes: [], lastBeforeDays: null } });
+  assert.match(p, /POSITIVES TO ACKNOWLEDGE/);
+  assert.match(p, /NOT as offsetting/i);
+});
+
+test("No positives → no positive line in the note", () => {
+  const note = deterministicNote({ ...ctx, positives: [] });
+  assert.doesNotMatch(note, /positive note/i);
+});
+
 test("Deterministic note adapts tone: first vs repeat", () => {
   const first = deterministicNote({ ...ctx, sequenceNo: 1 });
   const repeat = deterministicNote({ ...ctx, sequenceNo: 2, ccVp: true });

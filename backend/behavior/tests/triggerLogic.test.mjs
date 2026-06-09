@@ -117,6 +117,30 @@ test("INTERACTION never notifies and never counts", () => {
   assert.equal(d.shouldNotify, false);
 });
 
+test("POSITIVE behaviour (points > 0) never notifies, even in THRESHOLD mode", () => {
+  // A positive incident sitting on top of 2 real strikes must NOT trigger.
+  const positive = { ...inc({ id: "p", mode: "THRESHOLD", daysAgo: 0 }) };
+  positive.behaviorSnapshot = { ...positive.behaviorSnapshot, name: "Helped a classmate", points: 5 };
+  const d = evaluateIncident({
+    newIncident: positive,
+    priorIncidents: [inc({ id: "a", daysAgo: 1 }), inc({ id: "b", daysAgo: 0 })],
+    config: { triggerCount: 3, fadeWindowDays: 30 },
+    student: { noticesHomeCount: 0 },
+    asOf: now,
+  });
+  assert.equal(d.shouldNotify, false);
+});
+
+test("POSITIVE incidents are excluded from the active strike count", () => {
+  const positive = { ...inc({ id: "p", mode: "THRESHOLD", daysAgo: 0 }) };
+  positive.behaviorSnapshot = { ...positive.behaviorSnapshot, points: 5 };
+  const active = activeThresholdIncidents(
+    [inc({ id: "a", daysAgo: 2 }), inc({ id: "b", daysAgo: 1 }), positive],
+    { fadeWindowDays: 30, thresholdResetAt: null, asOf: now }
+  );
+  assert.equal(active.length, 2); // only the two real strikes
+});
+
 test("IMMEDIATE pulls in the queued threshold incidents", () => {
   const prior = [inc({ id: "a", daysAgo: 1 }), inc({ id: "b", daysAgo: 0 })]; // 2 queued
   const d = evaluateIncident({

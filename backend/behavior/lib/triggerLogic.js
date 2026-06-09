@@ -37,6 +37,9 @@ export function activeThresholdIncidents(incidents, { fadeWindowDays, thresholdR
   const resetAt = thresholdResetAt ? new Date(thresholdResetAt).getTime() : 0;
   return incidents
     .filter((inc) => {
+      // Positive behaviours (points > 0) are rewards — never part of the trigger
+      // mechanism, regardless of their mode.
+      if ((inc.behaviorSnapshot?.points || 0) > 0) return false;
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
       if (mode !== "THRESHOLD") return false;
       if (inc.countedInNoticeId) return false; // already spent on a prior notice
@@ -71,6 +74,12 @@ export function evaluateIncident({ newIncident, priorIncidents, config, student,
 
   const mode =
     newIncident.behaviorSnapshot?.triggerMode || (newIncident.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+
+  // POSITIVE behaviour (points > 0): a reward, documented only — never notifies
+  // and never counts toward strikes, whatever its mode.
+  if ((newIncident.behaviorSnapshot?.points || 0) > 0) {
+    return { shouldNotify: false, reason: null, contributingIncidents: [], sequenceNo: 0, ccVp: false };
+  }
 
   // INTERACTION: documented only — never notifies, never counts.
   if (mode === "INTERACTION") {
