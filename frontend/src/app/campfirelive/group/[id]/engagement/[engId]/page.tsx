@@ -157,8 +157,10 @@ export default function EngagementDetailPage() {
   // Local UI state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
-  // Truth or Dare: which one the responder picked.
+  // Truth or Dare: which one the responder picked + an optional photo (proof).
   const [todMode, setTodMode] = useState<"truth" | "dare" | null>(null);
+  const [todPhoto, setTodPhoto] = useState<string | null>(null);
+  const [todUploading, setTodUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Editing an already-submitted answer (before the reveal).
   const [editingResponse, setEditingResponse] = useState(false);
@@ -871,6 +873,7 @@ export default function EngagementDetailPage() {
     if (typeof c.text === "string") setTextInput(c.text);
     if (typeof c.caption === "string") setTextInput(c.caption);
     if (c.mode === "truth" || c.mode === "dare") setTodMode(c.mode);
+    setTodPhoto(typeof c.photo === "string" ? c.photo : null);
     if (engagement.type === "most_likely" && c.answers)
       setMlVotes(c.answers as Record<number, string>);
     if (engagement.type === "accountability" && c.answers) {
@@ -923,19 +926,42 @@ export default function EngagementDetailPage() {
     setTextInput("");
   };
 
-  // Truth or Dare: store which one they picked alongside their answer.
+  // Truth or Dare: upload an optional proof photo for the answer.
+  const handleTodPhotoUpload = async (file: File | undefined) => {
+    if (!file || !user) return;
+    setTodUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${user.id}/${engagementId}/tod-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("campfire-media")
+      .upload(path, file);
+    if (upErr) {
+      alert("Upload failed: " + upErr.message);
+      setTodUploading(false);
+      return;
+    }
+    const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
+    setTodPhoto(data.publicUrl);
+    setTodUploading(false);
+  };
+
+  // Truth or Dare: store which one they picked + their answer (text and/or photo).
   const handleTruthOrDareSubmit = async () => {
     if (!todMode) {
       alert("Pick Truth or Dare first.");
       return;
     }
-    if (!textInput.trim()) return;
-    if (hasProfanity(textInput)) {
+    const text = textInput.trim();
+    if (!text && !todPhoto) {
+      alert("Add an answer or a photo.");
+      return;
+    }
+    if (text && hasProfanity(text)) {
       alert("Let's keep it kind — please reword your response.");
       return;
     }
     setSubmitting(true);
-    await saveResponse({ mode: todMode, text: textInput.trim() });
+    await saveResponse({ mode: todMode, text, photo: todPhoto ?? undefined });
     setSubmitting(false);
     setTextInput("");
   };
@@ -1596,9 +1622,39 @@ export default function EngagementDetailPage() {
               rows={4}
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
             />
+            {/* Optional proof photo — handy when the dare needs it */}
+            {todPhoto ? (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={todPhoto}
+                  alt="Your proof"
+                  className="max-h-48 rounded-xl border border-slate-200 object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => setTodPhoto(null)}
+                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full border border-slate-300 bg-white text-xs text-slate-500 shadow hover:text-red-600"
+                  aria-label="Remove photo"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                {todUploading ? "Uploading…" : "📷 Add a photo (optional)"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  disabled={todUploading}
+                  onChange={(e) => handleTodPhotoUpload(e.target.files?.[0])}
+                />
+              </label>
+            )}
             <button
               onClick={handleTruthOrDareSubmit}
-              disabled={!textInput.trim() || submitting}
+              disabled={(!textInput.trim() && !todPhoto) || submitting || todUploading}
               className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
               {submitting ? "Submitting..." : "🔒 Lock in my answer"}
@@ -2399,6 +2455,16 @@ export default function EngagementDetailPage() {
                 )}
               {content.text && (
                 <p className="text-sm text-slate-700">{content.text as string}</p>
+              )}
+              {typeof content.photo === "string" && content.photo && (
+                <div className="mt-2 overflow-hidden rounded-lg">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={content.photo as string}
+                    alt="Proof"
+                    className="max-h-64 w-full object-cover"
+                  />
+                </div>
               )}
               {content.option && (
                 <p className="text-sm text-slate-700 font-medium">Voted: {content.option as string}</p>
