@@ -21,6 +21,7 @@ export default function LogIncidentPage() {
   const [behaviorId, setBehaviorId] = useState("");
   const [note, setNote] = useState("");
 
+  const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<NoticeResult>(null);
   const [trigger, setTrigger] = useState<{ date: string; teacher: string; offense: string; comment: string }[]>([]);
@@ -37,6 +38,18 @@ export default function LogIncidentPage() {
       .then((d) => setBehaviors(d.behaviors || []))
       .catch((e) => setError(e.message));
   }, []);
+
+  // When a student is selected, load their current strikes + recent incidents
+  // so the teacher sees the context while choosing the new incident.
+  useEffect(() => {
+    if (!student) {
+      setStatus(null);
+      return;
+    }
+    api<{ activeCount: number; triggerCount: number; incidents: any[] }>(`/students/${student._id}`)
+      .then((d) => setStatus({ activeCount: d.activeCount, triggerCount: d.triggerCount, incidents: d.incidents || [] }))
+      .catch(() => setStatus(null));
+  }, [student]);
 
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
   const classes = useMemo(() => {
@@ -175,6 +188,21 @@ export default function LogIncidentPage() {
         <h1 className="text-xl font-semibold">Log an incident</h1>
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
 
+        {/* Back navigation */}
+        <div className="flex items-center gap-3 text-sm">
+          <button type="button" onClick={() => setStudent(null)} className="text-slate-600 hover:text-slate-900">
+            ← {selectedClass || "students"}
+          </button>
+          <span className="text-slate-300">·</span>
+          <button
+            type="button"
+            onClick={() => { setStudent(null); setSelectedClass(""); setQuery(""); }}
+            className="text-slate-600 hover:text-slate-900"
+          >
+            all classes
+          </button>
+        </div>
+
         <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
           <div>
             <p className="font-semibold">
@@ -182,11 +210,40 @@ export default function LogIncidentPage() {
             </p>
             <p className="text-sm text-slate-400">{[student.classGroup, gradeLabel(student.grade)].filter(Boolean).join(" · ")}</p>
           </div>
-          <div className="flex items-center gap-4">
-            <Link href={`/behavior/student/${student._id}`} className="text-sm text-slate-500 underline">history</Link>
-            <button type="button" onClick={() => setStudent(null)} className="text-sm text-slate-500 underline">change</button>
-          </div>
+          <Link href={`/behavior/student/${student._id}`} className="text-sm text-slate-500 underline">full history</Link>
         </div>
+
+        {/* Current strikes + recent incidents for context while logging */}
+        {status && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-sm font-semibold">Current strikes (all teachers)</h2>
+              <span className={`text-sm font-medium ${status.activeCount >= status.triggerCount ? "text-red-600" : "text-slate-500"}`}>
+                {status.activeCount} / {status.triggerCount}
+              </span>
+            </div>
+            {status.incidents.length > 0 ? (
+              <ul className="mt-2 divide-y divide-slate-100">
+                {status.incidents.slice(0, 5).map((i, idx) => (
+                  <li key={idx} className="py-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">{i.behaviorSnapshot?.name}</span>
+                      <span className="text-slate-400">
+                        {new Date(i.timestamp).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                      </span>
+                    </div>
+                    <div className="text-slate-500">
+                      {i.teacherName || "—"}
+                      {i.detailText ? ` · ${i.detailText}` : ""}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-sm text-slate-400">No prior incidents.</p>
+            )}
+          </div>
+        )}
 
         <label className="block">
           <span className="mb-1 block text-sm font-medium text-slate-600">Incident</span>

@@ -435,13 +435,19 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
 
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: -1 }).lean();
 
+    // Enrich incidents with the logging teacher's name for display.
+    const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
+    const incidentsOut = incidents.map((i) => ({ ...i, teacherName: tName[String(i.teacherId)] || "" }));
+
     res.json({
       ok: true,
       student,
       activeCount,
       triggerCount: config?.triggerCount ?? 3,
       noticesHomeCount: student.noticesHomeCount || 0,
-      incidents,
+      incidents: incidentsOut,
       notices,
     });
   } catch (err) {
