@@ -583,19 +583,33 @@ function EdsbySection({ edsby }: { edsby: any }) {
       </details>
 
       <details className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        <summary className="cursor-pointer font-medium text-slate-700">Auto-push from your own browser script (advanced)</summary>
+        <summary className="cursor-pointer font-medium text-slate-700">Keep the cookie fresh automatically (recommended)</summary>
         <p className="mt-2">
-          If you have a browser script that can read your Edsby cookie, generate a token and POST the creds to the app —
-          no manual paste. The token is the auth; keep it secret. Regenerating invalidates the old one.
+          Install our small browser extension and it pushes a fresh Edsby cookie to the app on every login/refresh —
+          no more DevTools, no expiry surprises. Works in Chrome, Edge, and Vivaldi.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button type="button" onClick={genIngestToken} disabled={tokenBusy}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
-            {tokenBusy ? "Generating…" : ingestTokenSet ? "Regenerate token" : "Generate token"}
+            {tokenBusy ? "Generating…" : ingestTokenSet ? "Regenerate token" : "1. Generate token"}
           </button>
           {ingestToken && <code className="break-all rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">{ingestToken}</code>}
           {!ingestToken && ingestTokenSet && <span className="text-slate-400">A token already exists (hidden) — regenerate to see a new one.</span>}
         </div>
+        <ol className="mt-2 list-decimal space-y-1 pl-4">
+          <li>Generate the token above and copy it.</li>
+          <li><a href="/edsby-cookie-sync.zip" download className="text-slate-700 underline">Download the extension</a>, unzip it, then in <code className="rounded bg-slate-100 px-1">chrome://extensions</code> turn on Developer mode → <span className="font-medium">Load unpacked</span> → pick the folder.</li>
+          <li>Open the extension&apos;s Options, enter <span className="font-medium">your Edsby host</span> and paste the token, then <span className="font-medium">Push current cookie now</span>.</li>
+        </ol>
+        <p className="mt-2 text-slate-400">The token is the credential — keep it secret. Regenerating it here revokes the old one (update the extension afterwards).</p>
+      </details>
+
+      <details className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <summary className="cursor-pointer font-medium text-slate-700">Push from your own script instead (advanced)</summary>
+        <p className="mt-2">
+          Prefer your own userscript? Generate the token above, then POST the creds to the endpoint below. The token is
+          the auth (header <code className="rounded bg-slate-100 px-1">x-ingest-token</code>); it accepts any of cookie, formkey, jver, cver, userNid, zoomId, baseUrl.
+        </p>
         {ingestToken && (
           <>
             <p className="mt-2">Endpoint: <code className="rounded bg-slate-100 px-1">{API_BASE}/api/behavior/edsby/ingest</code></p>

@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "Behaviours — Edsby Cookie Sync",
+  "description": "Keeps your Edsby session cookie synced to the Behaviours app so parent notices can post via Edsby without re-pasting it.",
+  "version": "1.0.0",
+  "permissions": [
+    "cookies",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*.edsby.com/*",
+    "https://api.curriculate.net/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "action": {
+    "default_title": "Edsby Cookie Sync — click to push the current cookie now"
+  }
+}
