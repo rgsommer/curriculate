@@ -108,7 +108,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
             {b.name}
             {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
-            {housesOn && b.points ? <PointsBadge points={b.points} /> : null}
+            {b.points ? <PointsBadge points={b.points} /> : null}
           </span>
           <span className="text-xs text-slate-400">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
@@ -154,7 +154,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
       <div className="mb-2 inline-flex gap-1.5 text-xs font-semibold">
         <button type="button" onClick={() => setKind("negative")}
           className={`rounded-lg border px-3 py-1.5 ${!positive ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}>✕ Negative</button>
-        <button type="button" onClick={() => setKind("positive")}
+        <button type="button" onClick={() => { setKind("positive"); if (Number(points) <= 0) setPoints(1); }}
           className={`rounded-lg border px-3 py-1.5 ${positive ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>✓ Positive</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
@@ -173,19 +173,18 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             </select>
           </>
         )}
-        {housesOn && (
+        {/* Points are the reward value for positives, so always shown there;
+            for negatives they're a house deduction, shown only with Houses on. */}
+        {(positive || housesOn) && (
           <label className={`flex flex-wrap items-center gap-2 text-xs text-slate-500 col-span-2`}>
-            House points
+            {positive ? "Points" : "House points"}
             <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
             <span className="text-slate-400">
               {positive
-                ? "awarded to the student’s house when logged. Positive behaviours never count as a strike."
+                ? "added to the student’s house when logged. Positive behaviours never count as a strike."
                 : "negative deducts from the student’s house; leave 0 for no points."}
             </span>
           </label>
-        )}
-        {positive && !housesOn && (
-          <p className="col-span-2 text-xs text-slate-400">Documented as a positive — it never counts as a strike. (Turn on Houses in Setup to attach points.)</p>
         )}
         <div className={`flex items-center justify-end gap-2 ${interaction || positive ? "col-span-2" : ""}`}>
           {add && allowStandard && (
