@@ -226,10 +226,12 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
   const [role, setRole] = useState("teacher");
   const [result, setResult] = useState<any>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function send() {
     setErr(null);
     setResult(null);
+    setBusy(true);
     const list = emails.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
     try {
       const r = await api("/invite", { body: { emails: list, role } });
@@ -237,6 +239,8 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
       setEmails("");
     } catch (e: any) {
       setErr(e.message);
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -255,7 +259,9 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
           <option value="principal">Principal (read-only)</option>
           {isOriginator && <option value="admin">Admin</option>}
         </select>
-        <button onClick={send} className="rounded-lg bg-slate-900 px-4 py-2 text-white">Invite</button>
+        <button onClick={send} disabled={busy || !emails.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+          {busy ? "Sending…" : "Invite"}
+        </button>
       </div>
       {result && (
         <div className="mt-2 text-sm">
