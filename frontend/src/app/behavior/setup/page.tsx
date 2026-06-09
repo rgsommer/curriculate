@@ -319,8 +319,23 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const [enabled, setEnabled] = useState(!!edsby?.enabled);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [testMsg, setTestMsg] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
   const cookieSet = !!edsby?.cookieConfigured;
   const formkeySet = !!edsby?.formkeyConfigured;
+
+  async function testEdsby() {
+    setTestBusy(true);
+    setTestMsg("");
+    try {
+      const r = await api<{ ok: boolean; message?: string; error?: string }>("/test-edsby", { body: {} });
+      setTestMsg(r.ok ? `✓ ${r.message || "Connected."}` : `✗ ${r.error || "Failed"}`);
+    } catch (e: any) {
+      setTestMsg(`✗ ${e.message}`);
+    } finally {
+      setTestBusy(false);
+    }
+  }
 
   async function save() {
     setErr(null);
@@ -374,9 +389,15 @@ function EdsbySection({ edsby }: { edsby: any }) {
       <label className="mt-1 flex items-center gap-2 text-sm">
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Send notices via Edsby
       </label>
-      <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white">
-        {saved ? "Saved ✓" : "Save Edsby connection"}
-      </button>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button onClick={save} className="rounded-lg bg-slate-900 px-4 py-2 text-white">
+          {saved ? "Saved ✓" : "Save Edsby connection"}
+        </button>
+        <button onClick={testEdsby} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {testBusy ? "Testing…" : "Test connection"}
+        </button>
+      </div>
+      {testMsg && <p className={`mt-2 text-sm ${testMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testMsg}</p>}
       <p className="mt-2 text-xs text-amber-700">
         The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
         Parent Edsby nids still need harvesting from Edsby (next step).

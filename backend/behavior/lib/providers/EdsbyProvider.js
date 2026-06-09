@@ -36,6 +36,45 @@ export class EdsbyProvider extends NotificationProvider {
     return "edsby";
   }
 
+  /**
+   * Verify the session works: do an authenticated request that returns a fresh
+   * _formkey (mirrors the school's refreshEdsbyFormkey_). Confirms the cookie is
+   * valid and the post path will authenticate — without messaging a parent.
+   * Returns { ok, message?, error?, formkey? }.
+   */
+  async testConnection(zoomId) {
+    if (!this.baseUrl || !this.cookie) return { ok: false, error: "Edsby not connected — set base URL + session cookie." };
+    if (!this.userNid) return { ok: false, error: "Edsby user nid not set." };
+    const zid = String(zoomId || "").trim();
+    if (!zid) return { ok: false, error: "A Zoom/class id is needed for the connection test — set it in the Edsby connection." };
+
+    const url = `${this.baseUrl}/core/node.json/${zid}?xds=ZoomMyStudents&_method=GET`;
+    const boundary = "----CurriculateTest" + Date.now();
+    const payload =
+      `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${this.formkey || ""}\r\n--${boundary}--\r\n`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Cookie: this.cookie,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "x-xds-jver": this.jver,
+        "x-xds-cver": this.cver,
+        "x-edsby-client-request-queue": "net::post",
+        Origin: this.baseUrl,
+        Referer: `${this.baseUrl}/p/ZoomMyStudents/${zid}`,
+      },
+      body: payload,
+      redirect: "manual",
+    });
+    const text = await res.text().catch(() => "");
+    if (/login/i.test(text) && /<form/i.test(text)) {
+      return { ok: false, error: "Edsby session cookie has expired — re-paste it in Setup." };
+    }
+    const m = text.match(/"_formkey"\s*:\s*"([^"]+)"/);
+    if (m) return { ok: true, message: "Edsby session is valid — authenticated and refreshed the formkey.", formkey: m[1] };
+    return { ok: false, error: `Edsby responded ${res.status}; could not read a formkey (check user nid / Zoom id / jver / cver / cookie).` };
+  }
+
   async send({ recipient, body }) {
     if (!this.baseUrl || !this.cookie) {
       return { ok: false, error: "Edsby not connected (set base URL + session cookie in Setup)", channel: this.key };

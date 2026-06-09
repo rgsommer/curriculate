@@ -28,7 +28,8 @@ import BehaviorFollowup from "./models/BehaviorFollowup.js";
 
 import { evaluateIncident, activeThresholdIncidents } from "./lib/triggerLogic.js";
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
-import { encrypt } from "./lib/secretBox.js";
+import { encrypt, decrypt } from "./lib/secretBox.js";
+import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { composeNotice, makeDefaultAiClient } from "./lib/aiNote.js";
@@ -255,6 +256,32 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
     }
   } catch (err) {
     next(err);
+  }
+});
+
+// Test the Edsby connection (admin): authenticates with the stored cookie and
+// refreshes the formkey. Saves the fresh formkey on success. Doesn't message a
+// parent. The actual broadcast is exercised when a real notice sends via Edsby.
+router.post("/test-edsby", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const e = config?.edsby || {};
+    const provider = new EdsbyProvider({
+      baseUrl: e.baseUrl,
+      cookie: decrypt(e.cookieEnc),
+      formkey: decrypt(e.formkeyEnc),
+      jver: e.jver,
+      cver: e.cver,
+      userNid: e.userNid,
+    });
+    const r = await provider.testConnection(e.zoomId);
+    if (r.ok && r.formkey) {
+      await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+    }
+    await audit(req.schoolId, "edsby.test", req, { meta: { ok: r.ok } });
+    res.json({ ok: r.ok, message: r.message, error: r.error });
+  } catch (err) {
+    res.json({ ok: false, error: err?.message || String(err) });
   }
 });
 
