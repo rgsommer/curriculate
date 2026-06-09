@@ -405,20 +405,26 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const cookieSet = cookieStored;
   const formkeySet = formkeyStored;
 
-  async function detectVersions() {
+  // One tap: auto-detect jver/cver and (if the cookie is stored) refresh the
+  // formkey — pulling whatever is missing/stale.
+  async function refreshEdsby() {
     setDetectBusy(true);
     setDetectMsg("");
     try {
-      const r = await api<{ ok: boolean; jver?: string; cver?: string; error?: string }>("/edsby/fetch-versions", {
-        body: { baseUrl: baseUrl.trim() },
-      });
-      if (r.ok) {
-        if (r.jver) setJver(r.jver);
-        if (r.cver) setCver(r.cver);
-        setDetectMsg(`✓ Found${r.jver ? ` jver` : ""}${r.cver ? `${r.jver ? " &" : ""} cver` : ""} — review, then Save.`);
-      } else {
-        setDetectMsg(`✗ ${r.error || "Couldn't auto-detect"}`);
-      }
+      const r = await api<{
+        ok: boolean; jver?: string; cver?: string; updated?: string[];
+        formkeyOk?: boolean | null; formkeyError?: string; notes?: string[]; error?: string;
+      }>("/edsby/refresh", { body: { baseUrl: baseUrl.trim() } });
+      if (!r.ok) { setDetectMsg(`✗ ${r.error || "Refresh failed"}`); return; }
+      if (r.jver) setJver(r.jver);
+      if (r.cver) setCver(r.cver);
+      if (r.updated?.includes("formkey")) setFormkeyStored(true);
+      const parts: string[] = [];
+      if (r.updated?.length) parts.push(`Updated: ${r.updated.join(", ")}`);
+      if (r.formkeyOk === false && r.formkeyError) parts.push(`formkey: ${r.formkeyError}`);
+      if (r.notes?.length) parts.push(r.notes.join("; "));
+      const good = (r.updated?.length || 0) > 0 && r.formkeyOk !== false;
+      setDetectMsg(`${good ? "✓" : "•"} ${parts.join(" · ") || "Nothing to update."}`);
     } catch (e: any) {
       setDetectMsg(`✗ ${e.message}`);
     } finally {
@@ -478,8 +484,9 @@ function EdsbySection({ edsby }: { edsby: any }) {
       <p className="mt-1 text-sm text-slate-500">
         Edsby has no public API, so notices are posted using your school&apos;s signed-in session — each
         parent messaged separately via their Edsby nid. The cookie + formkey are stored <span className="font-medium">encrypted</span> and never shown again.
-        Set the base URL, then <span className="font-medium">Auto-detect jver/cver</span>. The cookie can&apos;t be fetched
-        for you (browsers block reading another site&apos;s session) — grab it once from DevTools.
+        Set the base URL, paste the cookie once, then hit <span className="font-medium">Refresh from Edsby</span> — it pulls
+        jver/cver and refreshes the formkey. The cookie itself can&apos;t be fetched for you (browsers block reading another
+        site&apos;s session), so it stays a manual paste.
       </p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <div className="mt-3 grid grid-cols-2 gap-3">
@@ -500,12 +507,18 @@ function EdsbySection({ edsby }: { edsby: any }) {
         </Field>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <button type="button" onClick={detectVersions} disabled={detectBusy || !baseUrl.trim()}
+        <button type="button" onClick={refreshEdsby} disabled={detectBusy || !baseUrl.trim()}
           className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
-          {detectBusy ? "Detecting…" : "Auto-detect jver/cver from Edsby"}
+          {detectBusy ? "Refreshing…" : "Refresh from Edsby (jver/cver + formkey)"}
         </button>
-        {detectMsg && <span className={`text-xs ${detectMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{detectMsg}</span>}
+        {detectMsg && <span className={`text-xs ${detectMsg.startsWith("✓") ? "text-green-700" : detectMsg.startsWith("✗") ? "text-red-600" : "text-slate-500"}`}>{detectMsg}</span>}
       </div>
+      <p className="mt-1 text-xs text-slate-400">
+        Can&apos;t find jver/cver by hand? In DevTools → Network, click any{" "}
+        <code className="rounded bg-slate-100 px-1">?xds=Panorama</code> request → <span className="font-medium">Headers → Request Headers</span>
+        {" "}→ copy <code className="rounded bg-slate-100 px-1">x-xds-jver</code> and <code className="rounded bg-slate-100 px-1">x-xds-cver</code>. (jver is also the
+        {" "}<code className="rounded bg-slate-100 px-1">_i=</code> hash on engine.min.js.)
+      </p>
       <Field label={`Session cookie ${cookieSet ? "(stored ✓ — blank keeps it)" : ""}`}>
         <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={2}
           placeholder={cookieSet ? "•••••••• (already saved)" : "paste the Edsby session cookie"} className={inputCls} />

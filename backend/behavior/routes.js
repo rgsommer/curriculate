@@ -241,44 +241,86 @@ router.put("/config/edsby", authAny, loadMembership, requireAdmin, async (req, r
   }
 });
 
-// Best-effort auto-detect of Edsby's jver/cver from the public bootstrap served
-// on the base URL, so admins don't have to harvest them by hand. The cookie +
-// formkey CANNOT be auto-fetched (they're login-gated / HttpOnly) — manual.
-router.post("/edsby/fetch-versions", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+// Scrape Edsby's jver/cver from a fetched page. jver is the engine bundle hash
+// (engine.min.js?..._i=<hash>); cver is the bundle version. Tolerant of layout.
+function extractEdsbyVersions(html) {
+  const grab = (k) => {
+    for (const re of [
+      new RegExp(`["']?${k}["']?\\s*[:=]\\s*["']([A-Za-z0-9._-]+)["']`, "i"), // jver:"abc"
+      new RegExp(`[?&]${k}=([A-Za-z0-9._-]+)`, "i"), // ...?jver=abc
+    ]) {
+      const m = html.match(re);
+      if (m && m[1]) return m[1];
+    }
+    return "";
+  };
+  let jver = grab("jver");
+  let cver = grab("cver");
+  if (!jver) {
+    const m =
+      html.match(/engine(?:\.min)?\.js\?[^"'<> ]*?[?&]_i=([A-Za-z0-9._-]+)/i) ||
+      html.match(/[?&]_i=([A-Za-z0-9._-]{6,})/i);
+    if (m) jver = m[1];
+  }
+  return { jver, cver };
+}
+
+// One-tap "Refresh from Edsby": auto-detects jver/cver from the public bootstrap
+// AND, if a session cookie is stored, refreshes the (short-lived) formkey. Saves
+// whatever it can and reports what was updated / what's still missing. The cookie
+// itself can't be fetched (login-gated / HttpOnly) — it stays a manual paste.
+router.post("/edsby/refresh", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.baseUrl").lean();
-    const baseUrl = String(req.body?.baseUrl || config?.edsby?.baseUrl || "").trim().replace(/\/+$/, "");
-    if (!/^https:\/\/[^/]+\.edsby\.com/i.test(baseUrl) && !/^https:\/\//i.test(baseUrl)) {
-      return res.status(400).json({ ok: false, error: "Set the Edsby base URL (https://…) first." });
-    }
-    let text = "";
-    try {
-      const r = await fetch(baseUrl, {
-        redirect: "follow",
-        headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html,application/xhtml+xml" },
-      });
-      text = await r.text();
-    } catch (e) {
-      return res.json({ ok: false, error: `Could not reach ${baseUrl}: ${e?.message || e}` });
-    }
-    const grab = (k) => {
-      for (const re of [
-        new RegExp(`["']?${k}["']?\\s*[:=]\\s*["']([A-Za-z0-9._-]+)["']`, "i"), // jver:"abc"
-        new RegExp(`[?&]${k}=([A-Za-z0-9._-]+)`, "i"), // ...?jver=abc
-      ]) {
-        const m = text.match(re);
-        if (m && m[1]) return m[1];
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const e = config?.edsby || {};
+    const baseUrl = String(req.body?.baseUrl || e.baseUrl || "").trim().replace(/\/+$/, "");
+    const updated = [];
+    const notes = [];
+    let jver = e.jver || "";
+    let cver = e.cver || "";
+
+    // 1) Auto-detect jver/cver from the base URL's public bootstrap.
+    if (/^https:\/\//i.test(baseUrl)) {
+      try {
+        const r = await fetch(baseUrl, { redirect: "follow", headers: { "User-Agent": "Mozilla/5.0", Accept: "text/html" } });
+        const found = extractEdsbyVersions(await r.text());
+        if (found.jver) jver = found.jver;
+        if (found.cver) cver = found.cver;
+        if (!found.jver && !found.cver) notes.push("couldn't read jver/cver from the page — copy them from a request's x-xds-jver / x-xds-cver headers");
+      } catch (err) {
+        notes.push(`version fetch failed: ${err?.message || err}`);
       }
-      return "";
-    };
-    const jver = grab("jver");
-    const cver = grab("cver");
-    if (!jver && !cver) {
-      return res.json({ ok: false, error: "Couldn't find jver/cver on that page — paste them from DevTools instead." });
+    } else {
+      notes.push("set the Edsby base URL (https://…) first");
     }
-    res.json({ ok: true, jver, cver });
+
+    const set = {};
+    if (jver && jver !== e.jver) { set["edsby.jver"] = jver; updated.push("jver"); }
+    if (cver && cver !== e.cver) { set["edsby.cver"] = cver; updated.push("cver"); }
+
+    // 2) Refresh the formkey if a cookie is stored.
+    let formkeyOk = null;
+    let formkeyError = "";
+    if (e.cookieEnc) {
+      const provider = new EdsbyProvider({
+        baseUrl, cookie: decrypt(e.cookieEnc), formkey: decrypt(e.formkeyEnc), jver, cver, userNid: e.userNid,
+      });
+      const r = await provider.testConnection(e.zoomId);
+      formkeyOk = r.ok;
+      if (r.ok && r.formkey) { set["edsby.formkeyEnc"] = encrypt(r.formkey); updated.push("formkey"); }
+      else formkeyError = r.error || r.message || "";
+    } else {
+      notes.push("no session cookie saved yet — paste it from DevTools, Save, then Refresh again");
+    }
+
+    if (Object.keys(set).length) {
+      set["edsby.updatedAt"] = new Date();
+      await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: set });
+    }
+    await audit(req.schoolId, "edsby.refresh", req, { meta: { updated, formkeyOk } });
+    res.json({ ok: true, jver, cver, updated, formkeyOk, formkeyError, notes });
   } catch (err) {
-    next(err);
+    res.json({ ok: false, error: err?.message || String(err) });
   }
 });
 
