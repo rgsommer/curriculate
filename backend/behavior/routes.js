@@ -28,13 +28,13 @@ import BehaviorFollowup from "./models/BehaviorFollowup.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 
-import { evaluateIncident, activeThresholdIncidents } from "./lib/triggerLogic.js";
+import { evaluateIncident, activeThresholdIncidents, evaluatePositive } from "./lib/triggerLogic.js";
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
 import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
-import { composeNotice, makeDefaultAiClient } from "./lib/aiNote.js";
+import { composeNotice, composePositiveNotice, makeDefaultAiClient } from "./lib/aiNote.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
 const router = express.Router();
@@ -886,6 +886,13 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       }
     }
 
+    // Independent POSITIVE trigger: when a positive was just logged, check whether
+    // the student has accumulated enough positives for a good-news note home.
+    let positiveNotice = null;
+    if (createdIncidents.some((i) => (i.behaviorSnapshot?.points || 0) > 0)) {
+      positiveNotice = await maybeFirePositiveNotice({ req, student, config });
+    }
+
     // The incidents that make up the CURRENT trigger, for the teacher to review:
     // if a notice just fired, the incidents that fed it; otherwise the running
     // set still accumulating toward the threshold (cross-teacher). Enriched with
@@ -917,6 +924,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       ok: true,
       incidents: createdIncidents.map((i) => ({ _id: i._id, behaviorName: i.behaviorSnapshot.name })),
       notice: notice ? { _id: notice._id, status: notice.status, cancelUntil: notice.cancelUntil, ccVp: notice.ccVp } : null,
+      positiveNotice: positiveNotice ? { _id: positiveNotice._id, status: positiveNotice.status } : null,
       triggerIncidents,
       triggerCount: config?.triggerCount ?? 3,
     });
@@ -985,10 +993,18 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       let notice = null;
       if (decision.shouldNotify) notice = await fireNotice({ req, student, config, decision });
 
+      // Positive note home if this batch behaviour is a positive and the student
+      // has now accumulated enough.
+      let positiveNotice = null;
+      if ((behavior.points || 0) > 0) {
+        positiveNotice = await maybeFirePositiveNotice({ req, student, config });
+      }
+
       results.push({
         studentId: String(student._id),
         name: `${student.preferredName || student.firstName} ${student.lastName}`.trim(),
         notice: notice ? { _id: notice._id, status: notice.status, ccVp: notice.ccVp } : null,
+        positiveNotice: positiveNotice ? { _id: positiveNotice._id, status: positiveNotice.status } : null,
       });
     }
 
@@ -1028,8 +1044,9 @@ function doubleConsequence(text) {
  */
 async function composeAndCreateNotice({
   schoolId, student, config, reason, sequenceNo, ccVp, sentByTeacherId,
-  channels, consequenceTexts, fromTeachers, contextIncidents, triggeringIncidentIds,
+  channels, consequenceTexts, fromTeachers, contextIncidents, triggeringIncidentIds, kind = "discipline",
 }) {
+  const isPositive = kind === "positive";
   const recipients = (student.parents || [])
     .filter((p) => p.email || p.edsbyParentId)
     .map((p) => ({ role: "parent", name: p.name, email: p.email, edsbyParentId: p.edsbyParentId }));
@@ -1042,50 +1059,53 @@ async function composeAndCreateNotice({
   const sender = await BehaviorTeacher.findById(sentByTeacherId).lean();
   const signature = (sender?.signature || config?.branding?.signatureBlock || "").trim();
 
-  // Background history for the AI's AWARENESS only (not to be summarized/listed):
-  // distinct prior behaviour types, prior-notice count, recency of past activity.
-  const contribIds = new Set((triggeringIncidentIds || []).map(String));
-  const allInc = await BehaviorIncident.find({ studentId: student._id })
-    .select("behaviorSnapshot.name timestamp")
-    .lean();
-  const priorInc = allInc.filter((i) => !contribIds.has(String(i._id)));
-  const behaviourTypes = [...new Set(priorInc.map((i) => i.behaviorSnapshot?.name).filter(Boolean))];
-  const lastPriorTs = priorInc.length ? Math.max(...priorInc.map((i) => new Date(i.timestamp).getTime())) : null;
-  const history = {
-    priorNotices: Math.max(0, sequenceNo - 1),
-    priorIncidentCount: priorInc.length,
-    behaviourTypes,
-    lastBeforeDays: lastPriorTs ? Math.round((Date.now() - lastPriorTs) / DAY_MS) : null,
-  };
-
-  // Recent POSITIVE behaviours (points > 0) to acknowledge in the note as a
-  // balancing, encouraging note — within a generous window so a good week still
-  // shows up alongside a threshold notice.
-  const positiveWindowDays = Math.max(30, (config?.fadeWindowDays ?? 30) * 2);
-  const positiveInc = await BehaviorIncident.find({
-    studentId: student._id,
-    "behaviorSnapshot.points": { $gt: 0 },
-    timestamp: { $gt: new Date(Date.now() - positiveWindowDays * DAY_MS) },
-  })
-    .sort({ timestamp: -1 })
-    .limit(5)
-    .lean();
-  const positives = positiveInc.map((i) => ({
-    behaviorName: i.behaviorSnapshot?.name || "",
-    date: i.timestamp,
-    detail: i.detailText || "",
-  }));
-
   // Replace the legacy "nnn" name placeholder with the student's name; the AI
   // otherwise handles naming/pronouns naturally from studentName + pronoun.
   const studentName = student.preferredName || student.firstName || "your child";
   const personalize = (t) => String(t || "").replace(/\bnnn\b/gi, studentName);
 
+  // Background history + recent positives are only relevant to the disciplinary
+  // note. A positive (good-news) note is built purely from its own incidents.
+  let history = null;
+  let positives = [];
+  if (!isPositive) {
+    const contribIds = new Set((triggeringIncidentIds || []).map(String));
+    const allInc = await BehaviorIncident.find({ studentId: student._id })
+      .select("behaviorSnapshot.name timestamp")
+      .lean();
+    const priorInc = allInc.filter((i) => !contribIds.has(String(i._id)));
+    const behaviourTypes = [...new Set(priorInc.map((i) => i.behaviorSnapshot?.name).filter(Boolean))];
+    const lastPriorTs = priorInc.length ? Math.max(...priorInc.map((i) => new Date(i.timestamp).getTime())) : null;
+    history = {
+      priorNotices: Math.max(0, sequenceNo - 1),
+      priorIncidentCount: priorInc.length,
+      behaviourTypes,
+      lastBeforeDays: lastPriorTs ? Math.round((Date.now() - lastPriorTs) / DAY_MS) : null,
+    };
+
+    // Recent POSITIVE behaviours (points > 0) to acknowledge as a balancing,
+    // encouraging note within the disciplinary note.
+    const positiveWindowDays = Math.max(30, (config?.fadeWindowDays ?? 30) * 2);
+    const positiveInc = await BehaviorIncident.find({
+      studentId: student._id,
+      "behaviorSnapshot.points": { $gt: 0 },
+      timestamp: { $gt: new Date(Date.now() - positiveWindowDays * DAY_MS) },
+    })
+      .sort({ timestamp: -1 })
+      .limit(5)
+      .lean();
+    positives = positiveInc.map((i) => ({
+      behaviorName: i.behaviorSnapshot?.name || "",
+      date: i.timestamp,
+      detail: personalize(i.detailText || ""),
+    }));
+  }
+
   const ctx = {
     studentName,
     pronoun: student.pronoun || "",
     history,
-    positives: positives.map((p) => ({ ...p, detail: personalize(p.detail) })),
+    positives,
     incidents: contextIncidents.map((i) => ({
       behaviorName: i.behaviorSnapshot?.name,
       teacherName: i.__teacherName || "",
@@ -1100,7 +1120,10 @@ async function composeAndCreateNotice({
     toneGuidance: config?.branding?.toneGuidance || "",
     ccVp,
   };
-  const { text, aiUsed } = await composeNotice(ctx, { aiClient: makeDefaultAiClient(config || {}) });
+  const aiClient = makeDefaultAiClient(config || {});
+  const { text, aiUsed } = isPositive
+    ? await composePositiveNotice(ctx, { aiClient })
+    : await composeNotice(ctx, { aiClient });
 
   const cancelWindow = config?.cancelWindowSeconds ?? 60;
   const notice = await BehaviorNotice.create({
@@ -1175,6 +1198,48 @@ async function fireNotice({ req, student, config, decision }) {
     sentByTeacherId: req.membership._id, noticeId: notice._id,
   });
   return notice;
+}
+
+/**
+ * Fire a good-news note home when a student's accumulated positives cross the
+ * positive threshold. Marks the celebrated positives so they don't re-fire; does
+ * NOT touch the disciplinary counters, the VP, or follow-ups.
+ */
+async function firePositiveNotice({ req, student, config, contributingIncidents }) {
+  const contribIds = contributingIncidents.map((i) => i._id);
+  const teacherIds = [...new Set(contributingIncidents.map((i) => String(i.teacherId)))];
+  const teachers = await BehaviorTeacher.find({ _id: { $in: teacherIds } }).lean();
+  const teacherById = Object.fromEntries(teachers.map((t) => [String(t._id), t]));
+  for (const i of contributingIncidents) i.__teacherName = teacherById[String(i.teacherId)]?.name || "";
+  const fromTeachers = contributingIncidents.map((i) => ({
+    teacherId: i.teacherId,
+    name: teacherById[String(i.teacherId)]?.name || "",
+    behaviorName: i.behaviorSnapshot?.name || "",
+  }));
+
+  const notice = await composeAndCreateNotice({
+    schoolId: req.schoolId, student, config, reason: "positive", sequenceNo: 1, ccVp: false,
+    sentByTeacherId: req.membership._id, channels: resolveChannels(config, req.body?.channelOverride),
+    consequenceTexts: [], fromTeachers, contextIncidents: contributingIncidents,
+    triggeringIncidentIds: contribIds, kind: "positive",
+  });
+
+  // Mark these positives celebrated so the next positive note starts fresh.
+  await BehaviorIncident.updateMany(
+    { _id: { $in: contribIds }, countedInNoticeId: null },
+    { $set: { countedInNoticeId: notice._id } }
+  );
+  return notice;
+}
+
+// Evaluate + fire a positive note home if the student has crossed the positive
+// threshold. Returns the notice (or null). Safe to call after any submission
+// that logged at least one positive incident.
+async function maybeFirePositiveNotice({ req, student, config }) {
+  const all = await BehaviorIncident.find({ studentId: student._id }).lean();
+  const decision = evaluatePositive({ incidents: all, config, student });
+  if (!decision.shouldNotify) return null;
+  return firePositiveNotice({ req, student, config, contributingIncidents: decision.contributingIncidents });
 }
 
 // Send a queued notice now — bypasses the auto-send window (and is the manual

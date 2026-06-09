@@ -7,7 +7,9 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   evaluateIncident,
+  evaluatePositive,
   activeThresholdIncidents,
+  activePositiveIncidents,
   isWithinFadeWindow,
   repeatMultiplier,
 } from "../lib/triggerLogic.js";
@@ -21,6 +23,16 @@ function inc({ id, mode = "THRESHOLD", teacher = "t1", daysAgo = 0, counted = fa
     teacherId: teacher,
     immediateFlag: mode === "IMMEDIATE",
     behaviorSnapshot: { triggerMode: mode, name: "Talking out", consequenceText: "10x lines" },
+    countedInNoticeId: counted ? "n1" : null,
+    timestamp: new Date(now.getTime() - daysAgo * DAY),
+  };
+}
+
+function pos({ id, teacher = "t1", daysAgo = 0, points = 5, counted = false }) {
+  return {
+    _id: id,
+    teacherId: teacher,
+    behaviorSnapshot: { triggerMode: "INTERACTION", name: "Helped a classmate", points },
     countedInNoticeId: counted ? "n1" : null,
     timestamp: new Date(now.getTime() - daysAgo * DAY),
   };
@@ -139,6 +151,56 @@ test("POSITIVE incidents are excluded from the active strike count", () => {
     { fadeWindowDays: 30, thresholdResetAt: null, asOf: now }
   );
   assert.equal(active.length, 2); // only the two real strikes
+});
+
+test("POSITIVE notice: fires at 3 positives within the 3× fade window", () => {
+  // fade 30 → positive window 90 days. Three positives inside the window fire.
+  const incidents = [
+    pos({ id: "p1", daysAgo: 80 }),
+    pos({ id: "p2", daysAgo: 40 }),
+    pos({ id: "p3", daysAgo: 1 }),
+  ];
+  const d = evaluatePositive({
+    incidents,
+    config: { triggerCount: 3, fadeWindowDays: 30 },
+    student: {},
+    asOf: now,
+  });
+  assert.equal(d.shouldNotify, true);
+  assert.equal(d.contributingIncidents.length, 3);
+});
+
+test("POSITIVE notice: a positive older than the 3× window does not count", () => {
+  const incidents = [
+    pos({ id: "p1", daysAgo: 120 }), // outside the 90-day window
+    pos({ id: "p2", daysAgo: 10 }),
+    pos({ id: "p3", daysAgo: 1 }),
+  ];
+  const d = evaluatePositive({ incidents, config: { triggerCount: 3, fadeWindowDays: 30 }, student: {}, asOf: now });
+  assert.equal(d.shouldNotify, false); // only 2 in-window
+});
+
+test("POSITIVE notice: negatives are neither counted nor subtracted", () => {
+  const incidents = [
+    pos({ id: "p1", daysAgo: 5 }),
+    pos({ id: "p2", daysAgo: 4 }),
+    pos({ id: "p3", daysAgo: 3 }),
+    inc({ id: "n1", daysAgo: 2 }), // a negative strike — irrelevant to positives
+    inc({ id: "n2", daysAgo: 1 }),
+  ];
+  const d = evaluatePositive({ incidents, config: { triggerCount: 3, fadeWindowDays: 30 }, student: {}, asOf: now });
+  assert.equal(d.shouldNotify, true);
+  assert.equal(d.contributingIncidents.length, 3); // exactly the 3 positives
+});
+
+test("POSITIVE notice: already-celebrated positives are excluded", () => {
+  const incidents = [
+    pos({ id: "p1", daysAgo: 5, counted: true }),
+    pos({ id: "p2", daysAgo: 4, counted: true }),
+    pos({ id: "p3", daysAgo: 1 }),
+  ];
+  const d = evaluatePositive({ incidents, config: { triggerCount: 3, fadeWindowDays: 30 }, student: {}, asOf: now });
+  assert.equal(d.shouldNotify, false); // only 1 fresh positive
 });
 
 test("IMMEDIATE pulls in the queued threshold incidents", () => {

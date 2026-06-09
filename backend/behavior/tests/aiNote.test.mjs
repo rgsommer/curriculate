@@ -5,7 +5,14 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composeNotice, deterministicNote, buildPrompt } from "../lib/aiNote.js";
+import {
+  composeNotice,
+  deterministicNote,
+  buildPrompt,
+  composePositiveNotice,
+  deterministicPositiveNote,
+  buildPositivePrompt,
+} from "../lib/aiNote.js";
 
 const ctx = {
   studentName: "Sam",
@@ -90,6 +97,37 @@ test("Positives are acknowledged in the note and prompt, never as offset", () =>
 test("No positives → no positive line in the note", () => {
   const note = deterministicNote({ ...ctx, positives: [] });
   assert.doesNotMatch(note, /positive note/i);
+});
+
+test("Positive note: celebratory, names the positives, no concerns", () => {
+  const pctx = {
+    studentName: "Sam",
+    schoolName: "Brampton CS",
+    signature: "Ms. A\nGrade 7",
+    incidents: [
+      { behaviorName: "Helped a classmate", teacherName: "Ms. A", date: "2026-06-05", detail: "" },
+      { behaviorName: "Great effort in math", teacherName: "Mr. B", date: "2026-06-06", detail: "" },
+      { behaviorName: "Kindness award", teacherName: "Ms. C", date: "2026-06-07", detail: "" },
+    ],
+  };
+  const note = deterministicPositiveNote(pctx);
+  assert.match(note, /good news/i);
+  assert.match(note, /Helped a classmate/);
+  assert.doesNotMatch(note, /concern|consequence|point/i);
+
+  const p = buildPositivePrompt(pctx);
+  assert.match(p, /good news/i);
+  assert.match(p, /Do NOT mention any negative/i);
+});
+
+test("Positive note: AI failure falls back to the deterministic good-news note", async () => {
+  const aiClient = { async complete() { throw new Error("nope"); } };
+  const { text, aiUsed } = await composePositiveNotice(
+    { studentName: "Sam", schoolName: "BCS", incidents: [{ behaviorName: "Helped out", date: "2026-06-07" }] },
+    { aiClient }
+  );
+  assert.equal(aiUsed, false);
+  assert.match(text, /good news/i);
 });
 
 test("Deterministic note adapts tone: first vs repeat", () => {

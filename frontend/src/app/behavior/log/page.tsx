@@ -54,6 +54,7 @@ export default function LogIncidentPage() {
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<NoticeResult>(null);
+  const [positiveNotice, setPositiveNotice] = useState<{ _id: string; status: string } | null>(null);
   const [trigger, setTrigger] = useState<{ date: string; teacher: string; offense: string; comment: string }[]>([]);
   const [triggerCount, setTriggerCount] = useState(3);
   const [done, setDone] = useState(false);
@@ -144,7 +145,7 @@ export default function LogIncidentPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await api<{ notice: NoticeResult; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
+      const res = await api<{ notice: NoticeResult; positiveNotice: { _id: string; status: string } | null; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
         body: {
           studentId: student._id,
           behaviorIds: [behaviorId],
@@ -154,6 +155,7 @@ export default function LogIncidentPage() {
         },
       });
       setNotice(res.notice);
+      setPositiveNotice(res.positiveNotice || null);
       setTrigger(res.triggerIncidents || []);
       setTriggerCount(res.triggerCount || 3);
       setDone(true);
@@ -192,6 +194,7 @@ export default function LogIncidentPage() {
     setNote("");
     setSendImmediately(false);
     setNotice(null);
+    setPositiveNotice(null);
     setTrigger([]);
     setDone(false);
     setQuery("");
@@ -233,6 +236,20 @@ export default function LogIncidentPage() {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+        {positiveNotice && (
+          <div className="rounded-xl border border-green-300 bg-green-50 p-5">
+            <h2 className="font-semibold text-green-900">Good-news note home queued 🎉</h2>
+            <p className="mt-1 text-sm text-green-800">
+              {student?.preferredName || student?.firstName} reached enough positive recognitions — a celebratory note to
+              their parents is queued (no concerns, no points mentioned). It sends automatically after a short window.
+            </p>
+            {student && (
+              <Link href={`/behavior/student/${student._id}`} className="mt-3 inline-block rounded-lg border border-green-400 px-4 py-2 text-green-900">
+                Review / edit
+              </Link>
+            )}
           </div>
         )}
         {notice && (
@@ -557,12 +574,27 @@ function BatchLog({
   // ── Confirmation ─────────────────────────────────────────────────────────
   if (result) {
     const notified = result.results.filter((r) => r.notice);
+    const celebrated = result.results.filter((r) => r.positiveNotice);
     return (
       <div className="space-y-4">
         <div className="rounded-xl border border-green-200 bg-green-50 p-5">
           <h1 className="text-lg font-semibold text-green-800">Logged for {result.logged} {result.logged === 1 ? "student" : "students"} ✓</h1>
           <p className="mt-1 text-sm text-green-700">{result.behaviorName}</p>
         </div>
+        {celebrated.length > 0 && (
+          <div className="rounded-xl border border-green-300 bg-green-50 p-5">
+            <h2 className="font-semibold text-green-900">{celebrated.length} earned a good-news note home 🎉</h2>
+            <p className="mt-1 text-sm text-green-800">Enough positives accumulated — a celebratory note is queued for each.</p>
+            <ul className="mt-2 space-y-1">
+              {celebrated.map((r) => (
+                <li key={r.studentId} className="flex items-center justify-between text-sm">
+                  <span className="font-medium text-green-900">{r.name}</span>
+                  <Link href={`/behavior/student/${r.studentId}`} className="rounded-lg border border-green-400 px-3 py-1 text-green-900">Review / send</Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {notified.length > 0 && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
             <h2 className="font-semibold text-amber-900">{notified.length} reached the threshold</h2>

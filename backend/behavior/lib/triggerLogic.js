@@ -50,6 +50,45 @@ export function activeThresholdIncidents(incidents, { fadeWindowDays, thresholdR
 }
 
 /**
+ * The student's accumulated POSITIVE incidents: points > 0, within the (wider)
+ * positive window, not already celebrated in a prior positive notice. Entirely
+ * separate from the strike mechanism — negatives are neither included nor
+ * subtracted here.
+ *
+ * @param {Array} incidents  all of the student's incidents (any order)
+ * @param {object} opts      { positiveWindowDays, asOf }
+ */
+export function activePositiveIncidents(incidents, { positiveWindowDays, asOf }) {
+  const now = asOf || new Date();
+  const cutoff = now.getTime() - positiveWindowDays * DAY_MS;
+  return incidents
+    .filter((inc) => {
+      if ((inc.behaviorSnapshot?.points || 0) <= 0) return false; // positives only
+      if (inc.countedInNoticeId) return false; // already celebrated in a notice
+      return new Date(inc.timestamp).getTime() > cutoff;
+    })
+    .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+}
+
+/**
+ * Decide whether a student's accumulated positives should fire a good-news note
+ * home. Threshold = config.triggerCount (default 3); window = 3× the disciplinary
+ * fade window (e.g. a 30-day fade → a 90-day positive window).
+ *
+ * @returns { shouldNotify, contributingIncidents }
+ */
+export function evaluatePositive({ incidents, config, student, asOf }) {
+  const positiveCount = config.positiveTriggerCount ?? config.triggerCount ?? 3;
+  const fadeWindowDays = config.fadeWindowDays ?? 30;
+  const positiveWindowDays = config.positiveWindowDays ?? fadeWindowDays * 3;
+  const active = activePositiveIncidents(incidents, { positiveWindowDays, asOf });
+  if (active.length >= positiveCount) {
+    return { shouldNotify: true, contributingIncidents: active };
+  }
+  return { shouldNotify: false, contributingIncidents: [] };
+}
+
+/**
  * Decide whether logging `newIncident` should fire a notice home.
  *
  * @param {object} args

@@ -43,7 +43,7 @@ const BehaviorNoticeSchema = new mongoose.Schema(
     periodNo: { type: Number, default: 1 },
     sequenceNo: { type: Number, default: 1 }, // 1 = first notice this period
 
-    reason: { type: String, enum: ["threshold", "immediate", "missed_consequence"], default: "threshold" },
+    reason: { type: String, enum: ["threshold", "immediate", "missed_consequence", "positive"], default: "threshold" },
 
     fromTeachers: { type: [FromTeacherSchema], default: [] },
     triggeringIncidentIds: { type: [mongoose.Schema.Types.ObjectId], default: [] },

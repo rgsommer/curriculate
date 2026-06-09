@@ -97,6 +97,69 @@ export function deterministicNote(ctx) {
   return lines.join("\n");
 }
 
+/**
+ * Deterministic GOOD-NEWS note — fired when a student accumulates enough
+ * positive behaviours. Entirely separate from discipline: no concerns, no
+ * consequences, no negatives, ever.
+ */
+export function deterministicPositiveNote(ctx) {
+  const name = ctx.studentName || "your child";
+  const lines = [];
+  lines.push(`Dear Parent/Guardian,`);
+  lines.push("");
+  lines.push(
+    `I wanted to share some good news. ${name} has been recognised for several positive contributions at ${ctx.schoolName || "school"} recently, and we wanted you to hear about it.`
+  );
+  lines.push("");
+  lines.push(`Recently recognised:`);
+  for (const inc of ctx.incidents || []) {
+    const date = fmtDate(inc.date);
+    const who = inc.teacherName ? ` (noted by ${inc.teacherName})` : "";
+    const detail = inc.detail ? ` — ${inc.detail}` : "";
+    lines.push(`  • ${date ? date + ": " : ""}${inc.behaviorName}${who}${detail}`);
+  }
+  lines.push("");
+  lines.push(`Please join us in celebrating ${name}. Thank you for your partnership.`);
+  lines.push("");
+  lines.push(ctx.signature || `Sincerely,\n${ctx.schoolName || ""}`);
+  return lines.join("\n");
+}
+
+/** Instruction prompt for the GOOD-NEWS note — celebratory, no concerns. */
+export function buildPositivePrompt(ctx) {
+  const incidentLines = (ctx.incidents || [])
+    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.detail ? ` (${inc.detail})` : ""}`)
+    .join("\n");
+  return [
+    `You are a teacher writing a short, warm, celebratory note home to a parent. This note is ENTIRELY good news about a student's positive behaviour — there are NO concerns in it.`,
+    ctx.toneGuidance ? `Division tone guidance: ${ctx.toneGuidance}` : "",
+    `Student preferred name: ${ctx.studentName}${ctx.pronoun ? ` (pronoun: ${ctx.pronoun})` : ""}.`,
+    `School: ${ctx.schoolName || ""}.`,
+    `The positive contributions to celebrate:\n${incidentLines}`,
+    `Do NOT mention any negative behaviour, discipline, consequences, points, or concerns of any kind. Keep it genuine, specific, and under 150 words.`,
+    `Sign off with this signature block exactly:\n${ctx.signature || ""}`,
+    `Write only the note body (no subject line).`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+/** Compose the good-news note (AI with timeout; deterministic fallback). */
+export async function composePositiveNotice(ctx, opts = {}) {
+  const aiClient = opts.aiClient;
+  const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
+  if (!aiClient) return { text: deterministicPositiveNote(ctx), aiUsed: false };
+  try {
+    const text = await withTimeout(aiClient.complete(buildPositivePrompt(ctx)), timeoutMs);
+    const trimmed = String(text || "").trim();
+    if (!trimmed) throw new Error("empty AI response");
+    return { text: trimmed, aiUsed: true };
+  } catch (err) {
+    console.warn("[behavior/aiNote] positive AI compose failed, using template:", err?.message || err);
+    return { text: deterministicPositiveNote(ctx), aiUsed: false };
+  }
+}
+
 /** Build the instruction prompt for the AI provider from de-identified context. */
 export function buildPrompt(ctx) {
   const incidentLines = (ctx.incidents || [])
