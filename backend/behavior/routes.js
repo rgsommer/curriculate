@@ -266,24 +266,24 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
       const link = `${appBase()}/behavior/accept?token=${token}`;
       const inviter = (req.user?.name || "").trim();
       const inviterEmail = req.user?.email || "";
-      const by = inviter ? `${inviter}${inviterEmail ? ` (${inviterEmail})` : ""}` : "Your school";
+      const by = inviter ? `${inviter}${inviterEmail ? ` (${inviterEmail})` : ""}` : "A colleague";
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
         await mailer.sendMail({
-          from: fromAddr ? { name: `Behaviours · ${school.name}`, address: fromAddr } : undefined,
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to: email,
           replyTo: inviterEmail || undefined,
-          subject: `${inviter || "You're"} invited you to Behaviours at ${school.name}`,
+          subject: `${inviter || "You're"} invited you to Behaviours`,
           text:
             `Hi,\n\n` +
-            `${by} has added you to Behaviours — ${school.name}'s behaviour-tracking app. ` +
+            `${by} has invited you to Behaviours — a tool for tracking student behaviour across teachers and keeping parents in the loop. ` +
             `You'll be able to log incidents against any student and see each student's cross-teacher status.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
             `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
           html:
             `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:480px;margin:0 auto;color:#0f172a">` +
             `<h2 style="margin:0 0 8px">You're invited to Behaviours</h2>` +
-            `<p style="color:#475569;line-height:1.5"><strong>${escapeHtml(by)}</strong> has added you to <strong>${escapeHtml(school.name)}</strong>'s behaviour-tracking app. ` +
+            `<p style="color:#475569;line-height:1.5"><strong>${escapeHtml(by)}</strong> has invited you to Behaviours — a tool for tracking student behaviour across teachers and keeping parents in the loop. ` +
             `You'll be able to log incidents against any student and see each student's cross-teacher status.</p>` +
             `<p style="margin:20px 0"><a href="${link}" style="background:#0f172a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:8px;display:inline-block">Accept &amp; set your password</a></p>` +
             `<p style="color:#94a3b8;font-size:13px;word-break:break-all">Or paste this link: ${link}</p>` +

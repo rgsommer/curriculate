@@ -55,7 +55,7 @@ export default function BehavioursPage() {
         <Link href="/behavior/log" className="text-sm text-slate-500 underline">← back to logging</Link>
         <h1 className="mt-1 text-xl font-semibold">Behaviours</h1>
         <p className="text-sm text-slate-400">
-          <span className="rounded bg-green-100 px-1.5 text-green-800">green</span> = school/standard ·{" "}
+          <span className="rounded bg-green-100 px-1.5 text-green-800">green</span> = shared/standard ·{" "}
           <span className="rounded bg-blue-100 px-1.5 text-blue-800">blue</span> = your own. Sorted by keyword; “Interaction” logs without a note home.
         </p>
       </div>
