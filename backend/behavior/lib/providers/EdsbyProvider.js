@@ -183,7 +183,10 @@ async function postBroadcast(p, parentNid, body) {
   if (/login/i.test(text) && /<form/i.test(text)) {
     return { ok: false, error: "Edsby session cookie expired — re-paste it in Setup" };
   }
-  return { ok: false, error: `Edsby responded ${res.status} ${res.statusText}` };
+  // Surface Edsby's own message so a 400/4xx is diagnosable (it usually returns
+  // a JSON error code/string explaining what it rejected).
+  const snippet = String(text || "").replace(/\s+/g, " ").trim().slice(0, 300);
+  return { ok: false, error: `Edsby responded ${res.status}${snippet ? `: ${snippet}` : res.statusText ? ` ${res.statusText}` : ""}` };
 }
 
 export default EdsbyProvider;
