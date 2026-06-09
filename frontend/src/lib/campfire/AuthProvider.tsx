@@ -15,7 +15,9 @@ interface AuthState {
   signUp: (email: string, password: string, displayName: string, next?: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: (next?: string) => Promise<void>;
-  signInAsGuest: (displayName: string) => Promise<{ error: string | null }>;
+  signInAsGuest: (
+    displayName: string
+  ) => Promise<{ error: string | null; rateLimited?: boolean }>;
   isGuest: boolean;
   linkGoogle: () => Promise<{ error: string | null }>;
   upgradeWithEmail: (email: string, password: string) => Promise<{ error: string | null }>;
@@ -127,7 +129,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signInAnonymously({
       options: { data: { display_name: displayName } },
     });
-    return { error: error?.message ?? null };
+    if (!error) return { error: null, rateLimited: false };
+    // A whole class shares one school IP, so Supabase's per-IP anonymous rate
+    // limit trips and later kids fail — flag that so the UI can say "wait & retry"
+    // instead of "guest mode is off".
+    const rateLimited =
+      error.status === 429 || /rate.?limit|too many/i.test(error.message);
+    return { error: error.message, rateLimited };
   };
 
   // Guest = anonymous account (device-bound, no email/password yet).

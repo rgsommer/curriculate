@@ -97,11 +97,12 @@ export default function JoinGroupPage() {
     }
     setGuestErr("");
     setGuestBusy(true);
-    const { error: gErr } = await signInAsGuest(name);
+    const { error: gErr, rateLimited } = await signInAsGuest(name);
     if (gErr) {
-      // Most likely anonymous sign-ins aren't enabled on the project.
       setGuestErr(
-        /anonymous|disabled|not enabled/i.test(gErr)
+        rateLimited
+          ? "Lots of people are joining at once — wait about a minute, then tap again. (Or use email below.)"
+          : /disabled|not enabled/i.test(gErr)
           ? "Guest join isn't switched on yet — use email below, or ask whoever invited you."
           : gErr
       );

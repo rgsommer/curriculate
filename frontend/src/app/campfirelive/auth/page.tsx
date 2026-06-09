@@ -42,7 +42,11 @@ export default function AuthPage() {
     setError("");
     const result = await signInAsGuest(guestName.trim());
     if (result.error) {
-      setError(result.error);
+      setError(
+        result.rateLimited
+          ? "Lots of people are joining at once — wait about a minute, then tap again. (Or use email below.)"
+          : result.error
+      );
       setGuestLoading(false);
     } else {
       router.push(next);
