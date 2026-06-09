@@ -57,6 +57,7 @@ export default function SetupPage() {
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
+      <AddStudentSection />
       <TestToolsSection email={me.membership.email} />
     </div>
   );
@@ -380,6 +381,59 @@ function EdsbySection({ edsby }: { edsby: any }) {
         The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
         Parent Edsby nids still need harvesting from Edsby (next step).
       </p>
+    </Card>
+  );
+}
+
+function AddStudentSection() {
+  const [f, setF] = useState({ firstName: "", lastName: "", preferredName: "", classGroup: "", grade: "", p1: "", p2: "" });
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function add() {
+    if (!f.firstName.trim() && !f.lastName.trim()) return;
+    setBusy(true);
+    setErr(null);
+    setMsg("");
+    try {
+      const parents = [f.p1, f.p2].filter((e) => e.trim()).map((email) => ({ email: email.trim() }));
+      await api("/students", {
+        body: {
+          firstName: f.firstName.trim(), lastName: f.lastName.trim(), preferredName: f.preferredName.trim(),
+          classGroup: f.classGroup.trim(), grade: f.grade.trim() || f.classGroup.replace(/[^0-9]/g, ""), parents,
+        },
+      });
+      setMsg(`Added ${f.firstName} ${f.lastName}.`);
+      setF({ firstName: "", lastName: "", preferredName: "", classGroup: "", grade: "", p1: "", p2: "" });
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Add a student (mid-year)</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        For one-off additions. For the new year, just re-import the whole roster — it updates each student&apos;s grade/class
+        and adds anyone new (it won&apos;t remove students who left; delete those below).
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <input value={f.firstName} onChange={(e) => setF({ ...f, firstName: e.target.value })} placeholder="First name" className={inputCls} />
+        <input value={f.lastName} onChange={(e) => setF({ ...f, lastName: e.target.value })} placeholder="Last name" className={inputCls} />
+        <input value={f.preferredName} onChange={(e) => setF({ ...f, preferredName: e.target.value })} placeholder="Preferred name (optional)" className={inputCls} />
+        <input value={f.classGroup} onChange={(e) => setF({ ...f, classGroup: e.target.value })} placeholder="Class (e.g. 7A)" className={inputCls} />
+        <input value={f.p1} onChange={(e) => setF({ ...f, p1: e.target.value })} placeholder="Parent 1 email" className={inputCls} />
+        <input value={f.p2} onChange={(e) => setF({ ...f, p2: e.target.value })} placeholder="Parent 2 email (optional)" className={inputCls} />
+      </div>
+      <button onClick={add} disabled={busy || (!f.firstName.trim() && !f.lastName.trim())}
+        className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-40">
+        {busy ? "Adding…" : "Add student"}
+      </button>
     </Card>
   );
 }

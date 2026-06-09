@@ -45,6 +45,7 @@ export default function LogIncidentPage() {
 
   const [student, setStudent] = useState<StudentSummary | null>(null);
   const [behaviorId, setBehaviorId] = useState("");
+  const [keywordFilter, setKeywordFilter] = useState("");
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
   const [sendImmediately, setSendImmediately] = useState(false);
@@ -82,6 +83,26 @@ export default function LogIncidentPage() {
       .then((d) => setStatus({ activeCount: d.activeCount, triggerCount: d.triggerCount, incidents: d.incidents || [] }))
       .catch(() => setStatus(null));
   }, [student]);
+
+  // Distinct keywords (offense categories) for the chip row + the filtered,
+  // Interaction-first sorted offense options.
+  const keywords = useMemo(
+    () =>
+      Array.from(new Set(behaviors.map((b) => b.keyword).filter((k): k is string => !!k))).sort((a, b) => a.localeCompare(b)),
+    [behaviors]
+  );
+  const offenseOptions = useMemo(
+    () =>
+      [...behaviors]
+        .filter((b) => !keywordFilter || b.keyword === keywordFilter)
+        .sort((a, b) => {
+          const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
+          const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
+          if (ai !== bi) return ai - bi;
+          return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
+        }),
+    [behaviors, keywordFilter]
+  );
 
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
   const classes = useMemo(() => {
@@ -160,6 +181,7 @@ export default function LogIncidentPage() {
   function reset() {
     setStudent(null);
     setBehaviorId("");
+    setKeywordFilter("");
     setOccurredAt("");
     setNote("");
     setSendImmediately(false);
@@ -300,8 +322,23 @@ export default function LogIncidentPage() {
           </div>
         )}
 
-        <label className="block">
+        <div>
           <span className="mb-1 block text-sm font-medium text-slate-600">Incident</span>
+          {/* Keyword chips to narrow the list quickly (like the class chips). */}
+          {keywords.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              <button type="button" onClick={() => setKeywordFilter("")}
+                className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === "" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>
+                All
+              </button>
+              {keywords.map((k) => (
+                <button key={k} type="button" onClick={() => { setKeywordFilter(k); setBehaviorId(""); }}
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === k ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>
+                  {k}
+                </button>
+              ))}
+            </div>
+          )}
           <select
             autoFocus
             value={behaviorId}
@@ -309,21 +346,14 @@ export default function LogIncidentPage() {
             className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
           >
             <option value="">Choose an incident…</option>
-            {[...behaviors]
-              .sort((a, b) => {
-                const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
-                const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
-                if (ai !== bi) return ai - bi;
-                return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
-              })
-              .map((b) => (
-                <option key={b._id} value={b._id}>
-                  {b.name}
-                  {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : ""}
-                </option>
-              ))}
+            {offenseOptions.map((b) => (
+              <option key={b._id} value={b._id}>
+                {b.name}
+                {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : ""}
+              </option>
+            ))}
           </select>
-        </label>
+        </div>
         <Link href="/behavior/behaviours" className="text-xs text-slate-400 underline">manage behaviours</Link>
 
         <label className="block">

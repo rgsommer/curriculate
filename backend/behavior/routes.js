@@ -820,17 +820,22 @@ async function composeAndCreateNotice({
     lastBeforeDays: lastPriorTs ? Math.round((Date.now() - lastPriorTs) / DAY_MS) : null,
   };
 
+  // Replace the legacy "nnn" name placeholder with the student's name; the AI
+  // otherwise handles naming/pronouns naturally from studentName + pronoun.
+  const studentName = student.preferredName || student.firstName || "your child";
+  const personalize = (t) => String(t || "").replace(/\bnnn\b/gi, studentName);
+
   const ctx = {
-    studentName: student.preferredName || student.firstName || "your child",
+    studentName,
     pronoun: student.pronoun || "",
     history,
     incidents: contextIncidents.map((i) => ({
       behaviorName: i.behaviorSnapshot?.name,
       teacherName: i.__teacherName || "",
       date: i.timestamp,
-      detail: i.detailText || "",
+      detail: personalize(i.detailText || ""),
     })),
-    consequences: consequenceTexts,
+    consequences: consequenceTexts.map(personalize),
     sequenceNo,
     daysSinceFirst,
     schoolName: config?.branding?.schoolName || "",
