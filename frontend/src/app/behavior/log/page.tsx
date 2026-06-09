@@ -6,6 +6,12 @@ import { api, getToken, loginHref, type Behavior, type StudentSummary } from "..
 
 type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: boolean } | null;
 
+// A behaviour's kind, with a legacy fallback to its points sign.
+function kindOf(b: any): "negative" | "positive" {
+  if (b?.kind === "positive" || b?.kind === "negative") return b.kind;
+  return (b?.points || 0) > 0 ? "positive" : "negative";
+}
+
 function gradeLabel(g?: string) {
   const v = (g || "").trim();
   return v ? `Grade ${v}` : "";
@@ -46,6 +52,7 @@ export default function LogIncidentPage() {
 
   const [student, setStudent] = useState<StudentSummary | null>(null);
   const [behaviorId, setBehaviorId] = useState("");
+  const [kindFilter, setKindFilter] = useState<"negative" | "positive">("negative");
   const [keywordFilter, setKeywordFilter] = useState("");
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
@@ -86,16 +93,22 @@ export default function LogIncidentPage() {
       .catch(() => setStatus(null));
   }, [student]);
 
+  // Behaviours of the chosen kind (positive vs negative). Legacy rows without an
+  // explicit kind fall back to their points sign.
+  const inKind = useMemo(
+    () => behaviors.filter((b) => (kindOf(b)) === kindFilter),
+    [behaviors, kindFilter]
+  );
   // Distinct keywords (offense categories) for the chip row + the filtered,
   // Interaction-first sorted offense options.
   const keywords = useMemo(
     () =>
-      Array.from(new Set(behaviors.map((b) => b.keyword).filter((k): k is string => !!k))).sort((a, b) => a.localeCompare(b)),
-    [behaviors]
+      Array.from(new Set(inKind.map((b) => b.keyword).filter((k): k is string => !!k))).sort((a, b) => a.localeCompare(b)),
+    [inKind]
   );
   const offenseOptions = useMemo(
     () =>
-      [...behaviors]
+      [...inKind]
         .filter((b) => !keywordFilter || b.keyword === keywordFilter)
         .sort((a, b) => {
           const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
@@ -103,7 +116,7 @@ export default function LogIncidentPage() {
           if (ai !== bi) return ai - bi;
           return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
         }),
-    [behaviors, keywordFilter]
+    [inKind, keywordFilter]
   );
 
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
@@ -193,6 +206,7 @@ export default function LogIncidentPage() {
     setOccurredAt("");
     setNote("");
     setSendImmediately(false);
+    setKindFilter("negative");
     setNotice(null);
     setPositiveNotice(null);
     setTrigger([]);
@@ -345,8 +359,26 @@ export default function LogIncidentPage() {
           </div>
         )}
 
+        {/* Positive or negative first — then the list filters to that kind. */}
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => { setKindFilter("negative"); setBehaviorId(""); setKeywordFilter(""); }}
+            className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "negative" ? "border-red-300 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"}`}
+          >
+            ✕ Negative
+          </button>
+          <button
+            type="button"
+            onClick={() => { setKindFilter("positive"); setBehaviorId(""); setKeywordFilter(""); }}
+            className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "positive" ? "border-green-300 bg-green-50 text-green-700" : "border-slate-200 bg-white text-slate-500"}`}
+          >
+            ✓ Positive
+          </button>
+        </div>
+
         <div>
-          <span className="mb-1 block text-sm font-medium text-slate-600">Incident</span>
+          <span className="mb-1 block text-sm font-medium text-slate-600">{kindFilter === "positive" ? "Positive behaviour" : "Behaviour"}</span>
           {/* Keyword chips to narrow the list quickly (like the class chips). */}
           {keywords.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -368,14 +400,19 @@ export default function LogIncidentPage() {
             onChange={(e) => setBehaviorId(e.target.value)}
             className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg"
           >
-            <option value="">Choose an incident…</option>
+            <option value="">{kindFilter === "positive" ? "Choose a positive behaviour…" : "Choose a behaviour…"}</option>
             {offenseOptions.map((b) => (
               <option key={b._id} value={b._id}>
                 {b.name}
-                {b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : ""}
+                {kindFilter === "negative" && (b.triggerMode === "IMMEDIATE" ? " — immediate" : b.triggerMode === "INTERACTION" ? " — interaction (no note)" : "")}
               </option>
             ))}
           </select>
+          {offenseOptions.length === 0 && (
+            <p className="mt-1 text-xs text-slate-400">
+              No {kindFilter} behaviours yet — <Link href="/behavior/behaviours" className="underline">add one</Link>.
+            </p>
+          )}
         </div>
         <Link href="/behavior/behaviours" className="text-xs text-slate-400 underline">manage behaviours</Link>
 
@@ -397,20 +434,27 @@ export default function LogIncidentPage() {
           className="w-full rounded-xl border border-slate-300 px-4 py-3"
         />
 
-        <label className="flex items-start gap-2 text-sm">
-          <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} className="mt-0.5" />
-          <span>
-            <span className="font-medium">Send a notice home immediately</span> — sends this offense plus any strikes already in the
-            queue, regardless of the count.
-          </span>
-        </label>
+        {kindFilter === "negative" && (
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} className="mt-0.5" />
+            <span>
+              <span className="font-medium">Send a notice home immediately</span> — sends this offense plus any strikes already in the
+              queue, regardless of the count.
+            </span>
+          </label>
+        )}
+        {kindFilter === "positive" && (
+          <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
+            Positive behaviours earn house points and are documented — they never count as a strike. Enough of them sends a good-news note home.
+          </p>
+        )}
 
         <button
           type="submit"
           disabled={!behaviorId || submitting}
-          className="w-full rounded-xl bg-slate-900 px-4 py-4 text-lg font-semibold text-white disabled:opacity-40"
+          className={`w-full rounded-xl px-4 py-4 text-lg font-semibold text-white disabled:opacity-40 ${kindFilter === "positive" ? "bg-green-700" : "bg-slate-900"}`}
         >
-          {submitting ? "Submitting…" : "Submit"}
+          {submitting ? "Submitting…" : kindFilter === "positive" ? "Log positive" : "Submit"}
         </button>
       </form>
     );

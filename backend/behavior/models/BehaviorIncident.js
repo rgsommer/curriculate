@@ -23,6 +23,7 @@ const BehaviorIncidentSchema = new mongoose.Schema(
     behaviorSnapshot: {
       name: { type: String, default: "" },
       description: { type: String, default: "" },
+      kind: { type: String, enum: ["negative", "positive"], default: "negative" },
       triggerMode: { type: String, enum: ["THRESHOLD", "IMMEDIATE", "INTERACTION"], default: "THRESHOLD" },
       consequenceText: { type: String, default: "" },
       // House points at log time: positive = a positive behaviour (reward),

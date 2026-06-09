@@ -939,13 +939,20 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
   try {
     const isAdmin = ["originator", "admin"].includes(req.membership.role);
     const wantStandard = req.body?.scope === "standard" && isAdmin;
+    const kind = req.body?.kind === "positive" ? "positive" : "negative";
+    // A positive behaviour is a reward: it documents + awards points but never
+    // counts as a strike or notifies, so its mode is always INTERACTION.
+    const triggerMode = kind === "positive"
+      ? "INTERACTION"
+      : ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD";
     const doc = await Behavior.create({
       schoolId: req.schoolId,
       name: String(req.body?.name || "").trim(),
       description: String(req.body?.description || ""),
       keyword: String(req.body?.keyword || "").trim(),
-      triggerMode: ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD",
-      consequenceText: String(req.body?.consequenceText || ""),
+      kind,
+      triggerMode,
+      consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
       points: Number(req.body?.points) || 0,
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
         ? req.body.followUpType
@@ -983,9 +990,12 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("name" in b) beh.name = String(b.name || "").trim();
     if ("description" in b) beh.description = String(b.description || "");
     if ("keyword" in b) beh.keyword = String(b.keyword || "").trim();
+    if (b.kind === "positive" || b.kind === "negative") beh.kind = b.kind;
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
+    // Positive behaviours never count/notify → force INTERACTION + no consequence.
+    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; }
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
@@ -1052,6 +1062,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           name: behavior.name,
           description: behavior.description,
           triggerMode: behavior.triggerMode,
+          kind: behavior.kind || "negative",
           consequenceText: behavior.consequenceText,
           points: behavior.points || 0,
         },
@@ -1193,6 +1204,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           name: behavior.name,
           description: behavior.description,
           triggerMode: behavior.triggerMode,
+          kind: behavior.kind || "negative",
           consequenceText: behavior.consequenceText,
           points: behavior.points || 0,
         },

@@ -15,12 +15,16 @@ const MODES = [
   { v: "IMMEDIATE", label: "Notify immediately" },
 ];
 
-// Interaction first, then alphabetical by keyword (falling back to name).
+const behKind = (b: any): "negative" | "positive" =>
+  b?.kind === "positive" || (b?.points ?? 0) > 0 ? "positive" : "negative";
+
+// Negatives first (grouped), then positives; within each, alphabetical by
+// keyword (falling back to name).
 function sortBehaviors(list: any[]) {
   return [...list].sort((a, b) => {
-    const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
-    const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
-    if (ai !== bi) return ai - bi;
+    const ak = behKind(a) === "positive" ? 1 : 0;
+    const bk = behKind(b) === "positive" ? 1 : 0;
+    if (ak !== bk) return ak - bk;
     return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
   });
 }
@@ -56,9 +60,9 @@ export default function BehavioursPage() {
         <Link href="/behavior/log" className="text-sm text-slate-500 underline">← back to logging</Link>
         <h1 className="mt-1 text-xl font-semibold">Behaviours</h1>
         <p className="text-sm text-slate-400">
-          <span className="rounded bg-green-100 px-1.5 text-green-800">green</span> = shared/standard ·{" "}
-          <span className="rounded bg-blue-100 px-1.5 text-blue-800">blue</span> = your own. Sorted by keyword; “Interaction” logs without a note home.
-          {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour — negative deducts for an offence, positive rewards a good one."}
+          Each behaviour is <span className="text-red-600 font-medium">✕ negative</span> (an offence) or{" "}
+          <span className="text-green-600 font-medium">✓ positive</span> (a reward — never counts as a strike). Negatives are listed first, then positives.
+          {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour."}
         </p>
       </div>
 
@@ -80,6 +84,7 @@ export default function BehavioursPage() {
 function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: { b?: any; add?: boolean; editable?: boolean; allowStandard?: boolean; housesOn?: boolean; onChanged: () => void }) {
   const [name, setName] = useState(b?.name || "");
   const [keyword, setKeyword] = useState(b?.keyword || "");
+  const [kind, setKind] = useState<"negative" | "positive">(b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative"));
   const [triggerMode, setTriggerMode] = useState(b?.triggerMode || (add ? "THRESHOLD" : "THRESHOLD"));
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
   const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
@@ -100,11 +105,12 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
       <div className={`rounded-lg border p-3 ${tint}`}>
         <div className="flex items-center justify-between text-sm">
           <span className="font-medium">
+            <span className={(b.kind === "positive" || (b.points ?? 0) > 0) ? "text-green-600" : "text-red-600"}>{(b.kind === "positive" || (b.points ?? 0) > 0) ? "✓" : "✕"}</span>{" "}
             {b.name}
             {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
             {housesOn && b.points ? <PointsBadge points={b.points} /> : null}
           </span>
-          <span className="text-xs text-slate-400">{MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
+          <span className="text-xs text-slate-400">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
         {b.consequenceText && <p className="mt-1 text-xs text-slate-500">{b.consequenceText}</p>}
       </div>
@@ -117,10 +123,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, triggerMode, consequenceText, followUpType, points: Number(points) || 0, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0);
+        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, triggerMode, consequenceText, followUpType, points: Number(points) || 0 } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0 } });
       }
       onChanged();
     } catch (e: any) {
@@ -140,16 +146,26 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   }
 
   const interaction = triggerMode === "INTERACTION";
+  const positive = kind === "positive";
   return (
     <div className={`rounded-lg border p-3 ${tint}`}>
       {err && <p className="mb-1 text-xs text-red-600">{err}</p>}
+      {/* Positive or negative — sets the whole shape of the behaviour. */}
+      <div className="mb-2 inline-flex overflow-hidden rounded-lg border border-slate-200 text-xs font-medium">
+        <button type="button" onClick={() => setKind("negative")}
+          className={`px-3 py-1.5 ${!positive ? "bg-red-50 text-red-700" : "bg-white text-slate-500"}`}>✕ Negative</button>
+        <button type="button" onClick={() => setKind("positive")}
+          className={`px-3 py-1.5 ${positive ? "bg-green-50 text-green-700" : "bg-white text-slate-500"}`}>✓ Positive</button>
+      </div>
       <div className="grid grid-cols-2 gap-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? "New behaviour name…" : "Name"} className={inputCls} />
-        <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Keyword (e.g. disrespect)" className={inputCls} />
-        <select value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)} className={`${inputCls} col-span-2`}>
-          {MODES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
-        </select>
-        {!interaction && (
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? (positive ? "New positive behaviour…" : "New behaviour name…") : "Name"} className={inputCls} />
+        <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Keyword (e.g. kindness)" className={inputCls} />
+        {!positive && (
+          <select value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)} className={`${inputCls} col-span-2`}>
+            {MODES.map((m) => <option key={m.v} value={m.v}>{m.label}</option>)}
+          </select>
+        )}
+        {!positive && !interaction && (
           <>
             <input value={consequenceText} onChange={(e) => setConsequenceText(e.target.value)} placeholder="Consequence (in the note home)" className={`${inputCls} col-span-2`} />
             <select value={followUpType} onChange={(e) => setFollowUpType(e.target.value)} className={inputCls}>
@@ -162,12 +178,16 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             House points
             <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
             <span className="text-slate-400">
-              positive rewards the student&apos;s house, negative deducts.
-              {interaction ? " Good for positive behaviours — won’t count as a strike or notify home." : " For a positive behaviour, set the mode to “Interaction” so it doesn’t count as a strike."}
+              {positive
+                ? "awarded to the student’s house when logged. Positive behaviours never count as a strike."
+                : "negative deducts from the student’s house; leave 0 for no points."}
             </span>
           </label>
         )}
-        <div className={`flex items-center justify-end gap-2 ${interaction ? "col-span-2" : ""}`}>
+        {positive && !housesOn && (
+          <p className="col-span-2 text-xs text-slate-400">Documented as a positive — it never counts as a strike. (Turn on Houses in Setup to attach points.)</p>
+        )}
+        <div className={`flex items-center justify-end gap-2 ${interaction || positive ? "col-span-2" : ""}`}>
           {add && allowStandard && (
             <label className="mr-auto flex items-center gap-1 text-xs text-slate-500">
               <input type="checkbox" checked={!scopeStandard} onChange={(e) => setScopeStandard(!e.target.checked)} /> private to me

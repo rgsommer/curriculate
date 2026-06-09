@@ -11,6 +11,16 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
+ * Is this incident a POSITIVE (reward) one? Keyed off the snapshot's explicit
+ * kind, falling back to a positive points value for legacy rows logged before
+ * the kind field existed. Positives never count toward strikes or notify.
+ */
+export function isPositiveIncident(inc) {
+  if (inc?.behaviorSnapshot?.kind === "positive") return true;
+  return (inc?.behaviorSnapshot?.points || 0) > 0;
+}
+
+/**
  * Is an incident still inside the fade window relative to `asOf`?
  * Incidents older than fadeWindowDays no longer count toward the threshold.
  */
@@ -37,9 +47,9 @@ export function activeThresholdIncidents(incidents, { fadeWindowDays, thresholdR
   const resetAt = thresholdResetAt ? new Date(thresholdResetAt).getTime() : 0;
   return incidents
     .filter((inc) => {
-      // Positive behaviours (points > 0) are rewards — never part of the trigger
-      // mechanism, regardless of their mode.
-      if ((inc.behaviorSnapshot?.points || 0) > 0) return false;
+      // Positive behaviours are rewards — never part of the trigger mechanism,
+      // regardless of their mode.
+      if (isPositiveIncident(inc)) return false;
       const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
       if (mode !== "THRESHOLD") return false;
       if (inc.countedInNoticeId) return false; // already spent on a prior notice
@@ -63,7 +73,7 @@ export function activePositiveIncidents(incidents, { positiveWindowDays, asOf })
   const cutoff = now.getTime() - positiveWindowDays * DAY_MS;
   return incidents
     .filter((inc) => {
-      if ((inc.behaviorSnapshot?.points || 0) <= 0) return false; // positives only
+      if (!isPositiveIncident(inc)) return false; // positives only
       if (inc.countedInNoticeId) return false; // already celebrated in a notice
       return new Date(inc.timestamp).getTime() > cutoff;
     })
@@ -114,9 +124,9 @@ export function evaluateIncident({ newIncident, priorIncidents, config, student,
   const mode =
     newIncident.behaviorSnapshot?.triggerMode || (newIncident.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
 
-  // POSITIVE behaviour (points > 0): a reward, documented only — never notifies
-  // and never counts toward strikes, whatever its mode.
-  if ((newIncident.behaviorSnapshot?.points || 0) > 0) {
+  // POSITIVE behaviour: a reward, documented only — never notifies and never
+  // counts toward strikes, whatever its mode.
+  if (isPositiveIncident(newIncident)) {
     return { shouldNotify: false, reason: null, contributingIncidents: [], sequenceNo: 0, ccVp: false };
   }
 

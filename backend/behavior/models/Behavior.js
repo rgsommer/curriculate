@@ -20,6 +20,12 @@ const BehaviorSchema = new mongoose.Schema(
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "" }, // standard description / expectation wording
 
+    // NEGATIVE = an offence (counts toward strikes / notifies). POSITIVE = a
+    // reward (documents + awards house points, never counts as a strike, can earn
+    // a good-news note). The teacher picks positive-or-negative first when
+    // logging, then the behaviour list filters to that kind.
+    kind: { type: String, enum: ["negative", "positive"], default: "negative", index: true },
+
     // Short teacher-defined category/keyword (e.g. "disrespect", "class time")
     // used to sort + group the merged behaviour list.
     keyword: { type: String, default: "", trim: true },

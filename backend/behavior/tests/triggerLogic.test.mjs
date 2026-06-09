@@ -153,6 +153,21 @@ test("POSITIVE incidents are excluded from the active strike count", () => {
   assert.equal(active.length, 2); // only the two real strikes
 });
 
+test("POSITIVE by kind (even with 0 points) never counts toward strikes", () => {
+  const positiveByKind = {
+    _id: "pk", teacherId: "t1",
+    behaviorSnapshot: { triggerMode: "INTERACTION", name: "Kindness", kind: "positive", points: 0 },
+    countedInNoticeId: null, timestamp: new Date(now.getTime()),
+  };
+  const active = activeThresholdIncidents(
+    [inc({ id: "a", daysAgo: 2 }), inc({ id: "b", daysAgo: 1 }), positiveByKind],
+    { fadeWindowDays: 30, thresholdResetAt: null, asOf: now }
+  );
+  assert.equal(active.length, 2); // the positive is excluded
+  const d = evaluatePositive({ incidents: [positiveByKind], config: { triggerCount: 1, fadeWindowDays: 30 }, student: {}, asOf: now });
+  assert.equal(d.shouldNotify, true); // counts as a positive despite 0 points
+});
+
 test("POSITIVE notice: fires at 3 positives within the 3× fade window", () => {
   // fade 30 → positive window 90 days. Three positives inside the window fire.
   const incidents = [
