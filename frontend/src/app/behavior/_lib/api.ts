@@ -93,6 +93,7 @@ export type StudentSummary = {
   preferredName?: string;
   classGroup?: string;
   grade?: string;
+  activeCount?: number;
 };
 
 export type Behavior = {

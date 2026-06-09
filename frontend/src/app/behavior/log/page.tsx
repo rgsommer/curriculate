@@ -23,11 +23,25 @@ function fmtDateTime(d: string | number | Date) {
   return new Date(d).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+// Count colour: red at/over trigger, orange when the next incident will trigger.
+function countColor(count: number, trigger: number) {
+  if (count >= trigger) return "text-red-600";
+  if (count === trigger - 1) return "text-orange-500";
+  return "text-slate-500";
+}
+// Student-list name colour: orange at threshold, lighter one fewer.
+function rowNameColor(count: number, trigger: number) {
+  if (count >= trigger - 1) return "text-orange-600";
+  if (count === trigger - 2) return "text-orange-400";
+  return "";
+}
+
 export default function LogIncidentPage() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
   const [query, setQuery] = useState("");
   const [selectedClass, setSelectedClass] = useState<string>("");
+  const [rosterTrigger, setRosterTrigger] = useState(3);
 
   const [student, setStudent] = useState<StudentSummary | null>(null);
   const [behaviorId, setBehaviorId] = useState("");
@@ -44,8 +58,11 @@ export default function LogIncidentPage() {
 
   useEffect(() => {
     if (!getToken()) return;
-    api<{ students: StudentSummary[] }>("/students")
-      .then((d) => setStudents(d.students || []))
+    api<{ students: StudentSummary[]; triggerCount: number }>("/students")
+      .then((d) => {
+        setStudents(d.students || []);
+        if (d.triggerCount) setRosterTrigger(d.triggerCount);
+      })
       .catch((e) => setError(e.message));
     api<{ behaviors: Behavior[] }>("/behaviors")
       .then((d) => setBehaviors(d.behaviors || []))
@@ -156,7 +173,7 @@ export default function LogIncidentPage() {
               <h2 className="font-semibold">
                 {notice ? "Incidents in this notice" : "Strikes so far (all teachers)"}
               </h2>
-              <span className="text-sm text-slate-400">
+              <span className={`text-sm font-medium ${notice ? "text-slate-400" : countColor(trigger.length, triggerCount)}`}>
                 {trigger.length}
                 {!notice && ` / ${triggerCount}`}
               </span>
@@ -236,7 +253,7 @@ export default function LogIncidentPage() {
           <div className="rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex items-baseline justify-between">
               <h2 className="text-sm font-semibold">Current strikes (all teachers)</h2>
-              <span className={`text-sm font-medium ${status.activeCount >= status.triggerCount ? "text-red-600" : "text-slate-500"}`}>
+              <span className={`text-sm font-medium ${countColor(status.activeCount, status.triggerCount)}`}>
                 {status.activeCount} / {status.triggerCount}
               </span>
             </div>
@@ -347,9 +364,10 @@ export default function LogIncidentPage() {
               onClick={() => setStudent(s)}
               className="flex flex-1 items-center justify-between px-4 py-3 text-left hover:bg-slate-50"
             >
-              <span className="font-medium">
+              <span className={`font-medium ${rowNameColor(s.activeCount || 0, rosterTrigger)}`}>
                 {s.lastName}, {s.firstName}
                 {s.preferredName ? ` (${s.preferredName})` : ""}
+                {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
               <span className="text-sm text-slate-400">{s.classGroup}</span>
             </button>

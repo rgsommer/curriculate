@@ -609,6 +609,8 @@ try {
   app.use("/api/behavior", behaviorRoutes);
   const { startMorningReminders } = await import("./behavior/jobs/morningReminders.js");
   startMorningReminders();
+  const { startNoticeSweeper } = await import("./behavior/lib/notify.js");
+  startNoticeSweeper();
   console.error("[boot] behaviours module loaded OK");
 } catch (e) {
   console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);

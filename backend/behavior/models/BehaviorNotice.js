@@ -75,6 +75,10 @@ const BehaviorNoticeSchema = new mongoose.Schema(
     sentByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     // Backfilled from the legacy behaviour spreadsheet (reversible marker).
     legacyImport: { type: Boolean, default: false, index: true },
+    // True when this notice should auto-send after its window (auto mode). The
+    // sweeper only dispatches autoDispatch notices, so draft-mode notices that
+    // await a manual send are never swept.
+    autoDispatch: { type: Boolean, default: true },
     queuedAt: { type: Date, default: () => new Date() },
     sentAt: { type: Date, default: null },
     cancelUntil: { type: Date, default: null }, // end of the cancellable window

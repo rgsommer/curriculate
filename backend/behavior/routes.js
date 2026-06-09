@@ -400,7 +400,28 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
-    res.json({ ok: true, students });
+
+    // Per-student active THRESHOLD count (for list colouring). Unspent incidents
+    // within the fade window — spent ones already carry countedInNoticeId.
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const fadeDays = config?.fadeWindowDays ?? 30;
+    const triggerCount = config?.triggerCount ?? 3;
+    const cutoff = new Date(Date.now() - fadeDays * DAY_MS);
+    const agg = await BehaviorIncident.aggregate([
+      {
+        $match: {
+          schoolId: req.schoolId,
+          studentId: { $in: students.map((s) => s._id) },
+          countedInNoticeId: null,
+          "behaviorSnapshot.triggerMode": "THRESHOLD",
+          timestamp: { $gt: cutoff },
+        },
+      },
+      { $group: { _id: "$studentId", n: { $sum: 1 } } },
+    ]);
+    const cnt = Object.fromEntries(agg.map((a) => [String(a._id), a.n]));
+    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0 }));
+    res.json({ ok: true, students: out, triggerCount });
   } catch (err) {
     next(err);
   }
@@ -736,6 +757,7 @@ async function composeAndCreateNotice({
     fromTeachers, triggeringIncidentIds, consequenceTexts, channels, recipients, ccVp,
     renderedText: text, aiUsed, status: "queued", sentByTeacherId,
     cancelUntil: new Date(Date.now() + cancelWindow * 1000),
+    autoDispatch: config?.aiSendMode !== "draft",
   });
   if (config?.aiSendMode !== "draft") scheduleDispatch(notice._id, cancelWindow);
   return notice;
@@ -946,5 +968,104 @@ async function escalateMissedConsequence(fu, req) {
 
   return { noticeId: notice._id, followupId: newFu._id, missLevel: newMissLevel, multiplier, ccVp, consequenceText };
 }
+
+// Edit a queued notice's text before it sends (auto-send mode gives a window;
+// editing extends that window so the edit isn't immediately swept out).
+router.put("/notices/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const notice = await BehaviorNotice.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!notice) return res.status(404).json({ ok: false, error: "Notice not found" });
+    if (notice.status !== "queued") {
+      return res.status(409).json({ ok: false, error: `Only queued notices can be edited (this one is ${notice.status})` });
+    }
+    if (typeof req.body?.renderedText === "string") notice.renderedText = req.body.renderedText;
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    notice.cancelUntil = new Date(Date.now() + (config?.cancelWindowSeconds ?? 60) * 1000);
+    await notice.save();
+    await audit(req.schoolId, "notice.edited", req, { noticeId: notice._id, studentId: notice.studentId });
+    res.json({ ok: true, notice: { _id: notice._id, renderedText: notice.renderedText, status: notice.status, cancelUntil: notice.cancelUntil } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Append a PRIVATE teacher note to an incident — internal documentation, never
+// sent to parents, but included in the AI Admin Summary (§ teacher request).
+router.post("/incidents/:id/notes", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const text = String(req.body?.text || "").trim();
+    if (!text) return res.status(400).json({ ok: false, error: "text required" });
+    const inc = await BehaviorIncident.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
+    inc.teacherNotes.push({ teacherId: req.membership._id, name: req.membership.name || "", text, at: new Date() });
+    await inc.save();
+    await audit(req.schoolId, "incident.note_added", req, { studentId: inc.studentId });
+    res.json({ ok: true, teacherNotes: inc.teacherNotes });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// AI "Admin Summary" for a student — scope "all" (full history) or "current"
+// (just the active trigger incidents). Includes private teacher notes. Returns
+// text for the client to copy to the clipboard. Fails safe to a plain digest.
+router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const scope = req.body?.scope === "current" ? "current" : "all";
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+
+    let incidents = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: 1 }).lean();
+    if (scope === "current") {
+      const resetAt = student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+      const cutoff = Date.now() - (config?.fadeWindowDays ?? 30) * DAY_MS;
+      incidents = incidents.filter((i) => {
+        const mode = i.behaviorSnapshot?.triggerMode || (i.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+        return mode === "THRESHOLD" && !i.countedInNoticeId &&
+          new Date(i.timestamp).getTime() > resetAt && new Date(i.timestamp).getTime() > cutoff;
+      });
+    }
+    const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
+    const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
+    const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
+    const lines = incidents.map((i) => {
+      const d = new Date(i.timestamp).toLocaleString("en-CA");
+      const notes = (i.teacherNotes || []).map((n) => `    • teacher note (${n.name || "teacher"}): ${n.text}`).join("\n");
+      return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
+    });
+    const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
+    const noticeLines = notices.map((n) => `- ${new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA")}: notice #${n.sequenceNo} (${n.reason}, ${n.status})`);
+
+    const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+    const ctxText =
+      `Student: ${name}${student.classGroup ? ` (${student.classGroup})` : ""}.\n\n` +
+      `${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
+      `Notices home:\n${noticeLines.join("\n") || "(none)"}`;
+    const prompt =
+      `Write a concise, objective summary of a student's behaviour record for a school administrator (VP/principal). ` +
+      `Cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
+      `Be factual and brief. Use ONLY the data below — do not invent.\n\n${ctxText}`;
+
+    let summary = `Behaviour summary — ${name}\n\n${ctxText}`; // deterministic fallback
+    let aiUsed = false;
+    try {
+      const client = makeDefaultAiClient(config || {});
+      if (client) {
+        const out = await Promise.race([
+          client.complete(prompt),
+          new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 15000)),
+        ]);
+        if (out && String(out).trim()) { summary = String(out).trim(); aiUsed = true; }
+      }
+    } catch {
+      /* fall back to the deterministic digest */
+    }
+    await audit(req.schoolId, "admin_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed } });
+    res.json({ ok: true, summary, aiUsed, scope });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

@@ -5,6 +5,7 @@
 // record the per-channel outcome on the notice and write an audit entry. The
 // rest of the app never talks to a provider directly — it goes through here.
 
+import cron from "node-cron";
 import BehaviorNotice from "../models/BehaviorNotice.js";
 import BehaviorStudent from "../models/BehaviorStudent.js";
 import BehaviorConfig from "../models/BehaviorConfig.js";
@@ -136,4 +137,32 @@ export function scheduleDispatch(noticeId, cancelWindowSeconds = 60, opts = {}) 
     );
   }, ms).unref?.();
   return Promise.resolve({ ok: true, scheduled: true, inSeconds: cancelWindowSeconds });
+}
+
+/**
+ * Reliability net: the per-notice setTimeout above is lost if the server
+ * restarts (Render redeploys) before it fires, leaving auto notices stuck in
+ * "queued". This sweep dispatches any auto notice whose cancellable window has
+ * passed. dispatchNotice is idempotent, so it's safe to run alongside the timer.
+ */
+export async function sweepQueuedNotices() {
+  const due = await BehaviorNotice.find({
+    status: "queued",
+    autoDispatch: true,
+    cancelUntil: { $lte: new Date() },
+  })
+    .select("_id")
+    .lean();
+  for (const n of due) {
+    await dispatchNotice(n._id).catch((err) => console.warn("[behavior/sweep] dispatch failed:", err?.message || err));
+  }
+  return due.length;
+}
+
+/** Register the every-minute queued-notice sweeper (call once at startup). */
+export function startNoticeSweeper() {
+  cron.schedule("* * * * *", () => {
+    sweepQueuedNotices().catch((err) => console.error("[behavior/sweep] tick failed:", err?.message || err));
+  });
+  console.log("[behavior] notice sweeper started");
 }

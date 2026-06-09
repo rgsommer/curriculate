@@ -27,7 +27,22 @@ const BehaviorIncidentSchema = new mongoose.Schema(
       consequenceText: { type: String, default: "" },
     },
 
-    detailText: { type: String, default: "" }, // optional free-text detail
+    detailText: { type: String, default: "" }, // optional free-text detail (goes in the parent note)
+
+    // Private teacher documentation on this incident. NOT sent to parents — for
+    // internal records — but IS fed to the AI "Admin Summary". Append-only log.
+    teacherNotes: {
+      type: [
+        {
+          teacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher" },
+          name: { type: String, default: "" },
+          text: { type: String, default: "" },
+          at: { type: Date, default: () => new Date() },
+          _id: false,
+        },
+      ],
+      default: [],
+    },
     // Convenience flag mirroring the snapshot trigger mode at log time.
     immediateFlag: { type: Boolean, default: false },
 
