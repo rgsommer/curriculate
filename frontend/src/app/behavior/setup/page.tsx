@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type Me } from "../_lib/api";
+import { api, getToken, loginHref, API_BASE, type Me } from "../_lib/api";
 
 export default function SetupPage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -384,6 +384,34 @@ function RosterSection() {
   );
 }
 
+// A ready-to-adapt userscript (Tampermonkey/Violentmonkey) that reads the page's
+// Edsby identifiers and POSTs them to the ingest endpoint. The cookie line uses
+// document.cookie — swap in your own accessor if your cookie is HttpOnly.
+function ingestSnippet(apiBase: string, token: string) {
+  return `// ==UserScript==
+// @name         Push Edsby creds → Behaviours
+// @match        https://*.edsby.com/*
+// @grant        GM_xmlhttpRequest
+// ==/UserScript==
+(function () {
+  var cf = window._cf || {};
+  var payload = {
+    cookie:  document.cookie,                              // ← replace with your cookie accessor
+    formkey: cf.formkey || "",
+    userNid: (cf.user && cf.user.nid) || "",
+    jver:    cf.jver || (document.documentElement.outerHTML.match(/_i=([A-Za-z0-9._-]+)/) || [])[1] || "",
+    cver:    cf.cver || ""
+  };
+  GM_xmlhttpRequest({
+    method: "POST",
+    url: "${apiBase}/api/behavior/edsby/ingest",
+    headers: { "Content-Type": "application/json", "x-ingest-token": "${token}" },
+    data: JSON.stringify(payload),
+    onload: function (r) { console.log("Behaviours ingest:", r.status, r.responseText); }
+  });
+})();`;
+}
+
 function EdsbySection({ edsby }: { edsby: any }) {
   const [baseUrl, setBaseUrl] = useState(edsby?.baseUrl || "");
   const [userNid, setUserNid] = useState(edsby?.userNid || "");
@@ -402,8 +430,24 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const [formkeyStored, setFormkeyStored] = useState(!!edsby?.formkeyConfigured);
   const [detectMsg, setDetectMsg] = useState("");
   const [detectBusy, setDetectBusy] = useState(false);
+  const [ingestToken, setIngestToken] = useState("");
+  const [tokenBusy, setTokenBusy] = useState(false);
+  const ingestTokenSet = !!edsby?.ingestTokenSet || !!ingestToken;
   const cookieSet = cookieStored;
   const formkeySet = formkeyStored;
+
+  async function genIngestToken() {
+    if (ingestTokenSet && !window.confirm("Generate a new token? Your existing script's token will stop working until you update it.")) return;
+    setTokenBusy(true);
+    try {
+      const r = await api<{ token: string }>("/edsby/ingest-token", { body: {} });
+      setIngestToken(r.token);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setTokenBusy(false);
+    }
+  }
 
   // One tap: auto-detect jver/cver and (if the cookie is stored) refresh the
   // formkey — pulling whatever is missing/stale.
@@ -535,6 +579,34 @@ function EdsbySection({ edsby }: { edsby: any }) {
         <p className="mt-2 text-slate-400">
           The app can&apos;t grab this for you — browsers block one site from reading another&apos;s session cookie. You only
           need to redo it when sends start failing over to email (the cookie expires every so often).
+        </p>
+      </details>
+
+      <details className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <summary className="cursor-pointer font-medium text-slate-700">Auto-push from your own browser script (advanced)</summary>
+        <p className="mt-2">
+          If you have a browser script that can read your Edsby cookie, generate a token and POST the creds to the app —
+          no manual paste. The token is the auth; keep it secret. Regenerating invalidates the old one.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={genIngestToken} disabled={tokenBusy}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
+            {tokenBusy ? "Generating…" : ingestTokenSet ? "Regenerate token" : "Generate token"}
+          </button>
+          {ingestToken && <code className="break-all rounded bg-slate-100 px-1.5 py-0.5 text-[11px]">{ingestToken}</code>}
+          {!ingestToken && ingestTokenSet && <span className="text-slate-400">A token already exists (hidden) — regenerate to see a new one.</span>}
+        </div>
+        {ingestToken && (
+          <>
+            <p className="mt-2">Endpoint: <code className="rounded bg-slate-100 px-1">{API_BASE}/api/behavior/edsby/ingest</code></p>
+            <pre className="mt-1 max-h-64 overflow-auto rounded-lg bg-slate-900 p-3 text-[11px] leading-relaxed text-slate-100">{ingestSnippet(API_BASE, ingestToken)}</pre>
+            <button type="button" onClick={() => navigator.clipboard?.writeText(ingestSnippet(API_BASE, ingestToken))}
+              className="mt-1 rounded-lg border border-slate-300 px-3 py-1 text-xs">Copy script</button>
+          </>
+        )}
+        <p className="mt-2 text-slate-400">
+          The app only reads what you POST — any of cookie, formkey, jver, cver, userNid, zoomId, baseUrl. Send the cookie
+          using your script&apos;s own accessor (replace the <code className="rounded bg-slate-100 px-1">document.cookie</code> line).
         </p>
       </details>
       <Field label={`Formkey (CSRF) ${formkeySet ? "(stored ✓ — blank keeps it)" : ""}`}>

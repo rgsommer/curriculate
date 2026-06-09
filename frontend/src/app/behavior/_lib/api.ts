@@ -4,7 +4,7 @@
 // existing Curriculate JWT stored by the login page in localStorage
 // ("curriculate_auth_token"), so Behaviours shares the same sign-in.
 
-const API_BASE =
+export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   "https://api.curriculate.net";

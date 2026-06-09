@@ -120,6 +120,7 @@ function sanitizeConfig(config) {
       zoomId: c.edsby.zoomId || "",
       cookieConfigured: !!c.edsby.cookieEnc,
       formkeyConfigured: !!c.edsby.formkeyEnc,
+      ingestTokenSet: !!c.edsby.ingestToken,
       updatedAt: c.edsby.updatedAt || null,
     };
   }
@@ -321,6 +322,50 @@ router.post("/edsby/refresh", authAny, loadMembership, requireAdmin, async (req,
     res.json({ ok: true, jver, cver, updated, formkeyOk, formkeyError, notes });
   } catch (err) {
     res.json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// Generate (or rotate) the ingest token a browser script uses to push fresh
+// Edsby creds in. Returns the token ONCE — store it in your script; regenerating
+// invalidates the previous one.
+router.post("/edsby/ingest-token", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const token = crypto.randomBytes(24).toString("hex");
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "edsby.ingestToken": token } });
+    await audit(req.schoolId, "edsby.ingest_token_rotated", req, {});
+    res.json({ ok: true, token, url: "/api/behavior/edsby/ingest" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Token-authenticated credential push — NO login required (the token IS the
+// auth), so a browser userscript on the Edsby page can POST fresh creds here.
+// Accepts any of: cookie, formkey, jver, cver, userNid, zoomId, baseUrl. Secrets
+// are encrypted at rest. Only the fields supplied are updated.
+router.post("/edsby/ingest", async (req, res) => {
+  try {
+    const token = String(req.headers["x-ingest-token"] || req.body?.token || "").trim();
+    if (!token) return res.status(401).json({ ok: false, error: "missing token" });
+    const config = await BehaviorConfig.findOne({ "edsby.ingestToken": token }).select("_id schoolId").lean();
+    if (!config) return res.status(401).json({ ok: false, error: "invalid token" });
+
+    const b = req.body || {};
+    const set = { "edsby.updatedAt": new Date() };
+    const updated = [];
+    for (const k of ["userNid", "jver", "cver", "zoomId"]) {
+      if (k in b && String(b[k] || "").trim()) { set[`edsby.${k}`] = String(b[k]).trim(); updated.push(k); }
+    }
+    if (b.baseUrl) { set["edsby.baseUrl"] = String(b.baseUrl).trim().replace(/\/+$/, ""); updated.push("baseUrl"); }
+    if (b.cookie) { set["edsby.cookieEnc"] = encrypt(String(b.cookie)); updated.push("cookie"); }
+    if (b.formkey) { set["edsby.formkeyEnc"] = encrypt(String(b.formkey)); updated.push("formkey"); }
+    if (updated.length <= 0) return res.status(400).json({ ok: false, error: "no fields to update" });
+
+    await BehaviorConfig.updateOne({ _id: config._id }, { $set: set });
+    await audit(config.schoolId, "edsby.ingested", req, { meta: { updated, via: "ingest-token" } });
+    res.json({ ok: true, updated });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err?.message || String(err) });
   }
 });
 

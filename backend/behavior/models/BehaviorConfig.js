@@ -51,6 +51,9 @@ const BehaviorConfigSchema = new mongoose.Schema(
       jver: { type: String, default: "" },
       cver: { type: String, default: "" },
       zoomId: { type: String, default: "" }, // a class/zoom id, used to refresh formkey
+      // Bearer token a browser script includes to PUSH fresh creds (cookie etc.)
+      // into the app without a login — see POST /edsby/ingest. Revocable.
+      ingestToken: { type: String, default: "" },
       updatedAt: { type: Date, default: null },
     },
 
