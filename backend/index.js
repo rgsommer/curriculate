@@ -84,8 +84,6 @@ import { authRequired } from "./middleware/authRequired.js";
 
 // 10) Routes
 import authRoutes from "./routes/auth.js";
-import behaviorRoutes from "./behavior/routes.js";
-import { startMorningReminders } from "./behavior/jobs/morningReminders.js";
 import stripeRoutes from "./routes/stripe.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
@@ -602,10 +600,19 @@ app.use("/api/subs-admin", subsAdminRouter);
 app.use("/api/subs-teacher", subsTeacherRouter);
 app.use("/api/subs-feedback", subsFeedbackRouter);
 app.use("/api/campfire", campfireFeedbackRouter);
-// Behaviours app (curriculate.net/behavior) — cross-teacher behaviour tracking.
-app.use("/api/behavior", behaviorRoutes);
-// Daily follow-up reminder digests (§8b) — checks each minute for due schools.
-startMorningReminders();
+// Behaviours app (curriculate.net/behavior) — loaded DEFENSIVELY so a fault in
+// this module can never take down the whole backend at boot. If it fails to
+// load, the exact error is logged (stderr) and the rest of the app continues
+// (the /api/behavior routes will 404 until the fault is fixed).
+try {
+  const { default: behaviorRoutes } = await import("./behavior/routes.js");
+  app.use("/api/behavior", behaviorRoutes);
+  const { startMorningReminders } = await import("./behavior/jobs/morningReminders.js");
+  startMorningReminders();
+  console.error("[boot] behaviours module loaded OK");
+} catch (e) {
+  console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);
+}
 // Sequential escalation sweep — contacts preferred subs in rank order and
 // advances when an offer's interval elapses, even if nobody responds.
 startSubsEscalation();
@@ -1556,7 +1563,7 @@ io.engine.on("connection_error", (err) => {
   const relatedKeys = Object.keys(process.env)
     .filter((k) => /mongo|jwt|database|^db_/i.test(k))
     .sort();
-  console.log(
+  console.error(
     `[boot] env check — MONGO_URI: ${present("MONGO_URI")}, ` +
       `JWT_SECRET: ${present("JWT_SECRET")}, PORT: ${present("PORT")}; ` +
       `${Object.keys(process.env).length} total env keys; ` +
