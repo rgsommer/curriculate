@@ -1556,29 +1556,9 @@ io.engine.on("connection_error", (err) => {
 // --------------------------------------------------------------------
 // MongoDB Connection
 // --------------------------------------------------------------------
-// Boot diagnostic — report which critical env vars are visible at startup
-// (names/presence only, NEVER values) so a failed deploy log is conclusive.
-{
-  const present = (k) => (process.env[k] ? "present" : "MISSING");
-  const relatedKeys = Object.keys(process.env)
-    .filter((k) => /mongo|jwt|database|^db_/i.test(k))
-    .sort();
-  console.error(
-    `[boot] env check — MONGO_URI: ${present("MONGO_URI")}, ` +
-      `JWT_SECRET: ${present("JWT_SECRET")}, PORT: ${present("PORT")}; ` +
-      `${Object.keys(process.env).length} total env keys; ` +
-      `Mongo/JWT-ish keys seen: [${relatedKeys.join(", ") || "none"}]`
-  );
-}
-
 const MONGO_URI = process.env.MONGO_URI;
 if (!MONGO_URI) {
-  console.error(
-    "❌ MONGO_URI is not defined in environment! " +
-      "It is not reaching this service at runtime — check it's set on THIS Render " +
-      "service (not another/an unattached env group), spelled exactly MONGO_URI, " +
-      "with no trailing space, as an Environment Variable (not a Secret File)."
-  );
+  console.error("❌ MONGO_URI is not defined in environment!");
   process.exit(1);
 }
 
