@@ -1,3 +1,3 @@
-Last name,First name,Common/preferred name,Gender,Class/Group,Grade,DOB,Parent 1 name,Parent 1 email,Parent 1 Edsby ID,Parent 2 name,Parent 2 email,Parent 2 Edsby ID
-Smith,Jonathan,Jon,M,7A,7,2013-04-01,Jane Smith,jane.smith@example.org,,John Smith,john.smith@example.org,
-Patel,Aisha,,F,7A,7,2013-09-12,Raj Patel,raj.patel@example.org,,,,
+Last name,First name,Common/preferred name,Gender,Class/Group,Grade,House,DOB,Parent 1 name,Parent 1 email,Parent 1 Edsby ID,Parent 2 name,Parent 2 email,Parent 2 Edsby ID
+Smith,Jonathan,Jon,M,7A,7,Phoenix,2013-04-01,Jane Smith,jane.smith@example.org,,John Smith,john.smith@example.org,
+Patel,Aisha,,F,7A,7,Dragon,2013-09-12,Raj Patel,raj.patel@example.org,,,,

@@ -314,20 +314,46 @@ function RosterSection() {
     }
   }
 
+  // Generate the template in-browser so it always matches the columns the
+  // importer accepts (including House). Quotes any cell with a comma.
+  function downloadTemplate() {
+    const headers = [
+      "Last name", "First name", "Common/preferred name", "Gender", "Class/Group", "Grade", "House", "DOB",
+      "Parent 1 name", "Parent 1 email", "Parent 1 Edsby ID",
+      "Parent 2 name", "Parent 2 email", "Parent 2 Edsby ID",
+    ];
+    const rows = [
+      ["Smith", "Jonathan", "Jon", "M", "7A", "7", "Phoenix", "2013-04-01", "Jane Smith", "jane.smith@example.org", "", "John Smith", "john.smith@example.org", ""],
+      ["Patel", "Aisha", "", "F", "7A", "7", "Dragon", "2013-09-12", "Raj Patel", "raj.patel@example.org", "", "", "", ""],
+    ];
+    const esc = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+    const csv = [headers, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "behaviours-roster-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <Card>
       <h2 id="roster" className="font-semibold">Import roster (CSV or XLSX)</h2>
       <p className="mt-1 text-sm text-slate-500">
-        Columns: Last name, First name, Common/preferred name, Gender, Class/Group, Grade, DOB,
-        Parent 1/2 name + email + Edsby ID. The ethnicity field is dropped automatically.
+        Columns: Last name, First name, Common/preferred name, Gender, Class/Group, Grade, House, DOB,
+        Parent 1/2 name + email + Edsby ID. Only Last/First name are required; House matches or creates a
+        house. The ethnicity field is dropped automatically.
       </p>
-      <a
-        href="/behavior-roster-template.csv"
-        download
+      <button
+        type="button"
+        onClick={downloadTemplate}
         className="mt-2 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700"
       >
         ⬇ Download template (CSV)
-      </a>
+      </button>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <input
         type="file"
