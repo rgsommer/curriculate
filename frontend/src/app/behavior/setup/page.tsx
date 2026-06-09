@@ -673,10 +673,36 @@ function HousesSection({ config }: { config?: any }) {
   const [reportMsg, setReportMsg] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
 
+  // Balanced auto-assign.
+  const [backfillBusy, setBackfillBusy] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState("");
+
   function load() {
     api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch((e) => setErr(e.message));
   }
   useEffect(() => { load(); }, []);
+
+  async function backfill() {
+    if (!window.confirm("Create Alpha/Beta/Delta/Gamma and assign ALL active students into a balanced mix (siblings by last name stay together)? This replaces any current house assignments and turns Houses on.")) return;
+    setBackfillBusy(true);
+    setBackfillMsg("");
+    try {
+      const r = await api<{ assigned: number; houses: { name: string; total: number; byGrade: Record<string, number>; byGender: Record<string, number> }[] }>(
+        "/houses/backfill", { body: {} }
+      );
+      setEnabled(true);
+      const lines = r.houses.map((h) => {
+        const g = Object.entries(h.byGender).map(([k, v]) => `${k}:${v}`).join(" ");
+        return `${h.name}: ${h.total} (${g})`;
+      });
+      setBackfillMsg(`✓ Assigned ${r.assigned} students — ${lines.join(" · ")}`);
+      load();
+    } catch (e: any) {
+      setBackfillMsg(`✗ ${e.message}`);
+    } finally {
+      setBackfillBusy(false);
+    }
+  }
 
   async function saveReportConfig(next: { enabled?: boolean; recipientEmail?: string }) {
     const houseReport = { enabled: reportOn, recipientEmail: recipient, ...next };
@@ -748,6 +774,19 @@ function HousesSection({ config }: { config?: any }) {
         <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-10 rounded border border-slate-300" />
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New house name…" className={`${inputCls} flex-1`} />
         <button onClick={add} disabled={!name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">Add house</button>
+      </div>
+
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">Quick start: balanced auto-assign</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Creates Alpha / Beta / Delta / Gamma and sorts all students into a balanced mix of grade and gender, keeping
+          same-last-name students (siblings) together. Replaces current assignments — you can hand-tune after.
+        </p>
+        <button onClick={backfill} disabled={backfillBusy}
+          className="mt-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+          {backfillBusy ? "Assigning…" : "Auto-assign all students to 4 houses"}
+        </button>
+        {backfillMsg && <p className={`mt-2 text-xs ${backfillMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{backfillMsg}</p>}
       </div>
 
       {/* House standings report */}
