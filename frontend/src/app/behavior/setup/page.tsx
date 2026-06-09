@@ -523,6 +523,20 @@ function EdsbySection({ edsby }: { edsby: any }) {
         <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={2}
           placeholder={cookieSet ? "•••••••• (already saved)" : "paste the Edsby session cookie"} className={inputCls} />
       </Field>
+      <details className="mt-1 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        <summary className="cursor-pointer font-medium text-slate-700">How to copy the session cookie from DevTools</summary>
+        <ol className="mt-2 list-decimal space-y-1 pl-4">
+          <li>Sign in to <span className="font-medium">Edsby</span> in a browser tab.</li>
+          <li>Open DevTools (<span className="font-mono">F12</span>, or <span className="font-mono">⌥⌘I</span> on Mac) → <span className="font-medium">Network</span> tab.</li>
+          <li>Reload the page; in the filter box type <code className="rounded bg-slate-100 px-1">xds</code>, then click any <code className="rounded bg-slate-100 px-1">?xds=Panorama</code> request.</li>
+          <li>Open <span className="font-medium">Headers → Request Headers</span> and find the <code className="rounded bg-slate-100 px-1">Cookie:</code> line.</li>
+          <li>Copy <span className="font-medium">everything after</span> <code className="rounded bg-slate-100 px-1">Cookie:</code> and paste it above, then <span className="font-medium">Save</span>.</li>
+        </ol>
+        <p className="mt-2 text-slate-400">
+          The app can&apos;t grab this for you — browsers block one site from reading another&apos;s session cookie. You only
+          need to redo it when sends start failing over to email (the cookie expires every so often).
+        </p>
+      </details>
       <Field label={`Formkey (CSRF) ${formkeySet ? "(stored ✓ — blank keeps it)" : ""}`}>
         <input value={formkey} onChange={(e) => setFormkey(e.target.value)}
           placeholder={formkeySet ? "•••••••• (already saved)" : "the _formkey from a logged-in page"} className={inputCls} />
