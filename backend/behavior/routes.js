@@ -802,9 +802,26 @@ async function composeAndCreateNotice({
   const sender = await BehaviorTeacher.findById(sentByTeacherId).lean();
   const signature = (sender?.signature || config?.branding?.signatureBlock || "").trim();
 
+  // Background history for the AI's AWARENESS only (not to be summarized/listed):
+  // distinct prior behaviour types, prior-notice count, recency of past activity.
+  const contribIds = new Set((triggeringIncidentIds || []).map(String));
+  const allInc = await BehaviorIncident.find({ studentId: student._id })
+    .select("behaviorSnapshot.name timestamp")
+    .lean();
+  const priorInc = allInc.filter((i) => !contribIds.has(String(i._id)));
+  const behaviourTypes = [...new Set(priorInc.map((i) => i.behaviorSnapshot?.name).filter(Boolean))];
+  const lastPriorTs = priorInc.length ? Math.max(...priorInc.map((i) => new Date(i.timestamp).getTime())) : null;
+  const history = {
+    priorNotices: Math.max(0, sequenceNo - 1),
+    priorIncidentCount: priorInc.length,
+    behaviourTypes,
+    lastBeforeDays: lastPriorTs ? Math.round((Date.now() - lastPriorTs) / DAY_MS) : null,
+  };
+
   const ctx = {
     studentName: student.preferredName || student.firstName || "your child",
     pronoun: student.pronoun || "",
+    history,
     incidents: contextIncidents.map((i) => ({
       behaviorName: i.behaviorSnapshot?.name,
       teacherName: i.__teacherName || "",

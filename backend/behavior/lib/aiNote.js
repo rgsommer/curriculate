@@ -90,6 +90,23 @@ export function buildPrompt(ctx) {
   const incidentLines = (ctx.incidents || [])
     .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.detail ? ` (${inc.detail})` : ""}`)
     .join("\n");
+
+  // Background history is for the model's AWARENESS only — it shapes tone but is
+  // NEVER summarized, listed, or quoted; at most an oblique reference is allowed.
+  const h = ctx.history;
+  const hasHistory = h && (h.priorNotices > 0 || h.priorIncidentCount > 0);
+  const historyBlock = hasHistory
+    ? [
+        `BACKGROUND (for your awareness ONLY — do NOT summarize, list, quote, count, or enumerate any of this in the note):`,
+        `- This student has ${h.priorNotices} prior notice(s) home and ${h.priorIncidentCount} earlier incident(s) on record.`,
+        h.behaviourTypes?.length ? `- Earlier behaviours have included: ${h.behaviourTypes.join(", ")}.` : "",
+        h.lastBeforeDays != null ? `- The most recent prior incident was about ${h.lastBeforeDays} day(s) ago.` : "",
+        `You MAY make at most a brief, OBLIQUE reference to this background — e.g. that this is part of an ongoing pattern, the general kinds of behaviour, or how recent past issues were — only if it fits naturally. Do NOT recount specifics.`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+    : "";
+
   return [
     `You are a teacher writing a brief, respectful note home to a parent about a student's behaviour.`,
     ctx.toneGuidance ? `Division tone guidance: ${ctx.toneGuidance}` : "",
@@ -101,11 +118,12 @@ export function buildPrompt(ctx) {
     `Student preferred name: ${ctx.studentName}${ctx.pronoun ? ` (pronoun: ${ctx.pronoun})` : ""}.`,
     `School: ${ctx.schoolName || ""}.`,
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
-    `Incidents:\n${incidentLines}`,
+    `The note should be ABOUT only these current incidents:\n${incidentLines}`,
+    historyBlock,
     (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}.` : "",
     ctx.ccVp ? `Mention that the Vice-Principal has been copied.` : "",
     `Sign off with this signature block exactly:\n${ctx.signature || ""}`,
-    `Write only the note body (no subject line). Keep it under 220 words. Do not invent facts beyond those given.`,
+    `Write only the note body (no subject line). Keep it under 220 words. Do not invent facts beyond those given, and do not recount the background history.`,
   ]
     .filter(Boolean)
     .join("\n\n");

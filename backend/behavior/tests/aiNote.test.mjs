@@ -5,7 +5,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { composeNotice, deterministicNote } from "../lib/aiNote.js";
+import { composeNotice, deterministicNote, buildPrompt } from "../lib/aiNote.js";
 
 const ctx = {
   studentName: "Sam",
@@ -55,6 +55,19 @@ test("No AI client at all → deterministic note, never throws", async () => {
   const { text, aiUsed } = await composeNotice(ctx, { aiClient: null });
   assert.equal(aiUsed, false);
   assert.ok(text.length > 50);
+});
+
+test("buildPrompt includes prior history as awareness-only (oblique, no summary)", () => {
+  const p = buildPrompt({ ...ctx, history: { priorNotices: 2, priorIncidentCount: 5, behaviourTypes: ["Talking out", "Disrespectful"], lastBeforeDays: 3 } });
+  assert.match(p, /do NOT summarize/i);
+  assert.match(p, /oblique/i);
+  assert.match(p, /Talking out/); // present as background context
+  assert.match(p, /do not recount the background/i);
+});
+
+test("buildPrompt omits the background block when there's no history", () => {
+  const p = buildPrompt({ ...ctx, history: { priorNotices: 0, priorIncidentCount: 0, behaviourTypes: [], lastBeforeDays: null } });
+  assert.doesNotMatch(p, /BACKGROUND/);
 });
 
 test("Deterministic note adapts tone: first vs repeat", () => {
