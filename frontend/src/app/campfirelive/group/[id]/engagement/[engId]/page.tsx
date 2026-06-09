@@ -230,6 +230,9 @@ export default function EngagementDetailPage() {
   const [editCareQuestions, setEditCareQuestions] = useState<
     { prompt: string; kind: "text" | "star" }[]
   >([]);
+  // Truth or Dare prompts (host-defined).
+  const [editTruthPrompt, setEditTruthPrompt] = useState("");
+  const [editDarePrompt, setEditDarePrompt] = useState("");
   const [editLeadDays, setEditLeadDays] = useState(14); // how many days before it opens
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
@@ -490,6 +493,14 @@ export default function EngagementDetailPage() {
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
     setEditCareQuestions(parseCareQuestions(engagement.config));
+    {
+      const cfg = (engagement.config ?? {}) as {
+        truthPrompt?: string;
+        darePrompt?: string;
+      };
+      setEditTruthPrompt(cfg.truthPrompt ?? "");
+      setEditDarePrompt(cfg.darePrompt ?? "");
+    }
     setEditLeadDays(engagement.lead_days ?? 14);
     // Birthday: the deadline IS the birthday (the day it reveals). Pre-fill the
     // date in LOCAL time so the day doesn't shift across time zones.
@@ -549,6 +560,21 @@ export default function EngagementDetailPage() {
         return;
       }
       careFields.config = { ...(engagement.config ?? {}), questions: cqs };
+    }
+    // Truth or Dare: persist the edited prompts.
+    if (engagement.type === "truth_or_dare") {
+      const tp = editTruthPrompt.trim();
+      const dp = editDarePrompt.trim();
+      if (!tp || !dp) {
+        alert("Keep both a Truth prompt and a Dare prompt.");
+        setSavingEdit(false);
+        return;
+      }
+      careFields.config = {
+        ...(engagement.config ?? {}),
+        truthPrompt: tp,
+        darePrompt: dp,
+      };
     }
     const { error } = await supabase
       .from("engagements")
@@ -1502,63 +1528,84 @@ export default function EngagementDetailPage() {
           </div>
         );
 
-      case "truth_or_dare":
+      case "truth_or_dare": {
+        const todCfg = engagement.config as {
+          truthPrompt?: string;
+          darePrompt?: string;
+        };
+        const todPromptFor = (m: "truth" | "dare") =>
+          (m === "truth" ? todCfg.truthPrompt : todCfg.darePrompt)?.trim() ||
+          (m === "truth" ? "Tell us a truth." : "Do a dare — then describe it.");
+
+        // Blind commit: no prompts shown until you pick. No takebacks.
+        if (!todMode) {
+          return (
+            <div className="space-y-3">
+              <p className="text-center text-xs text-slate-500">
+                Pick one — you won&apos;t see the prompt until you commit.{" "}
+                <span className="font-semibold">No takebacks!</span>
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => setTodMode("truth")}
+                  className="rounded-2xl border-2 border-sky-200 bg-sky-50 px-3 py-6 text-center font-extrabold text-sky-700 hover:border-sky-400 hover:bg-sky-100 transition"
+                >
+                  <div className="text-3xl">🤐</div>
+                  <div className="mt-1 text-base">Truth</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTodMode("dare")}
+                  className="rounded-2xl border-2 border-rose-200 bg-rose-50 px-3 py-6 text-center font-extrabold text-rose-700 hover:border-rose-400 hover:bg-rose-100 transition"
+                >
+                  <div className="text-3xl">🔥</div>
+                  <div className="mt-1 text-base">Dare</div>
+                </button>
+              </div>
+            </div>
+          );
+        }
+
+        // Committed — reveal the prompt and let them answer (mode is locked).
+        const isTruth = todMode === "truth";
         return (
           <div className="space-y-3">
-            {/* Pick which one you're doing — shown as a badge at the reveal */}
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  { v: "truth", emoji: "🤐", label: "Truth", hint: "Answer honestly" },
-                  { v: "dare", emoji: "🔥", label: "Dare", hint: "Take it on" },
-                ] as const
-              ).map((o) => {
-                const on = todMode === o.v;
-                return (
-                  <button
-                    key={o.v}
-                    type="button"
-                    onClick={() => setTodMode(o.v)}
-                    className={`rounded-xl border px-3 py-2.5 text-left transition ${
-                      on
-                        ? o.v === "truth"
-                          ? "border-sky-500 bg-sky-500 text-white"
-                          : "border-rose-500 bg-rose-500 text-white"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
-                    }`}
-                  >
-                    <div className="text-sm font-bold">
-                      {o.emoji} {o.label}
-                    </div>
-                    <div className={`text-[11px] ${on ? "text-white/80" : "text-slate-400"}`}>
-                      {o.hint}
-                    </div>
-                  </button>
-                );
-              })}
+            <div
+              className={`rounded-xl border p-3 ${
+                isTruth
+                  ? "border-sky-200 bg-sky-50"
+                  : "border-rose-200 bg-rose-50"
+              }`}
+            >
+              <div
+                className={`text-[11px] font-bold uppercase tracking-wide ${
+                  isTruth ? "text-sky-700" : "text-rose-700"
+                }`}
+              >
+                {isTruth ? "🤐 Truth" : "🔥 Dare"} · you&apos;re locked in
+              </div>
+              <p className="mt-1 text-sm font-medium text-slate-800">
+                {todPromptFor(todMode)}
+              </p>
             </div>
             <textarea
               value={textInput}
               onChange={(e) => setTextInput(e.target.value)}
-              placeholder={
-                todMode === "dare"
-                  ? "Describe your dare (and how it went)…"
-                  : todMode === "truth"
-                  ? "Your truth…"
-                  : "Pick Truth or Dare above, then answer…"
-              }
+              placeholder={isTruth ? "Your answer…" : "How did it go? (proof welcome)"}
               rows={4}
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
             />
             <button
               onClick={handleTruthOrDareSubmit}
-              disabled={!todMode || !textInput.trim() || submitting}
+              disabled={!textInput.trim() || submitting}
               className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
               {submitting ? "Submitting..." : "🔒 Lock in my answer"}
             </button>
           </div>
         );
+      }
 
       default:
         // Generic text response (share, accountability, advice, etc.)
@@ -2336,6 +2383,20 @@ export default function EngagementDetailPage() {
               )}
 
               {/* Content */}
+              {engagement.type === "truth_or_dare" &&
+                (content.mode === "truth" || content.mode === "dare") && (
+                  <p className="mb-1 text-xs italic text-slate-500">
+                    {(
+                      (engagement.config as {
+                        truthPrompt?: string;
+                        darePrompt?: string;
+                      })[content.mode === "truth" ? "truthPrompt" : "darePrompt"] || ""
+                    ).trim() ||
+                      (content.mode === "truth"
+                        ? "Truth"
+                        : "Dare")}
+                  </p>
+                )}
               {content.text && (
                 <p className="text-sm text-slate-700">{content.text as string}</p>
               )}
@@ -2631,6 +2692,38 @@ export default function EngagementDetailPage() {
               </div>
 
               {/* Care Check-in: edit prompts + response type, add/remove questions */}
+              {engagement.type === "truth_or_dare" && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      🤐 Truth prompt
+                    </label>
+                    <textarea
+                      value={editTruthPrompt}
+                      onChange={(e) => setEditTruthPrompt(e.target.value)}
+                      rows={2}
+                      placeholder="The truth question they'll answer"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none resize-y"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-500 mb-1">
+                      🔥 Dare prompt
+                    </label>
+                    <textarea
+                      value={editDarePrompt}
+                      onChange={(e) => setEditDarePrompt(e.target.value)}
+                      rows={2}
+                      placeholder="The dare they'll take on"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-orange-500 outline-none resize-y"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Players commit to one before seeing it — keep them spicy but kind.
+                  </p>
+                </div>
+              )}
+
               {engagement.type === "care" && (
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">

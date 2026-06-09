@@ -128,6 +128,9 @@ export default function NewEngagementPage() {
   const [nthDow, setNthDow] = useState(0); // 0=Sun … 6=Sat
   const [nthMonth, setNthMonth] = useState(5); // 1-12
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
+  // Truth or Dare: the host writes both; players commit blind, then see theirs.
+  const [truthPrompt, setTruthPrompt] = useState("");
+  const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
   const [questions, setQuestions] = useState<string[]>(["", "", ""]);
   // Care Check-in: each question has a prompt + a response kind (text or star).
@@ -430,6 +433,18 @@ export default function NewEngagementPage() {
 
     if (selectedType === "challenge") {
       config.media_type = "photo"; // Default, could be made selectable
+    }
+
+    if (selectedType === "truth_or_dare") {
+      const tp = truthPrompt.trim();
+      const dp = darePrompt.trim();
+      if (!tp || !dp) {
+        setError("Write both a Truth prompt and a Dare prompt.");
+        setCreating(false);
+        return;
+      }
+      config.truthPrompt = tp;
+      config.darePrompt = dp;
     }
 
     // Floating recurrence (Nth weekday) — store the pattern so the cron rolls it
@@ -800,6 +815,40 @@ export default function NewEngagementPage() {
                     + Add option
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Truth or Dare — host writes both prompts; players pick blind */}
+            {selectedType === "truth_or_dare" && (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-500">
+                  Players commit to Truth or Dare <span className="font-semibold">before</span>{" "}
+                  seeing the prompt — write a good one for each.
+                </p>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    🤐 Truth prompt
+                  </label>
+                  <textarea
+                    value={truthPrompt}
+                    onChange={(e) => setTruthPrompt(e.target.value)}
+                    rows={2}
+                    placeholder="e.g. What's the most embarrassing thing in your search history?"
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-y"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    🔥 Dare prompt
+                  </label>
+                  <textarea
+                    value={darePrompt}
+                    onChange={(e) => setDarePrompt(e.target.value)}
+                    rows={2}
+                    placeholder="e.g. Post a selfie with the worst filter you can find."
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-y"
+                  />
+                </div>
               </div>
             )}
 

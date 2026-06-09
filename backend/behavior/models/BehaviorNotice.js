@@ -73,6 +73,8 @@ const BehaviorNoticeSchema = new mongoose.Schema(
 
     // The teacher whose log triggered this notice (the "sender" of record).
     sentByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
+    // Backfilled from the legacy behaviour spreadsheet (reversible marker).
+    legacyImport: { type: Boolean, default: false, index: true },
     queuedAt: { type: Date, default: () => new Date() },
     sentAt: { type: Date, default: null },
     cancelUntil: { type: Date, default: null }, // end of the cancellable window
