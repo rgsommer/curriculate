@@ -7,12 +7,14 @@
 
 import BehaviorNotice from "../models/BehaviorNotice.js";
 import BehaviorStudent from "../models/BehaviorStudent.js";
+import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
 import { EmailProvider } from "./providers/EmailProvider.js";
 import { EdsbyProvider } from "./providers/EdsbyProvider.js";
+import { decrypt } from "./secretBox.js";
 
-export function getDefaultProviders() {
-  return { email: new EmailProvider(), edsby: new EdsbyProvider() };
+export function getDefaultProviders(edsby = {}) {
+  return { email: new EmailProvider(), edsby: new EdsbyProvider(edsby) };
 }
 
 /**
@@ -54,11 +56,20 @@ export async function sendWithFailover({ recipient, channels, subject, body, pro
  * Skips if the notice was cancelled in its cancellable window.
  */
 export async function dispatchNotice(noticeId, { providers } = {}) {
-  const prov = providers || getDefaultProviders();
   const notice = await BehaviorNotice.findById(noticeId);
   if (!notice) return { ok: false, error: "notice not found" };
   if (notice.status === "cancelled") return { ok: false, error: "cancelled" };
   if (notice.status === "sent") return { ok: true, alreadySent: true };
+
+  // Build providers with the school's Edsby connection (decrypted in memory).
+  let prov = providers;
+  if (!prov) {
+    const config = await BehaviorConfig.findOne({ schoolId: notice.schoolId }).lean();
+    const edsby = config?.edsby?.enabled
+      ? { baseUrl: config.edsby.baseUrl, cookie: decrypt(config.edsby.cookieEnc) }
+      : {};
+    prov = getDefaultProviders(edsby);
+  }
 
   const student = await BehaviorStudent.findById(notice.studentId).lean();
   const studentName = student?.preferredName || student?.firstName || "your child";

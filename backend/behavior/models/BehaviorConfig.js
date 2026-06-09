@@ -36,6 +36,17 @@ const BehaviorConfigSchema = new mongoose.Schema(
       edsby: { type: Boolean, default: false },
     },
 
+    // ── Edsby connection (§4, Phase 3) ──────────────────────────────────────
+    // Authenticated cookie/session posting — no public Edsby API. The admin
+    // pastes their Edsby session cookie; we store it ENCRYPTED (never plaintext,
+    // never sent to the client) and post to each parent's edsbyParentId.
+    edsby: {
+      enabled: { type: Boolean, default: false },
+      baseUrl: { type: String, default: "" }, // e.g. https://yourschool.edsby.com
+      cookieEnc: { type: String, default: "" }, // AES-256-GCM via secretBox
+      updatedAt: { type: Date, default: null },
+    },
+
     // ── AI note send behaviour (§8) ─────────────────────────────────────────
     // "auto"  → compose + send automatically on trigger (this school's choice).
     // "draft" → compose, hold for one-tap teacher send (toggle for later).

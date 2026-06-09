@@ -47,6 +47,7 @@ export default function SetupPage() {
     <div className="space-y-5">
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
       <ConfigSection config={me.config} />
+      <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
       <TestToolsSection email={me.membership.email} />
@@ -295,6 +296,60 @@ function RosterSection() {
           )}
         </div>
       )}
+    </Card>
+  );
+}
+
+function EdsbySection({ edsby }: { edsby: any }) {
+  const [baseUrl, setBaseUrl] = useState(edsby?.baseUrl || "");
+  const [cookie, setCookie] = useState("");
+  const [enabled, setEnabled] = useState(!!edsby?.enabled);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const configured = !!edsby?.configured;
+
+  async function save() {
+    setErr(null);
+    try {
+      const body: any = { baseUrl: baseUrl.trim(), enabled };
+      if (cookie.trim()) body.cookie = cookie.trim();
+      await api("/config/edsby", { method: "PUT", body });
+      setCookie("");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Edsby connection</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Edsby has no public API, so notices are posted using your school&apos;s signed-in session.
+        Paste your Edsby <span className="font-medium">session cookie</span> — it&apos;s stored encrypted,
+        never shown again, and each parent is messaged separately via their Edsby ID.
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-3 space-y-2">
+        <Field label="Edsby base URL">
+          <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://yourschool.edsby.com" className={inputCls} />
+        </Field>
+        <Field label={`Session cookie ${configured ? "(stored ✓ — leave blank to keep)" : ""}`}>
+          <textarea value={cookie} onChange={(e) => setCookie(e.target.value)} rows={2}
+            placeholder={configured ? "•••••••• (already saved)" : "paste the Edsby session cookie"} className={inputCls} />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Send notices via Edsby
+        </label>
+      </div>
+      <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-white">
+        {saved ? "Saved ✓" : "Save Edsby connection"}
+      </button>
+      <p className="mt-2 text-xs text-amber-700">
+        Note: the exact Edsby send endpoint is set server-side from your existing Edsby script. Until that&apos;s
+        configured, Edsby sends fail over to email automatically.
+      </p>
     </Card>
   );
 }

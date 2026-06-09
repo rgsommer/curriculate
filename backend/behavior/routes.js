@@ -28,6 +28,7 @@ import BehaviorFollowup from "./models/BehaviorFollowup.js";
 
 import { evaluateIncident } from "./lib/triggerLogic.js";
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
+import { encrypt } from "./lib/secretBox.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { composeNotice, makeDefaultAiClient } from "./lib/aiNote.js";
@@ -97,13 +98,28 @@ async function audit(schoolId, type, req, extra = {}) {
 // ── Identity / setup ─────────────────────────────────────────────────────────
 
 // Who am I in the Behaviours app (membership + role + config summary).
+// Never expose the encrypted Edsby cookie to the client; surface a boolean.
+function sanitizeConfig(config) {
+  if (!config) return config;
+  const c = { ...config };
+  if (c.edsby) {
+    c.edsby = {
+      enabled: !!c.edsby.enabled,
+      baseUrl: c.edsby.baseUrl || "",
+      configured: !!c.edsby.cookieEnc,
+      updatedAt: c.edsby.updatedAt || null,
+    };
+  }
+  return c;
+}
+
 router.get("/me", authAny, async (req, res, next) => {
   try {
     const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
     if (!membership) return res.json({ ok: true, membership: null, needsSetup: true });
     const school = await BehaviorSchool.findById(membership.schoolId).lean();
     const config = await BehaviorConfig.findOne({ schoolId: membership.schoolId }).lean();
-    res.json({ ok: true, membership, school, config });
+    res.json({ ok: true, membership, school, config: sanitizeConfig(config) });
   } catch (err) {
     next(err);
   }
@@ -155,7 +171,7 @@ router.post("/setup", authAny, async (req, res, next) => {
 router.get("/config", authAny, loadMembership, async (req, res, next) => {
   try {
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    res.json({ ok: true, config });
+    res.json({ ok: true, config: sanitizeConfig(config) });
   } catch (err) {
     next(err);
   }
@@ -177,7 +193,29 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       { new: true }
     ).lean();
     await audit(req.schoolId, "config.updated", req, { meta: { fields: Object.keys(update) } });
-    res.json({ ok: true, config });
+    res.json({ ok: true, config: sanitizeConfig(config) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Connect Edsby (admin): store the base URL + session cookie (encrypted). The
+// cookie is write-only — it's never returned. Posting per-parent happens via
+// the EdsbyProvider once channels.edsby is enabled.
+router.put("/config/edsby", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const update = { "edsby.updatedAt": new Date() };
+    if ("enabled" in (req.body || {})) update["edsby.enabled"] = !!req.body.enabled;
+    if ("baseUrl" in (req.body || {})) {
+      update["edsby.baseUrl"] = String(req.body.baseUrl || "").trim().replace(/\/+$/, "");
+    }
+    const cookie = String(req.body?.cookie || "");
+    if (cookie) update["edsby.cookieEnc"] = encrypt(cookie);
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: update });
+    await audit(req.schoolId, "config.edsby_updated", req, {
+      meta: { enabled: update["edsby.enabled"], baseUrl: update["edsby.baseUrl"], cookieSet: !!cookie },
+    });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

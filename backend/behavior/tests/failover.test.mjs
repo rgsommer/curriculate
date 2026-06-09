@@ -77,8 +77,17 @@ test("Both channels succeed when both are healthy", async () => {
   assert.ok(results.every((r) => r.ok));
 });
 
-test("EdsbyProvider stub reports not-implemented (so it fails over until Phase 3)", async () => {
+test("EdsbyProvider with no connection fails (so it fails over to email)", async () => {
   const r = await new EdsbyProvider().send({ recipient });
   assert.equal(r.ok, false);
-  assert.match(r.error, /not yet implemented/i);
+  assert.match(r.error, /not connected/i);
+});
+
+test("EdsbyProvider connected but with no send endpoint configured fails over", async () => {
+  const prev = process.env.BEHAVIOR_EDSBY_SEND_PATH;
+  delete process.env.BEHAVIOR_EDSBY_SEND_PATH;
+  const r = await new EdsbyProvider({ baseUrl: "https://x.edsby.com", cookie: "sess=abc" }).send({ recipient });
+  assert.equal(r.ok, false);
+  assert.match(r.error, /endpoint not configured/i);
+  if (prev) process.env.BEHAVIOR_EDSBY_SEND_PATH = prev;
 });
