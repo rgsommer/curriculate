@@ -106,6 +106,20 @@ test("IMMEDIATE: a single occurrence fires regardless of count", () => {
   assert.equal(d.contributingIncidents.length, 1);
 });
 
+test("IMMEDIATE pulls in the queued threshold incidents", () => {
+  const prior = [inc({ id: "a", daysAgo: 1 }), inc({ id: "b", daysAgo: 0 })]; // 2 queued
+  const d = evaluateIncident({
+    newIncident: inc({ id: "x", mode: "IMMEDIATE", daysAgo: 0 }),
+    priorIncidents: prior,
+    config: { triggerCount: 3, fadeWindowDays: 30 },
+    student: { noticesHomeCount: 0 },
+    asOf: now,
+  });
+  assert.equal(d.shouldNotify, true);
+  assert.equal(d.reason, "immediate");
+  assert.equal(d.contributingIncidents.length, 3); // the immediate one + 2 queued
+});
+
 test("CC-VP: first notice does not CC the VP; second-or-later does", () => {
   const base = {
     newIncident: inc({ id: "x", mode: "IMMEDIATE" }),

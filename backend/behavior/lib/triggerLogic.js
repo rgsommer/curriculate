@@ -76,12 +76,19 @@ export function evaluateIncident({ newIncident, priorIncidents, config, student,
   const sequenceNo = (student?.noticesHomeCount || 0) + 1;
   const ccVp = sequenceNo >= 2;
 
-  // IMMEDIATE: a single occurrence notifies right away, regardless of count.
+  // IMMEDIATE: a single occurrence notifies right away. The notice carries this
+  // offence PLUS any THRESHOLD incidents already accumulating in the queue, so
+  // the parent note reflects everything outstanding (and the queue resets).
   if (mode === "IMMEDIATE") {
+    const queued = activeThresholdIncidents([...priorIncidents, newIncident], {
+      fadeWindowDays,
+      thresholdResetAt: student?.thresholdResetAt,
+      asOf: now,
+    });
     return {
       shouldNotify: true,
       reason: "immediate",
-      contributingIncidents: [newIncident],
+      contributingIncidents: [newIncident, ...queued],
       sequenceNo,
       ccVp,
     };

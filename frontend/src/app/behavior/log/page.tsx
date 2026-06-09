@@ -47,6 +47,7 @@ export default function LogIncidentPage() {
   const [behaviorId, setBehaviorId] = useState("");
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
+  const [sendImmediately, setSendImmediately] = useState(false);
 
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -122,6 +123,7 @@ export default function LogIncidentPage() {
           behaviorIds: [behaviorId],
           detailText: note.trim(),
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
+          sendImmediately,
         },
       });
       setNotice(res.notice);
@@ -145,11 +147,22 @@ export default function LogIncidentPage() {
     }
   }
 
+  async function sendNow() {
+    if (!notice) return;
+    try {
+      await api(`/notices/${notice._id}/send`, { body: {} });
+      setNotice({ ...notice, status: "sent" });
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
   function reset() {
     setStudent(null);
     setBehaviorId("");
     setOccurredAt("");
     setNote("");
+    setSendImmediately(false);
     setNotice(null);
     setTrigger([]);
     setDone(false);
@@ -194,23 +207,32 @@ export default function LogIncidentPage() {
             </ul>
           </div>
         )}
-        {notice && notice.status !== "cancelled" && (
+        {notice && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
-            <h2 className="font-semibold text-amber-900">Notice home triggered</h2>
-            <p className="mt-1 text-sm text-amber-800">
-              A parent notice is queued{notice.ccVp ? " (VP CC’d)" : ""}. You can cancel it during the brief send window.
-            </p>
-            <div className="mt-3 flex gap-2">
-              <button onClick={cancelNotice} className="rounded-lg bg-amber-600 px-4 py-2 text-white">Cancel send</button>
+            <h2 className="font-semibold text-amber-900">
+              {notice.status === "sent" ? "Notice home sent ✓" : notice.status === "cancelled" ? "Notice not sent" : "Notice home ready"}
+            </h2>
+            {notice.status === "queued" && (
+              <p className="mt-1 text-sm text-amber-800">
+                A parent notice was composed{notice.ccVp ? " (VP CC’d)" : ""}. Send it now, don’t send it, or review/edit it first
+                — if you do nothing it sends automatically after a short window.
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {notice.status === "queued" && (
+                <>
+                  <button onClick={sendNow} className="rounded-lg bg-amber-600 px-4 py-2 text-white">Send now</button>
+                  <button onClick={cancelNotice} className="rounded-lg border border-amber-400 px-4 py-2 text-amber-900">Don’t send</button>
+                </>
+              )}
               {student && (
                 <Link href={`/behavior/student/${student._id}`} className="rounded-lg border border-amber-400 px-4 py-2 text-amber-900">
-                  View
+                  {notice.status === "queued" ? "Review / edit" : "View"}
                 </Link>
               )}
             </div>
           </div>
         )}
-        {notice && notice.status === "cancelled" && <p className="text-sm text-slate-500">Notice cancelled.</p>}
         <button onClick={reset} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-white">Log another</button>
       </div>
     );
@@ -313,6 +335,14 @@ export default function LogIncidentPage() {
           rows={2}
           className="w-full rounded-xl border border-slate-300 px-4 py-3"
         />
+
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} className="mt-0.5" />
+          <span>
+            <span className="font-medium">Send a notice home immediately</span> — sends this offense plus any strikes already in the
+            queue, regardless of the count.
+          </span>
+        </label>
 
         <button
           type="submit"

@@ -104,6 +104,24 @@ export default function StudentPage() {
     }
   }
 
+  async function sendNotice(id: string) {
+    try {
+      await api(`/notices/${id}/send`, { body: {} });
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function dontSend(id: string) {
+    try {
+      await api(`/notices/${id}/cancel`, { body: {} });
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
   async function addNote(incidentId: string) {
     const text = (noteText[incidentId] || "").trim();
     if (!text) return;
@@ -207,8 +225,11 @@ export default function StudentPage() {
                     <>
                       <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-slate-700">{n.renderedText}</pre>
                       {n.status === "queued" && (
-                        <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }}
-                          className="mt-2 rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button onClick={() => sendNotice(n._id)} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">Send now</button>
+                          <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
+                          <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
+                        </div>
                       )}
                     </>
                   )}

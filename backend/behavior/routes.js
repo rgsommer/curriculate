@@ -32,7 +32,7 @@ import { encrypt } from "./lib/secretBox.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { composeNotice, makeDefaultAiClient } from "./lib/aiNote.js";
-import { scheduleDispatch } from "./lib/notify.js";
+import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
@@ -636,17 +636,39 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     // Evaluate the trigger across ALL of the student's incidents (cross-teacher).
     const priorIncidents = await BehaviorIncident.find({ studentId: student._id }).lean();
     let notice = null;
-    for (const inc of createdIncidents) {
-      const others = priorIncidents.filter((p) => String(p._id) !== String(inc._id));
-      const decision = evaluateIncident({
-        newIncident: inc,
-        priorIncidents: others,
-        config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
-        student,
+    if (req.body?.sendImmediately) {
+      // Teacher chose "send now": fire a notice for these incidents PLUS any
+      // accumulated queue, regardless of the behaviour's normal trigger mode.
+      const createdIds = new Set(createdIncidents.map((i) => String(i._id)));
+      const queued = activeThresholdIncidents(priorIncidents, {
+        fadeWindowDays: config?.fadeWindowDays ?? 30,
+        thresholdResetAt: student.thresholdResetAt,
+        asOf: new Date(),
+      }).filter((q) => !createdIds.has(String(q._id)));
+      const sequenceNo = (student.noticesHomeCount || 0) + 1;
+      notice = await fireNotice({
+        req, student, config,
+        decision: {
+          shouldNotify: true,
+          reason: "immediate",
+          contributingIncidents: [...createdIncidents, ...queued],
+          sequenceNo,
+          ccVp: sequenceNo >= 2,
+        },
       });
-      if (decision.shouldNotify) {
-        notice = await fireNotice({ req, student, config, decision });
-        break; // one notice per submission; counter reset handled in fireNotice
+    } else {
+      for (const inc of createdIncidents) {
+        const others = priorIncidents.filter((p) => String(p._id) !== String(inc._id));
+        const decision = evaluateIncident({
+          newIncident: inc,
+          priorIncidents: others,
+          config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
+          student,
+        });
+        if (decision.shouldNotify) {
+          notice = await fireNotice({ req, student, config, decision });
+          break; // one notice per submission; counter reset handled in fireNotice
+        }
       }
     }
 
@@ -825,6 +847,23 @@ async function fireNotice({ req, student, config, decision }) {
   });
   return notice;
 }
+
+// Send a queued notice now — bypasses the auto-send window (and is the manual
+// send for draft mode). "Don't send" is the cancel route below.
+router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const notice = await BehaviorNotice.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!notice) return res.status(404).json({ ok: false, error: "Notice not found" });
+    if (notice.status !== "queued") {
+      return res.status(409).json({ ok: false, error: `Notice is already ${notice.status}` });
+    }
+    const result = await dispatchNotice(notice._id);
+    await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
+    res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // Cancel a queued notice during its cancellable window (§8 send model).
 router.post("/notices/:id/cancel", authAny, loadMembership, async (req, res, next) => {
