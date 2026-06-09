@@ -33,6 +33,10 @@ const BehaviorSchema = new mongoose.Schema(
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },
 
+    // House points applied when this behaviour is logged (typically negative for
+    // an offence; can be positive for a positive behaviour). 0 = no points.
+    points: { type: Number, default: 0 },
+
     // Drives Phase-2 follow-up tasks + morning reminders.
     followUpType: { type: String, enum: ["none", "next_school_day", "custom_deadline"], default: "none" },
 

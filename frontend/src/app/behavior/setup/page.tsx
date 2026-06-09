@@ -44,6 +44,7 @@ export default function SetupPage() {
           Manage behaviours →
         </Link>
       </Card>
+      <HousesSection />
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
@@ -470,6 +471,59 @@ function EdsbySection({ edsby }: { edsby: any }) {
   );
 }
 
+function HousesSection() {
+  const [houses, setHouses] = useState<any[] | null>(null);
+  const [name, setName] = useState("");
+  const [color, setColor] = useState("#0f172a");
+  const [err, setErr] = useState<string | null>(null);
+
+  function load() {
+    api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch((e) => setErr(e.message));
+  }
+  useEffect(() => { load(); }, []);
+
+  async function add() {
+    if (!name.trim()) return;
+    try {
+      await api("/houses", { body: { name: name.trim(), color } });
+      setName("");
+      load();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
+  async function save(h: any, patch: any) {
+    try { await api(`/houses/${h._id}`, { method: "PUT", body: patch }); load(); } catch (e: any) { setErr(e.message); }
+  }
+  async function remove(h: any) {
+    if (!window.confirm(`Remove house "${h.name}"? (students keep their assignment; points are hidden)`)) return;
+    try { await api(`/houses/${h._id}`, { method: "DELETE" }); load(); } catch (e: any) { setErr(e.message); }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Houses</h2>
+      <p className="mt-1 text-sm text-slate-500">Define houses, then assign students (below) and set point values per behaviour. Points show on the dashboard leaderboard.</p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-3 space-y-2">
+        {houses?.map((h) => (
+          <div key={h._id} className="flex items-center gap-2">
+            <input type="color" defaultValue={h.color} onBlur={(e) => save(h, { color: e.target.value })} className="h-8 w-10 rounded border border-slate-300" />
+            <input defaultValue={h.name} onBlur={(e) => e.target.value.trim() && save(h, { name: e.target.value })} className={`${inputCls} flex-1`} />
+            <span className="w-24 text-right text-xs text-slate-400">{h.members} students · {h.points} pts</span>
+            <button onClick={() => remove(h)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-700">Remove</button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} className="h-9 w-10 rounded border border-slate-300" />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New house name…" className={`${inputCls} flex-1`} />
+        <button onClick={add} disabled={!name.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">Add house</button>
+      </div>
+    </Card>
+  );
+}
+
 function AddStudentSection() {
   const [f, setF] = useState({ firstName: "", lastName: "", preferredName: "", classGroup: "", grade: "", p1: "", p2: "" });
   const [msg, setMsg] = useState("");
@@ -530,8 +584,20 @@ function TestToolsSection({ email }: { email: string }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
+  const [houses, setHouses] = useState<any[]>([]);
   const [testEmailMsg, setTestEmailMsg] = useState("");
   const [testBusy, setTestBusy] = useState(false);
+
+  useEffect(() => { api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch(() => {}); }, []);
+
+  async function setHouse(s: any, houseId: string) {
+    try {
+      await api(`/students/${s._id}`, { method: "PATCH", body: { houseId: houseId || null } });
+      setResults(results.map((x) => (x._id === s._id ? { ...x, houseId: houseId || null } : x)));
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
 
   async function sendTestEmail() {
     setTestBusy(true);
@@ -669,7 +735,13 @@ function TestToolsSection({ email }: { email: string }) {
                 {s.lastName}, {s.firstName} <span className="text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</span>
                 {s.active === false && <span className="ml-2 rounded bg-slate-100 px-1.5 text-xs text-slate-500">deactivated</span>}
               </span>
-              <span className="flex shrink-0 gap-1.5">
+              <span className="flex shrink-0 items-center gap-1.5">
+                {houses.length > 0 && (
+                  <select value={s.houseId || ""} onChange={(e) => setHouse(s, e.target.value)} className="rounded-lg border border-slate-200 px-2 py-1 text-xs">
+                    <option value="">No house</option>
+                    {houses.map((h) => <option key={h._id} value={h._id}>{h.name}</option>)}
+                  </select>
+                )}
                 {s.active === false ? (
                   <button onClick={() => setActive(s, true)} className="rounded-lg border border-green-300 px-3 py-1 text-xs text-green-700">Reactivate</button>
                 ) : (

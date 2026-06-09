@@ -81,6 +81,7 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
   const [triggerMode, setTriggerMode] = useState(b?.triggerMode || (add ? "THRESHOLD" : "THRESHOLD"));
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
   const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
+  const [points, setPoints] = useState<number | string>(b?.points ?? 0);
   const [scopeStandard, setScopeStandard] = useState(!!allowStandard);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -113,10 +114,10 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, triggerMode, consequenceText, followUpType, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none");
+        await api("/behaviors", { body: { name, keyword, triggerMode, consequenceText, followUpType, points: Number(points) || 0, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, triggerMode, consequenceText, followUpType } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, triggerMode, consequenceText, followUpType, points: Number(points) || 0 } });
       }
       onChanged();
     } catch (e: any) {
@@ -153,6 +154,11 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
             </select>
           </>
         )}
+        <label className={`flex items-center gap-2 text-xs text-slate-500 ${interaction ? "col-span-2" : ""}`}>
+          House points
+          <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+          <span className="text-slate-400">(negative deducts from the student&apos;s house)</span>
+        </label>
         <div className={`flex items-center justify-end gap-2 ${interaction ? "col-span-2" : ""}`}>
           {add && allowStandard && (
             <label className="mr-auto flex items-center gap-1 text-xs text-slate-500">

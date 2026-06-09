@@ -25,6 +25,8 @@ import BehaviorNotice from "./models/BehaviorNotice.js";
 import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
+import BehaviorHouse from "./models/BehaviorHouse.js";
+import HousePointEvent from "./models/HousePointEvent.js";
 
 import { evaluateIncident, activeThresholdIncidents } from "./lib/triggerLogic.js";
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
@@ -500,7 +502,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     // Sorted grade → class → name so the client can group by grade directly.
     // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
-      .select("lastName firstName preferredName classGroup grade active")
+      .select("lastName firstName preferredName classGroup grade active houseId")
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
@@ -622,15 +624,19 @@ router.post("/students", authAny, loadMembership, requireAdmin, async (req, res,
 // who has left. Reversible.
 router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
-    const active = !!req.body?.active;
+    const b = req.body || {};
+    const $set = {};
+    if ("active" in b) $set.active = !!b.active;
+    if ("houseId" in b) $set.houseId = b.houseId || null;
+    if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const student = await BehaviorStudent.findOneAndUpdate(
       { _id: req.params.id, schoolId: req.schoolId },
-      { $set: { active } },
+      { $set },
       { new: true }
     ).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
-    await audit(req.schoolId, active ? "student.reactivated" : "student.deactivated", req, { studentId: student._id });
-    res.json({ ok: true, active: student.active });
+    if ("active" in b) await audit(req.schoolId, $set.active ? "student.reactivated" : "student.deactivated", req, { studentId: student._id });
+    res.json({ ok: true, active: student.active, houseId: student.houseId });
   } catch (err) {
     next(err);
   }
@@ -690,6 +696,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       keyword: String(req.body?.keyword || "").trim(),
       triggerMode: ["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(req.body?.triggerMode) ? req.body.triggerMode : "THRESHOLD",
       consequenceText: String(req.body?.consequenceText || ""),
+      points: Number(req.body?.points) || 0,
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
         ? req.body.followUpType
         : "none",
@@ -728,6 +735,7 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("keyword" in b) beh.keyword = String(b.keyword || "").trim();
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
+    if ("points" in b) beh.points = Number(b.points) || 0;
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
@@ -801,6 +809,15 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         timestamp,
       });
       createdIncidents.push(inc.toObject());
+
+      // House points: apply this behaviour's point value to the student's house.
+      if (behavior.points && student.houseId) {
+        await HousePointEvent.create({
+          schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
+          points: behavior.points, reason: behavior.name, behaviorId: behavior._id,
+          incidentId: inc._id, awardedByTeacherId: req.membership._id, at: timestamp,
+        });
+      }
     }
     if (!createdIncidents.length) {
       return res.status(400).json({ ok: false, error: "No valid behaviours" });
@@ -1517,6 +1534,103 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       ],
       strikeBuckets,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Houses + points ──────────────────────────────────────────────────────────
+
+// Houses with their point totals + member counts (for the leaderboard).
+router.get("/houses", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
+    const totals = await HousePointEvent.aggregate([
+      { $match: { schoolId: req.schoolId } },
+      { $group: { _id: "$houseId", points: { $sum: "$points" } } },
+    ]);
+    const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
+    const members = await BehaviorStudent.aggregate([
+      { $match: { schoolId: req.schoolId, active: true, houseId: { $ne: null } } },
+      { $group: { _id: "$houseId", n: { $sum: 1 } } },
+    ]);
+    const memberById = Object.fromEntries(members.map((m) => [String(m._id), m.n]));
+    res.json({
+      ok: true,
+      houses: houses
+        .map((h) => ({ ...h, points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0 }))
+        .sort((a, b) => b.points - a.points),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/houses", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const name = String(req.body?.name || "").trim();
+    if (!name) return res.status(400).json({ ok: false, error: "name required" });
+    const house = await BehaviorHouse.create({
+      schoolId: req.schoolId, name, color: req.body?.color || "#0f172a", sortOrder: Number(req.body?.sortOrder) || 0,
+    });
+    await audit(req.schoolId, "house.created", req, { meta: { name } });
+    res.json({ ok: true, house });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const $set = {};
+    if ("name" in b) $set.name = String(b.name || "").trim();
+    if ("color" in b) $set.color = String(b.color || "#0f172a");
+    if ("sortOrder" in b) $set.sortOrder = Number(b.sortOrder) || 0;
+    const house = await BehaviorHouse.findOneAndUpdate({ _id: req.params.id, schoolId: req.schoolId }, { $set }, { new: true }).lean();
+    if (!house) return res.status(404).json({ ok: false, error: "House not found" });
+    res.json({ ok: true, house });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const house = await BehaviorHouse.findOneAndUpdate(
+      { _id: req.params.id, schoolId: req.schoolId },
+      { $set: { active: false } },
+      { new: true }
+    ).lean();
+    if (!house) return res.status(404).json({ ok: false, error: "House not found" });
+    await audit(req.schoolId, "house.removed", req, { meta: { name: house.name } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Award (or deduct) house points — to a whole house, or to a student (whose
+// house gets the points). Positive or negative.
+router.post("/house-points", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const points = Number(req.body?.points);
+    if (!points || isNaN(points)) return res.status(400).json({ ok: false, error: "points must be a non-zero number" });
+    let houseId = req.body?.houseId || null;
+    let studentId = req.body?.studentId || null;
+    if (studentId) {
+      const stu = await BehaviorStudent.findOne({ _id: studentId, schoolId: req.schoolId }).select("houseId").lean();
+      if (!stu) return res.status(404).json({ ok: false, error: "Student not found" });
+      houseId = houseId || stu.houseId;
+      if (!houseId) return res.status(400).json({ ok: false, error: "That student isn't assigned to a house" });
+    }
+    if (!houseId) return res.status(400).json({ ok: false, error: "houseId or a student with a house required" });
+    const event = await HousePointEvent.create({
+      schoolId: req.schoolId, houseId, studentId, points,
+      reason: String(req.body?.reason || ""), awardedByTeacherId: req.membership._id,
+    });
+    await audit(req.schoolId, "house.points", req, { studentId, meta: { houseId: String(houseId), points } });
+    res.json({ ok: true, event });
   } catch (err) {
     next(err);
   }

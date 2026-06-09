@@ -46,6 +46,7 @@ const BehaviorStudentSchema = new mongoose.Schema(
 
     classGroup: { type: String, default: "", trim: true, index: true }, // e.g. "7A", "8B"
     grade: { type: String, default: "", trim: true, index: true },
+    houseId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorHouse", default: null, index: true },
     dob: { type: Date, default: null },
 
     parents: { type: [ParentSchema], default: [] },

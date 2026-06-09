@@ -85,6 +85,8 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
+      <HousesCard canLog={canLog} />
+
       <ExecutiveSummaryCard />
 
       {isAdmin && (
@@ -104,6 +106,86 @@ export default function BehaviorDashboard() {
         </Card>
       )}
     </div>
+  );
+}
+
+function HousesCard({ canLog }: { canLog: boolean }) {
+  const [houses, setHouses] = useState<any[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [houseId, setHouseId] = useState("");
+  const [points, setPoints] = useState<number | string>(1);
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  function load() {
+    api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch(() => setHouses([]));
+  }
+  useEffect(load, []);
+
+  async function award() {
+    if (!houseId || !Number(points)) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      await api("/house-points", { body: { houseId, points: Number(points), reason } });
+      setReason("");
+      setMsg("Points recorded.");
+      setOpen(false);
+      load();
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Hide the card entirely until houses are defined in Setup.
+  if (houses === null || houses.length === 0) return null;
+
+  const max = Math.max(1, ...houses.map((h) => Math.abs(h.points || 0)));
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">House points</h2>
+        {canLog && (
+          <button onClick={() => { setOpen((o) => !o); setHouseId(houses[0]?._id || ""); }} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+            {open ? "Cancel" : "Give points"}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <select value={houseId} onChange={(e) => setHouseId(e.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+            {houses.map((h) => <option key={h._id} value={h._id}>{h.name}</option>)}
+          </select>
+          <div className="flex gap-2">
+            <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Reason (optional)" className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          </div>
+          <button onClick={award} disabled={busy || !houseId || !Number(points)} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
+            {busy ? "Saving…" : "Award to house"}
+          </button>
+        </div>
+      )}
+      {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
+
+      <ul className="mt-3 space-y-2">
+        {houses.map((h) => (
+          <li key={h._id} className="flex items-center gap-3">
+            <span className="inline-block h-3 w-3 shrink-0 rounded-full" style={{ background: h.color || "#0f172a" }} />
+            <span className="w-28 shrink-0 text-sm font-medium">{h.name}</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full" style={{ width: `${Math.max(2, (Math.abs(h.points || 0) / max) * 100)}%`, background: h.color || "#0f172a" }} />
+            </div>
+            <span className="w-12 shrink-0 text-right text-sm tabular-nums font-semibold">{h.points || 0}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-2 text-xs text-slate-400">{houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions.</p>
+    </Card>
   );
 }
 
