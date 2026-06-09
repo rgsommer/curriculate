@@ -151,11 +151,11 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     <div className={`rounded-lg border p-3 ${tint}`}>
       {err && <p className="mb-1 text-xs text-red-600">{err}</p>}
       {/* Positive or negative — sets the whole shape of the behaviour. */}
-      <div className="mb-2 inline-flex overflow-hidden rounded-lg border border-slate-200 text-xs font-medium">
+      <div className="mb-2 inline-flex gap-1.5 text-xs font-semibold">
         <button type="button" onClick={() => setKind("negative")}
-          className={`px-3 py-1.5 ${!positive ? "bg-red-50 text-red-700" : "bg-white text-slate-500"}`}>✕ Negative</button>
+          className={`rounded-lg border px-3 py-1.5 ${!positive ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}>✕ Negative</button>
         <button type="button" onClick={() => setKind("positive")}
-          className={`px-3 py-1.5 ${positive ? "bg-green-50 text-green-700" : "bg-white text-slate-500"}`}>✓ Positive</button>
+          className={`rounded-lg border px-3 py-1.5 ${positive ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>✓ Positive</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
         <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? (positive ? "New positive behaviour…" : "New behaviour name…") : "Name"} className={inputCls} />

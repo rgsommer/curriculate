@@ -364,14 +364,14 @@ export default function LogIncidentPage() {
           <button
             type="button"
             onClick={() => { setKindFilter("negative"); setBehaviorId(""); setKeywordFilter(""); }}
-            className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "negative" ? "border-red-300 bg-red-50 text-red-700" : "border-slate-200 bg-white text-slate-500"}`}
+            className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "negative" ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}
           >
             ✕ Negative
           </button>
           <button
             type="button"
             onClick={() => { setKindFilter("positive"); setBehaviorId(""); setKeywordFilter(""); }}
-            className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "positive" ? "border-green-300 bg-green-50 text-green-700" : "border-slate-200 bg-white text-slate-500"}`}
+            className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "positive" ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-600"}`}
           >
             ✓ Positive
           </button>
