@@ -542,8 +542,8 @@ function EdsbySection({ edsby }: { edsby: any }) {
         <Field label="Edsby base URL">
           <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://yourschool.edsby.com" className={inputCls} />
         </Field>
-        <Field label="Your Edsby user nid">
-          <input value={userNid} onChange={(e) => setUserNid(e.target.value)} placeholder="window._cf.user.nid" className={inputCls} />
+        <Field label="Your Edsby user nid (the sender)">
+          <input value={userNid} onChange={(e) => setUserNid(e.target.value)} placeholder="your own nid — notices are sent as you" className={inputCls} />
         </Field>
         <Field label="jver (bundle compiled hash)">
           <input value={jver} onChange={(e) => setJver(e.target.value)} className={inputCls} />
@@ -643,23 +643,22 @@ function EdsbySection({ edsby }: { edsby: any }) {
           {testBusy ? "Testing…" : "Test connection"}
         </button>
         <button onClick={testEdsbySend} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
-          {testBusy ? "…" : "Send test broadcast to me"}
+          {testBusy ? "…" : "Send test broadcast"}
         </button>
       </div>
       {testMsg && <p className={`mt-2 text-sm ${testMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testMsg}</p>}
-      <details className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-        <summary className="cursor-pointer font-medium text-slate-700">Test broadcast to a real recipient</summary>
-        <p className="mt-2">
-          Edsby won&apos;t let you message your own teacher nid (error 1042 “Cannot link nodes”). To truly test a send, use a
-          real <span className="font-medium">parent nid</span> as the recipient and that <span className="font-medium">student&apos;s nid</span> as the context
-          (e.g. your own child, or a willing colleague&apos;s student/parent pair).
+      <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+        <p className="font-medium text-slate-700">Test recipient</p>
+        <p className="mt-0.5">
+          Sends the test <span className="font-medium">to</span> this person (you can delete it after). A colleague&apos;s Edsby ID works
+          for a quick check; a real parent notice uses the parent&apos;s nid with the student&apos;s nid as context. Leave the colleague
+          field blank to send to yourself — Edsby returns 1042 “Cannot link nodes” for self-sends, which is expected, not a fault.
         </p>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <input value={testToNid} onChange={(e) => setTestToNid(e.target.value)} placeholder="Recipient (parent) nid" className={inputCls} />
-          <input value={testStudentNid} onChange={(e) => setTestStudentNid(e.target.value)} placeholder="Student nid (context)" className={inputCls} />
+          <input value={testToNid} onChange={(e) => setTestToNid(e.target.value)} placeholder="Colleague's (or parent's) Edsby ID" className={inputCls} />
+          <input value={testStudentNid} onChange={(e) => setTestStudentNid(e.target.value)} placeholder="Student nid (context, optional)" className={inputCls} />
         </div>
-        <p className="mt-1 text-slate-400">Leave blank to send to yourself (will return 1042 — that&apos;s expected, not a connection problem).</p>
-      </details>
+      </div>
       <p className="mt-2 text-xs text-amber-700">
         The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
         Parent Edsby nids still need harvesting from Edsby (next step).
