@@ -532,10 +532,11 @@ router.post("/test-edsby-send", authAny, loadMembership, requireAdmin, async (re
     const e = config?.edsby || {};
     const toNid = String(req.body?.toNid || "").trim() || String(e.userNid || "").trim();
     if (!toNid) return res.json({ ok: false, error: "No target nid — set your Edsby user nid, or enter one." });
-    // Edsby links the broadcast to a student context (Panorama Referer). Default
-    // to the recipient nid, but a real test should pass the STUDENT's nid here
-    // and the PARENT's nid as the recipient.
-    const studentNid = String(req.body?.studentNid || "").trim() || toNid;
+    // Edsby links a parent broadcast to a student context (Panorama Referer).
+    // Only set it if a real student nid is given — defaulting it to the recipient
+    // builds an invalid Panorama referer (and 1042s) when the recipient is a
+    // teacher/colleague rather than a parent.
+    const studentNid = String(req.body?.studentNid || "").trim();
     const provider = new EdsbyProvider({
       baseUrl: e.baseUrl, cookie: decrypt(e.cookieEnc), formkey: decrypt(e.formkeyEnc),
       jver: e.jver, cver: e.cver, userNid: e.userNid, studentNid,
@@ -627,6 +628,68 @@ router.get("/invites", authAny, loadMembership, requireAdmin, async (req, res, n
   try {
     const invites = await BehaviorInvite.find({ schoolId: req.schoolId }).sort({ createdAt: -1 }).lean();
     res.json({ ok: true, invites });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Resend a pending invite — fresh token + a (reminder) branded email.
+router.post("/invites/resend", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, error: "email required" });
+    const invite = await BehaviorInvite.findOne({ schoolId: req.schoolId, email, status: "pending" });
+    if (!invite) return res.status(404).json({ ok: false, error: "No pending invite for that address" });
+    invite.token = crypto.randomBytes(24).toString("hex");
+    await invite.save();
+
+    const school = await BehaviorSchool.findById(req.schoolId).lean();
+    const link = `${appBase()}/behavior/accept?token=${invite.token}`;
+    const inviter = (req.user?.name || "").trim();
+    const inviterEmail = req.user?.email || "";
+    const by = inviter ? `${inviter}${inviterEmail ? ` (${inviterEmail})` : ""}` : "A colleague";
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+    let emailed = false;
+    let emailError = "";
+    try {
+      await sendEmail({
+        from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+        to: email,
+        replyTo: inviterEmail || undefined,
+        subject: `Reminder: you're invited to Behaviours`,
+        text: `Reminder — ${by} invited you to Behaviours.\n\nSet your password and get started:\n${link}\n`,
+        html: emailShell({
+          title: "Reminder: you're invited to Behaviours",
+          schoolName: school?.name || "Behaviours",
+          preheader: `${by} invited you to Behaviours.`,
+          contentHtml:
+            `<p style="margin:0 0 12px;color:#334155;line-height:1.6">Just a reminder — <strong>${escapeHtml(by)}</strong> invited you to Behaviours. Here's your link again.</p>` +
+            emailButton("Accept & set your password", link) +
+            `<p style="color:#94a3b8;font-size:13px;word-break:break-all;margin:8px 0 0">Or paste this link: ${escapeHtml(link)}</p>`,
+        }),
+      });
+      emailed = true;
+    } catch (e) {
+      emailError = e?.message || String(e);
+    }
+    await audit(req.schoolId, "invite.resent", req, { meta: { email, emailed } });
+    res.json({ ok: true, emailed, emailError });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Revoke a pending invite so it stops counting / showing.
+router.post("/invites/revoke", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const email = String(req.body?.email || "").trim().toLowerCase();
+    if (!email) return res.status(400).json({ ok: false, error: "email required" });
+    const r = await BehaviorInvite.updateOne(
+      { schoolId: req.schoolId, email, status: "pending" },
+      { $set: { status: "revoked" } }
+    );
+    await audit(req.schoolId, "invite.revoked", req, { meta: { email } });
+    res.json({ ok: r.modifiedCount > 0 });
   } catch (err) {
     next(err);
   }

@@ -35,6 +35,7 @@ function shortDate(d: string | null) {
 export default function TeamPage() {
   const [data, setData] = useState<{ teachers: TeamRow[]; pending: Pending[]; stats: Stats } | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [noteByEmail, setNoteByEmail] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!getToken()) return;
@@ -42,6 +43,25 @@ export default function TeamPage() {
       .then(setData)
       .catch((e) => setErr(e.message));
   }, []);
+
+  async function resendInvite(email: string) {
+    setNoteByEmail((n) => ({ ...n, [email]: "Sending…" }));
+    try {
+      const r = await api<{ emailed: boolean; emailError?: string }>("/invites/resend", { body: { email } });
+      setNoteByEmail((n) => ({ ...n, [email]: r.emailed ? "Reminder sent ✓" : `Failed: ${r.emailError || "email error"}` }));
+    } catch (e: any) {
+      setNoteByEmail((n) => ({ ...n, [email]: e.message }));
+    }
+  }
+  async function revokeInvite(email: string) {
+    if (!window.confirm(`Revoke the invite for ${email}? They won't be able to use their link.`)) return;
+    try {
+      await api("/invites/revoke", { body: { email } });
+      setData((d) => d && { ...d, pending: d.pending.filter((p) => p.email !== email), stats: { ...d.stats, pending: d.stats.pending - 1 } });
+    } catch (e: any) {
+      setNoteByEmail((n) => ({ ...n, [email]: e.message }));
+    }
+  }
 
   if (!getToken()) return <p>Please <Link className="underline" href={loginHref("/behavior/team")}>sign in</Link>.</p>;
   if (err) return <p className="text-red-600">{err}</p>;
@@ -119,14 +139,18 @@ export default function TeamPage() {
         ) : (
           <ul className="mt-2 divide-y divide-slate-100">
             {pending.map((p) => (
-              <li key={p.email} className="flex items-center justify-between py-2 text-sm">
-                <div>
-                  <div className="font-medium">{p.email}</div>
+              <li key={p.email} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{p.email}</div>
                   <div className="text-xs text-slate-400">
                     {p.role} · invited {ago(p.invitedAt)}{p.invitedBy ? ` by ${p.invitedBy}` : ""}
+                    {noteByEmail[p.email] ? <span className="ml-2 text-green-700">{noteByEmail[p.email]}</span> : null}
                   </div>
                 </div>
-                <span className="rounded bg-amber-100 px-1.5 text-xs text-amber-700">awaiting sign-in</span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <button onClick={() => resendInvite(p.email)} className="rounded-lg border border-slate-300 px-2.5 py-1 text-xs">Resend</button>
+                  <button onClick={() => revokeInvite(p.email)} className="rounded-lg border border-red-300 px-2.5 py-1 text-xs text-red-700">Revoke</button>
+                </span>
               </li>
             ))}
           </ul>
