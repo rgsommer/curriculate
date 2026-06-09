@@ -83,12 +83,7 @@ export default function BehaviorDashboard() {
         </Link>
       )}
 
-      <Card>
-        <h2 className="font-semibold">Reminder for today</h2>
-        <p className="mt-1 text-sm text-slate-500">
-          Outstanding consequence follow-ups will appear here (Phase 2).
-        </p>
-      </Card>
+      {canLog && <ReminderToday />}
 
       {isAdmin && (
         <Card>
@@ -107,6 +102,68 @@ export default function BehaviorDashboard() {
         </Card>
       )}
     </div>
+  );
+}
+
+function ReminderToday() {
+  const [items, setItems] = useState<any[] | null>(null);
+  const [msg, setMsg] = useState("");
+
+  useEffect(() => {
+    api<{ followups: any[] }>("/followups?due=today&mine=1")
+      .then((d) => setItems(d.followups || []))
+      .catch(() => setItems([]));
+  }, []);
+
+  async function resolve(id: string, status: "done" | "not_done" | "waived") {
+    try {
+      const r = await api<{ escalation: any }>(`/followups/${id}/status`, { body: { status } });
+      setItems((prev) => (prev || []).filter((f) => f._id !== id));
+      if (status === "not_done" && r.escalation) {
+        setMsg(`Missed consequence escalated — re-issued${r.escalation.ccVp ? " and the VP was notified" : " to parents"}.`);
+      } else {
+        setMsg("");
+      }
+    } catch (e: any) {
+      setMsg(e.message);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Reminder for today</h2>
+      {msg && <p className="mt-1 text-sm text-amber-700">{msg}</p>}
+      {items === null && <p className="mt-1 text-sm text-slate-400">Loading…</p>}
+      {items && items.length === 0 && <p className="mt-1 text-sm text-slate-500">Nothing due today 🎉</p>}
+      <ul className="mt-2 space-y-2">
+        {items?.map((f) => {
+          const s = f.student;
+          const name = s ? `${s.preferredName || s.firstName} ${s.lastName}` : "student";
+          return (
+            <li key={f._id} className="rounded-lg border border-slate-200 p-3">
+              <p className="text-sm font-medium">
+                {name} <span className="text-slate-400">{s?.classGroup}</span>
+                {f.multiplier > 1 && <span className="ml-2 text-xs text-red-600">×{f.multiplier}</span>}
+              </p>
+              <p className="text-sm text-slate-600">
+                {f.behaviorName}: {f.consequenceText}
+              </p>
+              <div className="mt-2 flex gap-2">
+                <button onClick={() => resolve(f._id, "done")} className="rounded-lg bg-green-600 px-3 py-1 text-xs font-medium text-white">
+                  Done
+                </button>
+                <button onClick={() => resolve(f._id, "not_done")} className="rounded-lg bg-red-600 px-3 py-1 text-xs font-medium text-white">
+                  Not done
+                </button>
+                <button onClick={() => resolve(f._id, "waived")} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">
+                  Waive
+                </button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </Card>
   );
 }
 

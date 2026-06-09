@@ -85,6 +85,7 @@ import { authRequired } from "./middleware/authRequired.js";
 // 10) Routes
 import authRoutes from "./routes/auth.js";
 import behaviorRoutes from "./behavior/routes.js";
+import { startMorningReminders } from "./behavior/jobs/morningReminders.js";
 import stripeRoutes from "./routes/stripe.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
@@ -603,6 +604,8 @@ app.use("/api/subs-feedback", subsFeedbackRouter);
 app.use("/api/campfire", campfireFeedbackRouter);
 // Behaviours app (curriculate.net/behavior) — cross-teacher behaviour tracking.
 app.use("/api/behavior", behaviorRoutes);
+// Daily follow-up reminder digests (§8b) — checks each minute for due schools.
+startMorningReminders();
 // Sequential escalation sweep — contacts preferred subs in rank order and
 // advances when an offer's interval elapses, even if nobody responds.
 startSubsEscalation();

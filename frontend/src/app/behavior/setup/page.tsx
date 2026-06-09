@@ -104,6 +104,7 @@ function ConfigSection({ config }: { config: any }) {
     email: config?.channels?.email ?? true,
     edsby: config?.channels?.edsby ?? false,
     aiSendMode: config?.aiSendMode ?? "auto",
+    reminderTime: config?.reminderTime ?? "07:30",
   }));
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -120,6 +121,7 @@ function ConfigSection({ config }: { config: any }) {
           branding: { schoolName: c.schoolName, signatureBlock: c.signatureBlock },
           channels: { email: c.email, edsby: c.edsby },
           aiSendMode: c.aiSendMode,
+          reminderTime: c.reminderTime,
         },
       });
       setSaved(true);
@@ -156,6 +158,10 @@ function ConfigSection({ config }: { config: any }) {
             <option value="auto">Automatic on trigger</option>
             <option value="draft">Draft (one-tap send)</option>
           </select>
+        </Field>
+        <Field label="Morning reminder time">
+          <input type="time" value={c.reminderTime}
+            onChange={(e) => setC({ ...c, reminderTime: e.target.value })} className={inputCls} />
         </Field>
       </div>
       <Field label="Default signature block">

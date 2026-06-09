@@ -109,6 +109,27 @@ export default function DashboardPage() {
     birth_year: number | null;
   };
   const [todo, setTodo] = useState<TodoEng[]>([]);
+
+  // One-time orientation tip for first-timers ("what do I do once I'm in?").
+  // Read in an effect (not the initializer) so server and client first-render match.
+  const [showTip, setShowTip] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("campfire_dash_tip_v1") !== "dismissed") {
+        setShowTip(true);
+      }
+    } catch {
+      /* localStorage blocked — just skip the tip */
+    }
+  }, []);
+  const dismissTip = () => {
+    setShowTip(false);
+    try {
+      localStorage.setItem("campfire_dash_tip_v1", "dismissed");
+    } catch {
+      /* ignore */
+    }
+  };
   useEffect(() => {
     const ids = groupIdsKey ? groupIdsKey.split(",") : [];
     if (ids.length === 0 || !user?.id) {
@@ -274,6 +295,27 @@ export default function DashboardPage() {
             : `You're in ${groups.length} group${groups.length === 1 ? "" : "s"}.`}
         </p>
       </div>
+
+      {/* First-time orientation — dismissible, shown once, only when you're
+          actually in a group (so it answers "ok, I'm in… now what?"). */}
+      {showTip && groups.length > 0 && (
+        <div className="mb-6 flex items-start gap-3 rounded-2xl border border-sky-200 bg-sky-50 p-4">
+          <span className="text-xl leading-none">💡</span>
+          <div className="min-w-0 flex-1 text-sm text-sky-900">
+            <span className="font-semibold">New here?</span> When your group has
+            something for you, it shows up at the top under{" "}
+            <span className="font-semibold">Your turn</span> — just tap it to jump in
+            and respond. Tap any group below to see everything it&apos;s running.
+          </div>
+          <button
+            onClick={dismissTip}
+            aria-label="Dismiss tip"
+            className="flex-shrink-0 rounded-full px-2 py-0.5 text-sky-400 hover:bg-sky-100 hover:text-sky-600"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Your turn — the single most important thing on this page. Active
           engagements awaiting THIS user's response, each a one-tap deep link. */}
