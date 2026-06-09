@@ -445,6 +445,25 @@ function TestToolsSection({ email }: { email: string }) {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [msg, setMsg] = useState("");
+  const [testEmailMsg, setTestEmailMsg] = useState("");
+  const [testBusy, setTestBusy] = useState(false);
+
+  async function sendTestEmail() {
+    setTestBusy(true);
+    setTestEmailMsg("");
+    try {
+      const r = await api<{ ok: boolean; to: string; error?: string; fromConfigured: boolean }>("/test-email", { body: { to: email } });
+      setTestEmailMsg(
+        r.ok
+          ? `✓ Sent to ${r.to} — check your inbox (and spam).`
+          : `✗ Failed: ${r.error}${r.fromConfigured ? "" : " (no SMTP sender configured on the server)"}`
+      );
+    } catch (e: any) {
+      setTestEmailMsg(`✗ ${e.message}`);
+    } finally {
+      setTestBusy(false);
+    }
+  }
 
   // Build a "+alias" of the signed-in admin's email so test notices land in
   // their own inbox (Google Workspace delivers +tags to the base address).
@@ -533,6 +552,15 @@ function TestToolsSection({ email }: { email: string }) {
             <Link href="/behavior/log" className="underline">Log an incident →</Link>
           </p>
         )}
+      </div>
+
+      <div className="mt-5 border-t border-slate-100 pt-4">
+        <p className="text-sm font-medium text-slate-700">Email delivery</p>
+        <button onClick={sendTestEmail} disabled={testBusy}
+          className="mt-2 rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {testBusy ? "Sending…" : `Send test email to ${email}`}
+        </button>
+        {testEmailMsg && <p className={`mt-2 text-sm ${testEmailMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testEmailMsg}</p>}
       </div>
 
       <div className="mt-5 border-t border-slate-100 pt-4">

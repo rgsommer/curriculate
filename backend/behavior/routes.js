@@ -234,6 +234,30 @@ router.put("/config/edsby", authAny, loadMembership, requireAdmin, async (req, r
   }
 });
 
+// Send a test email (admin) to verify SMTP delivery. Returns the SMTP error in
+// the body (still 200) so the UI can show exactly why it failed.
+router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const to = String(req.body?.to || req.user?.email || "").trim();
+    if (!to) return res.status(400).json({ ok: false, error: "No recipient address" });
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+    try {
+      await mailer.sendMail({
+        from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+        to,
+        subject: "Behaviours — test email ✓",
+        text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString()}.`,
+      });
+      await audit(req.schoolId, "email.test_sent", req, { meta: { to } });
+      return res.json({ ok: true, to, fromConfigured: !!fromAddr });
+    } catch (mailErr) {
+      return res.json({ ok: false, to, fromConfigured: !!fromAddr, error: mailErr?.message || String(mailErr) });
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Invites (§5d) ────────────────────────────────────────────────────────────
 
 router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, next) => {
