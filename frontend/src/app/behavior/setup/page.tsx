@@ -232,7 +232,8 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
     setErr(null);
     setResult(null);
     setBusy(true);
-    const list = emails.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
+    // Extract real addresses — handles "Name <email>", commas, spaces, etc.
+    const list = (emails.match(/[\w.+-]+@[\w.-]+\.\w{2,}/g) || []).map((e) => e.toLowerCase());
     try {
       const r = await api("/invite", { body: { emails: list, role } });
       setResult(r);

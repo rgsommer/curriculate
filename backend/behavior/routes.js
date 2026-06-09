@@ -43,8 +43,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function emailDomain(email) {
-  const at = String(email || "").lastIndexOf("@");
-  return at === -1 ? "" : String(email).slice(at + 1).toLowerCase().trim();
+  const e = String(email || "").toLowerCase().replace(/[<>]/g, "").trim();
+  const at = e.lastIndexOf("@");
+  return at === -1 ? "" : e.slice(at + 1).trim();
 }
 
 function appBase() {
@@ -321,7 +322,10 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
     }
     const school = await BehaviorSchool.findById(req.schoolId).lean();
     const emails = (Array.isArray(req.body?.emails) ? req.body.emails : [req.body?.email])
-      .map((e) => String(e || "").trim().toLowerCase())
+      .map((e) => {
+        const m = String(e || "").match(/[\w.+-]+@[\w.-]+\.\w{2,}/); // pull addr from "Name <email>"
+        return m ? m[0].toLowerCase() : String(e || "").trim().toLowerCase().replace(/[<>]/g, "");
+      })
       .filter(Boolean);
     if (!emails.length) return res.status(400).json({ ok: false, error: "No email addresses provided" });
 
