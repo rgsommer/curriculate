@@ -129,7 +129,10 @@ router.get("/me", authAny, async (req, res, next) => {
     if (!membership) return res.json({ ok: true, membership: null, needsSetup: true });
     const school = await BehaviorSchool.findById(membership.schoolId).lean();
     const config = await BehaviorConfig.findOne({ schoolId: membership.schoolId }).lean();
-    res.json({ ok: true, membership, school, config: sanitizeConfig(config) });
+    const admins = await BehaviorTeacher.find({ schoolId: membership.schoolId, role: { $in: ["originator", "admin"] } })
+      .select("name email role")
+      .lean();
+    res.json({ ok: true, membership, school, config: sanitizeConfig(config), admins });
   } catch (err) {
     next(err);
   }
@@ -280,6 +283,28 @@ router.post("/test-edsby", authAny, loadMembership, requireAdmin, async (req, re
     }
     await audit(req.schoolId, "edsby.test", req, { meta: { ok: r.ok } });
     res.json({ ok: r.ok, message: r.message, error: r.error });
+  } catch (err) {
+    res.json({ ok: false, error: err?.message || String(err) });
+  }
+});
+
+// End-to-end Edsby test: actually POST a broadcast to a nid (defaults to your
+// own Edsby user nid) so you can confirm a message lands in Edsby.
+router.post("/test-edsby-send", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const e = config?.edsby || {};
+    const toNid = String(req.body?.toNid || "").trim() || String(e.userNid || "").trim();
+    if (!toNid) return res.json({ ok: false, error: "No target nid — set your Edsby user nid, or enter one." });
+    const provider = new EdsbyProvider({
+      baseUrl: e.baseUrl, cookie: decrypt(e.cookieEnc), formkey: decrypt(e.formkeyEnc),
+      jver: e.jver, cver: e.cver, userNid: e.userNid, studentNid: toNid,
+    });
+    const message = String(req.body?.message || "").trim() ||
+      "Test broadcast from Behaviours — if you can see this in Edsby, posting works.";
+    const r = await provider.send({ recipient: { edsbyParentId: toNid }, body: message });
+    await audit(req.schoolId, "edsby.test_send", req, { meta: { toNid, ok: r.ok } });
+    res.json({ ok: r.ok, error: r.error });
   } catch (err) {
     res.json({ ok: false, error: err?.message || String(err) });
   }
@@ -1341,17 +1366,61 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
 
     let summary = `Executive summary — ${who} (last ${months} months)\n\n${ctxText}`;
     let aiUsed = false;
-    try {
-      const client = makeDefaultAiClient(config || {});
-      if (client) {
-        const out = await Promise.race([client.complete(prompt), new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 20000))]);
-        if (out && String(out).trim()) { summary = String(out).trim(); aiUsed = true; }
+    const provided = String(req.body?.summaryText || "").trim();
+    if (provided) {
+      summary = provided; // emailing an already-generated summary — skip the AI re-call
+      aiUsed = true;
+    } else {
+      try {
+        const client = makeDefaultAiClient(config || {});
+        if (client) {
+          const out = await Promise.race([client.complete(prompt), new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 20000))]);
+          if (out && String(out).trim()) { summary = String(out).trim(); aiUsed = true; }
+        }
+      } catch {
+        /* deterministic digest fallback */
       }
-    } catch {
-      /* deterministic digest fallback */
     }
-    await audit(req.schoolId, "executive_summary.generated", req, { meta: { scope, months, aiUsed } });
-    res.json({ ok: true, summary, aiUsed, scope, months });
+
+    // Email path — HTML with a monthly-volume bar chart so formatting + the
+    // graph are preserved (clipboard text can't carry either).
+    let emailed = false;
+    let emailError = "";
+    if (req.body?.email) {
+      const monthsKeys = Object.keys(byMonth).sort();
+      const max = Math.max(1, ...monthsKeys.map((k) => byMonth[k]));
+      const bars = monthsKeys
+        .map((k) => {
+          const v = byMonth[k];
+          const w = Math.round((v / max) * 100);
+          return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:62px;color:#64748b;font-size:12px">${k}</span><span style="background:#0f172a;height:14px;width:${w}%;border-radius:3px;display:inline-block;min-width:2px"></span><span style="font-size:12px;color:#475569">${v}</span></div>`;
+        })
+        .join("");
+      const html =
+        `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;max-width:640px;margin:0 auto;color:#0f172a">` +
+        `<h2 style="margin:0 0 4px">Executive summary</h2>` +
+        `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
+        `<h3 style="margin:16px 0 6px;font-size:15px">Monthly incident volume</h3>${bars || "<p style='color:#94a3b8'>No incidents in this window.</p>"}` +
+        `<h3 style="margin:20px 0 6px;font-size:15px">Summary</h3>` +
+        `<div style="white-space:pre-wrap;line-height:1.55;color:#334155">${escapeHtml(summary)}</div>` +
+        `</div>`;
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      try {
+        await mailer.sendMail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to: req.user.email,
+          subject: `Behaviours executive summary — ${who} (last ${months} months)`,
+          text: summary,
+          html,
+        });
+        emailed = true;
+      } catch (mailErr) {
+        emailError = mailErr?.message || String(mailErr);
+      }
+    }
+
+    await audit(req.schoolId, "executive_summary.generated", req, { meta: { scope, months, aiUsed, emailed } });
+    res.json({ ok: true, summary, aiUsed, scope, months, emailed, emailError });
   } catch (err) {
     next(err);
   }

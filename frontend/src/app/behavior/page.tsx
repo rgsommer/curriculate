@@ -110,15 +110,17 @@ export default function BehaviorDashboard() {
 function ExecutiveSummaryCard() {
   const [months, setMonths] = useState(12);
   const [summary, setSummary] = useState("");
+  const [scope, setScope] = useState<"me" | "all">("me");
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
 
-  async function gen(scope: "me" | "all") {
+  async function gen(s: "me" | "all") {
     setBusy(true);
     setMsg("");
     setSummary("");
+    setScope(s);
     try {
-      const r = await api<{ summary: string; aiUsed: boolean }>("/executive-summary", { body: { scope, months } });
+      const r = await api<{ summary: string; aiUsed: boolean }>("/executive-summary", { body: { scope: s, months } });
       setSummary(r.summary);
       try {
         await navigator.clipboard.writeText(r.summary);
@@ -126,6 +128,21 @@ function ExecutiveSummaryCard() {
       } catch {
         setMsg("Generated below (clipboard blocked — copy manually).");
       }
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function emailIt() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await api<{ emailed: boolean; emailError?: string }>("/executive-summary", {
+        body: { scope, months, email: true, summaryText: summary },
+      });
+      setMsg(r.emailed ? "Emailed to you (with a monthly-trend chart)." : `Email failed: ${r.emailError || "check SMTP"}`);
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -154,7 +171,12 @@ function ExecutiveSummaryCard() {
       </div>
       {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
       {summary && (
-        <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-sm text-slate-700">{summary}</pre>
+        <>
+          <button onClick={emailIt} disabled={busy} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            Email it to me (with chart)
+          </button>
+          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-sm text-slate-700">{summary}</pre>
+        </>
       )}
     </Card>
   );

@@ -31,17 +31,7 @@ export default function SetupPage() {
   if (!me?.membership) return <CreateSchool onCreated={refresh} />;
 
   const isAdmin = me.membership.role === "originator" || me.membership.role === "admin";
-  if (!isAdmin) {
-    return (
-      <Card>
-        <h1 className="text-xl font-semibold">Division setup</h1>
-        <p className="mt-2 text-slate-600">
-          Only an admin can edit the shared division configuration. You can still log incidents and
-          view student status.
-        </p>
-      </Card>
-    );
-  }
+  if (!isAdmin) return <ReadOnlySettings me={me} />;
 
   return (
     <div className="space-y-5">
@@ -59,6 +49,45 @@ export default function SetupPage() {
       <RosterSection />
       <AddStudentSection />
       <TestToolsSection email={me.membership.email} />
+    </div>
+  );
+}
+
+function ReadOnlySettings({ me }: { me: Me }) {
+  const c = me.config || {};
+  const admins = (me.admins || []).filter((a) => a.email);
+  const Row = ({ label, val }: { label: string; val: any }) => (
+    <div className="flex justify-between py-1.5 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span className="font-medium">{val || "—"}</span>
+    </div>
+  );
+  return (
+    <div className="space-y-4">
+      <Card>
+        <h1 className="text-xl font-semibold">Settings (view only)</h1>
+        <p className="mt-1 text-sm text-slate-600">
+          These shared settings are managed by an admin. To discuss changes, contact{" "}
+          {admins.length
+            ? admins.map((a) => `${a.name || a.email}${a.email ? ` (${a.email})` : ""}`).join(", ")
+            : "your administrator"}
+          .
+        </p>
+      </Card>
+      <Card>
+        <h2 className="font-semibold">Division settings</h2>
+        <div className="mt-2 divide-y divide-slate-100">
+          <Row label="Trigger count" val={c.triggerCount ?? 3} />
+          <Row label="Fade window (days)" val={c.fadeWindowDays ?? 30} />
+          <Row label="VP" val={c.vp?.name ? `${c.vp.name}${c.vp.email ? ` (${c.vp.email})` : ""}` : ""} />
+          <Row label="Notice channels" val={[c.channels?.email && "email", c.channels?.edsby && "Edsby"].filter(Boolean).join(", ")} />
+          <Row label="AI send mode" val={c.aiSendMode === "draft" ? "Draft (one-tap send)" : "Automatic on trigger"} />
+          <Row label="Morning reminder time" val={c.reminderTime || "07:30"} />
+        </div>
+        <Link href="/behavior/behaviours" className="mt-3 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+          View behaviours →
+        </Link>
+      </Card>
     </div>
   );
 }
@@ -337,6 +366,19 @@ function EdsbySection({ edsby }: { edsby: any }) {
     }
   }
 
+  async function testEdsbySend() {
+    setTestBusy(true);
+    setTestMsg("");
+    try {
+      const r = await api<{ ok: boolean; error?: string }>("/test-edsby-send", { body: {} });
+      setTestMsg(r.ok ? "✓ Test broadcast posted — check your Edsby messages." : `✗ ${r.error || "Failed"}`);
+    } catch (e: any) {
+      setTestMsg(`✗ ${e.message}`);
+    } finally {
+      setTestBusy(false);
+    }
+  }
+
   async function save() {
     setErr(null);
     try {
@@ -395,6 +437,9 @@ function EdsbySection({ edsby }: { edsby: any }) {
         </button>
         <button onClick={testEdsby} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
           {testBusy ? "Testing…" : "Test connection"}
+        </button>
+        <button onClick={testEdsbySend} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {testBusy ? "…" : "Send test broadcast to me"}
         </button>
       </div>
       {testMsg && <p className={`mt-2 text-sm ${testMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{testMsg}</p>}

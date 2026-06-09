@@ -84,6 +84,7 @@ export type Me = {
   needsSetup?: boolean;
   school?: { _id: string; name: string; emailDomain: string };
   config?: any;
+  admins?: Array<{ name?: string; email?: string; role?: string }>;
 };
 
 export type StudentSummary = {
