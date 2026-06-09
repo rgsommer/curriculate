@@ -499,10 +499,21 @@ function EdsbySection({ edsby }: { edsby: any }) {
 }
 
 function HousesSection({ config }: { config?: any }) {
+  const [enabled, setEnabled] = useState(!!config?.housesEnabled);
   const [houses, setHouses] = useState<any[] | null>(null);
   const [name, setName] = useState("");
   const [color, setColor] = useState("#0f172a");
   const [err, setErr] = useState<string | null>(null);
+
+  async function toggleEnabled(on: boolean) {
+    setEnabled(on);
+    try {
+      await api("/config", { method: "PUT", body: { housesEnabled: on } });
+      if (on) load();
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
 
   // House standings report (opt-in).
   const [reportOn, setReportOn] = useState(!!config?.houseReport?.enabled);
@@ -554,7 +565,21 @@ function HousesSection({ config }: { config?: any }) {
 
   return (
     <Card>
-      <h2 className="font-semibold">Houses</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Houses</h2>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={enabled} onChange={(e) => toggleEnabled(e.target.checked)} />
+          {enabled ? "On" : "Off"}
+        </label>
+      </div>
+      {!enabled && (
+        <p className="mt-1 text-sm text-slate-500">
+          Houses are off. Turn them on to define houses, set point values on behaviours, assign students, and show the
+          leaderboard. While off, the whole House aspect is hidden across the app.
+        </p>
+      )}
+      {enabled && (
+        <>
       <p className="mt-1 text-sm text-slate-500">Define houses, then assign students (below) and set point values per behaviour. Points show on the dashboard leaderboard.</p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <div className="mt-3 space-y-2">
@@ -598,6 +623,8 @@ function HousesSection({ config }: { config?: any }) {
         )}
         {reportMsg && <p className="mt-2 text-sm text-green-700">{reportMsg}</p>}
       </div>
+        </>
+      )}
     </Card>
   );
 }

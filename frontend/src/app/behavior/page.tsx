@@ -63,6 +63,7 @@ export default function BehaviorDashboard() {
   const { membership, school } = me;
   const isAdmin = membership.role === "originator" || membership.role === "admin";
   const canLog = membership.role !== "principal";
+  const housesOn = !!me.config?.housesEnabled;
 
   return (
     <div className="space-y-4">
@@ -85,7 +86,7 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
-      <HousesCard canLog={canLog} />
+      {housesOn && <HousesCard canLog={canLog} />}
 
       <ExecutiveSummaryCard />
 

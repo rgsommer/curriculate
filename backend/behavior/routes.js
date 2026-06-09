@@ -199,7 +199,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "triggerCount", "fadeWindowDays", "vp", "branding", "channels",
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
-      "reminderTime", "manualNonSchoolDays", "houseReport",
+      "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -1726,6 +1726,11 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
 // Houses with their point totals + member counts (for the leaderboard).
 router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
+    // Master switch: when Houses is off, the whole aspect is hidden — report no
+    // houses so every consumer surface (leaderboard, assignment dropdown) hides.
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled").lean();
+    if (!cfg?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [] });
+
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const totals = await HousePointEvent.aggregate([
       { $match: { schoolId: req.schoolId } },
@@ -1739,6 +1744,7 @@ router.get("/houses", authAny, loadMembership, async (req, res, next) => {
     const memberById = Object.fromEntries(members.map((m) => [String(m._id), m.n]));
     res.json({
       ok: true,
+      enabled: true,
       houses: houses
         .map((h) => ({ ...h, points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0 }))
         .sort((a, b) => b.points - a.points),

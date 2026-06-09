@@ -82,6 +82,11 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // statutory holidays — PA days, March break, etc. Used for "next school day".
     manualNonSchoolDays: { type: [String], default: [] },
 
+    // ── Houses (opt-in) ─────────────────────────────────────────────────────
+    // Master switch for the whole House aspect (leaderboard, point values,
+    // assignment, report). Off by default; when off, all house UI is hidden.
+    housesEnabled: { type: Boolean, default: false },
+
     // ── House points report (opt-in) ───────────────────────────────────────
     // A standings email with each house's total + its top-3 contributing
     // students. Off by default; admins enable + send it from Setup.

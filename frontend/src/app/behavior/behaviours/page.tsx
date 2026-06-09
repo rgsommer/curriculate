@@ -45,6 +45,7 @@ export default function BehavioursPage() {
 
   const role = me.membership.role;
   const isAdmin = role === "originator" || role === "admin";
+  const housesOn = !!me.config?.housesEnabled;
   const myId = me.membership._id;
   const canManage = (b: any) =>
     (b.scope === "standard" && isAdmin) || (b.scope === "custom" && String(b.ownerTeacherId) === String(myId));
@@ -57,26 +58,26 @@ export default function BehavioursPage() {
         <p className="text-sm text-slate-400">
           <span className="rounded bg-green-100 px-1.5 text-green-800">green</span> = shared/standard ·{" "}
           <span className="rounded bg-blue-100 px-1.5 text-blue-800">blue</span> = your own. Sorted by keyword; “Interaction” logs without a note home.
-          Set <span className="font-medium">house points</span> on any behaviour — negative deducts for an offence, positive rewards a good one.
+          {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour — negative deducts for an offence, positive rewards a good one."}
         </p>
       </div>
 
       <div className="space-y-2">
         {sortBehaviors(items).map((b) => (
-          <BehaviorRow key={b._id} b={b} editable={canManage(b)} onChanged={load} />
+          <BehaviorRow key={b._id} b={b} editable={canManage(b)} housesOn={housesOn} onChanged={load} />
         ))}
       </div>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4">
         <h2 className="text-sm font-semibold">Add a behaviour</h2>
         <p className="text-xs text-slate-400">{isAdmin ? "Standard (shared) by default; toggle to make it your private one." : "Your private behaviour (only you see it)."}</p>
-        <BehaviorRow add allowStandard={isAdmin} onChanged={load} />
+        <BehaviorRow add allowStandard={isAdmin} housesOn={housesOn} onChanged={load} />
       </section>
     </div>
   );
 }
 
-function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; add?: boolean; editable?: boolean; allowStandard?: boolean; onChanged: () => void }) {
+function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: { b?: any; add?: boolean; editable?: boolean; allowStandard?: boolean; housesOn?: boolean; onChanged: () => void }) {
   const [name, setName] = useState(b?.name || "");
   const [keyword, setKeyword] = useState(b?.keyword || "");
   const [triggerMode, setTriggerMode] = useState(b?.triggerMode || (add ? "THRESHOLD" : "THRESHOLD"));
@@ -101,7 +102,7 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
           <span className="font-medium">
             {b.name}
             {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
-            {b.points ? <PointsBadge points={b.points} /> : null}
+            {housesOn && b.points ? <PointsBadge points={b.points} /> : null}
           </span>
           <span className="text-xs text-slate-400">{MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
@@ -156,14 +157,16 @@ function BehaviorRow({ b, add, editable, allowStandard, onChanged }: { b?: any; 
             </select>
           </>
         )}
-        <label className={`flex flex-wrap items-center gap-2 text-xs text-slate-500 col-span-2`}>
-          House points
-          <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
-          <span className="text-slate-400">
-            positive rewards the student&apos;s house, negative deducts.
-            {interaction ? " Good for positive behaviours — won’t count as a strike or notify home." : " For a positive behaviour, set the mode to “Interaction” so it doesn’t count as a strike."}
-          </span>
-        </label>
+        {housesOn && (
+          <label className={`flex flex-wrap items-center gap-2 text-xs text-slate-500 col-span-2`}>
+            House points
+            <input type="number" value={points} onChange={(e) => setPoints(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm" />
+            <span className="text-slate-400">
+              positive rewards the student&apos;s house, negative deducts.
+              {interaction ? " Good for positive behaviours — won’t count as a strike or notify home." : " For a positive behaviour, set the mode to “Interaction” so it doesn’t count as a strike."}
+            </span>
+          </label>
+        )}
         <div className={`flex items-center justify-end gap-2 ${interaction ? "col-span-2" : ""}`}>
           {add && allowStandard && (
             <label className="mr-auto flex items-center gap-1 text-xs text-slate-500">
