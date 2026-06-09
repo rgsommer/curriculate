@@ -85,6 +85,8 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
+      <ExecutiveSummaryCard />
+
       {isAdmin && (
         <Card>
           <h2 className="font-semibold">Admin</h2>
@@ -102,6 +104,59 @@ export default function BehaviorDashboard() {
         </Card>
       )}
     </div>
+  );
+}
+
+function ExecutiveSummaryCard() {
+  const [months, setMonths] = useState(12);
+  const [summary, setSummary] = useState("");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function gen(scope: "me" | "all") {
+    setBusy(true);
+    setMsg("");
+    setSummary("");
+    try {
+      const r = await api<{ summary: string; aiUsed: boolean }>("/executive-summary", { body: { scope, months } });
+      setSummary(r.summary);
+      try {
+        await navigator.clipboard.writeText(r.summary);
+        setMsg(`Copied to clipboard${r.aiUsed ? "" : " (template — no AI key set)"}.`);
+      } catch {
+        setMsg("Generated below (clipboard blocked — copy manually).");
+      }
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Executive summary (AI)</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        An overview of behaviour trends and your interactions over time — good for sharing with an administrator or year-end reflection. Copied to your clipboard.
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <select value={months} onChange={(e) => setMonths(Number(e.target.value))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm">
+          <option value={3}>Last 3 months</option>
+          <option value={6}>Last 6 months</option>
+          <option value={12}>Last 12 months</option>
+        </select>
+        <button onClick={() => gen("me")} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy ? "Generating…" : "My interactions"}
+        </button>
+        <button onClick={() => gen("all")} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy ? "Generating…" : "Whole division"}
+        </button>
+      </div>
+      {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
+      {summary && (
+        <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-sm text-slate-700">{summary}</pre>
+      )}
+    </Card>
   );
 }
 

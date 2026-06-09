@@ -1273,4 +1273,88 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
   }
 });
 
+// Division/teacher EXECUTIVE summary — an AI overview over a 6/12-month window,
+// scoped to me (this teacher) or all teachers. Behaviour trend, interaction
+// patterns, notices home, current strike load. Copied to clipboard by the UI.
+router.post("/executive-summary", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const months = [3, 6, 12].includes(Number(req.body?.months)) ? Number(req.body.months) : 12;
+    const scope = req.body?.scope === "me" ? "me" : "all";
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - months);
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const triggerCount = config?.triggerCount ?? 3;
+    const fadeDays = config?.fadeWindowDays ?? 30;
+
+    const incMatch = { schoolId: req.schoolId, timestamp: { $gt: cutoff } };
+    if (scope === "me") incMatch.teacherId = req.membership._id;
+    const incidents = await BehaviorIncident.find(incMatch)
+      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode timestamp studentId teacherNotes")
+      .lean();
+
+    const byType = {};
+    const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
+    const byMonth = {};
+    const students = new Set();
+    let teacherNoteCount = 0;
+    for (const i of incidents) {
+      const nm = i.behaviorSnapshot?.name || "Other";
+      byType[nm] = (byType[nm] || 0) + 1;
+      const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
+      byMode[mode] = (byMode[mode] || 0) + 1;
+      byMonth[new Date(i.timestamp).toISOString().slice(0, 7)] = (byMonth[new Date(i.timestamp).toISOString().slice(0, 7)] || 0) + 1;
+      students.add(String(i.studentId));
+      teacherNoteCount += i.teacherNotes?.length || 0;
+    }
+    const topTypes = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const monthly = Object.keys(byMonth).sort().map((k) => `${k}: ${byMonth[k]}`);
+
+    const notMatch = { schoolId: req.schoolId, createdAt: { $gt: cutoff } };
+    if (scope === "me") notMatch.sentByTeacherId = req.membership._id;
+    const notices = await BehaviorNotice.find(notMatch).select("reason status").lean();
+    const noticeByReason = {};
+    for (const n of notices) noticeByReason[n.reason] = (noticeByReason[n.reason] || 0) + 1;
+    const noticesSent = notices.filter((n) => n.status === "sent").length;
+
+    // Division current strike load (shared count — not per-teacher).
+    const agg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, countedInNoticeId: null, "behaviorSnapshot.triggerMode": "THRESHOLD", timestamp: { $gt: new Date(Date.now() - fadeDays * DAY_MS) } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 } } },
+    ]);
+    const atThreshold = agg.filter((a) => a.n >= triggerCount - 1).length;
+
+    const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
+    const ctxText =
+      `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
+      `Incidents logged: ${incidents.length}, across ${students.size} student(s).\n` +
+      `By type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
+      `By mode: threshold ${byMode.THRESHOLD || 0}, immediate ${byMode.IMMEDIATE || 0}, interactions (documented, no note home) ${byMode.INTERACTION || 0}.\n` +
+      `Private teacher notes recorded: ${teacherNoteCount}.\n` +
+      `Monthly volume: ${monthly.join("; ") || "n/a"}.\n` +
+      `Notices home: ${notices.length} created (${noticesSent} sent) — by reason: ${Object.entries(noticeByReason).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
+      `Current strike load (division, shared count): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.`;
+    const prompt =
+      `You are writing an executive summary for a teacher reflecting on classroom-behaviour management over the period. ` +
+      `Cover: how things are going overall; the behaviour TREND across the window (improving / worsening / steady, citing the monthly volumes); ` +
+      `${scope === "me" ? "this teacher's own engagement style, including the balance of documented interactions vs. discipline notices;" : "patterns across the division and which behaviours dominate;"} ` +
+      `what's been communicated to parents; and the current load. Be objective, balanced, and professional — suitable to share with an administrator or for personal reflection. Use ONLY the data; do not invent. A few short paragraphs.\n\n${ctxText}`;
+
+    let summary = `Executive summary — ${who} (last ${months} months)\n\n${ctxText}`;
+    let aiUsed = false;
+    try {
+      const client = makeDefaultAiClient(config || {});
+      if (client) {
+        const out = await Promise.race([client.complete(prompt), new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 20000))]);
+        if (out && String(out).trim()) { summary = String(out).trim(); aiUsed = true; }
+      }
+    } catch {
+      /* deterministic digest fallback */
+    }
+    await audit(req.schoolId, "executive_summary.generated", req, { meta: { scope, months, aiUsed } });
+    res.json({ ok: true, summary, aiUsed, scope, months });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
