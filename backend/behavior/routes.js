@@ -346,10 +346,12 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
       filter.$or = [{ lastName: rx }, { firstName: rx }, { preferredName: rx }];
     }
+    // Sorted grade → class → name so the client can group by grade directly.
+    // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
       .select("lastName firstName preferredName classGroup grade")
-      .sort({ lastName: 1, firstName: 1 })
-      .limit(50)
+      .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
+      .limit(q ? 50 : 2000)
       .lean();
     res.json({ ok: true, students });
   } catch (err) {
