@@ -694,6 +694,24 @@ function HousesSection({ config }: { config?: any }) {
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState("");
 
+  // Student portal code.
+  const [portalCode, setPortalCode] = useState(config?.housePortalCode || "");
+  const [portalBusy, setPortalBusy] = useState(false);
+
+  async function genPortalCode() {
+    if (portalCode && !window.confirm("Generate a new code? The current one will stop working for students.")) return;
+    setPortalBusy(true);
+    try {
+      const r = await api<{ code: string }>("/houses/portal-code", { body: {} });
+      setPortalCode(r.code);
+      setEnabled(true);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setPortalBusy(false);
+    }
+  }
+
   function load() {
     api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch((e) => setErr(e.message));
   }
@@ -815,6 +833,22 @@ function HousesSection({ config }: { config?: any }) {
         </div>
         <p className="mt-1 text-xs text-slate-400">Use “Rebalance only unassigned” after a mid-year roster import to slot new students into the existing houses without reshuffling everyone.</p>
         {backfillMsg && <p className={`mt-2 text-xs ${backfillMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{backfillMsg}</p>}
+      </div>
+
+      {/* Student portal code */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">Student leaderboard portal</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          Students see live standings at <span className="font-mono">curriculate.net/houses</span> by entering this code (house
+          totals only — no student names). Share it; rotate it any time.
+        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {portalCode && <span className="rounded-lg bg-white px-3 py-1.5 font-mono text-lg tracking-widest">{portalCode}</span>}
+          <button onClick={genPortalCode} disabled={portalBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            {portalBusy ? "…" : portalCode ? "New code" : "Generate code"}
+          </button>
+          {portalCode && <a href="/houses" target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
+        </div>
       </div>
 
       {/* House standings report */}

@@ -5,120 +5,119 @@ import { API_BASE } from "../behavior/_lib/api";
 
 type House = { id: string; name: string; color: string; points: number; members: number };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
-type School = { id: string; name: string };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[] };
 
-const KEY = "houses_portal_school";
+const KEY = "houses_portal_code";
 const MEDAL = ["🥇", "🥈", "🥉"];
 
-export default function HousesPortal() {
-  const [school, setSchool] = useState<School | null>(null);
-  const [schools, setSchools] = useState<School[] | null>(null);
-  const [houses, setHouses] = useState<House[] | null>(null);
-  const [comps, setComps] = useState<Comp[]>([]);
-  const [err, setErr] = useState("");
+async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; board?: Board }> {
+  try {
+    const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
+    const d = await r.json();
+    if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [] } };
+  } catch {
+    return { ok: false, error: "Network error — try again" };
+  }
+}
 
-  // Restore the chosen school (picked once, remembered).
+export default function HousesPortal() {
+  const [code, setCode] = useState<string>("");
+  const [input, setInput] = useState("");
+  const [board, setBoard] = useState<Board | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  // Restore the saved code (entered once, remembered on this device).
   useEffect(() => {
-    try {
-      const s = JSON.parse(localStorage.getItem(KEY) || "null");
-      if (s?.id) setSchool(s);
-    } catch {
-      /* ignore */
-    }
+    const saved = localStorage.getItem(KEY) || "";
+    if (saved) setCode(saved);
   }, []);
 
-  // No school yet → load the picker list.
+  // Load + auto-refresh standings while a code is active.
   useEffect(() => {
-    if (school) return;
-    fetch(`${API_BASE}/api/behavior/public/schools`)
-      .then((r) => r.json())
-      .then((d) => setSchools(d.schools || []))
-      .catch(() => setSchools([]));
-  }, [school]);
-
-  // Load standings for the chosen school (and refresh every 30s).
-  useEffect(() => {
-    if (!school) return;
+    if (!code) return;
     let alive = true;
-    const load = () =>
-      fetch(`${API_BASE}/api/behavior/public/houses?schoolId=${encodeURIComponent(school.id)}`)
-        .then((r) => r.json())
-        .then((d) => {
-          if (!alive) return;
-          if (!d.ok) { setErr(d.error || "Could not load standings"); return; }
-          setHouses(d.houses || []);
-          setComps(d.competitions || []);
-        })
-        .catch(() => alive && setErr("Could not load standings"));
+    const load = async () => {
+      const r = await fetchBoard(code);
+      if (!alive) return;
+      if (!r.ok) { setErr(r.error || "error"); setBoard(null); return; }
+      setErr("");
+      setBoard(r.board!);
+    };
     load();
     const t = setInterval(load, 30000);
     return () => { alive = false; clearInterval(t); };
-  }, [school]);
+  }, [code]);
 
-  function pick(s: School) {
-    localStorage.setItem(KEY, JSON.stringify(s));
-    setSchool(s);
-    setHouses(null);
+  async function submitCode(e?: React.FormEvent) {
+    e?.preventDefault();
+    const c = input.trim();
+    if (!/^\d{3,6}$/.test(c)) { setErr("Enter your school code (digits)."); return; }
+    setBusy(true);
     setErr("");
+    const r = await fetchBoard(c);
+    setBusy(false);
+    if (!r.ok) { setErr(r.error || "Invalid code"); return; }
+    localStorage.setItem(KEY, c);
+    setCode(c);
+    setBoard(r.board!);
   }
-  function changeSchool() {
+  function changeCode() {
     localStorage.removeItem(KEY);
-    setSchool(null);
-    setHouses(null);
-    setComps([]);
+    setCode("");
+    setBoard(null);
+    setInput("");
     setErr("");
   }
 
-  // ── School picker ──────────────────────────────────────────────────────────
-  if (!school) {
+  // ── Code entry ─────────────────────────────────────────────────────────────
+  if (!code) {
     return (
       <div className="space-y-4">
         <Header />
-        <div className="rounded-2xl border border-slate-200 bg-white p-5">
-          <h2 className="font-semibold">Choose your school</h2>
-          <p className="mt-1 text-sm text-slate-500">Pick once — we&apos;ll remember it on this device.</p>
-          {schools === null ? (
-            <p className="mt-3 text-sm text-slate-400">Loading…</p>
-          ) : schools.length === 0 ? (
-            <p className="mt-3 text-sm text-slate-400">No schools have published their house standings yet.</p>
-          ) : (
-            <ul className="mt-3 divide-y divide-slate-100">
-              {schools.map((s) => (
-                <li key={s.id}>
-                  <button onClick={() => pick(s)} className="w-full px-1 py-3 text-left font-medium hover:text-slate-600">
-                    {s.name} →
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <form onSubmit={submitCode} className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">Enter your school code</h2>
+          <p className="mt-1 text-sm text-slate-500">Ask your teacher for the 4-digit House code. You only enter it once.</p>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            autoFocus
+            placeholder="1234"
+            className="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3 text-center text-2xl tracking-[0.3em]"
+          />
+          {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+          <button type="submit" disabled={busy} className="mt-3 w-full rounded-xl bg-slate-900 px-4 py-3 font-semibold text-white disabled:opacity-40">
+            {busy ? "Checking…" : "See standings"}
+          </button>
+        </form>
       </div>
     );
   }
 
-  const max = Math.max(1, ...(houses || []).map((h) => Math.abs(h.points)));
+  const max = Math.max(1, ...(board?.houses || []).map((h) => Math.abs(h.points)));
 
   // ── Leaderboard ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
       <Header />
       <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">{school.name}</p>
-        <button onClick={changeSchool} className="text-xs text-slate-400 underline">change school</button>
+        <p className="text-sm text-slate-500">{board?.schoolName || ""}</p>
+        <button onClick={changeCode} className="text-xs text-slate-400 underline">change code</button>
       </div>
 
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Leaderboard</h2>
-        {houses === null ? (
+        {board === null ? (
           <p className="mt-2 text-sm text-slate-400">Loading…</p>
-        ) : houses.length === 0 ? (
+        ) : board.houses.length === 0 ? (
           <p className="mt-2 text-sm text-slate-400">No houses yet.</p>
         ) : (
           <ul className="mt-3 space-y-3">
-            {houses.map((h, i) => (
+            {board.houses.map((h, i) => (
               <li key={h.id} className="flex items-center gap-3">
                 <span className="w-6 text-center text-lg">{MEDAL[i] || <span className="text-sm text-slate-400">{i + 1}</span>}</span>
                 <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />
@@ -137,11 +136,11 @@ export default function HousesPortal() {
         )}
       </section>
 
-      {comps.length > 0 && (
+      {board && board.competitions.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold">Competitions</h2>
           <ul className="mt-3 space-y-2">
-            {comps.map((c) => (
+            {board.competitions.map((c) => (
               <li key={c.name} className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2 last:border-0 last:pb-0">
                 <div>
                   <div className="text-sm font-medium">{c.name}</div>
@@ -166,7 +165,7 @@ export default function HousesPortal() {
         </section>
       )}
 
-      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {houses && houses[0] ? houses[0].name : "team"}!</p>
+      <p className="pb-6 text-center text-xs text-slate-400">Updates automatically · go {board && board.houses[0] ? board.houses[0].name : "team"}!</p>
     </div>
   );
 }

@@ -2622,27 +2622,36 @@ router.delete("/competitions/:id", authAny, loadMembership, requireAdmin, async 
   }
 });
 
-// ── Public student portal (no auth) — house standings only, never PII ────────
-
-// Schools that have turned Houses on, for the /houses portal's school picker.
-router.get("/public/schools", async (req, res, next) => {
+// Generate (or rotate) the 4-digit student-portal code (admin). Returned once;
+// share it with students. Unique across schools.
+router.post("/houses/portal-code", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
-    const configs = await BehaviorConfig.find({ housesEnabled: true }).select("schoolId").lean();
-    const ids = configs.map((c) => c.schoolId);
-    const schools = await BehaviorSchool.find({ _id: { $in: ids } }).select("name").sort({ name: 1 }).lean();
-    res.json({ ok: true, schools: schools.map((s) => ({ id: String(s._id), name: s.name })) });
+    let code = "";
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const c = String(1000 + (crypto.randomBytes(2).readUInt16BE(0) % 9000));
+      const taken = await BehaviorConfig.findOne({ housePortalCode: c, schoolId: { $ne: req.schoolId } }).select("_id").lean();
+      if (!taken) { code = c; break; }
+    }
+    if (!code) return res.status(500).json({ ok: false, error: "Could not allocate a code — try again" });
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { housePortalCode: code, housesEnabled: true } });
+    await audit(req.schoolId, "houses.portal_code", req, {});
+    res.json({ ok: true, code });
   } catch (err) {
     next(err);
   }
 });
 
-// Public house standings + competition results for one school. House-level only.
+// ── Public student portal (no auth) — house standings only, never PII ────────
+
+// Public house standings + competition results, gated by the 4-digit code so the
+// portal isn't openly browseable. House-level only — no student data.
 router.get("/public/houses", async (req, res, next) => {
   try {
-    const schoolId = String(req.query.schoolId || "").trim();
-    if (!schoolId) return res.status(400).json({ ok: false, error: "schoolId required" });
-    const config = await BehaviorConfig.findOne({ schoolId }).select("housesEnabled").lean();
-    if (!config?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [], competitions: [] });
+    const code = String(req.query.code || "").trim();
+    if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
+    const schoolId = config.schoolId;
     const school = await BehaviorSchool.findById(schoolId).select("name").lean();
 
     const houses = await BehaviorHouse.find({ schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();

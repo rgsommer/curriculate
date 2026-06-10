@@ -90,6 +90,10 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // assignment, report). Off by default; when off, all house UI is hidden.
     housesEnabled: { type: Boolean, default: false },
 
+    // 4-digit code students enter at /houses to see this school's standings
+    // (so the public portal isn't openly browseable). Blank = portal disabled.
+    housePortalCode: { type: String, default: "" },
+
     // ── House points report (opt-in) ───────────────────────────────────────
     // A standings email with each house's total + its top-3 contributing
     // students. Off by default; admins enable + send it from Setup.
