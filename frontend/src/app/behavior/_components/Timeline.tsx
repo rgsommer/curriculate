@@ -32,7 +32,7 @@ export function Timeline({ byMonth }: { byMonth: Record<string, { neg: number; p
 // Incidents are coloured by kind/points; legacy/standalone notices count as
 // negative offences (they're the only record of those events).
 export function buildByMonth(
-  incidents: Array<{ timestamp: string; behaviorSnapshot?: { kind?: string; points?: number } }>,
+  incidents: Array<{ timestamp: string; behaviorSnapshot?: { kind?: string; points?: number; triggerMode?: string } }>,
   notices: Array<{ sentAt?: string; createdAt: string; legacyImport?: boolean; triggeringIncidentIds?: string[] }>,
 ): Record<string, { neg: number; pos: number }> {
   const by: Record<string, { neg: number; pos: number }> = {};
@@ -42,6 +42,9 @@ export function buildByMonth(
   };
   for (const i of incidents) {
     const pos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+    // Documented interactions (e.g. a logged parent meeting) are neutral — not
+    // an offence, so keep them off the red/green chart.
+    if (!pos && i.behaviorSnapshot?.triggerMode === "INTERACTION") continue;
     bump(i.timestamp, pos ? "pos" : "neg");
   }
   for (const n of notices) {

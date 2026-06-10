@@ -1956,9 +1956,12 @@ async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw, student
     byMonth[k] = byMonth[k] || { neg: 0, pos: 0 };
     byMonth[k][kind] += 1;
   };
-  const incs = await BehaviorIncident.find({ studentId }).select("timestamp behaviorSnapshot.kind behaviorSnapshot.points").lean();
+  const incs = await BehaviorIncident.find({ studentId }).select("timestamp behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
   for (const i of incs) {
     const pos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+    // Documented interactions (e.g. a logged parent meeting) are neutral — keep
+    // them off the red/green chart so they don't read as offences.
+    if (!pos && i.behaviorSnapshot?.triggerMode === "INTERACTION") continue;
     bump(i.timestamp, pos ? "pos" : "neg");
   }
   const nots = await BehaviorNotice.find({ studentId }).select("sentAt createdAt legacyImport triggeringIncidentIds").lean();
@@ -2055,16 +2058,95 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     const span = allTs.length
       ? `${new Date(allTs[0]).toLocaleDateString("en-CA")} to ${new Date(allTs[allTs.length - 1]).toLocaleDateString("en-CA")}`
       : "—";
+
+    // How staff have MANAGED this student — the diligence record. This summary
+    // may be used to show a parent/administrator that the behaviour was handled
+    // conscientiously, so surface every form of staff response, not just the
+    // offences. Computed over the FULL student record regardless of scope, since
+    // it describes the overall handling.
+    const allIncs = scope === "all"
+      ? incidents
+      : await BehaviorIncident.find({ studentId: student._id }).select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode teacherNotes timestamp").lean();
+    let offenceCount = 0, positiveCount = 0, interactionCount = 0, teacherNoteCount = 0;
+    for (const i of allIncs) {
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      const isInteraction = !isPositive && (i.behaviorSnapshot?.triggerMode === "INTERACTION");
+      if (isPositive) positiveCount += 1;
+      else if (isInteraction) interactionCount += 1;
+      else offenceCount += 1;
+      teacherNoteCount += i.teacherNotes?.length || 0;
+    }
+    const noticesSent = notices.filter((n) => n.status === "sent").length;
+    const fuAgg = await BehaviorFollowup.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: student._id } },
+      { $group: { _id: "$status", n: { $sum: 1 } } },
+    ]);
+    const fu = { open: 0, done: 0, not_done: 0, waived: 0 };
+    for (const f of fuAgg) fu[f._id] = f.n;
+    const fuTotal = fu.open + fu.done + fu.not_done + fu.waived;
+    const fuResolved = fu.done + fu.waived;
+    const managementText =
+      `\nHOW STAFF MANAGED THIS STUDENT (the diligence record — give this due weight; it shows the behaviour was handled, not ignored):\n` +
+      `- Staff involved: ${tIds.length} teacher(s).\n` +
+      `- Positive recognition given to this student: ${positiveCount}.\n` +
+      `- Documented interactions / parent meetings logged: ${interactionCount}.\n` +
+      `- Private documentation notes on incidents: ${teacherNoteCount}.\n` +
+      `- Notices home to parents: ${notices.length} (${noticesSent} sent) — parents were kept informed.\n` +
+      (fuTotal ? `- Consequence follow-through: ${fuResolved}/${fuTotal} consequence(s) with a follow-up were resolved (${fu.done} completed, ${fu.waived} waived), ${fu.not_done} missed, ${fu.open} still open.\n` : "");
+
+    // GENERAL PRACTICE of the teacher most involved with this student — context
+    // that the same standards are applied consistently across students, so the
+    // handling of THIS student isn't read as singling them out or as poor
+    // discipline. The teacher's own aggregate (counts only, no other names).
+    const primaryAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, studentId: student._id } },
+      { $group: { _id: "$teacherId", n: { $sum: 1 } } },
+      { $sort: { n: -1 } }, { $limit: 1 },
+    ]);
+    const primaryTeacherId = primaryAgg[0]?._id || null;
+    let practiceText = "";
+    if (primaryTeacherId) {
+      const pSince = new Date(); pSince.setMonth(pSince.getMonth() - 12);
+      const gincs = await BehaviorIncident.find({ schoolId: req.schoolId, teacherId: primaryTeacherId, timestamp: { $gt: pSince } })
+        .select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode studentId").lean();
+      let gOff = 0, gPos = 0, gInt = 0; const gStudents = new Set();
+      for (const i of gincs) {
+        const isPos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+        const isInt = !isPos && i.behaviorSnapshot?.triggerMode === "INTERACTION";
+        if (isPos) gPos += 1; else if (isInt) gInt += 1; else gOff += 1;
+        gStudents.add(String(i.studentId));
+      }
+      const gfu = { done: 0, waived: 0, not_done: 0, open: 0 };
+      const gfuAgg = await BehaviorFollowup.aggregate([
+        { $match: { schoolId: req.schoolId, assignedByTeacherId: primaryTeacherId, createdAt: { $gt: pSince } } },
+        { $group: { _id: "$status", n: { $sum: 1 } } },
+      ]);
+      for (const f of gfuAgg) gfu[f._id] = f.n;
+      const gfuTotal = gfu.done + gfu.waived + gfu.not_done + gfu.open;
+      const gfuPct = gfuTotal ? Math.round(((gfu.done + gfu.waived) / gfuTotal) * 100) : 0;
+      const pName = tName[String(primaryTeacherId)] || (await BehaviorTeacher.findById(primaryTeacherId).select("name").lean())?.name || "this teacher";
+      if (gincs.length || gfuTotal) {
+        practiceText =
+          `\nGENERAL PRACTICE of ${pName} (last 12 months, across ALL their students — for the 1-2 consistency sentences only):\n` +
+          `- ${gOff} offence(s) handled across ${gStudents.size} different student(s), alongside ${gPos} positive recognition(s) and ${gInt} documented interaction(s).\n` +
+          (gfuTotal ? `- Followed through on ${gfuPct}% of ${gfuTotal} consequence(s) that carried a follow-up.\n` : "");
+      }
+    }
+
     const ctxText =
       `Student: ${name}${student.classGroup ? ` (${student.classGroup})` : ""}.\n` +
       `Records on file: ${incidents.length} individually-logged incident(s) + ${notices.length} notice(s) home, spanning ${span}.\n` +
       (scope === "all" ? `NOTE: earlier offences may exist ONLY as notices home — treat each notice below as a record of past behaviour, not just a communication.\n` : "") +
+      managementText +
+      practiceText +
       `\n${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
       `Notices home${scope === "all" ? " (full content = the record of earlier offences)" : ""}:\n${noticeLines.join("\n") || "(none)"}`;
     const prompt =
-      `Write a concise, objective summary of a student's behaviour record for a school administrator (VP/principal). ` +
+      `Write a thorough, objective summary of a student's behaviour record for a school administrator (VP/principal). ` +
+      `It may be used to show — to an administrator or a parent — that staff have managed this student's behaviour conscientiously and fairly, so be comprehensive: cover BOTH the behaviour itself AND how staff responded (positive recognition given, parent meetings/interactions logged, notices home keeping parents informed, consequences followed through, and documentation kept). Give the staff-response record genuine weight; do not reduce the summary to a list of offences. ` +
       `Base your assessment on ALL the records below — BOTH the individually-logged incidents AND the notices home (which, especially for earlier events, are the only record of past offences). ` +
       `State the overall date range and the number of events on file (counting notices that describe offences), then cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
+      (practiceText ? `Also weave in 1-2 sentences (no more) — using the GENERAL PRACTICE figures — situating how this student was handled within the teacher's consistent, balanced approach across their other students (the same standards and follow-through applied to everyone, not singling this student out). Keep it factual; do not dump the raw practice numbers as a separate section. ` : "") +
       `Be factual and brief; you need not list every event, but the assessment must reflect the WHOLE record back to the earliest date. Use ONLY the data below — do not invent.\n\n${ctxText}`;
 
     let summary = `Behaviour summary — ${name}\n\n${ctxText}`; // deterministic fallback
@@ -2114,10 +2196,17 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       .select("behaviorSnapshot.name behaviorSnapshot.triggerMode behaviorSnapshot.kind behaviorSnapshot.points timestamp studentId teacherNotes")
       .lean();
 
-    const byType = {};
-    const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
-    const byMonth = {};
-    const byMonthKind = {}; // { "YYYY-MM": { neg, pos } } for the red/green email chart
+    // Classify every event into one of three distinct threads so the summary
+    // reflects the whole picture, not just discipline:
+    //   • offence     — a negative behaviour that counts toward strikes
+    //   • positive     — a reward / good behaviour (kind positive or points > 0)
+    //   • interaction  — a documented conversation/parent-meeting (INTERACTION
+    //                    mode, not positive): kept for the record, no strike,
+    //                    nothing sent home.
+    const byType = {};          // offence types
+    const posByType = {};       // positive types
+    const byMonth = {};         // OFFENCE monthly volume (the discipline trend)
+    const byMonthKind = {};     // { "YYYY-MM": { neg, pos } } red/green chart — offences vs positives only
     const bumpKind = (d, kind) => {
       const k = new Date(d).toISOString().slice(0, 7);
       byMonthKind[k] = byMonthKind[k] || { neg: 0, pos: 0 };
@@ -2125,16 +2214,28 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     };
     const students = new Set();
     let teacherNoteCount = 0;
+    let offenceCount = 0, positiveCount = 0, interactionCount = 0;
     for (const i of incidents) {
       const nm = i.behaviorSnapshot?.name || "Other";
-      byType[nm] = (byType[nm] || 0) + 1;
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
-      byMode[mode] = (byMode[mode] || 0) + 1;
-      byMonth[new Date(i.timestamp).toISOString().slice(0, 7)] = (byMonth[new Date(i.timestamp).toISOString().slice(0, 7)] || 0) + 1;
-      const pos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
-      bumpKind(i.timestamp, pos ? "pos" : "neg");
+      const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      const isInteraction = !isPositive && mode === "INTERACTION";
       students.add(String(i.studentId));
       teacherNoteCount += i.teacherNotes?.length || 0;
+      if (isPositive) {
+        positiveCount += 1;
+        posByType[nm] = (posByType[nm] || 0) + 1;
+        bumpKind(i.timestamp, "pos");
+      } else if (isInteraction) {
+        // Documented interaction — neutral; not an offence and not on the chart.
+        interactionCount += 1;
+      } else {
+        offenceCount += 1;
+        byType[nm] = (byType[nm] || 0) + 1;
+        const mk = new Date(i.timestamp).toISOString().slice(0, 7);
+        byMonth[mk] = (byMonth[mk] || 0) + 1;
+        bumpKind(i.timestamp, "neg");
+      }
     }
     const notMatch = { schoolId: req.schoolId, createdAt: { $gt: cutoff } };
     if (scope === "me") notMatch.sentByTeacherId = req.membership._id;
@@ -2170,39 +2271,67 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     ]);
     const atThreshold = agg.filter((a) => a.n >= triggerCount - 1).length;
 
+    // Follow-through diligence: of consequences that carried a follow-up, how
+    // many did the teacher/division actually resolve vs let slip. This is a
+    // record of conscientiousness — valuable when the summary is used to
+    // represent how thoroughly someone manages behaviour.
+    const fuMatch = { schoolId: req.schoolId, createdAt: { $gt: cutoff } };
+    if (scope === "me") fuMatch.assignedByTeacherId = req.membership._id;
+    const fuAgg = await BehaviorFollowup.aggregate([
+      { $match: fuMatch },
+      { $group: { _id: "$status", n: { $sum: 1 } } },
+    ]);
+    const fu = { open: 0, done: 0, not_done: 0, waived: 0 };
+    for (const f of fuAgg) fu[f._id] = f.n;
+    const fuTotal = fu.open + fu.done + fu.not_done + fu.waived;
+    const fuResolved = fu.done + fu.waived;
+    const fuResolvedPct = fuTotal ? Math.round((fuResolved / fuTotal) * 100) : 0;
+
+    // Distinct active months — a span of steady engagement, not a one-off burst.
+    const activeMonths = Object.keys(byMonth).length;
+
     // Positive behaviours are a new feature — flag it so a low positive count
     // isn't read as the teacher/division being "unbalanced".
     const firstPositive = await BehaviorIncident.findOne({
       schoolId: req.schoolId,
       $or: [{ "behaviorSnapshot.kind": "positive" }, { "behaviorSnapshot.points": { $gt: 0 } }],
     }).sort({ timestamp: 1 }).select("timestamp").lean();
-    const positiveCount = Object.values(byMonthKind).reduce((s, m) => s + (m.pos || 0), 0);
     const positivesNew = !firstPositive || Date.now() - new Date(firstPositive.timestamp).getTime() < 90 * DAY_MS;
     const positiveNote = positivesNew
       ? `\nNOTE: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}. The small number of positive events (${positiveCount}) reflects that it is NEW — do NOT characterise the teacher/division as unbalanced, lacking positives, or skewed toward discipline; if anything, note that positive tracking is just getting underway.`
       : "";
 
     const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
-    const totalEvents = incidents.length + legacyOffences;
+    const totalOffences = offenceCount + legacyOffences;
+    const topPosTypes = Object.entries(posByType).sort((a, b) => b[1] - a[1]).slice(0, 5);
     const ctxText =
       `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
-      `Behaviour events: ${totalEvents} total across ${students.size} student(s) — ${incidents.length} logged as individual incidents in the app` +
+      `Students involved (any event type): ${students.size}.\n` +
+      `\nThree DISTINCT threads — keep them separate, do not conflate:\n` +
+      `1) OFFENCES (negative behaviour, counts toward strikes): ${totalOffences} total — ${offenceCount} logged as individual incidents in the app` +
       `${legacyOffences ? `, plus ${legacyOffences} earlier offence(s) that exist ONLY as historical notices home (from a one-time import of past paper records)` : ""}.\n` +
       (legacyOffences
-        ? `RECONCILIATION (important — do not contradict): those ${legacyOffences} historical notices ARE offences and are already counted in the ${totalEvents} total and the monthly volume below. The "${notices.length} notices home" figure overlaps with them — it is NOT additional events. Do NOT state there were more notices than offences, and do NOT headline the small "${incidents.length} incidents" number as the year's total; use ${totalEvents} total behaviour events.\n`
+        ? `   RECONCILIATION (important — do not contradict): those ${legacyOffences} historical notices ARE offences and are already counted in the ${totalOffences} offence total and the monthly volume below. The "${notices.length} notices home" figure overlaps with them — it is NOT additional events. Do NOT state there were more notices than offences, and do NOT headline the small "${offenceCount}" logged-incident number as the year's total; use ${totalOffences} total offences.\n`
         : "") +
-      `By behaviour type (of the ${incidents.length} logged incidents): ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
-      `By mode (logged incidents): threshold ${byMode.THRESHOLD || 0}, immediate ${byMode.IMMEDIATE || 0}, interactions (documented, no note home) ${byMode.INTERACTION || 0}.\n` +
-      `Private teacher notes recorded: ${teacherNoteCount}.\n` +
-      `Monthly volume (ALL ${totalEvents} events, incidents + historical notices): ${monthly.join("; ") || "n/a"}.\n` +
-      `Notices home to parents: ${notices.length} created (${noticesSent} sent) — by reason: ${Object.entries(noticeByReason).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
+      `2) POSITIVE recognitions (rewards / good behaviour — NEVER a strike): ${positiveCount}${topPosTypes.length ? ` — e.g. ${topPosTypes.map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}.\n` +
+      `3) Documented INTERACTIONS (conversations & parent meetings logged for the record — no note home, no strike; relationship-building / proactive engagement): ${interactionCount}.\n` +
+      `\nBy offence type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
+      `Engagement span: activity recorded across ${activeMonths} distinct month(s) of the window.\n` +
+      `Documentation diligence: ${teacherNoteCount} private teacher note(s) recorded alongside incidents.\n` +
+      `Monthly OFFENCE volume (incidents + historical notices): ${monthly.join("; ") || "n/a"}.\n` +
+      `Parent communication: ${notices.length} notice(s) home created (${noticesSent} sent) — by reason: ${Object.entries(noticeByReason).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
+      `Consequence follow-through: of ${fuTotal} consequence(s) that carried a follow-up, ${fuResolved} were resolved (${fu.done} completed, ${fu.waived} waived) — ${fuResolvedPct}% — with ${fu.not_done} missed and ${fu.open} still open.\n` +
       `Current strike load (division, shared count): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
       positiveNote;
     const prompt =
-      `You are writing an executive summary for a teacher reflecting on classroom-behaviour management over the period. ` +
-      `Cover: how things are going overall; the behaviour TREND across the window (improving / worsening / steady, citing the monthly volumes — use the ${totalEvents} total behaviour events, not the smaller logged-incident count); ` +
-      `${scope === "me" ? "this teacher's own engagement style, including the balance of documented interactions vs. discipline notices;" : "patterns across the division and which behaviours dominate;"} ` +
-      `what's been communicated to parents; and the current load. Keep the figures internally consistent (never more notices than total offences). Be objective, balanced, and professional — suitable to share with an administrator or for personal reflection. Use ONLY the data; do not invent. A few short paragraphs.\n\n${ctxText}`;
+      `You are writing a COMPREHENSIVE executive summary for a teacher reflecting on their classroom-behaviour management over the period. ` +
+      `This summary may later be used by the teacher to represent the full, fair picture of how conscientiously they manage behaviour — so be thorough and give due weight to every form of engagement, not just discipline. Do not omit a thread because its number is small. ` +
+      `Cover, as distinct threads: (1) how things are going overall and the OFFENCE trend across the window (improving / worsening / steady, citing the monthly offence volumes — use the ${totalOffences} total offences, not just the logged-incident count); ` +
+      `(2) POSITIVE recognition — how positives are being used to reinforce good behaviour (${positiveCount} in the window); ` +
+      `(3) documented INTERACTIONS (${interactionCount}) such as conversations and parent meetings logged for the record — proactive, relationship-building engagement that is NOT discipline; ` +
+      `(4) thoroughness and follow-through — parent communication (${notices.length} notice(s) home), consequence follow-through (${fuResolvedPct}% of ${fuTotal} resolved), documentation via ${teacherNoteCount} private note(s), and steady engagement across ${activeMonths} month(s); ` +
+      `${scope === "me" ? "this teacher's overall engagement style, including the balance of positives and documented interactions vs. discipline, and the diligence shown in following process through;" : "patterns across the division and which behaviours dominate;"} ` +
+      `and the current load. Keep the figures internally consistent (never more notices than total offences; positives and interactions are NOT offences and must not be added into the offence count). Be objective, balanced, fair and professional — suitable to share with an administrator or for personal reflection. Do not exaggerate or editorialise; let the comprehensiveness come from covering every thread accurately. Use ONLY the data; do not invent. A few short paragraphs.\n\n${ctxText}`;
 
     let summary = `Executive summary — ${who} (last ${months} months)\n\n${ctxText}`;
     let aiUsed = false;
