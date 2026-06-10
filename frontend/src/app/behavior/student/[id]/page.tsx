@@ -61,6 +61,8 @@ export default function StudentPage() {
 
   // Per-incident note inputs
   const [noteText, setNoteText] = useState<Record<string, string>>({});
+  // Per-notice "request a meeting" toggle
+  const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
 
   const load = useCallback(() => {
     if (!params?.id) return;
@@ -135,7 +137,7 @@ export default function StudentPage() {
 
   async function sendNotice(id: string) {
     try {
-      await api(`/notices/${id}/send`, { body: {} });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
       load();
     } catch (e: any) {
       setError(e.message);
@@ -273,13 +275,19 @@ export default function StudentPage() {
                     <>
                       <pre className="mt-2 whitespace-pre-wrap font-sans text-sm text-slate-700">{n.renderedText}</pre>
                       {(n.status === "queued" || n.status === "failed") && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <button onClick={() => sendNotice(n._id)} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
-                            {n.status === "failed" ? "Retry send" : "Send now"}
-                          </button>
-                          <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
-                          <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
-                        </div>
+                        <>
+                          <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                            <input type="checkbox" checked={!!meetingFor[n._id]} onChange={(e) => setMeetingFor((m) => ({ ...m, [n._id]: e.target.checked }))} />
+                            Also request a meeting with the parents
+                          </label>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button onClick={() => sendNotice(n._id)} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
+                              {n.status === "failed" ? "Retry send" : "Send now"}
+                            </button>
+                            <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
+                            <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
+                          </div>
+                        </>
                       )}
                       {n.status === "failed" && (
                         <p className="mt-1 text-xs text-red-600">

@@ -85,6 +85,13 @@ export default function BehaviorDashboard() {
         </Link>
       )}
 
+      <Link
+        href="/behavior/students"
+        className="block rounded-xl border border-slate-300 bg-white px-5 py-3 text-center text-sm font-semibold text-slate-700"
+      >
+        🔍 Find a student &amp; view history
+      </Link>
+
       {canLog && <ReminderToday />}
 
       {housesOn && <HousesCard canLog={canLog} isAdmin={isAdmin} portalCode={me.config?.housePortalCode || ""} />}

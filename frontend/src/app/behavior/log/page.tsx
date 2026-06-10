@@ -57,6 +57,7 @@ export default function LogIncidentPage() {
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
   const [sendImmediately, setSendImmediately] = useState(false);
+  const [requestMeeting, setRequestMeeting] = useState(false);
 
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -192,7 +193,7 @@ export default function LogIncidentPage() {
   async function sendNow() {
     if (!notice) return;
     try {
-      await api(`/notices/${notice._id}/send`, { body: {} });
+      await api(`/notices/${notice._id}/send`, { body: { requestMeeting } });
       setNotice({ ...notice, status: "sent" });
     } catch (e: any) {
       setError(e.message);
@@ -206,6 +207,7 @@ export default function LogIncidentPage() {
     setOccurredAt("");
     setNote("");
     setSendImmediately(false);
+    setRequestMeeting(false);
     setKindFilter("negative");
     setNotice(null);
     setPositiveNotice(null);
@@ -276,6 +278,12 @@ export default function LogIncidentPage() {
                 A parent notice was composed{notice.ccVp ? " (VP CC’d)" : ""}. Send it now, don’t send it, or review/edit it first
                 — if you do nothing it sends automatically after a short window.
               </p>
+            )}
+            {notice.status === "queued" && (
+              <label className="mt-3 flex items-center gap-2 text-sm text-amber-900">
+                <input type="checkbox" checked={requestMeeting} onChange={(e) => setRequestMeeting(e.target.checked)} />
+                Also request a meeting with the parents
+              </label>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               {notice.status === "queued" && (

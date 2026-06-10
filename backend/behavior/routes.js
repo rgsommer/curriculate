@@ -1674,6 +1674,16 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
     if (!["queued", "failed"].includes(notice.status)) {
       return res.status(409).json({ ok: false, error: `Notice is already ${notice.status}` });
     }
+    // Optional: weave in a request to meet with the parents, just before the
+    // signature (idempotent).
+    if (req.body?.requestMeeting && !/arrange a (?:brief )?meeting/i.test(notice.renderedText || "")) {
+      const line = "We would also like to arrange a brief meeting to discuss this. Please reply with a few times that would work for you, and we'll do our best to accommodate.";
+      const parts = String(notice.renderedText || "").split(/\n\n+/);
+      if (parts.length >= 2) parts.splice(parts.length - 1, 0, line);
+      else parts.push(line);
+      notice.renderedText = parts.join("\n\n");
+      await notice.save();
+    }
     const result = await dispatchNotice(notice._id); // re-attempts delivery (e.g. after fixing Edsby)
     await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
     res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
