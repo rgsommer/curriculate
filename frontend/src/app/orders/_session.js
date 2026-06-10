@@ -40,6 +40,22 @@ export function getCurriculateToken() {
   }
 }
 
+// Re-check admin status live (config may have changed since login, e.g. this
+// person was just added as a 2nd finance account). Updates the cached flag.
+export async function refreshAdmin(session) {
+  if (!session) return null;
+  try {
+    const r = await fetch("/api/orders/whoami?session=" + encodeURIComponent(session));
+    if (!r.ok) return null;
+    const j = await r.json();
+    if (!j.ok) return null;
+    try { localStorage.setItem("orders_isAdmin", j.isAdmin ? "1" : "0"); } catch {}
+    return { email: j.email, isAdmin: !!j.isAdmin };
+  } catch {
+    return null;
+  }
+}
+
 // Attempt single-sign-on from an existing Curriculate/Behaviours login.
 // Returns { session, email, isAdmin, name } on success, or null.
 export async function trySso() {

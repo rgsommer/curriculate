@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { getStoredSession, storeSession, clearSession, trySso } from "./_session";
+import { getStoredSession, storeSession, clearSession, trySso, refreshAdmin } from "./_session";
 
 export default function AdminGate({ title, children }) {
   const [stage, setStage] = useState("loading"); // loading | email | code | denied | ok
@@ -26,7 +26,11 @@ export default function AdminGate({ title, children }) {
       const stored = getStoredSession();
       if (stored) {
         setSession(stored.session); setEmail(stored.email);
-        setStage(stored.isAdmin ? "ok" : "denied"); return;
+        // Re-check admin live so a just-added 2nd finance person isn't denied by a stale cache.
+        const fresh = await refreshAdmin(stored.session);
+        if (cancelled) return;
+        const admin = fresh ? fresh.isAdmin : stored.isAdmin;
+        setStage(admin ? "ok" : "denied"); return;
       }
       const sso = await trySso();
       if (cancelled) return;

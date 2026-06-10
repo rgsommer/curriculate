@@ -12,7 +12,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { CATALOG as BUNDLED } from "./_catalog";
-import { getStoredSession, storeSession, clearSession, trySso } from "./_session";
+import { getStoredSession, storeSession, clearSession, trySso, refreshAdmin } from "./_session";
 
 const money = (n) => "$" + (Math.round((n || 0) * 100) / 100).toFixed(2);
 
@@ -64,7 +64,10 @@ export default function OrdersPage() {
       if (stored) {
         setSession(stored.session); setEmail(stored.email); setIsAdmin(stored.isAdmin);
         if (stored.name) setTeacherName(stored.name);
-        setStage("order"); return;
+        setStage("order");
+        // Refresh admin status live so Setup/Summary links reflect current config.
+        refreshAdmin(stored.session).then((f) => { if (!cancelled && f) setIsAdmin(f.isAdmin); });
+        return;
       }
       const sso = await trySso();
       if (cancelled) return;
