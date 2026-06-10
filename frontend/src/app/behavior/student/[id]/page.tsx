@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactElement } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref } from "../../_lib/api";
@@ -49,7 +49,7 @@ export default function StudentPage() {
   // Admin summary
   const [summary, setSummary] = useState<string>("");
   const [summaryMsg, setSummaryMsg] = useState<string>("");
-  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryBusy, setSummaryBusy] = useState<"" | "all" | "current">("");
 
   // Notice editing
   const [editId, setEditId] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export default function StudentPage() {
   const pct = Math.min(100, Math.round((data.activeCount / Math.max(1, data.triggerCount)) * 100));
 
   async function adminSummary(scope: "all" | "current") {
-    setSummaryBusy(true);
+    setSummaryBusy(scope);
     setSummaryMsg("");
     setSummary("");
     try {
@@ -91,7 +91,7 @@ export default function StudentPage() {
     } catch (e: any) {
       setSummaryMsg(e.message);
     } finally {
-      setSummaryBusy(false);
+      setSummaryBusy("");
     }
   }
 
@@ -161,20 +161,20 @@ export default function StudentPage() {
           <p className="text-sm font-medium text-slate-700">Admin summary (AI) → clipboard</p>
           <p className="text-xs text-slate-400">Includes private teacher notes. For VP/principal — not sent to parents.</p>
           <div className="mt-2 flex flex-wrap gap-2">
-            <button onClick={() => adminSummary("all")} disabled={summaryBusy}
+            <button onClick={() => adminSummary("all")} disabled={!!summaryBusy}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
-              {summaryBusy ? "Generating…" : "Full history"}
+              {summaryBusy === "all" ? "Generating…" : "Full history"}
             </button>
-            <button onClick={() => adminSummary("current")} disabled={summaryBusy}
+            <button onClick={() => adminSummary("current")} disabled={!!summaryBusy}
               className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
-              {summaryBusy ? "Generating…" : "Current trigger only"}
+              {summaryBusy === "current" ? "Generating…" : "Current trigger only"}
             </button>
           </div>
           {summaryMsg && <p className="mt-2 text-sm text-green-700">{summaryMsg}</p>}
           {summary && (
-            <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-sm text-slate-700">
-              {summary}
-            </pre>
+            <div className="mt-2 max-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <Markdown text={summary} />
+            </div>
           )}
         </div>
       </section>
@@ -293,4 +293,49 @@ export default function StudentPage() {
       </section>
     </div>
   );
+}
+
+// Minimal markdown renderer for the AI summary: **bold**, # headings, and
+// - bullet lists become real formatting (no external dependency).
+function renderInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((p, i) => {
+    const m = p.match(/^\*\*([^*]+)\*\*$/);
+    return m ? <strong key={i}>{m[1]}</strong> : <span key={i}>{p}</span>;
+  });
+}
+
+function Markdown({ text }: { text: string }) {
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  const blocks: ReactElement[] = [];
+  let list: string[] = [];
+  let key = 0;
+  const flushList = () => {
+    if (list.length) {
+      const items = list.slice();
+      blocks.push(
+        <ul key={`u${key++}`} className="my-2 list-disc space-y-1 pl-5">
+          {items.map((li, i) => <li key={i}>{renderInline(li)}</li>)}
+        </ul>
+      );
+      list = [];
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
+    if (bullet) { list.push(bullet[1]); continue; }
+    flushList();
+    if (!line.trim()) continue;
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    const wholeBold = line.trim().match(/^\*\*([^*]+)\*\*$/);
+    if (h) {
+      blocks.push(<p key={`h${key++}`} className="mb-1 mt-3 font-semibold text-slate-900">{renderInline(h[2])}</p>);
+    } else if (wholeBold) {
+      blocks.push(<p key={`b${key++}`} className="mb-1 mt-3 font-semibold text-slate-900">{wholeBold[1]}</p>);
+    } else {
+      blocks.push(<p key={`p${key++}`} className="my-1.5 leading-relaxed">{renderInline(line)}</p>);
+    }
+  }
+  flushList();
+  return <div>{blocks}</div>;
 }
