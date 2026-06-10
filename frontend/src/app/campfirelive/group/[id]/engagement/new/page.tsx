@@ -347,7 +347,15 @@ export default function NewEngagementPage() {
     } else if (selectedType === "poll") {
       config.format = pollFormat;
       if (pollFormat === "open") {
-        config.options = []; // open-ended — people type their own answer
+        // Open-ended: the inputs are the question(s) people type answers to.
+        const qs = pollOptions.map((o) => o.trim()).filter(Boolean);
+        if (qs.length < 1) {
+          setError("Add at least one open question.");
+          setCreating(false);
+          return;
+        }
+        config.questions = qs;
+        config.options = [];
       } else if (pollFormat === "yes_no") {
         config.options = ["Yes", "No"];
       } else {
@@ -836,51 +844,67 @@ export default function NewEngagementPage() {
                 )}
                 {pollFormat === "open" && (
                   <p className="mt-2 text-xs text-slate-500">
-                    People type their own answer — results show every response.
+                    Add one or more open questions — people type an answer to each.
                   </p>
                 )}
               </div>
             )}
 
-            {(selectedType === "baby_reveal" ||
-              (selectedType === "poll" && pollFormat === "multiple")) && (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {selectedType === "baby_reveal" ? "Choices to guess between" : "Poll Options"}
-                </label>
-                {pollOptions.map((opt, i) => (
-                  <div key={i} className="flex gap-2 mb-2">
-                    <input
-                      type="text"
-                      value={opt}
-                      onChange={(e) => {
-                        const next = [...pollOptions];
-                        next[i] = e.target.value;
-                        setPollOptions(next);
-                      }}
-                      placeholder={`Option ${i + 1}`}
-                      className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
-                    />
-                    {pollOptions.length > 2 && (
-                      <button
-                        onClick={() => setPollOptions(pollOptions.filter((_, j) => j !== i))}
-                        className="text-slate-400 hover:text-red-500 px-2"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-                {pollOptions.length < 8 && (
-                  <button
-                    onClick={() => setPollOptions([...pollOptions, ""])}
-                    className="text-sm text-orange-600 font-medium"
-                  >
-                    + Add option
-                  </button>
-                )}
-              </div>
-            )}
+            {(() => {
+              const isOpen = selectedType === "poll" && pollFormat === "open";
+              const show =
+                selectedType === "baby_reveal" ||
+                (selectedType === "poll" &&
+                  (pollFormat === "multiple" || pollFormat === "open"));
+              if (!show) return null;
+              const label =
+                selectedType === "baby_reveal"
+                  ? "Choices to guess between"
+                  : isOpen
+                  ? "Open questions"
+                  : "Poll Options";
+              const minKeep = isOpen ? 1 : 2; // open polls can have a single question
+              return (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    {label}
+                  </label>
+                  {pollOptions.map((opt, i) => (
+                    <div key={i} className="flex gap-2 mb-2">
+                      <input
+                        type="text"
+                        value={opt}
+                        onChange={(e) => {
+                          const next = [...pollOptions];
+                          next[i] = e.target.value;
+                          setPollOptions(next);
+                        }}
+                        placeholder={`${isOpen ? "Question" : "Option"} ${i + 1}`}
+                        className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                      />
+                      {pollOptions.length > minKeep && (
+                        <button
+                          onClick={() =>
+                            setPollOptions(pollOptions.filter((_, j) => j !== i))
+                          }
+                          className="text-slate-400 hover:text-red-500 px-2"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {pollOptions.length < 12 && (
+                    <button
+                      onClick={() => setPollOptions([...pollOptions, ""])}
+                      className="text-sm text-orange-600 font-medium"
+                    >
+                      {isOpen ? "+ Add question" : "+ Add option"}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Truth or Dare — host writes both prompts; players pick blind */}
             {selectedType === "truth_or_dare" && (

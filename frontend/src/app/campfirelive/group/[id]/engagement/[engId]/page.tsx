@@ -157,6 +157,8 @@ export default function EngagementDetailPage() {
   // Local UI state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textInput, setTextInput] = useState("");
+  // Open-ended poll: free-text answer per question (keyed by question index).
+  const [openPollAnswers, setOpenPollAnswers] = useState<Record<number, string>>({});
   // Truth or Dare: which one the responder picked + an optional photo (proof).
   const [todMode, setTodMode] = useState<"truth" | "dare" | null>(null);
   const [todPhoto, setTodPhoto] = useState<string | null>(null);
@@ -410,8 +412,19 @@ export default function EngagementDetailPage() {
   const memberNameOf = (userId: string | null | undefined, fallback?: string | null) =>
     roster.find((m) => m.user_id === userId)?.name || fallback || "Someone";
   const pollOptions = (engagement.config?.options as string[]) ?? [];
-  // An open-ended poll has no preset options — people type a free-text answer.
-  const isOpenPoll = engagement.type === "poll" && pollOptions.length === 0;
+  // An open-ended poll has no preset options — people type free-text answers to one
+  // or more open questions (stored in config.questions).
+  const isOpenPoll =
+    engagement.type === "poll" &&
+    (engagement.config?.format === "open" || pollOptions.length === 0);
+  const pollOpenQuestions: string[] = (() => {
+    if (engagement.type !== "poll") return [];
+    const qs =
+      (engagement.config?.questions as string[] | undefined)?.filter(Boolean) ?? [];
+    if (qs.length) return qs;
+    // Legacy/simple open poll with no explicit questions → the title is the question.
+    return isOpenPoll ? [engagement.title] : [];
+  })();
   const canEdit = isCreator && engagement.status === "active";
 
   // Birthday card = private to the recipient. Each wish is seen only by its author
@@ -507,6 +520,7 @@ export default function EngagementDetailPage() {
         truthPrompt?: string;
         darePrompt?: string;
         format?: "multiple" | "yes_no" | "open";
+        questions?: string[];
       };
       setEditTruthPrompt(cfg.truthPrompt ?? "");
       setEditDarePrompt(cfg.darePrompt ?? "");
@@ -521,7 +535,10 @@ export default function EngagementDetailPage() {
           ? "yes_no"
           : "multiple");
       setEditPollFormat(inferred);
-      setEditPollOptions(opts.length ? opts : ["", "", ""]);
+      // The editable list is the questions for an open poll, else the options. A
+      // multiple→open switch keeps whatever's typed, turning options into questions.
+      const list = inferred === "open" ? cfg.questions ?? [] : opts;
+      setEditPollOptions(list.length ? list : ["", ""]);
     }
     setEditLeadDays(engagement.lead_days ?? 14);
     // Birthday: the deadline IS the birthday (the day it reveals). Pre-fill the
@@ -598,26 +615,29 @@ export default function EngagementDetailPage() {
         darePrompt: dp,
       };
     }
-    // Poll: persist the (possibly changed) format + options.
+    // Poll: persist the (possibly changed) format. For an open poll the editable
+    // list IS the questions (so switching multiple→open turns options into questions).
     if (engagement.type === "poll") {
-      let options: string[];
+      const base = { ...(engagement.config ?? {}) } as Record<string, unknown>;
       if (editPollFormat === "open") {
-        options = [];
+        const qs = editPollOptions.map((o) => o.trim()).filter(Boolean);
+        if (qs.length < 1) {
+          alert("Add at least one open question.");
+          setSavingEdit(false);
+          return;
+        }
+        careFields.config = { ...base, format: "open", questions: qs, options: [] };
       } else if (editPollFormat === "yes_no") {
-        options = ["Yes", "No"];
+        careFields.config = { ...base, format: "yes_no", options: ["Yes", "No"], questions: [] };
       } else {
-        options = editPollOptions.map((o) => o.trim()).filter(Boolean);
+        const options = editPollOptions.map((o) => o.trim()).filter(Boolean);
         if (options.length < 2) {
           alert("A multiple-choice poll needs at least 2 options.");
           setSavingEdit(false);
           return;
         }
+        careFields.config = { ...base, format: "multiple", options, questions: [] };
       }
-      careFields.config = {
-        ...(engagement.config ?? {}),
-        format: editPollFormat,
-        options,
-      };
     }
     const { error } = await supabase
       .from("engagements")
@@ -636,33 +656,11 @@ export default function EngagementDetailPage() {
         ...careFields,
       })
       .eq("id", engagementId);
+    setSavingEdit(false);
     if (error) {
-      setSavingEdit(false);
       alert("Couldn't save your changes: " + error.message);
       return;
     }
-    // Converting an options poll to open-ended: carry each existing option-vote
-    // over as a text answer (service role — RLS blocks editing others' responses).
-    const convertingToOpen =
-      engagement.type === "poll" &&
-      editPollFormat === "open" &&
-      pollOptions.length > 0 &&
-      responseCount > 0;
-    if (convertingToOpen && session) {
-      try {
-        await fetch("/api/campfire/engagement/poll-to-open", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({ engagementId }),
-        });
-      } catch {
-        /* non-fatal — the poll still converts; old votes just won't show as text */
-      }
-    }
-    setSavingEdit(false);
     setEditing(false);
     refresh();
   };
@@ -935,6 +933,15 @@ export default function EngagementDetailPage() {
     if (typeof c.option === "string") setSelectedOption(c.option);
     if (typeof c.text === "string") setTextInput(c.text);
     if (typeof c.caption === "string") setTextInput(c.caption);
+    if (engagement.type === "poll" && isOpenPoll) {
+      const ans = (c.answers ?? {}) as Record<string, string>;
+      const init: Record<number, string> = {};
+      pollOpenQuestions.forEach((_, i) => {
+        init[i] =
+          ans[String(i)] ?? (i === 0 && typeof c.text === "string" ? c.text : "");
+      });
+      setOpenPollAnswers(init);
+    }
     if (c.mode === "truth" || c.mode === "dare") setTodMode(c.mode);
     setTodPhoto(typeof c.photo === "string" ? c.photo : null);
     if (engagement.type === "most_likely" && c.answers)
@@ -974,6 +981,28 @@ export default function EngagementDetailPage() {
     if (!selectedOption) return;
     setSubmitting(true);
     await saveResponse({ option: selectedOption });
+    setSubmitting(false);
+  };
+
+  // Open-ended poll: one free-text answer per question.
+  const handleOpenPollSubmit = async () => {
+    const answers: Record<number, string> = {};
+    pollOpenQuestions.forEach((_, i) => {
+      const v = (openPollAnswers[i] ?? "").trim();
+      if (v) answers[i] = v;
+    });
+    if (Object.keys(answers).length === 0) {
+      alert("Answer at least one question.");
+      return;
+    }
+    for (const v of Object.values(answers)) {
+      if (hasProfanity(v)) {
+        alert("Let's keep it kind — please reword.");
+        return;
+      }
+    }
+    setSubmitting(true);
+    await saveResponse({ answers });
     setSubmitting(false);
   };
 
@@ -1540,20 +1569,31 @@ export default function EngagementDetailPage() {
         );
 
       case "poll":
-        // Open-ended poll: free-text answer instead of fixed options.
+        // Open-ended poll: free-text answer to each open question.
         if (isOpenPoll) {
           return (
-            <div className="space-y-3">
-              <textarea
-                value={textInput}
-                onChange={(e) => setTextInput(e.target.value)}
-                placeholder="Type your answer…"
-                rows={4}
-                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
-              />
+            <div className="space-y-4">
+              {pollOpenQuestions.map((q, i) => (
+                <div key={i}>
+                  {pollOpenQuestions.length > 1 && (
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      {q}
+                    </label>
+                  )}
+                  <textarea
+                    value={openPollAnswers[i] ?? ""}
+                    onChange={(e) =>
+                      setOpenPollAnswers({ ...openPollAnswers, [i]: e.target.value })
+                    }
+                    placeholder="Type your answer…"
+                    rows={3}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
+                  />
+                </div>
+              ))}
               <button
-                onClick={handleTextSubmit}
-                disabled={!textInput.trim() || submitting}
+                onClick={handleOpenPollSubmit}
+                disabled={submitting}
                 className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
               >
                 {submitting ? "Submitting..." : "🔒 Submit My Answer"}
@@ -1799,6 +1839,55 @@ export default function EngagementDetailPage() {
                   <span className="text-sm font-bold text-slate-700">{pct}% ({count})</span>
                 </div>
               </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  // Open-ended poll: each open question with everyone's free-text answers.
+  const renderOpenPollResults = () => {
+    if (!showResults || engagement.type !== "poll" || !isOpenPoll) return null;
+    return (
+      <div className="space-y-3">
+        {pollOpenQuestions.map((q, i) => {
+          const rows = responses
+            .map((r) => {
+              const c = r.content as {
+                answers?: Record<string, string>;
+                text?: string;
+              };
+              const v = c.answers?.[String(i)] ?? (i === 0 ? c.text : undefined);
+              return { r, v };
+            })
+            .filter((x) => typeof x.v === "string" && x.v.trim());
+          return (
+            <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="mb-2 text-sm font-semibold text-slate-800">
+                {q}{" "}
+                <span className="text-xs font-normal text-slate-400">
+                  ({rows.length})
+                </span>
+              </div>
+              {rows.length === 0 ? (
+                <p className="text-xs text-slate-400">No answers yet.</p>
+              ) : (
+                <div className="space-y-2.5">
+                  {rows.map(({ r, v }) => (
+                    <div key={r.id} className="border-l-2 border-orange-200 pl-3">
+                      <div className="text-xs font-semibold text-orange-700">
+                        {engagement.is_blind
+                          ? "Anonymous"
+                          : memberNameOf(r.user_id, r.profile?.display_name)}
+                      </div>
+                      <p className="whitespace-pre-wrap text-sm text-slate-700">
+                        {String(v)}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           );
         })}
@@ -2440,9 +2529,7 @@ export default function EngagementDetailPage() {
   const renderRevealedResponses = () => {
     if (
       !showResults ||
-      // Multiple-choice polls render as bars; OPEN polls fall through to here so
-      // their free-text answers show like any other text response.
-      (engagement.type === "poll" && !isOpenPoll) ||
+      engagement.type === "poll" || // polls (bars or open Q&A) have their own renderers
       engagement.type === "two_truths" ||
       engagement.type === "baby_reveal" ||
       engagement.type === "most_likely" ||
@@ -2875,58 +2962,67 @@ export default function EngagementDetailPage() {
                       );
                     })}
                   </div>
-                  {editPollFormat === "open" ? (
-                    <p className="text-xs text-slate-500">
-                      People type their own answer.
-                      {responseCount > 0 && pollOptions.length > 0 && (
-                        <span className="text-slate-600">
-                          {" "}
-                          Existing votes carry over as their text answers.
-                        </span>
-                      )}
-                    </p>
-                  ) : editPollFormat === "yes_no" ? (
+                  {editPollFormat === "yes_no" ? (
                     <p className="text-xs text-slate-500">Answers are Yes or No.</p>
                   ) : (
-                    <div className="space-y-2">
-                      {editPollOptions.map((opt, i) => (
-                        <div key={i} className="flex gap-2">
-                          <input
-                            type="text"
-                            value={opt}
-                            onChange={(e) => {
-                              const next = [...editPollOptions];
-                              next[i] = e.target.value;
-                              setEditPollOptions(next);
-                            }}
-                            placeholder={`Option ${i + 1}`}
-                            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
-                          />
-                          {editPollOptions.length > 2 && (
+                    (() => {
+                      const isOpen = editPollFormat === "open";
+                      const minKeep = isOpen ? 1 : 2;
+                      return (
+                        <div className="space-y-2">
+                          {isOpen && (
+                            <p className="text-xs text-slate-500">
+                              People type an answer to each question.
+                              {pollOptions.length > 0 && (
+                                <span className="text-slate-600">
+                                  {" "}
+                                  Your options below become the open questions.
+                                </span>
+                              )}
+                            </p>
+                          )}
+                          {editPollOptions.map((opt, i) => (
+                            <div key={i} className="flex gap-2">
+                              <input
+                                type="text"
+                                value={opt}
+                                onChange={(e) => {
+                                  const next = [...editPollOptions];
+                                  next[i] = e.target.value;
+                                  setEditPollOptions(next);
+                                }}
+                                placeholder={`${isOpen ? "Question" : "Option"} ${i + 1}`}
+                                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+                              />
+                              {editPollOptions.length > minKeep && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditPollOptions(
+                                      editPollOptions.filter((_, j) => j !== i)
+                                    )
+                                  }
+                                  className="px-2 text-slate-400 hover:text-red-500"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                          {editPollOptions.length < 12 && (
                             <button
                               type="button"
                               onClick={() =>
-                                setEditPollOptions(
-                                  editPollOptions.filter((_, j) => j !== i)
-                                )
+                                setEditPollOptions([...editPollOptions, ""])
                               }
-                              className="px-2 text-slate-400 hover:text-red-500"
+                              className="text-sm font-medium text-orange-600"
                             >
-                              ✕
+                              {isOpen ? "+ Add question" : "+ Add option"}
                             </button>
                           )}
                         </div>
-                      ))}
-                      {editPollOptions.length < 8 && (
-                        <button
-                          type="button"
-                          onClick={() => setEditPollOptions([...editPollOptions, ""])}
-                          className="text-sm font-medium text-orange-600"
-                        >
-                          + Add option
-                        </button>
-                      )}
-                    </div>
+                      );
+                    })()
                   )}
                 </div>
               )}
@@ -3967,6 +4063,7 @@ export default function EngagementDetailPage() {
 
           {/* Poll results */}
           {renderPollResults()}
+          {renderOpenPollResults()}
 
           {/* Two Truths & a Lie — guess-the-lie + scored reveal */}
           {renderTwoTruthsResults()}
