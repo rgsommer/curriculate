@@ -49,6 +49,9 @@ export async function POST(req: Request) {
   if (body.financeName2 !== undefined) {
     patch.financeName2 = String(body.financeName2).trim().slice(0, 120);
   }
+  // Per-person "receive order emails" toggles.
+  if (body.financeNotify !== undefined) patch.financeNotify = !!body.financeNotify;
+  if (body.financeNotify2 !== undefined) patch.financeNotify2 = !!body.financeNotify2;
   if (body.schoolName !== undefined) {
     const sn = String(body.schoolName).trim().slice(0, 120);
     if (sn) patch.schoolName = sn;

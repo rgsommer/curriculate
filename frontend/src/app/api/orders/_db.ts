@@ -39,9 +39,12 @@ export const DEFAULT_SCHOOL_NAME = "Brampton Christian School";
 export type OrdersConfig = {
   financeEmail: string;
   financeName: string;
-  // Optional second finance person: also an admin + order-email recipient.
+  // Optional second finance person: also an admin.
   financeEmail2: string;
   financeName2: string;
+  // Per-person toggle: receive the order emails (admin access is independent of this).
+  financeNotify: boolean;
+  financeNotify2: boolean;
   schoolName: string;
 };
 
@@ -52,6 +55,8 @@ export async function getConfig(): Promise<OrdersConfig> {
     financeName: process.env.ORDERS_FINANCE_NAME || DEFAULT_FINANCE_NAME,
     financeEmail2: process.env.ORDERS_FINANCE_EMAIL2 || "",
     financeName2: process.env.ORDERS_FINANCE_NAME2 || "",
+    financeNotify: true,
+    financeNotify2: true,
     schoolName: process.env.ORDERS_SCHOOL_NAME || DEFAULT_SCHOOL_NAME,
   };
   if (!db) return fallback;
@@ -61,6 +66,8 @@ export async function getConfig(): Promise<OrdersConfig> {
     financeName: (doc?.financeName as string) || fallback.financeName,
     financeEmail2: (doc?.financeEmail2 as string) ?? fallback.financeEmail2,
     financeName2: (doc?.financeName2 as string) ?? fallback.financeName2,
+    financeNotify: (doc?.financeNotify ?? fallback.financeNotify) as boolean,
+    financeNotify2: (doc?.financeNotify2 ?? fallback.financeNotify2) as boolean,
     schoolName: (doc?.schoolName as string) || fallback.schoolName,
   };
 }
@@ -77,11 +84,12 @@ export function isFinanceEmail(email: string, cfg: OrdersConfig): boolean {
   return financeEmails(cfg).includes(String(email || "").trim().toLowerCase());
 }
 
-// Order-email recipients formatted as "Name <email>" (primary + optional second).
+// Order-email recipients formatted as "Name <email>" — only finance people whose
+// "receive emails" box is checked. Admin access is separate (see isFinanceEmail).
 export function financeRecipients(cfg: OrdersConfig): string[] {
   const out: string[] = [];
-  if (cfg.financeEmail) out.push(cfg.financeName ? `${cfg.financeName} <${cfg.financeEmail}>` : cfg.financeEmail);
-  if (cfg.financeEmail2) out.push(cfg.financeName2 ? `${cfg.financeName2} <${cfg.financeEmail2}>` : cfg.financeEmail2);
+  if (cfg.financeEmail && cfg.financeNotify) out.push(cfg.financeName ? `${cfg.financeName} <${cfg.financeEmail}>` : cfg.financeEmail);
+  if (cfg.financeEmail2 && cfg.financeNotify2) out.push(cfg.financeName2 ? `${cfg.financeName2} <${cfg.financeEmail2}>` : cfg.financeEmail2);
   return out;
 }
 

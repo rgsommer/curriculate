@@ -77,15 +77,18 @@ export async function POST(req: Request) {
     schoolName
   );
 
+  const financeTo = financeRecipients(cfg); // honours each person's "receive emails" box
   const [teacherSend, financeSend] = await Promise.all([
     sendEmail({ to: email, subject: `Your supply order — ${money(total)} (${lines.length} items)`, html: teacherHtml }),
-    sendEmail({
-      to: financeRecipients(cfg),
-      replyTo: email,
-      subject: `Supply order: ${teacherName} — ${money(total)} (${lines.length} items)`,
-      html: financeHtml,
-      attachments,
-    }),
+    financeTo.length
+      ? sendEmail({
+          to: financeTo,
+          replyTo: email,
+          subject: `Supply order: ${teacherName} — ${money(total)} (${lines.length} items)`,
+          html: financeHtml,
+          attachments,
+        })
+      : Promise.resolve({ ok: false, skipped: true }),
   ]);
 
   return NextResponse.json({
