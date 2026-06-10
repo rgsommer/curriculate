@@ -18,6 +18,9 @@ const HousePointEventSchema = new mongoose.Schema(
     // Set when this deduction came from a logged incident.
     behaviorId: { type: mongoose.Schema.Types.ObjectId, ref: "Behavior", default: null },
     incidentId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorIncident", default: null },
+    // Set when these points came from a scored house competition (placement
+    // points), so re-scoring can delete-then-reaward idempotently.
+    competitionId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorCompetition", default: null, index: true },
     awardedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher", default: null },
     at: { type: Date, default: () => new Date(), index: true },
   },

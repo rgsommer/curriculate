@@ -9,6 +9,7 @@
 // ./lib/aiNote.js. This file is the orchestration glue.
 
 import express from "express";
+import mongoose from "mongoose";
 import crypto from "crypto";
 import multer from "multer";
 
@@ -27,6 +28,7 @@ import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
+import BehaviorCompetition from "./models/BehaviorCompetition.js";
 
 import { evaluateIncident, activeThresholdIncidents, evaluatePositive } from "./lib/triggerLogic.js";
 import { nextSchoolDay } from "./lib/schoolCalendar.js";
@@ -2462,6 +2464,215 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
 
     await audit(req.schoolId, "house_report.generated", req, { meta: { emailed } });
     res.json({ ok: true, report, emailed, emailError });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── House competitions (Sept–June calendar) ─────────────────────────────────
+
+function ordinal(n) {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// List the competition calendar with each event's results mapped to houses.
+router.get("/competitions", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const comps = await BehaviorCompetition.find({ schoolId: req.schoolId, active: true }).sort({ monthOrder: 1, createdAt: 1 }).lean();
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).select("name color").lean();
+    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+    const out = comps.map((c) => ({
+      _id: String(c._id),
+      name: c.name,
+      description: c.description,
+      monthOrder: c.monthOrder,
+      monthLabel: c.monthLabel,
+      placementPoints: c.placementPoints,
+      scoredAt: c.scoredAt,
+      results: (c.results || [])
+        .slice()
+        .sort((a, b) => a.place - b.place)
+        .map((r) => ({
+          place: r.place,
+          houseId: String(r.houseId),
+          houseName: houseById[String(r.houseId)]?.name || "",
+          houseColor: houseById[String(r.houseId)]?.color || "#0f172a",
+          points: c.placementPoints[r.place - 1] || 0,
+        })),
+    }));
+    res.json({ ok: true, competitions: out });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Seed the default Sept–June calendar (upsert: only adds the events that are
+// missing, so it's safe to run again).
+router.post("/competitions/seed", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const DEFAULTS = [
+      { monthOrder: 0, monthLabel: "September", name: "Spirit Week" },
+      { monthOrder: 1, monthLabel: "October", name: "Quiz Bowl" },
+      { monthOrder: 2, monthLabel: "November", name: "Food Drive" },
+      { monthOrder: 3, monthLabel: "December", name: "Choir / Christmas Concert" },
+      { monthOrder: 4, monthLabel: "January", name: "STEM Day" },
+      { monthOrder: 5, monthLabel: "February", name: "Kindness Marathon" },
+      { monthOrder: 6, monthLabel: "March", name: "Trivia Challenge" },
+      { monthOrder: 7, monthLabel: "April", name: "Mini-Olympics" },
+      { monthOrder: 8, monthLabel: "May", name: "Arts Festival" },
+      { monthOrder: 9, monthLabel: "June", name: "Field Day" },
+    ];
+    let created = 0;
+    for (const d of DEFAULTS) {
+      const exists = await BehaviorCompetition.findOne({ schoolId: req.schoolId, name: d.name, active: true });
+      if (!exists) {
+        await BehaviorCompetition.create({ schoolId: req.schoolId, ...d, placementPoints: [500, 300, 200, 100] });
+        created += 1;
+      }
+    }
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { housesEnabled: true } });
+    await audit(req.schoolId, "competitions.seeded", req, { meta: { created } });
+    res.json({ ok: true, created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Create or edit a competition.
+router.post("/competitions", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const name = String(b.name || "").trim();
+    if (!name) return res.status(400).json({ ok: false, error: "name required" });
+    const placementPoints = Array.isArray(b.placementPoints) && b.placementPoints.length
+      ? b.placementPoints.map((n) => Number(n) || 0)
+      : [500, 300, 200, 100];
+    if (b._id) {
+      const comp = await BehaviorCompetition.findOne({ _id: b._id, schoolId: req.schoolId });
+      if (!comp) return res.status(404).json({ ok: false, error: "Competition not found" });
+      comp.name = name;
+      comp.description = String(b.description || "");
+      if (typeof b.monthOrder === "number") comp.monthOrder = b.monthOrder;
+      if (b.monthLabel != null) comp.monthLabel = String(b.monthLabel);
+      comp.placementPoints = placementPoints;
+      await comp.save();
+      return res.json({ ok: true, competition: comp });
+    }
+    const comp = await BehaviorCompetition.create({
+      schoolId: req.schoolId, name, description: String(b.description || ""),
+      monthOrder: Number(b.monthOrder) || 0, monthLabel: String(b.monthLabel || ""), placementPoints,
+    });
+    res.json({ ok: true, competition: comp });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Score a competition: set placements + award (capped) placement points to the
+// houses. Idempotent — re-scoring deletes the prior award and re-applies.
+router.post("/competitions/:id/score", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const comp = await BehaviorCompetition.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!comp) return res.status(404).json({ ok: false, error: "Competition not found" });
+    const raw = Array.isArray(req.body?.results) ? req.body.results : [];
+    const validHouses = new Set(
+      (await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).select("_id").lean()).map((h) => String(h._id))
+    );
+    const results = raw
+      .map((r) => ({ houseId: r.houseId, place: Number(r.place) }))
+      .filter((r) => r.houseId && validHouses.has(String(r.houseId)) && r.place >= 1);
+
+    // Re-award cleanly.
+    await HousePointEvent.deleteMany({ schoolId: req.schoolId, competitionId: comp._id });
+    const events = results
+      .map((r) => ({
+        schoolId: req.schoolId, houseId: r.houseId, points: comp.placementPoints[r.place - 1] || 0,
+        reason: `${comp.name} — ${ordinal(r.place)} place`, competitionId: comp._id, awardedByTeacherId: req.membership._id,
+      }))
+      .filter((e) => e.points);
+    if (events.length) await HousePointEvent.insertMany(events);
+
+    comp.results = results;
+    comp.scoredAt = new Date();
+    await comp.save();
+    await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { housesEnabled: true } });
+    await audit(req.schoolId, "competition.scored", req, { meta: { name: comp.name, awarded: events.length } });
+    res.json({ ok: true, awarded: events.reduce((s, e) => s + e.points, 0) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Remove a competition + reverse its awarded points.
+router.delete("/competitions/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const comp = await BehaviorCompetition.findOneAndUpdate(
+      { _id: req.params.id, schoolId: req.schoolId },
+      { $set: { active: false } },
+      { new: true }
+    ).lean();
+    if (!comp) return res.status(404).json({ ok: false, error: "Competition not found" });
+    await HousePointEvent.deleteMany({ schoolId: req.schoolId, competitionId: comp._id });
+    await audit(req.schoolId, "competition.removed", req, { meta: { name: comp.name } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Public student portal (no auth) — house standings only, never PII ────────
+
+// Schools that have turned Houses on, for the /houses portal's school picker.
+router.get("/public/schools", async (req, res, next) => {
+  try {
+    const configs = await BehaviorConfig.find({ housesEnabled: true }).select("schoolId").lean();
+    const ids = configs.map((c) => c.schoolId);
+    const schools = await BehaviorSchool.find({ _id: { $in: ids } }).select("name").sort({ name: 1 }).lean();
+    res.json({ ok: true, schools: schools.map((s) => ({ id: String(s._id), name: s.name })) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Public house standings + competition results for one school. House-level only.
+router.get("/public/houses", async (req, res, next) => {
+  try {
+    const schoolId = String(req.query.schoolId || "").trim();
+    if (!schoolId) return res.status(400).json({ ok: false, error: "schoolId required" });
+    const config = await BehaviorConfig.findOne({ schoolId }).select("housesEnabled").lean();
+    if (!config?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [], competitions: [] });
+    const school = await BehaviorSchool.findById(schoolId).select("name").lean();
+
+    const houses = await BehaviorHouse.find({ schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
+    const totals = await HousePointEvent.aggregate([
+      { $match: { schoolId: new mongoose.Types.ObjectId(schoolId) } },
+      { $group: { _id: "$houseId", points: { $sum: "$points" } } },
+    ]);
+    const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
+    const members = await BehaviorStudent.aggregate([
+      { $match: { schoolId: new mongoose.Types.ObjectId(schoolId), active: true, houseId: { $ne: null } } },
+      { $group: { _id: "$houseId", n: { $sum: 1 } } },
+    ]);
+    const memberById = Object.fromEntries(members.map((m) => [String(m._id), m.n]));
+    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+    const houseOut = houses
+      .map((h) => ({ id: String(h._id), name: h.name, color: h.color || "#0f172a", points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0 }))
+      .sort((a, b) => b.points - a.points);
+
+    const comps = await BehaviorCompetition.find({ schoolId, active: true }).sort({ monthOrder: 1 }).lean();
+    const compOut = comps.map((c) => ({
+      name: c.name,
+      monthLabel: c.monthLabel,
+      scored: !!c.scoredAt,
+      results: (c.results || [])
+        .slice()
+        .sort((a, b) => a.place - b.place)
+        .map((r) => ({ place: r.place, houseName: houseById[String(r.houseId)]?.name || "", houseColor: houseById[String(r.houseId)]?.color || "#0f172a" })),
+    }));
+
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut });
   } catch (err) {
     next(err);
   }

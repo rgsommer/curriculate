@@ -106,6 +106,11 @@ export default function BehaviorDashboard() {
             <Link href="/behavior/team" className="rounded-lg border border-slate-300 px-3 py-1.5">
               Team &amp; usage
             </Link>
+            {housesOn && (
+              <Link href="/behavior/competitions" className="rounded-lg border border-slate-300 px-3 py-1.5">
+                House competitions
+              </Link>
+            )}
           </div>
         </Card>
       )}
@@ -188,7 +193,10 @@ function HousesCard({ canLog }: { canLog: boolean }) {
           </li>
         ))}
       </ul>
-      <p className="mt-2 text-xs text-slate-400">{houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions.</p>
+      <p className="mt-2 text-xs text-slate-400">
+        {houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions ·{" "}
+        <a href="/houses" target="_blank" rel="noreferrer" className="underline">student board ↗</a>
+      </p>
     </Card>
   );
 }
