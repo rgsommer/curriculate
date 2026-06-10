@@ -13,6 +13,7 @@
  */
 
 import { useRef, useState } from "react";
+import EdsbyHonours from "./EdsbyHonours";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
 
@@ -473,6 +474,8 @@ export default function AvgsPage() {
           ))}
         </section>
       )}
+
+      <EdsbyHonours />
     </main>
   );
 }

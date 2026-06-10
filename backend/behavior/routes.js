@@ -38,6 +38,7 @@ import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
+import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
@@ -3107,5 +3108,8 @@ router.get("/public/houses", async (req, res, next) => {
     next(err);
   }
 });
+
+// ── Honour roll (weighted averages from Edsby) — backs the /avgs panel ───────
+router.use("/avgs", authAny, loadMembership, buildAvgsRouter({ requireAdmin }));
 
 export default router;
