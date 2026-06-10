@@ -59,24 +59,32 @@ export async function POST(req: Request) {
 
   const orderTable = renderOrderHtml(lines, total);
   const dateStr = now.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
-  const verb = isUpdate ? "updated" : "submitted";
+  const verb = isUpdate ? "revised" : "submitted";
 
   // One .xlsx per supplier (that teacher's order) attached to the finance email.
   const attachments = buildSupplierWorkbooks(lines, { teacherName, schoolName, dateStr });
 
+  // A loud callout for revised orders, telling the reader to ignore the previous one.
+  const revisedBanner =
+    `<div style="margin:0 0 14px;padding:10px 14px;background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;color:#92400e;font-weight:600">
+       REVISED ORDER — please ignore the previous order from this teacher. This version (revision ${revision}) replaces it.
+     </div>`;
+
   // Teacher confirmation
   const teacherHtml = pageShell(
-    isUpdate ? "Your supply order — updated" : "Your supply order — confirmation",
-    `<p style="margin:0 0 6px">Hi ${escapeName(teacherName)}, thanks — your order has been ${verb} and sent to ${escapeName(schoolName)} finance. It replaces any earlier version.</p>
-     <p style="margin:0 0 12px;font-size:13px;color:#6b7280">${isUpdate ? "Updated" : "Submitted"} ${dateStr} · ${lines.length} item${lines.length === 1 ? "" : "s"}</p>
+    isUpdate ? "Your supply order — REVISED" : "Your supply order — confirmation",
+    `${isUpdate ? revisedBanner : ""}
+     <p style="margin:0 0 6px">Hi ${escapeName(teacherName)}, thanks — your order has been ${verb} and sent to ${escapeName(schoolName)} finance.${isUpdate ? " Please ignore any earlier confirmation — this is your current order." : ""}</p>
+     <p style="margin:0 0 12px;font-size:13px;color:#6b7280">${isUpdate ? "Revised" : "Submitted"} ${dateStr} · ${lines.length} item${lines.length === 1 ? "" : "s"}</p>
      ${orderTable}`,
     schoolName
   );
 
   // Finance copy
   const financeHtml = pageShell(
-    `Supply order ${isUpdate ? "UPDATED" : "from"} ${isUpdate ? "" : ""}${teacherName}`,
-    `<p style="margin:0 0 6px"><strong>${escapeName(teacherName)}</strong> (${escapeName(email)}) ${verb} ${isUpdate ? `their order (revision ${revision} — this replaces their previous order)` : "an order"}.</p>
+    `${isUpdate ? "REVISED supply order" : "Supply order"} — ${teacherName}`,
+    `${isUpdate ? revisedBanner : ""}
+     <p style="margin:0 0 6px"><strong>${escapeName(teacherName)}</strong> (${escapeName(email)}) ${verb} ${isUpdate ? "their order" : "an order"}.</p>
      <p style="margin:0 0 12px;font-size:13px;color:#6b7280">${dateStr} · ${lines.length} item${lines.length === 1 ? "" : "s"} · ${money(total)}</p>
      ${orderTable}
      <p style="margin:16px 0 0;font-size:13px;color:#6b7280">The combined school-wide total (current order per teacher) is at <a href="https://www.curriculate.net/orders/summary">curriculate.net/orders/summary</a>.</p>`,
@@ -84,9 +92,9 @@ export async function POST(req: Request) {
   );
 
   const financeTo = financeRecipients(cfg); // honours each person's "receive emails" box
-  const subjPrefix = isUpdate ? "Supply order UPDATED" : "Supply order";
+  const subjPrefix = isUpdate ? "Supply order REVISED" : "Supply order";
   const [teacherSend, financeSend] = await Promise.all([
-    sendEmail({ to: email, subject: `Your supply order ${isUpdate ? "updated" : "received"} — ${money(total)} (${lines.length} items)`, html: teacherHtml }),
+    sendEmail({ to: email, subject: `Your supply order ${isUpdate ? "REVISED" : "received"} — ${money(total)} (${lines.length} items)`, html: teacherHtml }),
     financeTo.length
       ? sendEmail({
           to: financeTo,
