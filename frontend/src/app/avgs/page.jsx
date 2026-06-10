@@ -257,7 +257,15 @@ export default function AvgsPage() {
   const [error, setError] = useState("");
   const [groups, setGroups] = useState(null); // [[gradeLabel, students[]], ...]
   const [expanded, setExpanded] = useState({});
+  const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
+
+  function onDrop(e) {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = Array.from(e.dataTransfer?.files || []);
+    if (dropped.length) setFiles(dropped);
+  }
 
   async function analyze() {
     if (!files.length || busy) return;
@@ -331,11 +339,20 @@ export default function AvgsPage() {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="mt-3 w-full rounded-lg border-2 border-dashed border-slate-300 px-4 py-8 text-slate-500 transition hover:border-blue-400 hover:text-blue-600"
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={onDrop}
+          className={`mt-3 w-full rounded-lg border-2 border-dashed px-4 py-8 transition ${
+            dragOver
+              ? "border-blue-500 bg-blue-50 text-blue-700"
+              : "border-slate-300 text-slate-500 hover:border-blue-400 hover:text-blue-600"
+          }`}
         >
-          {files.length
-            ? files.map((f) => f.name).join(", ")
-            : "Click to choose files — one big PDF of every report card works great"}
+          {dragOver
+            ? "Drop it here"
+            : files.length
+              ? files.map((f) => f.name).join(", ")
+              : "Drop your whole report-card PDF here — every student, every class, any size — or click to choose files"}
         </button>
 
         <button
