@@ -262,14 +262,14 @@ export function makeDefaultAiClient(config = {}) {
     if (!key) return null;
     const model = config.aiModel || process.env.BEHAVIOR_AI_MODEL || "gpt-4o-mini";
     return {
-      async complete(prompt) {
+      async complete(prompt, opts = {}) {
         const { default: OpenAI } = await import("openai");
         const client = new OpenAI({ apiKey: key });
         const resp = await client.chat.completions.create({
           model,
           messages: [{ role: "user", content: prompt }],
           temperature: 0.5,
-          max_tokens: 500,
+          max_tokens: opts.maxTokens || 500,
         });
         return resp.choices?.[0]?.message?.content || "";
       },
@@ -281,12 +281,12 @@ export function makeDefaultAiClient(config = {}) {
     if (!key) return null;
     const model = config.aiModel || process.env.BEHAVIOR_AI_MODEL || "claude-3-5-haiku-latest";
     return {
-      async complete(prompt) {
+      async complete(prompt, opts = {}) {
         const { default: Anthropic } = await import("@anthropic-ai/sdk");
         const client = new Anthropic({ apiKey: key });
         const resp = await client.messages.create({
           model,
-          max_tokens: 600,
+          max_tokens: opts.maxTokens || 600,
           messages: [{ role: "user", content: prompt }],
         });
         return resp.content?.map((b) => (b.type === "text" ? b.text : "")).join("") || "";
