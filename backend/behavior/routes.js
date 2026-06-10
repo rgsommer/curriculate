@@ -38,7 +38,7 @@ import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
-import { emailShell, emailButton, noteToHtml } from "./lib/emailTemplate.js";
+import { emailShell, emailButton, noteToHtml, mdToHtml } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
 const router = express.Router();
@@ -1865,12 +1865,49 @@ router.post("/incidents/:id/notes", authAny, loadMembership, canLog, async (req,
 // AI "Admin Summary" for a student — scope "all" (full history) or "current"
 // (just the active trigger incidents). Includes private teacher notes. Returns
 // text for the client to copy to the clipboard. Fails safe to a plain digest.
+// Email a behaviour summary to the requester (+ optional extra recipients, e.g.
+// the VP). Confidential — branded shell, markdown-rendered, never to parents.
+async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw) {
+  const extra = String(toRaw || "")
+    .split(/[,\s;]+/)
+    .map((e) => e.trim().toLowerCase())
+    .filter((e) => /^[\w.+-]+@[\w.-]+\.\w{2,}$/.test(e));
+  const to = [...new Set([req.user?.email, ...extra].filter(Boolean))];
+  if (!to.length) return { emailed: false, emailError: "no recipient" };
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  try {
+    await sendEmail({
+      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      to,
+      subject: `Behaviour summary — ${name}`,
+      text,
+      html: emailShell({
+        title: `Behaviour summary — ${name}`,
+        schoolName: schoolName || "Behaviours",
+        preheader: `Confidential behaviour summary for ${name}.`,
+        footnote: "Confidential — includes private teacher notes. For VP/principal; not sent to parents.",
+        contentHtml: mdToHtml(text),
+      }),
+    });
+    return { emailed: true, emailError: "", recipients: to };
+  } catch (e) {
+    return { emailed: false, emailError: e?.message || String(e) };
+  }
+}
+
 router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, res, next) => {
   try {
     const scope = req.body?.scope === "current" ? "current" : "all";
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+
+    // Email an already-generated summary without re-running the AI.
+    if (req.body?.email && req.body?.summaryText) {
+      const nm = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+      const r = await sendAdminSummaryEmail(req, nm, config?.branding?.schoolName || "", String(req.body.summaryText), req.body.to);
+      return res.json({ ok: true, summary: String(req.body.summaryText), emailed: r.emailed, emailError: r.emailError });
+    }
 
     let incidents = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: 1 }).lean();
     if (scope === "current") {
@@ -1936,8 +1973,15 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     } catch {
       /* fall back to the deterministic digest */
     }
-    await audit(req.schoolId, "admin_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed } });
-    res.json({ ok: true, summary, aiUsed, scope });
+    let emailed = false;
+    let emailError = "";
+    if (req.body?.email) {
+      const r = await sendAdminSummaryEmail(req, name, config?.branding?.schoolName || "", summary, req.body.to);
+      emailed = r.emailed;
+      emailError = r.emailError;
+    }
+    await audit(req.schoolId, "admin_summary.generated", req, { studentId: student._id, meta: { scope, aiUsed, emailed } });
+    res.json({ ok: true, summary, aiUsed, scope, emailed, emailError });
   } catch (err) {
     next(err);
   }
@@ -1976,15 +2020,31 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       students.add(String(i.studentId));
       teacherNoteCount += i.teacherNotes?.length || 0;
     }
-    const topTypes = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10);
-    const monthly = Object.keys(byMonth).sort().map((k) => `${k}: ${byMonth[k]}`);
-
     const notMatch = { schoolId: req.schoolId, createdAt: { $gt: cutoff } };
     if (scope === "me") notMatch.sentByTeacherId = req.membership._id;
-    const notices = await BehaviorNotice.find(notMatch).select("reason status").lean();
+    const notices = await BehaviorNotice.find(notMatch)
+      .select("reason status studentId sentAt createdAt legacyImport triggeringIncidentIds")
+      .lean();
     const noticeByReason = {};
     for (const n of notices) noticeByReason[n.reason] = (noticeByReason[n.reason] || 0) + 1;
     const noticesSent = notices.filter((n) => n.status === "sent").length;
+
+    // Earlier/legacy offences often exist ONLY as notices home (no individual
+    // incident row). Fold those into the monthly trend + student set so the
+    // history isn't undercounted — but skip notices backed by counted incidents
+    // (modern flow) to avoid double-counting.
+    let legacyOffences = 0;
+    for (const n of notices) {
+      const backed = Array.isArray(n.triggeringIncidentIds) && n.triggeringIncidentIds.length > 0;
+      if (n.legacyImport || !backed) {
+        legacyOffences += 1;
+        const mk = new Date(n.sentAt || n.createdAt).toISOString().slice(0, 7);
+        byMonth[mk] = (byMonth[mk] || 0) + 1;
+        if (n.studentId) students.add(String(n.studentId));
+      }
+    }
+    const topTypes = Object.entries(byType).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const monthly = Object.keys(byMonth).sort().map((k) => `${k}: ${byMonth[k]}`);
 
     // Division current strike load (shared count — not per-teacher).
     const agg = await BehaviorIncident.aggregate([
@@ -1996,7 +2056,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
     const ctxText =
       `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
-      `Incidents logged: ${incidents.length}, across ${students.size} student(s).\n` +
+      `Incidents logged: ${incidents.length}${legacyOffences ? ` (plus ${legacyOffences} earlier offence(s) recorded only as notices home — included in the monthly volume below)` : ""}, across ${students.size} student(s).\n` +
       `By type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
       `By mode: threshold ${byMode.THRESHOLD || 0}, immediate ${byMode.IMMEDIATE || 0}, interactions (documented, no note home) ${byMode.INTERACTION || 0}.\n` +
       `Private teacher notes recorded: ${teacherNoteCount}.\n` +

@@ -86,6 +86,34 @@ export function noteToHtml(text) {
   return html;
 }
 
+/** Convert light markdown (**bold**, # headings, - bullets) to email HTML. */
+export function mdToHtml(text) {
+  const lines = String(text || "").replace(/\r/g, "").split("\n");
+  const inline = (s) => escapeHtml(s).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  let html = "";
+  let list = [];
+  const flush = () => {
+    if (list.length) {
+      html += `<ul style="margin:8px 0 12px;padding-left:20px;color:#334155">${list.map((li) => `<li style="margin:3px 0;line-height:1.5">${inline(li)}</li>`).join("")}</ul>`;
+      list = [];
+    }
+  };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    const b = line.match(/^\s*[-*]\s+(.*)$/);
+    if (b) { list.push(b[1]); continue; }
+    flush();
+    if (!line.trim()) continue;
+    const h = line.match(/^(#{1,3})\s+(.*)$/);
+    const whole = line.trim().match(/^\*\*([^*]+)\*\*$/);
+    if (h) html += `<h3 style="margin:14px 0 6px;font-size:15px;color:#0f172a">${inline(h[2])}</h3>`;
+    else if (whole) html += `<p style="margin:12px 0 4px;font-weight:700;color:#0f172a">${escapeHtml(whole[1])}</p>`;
+    else html += `<p style="margin:0 0 10px;line-height:1.6;color:#334155">${inline(line)}</p>`;
+  }
+  flush();
+  return html;
+}
+
 /** A simple call-to-action button (table-based for Outlook). */
 export function emailButton(label, href, color = "#0f172a") {
   return (

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "./_lib/api";
+import { Markdown } from "./_lib/Markdown";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -284,7 +285,9 @@ function ExecutiveSummaryCard() {
           <button onClick={emailIt} disabled={!!busy} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
             {busy === "email" ? "Emailing…" : "Email it to me (with chart)"}
           </button>
-          <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-sm text-slate-700">{summary}</pre>
+          <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
+            <Markdown text={summary} />
+          </div>
         </>
       )}
     </Card>

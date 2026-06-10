@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState, type ReactElement } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { api, getToken, loginHref } from "../../_lib/api";
+import { Markdown } from "../../_lib/Markdown";
 
 type TeacherNote = { name?: string; text: string; at: string };
 type StudentDetail = {
@@ -48,8 +49,11 @@ export default function StudentPage() {
 
   // Admin summary
   const [summary, setSummary] = useState<string>("");
+  const [summaryScope, setSummaryScope] = useState<"all" | "current">("all");
   const [summaryMsg, setSummaryMsg] = useState<string>("");
   const [summaryBusy, setSummaryBusy] = useState<"" | "all" | "current">("");
+  const [emailTo, setEmailTo] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
 
   // Notice editing
   const [editId, setEditId] = useState<string | null>(null);
@@ -82,6 +86,7 @@ export default function StudentPage() {
     try {
       const r = await api<{ summary: string; aiUsed: boolean }>(`/students/${params.id}/admin-summary`, { body: { scope } });
       setSummary(r.summary);
+      setSummaryScope(scope);
       try {
         await navigator.clipboard.writeText(r.summary);
         setSummaryMsg(`Copied to clipboard${r.aiUsed ? "" : " (template — no AI key set)"}.`);
@@ -92,6 +97,30 @@ export default function StudentPage() {
       setSummaryMsg(e.message);
     } finally {
       setSummaryBusy("");
+    }
+  }
+
+  async function copySummary() {
+    try {
+      await navigator.clipboard.writeText(summary);
+      setSummaryMsg("Copied to clipboard.");
+    } catch {
+      setSummaryMsg("Clipboard blocked — select and copy manually.");
+    }
+  }
+
+  async function emailSummary() {
+    setEmailBusy(true);
+    setSummaryMsg("");
+    try {
+      const r = await api<{ emailed: boolean; emailError?: string }>(`/students/${params.id}/admin-summary`, {
+        body: { scope: summaryScope, email: true, to: emailTo.trim(), summaryText: summary },
+      });
+      setSummaryMsg(r.emailed ? `Emailed to you${emailTo.trim() ? ` + ${emailTo.trim()}` : ""}.` : `Email failed: ${r.emailError || "check email settings"}`);
+    } catch (e: any) {
+      setSummaryMsg(e.message);
+    } finally {
+      setEmailBusy(false);
     }
   }
 
@@ -172,9 +201,28 @@ export default function StudentPage() {
           </div>
           {summaryMsg && <p className="mt-2 text-sm text-green-700">{summaryMsg}</p>}
           {summary && (
-            <div className="mt-2 max-h-80 overflow-auto rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-              <Markdown text={summary} />
-            </div>
+            <>
+              <button
+                onClick={copySummary}
+                title="Click to copy"
+                className="mt-2 block w-full cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-4 text-left text-sm text-slate-700 hover:bg-slate-100"
+              >
+                <Markdown text={summary} />
+                <span className="mt-2 block text-xs text-slate-400">Tap to copy ⧉</span>
+              </button>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <input
+                  value={emailTo}
+                  onChange={(e) => setEmailTo(e.target.value)}
+                  placeholder="also email to (optional), e.g. VP's address"
+                  className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+                />
+                <button onClick={emailSummary} disabled={emailBusy}
+                  className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                  {emailBusy ? "Emailing…" : "Email to me"}
+                </button>
+              </div>
+            </>
           )}
         </div>
       </section>
@@ -293,49 +341,4 @@ export default function StudentPage() {
       </section>
     </div>
   );
-}
-
-// Minimal markdown renderer for the AI summary: **bold**, # headings, and
-// - bullet lists become real formatting (no external dependency).
-function renderInline(text: string) {
-  return text.split(/(\*\*[^*]+\*\*)/g).map((p, i) => {
-    const m = p.match(/^\*\*([^*]+)\*\*$/);
-    return m ? <strong key={i}>{m[1]}</strong> : <span key={i}>{p}</span>;
-  });
-}
-
-function Markdown({ text }: { text: string }) {
-  const lines = String(text || "").replace(/\r/g, "").split("\n");
-  const blocks: ReactElement[] = [];
-  let list: string[] = [];
-  let key = 0;
-  const flushList = () => {
-    if (list.length) {
-      const items = list.slice();
-      blocks.push(
-        <ul key={`u${key++}`} className="my-2 list-disc space-y-1 pl-5">
-          {items.map((li, i) => <li key={i}>{renderInline(li)}</li>)}
-        </ul>
-      );
-      list = [];
-    }
-  };
-  for (const raw of lines) {
-    const line = raw.replace(/\s+$/, "");
-    const bullet = line.match(/^\s*[-*]\s+(.*)$/);
-    if (bullet) { list.push(bullet[1]); continue; }
-    flushList();
-    if (!line.trim()) continue;
-    const h = line.match(/^(#{1,3})\s+(.*)$/);
-    const wholeBold = line.trim().match(/^\*\*([^*]+)\*\*$/);
-    if (h) {
-      blocks.push(<p key={`h${key++}`} className="mb-1 mt-3 font-semibold text-slate-900">{renderInline(h[2])}</p>);
-    } else if (wholeBold) {
-      blocks.push(<p key={`b${key++}`} className="mb-1 mt-3 font-semibold text-slate-900">{wholeBold[1]}</p>);
-    } else {
-      blocks.push(<p key={`p${key++}`} className="my-1.5 leading-relaxed">{renderInline(line)}</p>);
-    }
-  }
-  flushList();
-  return <div>{blocks}</div>;
 }
