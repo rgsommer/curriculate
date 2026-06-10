@@ -221,10 +221,10 @@ function ExecutiveSummaryCard() {
   const [summary, setSummary] = useState("");
   const [scope, setScope] = useState<"me" | "all">("me");
   const [msg, setMsg] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"" | "me" | "all" | "email">("");
 
   async function gen(s: "me" | "all") {
-    setBusy(true);
+    setBusy(s);
     setMsg("");
     setSummary("");
     setScope(s);
@@ -240,12 +240,12 @@ function ExecutiveSummaryCard() {
     } catch (e: any) {
       setMsg(e.message);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
   async function emailIt() {
-    setBusy(true);
+    setBusy("email");
     setMsg("");
     try {
       const r = await api<{ emailed: boolean; emailError?: string }>("/executive-summary", {
@@ -255,7 +255,7 @@ function ExecutiveSummaryCard() {
     } catch (e: any) {
       setMsg(e.message);
     } finally {
-      setBusy(false);
+      setBusy("");
     }
   }
 
@@ -271,18 +271,18 @@ function ExecutiveSummaryCard() {
           <option value={6}>Last 6 months</option>
           <option value={12}>Last 12 months</option>
         </select>
-        <button onClick={() => gen("me")} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
-          {busy ? "Generating…" : "My interactions"}
+        <button onClick={() => gen("me")} disabled={!!busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy === "me" ? "Generating…" : "My interactions"}
         </button>
-        <button onClick={() => gen("all")} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
-          {busy ? "Generating…" : "Whole division"}
+        <button onClick={() => gen("all")} disabled={!!busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy === "all" ? "Generating…" : "Whole division"}
         </button>
       </div>
       {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
       {summary && (
         <>
-          <button onClick={emailIt} disabled={busy} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
-            Email it to me (with chart)
+          <button onClick={emailIt} disabled={!!busy} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            {busy === "email" ? "Emailing…" : "Email it to me (with chart)"}
           </button>
           <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-50 p-3 font-sans text-sm text-slate-700">{summary}</pre>
         </>
