@@ -2147,7 +2147,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       `Base your assessment on ALL the records below — BOTH the individually-logged incidents AND the notices home (which, especially for earlier events, are the only record of past offences). ` +
       `State the overall date range and the number of events on file (counting notices that describe offences), then cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
       (practiceText ? `Also weave in 1-2 sentences (no more) — using the GENERAL PRACTICE figures — situating how this student was handled within the teacher's consistent, balanced approach across their other students (the same standards and follow-through applied to everyone, not singling this student out). Keep it factual; do not dump the raw practice numbers as a separate section. ` : "") +
-      `Be factual and brief; you need not list every event, but the assessment must reflect the WHOLE record back to the earliest date. Use ONLY the data below — do not invent.\n\n${ctxText}`;
+      `Be factual and tight: 2-3 short flowing paragraphs (~200 words) of continuous prose — NOT a headed report with section titles or bullet lists. You need not list every event, but the assessment must reflect the WHOLE record back to the earliest date. Use ONLY the data below — do not invent.\n\n${ctxText}`;
 
     let summary = `Behaviour summary — ${name}\n\n${ctxText}`; // deterministic fallback
     let aiUsed = false;
@@ -2331,7 +2331,8 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `(3) documented INTERACTIONS (${interactionCount}) such as conversations and parent meetings logged for the record — proactive, relationship-building engagement that is NOT discipline; ` +
       `(4) thoroughness and follow-through — parent communication (${notices.length} notice(s) home), consequence follow-through (${fuResolvedPct}% of ${fuTotal} resolved), documentation via ${teacherNoteCount} private note(s), and steady engagement across ${activeMonths} month(s); ` +
       `${scope === "me" ? "this teacher's overall engagement style, including the balance of positives and documented interactions vs. discipline, and the diligence shown in following process through;" : "patterns across the division and which behaviours dominate;"} ` +
-      `and the current load. Keep the figures internally consistent (never more notices than total offences; positives and interactions are NOT offences and must not be added into the offence count). Be objective, balanced, fair and professional — suitable to share with an administrator or for personal reflection. Do not exaggerate or editorialise; let the comprehensiveness come from covering every thread accurately. Use ONLY the data; do not invent. A few short paragraphs.\n\n${ctxText}`;
+      `and the current load. Keep the figures internally consistent (never more notices than total offences; positives and interactions are NOT offences and must not be added into the offence count). Be objective, balanced, fair and professional — suitable to share with an administrator or for personal reflection. Do not exaggerate or editorialise; let the comprehensiveness come from covering every thread accurately, not from length. ` +
+      `Write 3-4 short flowing paragraphs (~250-300 words) — continuous prose, NOT a headed report with section titles or bullet lists, and no separate "Conclusion" heading. Use ONLY the data; do not invent.\n\n${ctxText}`;
 
     let summary = `Executive summary — ${who} (last ${months} months)\n\n${ctxText}`;
     let aiUsed = false;
