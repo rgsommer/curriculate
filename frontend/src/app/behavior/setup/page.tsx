@@ -529,7 +529,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
 
   return (
     <Card>
-      <h2 className="font-semibold">Edsby connection</h2>
+      <h2 id="edsby" className="scroll-mt-20 font-semibold">Edsby connection</h2>
       <p className="mt-1 text-sm text-slate-500">
         Edsby has no public API, so notices are posted using your school&apos;s signed-in session — each
         parent messaged separately via their Edsby nid. The cookie + formkey are stored <span className="font-medium">encrypted</span> and never shown again.

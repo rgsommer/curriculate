@@ -284,7 +284,15 @@ export default function EdsbyHonours() {
           className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40">
           {busy === "refresh" ? "Pulling grades from Edsby…" : "Refresh from Edsby"}
         </button>
+        <a href="/behavior/setup#edsby"
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Connect Edsby ↗
+        </a>
       </div>
+      <p className="mt-2 text-xs text-slate-400">
+        A complete, weighted honour roll needs an <strong>admin</strong> Edsby session connected (a teacher login only
+        sees its own classes). Set it up under <a href="/behavior/setup#edsby" className="text-blue-600 hover:underline">Behaviours → Edsby connection</a>.
+      </p>
 
       {notice && (
         <p className={`mt-3 rounded-lg p-3 text-sm ${
