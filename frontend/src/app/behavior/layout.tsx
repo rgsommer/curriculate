@@ -1,6 +1,7 @@
 // src/app/behavior/layout.tsx
 import Link from "next/link";
 import type { ReactNode } from "react";
+import LogNavLink from "./_components/LogNavLink";
 
 export const metadata = {
   title: "Behaviours — Curriculate",
@@ -19,9 +20,7 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
             <Link href="/behavior" className="text-slate-600 hover:text-slate-900">
               Dashboard
             </Link>
-            <Link href="/behavior/log" className="text-slate-600 hover:text-slate-900">
-              Log
-            </Link>
+            <LogNavLink className="text-slate-600 hover:text-slate-900" />
             <Link href="/behavior/students" className="text-slate-600 hover:text-slate-900">
               Students
             </Link>

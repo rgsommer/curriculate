@@ -68,6 +68,14 @@ export default function LogIncidentPage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Tapping "Log" in the nav while already here returns to the student picker.
+  useEffect(() => {
+    const onReset = () => reset();
+    window.addEventListener("behavior:log-reset", onReset);
+    return () => window.removeEventListener("behavior:log-reset", onReset);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!getToken()) return;
     api<{ students: StudentSummary[]; triggerCount: number }>("/students")
@@ -214,6 +222,8 @@ export default function LogIncidentPage() {
     setTrigger([]);
     setDone(false);
     setQuery("");
+    setSelectedClass("");
+    setMode("single");
   }
 
   // ── Confirmation ───────────────────────────────────────────────────────────
