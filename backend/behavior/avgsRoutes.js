@@ -94,12 +94,16 @@ export function buildAvgsRouter({ requireAdmin }) {
 
   router.put("/config", requireAdmin, async (req, res, next) => {
     try {
-      const { gradeMin, gradeMax, honours, highHonours, classes } = req.body || {};
+      const { gradeMin, gradeMax, honours, highHonours, zoomNid, classes } = req.body || {};
       const $set = {};
       if (Number.isFinite(+gradeMin)) $set.gradeMin = Math.max(0, Math.min(12, +gradeMin));
       if (Number.isFinite(+gradeMax)) $set.gradeMax = Math.max(0, Math.min(12, +gradeMax));
       if (Number.isFinite(+honours)) $set.honours = Math.max(0, Math.min(100, +honours));
       if (Number.isFinite(+highHonours)) $set.highHonours = Math.max(0, Math.min(100, +highHonours));
+      if (typeof zoomNid === "string") {
+        // Keep only digits and commas (one or more Edsby Zoom node ids).
+        $set.zoomNid = zoomNid.replace(/[^\d,]/g, "").replace(/,+/g, ",").replace(/^,|,$/g, "").slice(0, 200);
+      }
       if (Array.isArray(classes)) {
         $set.classes = classes
           .filter((c) => c && String(c.name || "").trim())
@@ -132,25 +136,41 @@ export function buildAvgsRouter({ requireAdmin }) {
       const { session, error } = await loadEdsbySession(req.schoolId);
       if (error) return res.json({ ok: false, error });
 
+      const cfg = await getOrCreateConfig(req.schoolId);
       const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
       const e = config?.edsby || {};
-      const zoomId = String(req.body?.zoomId || e.zoomId || "").trim();
-      if (!zoomId) {
+      // Student-list node(s): the avgs config's zoomNid (the "My Students" Zoom,
+      // /p/ZoomMyStudents/<nid>), or a body override, or the Behaviours formkey
+      // Zoom id as a last resort. Comma-separated → multiple nodes get unioned.
+      const nodeSpec = String(req.body?.zoomId || cfg.zoomNid || e.zoomId || "").trim();
+      const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!nodeIds.length) {
         return res.json({
           ok: false,
-          error: "No Edsby Zoom id set. In Edsby, open My Students — the number in the page URL is the Zoom id. Save it in Behaviours Setup → Edsby (it's also used to refresh the formkey).",
+          error: "No Edsby “My Students” node id set. In Edsby open My Students — the number in the page URL (/p/ZoomMyStudents/NUMBER) is it. Paste it in the “My Students node” box and Save.",
         });
       }
       const formkey = e.formkeyEnc ? decrypt(e.formkeyEnc) : "";
 
-      const r = await fetchZoomStudents(session, zoomId, formkey);
-      // Persist the freshly-refreshed formkey so later Edsby calls start valid.
-      if (r.formkey && r.formkey !== formkey) {
-        await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+      // Fetch each node and union the people (dedupe by nid).
+      const diagnostics = [];
+      const peopleByNid = new Map();
+      let usedView = null, savedFormkey = formkey;
+      for (const nodeId of nodeIds) {
+        const r = await fetchZoomStudents(session, nodeId, savedFormkey);
+        if (r.formkey && r.formkey !== savedFormkey) {
+          savedFormkey = r.formkey;
+          await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+        }
+        if (r.sessionExpired) {
+          return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+        }
+        if (r.view) usedView = r.view;
+        for (const p of r.people || []) if (p?.nid && !peopleByNid.has(p.nid)) peopleByNid.set(p.nid, p);
+        if (nodeIds.length > 1) diagnostics.push({ step: `node ${nodeId}`, note: `${(r.people || []).length} people` });
+        diagnostics.push(...(r.diagnostics || []));
       }
-      if (r.sessionExpired) {
-        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
-      }
+      const r = { people: [...peopleByNid.values()], view: usedView, diagnostics };
       if (!r.people.length) {
         return res.json({
           ok: false,

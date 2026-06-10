@@ -34,8 +34,8 @@ export const DEFAULT_STUDENT_LIST_VIEWS = (
   .filter(Boolean);
 
 /** Authenticated GET of an Edsby JSON view. Returns { ok, status, json, text }. */
-export async function edsbyGetJson(sess, nid, view) {
-  const url = `${String(sess.baseUrl || "").replace(/\/+$/, "")}/core/node.json/${nid}?xds=${encodeURIComponent(view)}`;
+export async function edsbyGetJson(sess, nid, view, extraQuery = "") {
+  const url = `${String(sess.baseUrl || "").replace(/\/+$/, "")}/core/node.json/${nid}?xds=${encodeURIComponent(view)}${extraQuery}`;
   let res;
   try {
     res = await fetch(url, {
@@ -194,6 +194,52 @@ export async function fetchStudentCourses(sess, studentNid, views = DEFAULT_STUD
 
 // ── Student-nid harvesting ────────────────────────────────────────────────────
 
+/**
+ * Parse the Edsby Zoom "My Students" row table — verified shape (bcs.edsby.com,
+ * 2026-06): the rows live at `…data.zoom.data.table.rec`, an object keyed by
+ * "r<studentNid>", each value having FirstName/PrefName/LastName, Grade,
+ * Average, SID, Classes. The rows only load when the request carries `stage=1`.
+ * Finds the rec map wherever it sits, so it survives minor nesting changes.
+ * Returns [{ nid, name, first, last, grade, average }].
+ */
+export function extractZoomStudents(root) {
+  let rec = null;
+  (function find(node, depth) {
+    if (rec || !node || typeof node !== "object" || depth > 16) return;
+    if (Array.isArray(node)) {
+      for (const v of node) find(v, depth + 1);
+      return;
+    }
+    const keys = Object.keys(node);
+    // A rec map is mostly "r<digits>" keys pointing at row objects.
+    if (keys.length >= 3 && keys.filter((k) => /^r\d+$/.test(k)).length >= keys.length * 0.8) {
+      rec = node;
+      return;
+    }
+    for (const k of keys) find(node[k], depth + 1);
+  })(root, 0);
+
+  if (!rec) return [];
+  const out = [];
+  for (const [key, r] of Object.entries(rec)) {
+    if (!r || typeof r !== "object") continue;
+    const nid = String(r.nid ?? key.replace(/^r/, "")).trim();
+    const first = String(r.PrefName || r.FirstName || "").trim();
+    const last = String(r.LastName || "").trim();
+    const name = `${first} ${last}`.trim();
+    if (!/^\d{3,}$/.test(nid) || !name) continue;
+    out.push({
+      nid,
+      name,
+      first,
+      last,
+      grade: String(r.Grade ?? "").trim(),
+      average: typeof r.Average === "number" ? r.Average : null,
+    });
+  }
+  return out;
+}
+
 const PERSON_NAME_KEYS = /^(name|fullname|studentname|displayname|text|title)$/i;
 const FIRST_KEYS = /^(first|firstname|givenname|given)$/i;
 const LAST_KEYS = /^(last|lastname|surname|familyname)$/i;
@@ -299,12 +345,17 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
   // error 1030 "denied nodetype"). Try each candidate view, GET then formkey
   // POST, and report per-view diagnostics so the right one can be pinned via
   // EDSBY_STUDENT_VIEWS (no deploy needed).
+  // The Zoom "My Students" rows only load when the request carries stage=1; the
+  // bare view returns just the page shell. Prefer the verified rec-table parser,
+  // fall back to the generic person scan.
+  const parse = (j) => { const z = extractZoomStudents(j); return z.length ? z : extractPeople(j); };
+
   for (const view of DEFAULT_STUDENT_LIST_VIEWS) {
-    // GET
-    const g = await edsbyGetJson(sess, zoomId, view);
+    // GET (with stage=1 so the row data is included)
+    const g = await edsbyGetJson(sess, zoomId, view, "&stage=1");
     if (g.status === 401) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
     if (g.ok) {
-      const people = extractPeople(g.json);
+      const people = parse(g.json);
       if (people.length) return { people, diagnostics, view, formkey: fk };
       diagnostics.push({ step: `GET ${view}`, status: g.status, note: `JSON but no person-shaped data; shape: ${describeShape(g.json)}`, sample: JSON.stringify(g.json).slice(0, 1500) });
     } else {
@@ -316,7 +367,7 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
       diagnostics.push({ step: `POST ${view}`, note: "skipped — no formkey (refresh failed and none stored)" });
       continue;
     }
-    const url = `${base}/core/node.json/${zoomId}?xds=${encodeURIComponent(view)}&_method=GET`;
+    const url = `${base}/core/node.json/${zoomId}?xds=${encodeURIComponent(view)}&stage=1&_method=GET`;
     const boundary = "----CurriculateHarvest";
     const payload = `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${fk}\r\n--${boundary}--\r\n`;
     let res, text = "";
@@ -348,7 +399,7 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
       diagnostics.push({ step: `POST ${view}`, status: res.status, note: `non-JSON: ${text.slice(0, 150)}` });
       continue;
     }
-    const people = extractPeople(json);
+    const people = parse(json);
     if (people.length) return { people, diagnostics, view, formkey: fk };
     diagnostics.push({ step: `POST ${view}`, status: res.status, note: `JSON but no person-shaped data; shape: ${describeShape(json)}`, sample: JSON.stringify(json).slice(0, 1500) });
   }

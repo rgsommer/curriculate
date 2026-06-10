@@ -247,6 +247,12 @@ export default function EdsbyHonours() {
             onChange={(e) => setCfg({ ...cfg, highHonours: +e.target.value })}
             className="mt-1 w-20 rounded border border-slate-300 p-1.5" />
         </label>
+        <label className="flex flex-col text-slate-600" title="From the Edsby URL /p/ZoomMyStudents/NUMBER. Comma-separate several if one Zoom doesn't cover every grade.">
+          My Students node(s)
+          <input type="text" inputMode="numeric" placeholder="e.g. 21471167" value={cfg.zoomNid || ""}
+            onChange={(e) => setCfg({ ...cfg, zoomNid: e.target.value })}
+            className="mt-1 w-40 rounded border border-slate-300 p-1.5" />
+        </label>
         <span className="text-xs text-slate-400">
           {roster.inRange} students in range{roster.missingNid ? ` · ${roster.missingNid} missing an Edsby ID` : ""}
         </span>

@@ -33,6 +33,10 @@ const HonourRollConfigSchema = new mongoose.Schema(
     gradeMax: { type: Number, default: 8 },
     honours: { type: Number, default: 80 }, // weighted avg ≥ this → Honours
     highHonours: { type: Number, default: 90 }, // ≥ this → High Honours
+    // Edsby "My Students" Zoom node id(s) to read the student list from, comma-
+    // separated (one Zoom often covers only some grades). Found in the Edsby
+    // URL /p/ZoomMyStudents/<nid>. Used to harvest student nids.
+    zoomNid: { type: String, default: "" },
     classes: { type: [ClassWeightSchema], default: [] },
   },
   { timestamps: true }
