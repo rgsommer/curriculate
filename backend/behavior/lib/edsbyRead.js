@@ -174,20 +174,30 @@ export function describeShape(json, maxKeys = 40) {
  */
 export async function fetchStudentCourses(sess, studentNid, views = DEFAULT_STUDENT_VIEWS) {
   const diagnostics = [];
+  // Edsby loads page row/section data only when the request carries a stage
+  // param (verified for ZoomMyStudents). Try with stage=1 first, then bare.
   for (const view of views) {
-    const r = await edsbyGetJson(sess, studentNid, view);
-    if (r.status === 401) {
-      return { courses: [], view: null, diagnostics, sessionExpired: true };
+    for (const extra of ["&stage=1", ""]) {
+      const r = await edsbyGetJson(sess, studentNid, view, extra);
+      if (r.status === 401) {
+        return { courses: [], view: null, diagnostics, sessionExpired: true };
+      }
+      const tag = `${view}${extra ? " (stage=1)" : ""}`;
+      if (!r.ok) {
+        diagnostics.push({ view: tag, status: r.status, note: "non-JSON or error response" });
+        continue;
+      }
+      const { courses, scheduleHints } = extractCourses(r.json);
+      if (courses.length) {
+        return { courses, scheduleHints, view: tag, diagnostics };
+      }
+      diagnostics.push({
+        view: tag,
+        status: r.status,
+        note: `JSON but no course-shaped data; shape: ${describeShape(r.json)}`,
+        sample: JSON.stringify(r.json).slice(0, 1500),
+      });
     }
-    if (!r.ok) {
-      diagnostics.push({ view, status: r.status, note: "non-JSON or error response" });
-      continue;
-    }
-    const { courses, scheduleHints } = extractCourses(r.json);
-    if (courses.length) {
-      return { courses, scheduleHints, view, diagnostics };
-    }
-    diagnostics.push({ view, status: r.status, note: `JSON but no course-shaped data; keys: ${describeShape(r.json)}` });
   }
   return { courses: [], view: null, diagnostics };
 }

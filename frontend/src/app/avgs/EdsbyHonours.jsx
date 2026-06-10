@@ -126,14 +126,20 @@ export default function EdsbyHonours() {
   async function probe() {
     setBusy("probe");
     setNotice(null);
+    setDiagnostics(null);
     try {
       const r = await api("/avgs/probe", { method: "POST", body: {}, timeoutMs: 120000 });
       if (!r.ok) throw new Error(r.error);
       setCfg(r.config);
       setShowClasses(true);
+      // No classes found means the per-student grade view didn't parse — show
+      // the diagnostics so the shape can be pinned down.
+      if (!r.classesDiscovered && r.diagnostics?.length) setDiagnostics(r.diagnostics);
       setNotice({
-        kind: "ok",
-        text: `Probed ${r.sampled} students — found ${r.classesDiscovered} classes (${r.classesAdded} new). Check the weights below, then Save.`,
+        kind: r.classesDiscovered ? "ok" : "warn",
+        text: r.classesDiscovered
+          ? `Probed ${r.sampled} students — found ${r.classesDiscovered} classes (${r.classesAdded} new). Check the weights below, then Save.`
+          : `Probed ${r.sampled} students but found no classes — Edsby's per-student grade view returned a shape I can't read yet. Diagnostics below — share them to pin it down.`,
       });
     } catch (e) {
       setNotice({ kind: "err", text: e.message });
