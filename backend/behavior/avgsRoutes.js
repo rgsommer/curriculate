@@ -220,7 +220,7 @@ export function buildAvgsRouter({ requireAdmin }) {
       if (!students.length) {
         return res.json({
           ok: false,
-          error: "No students in the grade range have an Edsby nid (edsbyStudentId). Harvest/import student nids first.",
+          error: "No students in the grade range have an Edsby ID yet. Use “Extract student IDs” first.",
         });
       }
 
@@ -303,7 +303,7 @@ export function buildAvgsRouter({ requireAdmin }) {
       if (!withNid.length) {
         return res.json({
           ok: false,
-          error: "No students in the grade range have an Edsby nid (edsbyStudentId). Harvest/import student nids first.",
+          error: "No students in the grade range have an Edsby ID yet. Use “Extract student IDs” first.",
         });
       }
 

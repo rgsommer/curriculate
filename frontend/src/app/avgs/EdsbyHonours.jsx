@@ -91,10 +91,12 @@ export default function EdsbyHonours() {
     }
   }
 
-  async function harvestNids() {
-    setBusy("harvest");
+  async function extractIds() {
+    setBusy("extract");
     setNotice(null);
     try {
+      // Route path stays /harvest-nids (internal, never shown) so the button
+      // doesn't 404 during the backend's deploy lag; the UI says "Extract".
       const r = await api("/avgs/harvest-nids", { method: "POST", body: {}, timeoutMs: 120000 });
       if (!r.ok) throw new Error(r.error);
       const left = r.unmatchedRosterCount;
@@ -246,9 +248,9 @@ export default function EdsbyHonours() {
 
       <div className="mt-4 flex flex-wrap gap-2">
         {roster.missingNid > 0 && (
-          <button type="button" onClick={harvestNids} disabled={!!busy}
+          <button type="button" onClick={extractIds} disabled={!!busy}
             className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-40">
-            {busy === "harvest" ? "Harvesting from Edsby…" : `Harvest student IDs (${roster.missingNid} missing)`}
+            {busy === "extract" ? "Extracting from Edsby…" : `Extract student IDs (${roster.missingNid} missing)`}
           </button>
         )}
         <button type="button" onClick={probe} disabled={!!busy}
