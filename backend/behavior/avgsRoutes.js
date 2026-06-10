@@ -26,6 +26,7 @@ import { HonourRollConfig, HonourRollSnapshot } from "./models/HonourRoll.js";
 import { decrypt } from "./lib/secretBox.js";
 import {
   fetchStudentCourses,
+  fetchZoomStudents,
   guessWeight,
   normalizeClassKey,
   computeStudent,
@@ -117,6 +118,92 @@ export function buildAvgsRouter({ requireAdmin }) {
         { new: true, upsert: true }
       );
       res.json({ ok: true, config: cfg });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // Harvest student Edsby nids: pull the students listing from Edsby via the
+  // session, match people to the roster by name, and fill in edsbyStudentId.
+  // This is the prerequisite the probe/refresh error messages point at.
+  router.post("/harvest-nids", requireAdmin, async (req, res, next) => {
+    try {
+      const { session, error } = await loadEdsbySession(req.schoolId);
+      if (error) return res.json({ ok: false, error });
+
+      const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+      const e = config?.edsby || {};
+      const zoomId = String(req.body?.zoomId || e.zoomId || "").trim();
+      if (!zoomId) {
+        return res.json({
+          ok: false,
+          error: "No Edsby Zoom id set. In Edsby, open My Students — the number in the page URL is the Zoom id. Save it in Behaviours Setup → Edsby (it's also used to refresh the formkey).",
+        });
+      }
+      const formkey = e.formkeyEnc ? decrypt(e.formkeyEnc) : "";
+
+      const r = await fetchZoomStudents(session, zoomId, formkey);
+      if (r.sessionExpired) {
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+      }
+      if (!r.people.length) {
+        return res.json({
+          ok: false,
+          error: "Edsby answered, but no student list could be read from the response. Diagnostics attached — share them to get the parser tuned to your school.",
+          diagnostics: r.diagnostics,
+        });
+      }
+
+      // Index Edsby people by normalized name keys ("first last" and "last first").
+      // A key claimed by two different people is ambiguous → unusable.
+      const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z]/g, "");
+      const byKey = new Map();
+      const claim = (key, nid) => {
+        if (!key) return;
+        if (byKey.has(key) && byKey.get(key) !== nid) byKey.set(key, "AMBIGUOUS");
+        else byKey.set(key, nid);
+      };
+      for (const p of r.people) {
+        const first = p.first || String(p.name).split(/\s+/)[0];
+        const last = p.last || String(p.name).split(/\s+/).slice(1).join(" ");
+        claim(norm(first + last), p.nid);
+        claim(norm(last + first), p.nid);
+        claim(norm(p.name), p.nid);
+      }
+
+      const students = await BehaviorStudent.find({ schoolId: req.schoolId })
+        .select("firstName lastName preferredName edsbyStudentId")
+        .lean();
+
+      let matched = 0, already = 0;
+      const unmatched = [];
+      const ops = [];
+      for (const s of students) {
+        if (s.edsbyStudentId) { already++; continue; }
+        const keys = [
+          norm((s.firstName || "") + (s.lastName || "")),
+          norm((s.preferredName || "") + (s.lastName || "")),
+          norm((s.lastName || "") + (s.firstName || "")),
+        ];
+        const nid = keys.map((k) => byKey.get(k)).find((v) => v && v !== "AMBIGUOUS");
+        if (nid) {
+          matched++;
+          ops.push({ updateOne: { filter: { _id: s._id }, update: { $set: { edsbyStudentId: nid } } } });
+        } else {
+          unmatched.push(displayName(s));
+        }
+      }
+      if (ops.length) await BehaviorStudent.bulkWrite(ops);
+
+      res.json({
+        ok: true,
+        edsbyPeople: r.people.length,
+        matched,
+        alreadyHadNid: already,
+        unmatchedRoster: unmatched.slice(0, 40),
+        unmatchedRosterCount: unmatched.length,
+        diagnostics: r.diagnostics,
+      });
     } catch (err) {
       next(err);
     }

@@ -164,6 +164,126 @@ export async function fetchStudentCourses(sess, studentNid, views = DEFAULT_STUD
   return { courses: [], view: null, diagnostics };
 }
 
+// ── Student-nid harvesting ────────────────────────────────────────────────────
+
+const PERSON_NAME_KEYS = /^(name|fullname|studentname|displayname|text|title)$/i;
+const FIRST_KEYS = /^(first|firstname|givenname|given)$/i;
+const LAST_KEYS = /^(last|lastname|surname|familyname)$/i;
+const NID_KEYS = /^(nid|id|userid|user_id|studentnid|studentid|student_nid)$/i;
+
+function asNid(v) {
+  const s = String(v ?? "").trim();
+  return /^\d{3,}$/.test(s) ? s : null;
+}
+
+/**
+ * Recursively scan Edsby JSON for person-shaped objects: an nid-ish numeric id
+ * next to a name (either one "name" string — possibly "Last, First" — or
+ * first/last fields). Returns [{ nid, name, first, last }] deduped by nid.
+ */
+export function extractPeople(root) {
+  const people = [];
+  const seen = new Set();
+
+  function visit(node, depth) {
+    if (!node || depth > 12) return;
+    if (Array.isArray(node)) {
+      for (const item of node) visit(item, depth + 1);
+      return;
+    }
+    if (typeof node !== "object") return;
+
+    let nid = null, name = "", first = "", last = "";
+    for (const [k, v] of Object.entries(node)) {
+      if (!nid && NID_KEYS.test(k)) nid = asNid(v);
+      if (!name && PERSON_NAME_KEYS.test(k) && typeof v === "string" && /[a-z]/i.test(v)) name = v.trim();
+      if (!first && FIRST_KEYS.test(k) && typeof v === "string") first = v.trim();
+      if (!last && LAST_KEYS.test(k) && typeof v === "string") last = v.trim();
+    }
+    if (!name && (first || last)) name = `${first} ${last}`.trim();
+    if (name && name.includes(",") && !first && !last) {
+      const [l, f] = name.split(",", 2).map((s) => s.trim());
+      last = l; first = f || "";
+    }
+    if (nid && name && !seen.has(nid)) {
+      seen.add(nid);
+      people.push({ nid, name, first, last });
+    }
+    for (const v of Object.values(node)) {
+      if (v && typeof v === "object") visit(v, depth + 1);
+    }
+  }
+
+  visit(root, 0);
+  return people;
+}
+
+/**
+ * Fetch the students listing via the ZoomMyStudents view (the one
+ * DevTools-verified listing request in this codebase — see
+ * EdsbyProvider.testConnection). Plain GET first; if that yields no people,
+ * fall back to the formkey POST with _method=GET. Returns
+ * { people, diagnostics, sessionExpired? }.
+ */
+export async function fetchZoomStudents(sess, zoomId, formkey) {
+  const diagnostics = [];
+  const base = String(sess.baseUrl || "").replace(/\/+$/, "");
+
+  // 1) plain authenticated GET
+  const g = await edsbyGetJson(sess, zoomId, "ZoomMyStudents");
+  if (g.status === 401) return { people: [], diagnostics, sessionExpired: true };
+  if (g.ok) {
+    const people = extractPeople(g.json);
+    if (people.length) return { people, diagnostics };
+    diagnostics.push({ step: "GET ZoomMyStudents", status: g.status, note: `JSON but no person-shaped data; keys: ${describeShape(g.json)}` });
+  } else {
+    diagnostics.push({ step: "GET ZoomMyStudents", status: g.status, note: "non-JSON or error response" });
+  }
+
+  // 2) formkey POST fallback (mirrors testConnection's verified shape)
+  if (!formkey) {
+    diagnostics.push({ step: "POST ZoomMyStudents", note: "skipped — no formkey stored" });
+    return { people: [], diagnostics };
+  }
+  const url = `${base}/core/node.json/${zoomId}?xds=ZoomMyStudents&_method=GET`;
+  const boundary = "----CurriculateHarvest";
+  const payload = `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${formkey}\r\n--${boundary}--\r\n`;
+  let res, text = "";
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Cookie: sess.cookie,
+        "Content-Type": `multipart/form-data; boundary=${boundary}`,
+        "x-xds-jver": sess.jver || "",
+        "x-xds-cver": sess.cver || "",
+        "x-edsby-client-request-queue": "net::post",
+        Origin: base,
+        Referer: `${base}/p/ZoomMyStudents/${zoomId}`,
+      },
+      body: payload,
+      redirect: "manual",
+      signal: AbortSignal.timeout(15000),
+    });
+    text = await res.text().catch(() => "");
+  } catch (err) {
+    diagnostics.push({ step: "POST ZoomMyStudents", note: err?.message || String(err) });
+    return { people: [], diagnostics };
+  }
+  if (/login/i.test(text) && /<form/i.test(text)) return { people: [], diagnostics, sessionExpired: true };
+  let json = null;
+  try { json = JSON.parse(text); } catch { /* non-JSON */ }
+  if (!json) {
+    diagnostics.push({ step: "POST ZoomMyStudents", status: res.status, note: `non-JSON: ${text.slice(0, 150)}` });
+    return { people: [], diagnostics };
+  }
+  const people = extractPeople(json);
+  if (!people.length) {
+    diagnostics.push({ step: "POST ZoomMyStudents", status: res.status, note: `JSON but no person-shaped data; keys: ${describeShape(json)}` });
+  }
+  return { people, diagnostics };
+}
+
 // ── Weights, averages, honours ────────────────────────────────────────────────
 
 /**

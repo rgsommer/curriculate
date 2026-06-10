@@ -91,6 +91,29 @@ export default function EdsbyHonours() {
     }
   }
 
+  async function harvestNids() {
+    setBusy("harvest");
+    setNotice(null);
+    try {
+      const r = await api("/avgs/harvest-nids", { method: "POST", body: {}, timeoutMs: 120000 });
+      if (!r.ok) throw new Error(r.error);
+      const left = r.unmatchedRosterCount;
+      setNotice({
+        kind: left ? "warn" : "ok",
+        text:
+          `Edsby listed ${r.edsbyPeople} students — matched ${r.matched} to the roster by name` +
+          (r.alreadyHadNid ? ` (${r.alreadyHadNid} already had IDs)` : "") +
+          (left ? `. ${left} still unmatched: ${r.unmatchedRoster.join(", ")}${left > r.unmatchedRoster.length ? "…" : ""}` : ". All set — run Probe next."),
+      });
+      const c = await api("/avgs/config");
+      setRoster({ inRange: c.rosterInRange, missingNid: c.rosterMissingNid });
+    } catch (e) {
+      setNotice({ kind: "err", text: e.message });
+    } finally {
+      setBusy("");
+    }
+  }
+
   async function probe() {
     setBusy("probe");
     setNotice(null);
@@ -222,6 +245,12 @@ export default function EdsbyHonours() {
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2">
+        {roster.missingNid > 0 && (
+          <button type="button" onClick={harvestNids} disabled={!!busy}
+            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-40">
+            {busy === "harvest" ? "Harvesting from Edsby…" : `Harvest student IDs (${roster.missingNid} missing)`}
+          </button>
+        )}
         <button type="button" onClick={probe} disabled={!!busy}
           className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-40">
           {busy === "probe" ? "Probing Edsby…" : "Probe classes"}
@@ -237,7 +266,11 @@ export default function EdsbyHonours() {
       </div>
 
       {notice && (
-        <p className={`mt-3 rounded-lg p-3 text-sm ${notice.kind === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+        <p className={`mt-3 rounded-lg p-3 text-sm ${
+          notice.kind === "ok" ? "bg-green-50 text-green-700"
+          : notice.kind === "warn" ? "bg-amber-50 text-amber-800"
+          : "bg-red-50 text-red-700"
+        }`}>
           {notice.text}
         </p>
       )}

@@ -18,8 +18,8 @@ const SETUP_STEPS = [
     d: "In Behaviours Setup → Edsby, paste your Edsby base URL and session cookie — stored encrypted, never shown again. Install the Cookie Sync browser extension so the session stays fresh without re-pasting.",
   },
   {
-    t: "Make sure students have Edsby IDs",
-    d: "Each student needs their Edsby nid on file (the same one parent notices use). Students missing an ID are listed by name after every refresh so you can see exactly who's not covered.",
+    t: "Harvest student IDs (one button)",
+    d: "Each student needs their internal Edsby ID on file. If any are missing, an amber “Harvest student IDs” button appears on /avgs — it pulls the student list from Edsby through your session and matches names to the roster automatically. Anyone it can't match (name spelled differently, ambiguous twins) is listed so you can fix the roster name and run it again.",
   },
   {
     t: "Probe classes",
@@ -41,7 +41,7 @@ const SETUP_STEPS = [
 
 const TROUBLE = [
   ["“Edsby session cookie has expired”", "Open Edsby in your browser and sign in — the Cookie Sync extension pushes the fresh session automatically. Or re-paste the cookie in Behaviours Setup."],
-  ["“No students … have an Edsby nid”", "Student Edsby IDs haven't been harvested/imported yet — same prerequisite as Edsby parent notices."],
+  ["“No students … have an Edsby nid”", "Student Edsby IDs haven't been harvested yet — hit the amber “Harvest student IDs” button on /avgs. It needs the Zoom id saved in Behaviours Setup → Edsby (open My Students in Edsby; the number in the page URL is the Zoom id)."],
   ["Some students show “no course data found”", "Edsby's grade view varies by school. The refresh result includes diagnostics describing exactly what Edsby returned — pass them along and the probe can be tuned to your school without touching your setup."],
 ];
 
