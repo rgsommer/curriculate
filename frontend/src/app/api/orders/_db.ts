@@ -30,8 +30,10 @@ export async function getDb(): Promise<Db | null> {
   return client.db(process.env.MONGODB_DB || undefined);
 }
 
-export const DEFAULT_FINANCE_EMAIL = "emcbride@bramptoncs.org";
-export const DEFAULT_FINANCE_NAME = "Evelyn McBride";
+// TEMP (testing 2026-06-10): finance pointed at rsommer@bramptoncs.org so Richard
+// can receive the finance emails + xlsx. Revert to emcbride@bramptoncs.org after.
+export const DEFAULT_FINANCE_EMAIL = "rsommer@bramptoncs.org";
+export const DEFAULT_FINANCE_NAME = "Richard Sommer";
 export const DEFAULT_SCHOOL_NAME = "Brampton Christian School";
 
 export type OrdersConfig = {
