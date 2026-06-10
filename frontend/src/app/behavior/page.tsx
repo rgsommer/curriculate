@@ -86,7 +86,7 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
-      {housesOn && <HousesCard canLog={canLog} />}
+      {housesOn && <HousesCard canLog={canLog} isAdmin={isAdmin} portalCode={me.config?.housePortalCode || ""} />}
 
       <ExecutiveSummaryCard />
 
@@ -118,7 +118,7 @@ export default function BehaviorDashboard() {
   );
 }
 
-function HousesCard({ canLog }: { canLog: boolean }) {
+function HousesCard({ canLog, isAdmin, portalCode }: { canLog: boolean; isAdmin: boolean; portalCode: string }) {
   const [houses, setHouses] = useState<any[] | null>(null);
   const [open, setOpen] = useState(false);
   const [houseId, setHouseId] = useState("");
@@ -156,6 +156,21 @@ function HousesCard({ canLog }: { canLog: boolean }) {
 
   return (
     <Card>
+      {/* Student portal code — prominent so it can be shared/posted easily. */}
+      {portalCode ? (
+        <a href="/houses" target="_blank" rel="noreferrer" className="mb-3 flex items-center justify-between rounded-xl bg-slate-900 px-4 py-3 text-white">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-slate-300">Student leaderboard · curriculate.net/houses</div>
+            <div className="text-xs text-slate-400">Students enter this code once per device</div>
+          </div>
+          <div className="font-mono text-3xl font-bold tracking-[0.25em]">{portalCode}</div>
+        </a>
+      ) : isAdmin ? (
+        <Link href="/behavior/setup#roster" className="mb-3 block rounded-xl border border-dashed border-slate-300 px-4 py-3 text-center text-sm text-slate-500">
+          Generate a student portal code in Setup → Houses to share the live leaderboard at <span className="font-medium">curriculate.net/houses</span>
+        </Link>
+      ) : null}
+
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">House points</h2>
         {canLog && (
