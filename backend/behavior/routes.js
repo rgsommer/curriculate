@@ -1893,6 +1893,16 @@ async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw, student
     const backed = Array.isArray(n.triggeringIncidentIds) && n.triggeringIncidentIds.length > 0;
     if (n.legacyImport || !backed) bump(n.sentAt || n.createdAt, "neg");
   }
+  // Positive tracking is new — caption the graph so a lone green bar isn't read
+  // as a lack of positive recognition.
+  const firstPositive = await BehaviorIncident.findOne({
+    schoolId: req.schoolId,
+    $or: [{ "behaviorSnapshot.kind": "positive" }, { "behaviorSnapshot.points": { $gt: 0 } }],
+  }).sort({ timestamp: 1 }).select("timestamp").lean();
+  const positivesNew = !firstPositive || Date.now() - new Date(firstPositive.timestamp).getTime() < 90 * DAY_MS;
+  const chartCaption = positivesNew
+    ? `<p style="font-size:11px;color:#94a3b8;margin:6px 0 0">Positive recognition was recently introduced, so green is still ramping up.</p>`
+    : "";
 
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
@@ -1910,7 +1920,8 @@ async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw, student
           mdToHtml(text) +
           `<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">` +
           `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Timeline (red = negative, green = positive)</h3>` +
-          monthlyKindChartHtml(byMonth),
+          monthlyKindChartHtml(byMonth) +
+          chartCaption,
       }),
     });
     return { emailed: true, emailError: "", recipients: to };
@@ -2086,6 +2097,18 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     ]);
     const atThreshold = agg.filter((a) => a.n >= triggerCount - 1).length;
 
+    // Positive behaviours are a new feature — flag it so a low positive count
+    // isn't read as the teacher/division being "unbalanced".
+    const firstPositive = await BehaviorIncident.findOne({
+      schoolId: req.schoolId,
+      $or: [{ "behaviorSnapshot.kind": "positive" }, { "behaviorSnapshot.points": { $gt: 0 } }],
+    }).sort({ timestamp: 1 }).select("timestamp").lean();
+    const positiveCount = Object.values(byMonthKind).reduce((s, m) => s + (m.pos || 0), 0);
+    const positivesNew = !firstPositive || Date.now() - new Date(firstPositive.timestamp).getTime() < 90 * DAY_MS;
+    const positiveNote = positivesNew
+      ? `\nNOTE: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}. The small number of positive events (${positiveCount}) reflects that it is NEW — do NOT characterise the teacher/division as unbalanced, lacking positives, or skewed toward discipline; if anything, note that positive tracking is just getting underway.`
+      : "";
+
     const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
     const totalEvents = incidents.length + legacyOffences;
     const ctxText =
@@ -2100,7 +2123,8 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `Private teacher notes recorded: ${teacherNoteCount}.\n` +
       `Monthly volume (ALL ${totalEvents} events, incidents + historical notices): ${monthly.join("; ") || "n/a"}.\n` +
       `Notices home to parents: ${notices.length} created (${noticesSent} sent) — by reason: ${Object.entries(noticeByReason).map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
-      `Current strike load (division, shared count): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.`;
+      `Current strike load (division, shared count): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
+      positiveNote;
     const prompt =
       `You are writing an executive summary for a teacher reflecting on classroom-behaviour management over the period. ` +
       `Cover: how things are going overall; the behaviour TREND across the window (improving / worsening / steady, citing the monthly volumes — use the ${totalEvents} total behaviour events, not the smaller logged-incident count); ` +
@@ -2138,7 +2162,8 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
           `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
           mdToHtml(summary) +
           `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
-          `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}`,
+          `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}` +
+          (positivesNew ? `<p style="font-size:11px;color:#94a3b8;margin:6px 0 0">Positive recognition was recently introduced, so green is still ramping up.</p>` : ""),
       });
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       const extra = String(req.body?.to || "")
