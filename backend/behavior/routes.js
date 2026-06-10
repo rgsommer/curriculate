@@ -1907,10 +1907,10 @@ async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw, student
         preheader: `Confidential behaviour summary for ${name}.`,
         footnote: "Confidential — includes private teacher notes. For VP/principal; not sent to parents.",
         contentHtml:
-          `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Timeline (red = negative, green = positive)</h3>` +
-          monthlyKindChartHtml(byMonth) +
+          mdToHtml(text) +
           `<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">` +
-          mdToHtml(text),
+          `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Timeline (red = negative, green = positive)</h3>` +
+          monthlyKindChartHtml(byMonth),
       }),
     });
     return { emailed: true, emailError: "", recipients: to };
@@ -2136,9 +2136,9 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         preheader: `${who} · last ${months} months`,
         contentHtml:
           `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
-          `<h3 style="margin:16px 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}` +
-          `<h3 style="margin:20px 0 6px;font-size:15px;color:#0f172a">Summary</h3>` +
-          mdToHtml(summary),
+          mdToHtml(summary) +
+          `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
+          `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}`,
       });
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       const extra = String(req.body?.to || "")
