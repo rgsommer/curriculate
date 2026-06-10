@@ -2136,10 +2136,15 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
           mdToHtml(summary),
       });
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      const extra = String(req.body?.to || "")
+        .split(/[,\s;]+/)
+        .map((e) => e.trim().toLowerCase())
+        .filter((e) => /^[\w.+-]+@[\w.-]+\.\w{2,}$/.test(e));
+      const to = [...new Set([req.user.email, ...extra].filter(Boolean))];
       try {
         await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
-          to: req.user.email,
+          to,
           subject: `Behaviours executive summary — ${who} (last ${months} months)`,
           text: summary,
           html,

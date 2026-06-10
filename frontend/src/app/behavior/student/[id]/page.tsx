@@ -87,12 +87,11 @@ export default function StudentPage() {
       const r = await api<{ summary: string; aiUsed: boolean }>(`/students/${params.id}/admin-summary`, { body: { scope }, timeoutMs: 45000 });
       setSummary(r.summary);
       setSummaryScope(scope);
-      try {
-        await navigator.clipboard.writeText(r.summary);
-        setSummaryMsg(`Copied to clipboard${r.aiUsed ? "" : " (template — no AI key set)"}.`);
-      } catch {
-        setSummaryMsg("Generated below (clipboard blocked — copy manually).");
-      }
+      // Don't await the clipboard — a hung write must not block the busy reset.
+      navigator.clipboard?.writeText(r.summary).then(
+        () => setSummaryMsg(`Copied to clipboard${r.aiUsed ? "" : " (template — no AI key set)"}.`),
+        () => setSummaryMsg("Generated below (clipboard blocked — copy manually)."),
+      );
     } catch (e: any) {
       setSummaryMsg(e.message);
     } finally {

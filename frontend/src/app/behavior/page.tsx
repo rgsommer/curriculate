@@ -222,6 +222,7 @@ function ExecutiveSummaryCard() {
   const [summary, setSummary] = useState("");
   const [scope, setScope] = useState<"me" | "all">("me");
   const [msg, setMsg] = useState("");
+  const [emailTo, setEmailTo] = useState("");
   const [busy, setBusy] = useState<"" | "me" | "all" | "email">("");
 
   async function gen(s: "me" | "all") {
@@ -232,14 +233,14 @@ function ExecutiveSummaryCard() {
     try {
       const r = await api<{ summary: string; aiUsed: boolean }>("/executive-summary", { body: { scope: s, months }, timeoutMs: 45000 });
       setSummary(r.summary);
-      try {
-        await navigator.clipboard.writeText(r.summary);
-        setMsg(`Copied to clipboard${r.aiUsed ? "" : " (template — no AI key set)"}.`);
-      } catch {
-        setMsg("Generated below (clipboard blocked — copy manually).");
-      }
+      // Copy WITHOUT awaiting — a hung clipboard write must not block the
+      // busy-state reset (that left the button stuck on "Generating…").
+      navigator.clipboard?.writeText(r.summary).then(
+        () => setMsg(`Copied to clipboard${r.aiUsed ? "" : " (template — no AI key set)"}.`),
+        () => setMsg("Generated below (clipboard blocked — copy manually)."),
+      );
     } catch (e: any) {
-      setMsg(e.message);
+      setMsg(`✗ ${e.message}`);
     } finally {
       setBusy("");
     }
@@ -250,10 +251,10 @@ function ExecutiveSummaryCard() {
     setMsg("");
     try {
       const r = await api<{ emailed: boolean; emailError?: string }>("/executive-summary", {
-        body: { scope, months, email: true, summaryText: summary },
+        body: { scope, months, email: true, summaryText: summary, to: emailTo.trim() },
         timeoutMs: 45000,
       });
-      setMsg(r.emailed ? "✓ Emailed to you (with the red/green chart)." : `✗ Email failed: ${r.emailError || "check email settings"}`);
+      setMsg(r.emailed ? `✓ Emailed to you${emailTo.trim() ? ` + ${emailTo.trim()}` : ""} (with the red/green chart).` : `✗ Email failed: ${r.emailError || "check email settings"}`);
     } catch (e: any) {
       setMsg(`✗ ${e.message}`);
     } finally {
@@ -283,9 +284,17 @@ function ExecutiveSummaryCard() {
       {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
       {summary && (
         <>
-          <button onClick={emailIt} disabled={!!busy} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
-            {busy === "email" ? "Emailing…" : "Email it to me (with chart)"}
-          </button>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button onClick={emailIt} disabled={!!busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+              {busy === "email" ? "Emailing…" : "Email it to me (with chart)"}
+            </button>
+            <input
+              value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              placeholder="also email to (optional), e.g. admin's address"
+              className="min-w-[14rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+            />
+          </div>
           <div className="mt-2 max-h-80 overflow-auto rounded-lg bg-slate-50 p-4 text-sm text-slate-700">
             <Markdown text={summary} />
           </div>
