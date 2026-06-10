@@ -110,6 +110,7 @@ export default function EdsbyHonours() {
         kind: left ? "warn" : "ok",
         text:
           `Edsby listed ${r.edsbyPeople} students — matched ${r.matched} to the roster by name` +
+          (r.fuzzyMatched ? ` (${r.fuzzyMatched} by nickname/variant)` : "") +
           (r.alreadyHadNid ? ` (${r.alreadyHadNid} already had IDs)` : "") +
           (left ? `. ${left} still unmatched: ${r.unmatchedRoster.join(", ")}${left > r.unmatchedRoster.length ? "…" : ""}` : ". All set — run Probe next."),
       });

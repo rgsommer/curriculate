@@ -179,41 +179,92 @@ export function buildAvgsRouter({ requireAdmin }) {
         });
       }
 
-      // Index Edsby people by normalized name keys ("first last" and "last first").
-      // A key claimed by two different people is ambiguous → unusable.
       const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z]/g, "");
+
+      // First-name variants for one person: preferred, legal, the first token of
+      // the full name, plus any parenthetical nickname and the pre-paren legal
+      // name — Edsby stores "Oluwatobiloba(Tobi)" where a roster has "Tobi".
+      const firstVariants = (cands) => {
+        const out = new Set();
+        const add = (s) => { const t = String(s || "").trim(); if (t) out.add(t); };
+        for (const c of cands) add(c);
+        for (const c of [...out]) {
+          const m = String(c).match(/\(([^)]+)\)/);
+          if (m) add(m[1]);                       // the "(Tobi)" nickname
+          add(String(c).replace(/\([^)]*\)/g, "")); // the name minus parens
+        }
+        return [...out];
+      };
+
+      // Exact-key index: "first+last" and "last+first" across every first-name
+      // variant, plus the whole name. Ambiguous keys (two people) are dropped.
       const byKey = new Map();
       const claim = (key, nid) => {
         if (!key) return;
         if (byKey.has(key) && byKey.get(key) !== nid) byKey.set(key, "AMBIGUOUS");
         else byKey.set(key, nid);
       };
+      // Same-lastname buckets for the fuzzy fallback.
+      const byLast = new Map();
       for (const p of r.people) {
-        const first = p.first || String(p.name).split(/\s+/)[0];
         const last = p.last || String(p.name).split(/\s+/).slice(1).join(" ");
-        claim(norm(first + last), p.nid);
-        claim(norm(last + first), p.nid);
+        const firsts = firstVariants([p.first, p.firstName, p.prefName, String(p.name).split(/\s+/)[0]]);
+        for (const f of firsts) {
+          claim(norm(f + last), p.nid);
+          claim(norm(last + f), p.nid);
+        }
         claim(norm(p.name), p.nid);
+        const lk = norm(last);
+        if (lk) {
+          if (!byLast.has(lk)) byLast.set(lk, []);
+          byLast.get(lk).push({ nid: p.nid, firsts: firsts.map(norm).filter(Boolean) });
+        }
       }
 
       const students = await BehaviorStudent.find({ schoolId: req.schoolId })
         .select("firstName lastName preferredName edsbyStudentId")
         .lean();
 
-      let matched = 0, already = 0;
+      // Two first names are "compatible" if one is a prefix of, or contained in,
+      // the other (≥3 chars) — covers Tobi⊂Oluwatobiloba(Tobi) and Max/Maxwell.
+      const compatible = (a, b) => {
+        if (!a || !b || a.length < 3 || b.length < 3) return false;
+        return a === b || a.startsWith(b) || b.startsWith(a) || a.includes(b) || b.includes(a);
+      };
+
+      let matched = 0, already = 0, fuzzy = 0;
       const unmatched = [];
       const ops = [];
+      const usedNids = new Set();
+      const claimNid = (s, nid) => {
+        matched++;
+        usedNids.add(nid);
+        ops.push({ updateOne: { filter: { _id: s._id }, update: { $set: { edsbyStudentId: nid } } } });
+      };
       for (const s of students) {
         if (s.edsbyStudentId) { already++; continue; }
         const keys = [
           norm((s.firstName || "") + (s.lastName || "")),
           norm((s.preferredName || "") + (s.lastName || "")),
           norm((s.lastName || "") + (s.firstName || "")),
+          norm((s.lastName || "") + (s.preferredName || "")),
         ];
         const nid = keys.map((k) => byKey.get(k)).find((v) => v && v !== "AMBIGUOUS");
         if (nid) {
-          matched++;
-          ops.push({ updateOne: { filter: { _id: s._id }, update: { $set: { edsbyStudentId: nid } } } });
+          claimNid(s, nid);
+          continue;
+        }
+        // Fuzzy fallback: among Edsby people with the SAME last name, find the
+        // unique one whose first name is compatible and not already taken.
+        const lk = norm(s.lastName);
+        const sFirsts = [norm(s.firstName), norm(s.preferredName)].filter(Boolean);
+        const cands = (byLast.get(lk) || []).filter(
+          (p) => !usedNids.has(p.nid) && p.firsts.some((ef) => sFirsts.some((sf) => compatible(ef, sf)))
+        );
+        const uniqueNids = [...new Set(cands.map((c) => c.nid))];
+        if (uniqueNids.length === 1) {
+          fuzzy++;
+          claimNid(s, uniqueNids[0]);
         } else {
           unmatched.push(displayName(s));
         }
@@ -225,6 +276,7 @@ export function buildAvgsRouter({ requireAdmin }) {
         edsbyView: r.view, // which Edsby view actually listed the students
         edsbyPeople: r.people.length,
         matched,
+        fuzzyMatched: fuzzy,
         alreadyHadNid: already,
         unmatchedRoster: unmatched.slice(0, 40),
         unmatchedRosterCount: unmatched.length,

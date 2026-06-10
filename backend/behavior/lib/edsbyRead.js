@@ -233,6 +233,8 @@ export function extractZoomStudents(root) {
       name,
       first,
       last,
+      firstName: String(r.FirstName ?? "").trim(), // legal first (e.g. "Oluwatobiloba")
+      prefName: String(r.PrefName ?? "").trim(),    // preferred (e.g. "Tobi" or "Oluwatobiloba(Tobi)")
       grade: String(r.Grade ?? "").trim(),
       average: typeof r.Average === "number" ? r.Average : null,
     });
