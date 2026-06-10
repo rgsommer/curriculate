@@ -202,6 +202,38 @@ export async function fetchStudentCourses(sess, studentNid, views = DEFAULT_STUD
   return { courses: [], view: null, diagnostics };
 }
 
+// ── Per-class gradebook (teachersBook) ────────────────────────────────────────
+
+/**
+ * Parse an Edsby teachersBook (class gradebook) into a map of
+ * studentNid → overall course average. Verified shape (bcs.edsby.com, 2026-06):
+ * `slices[0].data.body.book.gradebook.students` keyed by "r<nid>", each with a
+ * numeric `average` (the student's overall mark for that class).
+ */
+export function extractClassMarks(json) {
+  const studs = json?.slices?.[0]?.data?.body?.book?.gradebook?.students;
+  const marks = new Map();
+  if (studs && typeof studs === "object") {
+    for (const [key, s] of Object.entries(studs)) {
+      const nid = String(s?.nid ?? key.replace(/^r/, "")).trim();
+      if (/^\d{3,}$/.test(nid) && typeof s?.average === "number") marks.set(nid, s.average);
+    }
+  }
+  return marks;
+}
+
+/**
+ * Fetch one class's gradebook and return { marks: Map(studentNid→average) }.
+ * Plain authenticated GET — teachersBook returns its data without a stage param.
+ */
+export async function fetchClassGradebook(sess, classNid) {
+  const r = await edsbyGetJson(sess, classNid, "teachersBook", "&tab=0");
+  if (r.status === 401) return { marks: new Map(), sessionExpired: true };
+  if (!r.ok) return { marks: new Map(), error: `HTTP ${r.status}` };
+  const marks = extractClassMarks(r.json);
+  return { marks, count: marks.size, shape: marks.size ? null : describeShape(r.json) };
+}
+
 // ── Student-nid harvesting ────────────────────────────────────────────────────
 
 /**
@@ -247,6 +279,12 @@ export function extractZoomStudents(root) {
       prefName: String(r.PrefName ?? "").trim(),    // preferred (e.g. "Tobi" or "Oluwatobiloba(Tobi)")
       grade: String(r.Grade ?? "").trim(),
       average: typeof r.Average === "number" ? r.Average : null,
+      // The student's classes — id + name — for the per-class gradebook lookup.
+      classes: Array.isArray(r.Classes)
+        ? r.Classes
+            .map((c) => ({ id: String(c.id ?? "").trim(), name: String(c.LastName || c.PrefName || "").trim() }))
+            .filter((c) => c.id && c.name)
+        : [],
     });
   }
   return out;
@@ -428,7 +466,8 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
  */
 export function guessWeight(className) {
   const n = String(className || "").toLowerCase();
-  if (/career|\bce\b|^ce\d|planning/.test(n)) return { daysPerWeek: 5, weight: 0.5, note: "daily, counted at half value" };
+  if (/career|christian ed|religion|\bce\b|^ce\d|planning/.test(n)) return { daysPerWeek: 5, weight: 0.5, note: "daily, counted at half value" };
+  if (/homeroom|learning skill|advisory|study hall|\bflex\b/.test(n)) return { daysPerWeek: 0, weight: 0, include: false, note: "non-academic — excluded by default" };
   if (/math/.test(n)) return { daysPerWeek: 4, weight: 0.8 };
   if (/engl|language arts|\bela\b|liter/.test(n)) return { daysPerWeek: 4, weight: 0.8 };
   if (/scien/.test(n)) return { daysPerWeek: 4, weight: 0.8 };

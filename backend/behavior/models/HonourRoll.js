@@ -50,12 +50,14 @@ const SnapshotCourseSchema = new mongoose.Schema(
 const SnapshotStudentSchema = new mongoose.Schema(
   {
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorStudent" },
+    edsbyNid: { type: String, default: "" },
     name: { type: String, default: "" },
     grade: { type: String, default: "" },
     classGroup: { type: String, default: "" },
     weightedAvg: { type: Number, default: null },
     tier: { type: String, default: "" }, // "" | honours | high-honours
     courses: { type: [SnapshotCourseSchema], default: [] },
+    edsbyAverage: { type: Number, default: null }, // Edsby's own unweighted avg, for reference
     error: { type: String, default: "" }, // per-student fetch/extract failure
   },
   { _id: false }

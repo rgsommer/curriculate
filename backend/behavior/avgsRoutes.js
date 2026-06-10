@@ -25,8 +25,8 @@ import BehaviorStudent from "./models/BehaviorStudent.js";
 import { HonourRollConfig, HonourRollSnapshot } from "./models/HonourRoll.js";
 import { decrypt, encrypt } from "./lib/secretBox.js";
 import {
-  fetchStudentCourses,
   fetchZoomStudents,
+  fetchClassGradebook,
   guessWeight,
   normalizeClassKey,
   computeStudent,
@@ -57,6 +57,40 @@ async function getOrCreateConfig(schoolId) {
   let cfg = await HonourRollConfig.findOne({ schoolId });
   if (!cfg) cfg = await HonourRollConfig.create({ schoolId });
   return cfg;
+}
+
+/**
+ * Load the Edsby student roster (ZoomMyStudents) across the configured node(s),
+ * unioned by nid. Each person carries name, grade, Edsby's overall average, and
+ * their class list (id+name). Refreshes/persists the formkey along the way.
+ * Returns { people, view, diagnostics } or { error } / { sessionExpired }.
+ */
+async function loadZoomRoster(schoolId, session, bodyZoomId) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  const e = config?.edsby || {};
+  const hrCfg = await HonourRollConfig.findOne({ schoolId }).lean();
+  const nodeSpec = String(bodyZoomId || hrCfg?.zoomNid || e.zoomId || "").trim();
+  const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!nodeIds.length) {
+    return { error: "No Edsby “My Students” node id set. In Edsby open My Students — the number in the page URL (/p/ZoomMyStudents/NUMBER) is it. Paste it in the “My Students node” box and Save." };
+  }
+  let savedFormkey = e.formkeyEnc ? decrypt(e.formkeyEnc) : "";
+  const diagnostics = [];
+  const peopleByNid = new Map();
+  let view = null;
+  for (const nodeId of nodeIds) {
+    const r = await fetchZoomStudents(session, nodeId, savedFormkey);
+    if (r.formkey && r.formkey !== savedFormkey) {
+      savedFormkey = r.formkey;
+      await BehaviorConfig.updateOne({ schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+    }
+    if (r.sessionExpired) return { sessionExpired: true };
+    if (r.view) view = r.view;
+    for (const p of r.people || []) if (p?.nid && !peopleByNid.has(p.nid)) peopleByNid.set(p.nid, p);
+    if (nodeIds.length > 1) diagnostics.push({ step: `node ${nodeId}`, note: `${(r.people || []).length} people` });
+    diagnostics.push(...(r.diagnostics || []));
+  }
+  return { people: [...peopleByNid.values()], view, diagnostics };
 }
 
 function gradeInRange(grade, min, max) {
@@ -136,41 +170,11 @@ export function buildAvgsRouter({ requireAdmin }) {
       const { session, error } = await loadEdsbySession(req.schoolId);
       if (error) return res.json({ ok: false, error });
 
-      const cfg = await getOrCreateConfig(req.schoolId);
-      const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-      const e = config?.edsby || {};
-      // Student-list node(s): the avgs config's zoomNid (the "My Students" Zoom,
-      // /p/ZoomMyStudents/<nid>), or a body override, or the Behaviours formkey
-      // Zoom id as a last resort. Comma-separated → multiple nodes get unioned.
-      const nodeSpec = String(req.body?.zoomId || cfg.zoomNid || e.zoomId || "").trim();
-      const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
-      if (!nodeIds.length) {
-        return res.json({
-          ok: false,
-          error: "No Edsby “My Students” node id set. In Edsby open My Students — the number in the page URL (/p/ZoomMyStudents/NUMBER) is it. Paste it in the “My Students node” box and Save.",
-        });
+      const r = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
+      if (r.error) return res.json({ ok: false, error: r.error });
+      if (r.sessionExpired) {
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
       }
-      const formkey = e.formkeyEnc ? decrypt(e.formkeyEnc) : "";
-
-      // Fetch each node and union the people (dedupe by nid).
-      const diagnostics = [];
-      const peopleByNid = new Map();
-      let usedView = null, savedFormkey = formkey;
-      for (const nodeId of nodeIds) {
-        const r = await fetchZoomStudents(session, nodeId, savedFormkey);
-        if (r.formkey && r.formkey !== savedFormkey) {
-          savedFormkey = r.formkey;
-          await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
-        }
-        if (r.sessionExpired) {
-          return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
-        }
-        if (r.view) usedView = r.view;
-        for (const p of r.people || []) if (p?.nid && !peopleByNid.has(p.nid)) peopleByNid.set(p.nid, p);
-        if (nodeIds.length > 1) diagnostics.push({ step: `node ${nodeId}`, note: `${(r.people || []).length} people` });
-        diagnostics.push(...(r.diagnostics || []));
-      }
-      const r = { people: [...peopleByNid.values()], view: usedView, diagnostics };
       if (!r.people.length) {
         return res.json({
           ok: false,
@@ -287,48 +291,36 @@ export function buildAvgsRouter({ requireAdmin }) {
     }
   });
 
-  // Discover classes: pull a few students per grade and union their courses.
+  // Discover classes: read the student roster from Edsby and union every class
+  // each student is enrolled in. Each gets a name-based weight guess to edit.
   router.post("/probe", requireAdmin, async (req, res, next) => {
     try {
       const cfg = await getOrCreateConfig(req.schoolId);
       const { session, error } = await loadEdsbySession(req.schoolId);
       if (error) return res.json({ ok: false, error });
 
-      const students = (await inRangeStudents(req.schoolId, cfg)).filter((s) => s.edsbyStudentId);
-      if (!students.length) {
-        return res.json({
-          ok: false,
-          error: "No students in the grade range have an Edsby ID yet. Use “Extract student IDs” first.",
-        });
-      }
-
-      // Up to 3 sample students per grade — enough to see every class without
-      // hammering Edsby.
-      const byGrade = new Map();
-      for (const s of students) {
-        const g = String(s.grade);
-        if (!byGrade.has(g)) byGrade.set(g, []);
-        if (byGrade.get(g).length < 3) byGrade.get(g).push(s);
-      }
-      const sample = [...byGrade.values()].flat();
-
-      const results = await mapPool(sample, FETCH_CONCURRENCY, async (s) => ({
-        student: displayName(s),
-        ...(await fetchStudentCourses(session, s.edsbyStudentId)),
-      }));
-
-      if (results.some((r) => r.sessionExpired)) {
+      const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
+      if (roster.error) return res.json({ ok: false, error: roster.error });
+      if (roster.sessionExpired) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
       }
+      if (!roster.people.length) {
+        return res.json({ ok: false, error: "Edsby returned no students. Diagnostics attached — share them to get the parser tuned.", diagnostics: roster.diagnostics });
+      }
 
-      // Union of discovered class names, merged into config. Existing entries
-      // keep their (possibly hand-edited) weights; new ones get guessed.
+      // Only consider classes belonging to students in the configured grade range.
+      const inRange = roster.people.filter((p) => gradeInRange(p.grade, cfg.gradeMin, cfg.gradeMax));
+      const people = inRange.length ? inRange : roster.people;
+
+      // Union of class names, merged into config. Existing entries keep their
+      // (possibly hand-edited) weights; new ones get a name-based guess.
       const existing = new Map(cfg.classes.map((c) => [normalizeClassKey(c.name), c]));
       let added = 0;
       const discovered = new Set();
-      for (const r of results) {
-        for (const c of r.courses || []) {
+      for (const p of people) {
+        for (const c of p.classes || []) {
           const key = normalizeClassKey(c.name);
+          if (!key) continue;
           discovered.add(key);
           if (!existing.has(key)) {
             const g = guessWeight(c.name);
@@ -336,7 +328,7 @@ export function buildAvgsRouter({ requireAdmin }) {
               name: c.name,
               daysPerWeek: g.daysPerWeek,
               weight: g.weight,
-              include: true,
+              include: g.include !== false,
               source: "probe",
               note: g.note || "",
             });
@@ -347,86 +339,96 @@ export function buildAvgsRouter({ requireAdmin }) {
       cfg.classes = [...existing.values()];
       await cfg.save();
 
-      const diagnostics = results
-        .filter((r) => !r.courses?.length)
-        .map((r) => ({ student: r.student, tried: r.diagnostics }));
-      const scheduleHints = results.flatMap((r) => r.scheduleHints || []).slice(0, 20);
-
       res.json({
         ok: true,
-        sampled: sample.length,
+        sampled: people.length,
         classesDiscovered: discovered.size,
         classesAdded: added,
         config: cfg,
-        // Raw material for wiring automatic times-per-week once we see real
-        // schedule data in Edsby's JSON.
-        scheduleHints,
-        diagnostics,
+        diagnostics: roster.diagnostics,
       });
     } catch (err) {
       next(err);
     }
   });
 
-  // Pull fresh grades for every in-range student and snapshot the honour roll.
+  // Pull fresh grades and snapshot the honour roll. Reads the Edsby roster
+  // (students + their class list + grade) once, then each referenced class's
+  // gradebook once, and joins them by nid — so the weighted average uses each
+  // class's verified overall mark. Far fewer Edsby calls than per-student.
   router.post("/refresh", async (req, res, next) => {
     try {
       const cfg = await getOrCreateConfig(req.schoolId);
       const { session, error } = await loadEdsbySession(req.schoolId);
       if (error) return res.json({ ok: false, error });
 
-      const inRange = await inRangeStudents(req.schoolId, cfg);
-      const withNid = inRange.filter((s) => s.edsbyStudentId).slice(0, MAX_STUDENTS_PER_REFRESH);
-      const missingNid = inRange.filter((s) => !s.edsbyStudentId).map(displayName);
-      if (!withNid.length) {
-        return res.json({
-          ok: false,
-          error: "No students in the grade range have an Edsby ID yet. Use “Extract student IDs” first.",
-        });
+      const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
+      if (roster.error) return res.json({ ok: false, error: roster.error });
+      if (roster.sessionExpired) {
+        return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
+      }
+      if (!roster.people.length) {
+        return res.json({ ok: false, error: "Edsby returned no students. Diagnostics attached.", diagnostics: roster.diagnostics });
       }
 
-      const thresholds = { honours: cfg.honours, highHonours: cfg.highHonours };
+      // Restrict to the configured grade range (by Edsby's grade on each person).
+      const people = roster.people
+        .filter((p) => gradeInRange(p.grade, cfg.gradeMin, cfg.gradeMax))
+        .slice(0, MAX_STUDENTS_PER_REFRESH);
+      if (!people.length) {
+        return res.json({ ok: false, error: `Edsby listed ${roster.people.length} students but none in grades ${cfg.gradeMin}–${cfg.gradeMax}. Check the grade range or add the right My Students node.` });
+      }
+
+      // Every distinct class across these students → fetch each gradebook once.
+      const classNames = new Map(); // classId → display name
+      for (const p of people) for (const c of p.classes || []) if (!classNames.has(c.id)) classNames.set(c.id, c.name);
+      const classIds = [...classNames.keys()];
+
       let sessionExpired = false;
-      const viewDiagnostics = [];
-
-      const rows = await mapPool(withNid, FETCH_CONCURRENCY, async (s) => {
-        if (sessionExpired) return { student: s, error: "skipped — session expired" };
-        const r = await fetchStudentCourses(session, s.edsbyStudentId);
-        if (r.sessionExpired) {
-          sessionExpired = true;
-          return { student: s, error: "Edsby session expired" };
-        }
-        if (!r.courses.length) {
-          if (viewDiagnostics.length < 5) viewDiagnostics.push({ student: displayName(s), tried: r.diagnostics });
-          return { student: s, error: "no course data found" };
-        }
-        return { student: s, computed: computeStudent(r.courses, cfg.classes, thresholds) };
+      const classMarks = new Map(); // classId → Map(studentNid → average)
+      const classDiag = [];
+      await mapPool(classIds, FETCH_CONCURRENCY, async (cid) => {
+        if (sessionExpired) return;
+        const g = await fetchClassGradebook(session, cid);
+        if (g.sessionExpired) { sessionExpired = true; return; }
+        classMarks.set(cid, g.marks);
+        if (!g.marks.size && classDiag.length < 8) classDiag.push({ classId: cid, name: classNames.get(cid), note: g.error || `no marks; shape: ${g.shape || "?"}` });
       });
-
       if (sessionExpired) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
       }
 
-      const students = rows.map(({ student: s, computed, error: rowError }) => ({
-        studentId: s._id,
-        name: displayName(s),
-        grade: String(s.grade || ""),
-        classGroup: s.classGroup || "",
-        weightedAvg: computed?.weightedAvg ?? null,
-        tier: computed?.tier || "",
-        courses: computed?.courses || [],
-        error: rowError || "",
-      }));
+      const thresholds = { honours: cfg.honours, highHonours: cfg.highHonours };
+      const students = people.map((p) => {
+        // Build this student's per-class marks from the gradebooks.
+        const courses = (p.classes || []).map((c) => ({
+          name: c.name,
+          pct: classMarks.get(c.id)?.get(p.nid) ?? null,
+        }));
+        const computed = computeStudent(courses, cfg.classes, thresholds);
+        return {
+          studentId: null,
+          edsbyNid: p.nid,
+          name: p.name,
+          grade: String(p.grade || ""),
+          classGroup: "",
+          weightedAvg: computed.weightedAvg,
+          tier: computed.tier,
+          courses: computed.courses,
+          edsbyAverage: p.average, // Edsby's own unweighted average, for reference
+          error: computed.weightedAvg === null ? "no class marks found" : "",
+        };
+      });
 
       const snapshot = await HonourRollSnapshot.create({
         schoolId: req.schoolId,
         takenAt: new Date(),
         students,
         diagnostics: {
-          requested: withNid.length,
+          requested: people.length,
           succeeded: students.filter((s) => !s.error).length,
-          missingNid,
-          viewDiagnostics,
+          classesFetched: classIds.length,
+          classesWithNoMarks: classDiag,
         },
       });
 
