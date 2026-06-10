@@ -1863,14 +1863,18 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     const noticeLines = notices.map((n) => `- ${new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA")}: notice #${n.sequenceNo} (${n.reason}, ${n.status})`);
 
     const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+    const span = incidents.length
+      ? `${new Date(incidents[0].timestamp).toLocaleDateString("en-CA")} to ${new Date(incidents[incidents.length - 1].timestamp).toLocaleDateString("en-CA")}`
+      : "—";
     const ctxText =
-      `Student: ${name}${student.classGroup ? ` (${student.classGroup})` : ""}.\n\n` +
+      `Student: ${name}${student.classGroup ? ` (${student.classGroup})` : ""}.\n` +
+      `Total incidents in this record: ${incidents.length} (${span}).\n\n` +
       `${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
       `Notices home:\n${noticeLines.join("\n") || "(none)"}`;
     const prompt =
       `Write a concise, objective summary of a student's behaviour record for a school administrator (VP/principal). ` +
-      `Cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
-      `Be factual and brief. Use ONLY the data below — do not invent.\n\n${ctxText}`;
+      `Base your assessment on ALL ${incidents.length} incident(s) listed below — state the total count and the date range, then cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
+      `Be factual and brief; you need not list every incident, but the assessment must reflect the whole record. Use ONLY the data below — do not invent.\n\n${ctxText}`;
 
     let summary = `Behaviour summary — ${name}\n\n${ctxText}`; // deterministic fallback
     let aiUsed = false;
