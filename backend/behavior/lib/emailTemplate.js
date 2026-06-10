@@ -114,6 +114,39 @@ export function mdToHtml(text) {
   return html;
 }
 
+/**
+ * A monthly timeline bar chart for an email: red = negative events, green =
+ * positive, stacked per month. `byMonth` is { "YYYY-MM": { neg, pos } }.
+ */
+export function monthlyKindChartHtml(byMonth) {
+  const keys = Object.keys(byMonth || {}).sort();
+  if (!keys.length) return `<p style="color:#94a3b8;margin:4px 0">No events in this window.</p>`;
+  const max = Math.max(1, ...keys.map((k) => (byMonth[k].neg || 0) + (byMonth[k].pos || 0)));
+  const rows = keys
+    .map((k) => {
+      const neg = byMonth[k].neg || 0;
+      const pos = byMonth[k].pos || 0;
+      const negW = Math.round((neg / max) * 100);
+      const posW = Math.round((pos / max) * 100);
+      const label = [neg ? `${neg}✕` : "", pos ? `${pos}✓` : ""].filter(Boolean).join(" ");
+      return (
+        `<div style="display:flex;align-items:center;gap:8px;margin:3px 0">` +
+        `<span style="width:62px;color:#64748b;font-size:12px">${escapeHtml(k)}</span>` +
+        `<span style="flex:1;display:flex;background:#f1f5f9;border-radius:3px;overflow:hidden;height:14px">` +
+        `<span style="background:#dc2626;width:${negW}%;display:inline-block">&nbsp;</span>` +
+        `<span style="background:#16a34a;width:${posW}%;display:inline-block">&nbsp;</span>` +
+        `</span>` +
+        `<span style="width:54px;font-size:12px;color:#475569">${label}</span>` +
+        `</div>`
+      );
+    })
+    .join("");
+  return (
+    `<div>${rows}` +
+    `<div style="margin-top:6px;font-size:11px;color:#94a3b8"><span style="color:#dc2626">■</span> negative &nbsp; <span style="color:#16a34a">■</span> positive</div></div>`
+  );
+}
+
 /** A simple call-to-action button (table-based for Outlook). */
 export function emailButton(label, href, color = "#0f172a") {
   return (

@@ -159,7 +159,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           className={`rounded-lg border px-3 py-1.5 ${positive ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-700"}`}>✓ Positive</button>
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? (positive ? "New positive behaviour…" : "New behaviour name…") : "Name"} className={inputCls} />
+        <input value={name} onChange={(e) => setName(e.target.value)} placeholder={add ? (positive ? "New positive behaviour…" : "New behaviour name…") : "Name"} className={`${inputCls} bg-slate-100 font-medium text-slate-900`} />
         <input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Keyword (e.g. kindness)" className={inputCls} />
         {!positive && (
           <select value={triggerMode} onChange={(e) => setTriggerMode(e.target.value)} className={`${inputCls} col-span-2`}>

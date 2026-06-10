@@ -38,7 +38,7 @@ import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
 import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
-import { emailShell, emailButton, noteToHtml, mdToHtml } from "./lib/emailTemplate.js";
+import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
 
 const router = express.Router();
@@ -1867,13 +1867,33 @@ router.post("/incidents/:id/notes", authAny, loadMembership, canLog, async (req,
 // text for the client to copy to the clipboard. Fails safe to a plain digest.
 // Email a behaviour summary to the requester (+ optional extra recipients, e.g.
 // the VP). Confidential — branded shell, markdown-rendered, never to parents.
-async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw) {
+async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw, studentId) {
   const extra = String(toRaw || "")
     .split(/[,\s;]+/)
     .map((e) => e.trim().toLowerCase())
     .filter((e) => /^[\w.+-]+@[\w.-]+\.\w{2,}$/.test(e));
   const to = [...new Set([req.user?.email, ...extra].filter(Boolean))];
   if (!to.length) return { emailed: false, emailError: "no recipient" };
+
+  // Build the red/green timeline across the WHOLE record (incidents by kind +
+  // legacy/notices-only offences as negative).
+  const byMonth = {};
+  const bump = (d, kind) => {
+    const k = new Date(d).toISOString().slice(0, 7);
+    byMonth[k] = byMonth[k] || { neg: 0, pos: 0 };
+    byMonth[k][kind] += 1;
+  };
+  const incs = await BehaviorIncident.find({ studentId }).select("timestamp behaviorSnapshot.kind behaviorSnapshot.points").lean();
+  for (const i of incs) {
+    const pos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+    bump(i.timestamp, pos ? "pos" : "neg");
+  }
+  const nots = await BehaviorNotice.find({ studentId }).select("sentAt createdAt legacyImport triggeringIncidentIds").lean();
+  for (const n of nots) {
+    const backed = Array.isArray(n.triggeringIncidentIds) && n.triggeringIncidentIds.length > 0;
+    if (n.legacyImport || !backed) bump(n.sentAt || n.createdAt, "neg");
+  }
+
   const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
   try {
     await sendEmail({
@@ -1886,7 +1906,11 @@ async function sendAdminSummaryEmail(req, name, schoolName, text, toRaw) {
         schoolName: schoolName || "Behaviours",
         preheader: `Confidential behaviour summary for ${name}.`,
         footnote: "Confidential — includes private teacher notes. For VP/principal; not sent to parents.",
-        contentHtml: mdToHtml(text),
+        contentHtml:
+          `<h3 style="margin:0 0 6px;font-size:15px;color:#0f172a">Timeline (red = negative, green = positive)</h3>` +
+          monthlyKindChartHtml(byMonth) +
+          `<hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0">` +
+          mdToHtml(text),
       }),
     });
     return { emailed: true, emailError: "", recipients: to };
@@ -1905,7 +1929,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     // Email an already-generated summary without re-running the AI.
     if (req.body?.email && req.body?.summaryText) {
       const nm = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
-      const r = await sendAdminSummaryEmail(req, nm, config?.branding?.schoolName || "", String(req.body.summaryText), req.body.to);
+      const r = await sendAdminSummaryEmail(req, nm, config?.branding?.schoolName || "", String(req.body.summaryText), req.body.to, student._id);
       return res.json({ ok: true, summary: String(req.body.summaryText), emailed: r.emailed, emailError: r.emailError });
     }
 
@@ -1976,7 +2000,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     let emailed = false;
     let emailError = "";
     if (req.body?.email) {
-      const r = await sendAdminSummaryEmail(req, name, config?.branding?.schoolName || "", summary, req.body.to);
+      const r = await sendAdminSummaryEmail(req, name, config?.branding?.schoolName || "", summary, req.body.to, student._id);
       emailed = r.emailed;
       emailError = r.emailError;
     }
@@ -2003,12 +2027,18 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const incMatch = { schoolId: req.schoolId, timestamp: { $gt: cutoff } };
     if (scope === "me") incMatch.teacherId = req.membership._id;
     const incidents = await BehaviorIncident.find(incMatch)
-      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode timestamp studentId teacherNotes")
+      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode behaviorSnapshot.kind behaviorSnapshot.points timestamp studentId teacherNotes")
       .lean();
 
     const byType = {};
     const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
     const byMonth = {};
+    const byMonthKind = {}; // { "YYYY-MM": { neg, pos } } for the red/green email chart
+    const bumpKind = (d, kind) => {
+      const k = new Date(d).toISOString().slice(0, 7);
+      byMonthKind[k] = byMonthKind[k] || { neg: 0, pos: 0 };
+      byMonthKind[k][kind] += 1;
+    };
     const students = new Set();
     let teacherNoteCount = 0;
     for (const i of incidents) {
@@ -2017,6 +2047,8 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
       byMode[mode] = (byMode[mode] || 0) + 1;
       byMonth[new Date(i.timestamp).toISOString().slice(0, 7)] = (byMonth[new Date(i.timestamp).toISOString().slice(0, 7)] || 0) + 1;
+      const pos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+      bumpKind(i.timestamp, pos ? "pos" : "neg");
       students.add(String(i.studentId));
       teacherNoteCount += i.teacherNotes?.length || 0;
     }
@@ -2040,6 +2072,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
         legacyOffences += 1;
         const mk = new Date(n.sentAt || n.createdAt).toISOString().slice(0, 7);
         byMonth[mk] = (byMonth[mk] || 0) + 1;
+        bumpKind(n.sentAt || n.createdAt, "neg");
         if (n.studentId) students.add(String(n.studentId));
       }
     }
@@ -2087,29 +2120,20 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       }
     }
 
-    // Email path — HTML with a monthly-volume bar chart so formatting + the
-    // graph are preserved (clipboard text can't carry either).
+    // Email path — HTML with a red/green monthly timeline so the graph +
+    // formatting are preserved (clipboard text can't carry either).
     let emailed = false;
     let emailError = "";
     if (req.body?.email) {
-      const monthsKeys = Object.keys(byMonth).sort();
-      const max = Math.max(1, ...monthsKeys.map((k) => byMonth[k]));
-      const bars = monthsKeys
-        .map((k) => {
-          const v = byMonth[k];
-          const w = Math.round((v / max) * 100);
-          return `<div style="display:flex;align-items:center;gap:8px;margin:3px 0"><span style="width:62px;color:#64748b;font-size:12px">${k}</span><span style="background:#0f172a;height:14px;width:${w}%;border-radius:3px;display:inline-block;min-width:2px"></span><span style="font-size:12px;color:#475569">${v}</span></div>`;
-        })
-        .join("");
       const html = emailShell({
         title: "Executive summary",
         schoolName: config?.branding?.schoolName || "Behaviours",
         preheader: `${who} · last ${months} months`,
         contentHtml:
           `<p style="color:#64748b;margin:0 0 16px">${escapeHtml(who)} · last ${months} months</p>` +
-          `<h3 style="margin:16px 0 6px;font-size:15px;color:#0f172a">Monthly incident volume</h3>${bars || "<p style='color:#94a3b8'>No incidents in this window.</p>"}` +
+          `<h3 style="margin:16px 0 6px;font-size:15px;color:#0f172a">Monthly volume (red = negative, green = positive)</h3>${monthlyKindChartHtml(byMonthKind)}` +
           `<h3 style="margin:20px 0 6px;font-size:15px;color:#0f172a">Summary</h3>` +
-          `<div style="white-space:pre-wrap;line-height:1.6;color:#334155">${escapeHtml(summary)}</div>`,
+          mdToHtml(summary),
       });
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       try {
