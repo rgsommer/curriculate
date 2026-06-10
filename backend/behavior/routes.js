@@ -1860,21 +1860,36 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
     });
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
-    const noticeLines = notices.map((n) => `- ${new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA")}: notice #${n.sequenceNo} (${n.reason}, ${n.status})`);
+    // For "all", include the FULL note content — earlier/legacy offences often
+    // exist only as notices home, so the note text is the record of what
+    // happened. For "current", a brief line is enough.
+    const noticeLines = notices.map((n) => {
+      const date = new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA");
+      if (scope !== "all") return `- ${date}: notice #${n.sequenceNo} (${n.reason}, ${n.status})`;
+      const body = String(n.renderedText || "").replace(/\s+/g, " ").trim().slice(0, 600);
+      return `- ${date} (notice #${n.sequenceNo}, ${n.status}): ${body || `(${n.reason})`}`;
+    });
 
     const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
-    const span = incidents.length
-      ? `${new Date(incidents[0].timestamp).toLocaleDateString("en-CA")} to ${new Date(incidents[incidents.length - 1].timestamp).toLocaleDateString("en-CA")}`
+    // Span across BOTH incidents and notices (legacy offences live in notices).
+    const allTs = [
+      ...incidents.map((i) => new Date(i.timestamp).getTime()),
+      ...notices.map((n) => new Date(n.sentAt || n.createdAt).getTime()),
+    ].filter((t) => t && !isNaN(t)).sort((a, b) => a - b);
+    const span = allTs.length
+      ? `${new Date(allTs[0]).toLocaleDateString("en-CA")} to ${new Date(allTs[allTs.length - 1]).toLocaleDateString("en-CA")}`
       : "—";
     const ctxText =
       `Student: ${name}${student.classGroup ? ` (${student.classGroup})` : ""}.\n` +
-      `Total incidents in this record: ${incidents.length} (${span}).\n\n` +
-      `${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
-      `Notices home:\n${noticeLines.join("\n") || "(none)"}`;
+      `Records on file: ${incidents.length} individually-logged incident(s) + ${notices.length} notice(s) home, spanning ${span}.\n` +
+      (scope === "all" ? `NOTE: earlier offences may exist ONLY as notices home — treat each notice below as a record of past behaviour, not just a communication.\n` : "") +
+      `\n${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
+      `Notices home${scope === "all" ? " (full content = the record of earlier offences)" : ""}:\n${noticeLines.join("\n") || "(none)"}`;
     const prompt =
       `Write a concise, objective summary of a student's behaviour record for a school administrator (VP/principal). ` +
-      `Base your assessment on ALL ${incidents.length} incident(s) listed below — state the total count and the date range, then cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
-      `Be factual and brief; you need not list every incident, but the assessment must reflect the whole record. Use ONLY the data below — do not invent.\n\n${ctxText}`;
+      `Base your assessment on ALL the records below — BOTH the individually-logged incidents AND the notices home (which, especially for earlier events, are the only record of past offences). ` +
+      `State the overall date range and the number of events on file (counting notices that describe offences), then cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
+      `Be factual and brief; you need not list every event, but the assessment must reflect the WHOLE record back to the earliest date. Use ONLY the data below — do not invent.\n\n${ctxText}`;
 
     let summary = `Behaviour summary — ${name}\n\n${ctxText}`; // deterministic fallback
     let aiUsed = false;
