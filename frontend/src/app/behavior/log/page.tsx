@@ -339,22 +339,22 @@ export default function LogIncidentPage() {
 
         {/* Current strikes + recent incidents for context while logging */}
         {status && (
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold">Current strikes (all teachers)</h2>
-              <span className={`text-sm font-medium ${countColor(status.activeCount, status.triggerCount)}`}>
+              <h2 className="text-sm font-semibold text-amber-900">Current strikes (all teachers)</h2>
+              <span className={`text-sm font-semibold ${countColor(status.activeCount, status.triggerCount)}`}>
                 {status.activeCount} / {status.triggerCount}
               </span>
             </div>
             {status.incidents.length > 0 ? (
-              <ul className="mt-2 divide-y divide-slate-100">
+              <ul className="mt-2 divide-y divide-amber-100">
                 {status.incidents.slice(0, 5).map((i, idx) => (
                   <li key={idx} className="py-1.5 text-sm">
                     <div className="flex items-center justify-between">
-                      <span className="font-medium">{i.behaviorSnapshot?.name}</span>
-                      <span className="text-slate-400">{fmtDateTime(i.timestamp)}</span>
+                      <span className="font-semibold text-slate-900">{i.behaviorSnapshot?.name}</span>
+                      <span className="text-slate-500">{fmtDateTime(i.timestamp)}</span>
                     </div>
-                    <div className="text-slate-500">
+                    <div className="text-slate-700">
                       {i.teacherName || "—"}
                       {i.detailText ? ` · ${i.detailText}` : ""}
                     </div>
@@ -362,7 +362,7 @@ export default function LogIncidentPage() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-sm text-slate-400">No prior incidents.</p>
+              <p className="mt-1 text-sm text-slate-500">No prior incidents.</p>
             )}
           </div>
         )}
