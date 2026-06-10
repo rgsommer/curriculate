@@ -124,16 +124,33 @@ export function extractCourses(root) {
   return { courses, scheduleHints };
 }
 
-/** Top-level keys of a JSON payload — cheap diagnostic when extraction finds nothing. */
-export function describeShape(json, maxKeys = 25) {
+/**
+ * Map the structure of a JSON payload — cheap diagnostic when extraction finds
+ * nothing. Descends into objects AND the first element of arrays (where Edsby
+ * list rows live), so a single shape string reveals where the records are.
+ */
+export function describeShape(json, maxKeys = 40) {
   if (json === null || typeof json !== "object") return typeof json;
   const keys = [];
   function walk(node, prefix, depth) {
-    if (keys.length >= maxKeys || depth > 3 || !node || typeof node !== "object") return;
+    if (keys.length >= maxKeys || depth > 5 || !node || typeof node !== "object") return;
+    if (Array.isArray(node)) {
+      keys.push(`${prefix}[${node.length}]`);
+      if (node.length) walk(node[0], `${prefix}[0].`, depth + 1); // peek at the row shape
+      return;
+    }
     for (const k of Object.keys(node)) {
       if (keys.length >= maxKeys) break;
-      keys.push(prefix + k + (Array.isArray(node[k]) ? `[${node[k].length}]` : ""));
-      if (node[k] && typeof node[k] === "object" && !Array.isArray(node[k])) walk(node[k], prefix + k + ".", depth + 1);
+      const v = node[k];
+      if (Array.isArray(v)) {
+        keys.push(`${prefix}${k}[${v.length}]`);
+        if (v.length && typeof v[0] === "object") walk(v[0], `${prefix}${k}[0].`, depth + 1);
+      } else if (v && typeof v === "object") {
+        keys.push(prefix + k);
+        walk(v, prefix + k + ".", depth + 1);
+      } else {
+        keys.push(prefix + k);
+      }
     }
   }
   walk(json, "", 0);
@@ -235,7 +252,12 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
   if (g.ok) {
     const people = extractPeople(g.json);
     if (people.length) return { people, diagnostics };
-    diagnostics.push({ step: "GET ZoomMyStudents", status: g.status, note: `JSON but no person-shaped data; keys: ${describeShape(g.json)}` });
+    diagnostics.push({
+      step: "GET ZoomMyStudents",
+      status: g.status,
+      note: `JSON but no person-shaped data; shape: ${describeShape(g.json)}`,
+      sample: JSON.stringify(g.json).slice(0, 1500),
+    });
   } else {
     diagnostics.push({ step: "GET ZoomMyStudents", status: g.status, note: "non-JSON or error response" });
   }
@@ -279,7 +301,12 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
   }
   const people = extractPeople(json);
   if (!people.length) {
-    diagnostics.push({ step: "POST ZoomMyStudents", status: res.status, note: `JSON but no person-shaped data; keys: ${describeShape(json)}` });
+    diagnostics.push({
+      step: "POST ZoomMyStudents",
+      status: res.status,
+      note: `JSON but no person-shaped data; shape: ${describeShape(json)}`,
+      sample: JSON.stringify(json).slice(0, 1500),
+    });
   }
   return { people, diagnostics };
 }

@@ -42,6 +42,7 @@ export default function EdsbyHonours() {
   const [needsSetup, setNeedsSetup] = useState(false);
   const [busy, setBusy] = useState("");
   const [notice, setNotice] = useState(null); // { kind: "ok"|"err", text }
+  const [diagnostics, setDiagnostics] = useState(null); // raw Edsby diagnostics to show on a parse miss
   const [showClasses, setShowClasses] = useState(false);
 
   useEffect(() => {
@@ -94,11 +95,16 @@ export default function EdsbyHonours() {
   async function extractIds() {
     setBusy("extract");
     setNotice(null);
+    setDiagnostics(null);
     try {
       // Route path stays /harvest-nids (internal, never shown) so the button
       // doesn't 404 during the backend's deploy lag; the UI says "Extract".
       const r = await api("/avgs/harvest-nids", { method: "POST", body: {}, timeoutMs: 120000 });
-      if (!r.ok) throw new Error(r.error);
+      if (!r.ok) {
+        // Keep the diagnostics Edsby returned so the parser can be tuned.
+        if (r.diagnostics) setDiagnostics(r.diagnostics);
+        throw new Error(r.error);
+      }
       const left = r.unmatchedRosterCount;
       setNotice({
         kind: left ? "warn" : "ok",
@@ -275,6 +281,17 @@ export default function EdsbyHonours() {
         }`}>
           {notice.text}
         </p>
+      )}
+
+      {diagnostics && (
+        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs font-semibold text-slate-600">
+            Edsby diagnostics — copy this and send it to get the parser tuned:
+          </p>
+          <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-xs text-slate-700">
+            {JSON.stringify(diagnostics, null, 2)}
+          </pre>
+        </div>
       )}
 
       {/* Class weights */}
