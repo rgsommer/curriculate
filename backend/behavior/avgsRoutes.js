@@ -23,7 +23,7 @@ import express from "express";
 import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorStudent from "./models/BehaviorStudent.js";
 import { HonourRollConfig, HonourRollSnapshot } from "./models/HonourRoll.js";
-import { decrypt } from "./lib/secretBox.js";
+import { decrypt, encrypt } from "./lib/secretBox.js";
 import {
   fetchStudentCourses,
   fetchZoomStudents,
@@ -48,6 +48,7 @@ async function loadEdsbySession(schoolId) {
       cookie: decrypt(e.cookieEnc),
       jver: e.jver || "",
       cver: e.cver || "",
+      userNid: e.userNid || "", // used to refresh the formkey from the bootstrap
     },
   };
 }
@@ -143,6 +144,10 @@ export function buildAvgsRouter({ requireAdmin }) {
       const formkey = e.formkeyEnc ? decrypt(e.formkeyEnc) : "";
 
       const r = await fetchZoomStudents(session, zoomId, formkey);
+      // Persist the freshly-refreshed formkey so later Edsby calls start valid.
+      if (r.formkey && r.formkey !== formkey) {
+        await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+      }
       if (r.sessionExpired) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
       }

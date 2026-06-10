@@ -242,16 +242,53 @@ export function extractPeople(root) {
  * fall back to the formkey POST with _method=GET. Returns
  * { people, diagnostics, sessionExpired? }.
  */
+/**
+ * Fetch a fresh _formkey from an unauthenticated-CSRF bootstrap GET (mirrors
+ * EdsbyProvider.testConnection step 1). Edsby formkeys expire quickly, so a
+ * stored one usually 403s on POST — refresh right before use. Returns
+ * { formkey } / { sessionExpired } / {}.
+ */
+export async function refreshFormkey(sess) {
+  const base = String(sess.baseUrl || "").replace(/\/+$/, "");
+  const urls = [
+    `${base}/core/node.json/?xds=bootstrap`,
+    sess.userNid ? `${base}/core/node.json/${sess.userNid}?xds=Home` : null,
+    sess.userNid ? `${base}/core/node.json/${sess.userNid}` : null,
+  ].filter(Boolean);
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, {
+        headers: { Cookie: sess.cookie, "x-xds-jver": sess.jver || "", "x-xds-cver": sess.cver || "", Accept: "application/json, text/plain, */*" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(15000),
+      });
+      const t = await r.text().catch(() => "");
+      if (/login/i.test(t) && /<form/i.test(t)) return { sessionExpired: true };
+      const m = t.match(/_formkey"?\s*[:=]\s*"([^"]+)"/);
+      if (m) return { formkey: m[1] };
+    } catch {
+      /* try the next bootstrap endpoint */
+    }
+  }
+  return {};
+}
+
 export async function fetchZoomStudents(sess, zoomId, formkey) {
   const diagnostics = [];
   const base = String(sess.baseUrl || "").replace(/\/+$/, "");
 
+  // Refresh the formkey first — a stored one is usually stale and 403s the POST.
+  const fresh = await refreshFormkey(sess);
+  if (fresh.sessionExpired) return { people: [], diagnostics, sessionExpired: true };
+  const fk = fresh.formkey || formkey || "";
+  diagnostics.push({ step: "refreshFormkey", note: fresh.formkey ? "fetched a fresh formkey" : "could not refresh — using stored formkey" });
+
   // 1) plain authenticated GET
   const g = await edsbyGetJson(sess, zoomId, "ZoomMyStudents");
-  if (g.status === 401) return { people: [], diagnostics, sessionExpired: true };
+  if (g.status === 401) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
   if (g.ok) {
     const people = extractPeople(g.json);
-    if (people.length) return { people, diagnostics };
+    if (people.length) return { people, diagnostics, formkey: fk };
     diagnostics.push({
       step: "GET ZoomMyStudents",
       status: g.status,
@@ -263,13 +300,13 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
   }
 
   // 2) formkey POST fallback (mirrors testConnection's verified shape)
-  if (!formkey) {
-    diagnostics.push({ step: "POST ZoomMyStudents", note: "skipped — no formkey stored" });
-    return { people: [], diagnostics };
+  if (!fk) {
+    diagnostics.push({ step: "POST ZoomMyStudents", note: "skipped — no formkey (refresh failed and none stored)" });
+    return { people: [], diagnostics, formkey: fk };
   }
   const url = `${base}/core/node.json/${zoomId}?xds=ZoomMyStudents&_method=GET`;
   const boundary = "----CurriculateHarvest";
-  const payload = `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${formkey}\r\n--${boundary}--\r\n`;
+  const payload = `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${fk}\r\n--${boundary}--\r\n`;
   let res, text = "";
   try {
     res = await fetch(url, {
@@ -290,14 +327,14 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
     text = await res.text().catch(() => "");
   } catch (err) {
     diagnostics.push({ step: "POST ZoomMyStudents", note: err?.message || String(err) });
-    return { people: [], diagnostics };
+    return { people: [], diagnostics, formkey: fk };
   }
-  if (/login/i.test(text) && /<form/i.test(text)) return { people: [], diagnostics, sessionExpired: true };
+  if (/login/i.test(text) && /<form/i.test(text)) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
   let json = null;
   try { json = JSON.parse(text); } catch { /* non-JSON */ }
   if (!json) {
     diagnostics.push({ step: "POST ZoomMyStudents", status: res.status, note: `non-JSON: ${text.slice(0, 150)}` });
-    return { people: [], diagnostics };
+    return { people: [], diagnostics, formkey: fk };
   }
   const people = extractPeople(json);
   if (!people.length) {
@@ -308,7 +345,7 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
       sample: JSON.stringify(json).slice(0, 1500),
     });
   }
-  return { people, diagnostics };
+  return { people, diagnostics, formkey: fk };
 }
 
 // ── Weights, averages, honours ────────────────────────────────────────────────
