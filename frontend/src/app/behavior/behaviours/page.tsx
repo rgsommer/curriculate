@@ -64,6 +64,7 @@ export default function BehavioursPage() {
           <span className="text-green-600 font-medium">✓ positive</span> (a reward — never counts as a strike). Negatives are listed first, then positives.
           {housesOn && " Set "}{housesOn && <span className="font-medium">house points</span>}{housesOn && " on any behaviour."}
         </p>
+        {isAdmin && <SeedStandard onSeeded={load} />}
       </div>
 
       <div className="space-y-2">
@@ -198,6 +199,32 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           {!add && <button onClick={remove} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700">Remove</button>}
         </div>
       </div>
+    </div>
+  );
+}
+
+function SeedStandard({ onSeeded }: { onSeeded: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  async function seed() {
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await api<{ created: number; skipped: number }>("/behaviors/seed-standard", { body: {} });
+      setMsg(`✓ Added ${r.created}${r.skipped ? `, skipped ${r.skipped} already present` : ""}.`);
+      onSeeded();
+    } catch (e: any) {
+      setMsg(`✗ ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      <button onClick={seed} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs disabled:opacity-40">
+        {busy ? "Adding…" : "Add standard behaviour set"}
+      </button>
+      {msg && <span className={`text-xs ${msg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{msg}</span>}
     </div>
   );
 }

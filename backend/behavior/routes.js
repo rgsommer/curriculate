@@ -36,6 +36,7 @@ import { encrypt, decrypt } from "./lib/secretBox.js";
 import { EdsbyProvider } from "./lib/providers/EdsbyProvider.js";
 import { seedBehaviorDocs } from "./lib/seedBehaviors.js";
 import { parseRoster, parseRosterFile } from "./lib/rosterImport.js";
+import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
 import { emailShell, emailButton, noteToHtml } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
@@ -1088,6 +1089,36 @@ router.get("/behaviors", authAny, loadMembership, async (req, res, next) => {
 
 // Add a behaviour. Admin may add a standard (shared) one; any teacher may add a
 // custom (private) one.
+// Upsert the standard behaviour set (admin) — adds any that are missing by name
+// (case-insensitive), leaves existing ones untouched.
+router.post("/behaviors/seed-standard", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const existing = await Behavior.find({ schoolId: req.schoolId }).select("name").lean();
+    const have = new Set(existing.map((b) => String(b.name || "").trim().toLowerCase()));
+    let created = 0;
+    for (const b of STANDARD_BEHAVIORS) {
+      if (have.has(b.name.trim().toLowerCase())) continue;
+      await Behavior.create({
+        schoolId: req.schoolId,
+        name: b.name,
+        keyword: b.keyword || "",
+        description: b.description || "",
+        consequenceText: b.consequenceText || "",
+        triggerMode: b.triggerMode || "THRESHOLD",
+        followUpType: b.followUpType || "none",
+        kind: "negative",
+        scope: "standard",
+        ownerTeacherId: null,
+      });
+      created += 1;
+    }
+    await audit(req.schoolId, "behaviors.seed_standard", req, { meta: { created } });
+    res.json({ ok: true, created, total: STANDARD_BEHAVIORS.length, skipped: STANDARD_BEHAVIORS.length - created });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const isAdmin = ["originator", "admin"].includes(req.membership.role);
