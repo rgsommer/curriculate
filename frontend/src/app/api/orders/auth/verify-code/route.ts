@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import {
   clientIp, rateOk, normalizeEmail, verifyToken, codeHash, makeSessionToken,
 } from "../../_auth";
-import { getConfig } from "../../_db";
+import { getConfig, isFinanceEmail } from "../../_db";
 
 export const runtime = "nodejs";
 
@@ -25,11 +25,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "That code is incorrect. Please check and try again." }, { status: 401 });
   }
 
-  const { financeEmail } = await getConfig();
+  const cfg = await getConfig();
   return NextResponse.json({
     ok: true,
     session: makeSessionToken(email),
     email,
-    isAdmin: email === normalizeEmail(financeEmail),
+    isAdmin: isFinanceEmail(email, cfg),
   });
 }

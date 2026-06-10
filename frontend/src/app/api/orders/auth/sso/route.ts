@@ -4,7 +4,7 @@
 // signature-verified GET /api/me and trust the email it returns.
 import { NextResponse } from "next/server";
 import { makeSessionToken, normalizeEmail, isEmail } from "../../_auth";
-import { getConfig } from "../../_db";
+import { getConfig, isFinanceEmail } from "../../_db";
 
 export const runtime = "nodejs";
 
@@ -36,12 +36,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Not signed in." }, { status: 401 });
   }
 
-  const { financeEmail } = await getConfig();
+  const cfg = await getConfig();
   return NextResponse.json({
     ok: true,
     session: makeSessionToken(email),
     email,
     name: me?.user?.name || "",
-    isAdmin: email === normalizeEmail(financeEmail),
+    isAdmin: isFinanceEmail(email, cfg),
   });
 }

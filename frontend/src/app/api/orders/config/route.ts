@@ -6,7 +6,7 @@
 // holder can sign in and set the real one.
 import { NextResponse } from "next/server";
 import { sessionEmail, normalizeEmail, isEmail } from "../_auth";
-import { getConfig, saveConfig } from "../_db";
+import { getConfig, saveConfig, isFinanceEmail, OrdersConfig } from "../_db";
 
 export const runtime = "nodejs";
 
@@ -23,14 +23,15 @@ export async function POST(req: Request) {
   }
 
   const cfg = await getConfig();
-  if (normalizeEmail(email) !== normalizeEmail(cfg.financeEmail)) {
+  // Either finance person (primary or second) can change settings.
+  if (!isFinanceEmail(email, cfg)) {
     return NextResponse.json(
-      { error: `Only the finance account (${cfg.financeEmail}) can change settings.` },
+      { error: `Only a finance account (${cfg.financeEmail}${cfg.financeEmail2 ? " / " + cfg.financeEmail2 : ""}) can change settings.` },
       { status: 403 }
     );
   }
 
-  const patch: { financeEmail?: string; financeName?: string; schoolName?: string } = {};
+  const patch: Partial<OrdersConfig> = {};
   if (body.financeEmail !== undefined) {
     const fe = normalizeEmail(body.financeEmail);
     if (!isEmail(fe)) return NextResponse.json({ error: "Enter a valid finance email." }, { status: 400 });
@@ -38,6 +39,15 @@ export async function POST(req: Request) {
   }
   if (body.financeName !== undefined) {
     patch.financeName = String(body.financeName).trim().slice(0, 120);
+  }
+  // Second finance person — empty string clears it.
+  if (body.financeEmail2 !== undefined) {
+    const fe2 = normalizeEmail(body.financeEmail2);
+    if (fe2 && !isEmail(fe2)) return NextResponse.json({ error: "Enter a valid second finance email (or leave it blank)." }, { status: 400 });
+    patch.financeEmail2 = fe2;
+  }
+  if (body.financeName2 !== undefined) {
+    patch.financeName2 = String(body.financeName2).trim().slice(0, 120);
   }
   if (body.schoolName !== undefined) {
     const sn = String(body.schoolName).trim().slice(0, 120);

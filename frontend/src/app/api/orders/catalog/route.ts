@@ -3,8 +3,8 @@
 //        catalog for a new year. Parsed with SheetJS; flexible column headers.
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { sessionEmail, normalizeEmail } from "../_auth";
-import { getConfig } from "../_db";
+import { sessionEmail } from "../_auth";
+import { getConfig, isFinanceEmail } from "../_db";
 import { getActiveCatalog, saveCatalog } from "../_catalog-store";
 
 export const runtime = "nodejs";
@@ -32,9 +32,9 @@ export async function POST(req: Request) {
   if (!email) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
 
   const cfg = await getConfig();
-  if (normalizeEmail(email) !== normalizeEmail(cfg.financeEmail)) {
+  if (!isFinanceEmail(email, cfg)) {
     return NextResponse.json(
-      { error: `Only the finance account (${cfg.financeEmail}) can update the catalog.` },
+      { error: `Only a finance account can update the catalog.` },
       { status: 403 }
     );
   }

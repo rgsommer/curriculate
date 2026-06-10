@@ -20,6 +20,8 @@ function Section({ title, children }) {
 function SetupForm({ session }) {
   const [financeEmail, setFinanceEmail] = useState("");
   const [financeName, setFinanceName] = useState("");
+  const [financeEmail2, setFinanceEmail2] = useState("");
+  const [financeName2, setFinanceName2] = useState("");
   const [schoolName, setSchoolName] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -39,7 +41,9 @@ function SetupForm({ session }) {
 
   useEffect(() => {
     fetch("/api/orders/config").then((r) => r.json()).then((j) => {
-      setFinanceEmail(j.financeEmail || ""); setFinanceName(j.financeName || ""); setSchoolName(j.schoolName || ""); setLoaded(true);
+      setFinanceEmail(j.financeEmail || ""); setFinanceName(j.financeName || "");
+      setFinanceEmail2(j.financeEmail2 || ""); setFinanceName2(j.financeName2 || "");
+      setSchoolName(j.schoolName || ""); setLoaded(true);
     }).catch(() => setLoaded(true));
     loadCatalogInfo();
   }, []);
@@ -55,7 +59,7 @@ function SetupForm({ session }) {
     try {
       const r = await fetch("/api/orders/config", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session, financeEmail: financeEmail.trim(), financeName: financeName.trim(), schoolName: schoolName.trim() }),
+        body: JSON.stringify({ session, financeEmail: financeEmail.trim(), financeName: financeName.trim(), financeEmail2: financeEmail2.trim(), financeName2: financeName2.trim(), schoolName: schoolName.trim() }),
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Could not save.");
@@ -137,6 +141,16 @@ function SetupForm({ session }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">Finance email (receives every order + the school summary)</label>
           <input type="email" value={financeEmail} onChange={(e) => setFinanceEmail(e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+
+          <div className="border-t border-slate-100 pt-4 mt-1 mb-4">
+            <p className="text-xs text-slate-500 mb-3">Optional — a second finance person. They get the same admin access (Setup, summary, settings) and also receive every order email. Leave blank for none.</p>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Second finance name</label>
+            <input value={financeName2} onChange={(e) => setFinanceName2(e.target.value)} placeholder="(optional)"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 mb-3 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Second finance email</label>
+            <input type="email" value={financeEmail2} onChange={(e) => setFinanceEmail2(e.target.value)} placeholder="(optional)"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+          </div>
 
           <label className="block text-sm font-medium text-slate-700 mb-1">School name (shown in emails)</label>
           <input value={schoolName} onChange={(e) => setSchoolName(e.target.value)}

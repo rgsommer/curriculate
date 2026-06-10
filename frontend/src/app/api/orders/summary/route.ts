@@ -6,8 +6,8 @@
 //   orders:   per-teacher order summaries (name, email, date, total, lineCount)
 //   totals:   { grand, orderCount, bySupplier:[{supplier,po,subtotal}] }
 import { NextResponse } from "next/server";
-import { sessionEmail, normalizeEmail } from "../_auth";
-import { getDb, getConfig } from "../_db";
+import { sessionEmail } from "../_auth";
+import { getDb, getConfig, isFinanceEmail } from "../_db";
 import { OrderLine, groupBySupplier } from "../_order";
 
 export const runtime = "nodejs";
@@ -25,9 +25,9 @@ export async function GET(req: Request) {
   if (!email) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
 
   const cfg = await getConfig();
-  if (normalizeEmail(email) !== normalizeEmail(cfg.financeEmail)) {
+  if (!isFinanceEmail(email, cfg)) {
     return NextResponse.json(
-      { error: `Only the finance account (${cfg.financeEmail}) can view the summary.` },
+      { error: `Only a finance account can view the summary.` },
       { status: 403 }
     );
   }

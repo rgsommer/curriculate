@@ -4,7 +4,7 @@
 //   - emails the teacher a confirmation + finance the order
 import { NextResponse } from "next/server";
 import { sessionEmail } from "../_auth";
-import { getDb, getConfig } from "../_db";
+import { getDb, getConfig, financeRecipients } from "../_db";
 import { getActiveCatalog } from "../_catalog-store";
 import { buildLines, renderOrderHtml, money } from "../_order";
 import { buildSupplierWorkbooks } from "../_xlsx";
@@ -30,7 +30,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Your order is empty — add a quantity to at least one item." }, { status: 400 });
   }
 
-  const { financeEmail, financeName, schoolName } = await getConfig();
+  const cfg = await getConfig();
+  const { schoolName } = cfg;
   const createdAt = new Date();
 
   // Persist (best-effort: if Mongo isn't configured locally, still send emails).
@@ -79,7 +80,7 @@ export async function POST(req: Request) {
   const [teacherSend, financeSend] = await Promise.all([
     sendEmail({ to: email, subject: `Your supply order — ${money(total)} (${lines.length} items)`, html: teacherHtml }),
     sendEmail({
-      to: financeName ? `${financeName} <${financeEmail}>` : financeEmail,
+      to: financeRecipients(cfg),
       replyTo: email,
       subject: `Supply order: ${teacherName} — ${money(total)} (${lines.length} items)`,
       html: financeHtml,
