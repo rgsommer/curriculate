@@ -22,6 +22,17 @@ export const DEFAULT_STUDENT_VIEWS = (process.env.EDSBY_GRADE_VIEWS || "Panorama
   .map((s) => s.trim())
   .filter(Boolean);
 
+// Candidate views for LISTING a school's students (to harvest their nids).
+// ZoomMyStudents is a teacher's "My Students"; an admin account is often
+// denied it (Edsby error 1030), so a few alternatives are tried in order.
+// Pin the correct one for a school via EDSBY_STUDENT_VIEWS="View1,View2".
+export const DEFAULT_STUDENT_LIST_VIEWS = (
+  process.env.EDSBY_STUDENT_VIEWS || "ZoomMyStudents,SchoolStudents,Students,ClassStudents"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 /** Authenticated GET of an Edsby JSON view. Returns { ok, status, json, text }. */
 export async function edsbyGetJson(sess, nid, view) {
   const url = `${String(sess.baseUrl || "").replace(/\/+$/, "")}/core/node.json/${nid}?xds=${encodeURIComponent(view)}`;
@@ -283,69 +294,66 @@ export async function fetchZoomStudents(sess, zoomId, formkey) {
   const fk = fresh.formkey || formkey || "";
   diagnostics.push({ step: "refreshFormkey", note: fresh.formkey ? "fetched a fresh formkey" : "could not refresh — using stored formkey" });
 
-  // 1) plain authenticated GET
-  const g = await edsbyGetJson(sess, zoomId, "ZoomMyStudents");
-  if (g.status === 401) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
-  if (g.ok) {
-    const people = extractPeople(g.json);
-    if (people.length) return { people, diagnostics, formkey: fk };
-    diagnostics.push({
-      step: "GET ZoomMyStudents",
-      status: g.status,
-      note: `JSON but no person-shaped data; shape: ${describeShape(g.json)}`,
-      sample: JSON.stringify(g.json).slice(0, 1500),
-    });
-  } else {
-    diagnostics.push({ step: "GET ZoomMyStudents", status: g.status, note: "non-JSON or error response" });
+  // Which Edsby view lists this account's students is school/role-specific
+  // (a teacher has ZoomMyStudents; an admin may not — Edsby returns
+  // error 1030 "denied nodetype"). Try each candidate view, GET then formkey
+  // POST, and report per-view diagnostics so the right one can be pinned via
+  // EDSBY_STUDENT_VIEWS (no deploy needed).
+  for (const view of DEFAULT_STUDENT_LIST_VIEWS) {
+    // GET
+    const g = await edsbyGetJson(sess, zoomId, view);
+    if (g.status === 401) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
+    if (g.ok) {
+      const people = extractPeople(g.json);
+      if (people.length) return { people, diagnostics, view, formkey: fk };
+      diagnostics.push({ step: `GET ${view}`, status: g.status, note: `JSON but no person-shaped data; shape: ${describeShape(g.json)}`, sample: JSON.stringify(g.json).slice(0, 1500) });
+    } else {
+      diagnostics.push({ step: `GET ${view}`, status: g.status, note: "non-JSON or error response" });
+    }
+
+    // formkey POST
+    if (!fk) {
+      diagnostics.push({ step: `POST ${view}`, note: "skipped — no formkey (refresh failed and none stored)" });
+      continue;
+    }
+    const url = `${base}/core/node.json/${zoomId}?xds=${encodeURIComponent(view)}&_method=GET`;
+    const boundary = "----CurriculateHarvest";
+    const payload = `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${fk}\r\n--${boundary}--\r\n`;
+    let res, text = "";
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Cookie: sess.cookie,
+          "Content-Type": `multipart/form-data; boundary=${boundary}`,
+          "x-xds-jver": sess.jver || "",
+          "x-xds-cver": sess.cver || "",
+          "x-edsby-client-request-queue": "net::post",
+          Origin: base,
+          Referer: `${base}/p/${view}/${zoomId}`,
+        },
+        body: payload,
+        redirect: "manual",
+        signal: AbortSignal.timeout(15000),
+      });
+      text = await res.text().catch(() => "");
+    } catch (err) {
+      diagnostics.push({ step: `POST ${view}`, note: err?.message || String(err) });
+      continue;
+    }
+    if (/login/i.test(text) && /<form/i.test(text)) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* non-JSON */ }
+    if (!json) {
+      diagnostics.push({ step: `POST ${view}`, status: res.status, note: `non-JSON: ${text.slice(0, 150)}` });
+      continue;
+    }
+    const people = extractPeople(json);
+    if (people.length) return { people, diagnostics, view, formkey: fk };
+    diagnostics.push({ step: `POST ${view}`, status: res.status, note: `JSON but no person-shaped data; shape: ${describeShape(json)}`, sample: JSON.stringify(json).slice(0, 1500) });
   }
 
-  // 2) formkey POST fallback (mirrors testConnection's verified shape)
-  if (!fk) {
-    diagnostics.push({ step: "POST ZoomMyStudents", note: "skipped — no formkey (refresh failed and none stored)" });
-    return { people: [], diagnostics, formkey: fk };
-  }
-  const url = `${base}/core/node.json/${zoomId}?xds=ZoomMyStudents&_method=GET`;
-  const boundary = "----CurriculateHarvest";
-  const payload = `--${boundary}\r\nContent-Disposition: form-data; name="_formkey"\r\n\r\n${fk}\r\n--${boundary}--\r\n`;
-  let res, text = "";
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: {
-        Cookie: sess.cookie,
-        "Content-Type": `multipart/form-data; boundary=${boundary}`,
-        "x-xds-jver": sess.jver || "",
-        "x-xds-cver": sess.cver || "",
-        "x-edsby-client-request-queue": "net::post",
-        Origin: base,
-        Referer: `${base}/p/ZoomMyStudents/${zoomId}`,
-      },
-      body: payload,
-      redirect: "manual",
-      signal: AbortSignal.timeout(15000),
-    });
-    text = await res.text().catch(() => "");
-  } catch (err) {
-    diagnostics.push({ step: "POST ZoomMyStudents", note: err?.message || String(err) });
-    return { people: [], diagnostics, formkey: fk };
-  }
-  if (/login/i.test(text) && /<form/i.test(text)) return { people: [], diagnostics, sessionExpired: true, formkey: fk };
-  let json = null;
-  try { json = JSON.parse(text); } catch { /* non-JSON */ }
-  if (!json) {
-    diagnostics.push({ step: "POST ZoomMyStudents", status: res.status, note: `non-JSON: ${text.slice(0, 150)}` });
-    return { people: [], diagnostics, formkey: fk };
-  }
-  const people = extractPeople(json);
-  if (!people.length) {
-    diagnostics.push({
-      step: "POST ZoomMyStudents",
-      status: res.status,
-      note: `JSON but no person-shaped data; shape: ${describeShape(json)}`,
-      sample: JSON.stringify(json).slice(0, 1500),
-    });
-  }
-  return { people, diagnostics, formkey: fk };
+  return { people: [], diagnostics, formkey: fk };
 }
 
 // ── Weights, averages, honours ────────────────────────────────────────────────

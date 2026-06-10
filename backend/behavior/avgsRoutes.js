@@ -202,6 +202,7 @@ export function buildAvgsRouter({ requireAdmin }) {
 
       res.json({
         ok: true,
+        edsbyView: r.view, // which Edsby view actually listed the students
         edsbyPeople: r.people.length,
         matched,
         alreadyHadNid: already,
