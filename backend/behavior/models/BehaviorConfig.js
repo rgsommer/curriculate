@@ -94,6 +94,10 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // (so the public portal isn't openly browseable). Blank = portal disabled.
     housePortalCode: { type: String, default: "" },
 
+    // Start-of-term marker: only house points earned AFTER this date count toward
+    // the standings (earlier events are kept for history). Null = count all.
+    housePointsResetAt: { type: Date, default: null },
+
     // ── House points report (opt-in) ───────────────────────────────────────
     // A standings email with each house's total + its top-3 contributing
     // students. Off by default; admins enable + send it from Setup.

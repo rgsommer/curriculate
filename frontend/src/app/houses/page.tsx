@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { API_BASE } from "../behavior/_lib/api";
 
-type House = { id: string; name: string; color: string; points: number; members: number };
+type House = { id: string; name: string; color: string; points: number; members: number; captains?: string[] };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
-type Board = { schoolName: string; houses: House[]; competitions: Comp[] };
+type Activity = { house: string; color: string; points: number; reason: string; at: string };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[] };
 
 const KEY = "houses_portal_code";
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -15,7 +16,7 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
     const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
     const d = await r.json();
     if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
-    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [] } };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [] } };
   } catch {
     return { ok: false, error: "Network error — try again" };
   }
@@ -129,6 +130,9 @@ export default function HousesPortal() {
                   <div className="mt-1 h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
                     <div className="h-full rounded-full" style={{ width: `${Math.max(3, (Math.abs(h.points) / max) * 100)}%`, background: h.color }} />
                   </div>
+                  {h.captains && h.captains.length > 0 && (
+                    <div className="mt-1 text-xs text-slate-400">© {h.captains.join(", ")}</div>
+                  )}
                 </div>
               </li>
             ))}
@@ -159,6 +163,29 @@ export default function HousesPortal() {
                 ) : (
                   <span className="text-xs text-slate-300">upcoming</span>
                 )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {board && board.activity.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <style>{`@keyframes hpFlash { 0% { background:#fef9c3; } 100% { background:transparent; } }`}</style>
+          <h2 className="font-semibold">Latest points</h2>
+          <ul className="mt-2 divide-y divide-slate-100">
+            {board.activity.map((a) => (
+              <li
+                key={`${a.house}-${a.at}-${a.points}-${a.reason}`}
+                className="flex items-center gap-2 rounded-md py-2 text-sm"
+                style={{ animation: "hpFlash 1.6s ease-out" }}
+              >
+                <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: a.color }} />
+                <span className="font-medium">{a.house}</span>
+                <span className={`shrink-0 font-bold tabular-nums ${a.points < 0 ? "text-red-600" : "text-green-600"}`}>
+                  {a.points > 0 ? `+${a.points}` : a.points}
+                </span>
+                {a.reason && <span className="truncate text-slate-400">· {a.reason}</span>}
               </li>
             ))}
           </ul>

@@ -405,6 +405,8 @@ export default function EngagementDetailPage() {
   const memberNameOf = (userId: string | null | undefined, fallback?: string | null) =>
     roster.find((m) => m.user_id === userId)?.name || fallback || "Someone";
   const pollOptions = (engagement.config?.options as string[]) ?? [];
+  // An open-ended poll has no preset options — people type a free-text answer.
+  const isOpenPoll = engagement.type === "poll" && pollOptions.length === 0;
   const canEdit = isCreator && engagement.status === "active";
 
   // Birthday card = private to the recipient. Each wish is seen only by its author
@@ -1477,6 +1479,27 @@ export default function EngagementDetailPage() {
         );
 
       case "poll":
+        // Open-ended poll: free-text answer instead of fixed options.
+        if (isOpenPoll) {
+          return (
+            <div className="space-y-3">
+              <textarea
+                value={textInput}
+                onChange={(e) => setTextInput(e.target.value)}
+                placeholder="Type your answer…"
+                rows={4}
+                className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
+              />
+              <button
+                onClick={handleTextSubmit}
+                disabled={!textInput.trim() || submitting}
+                className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+              >
+                {submitting ? "Submitting..." : "🔒 Submit My Answer"}
+              </button>
+            </div>
+          );
+        }
         return (
           <div className="space-y-2">
             {pollOptions.map((opt) => (
@@ -1687,7 +1710,8 @@ export default function EngagementDetailPage() {
   };
 
   const renderPollResults = () => {
-    if (!showResults || engagement.type !== "poll") return null;
+    // Open-ended polls have no bars — their text answers render below instead.
+    if (!showResults || engagement.type !== "poll" || isOpenPoll) return null;
 
     const votes: Record<string, number> = {};
     pollOptions.forEach((o) => (votes[o] = 0));
@@ -2355,7 +2379,9 @@ export default function EngagementDetailPage() {
   const renderRevealedResponses = () => {
     if (
       !showResults ||
-      engagement.type === "poll" ||
+      // Multiple-choice polls render as bars; OPEN polls fall through to here so
+      // their free-text answers show like any other text response.
+      (engagement.type === "poll" && !isOpenPoll) ||
       engagement.type === "two_truths" ||
       engagement.type === "baby_reveal" ||
       engagement.type === "most_likely" ||

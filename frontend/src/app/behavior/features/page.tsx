@@ -4,6 +4,7 @@
 // /behavior/features (and /behaviors/features via a redirect in next.config.js).
 
 import Link from "next/link";
+import GuideGated from "../_components/GuideGated";
 
 export const metadata = {
   title: "Behaviours — Features",
@@ -45,10 +46,6 @@ const FEATURES = [
     body: "The Vice-Principal is automatically copied on the second and later notices home for a student, so leadership is looped in exactly when a pattern is forming.",
   },
   {
-    title: "Edsby or email — your choice",
-    body: "Notices deliver over Edsby, email, or both. Email works on day one; if an Edsby post ever fails, it falls over to email automatically. (A small browser extension keeps your Edsby session fresh.)",
-  },
-  {
     title: "Log several students at once",
     body: "For “these five weren't ready for class” moments, flip to the reverse flow: pick one behaviour, tap the students, log them all in one go. Each still gets their own record and trigger check.",
   },
@@ -57,8 +54,32 @@ const FEATURES = [
     body: "A Students tab and dashboard search open any student's full cross-teacher history — strikes, every incident, and every notice home — in one tap.",
   },
   {
+    title: "Students to watch",
+    body: "The dashboard surfaces anyone at — or one incident away from — the trigger, so the next strike doesn't catch you by surprise. Tap straight through to their record.",
+  },
+  {
+    title: "Who needs attention (admin)",
+    body: "A read-only, school-wide view for admins and the VP: students at or near a notice, the most-logged students over the last 90 days, and a per-class breakdown — the whole division at a glance.",
+  },
+  {
     title: "Per-student communication history",
     body: "Every notice — who it went to, on which channel, the full wording, whether the VP was copied — is kept in a timeline you can review before a parent meeting.",
+  },
+  {
+    title: "On-screen trend chart",
+    body: "Each student's record shows a month-by-month red/green timeline of incidents and positives, so a pattern — or a turnaround — is visible at a glance.",
+  },
+  {
+    title: "Edit, delete & undo",
+    body: "Fix a detail, remove a mistaken incident (which also unwinds any house points), or undo a just-logged entry. You can edit your own incidents; admins can edit any.",
+  },
+  {
+    title: "Log a parent meeting or call",
+    body: "Record a meeting or phone call on a student's record as an interaction — kept for the file and the AI summary, but it never counts as a strike and sends nothing home.",
+  },
+  {
+    title: "Print or export a record",
+    body: "One tap prints a clean copy of a student's full record — strikes, incidents and notices home — for a meeting, a file, or a PDF, with the buttons and menus stripped out.",
   },
   {
     title: "Morning follow-up reminders",
@@ -82,37 +103,6 @@ const FEATURES = [
   },
 ];
 
-const HOUSES = [
-  {
-    title: "Houses & points",
-    body: "Define houses (name + colour) and assign students by import or in Setup. Any behaviour can carry points — negative deducts for an offence, positive rewards a good one — and they roll straight onto a live leaderboard on the dashboard. Award points to a whole house at once for a spirit day.",
-  },
-  {
-    title: "Balanced auto-assign",
-    body: "One click sorts every student into four houses, balancing grade and gender and keeping same-last-name students (siblings) together. A “rebalance only unassigned” mode slots in new students mid-year without reshuffling everyone.",
-  },
-  {
-    title: "Positive behaviours, properly separated",
-    body: "Positives never touch the strike count — they don't add to it and never subtract from it. They earn house points, are documented, and are warmly acknowledged in a note home rather than weighed against the student.",
-  },
-  {
-    title: "Good-news notes home",
-    body: "When a student earns enough positives in the window (e.g. 3 within 3× the fade range), a celebratory note home is queued automatically — no concerns, no points mentioned, just good news for the parents.",
-  },
-  {
-    title: "Monthly competitions (Sept–June)",
-    body: "A built-in calendar of house events (quiz, kindness marathon, mini-Olympics, spirit week…). Scoring an event awards capped placement points (1st 500 / 2nd 300 / 3rd 200 / 4th 100) on top of everyday points, so a single event can't run away with the year.",
-  },
-  {
-    title: "Student leaderboard portal",
-    body: "Students see live standings and competition results at curriculate.net/houses by entering a short school code — house-level totals only, no student names. The code (e.g. set your own like 1977) is shown right on the dashboard.",
-  },
-  {
-    title: "House standings report",
-    body: "Turn on an email report that ranks the houses by total points and names the top 3 contributing students for each — send it on demand for assemblies or the newsletter.",
-  },
-];
-
 const STEPS = [
   { n: "1", t: "Set up your division", d: "Upload the roster, set the trigger count and fade window, name your VP, and invite your staff." },
   { n: "2", t: "Log in the moment", d: "Any teacher logs any student in a few taps. The shared count updates instantly across the whole school." },
@@ -128,6 +118,8 @@ const TEACHER_STEPS = [
   { t: "Check status & history", d: "Open a student any time to see their current strikes across all teachers and every note that's gone home." },
   { t: "Catch the good too", d: "Log positive behaviours the same way — they earn the student's house points and are documented, but never count as a strike. Enough of them triggers a good-news note home on their own." },
   { t: "Log a group in one go", d: "On the Log screen, tap “Several students” to apply one behaviour to a whole group at once — handy for a quick “not ready for class.”" },
+  { t: "Fix a mistake", d: "Tapped the wrong thing? Undo a just-logged incident, or open the student to edit the detail or delete an incident — deleting also unwinds any house points it earned." },
+  { t: "Note a meeting or call", d: "On a student's record, log a parent meeting or phone call. It's kept on file (and in the AI summary) but never counts as a strike and sends nothing home." },
   { t: "Clear your morning follow-ups", d: "Each morning you'll get a “Reminder for today” list of consequences to check off — mark each Done, Not done, or Waived." },
 ];
 
@@ -184,25 +176,8 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      {/* Houses — its own section */}
-      <section>
-        <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-green-600 text-sm text-white">🏆</span>
-          <h2 className="text-xl font-semibold text-slate-900">Houses &amp; house points</h2>
-        </div>
-        <p className="mt-1 max-w-2xl text-sm text-slate-600">
-          An optional house system that turns everyday behaviour into team spirit — rewarding the good, not just policing
-          the bad. Toggle it on in Setup; when it&apos;s off, the whole house aspect stays hidden.
-        </p>
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {HOUSES.map((f) => (
-            <div key={f.title} className="rounded-xl border border-green-200 bg-green-50/50 p-5">
-              <h3 className="font-semibold text-slate-900">{f.title}</h3>
-              <p className="mt-1 text-sm leading-relaxed text-slate-600">{f.body}</p>
-            </div>
-          ))}
-        </div>
-      </section>
+      {/* Houses, Edsby & portal setup — only for signed-in staff */}
+      <GuideGated />
 
       {/* For teachers */}
       <section>

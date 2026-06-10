@@ -73,6 +73,11 @@ export default function StudentPage() {
   // Per-notice "request a meeting" toggle
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
 
+  // Log a parent meeting / contact (an interaction — no strike, nothing sent home)
+  const [meetingNote, setMeetingNote] = useState("");
+  const [meetingBusy, setMeetingBusy] = useState(false);
+  const [meetingMsg, setMeetingMsg] = useState("");
+
   const load = useCallback(() => {
     if (!params?.id) return;
     api<StudentDetail>(`/students/${params.id}`).then(setData).catch((e) => setError(e.message));
@@ -189,6 +194,23 @@ export default function StudentPage() {
     }
   }
 
+  async function logMeeting() {
+    const text = meetingNote.trim();
+    if (!text) return;
+    setMeetingBusy(true);
+    setMeetingMsg("");
+    try {
+      await api(`/students/${params.id}/meeting`, { body: { detailText: text } });
+      setMeetingNote("");
+      setMeetingMsg("Logged — kept in this student's record. No strike, nothing sent home.");
+      load();
+    } catch (e: any) {
+      setMeetingMsg(e.message);
+    } finally {
+      setMeetingBusy(false);
+    }
+  }
+
   async function addNote(incidentId: string) {
     const text = (noteText[incidentId] || "").trim();
     if (!text) return;
@@ -203,10 +225,23 @@ export default function StudentPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <Link href="/behavior/log" className="text-sm text-slate-500 underline">← back to logging</Link>
-        <h1 className="mt-1 text-xl font-semibold">{s.preferredName || s.firstName} {s.lastName}</h1>
-        <p className="text-sm text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</p>
+      {/* Hide controls + chrome when printing this record. */}
+      <style>{`@media print {
+        .no-print { display: none !important; }
+        nav, header, footer { display: none !important; }
+        body { background: #fff !important; }
+        section { break-inside: avoid; border-color: #cbd5e1 !important; }
+      }`}</style>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <Link href="/behavior/log" className="no-print text-sm text-slate-500 underline">← back to logging</Link>
+          <h1 className="mt-1 text-xl font-semibold">{s.preferredName || s.firstName} {s.lastName}</h1>
+          <p className="text-sm text-slate-400">{[s.classGroup, s.grade].filter(Boolean).join(" · ")}</p>
+        </div>
+        <button onClick={() => window.print()}
+          className="no-print shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50">
+          Print / export ⎙
+        </button>
       </div>
 
       {/* Strikes + admin summary */}
@@ -262,6 +297,26 @@ export default function StudentPage() {
             </>
           )}
         </div>
+      </section>
+
+      {/* Log a parent meeting / contact (interaction — no strike, nothing home) */}
+      <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold">Log a parent meeting / contact</h2>
+        <p className="text-xs text-slate-400">Keeps a dated record (e.g. phone call, conference). Does not count as a strike and sends nothing home.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            value={meetingNote}
+            onChange={(e) => setMeetingNote(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && logMeeting()}
+            placeholder="e.g. Called mum re: homework — agreed to check planner nightly"
+            className="min-w-[16rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          />
+          <button onClick={logMeeting} disabled={meetingBusy || !meetingNote.trim()}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            {meetingBusy ? "Logging…" : "Log meeting"}
+          </button>
+        </div>
+        {meetingMsg && <p className="mt-2 text-sm text-green-700">{meetingMsg}</p>}
       </section>
 
       {/* Trend over time */}

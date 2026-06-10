@@ -128,6 +128,10 @@ export default function NewEngagementPage() {
   const [nthDow, setNthDow] = useState(0); // 0=Sun … 6=Sat
   const [nthMonth, setNthMonth] = useState(5); // 1-12
   const [pollOptions, setPollOptions] = useState(["", "", ""]);
+  // Poll format: pick-an-option, a quick Yes/No, or open-ended text answers.
+  const [pollFormat, setPollFormat] = useState<"multiple" | "yes_no" | "open">(
+    "multiple"
+  );
   // Truth or Dare: the host writes both; players commit blind, then see theirs.
   const [truthPrompt, setTruthPrompt] = useState("");
   const [darePrompt, setDarePrompt] = useState("");
@@ -332,18 +336,29 @@ export default function NewEngagementPage() {
     const config: Record<string, unknown> = {};
 
     // Type-specific config
-    if (selectedType === "poll" || selectedType === "baby_reveal") {
+    if (selectedType === "baby_reveal") {
       const opts = pollOptions.filter((o) => o.trim());
       if (opts.length < 2) {
-        setError(
-          selectedType === "baby_reveal"
-            ? "Add at least 2 choices to guess between."
-            : "Add at least 2 options for your poll."
-        );
+        setError("Add at least 2 choices to guess between.");
         setCreating(false);
         return;
       }
       config.options = opts;
+    } else if (selectedType === "poll") {
+      config.format = pollFormat;
+      if (pollFormat === "open") {
+        config.options = []; // open-ended — people type their own answer
+      } else if (pollFormat === "yes_no") {
+        config.options = ["Yes", "No"];
+      } else {
+        const opts = pollOptions.filter((o) => o.trim());
+        if (opts.length < 2) {
+          setError("Add at least 2 options for your poll.");
+          setCreating(false);
+          return;
+        }
+        config.options = opts;
+      }
     }
 
     // Baby Reveal auto-opens on a date — a reveal date is required.
@@ -779,7 +794,56 @@ export default function NewEngagementPage() {
             </div>
 
             {/* Poll / Baby Reveal: the choices */}
-            {(selectedType === "poll" || selectedType === "baby_reveal") && (
+            {/* Poll format: multiple choice / yes-no / open-ended */}
+            {selectedType === "poll" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Answer format
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      { v: "multiple", label: "Multiple choice", sub: "Pick an option" },
+                      { v: "yes_no", label: "Yes / No", sub: "One tap" },
+                      { v: "open", label: "Open-ended", sub: "Type an answer" },
+                    ] as const
+                  ).map((o) => {
+                    const on = pollFormat === o.v;
+                    return (
+                      <button
+                        key={o.v}
+                        type="button"
+                        onClick={() => setPollFormat(o.v)}
+                        className={`rounded-xl border px-2 py-2 text-center text-xs transition ${
+                          on
+                            ? "border-orange-500 bg-orange-50 text-slate-900"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                        }`}
+                      >
+                        <div className="font-semibold">{o.label}</div>
+                        <div className={on ? "text-orange-500" : "text-slate-400"}>
+                          {o.sub}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                {pollFormat === "yes_no" && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    People answer with a quick <span className="font-semibold">Yes</span> or{" "}
+                    <span className="font-semibold">No</span>.
+                  </p>
+                )}
+                {pollFormat === "open" && (
+                  <p className="mt-2 text-xs text-slate-500">
+                    People type their own answer — results show every response.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {(selectedType === "baby_reveal" ||
+              (selectedType === "poll" && pollFormat === "multiple")) && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   {selectedType === "baby_reveal" ? "Choices to guess between" : "Poll Options"}

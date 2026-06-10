@@ -12,6 +12,7 @@ type TeamRow = {
   status: "pending" | "accepted";
   joinedAt: string | null;
   incidents: number;
+  legacyOffences?: number;
   notices: number;
   lastActiveAt: string | null;
 };
@@ -116,7 +117,10 @@ export default function TeamPage() {
                       <span title={t.lastActiveAt ? new Date(t.lastActiveAt).toLocaleString() : ""}>{ago(t.lastActiveAt)}</span>
                     )}
                   </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{t.incidents}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">
+                    {t.incidents}
+                    {t.legacyOffences ? <span className="ml-1 text-xs font-normal text-slate-400" title={`${t.legacyOffences} earlier offence(s) imported from past records`}>(incl. {t.legacyOffences})</span> : null}
+                  </td>
                   <td className="py-2 text-right tabular-nums">{t.notices}</td>
                 </tr>
               ))}
@@ -126,6 +130,11 @@ export default function TeamPage() {
             </tbody>
           </table>
         </div>
+        {teachers.some((t) => t.legacyOffences) && (
+          <p className="mt-2 text-xs text-slate-400">
+            Incidents include earlier offences imported from past records (shown as “incl. N”). Those historical offences may also appear among the notices home, so the two columns aren&apos;t additive.
+          </p>
+        )}
       </section>
 
       {/* Pending invites */}

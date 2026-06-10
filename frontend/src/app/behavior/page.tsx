@@ -104,6 +104,9 @@ export default function BehaviorDashboard() {
         <Card>
           <h2 className="font-semibold">Admin</h2>
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
+            <Link href="/behavior/intervention" className="rounded-lg border border-slate-300 px-3 py-1.5">
+              Who needs attention
+            </Link>
             <Link href="/behavior/setup" className="rounded-lg border border-slate-300 px-3 py-1.5">
               Division setup
             </Link>

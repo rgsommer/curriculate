@@ -26,6 +26,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
 import cardsRouter from "./routes/cards.js";
+import avgsRouter from "./routes/avgs.js";
 
 // 4) Shared constants (used across server)
 import { TASK_TYPE_META, analyzeBloomsTaxonomy } from "../shared/taskTypes.js";
@@ -630,6 +631,9 @@ app.use("/api/grading", gradingFeedbackRouter);
 
 // Trading-card evaluator — public /cards page on curriculate.net
 app.use("/cards", cardsRouter);
+
+// Weighted report-card averages — public /avgs page on curriculate.net
+app.use("/avgs", avgsRouter);
 
 // Personal /tasks app on curriculate.net/tasks (passwordless email+PIN auth)
 app.use("/api/tasks-app", tasksAppRouter);

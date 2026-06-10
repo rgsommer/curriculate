@@ -204,7 +204,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "triggerCount", "fadeWindowDays", "vp", "branding", "channels",
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
-      "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled",
+      "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -722,6 +722,22 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     ]);
     const notById = Object.fromEntries(notAgg.map((a) => [String(a._id), a.n]));
 
+    // Earlier/legacy offences often exist ONLY as a historical notice home (a
+    // one-time import of past paper records), with no itemised incident row.
+    // Count those standalone offences per teacher so the Incidents column
+    // reflects the FULL history, not just what's been logged in the app — the
+    // same reconciliation the AI summaries use.
+    const legNotAgg = await BehaviorNotice.aggregate([
+      {
+        $match: {
+          schoolId: req.schoolId,
+          $or: [{ legacyImport: true }, { triggeringIncidentIds: { $exists: false } }, { triggeringIncidentIds: { $size: 0 } }],
+        },
+      },
+      { $group: { _id: "$sentByTeacherId", n: { $sum: 1 } } },
+    ]);
+    const legOffByTeacher = Object.fromEntries(legNotAgg.map((a) => [String(a._id), a.n]));
+
     const auditAgg = await BehaviorAuditLog.aggregate([
       { $match: { schoolId: req.schoolId, actorUserId: { $ne: null } } },
       { $group: { _id: "$actorUserId", last: { $max: "$createdAt" } } },
@@ -736,6 +752,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
         const lastIncident = inc?.last ? new Date(inc.last).getTime() : 0;
         const lastAudit = auditByUser[String(t.userId)] ? new Date(auditByUser[String(t.userId)]).getTime() : 0;
         const lastActive = Math.max(lastIncident, lastAudit);
+        const legOff = legOffByTeacher[String(t._id)] || 0;
         return {
           _id: String(t._id),
           name: t.name,
@@ -743,7 +760,9 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
           role: t.role,
           status: t.status,
           joinedAt: t.createdAt,
-          incidents: inc?.n || 0,
+          // History-inclusive: itemised incidents + standalone legacy offences.
+          incidents: (inc?.n || 0) + legOff,
+          legacyOffences: legOff,
           notices: notById[String(t._id)] || 0,
           lastActiveAt: lastActive ? new Date(lastActive) : null,
         };
@@ -760,7 +779,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
     ).filter((p) => !memberEmails.has((p.email || "").toLowerCase()));
 
     const activeLast30 = rows.filter((r) => r.lastActiveAt && now - new Date(r.lastActiveAt).getTime() < 30 * DAY).length;
-    const totalIncidents = incAgg.reduce((s, a) => s + a.n, 0);
+    const totalIncidents = incAgg.reduce((s, a) => s + a.n, 0) + legNotAgg.reduce((s, a) => s + a.n, 0);
     const totalNotices = notAgg.reduce((s, a) => s + a.n, 0);
 
     res.json({
@@ -906,7 +925,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     // Sorted grade → class → name so the client can group by grade directly.
     // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
-      .select("lastName firstName preferredName classGroup grade active houseId")
+      .select("lastName firstName preferredName classGroup grade active houseId houseCaptain")
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
@@ -1032,6 +1051,7 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     const $set = {};
     if ("active" in b) $set.active = !!b.active;
     if ("houseId" in b) $set.houseId = b.houseId || null;
+    if ("houseCaptain" in b) $set.houseCaptain = !!b.houseCaptain;
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const student = await BehaviorStudent.findOneAndUpdate(
       { _id: req.params.id, schoolId: req.schoolId },
@@ -1040,7 +1060,7 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     ).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     if ("active" in b) await audit(req.schoolId, $set.active ? "student.reactivated" : "student.deactivated", req, { studentId: student._id });
-    res.json({ ok: true, active: student.active, houseId: student.houseId });
+    res.json({ ok: true, active: student.active, houseId: student.houseId, houseCaptain: student.houseCaptain });
   } catch (err) {
     next(err);
   }
@@ -2336,6 +2356,131 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
   }
 });
 
+// ── Parent meeting / contact log (no strike, no note home) ───────────────────
+// A teacher records that a meeting or contact happened. Logged as an
+// INTERACTION incident so it lives in the student's history for context but
+// never counts toward a notice and never sends anything home (§5a).
+router.post("/students/:id/meeting", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+
+    const detailText = String(req.body?.detailText || "").trim();
+    if (!detailText) return res.status(400).json({ ok: false, error: "Please add a short note about the meeting." });
+    const occurredAt = req.body?.occurredAt ? new Date(req.body.occurredAt) : null;
+    const timestamp = occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : new Date();
+
+    // Find-or-create the shared "Parent meeting / contact" interaction behaviour.
+    let beh = await Behavior.findOne({ schoolId: req.schoolId, name: "Parent meeting / contact" });
+    if (!beh) {
+      beh = await Behavior.create({
+        schoolId: req.schoolId,
+        name: "Parent meeting / contact",
+        keyword: "meeting",
+        kind: "negative",
+        triggerMode: "INTERACTION",
+        description: "A logged meeting or contact with a parent/guardian — kept for the record. Does not count as a strike and sends nothing home.",
+        consequenceText: "",
+        points: 0,
+      });
+    }
+
+    const inc = await BehaviorIncident.create({
+      schoolId: req.schoolId,
+      studentId: student._id,
+      teacherId: req.membership._id,
+      behaviorId: beh._id,
+      behaviorSnapshot: {
+        name: beh.name,
+        description: beh.description,
+        triggerMode: "INTERACTION",
+        kind: "negative",
+        consequenceText: "",
+        points: 0,
+      },
+      detailText,
+      immediateFlag: false,
+      timestamp,
+    });
+    await audit(req.schoolId, "meeting.log", req, { studentId: String(student._id), incidentId: String(inc._id) });
+    res.json({ ok: true, incident: inc.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Intervention view (admin/VP read-only, school-wide) ──────────────────────
+// Who needs attention right now: students at/near the strike threshold, the
+// most-logged students, and a per-class breakdown. Read-only, admin only.
+router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const triggerCount = config?.triggerCount ?? 3;
+    const fadeDays = config?.fadeWindowDays ?? 30;
+    const fadeCutoff = new Date(Date.now() - fadeDays * DAY_MS);
+
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
+      .select("firstName preferredName lastName grade classGroup noticesHomeCount")
+      .lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    const nameOf = (s) => (s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "—");
+
+    // Current strike load (uncounted THRESHOLD incidents within the fade window).
+    const strikeAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, countedInNoticeId: null, "behaviorSnapshot.triggerMode": "THRESHOLD", timestamp: { $gt: fadeCutoff } } },
+      { $group: { _id: "$studentId", strikes: { $sum: 1 }, last: { $max: "$timestamp" } } },
+    ]);
+    const atThreshold = strikeAgg
+      .filter((a) => a.strikes >= triggerCount - 1 && sById[String(a._id)])
+      .map((a) => ({
+        studentId: String(a._id),
+        name: nameOf(sById[String(a._id)]),
+        classGroup: sById[String(a._id)].classGroup || "—",
+        grade: sById[String(a._id)].grade || "—",
+        strikes: a.strikes,
+        triggerCount,
+        lastAt: a.last,
+      }))
+      .sort((a, b) => b.strikes - a.strikes || new Date(b.lastAt) - new Date(a.lastAt));
+
+    // Most-logged students over the last 90 days (all incidents, any mode).
+    const since = new Date(Date.now() - 90 * DAY_MS);
+    const repeatAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, timestamp: { $gt: since } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 }, last: { $max: "$timestamp" } } },
+      { $sort: { n: -1 } },
+      { $limit: 15 },
+    ]);
+    const topRepeat = repeatAgg
+      .filter((a) => sById[String(a._id)])
+      .map((a) => ({
+        studentId: String(a._id),
+        name: nameOf(sById[String(a._id)]),
+        classGroup: sById[String(a._id)].classGroup || "—",
+        count: a.n,
+        lastAt: a.last,
+      }));
+
+    // Per-class incident counts over the same 90-day window.
+    const byClassAgg = await BehaviorIncident.aggregate([
+      { $match: { schoolId: req.schoolId, timestamp: { $gt: since } } },
+      { $group: { _id: "$studentId", n: { $sum: 1 } } },
+    ]);
+    const classCounts = {};
+    for (const a of byClassAgg) {
+      const cls = sById[String(a._id)]?.classGroup || "—";
+      classCounts[cls] = (classCounts[cls] || 0) + a.n;
+    }
+    const byClass = Object.entries(classCounts)
+      .map(([classGroup, count]) => ({ classGroup, count }))
+      .sort((a, b) => b.count - a.count || a.classGroup.localeCompare(b.classGroup));
+
+    res.json({ ok: true, triggerCount, fadeDays, atThreshold, topRepeat, byClass });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Houses + points ──────────────────────────────────────────────────────────
 
 // Houses with their point totals + member counts (for the leaderboard).
@@ -2343,12 +2488,14 @@ router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
     // Master switch: when Houses is off, the whole aspect is hidden — report no
     // houses so every consumer surface (leaderboard, assignment dropdown) hides.
-    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled").lean();
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt").lean();
     if (!cfg?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [] });
 
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
+    const pointMatch = { schoolId: req.schoolId };
+    if (cfg.housePointsResetAt) pointMatch.at = { $gt: new Date(cfg.housePointsResetAt) };
     const totals = await HousePointEvent.aggregate([
-      { $match: { schoolId: req.schoolId } },
+      { $match: pointMatch },
       { $group: { _id: "$houseId", points: { $sum: "$points" } } },
     ]);
     const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
@@ -2360,6 +2507,7 @@ router.get("/houses", authAny, loadMembership, async (req, res, next) => {
     res.json({
       ok: true,
       enabled: true,
+      resetAt: cfg.housePointsResetAt || null,
       houses: houses
         .map((h) => ({ ...h, points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0 }))
         .sort((a, b) => b.points - a.points),
@@ -2592,10 +2740,12 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
   try {
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).lean();
+    const resetAt = config?.housePointsResetAt ? new Date(config.housePointsResetAt) : null;
+    const sinceMatch = resetAt ? { at: { $gt: resetAt } } : {};
 
     // House totals (all events, +/-).
     const totals = await HousePointEvent.aggregate([
-      { $match: { schoolId: req.schoolId } },
+      { $match: { schoolId: req.schoolId, ...sinceMatch } },
       { $group: { _id: "$houseId", points: { $sum: "$points" } } },
     ]);
     const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
@@ -2603,7 +2753,7 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
     // Top contributors: POSITIVE points only, summed per (house, student),
     // globally sorted so the first 3 seen per house are its top 3.
     const contribAgg = await HousePointEvent.aggregate([
-      { $match: { schoolId: req.schoolId, points: { $gt: 0 }, studentId: { $ne: null } } },
+      { $match: { schoolId: req.schoolId, points: { $gt: 0 }, studentId: { $ne: null }, ...sinceMatch } },
       { $group: { _id: { houseId: "$houseId", studentId: "$studentId" }, points: { $sum: "$points" } } },
       { $sort: { points: -1 } },
     ]);
@@ -2623,6 +2773,16 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
       }
     }
 
+    // House captains.
+    const captainDocs = await BehaviorStudent.find({ schoolId: req.schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
+      .select("firstName preferredName lastName houseId")
+      .lean();
+    const captainsByHouse = {};
+    for (const c of captainDocs) {
+      const k = String(c.houseId);
+      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${c.lastName || ""}`.trim());
+    }
+
     const report = houses
       .map((h) => ({
         _id: String(h._id),
@@ -2630,6 +2790,7 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
         color: h.color || "#0f172a",
         points: totalById[String(h._id)] || 0,
         top: topByHouse[String(h._id)] || [],
+        captains: captainsByHouse[String(h._id)] || [],
       }))
       .sort((a, b) => b.points - a.points);
 
@@ -2645,6 +2806,7 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
           `<div style="display:flex;align-items:center;gap:8px">` +
           `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${h.color}"></span>` +
           `<strong>${i + 1}. ${escapeHtml(h.name)}</strong>` +
+          (h.captains.length ? `<span style="font-size:11px;color:#94a3b8">© ${escapeHtml(h.captains.join(", "))}</span>` : "") +
           `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:#0f172a">${h.points} pts</span>` +
           `</div>` +
           `<div style="background:#f1f5f9;border-radius:4px;height:8px;margin:5px 0"><div style="background:${h.color};height:8px;border-radius:4px;width:${w}%"></div></div>` +
@@ -2880,25 +3042,43 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
+    const sid = new mongoose.Types.ObjectId(schoolId);
     const school = await BehaviorSchool.findById(schoolId).select("name").lean();
 
     const houses = await BehaviorHouse.find({ schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
+    const pointMatch = { schoolId: sid };
+    if (config.housePointsResetAt) pointMatch.at = { $gt: new Date(config.housePointsResetAt) };
     const totals = await HousePointEvent.aggregate([
-      { $match: { schoolId: new mongoose.Types.ObjectId(schoolId) } },
+      { $match: pointMatch },
       { $group: { _id: "$houseId", points: { $sum: "$points" } } },
     ]);
     const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
     const members = await BehaviorStudent.aggregate([
-      { $match: { schoolId: new mongoose.Types.ObjectId(schoolId), active: true, houseId: { $ne: null } } },
+      { $match: { schoolId: sid, active: true, houseId: { $ne: null } } },
       { $group: { _id: "$houseId", n: { $sum: 1 } } },
     ]);
     const memberById = Object.fromEntries(members.map((m) => [String(m._id), m.n]));
     const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+
+    // House captains (first name + last initial only — minimal PII for a wall board).
+    const captains = await BehaviorStudent.find({ schoolId, active: true, houseCaptain: true, houseId: { $ne: null } })
+      .select("firstName preferredName lastName houseId")
+      .lean();
+    const captainsByHouse = {};
+    for (const c of captains) {
+      const k = String(c.houseId);
+      (captainsByHouse[k] ||= []).push(`${c.preferredName || c.firstName} ${(c.lastName || "").charAt(0)}.`.trim());
+    }
+
     const houseOut = houses
-      .map((h) => ({ id: String(h._id), name: h.name, color: h.color || "#0f172a", points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0 }))
+      .map((h) => ({
+        id: String(h._id), name: h.name, color: h.color || "#0f172a",
+        points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0,
+        captains: captainsByHouse[String(h._id)] || [],
+      }))
       .sort((a, b) => b.points - a.points);
 
     const comps = await BehaviorCompetition.find({ schoolId, active: true }).sort({ monthOrder: 1 }).lean();
@@ -2912,7 +3092,17 @@ router.get("/public/houses", async (req, res, next) => {
         .map((r) => ({ place: r.place, houseName: houseById[String(r.houseId)]?.name || "", houseColor: houseById[String(r.houseId)]?.color || "#0f172a" })),
     }));
 
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut });
+    // Recent point activity — last ~12 awards (house-level only, no student names).
+    const recent = await HousePointEvent.find(pointMatch).sort({ at: -1 }).limit(12).select("houseId points reason at").lean();
+    const activity = recent.map((e) => ({
+      house: houseById[String(e.houseId)]?.name || "",
+      color: houseById[String(e.houseId)]?.color || "#0f172a",
+      points: e.points,
+      reason: e.reason || "",
+      at: e.at,
+    }));
+
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity });
   } catch (err) {
     next(err);
   }

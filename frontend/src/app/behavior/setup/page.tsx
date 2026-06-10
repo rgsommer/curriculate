@@ -716,10 +716,48 @@ function HousesSection({ config }: { config?: any }) {
     }
   }
 
+  // Term reset (only points after this date count toward standings).
+  const [resetAt, setResetAt] = useState<string | null>(config?.housePointsResetAt || null);
+  const [resetBusy, setResetBusy] = useState(false);
+
+  // Captains: full roster so we can pick per-house leaders.
+  const [roster, setRoster] = useState<any[] | null>(null);
+  function loadRoster() {
+    api<{ students: any[] }>("/students").then((d) => setRoster(d.students || [])).catch(() => setRoster([]));
+  }
+
+  async function setCaptain(studentId: string, on: boolean) {
+    setRoster((prev) => (prev || []).map((s) => (s._id === studentId ? { ...s, houseCaptain: on } : s)));
+    try { await api(`/students/${studentId}`, { method: "PATCH", body: { houseCaptain: on } }); }
+    catch (e: any) { setErr(e.message); loadRoster(); }
+  }
+
+  async function startNewTerm() {
+    if (!window.confirm("Start a new term? House standings reset to zero from now — earlier points are kept in history but stop counting toward the leaderboard and competitions.")) return;
+    setResetBusy(true);
+    try {
+      const now = new Date().toISOString();
+      await api("/config", { method: "PUT", body: { housePointsResetAt: now } });
+      setResetAt(now);
+      load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
+  async function clearTermReset() {
+    if (!window.confirm("Count ALL house points again (since the start)? This undoes the term reset.")) return;
+    setResetBusy(true);
+    try {
+      await api("/config", { method: "PUT", body: { housePointsResetAt: null } });
+      setResetAt(null);
+      load();
+    } catch (e: any) { setErr(e.message); }
+    finally { setResetBusy(false); }
+  }
+
   function load() {
     api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch((e) => setErr(e.message));
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadRoster(); }, []);
 
   async function backfill(mode: "full" | "unassigned") {
     const confirmMsg = mode === "unassigned"
@@ -866,6 +904,78 @@ function HousesSection({ config }: { config?: any }) {
             Set code
           </button>
           {portalMsg && <span className="text-xs text-red-600">{portalMsg}</span>}
+        </div>
+      </div>
+
+      {/* House captains */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">House captains</p>
+        <p className="mt-0.5 text-xs text-slate-500">Mark a student leader for each house. Captains show on the standings report and the student portal (first name + last initial only).</p>
+        {roster === null ? (
+          <p className="mt-2 text-xs text-slate-400">Loading roster…</p>
+        ) : (
+          <div className="mt-2 space-y-3">
+            {(houses || []).map((h) => {
+              const members = roster.filter((s) => String(s.houseId) === String(h._id));
+              const caps = members.filter((s) => s.houseCaptain);
+              const nonCaps = members.filter((s) => !s.houseCaptain);
+              return (
+                <div key={h._id}>
+                  <div className="flex items-center gap-2 text-sm font-medium">
+                    <span className="inline-block h-3 w-3 rounded-full" style={{ background: h.color || "#0f172a" }} />
+                    {h.name}
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {caps.map((s) => (
+                      <button key={s._id} onClick={() => setCaptain(s._id, false)}
+                        className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200">
+                        © {s.preferredName || s.firstName} {s.lastName} <span className="text-slate-400">✕</span>
+                      </button>
+                    ))}
+                    {caps.length === 0 && <span className="text-xs text-slate-400">No captains yet.</span>}
+                    {nonCaps.length > 0 && (
+                      <select
+                        value=""
+                        onChange={(e) => { if (e.target.value) setCaptain(e.target.value, true); }}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-0.5 text-xs"
+                      >
+                        <option value="">+ add captain…</option>
+                        {nonCaps
+                          .slice()
+                          .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
+                          .map((s) => (
+                            <option key={s._id} value={s._id}>{s.lastName}, {s.firstName}{s.preferredName ? ` (${s.preferredName})` : ""}</option>
+                          ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+            {(houses || []).length === 0 && <p className="text-xs text-slate-400">Define houses first.</p>}
+          </div>
+        )}
+      </div>
+
+      {/* Term / seasonal reset */}
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">Term standings</p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {resetAt
+            ? <>Standings count points earned since <span className="font-medium">{new Date(resetAt).toLocaleDateString()}</span>. Earlier points are kept in history.</>
+            : "All points since the start currently count toward the leaderboard."}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button onClick={startNewTerm} disabled={resetBusy}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            {resetBusy ? "…" : "Start a new term (reset standings)"}
+          </button>
+          {resetAt && (
+            <button onClick={clearTermReset} disabled={resetBusy}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-40">
+              Count all points again
+            </button>
+          )}
         </div>
       </div>
 
