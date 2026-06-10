@@ -235,6 +235,11 @@ export default function EngagementDetailPage() {
   // Truth or Dare prompts (host-defined).
   const [editTruthPrompt, setEditTruthPrompt] = useState("");
   const [editDarePrompt, setEditDarePrompt] = useState("");
+  // Poll: editable format + options (lets a host convert an options poll to open).
+  const [editPollFormat, setEditPollFormat] = useState<
+    "multiple" | "yes_no" | "open"
+  >("multiple");
+  const [editPollOptions, setEditPollOptions] = useState<string[]>([]);
   const [editLeadDays, setEditLeadDays] = useState(14); // how many days before it opens
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
@@ -501,9 +506,22 @@ export default function EngagementDetailPage() {
       const cfg = (engagement.config ?? {}) as {
         truthPrompt?: string;
         darePrompt?: string;
+        format?: "multiple" | "yes_no" | "open";
       };
       setEditTruthPrompt(cfg.truthPrompt ?? "");
       setEditDarePrompt(cfg.darePrompt ?? "");
+      // Infer the format for polls created before the format field existed.
+      const opts = pollOptions;
+      const inferred: "multiple" | "yes_no" | "open" =
+        cfg.format ??
+        (opts.length === 0
+          ? "open"
+          : opts.length === 2 &&
+            opts.map((o) => o.toLowerCase()).join(",") === "yes,no"
+          ? "yes_no"
+          : "multiple");
+      setEditPollFormat(inferred);
+      setEditPollOptions(opts.length ? opts : ["", "", ""]);
     }
     setEditLeadDays(engagement.lead_days ?? 14);
     // Birthday: the deadline IS the birthday (the day it reveals). Pre-fill the
@@ -578,6 +596,27 @@ export default function EngagementDetailPage() {
         ...(engagement.config ?? {}),
         truthPrompt: tp,
         darePrompt: dp,
+      };
+    }
+    // Poll: persist the (possibly changed) format + options.
+    if (engagement.type === "poll") {
+      let options: string[];
+      if (editPollFormat === "open") {
+        options = [];
+      } else if (editPollFormat === "yes_no") {
+        options = ["Yes", "No"];
+      } else {
+        options = editPollOptions.map((o) => o.trim()).filter(Boolean);
+        if (options.length < 2) {
+          alert("A multiple-choice poll needs at least 2 options.");
+          setSavingEdit(false);
+          return;
+        }
+      }
+      careFields.config = {
+        ...(engagement.config ?? {}),
+        format: editPollFormat,
+        options,
       };
     }
     const { error } = await supabase
@@ -2784,6 +2823,92 @@ export default function EngagementDetailPage() {
               </div>
 
               {/* Care Check-in: edit prompts + response type, add/remove questions */}
+              {engagement.type === "poll" && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-medium text-slate-500">
+                    Answer format
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        { v: "multiple", label: "Multiple choice" },
+                        { v: "yes_no", label: "Yes / No" },
+                        { v: "open", label: "Open-ended" },
+                      ] as const
+                    ).map((o) => {
+                      const on = editPollFormat === o.v;
+                      return (
+                        <button
+                          key={o.v}
+                          type="button"
+                          onClick={() => setEditPollFormat(o.v)}
+                          className={`rounded-lg border px-2 py-1.5 text-center text-xs font-medium transition ${
+                            on
+                              ? "border-orange-500 bg-orange-50 text-slate-900"
+                              : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                          }`}
+                        >
+                          {o.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {editPollFormat === "open" ? (
+                    <p className="text-xs text-slate-500">
+                      People type their own answer.
+                      {responseCount > 0 && (
+                        <span className="text-amber-600">
+                          {" "}
+                          ⚠️ Existing option votes won&apos;t show once it&apos;s open-ended.
+                        </span>
+                      )}
+                    </p>
+                  ) : editPollFormat === "yes_no" ? (
+                    <p className="text-xs text-slate-500">Answers are Yes or No.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {editPollOptions.map((opt, i) => (
+                        <div key={i} className="flex gap-2">
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={(e) => {
+                              const next = [...editPollOptions];
+                              next[i] = e.target.value;
+                              setEditPollOptions(next);
+                            }}
+                            placeholder={`Option ${i + 1}`}
+                            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+                          />
+                          {editPollOptions.length > 2 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditPollOptions(
+                                  editPollOptions.filter((_, j) => j !== i)
+                                )
+                              }
+                              className="px-2 text-slate-400 hover:text-red-500"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                      {editPollOptions.length < 8 && (
+                        <button
+                          type="button"
+                          onClick={() => setEditPollOptions([...editPollOptions, ""])}
+                          className="text-sm font-medium text-orange-600"
+                        >
+                          + Add option
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {engagement.type === "truth_or_dare" && (
                 <div className="space-y-3">
                   <div>
