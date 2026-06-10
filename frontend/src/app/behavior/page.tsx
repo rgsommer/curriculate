@@ -251,10 +251,11 @@ function ExecutiveSummaryCard() {
     try {
       const r = await api<{ emailed: boolean; emailError?: string }>("/executive-summary", {
         body: { scope, months, email: true, summaryText: summary },
+        timeoutMs: 45000,
       });
-      setMsg(r.emailed ? "Emailed to you (with a monthly-trend chart)." : `Email failed: ${r.emailError || "check SMTP"}`);
+      setMsg(r.emailed ? "✓ Emailed to you (with the red/green chart)." : `✗ Email failed: ${r.emailError || "check email settings"}`);
     } catch (e: any) {
-      setMsg(e.message);
+      setMsg(`✗ ${e.message}`);
     } finally {
       setBusy("");
     }
@@ -279,7 +280,7 @@ function ExecutiveSummaryCard() {
           {busy === "all" ? "Generating…" : "Whole division"}
         </button>
       </div>
-      {msg && <p className="mt-2 text-sm text-green-700">{msg}</p>}
+      {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
       {summary && (
         <>
           <button onClick={emailIt} disabled={!!busy} className="mt-2 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
