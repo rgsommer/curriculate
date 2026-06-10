@@ -53,6 +53,7 @@ export default function OrdersPage() {
   const [open, setOpen] = useState(() => new Set());
   const [result, setResult] = useState(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const [amending, setAmending] = useState(null); // current submitted order being edited, or null
 
   const groups = useMemo(() => buildGroups(catalog), [catalog]);
 
@@ -98,11 +99,15 @@ export default function OrdersPage() {
       .then((r) => r.json())
       .then((j) => {
         if (cancelled) return;
-        if (Array.isArray(j.items) && j.items.length) {
+        // An in-progress draft wins; otherwise seed from the current submitted order
+        // so the teacher can amend (add/change/remove) and resubmit to replace it.
+        const source = Array.isArray(j.items) && j.items.length ? j.items : (j.submitted?.items || []);
+        if (source.length) {
           const m = {};
-          for (const it of j.items) if (it?.id && it?.qty > 0) m[it.id] = it.qty;
+          for (const it of source) if (it?.id && it?.qty > 0) m[it.id] = it.qty;
           setQty(m);
         }
+        if (j.submitted) setAmending(j.submitted);
         if (j.teacherName) setTeacherName((cur) => cur || j.teacherName);
       })
       .catch(() => {})
@@ -300,24 +305,31 @@ export default function OrdersPage() {
           <div className="max-w-2xl mx-auto mt-8 bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
             <div className="flex items-center gap-2 text-green-700 mb-2">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6 9 17l-5-5"/></svg>
-              <h2 className="text-lg font-semibold">Order sent</h2>
+              <h2 className="text-lg font-semibold">{result.updated ? "Order updated" : "Order sent"}</h2>
             </div>
             <p className="text-sm text-slate-600 mb-4">
-              Thanks, {teacherName}. Your order of <strong>{result.lineCount}</strong> item{result.lineCount === 1 ? "" : "s"} totalling <strong>{money(result.total)}</strong> was sent to finance, and a confirmation is on its way to {email}.
+              Thanks, {teacherName}. Your order of <strong>{result.lineCount}</strong> item{result.lineCount === 1 ? "" : "s"} totalling <strong>{money(result.total)}</strong> was {result.updated ? "updated and re-sent" : "sent"} to finance, and a {result.updated ? "copy" : "confirmation"} is on its way to {email}. {result.updated ? "It replaces your previous order." : ""}
               {result.emailed && !result.emailed.teacher && (
                 <span className="block mt-1 text-amber-600">(Email delivery is not configured in this environment, but your order was recorded.)</span>
               )}
             </p>
-            <button onClick={() => { setQty({}); setResult(null); setStage("order"); setQuery(""); }}
+            <p className="text-xs text-slate-500 mb-4">Need to fix something? You can re-open and change your order anytime — resubmitting always replaces it.</p>
+            <button onClick={() => { setResult(null); setQuery(""); setDraftLoaded(false); setStage("order"); }}
               className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700">
-              Start another order
+              Back to my order
             </button>
           </div>
         )}
 
         {/* ---- ORDER ---- */}
         {stage === "order" && (
-          <div className="grid md:grid-cols-[1fr_320px] gap-6 items-start">
+          <div>
+            {amending && (
+              <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 text-sm">
+                You have an order already submitted{amending.updatedAt ? ` on ${new Date(amending.updatedAt).toLocaleDateString("en-CA", { dateStyle: "medium" })}` : ""}{amending.revision > 1 ? ` (revision ${amending.revision})` : ""}. It's loaded below — change quantities, add or remove items, then <strong>Update order</strong> to replace it.
+              </div>
+            )}
+            <div className="grid md:grid-cols-[1fr_320px] gap-6 items-start">
             <div>
               <div className="bg-white rounded-xl border border-slate-200 p-4 mb-4 shadow-sm sticky top-0 z-10">
                 <input value={query} onChange={(e) => setQuery(e.target.value)}
@@ -405,10 +417,11 @@ export default function OrdersPage() {
               </div>
               <button disabled={busy || selected.length === 0} onClick={submitOrder}
                 className="w-full rounded-lg bg-indigo-600 text-white py-2.5 font-medium hover:bg-indigo-700 disabled:opacity-50">
-                {busy ? "Sending…" : "Send order"}
+                {busy ? (amending ? "Updating…" : "Sending…") : (amending ? "Update order" : "Send order")}
               </button>
-              <p className="text-xs text-slate-400 mt-2 text-center">Finance and you both get an email copy.</p>
+              <p className="text-xs text-slate-400 mt-2 text-center">{amending ? "Replaces your current order. " : ""}Finance and you both get an email copy.</p>
             </aside>
+            </div>
           </div>
         )}
       </main>

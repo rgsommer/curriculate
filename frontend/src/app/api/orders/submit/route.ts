@@ -32,59 +32,66 @@ export async function POST(req: Request) {
 
   const cfg = await getConfig();
   const { schoolName } = cfg;
-  const createdAt = new Date();
+  const now = new Date();
 
-  // Persist (best-effort: if Mongo isn't configured locally, still send emails).
+  // One order per teacher: a resubmit REPLACES the previous one (amend = add/change).
+  // delete+insert also collapses any legacy duplicate docs into a single current order.
   let orderId: string | null = null;
+  let isUpdate = false;
+  let revision = 1;
+  let createdAt = now;
   const db = await getDb();
   if (db) {
-    const doc = {
-      teacherEmail: email,
-      teacherName,
-      createdAt,
-      lines,
-      total,
-      schoolName,
-    };
-    const r = await db.collection("bcs_orders").insertOne(doc as any);
+    const prior = await db.collection("bcs_orders").find({ teacherEmail: email }).toArray();
+    isUpdate = prior.length > 0;
+    if (isUpdate) {
+      createdAt = prior.reduce((min: Date, d: any) => (d.createdAt && (!min || d.createdAt < min) ? d.createdAt : min), null as any) || now;
+      revision = prior.reduce((mx: number, d: any) => Math.max(mx, Number(d.revision) || 1), 0) + 1;
+      await db.collection("bcs_orders").deleteMany({ teacherEmail: email });
+    }
+    const r = await db.collection("bcs_orders").insertOne({
+      teacherEmail: email, teacherName, createdAt, updatedAt: now, revision, lines, total, schoolName,
+    } as any);
     orderId = String(r.insertedId);
-    // Order submitted — clear this teacher's saved draft.
+    // Order submitted — clear this teacher's in-progress draft.
     await db.collection("bcs_drafts").deleteOne({ _id: email as any }).catch(() => {});
   }
 
   const orderTable = renderOrderHtml(lines, total);
-  const dateStr = createdAt.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  const dateStr = now.toLocaleString("en-CA", { dateStyle: "medium", timeStyle: "short" });
+  const verb = isUpdate ? "updated" : "submitted";
 
   // One .xlsx per supplier (that teacher's order) attached to the finance email.
   const attachments = buildSupplierWorkbooks(lines, { teacherName, schoolName, dateStr });
 
   // Teacher confirmation
   const teacherHtml = pageShell(
-    "Your supply order — confirmation",
-    `<p style="margin:0 0 6px">Hi ${escapeName(teacherName)}, thanks — your order has been sent to ${escapeName(schoolName)} finance.</p>
-     <p style="margin:0 0 12px;font-size:13px;color:#6b7280">Submitted ${dateStr} · ${lines.length} item${lines.length === 1 ? "" : "s"}</p>
+    isUpdate ? "Your supply order — updated" : "Your supply order — confirmation",
+    `<p style="margin:0 0 6px">Hi ${escapeName(teacherName)}, thanks — your order has been ${verb} and sent to ${escapeName(schoolName)} finance. It replaces any earlier version.</p>
+     <p style="margin:0 0 12px;font-size:13px;color:#6b7280">${isUpdate ? "Updated" : "Submitted"} ${dateStr} · ${lines.length} item${lines.length === 1 ? "" : "s"}</p>
      ${orderTable}`,
     schoolName
   );
 
   // Finance copy
   const financeHtml = pageShell(
-    `Supply order from ${teacherName}`,
-    `<p style="margin:0 0 6px"><strong>${escapeName(teacherName)}</strong> (${escapeName(email)}) submitted an order.</p>
+    `Supply order ${isUpdate ? "UPDATED" : "from"} ${isUpdate ? "" : ""}${teacherName}`,
+    `<p style="margin:0 0 6px"><strong>${escapeName(teacherName)}</strong> (${escapeName(email)}) ${verb} ${isUpdate ? `their order (revision ${revision} — this replaces their previous order)` : "an order"}.</p>
      <p style="margin:0 0 12px;font-size:13px;color:#6b7280">${dateStr} · ${lines.length} item${lines.length === 1 ? "" : "s"} · ${money(total)}</p>
      ${orderTable}
-     <p style="margin:16px 0 0;font-size:13px;color:#6b7280">A combined school-wide total of all teachers' orders is at <a href="https://www.curriculate.net/orders/summary">curriculate.net/orders/summary</a>.</p>`,
+     <p style="margin:16px 0 0;font-size:13px;color:#6b7280">The combined school-wide total (current order per teacher) is at <a href="https://www.curriculate.net/orders/summary">curriculate.net/orders/summary</a>.</p>`,
     schoolName
   );
 
   const financeTo = financeRecipients(cfg); // honours each person's "receive emails" box
+  const subjPrefix = isUpdate ? "Supply order UPDATED" : "Supply order";
   const [teacherSend, financeSend] = await Promise.all([
-    sendEmail({ to: email, subject: `Your supply order — ${money(total)} (${lines.length} items)`, html: teacherHtml }),
+    sendEmail({ to: email, subject: `Your supply order ${isUpdate ? "updated" : "received"} — ${money(total)} (${lines.length} items)`, html: teacherHtml }),
     financeTo.length
       ? sendEmail({
           to: financeTo,
           replyTo: email,
-          subject: `Supply order: ${teacherName} — ${money(total)} (${lines.length} items)`,
+          subject: `${subjPrefix}: ${teacherName} — ${money(total)} (${lines.length} items)`,
           html: financeHtml,
           attachments,
         })
@@ -94,6 +101,8 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     orderId,
+    updated: isUpdate,
+    revision,
     total,
     lineCount: lines.length,
     lines,

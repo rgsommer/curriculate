@@ -22,12 +22,25 @@ export async function GET(req: Request) {
   const email = emailFrom(req);
   if (!email) return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   const db = await getDb();
-  if (!db) return NextResponse.json({ items: [], teacherName: "" });
+  if (!db) return NextResponse.json({ items: [], teacherName: "", submitted: null });
   const doc = await db.collection("bcs_drafts").findOne({ _id: email as any });
+  // Also surface the teacher's current submitted order so they can re-open + amend it.
+  const order = await db.collection("bcs_orders").findOne({ teacherEmail: email });
+  const submitted = order
+    ? {
+        items: (Array.isArray(order.lines) ? order.lines : []).map((l: any) => ({ id: l.id, sku: l.sku, qty: l.qty })),
+        teacherName: order.teacherName || "",
+        total: Number(order.total || 0),
+        revision: Number(order.revision || 1),
+        createdAt: order.createdAt ? new Date(order.createdAt).toISOString() : null,
+        updatedAt: order.updatedAt ? new Date(order.updatedAt).toISOString() : null,
+      }
+    : null;
   return NextResponse.json({
     items: Array.isArray(doc?.items) ? doc!.items : [],
-    teacherName: doc?.teacherName || "",
+    teacherName: doc?.teacherName || submitted?.teacherName || "",
     updatedAt: doc?.updatedAt ? new Date(doc.updatedAt).toISOString() : null,
+    submitted,
   });
 }
 
