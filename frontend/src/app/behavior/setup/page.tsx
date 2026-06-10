@@ -696,17 +696,21 @@ function HousesSection({ config }: { config?: any }) {
 
   // Student portal code.
   const [portalCode, setPortalCode] = useState(config?.housePortalCode || "");
+  const [portalInput, setPortalInput] = useState("");
   const [portalBusy, setPortalBusy] = useState(false);
+  const [portalMsg, setPortalMsg] = useState("");
 
-  async function genPortalCode() {
-    if (portalCode && !window.confirm("Generate a new code? The current one will stop working for students.")) return;
+  async function setPortalCodeTo(custom?: string) {
+    if (portalCode && !custom && !window.confirm("Generate a new random code? The current one will stop working for students.")) return;
     setPortalBusy(true);
+    setPortalMsg("");
     try {
-      const r = await api<{ code: string }>("/houses/portal-code", { body: {} });
+      const r = await api<{ code: string }>("/houses/portal-code", { body: custom ? { code: custom } : {} });
       setPortalCode(r.code);
+      setPortalInput("");
       setEnabled(true);
     } catch (e: any) {
-      setErr(e.message);
+      setPortalMsg(e.message);
     } finally {
       setPortalBusy(false);
     }
@@ -844,10 +848,24 @@ function HousesSection({ config }: { config?: any }) {
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-3">
           {portalCode && <span className="rounded-lg bg-white px-3 py-1.5 font-mono text-lg tracking-widest">{portalCode}</span>}
-          <button onClick={genPortalCode} disabled={portalBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
-            {portalBusy ? "…" : portalCode ? "New code" : "Generate code"}
+          <button onClick={() => setPortalCodeTo()} disabled={portalBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            {portalBusy ? "…" : portalCode ? "Random" : "Generate code"}
           </button>
           {portalCode && <a href="/houses" target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            value={portalInput}
+            onChange={(e) => setPortalInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            placeholder="set your own (e.g. 1977)"
+            className="w-44 rounded-lg border border-slate-300 px-3 py-1.5 text-sm"
+          />
+          <button onClick={() => setPortalCodeTo(portalInput)} disabled={portalBusy || portalInput.length < 3}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+            Set code
+          </button>
+          {portalMsg && <span className="text-xs text-red-600">{portalMsg}</span>}
         </div>
       </div>
 

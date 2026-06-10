@@ -2677,12 +2677,22 @@ router.delete("/competitions/:id", authAny, loadMembership, requireAdmin, async 
 router.post("/houses/portal-code", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
     let code = "";
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const c = String(1000 + (crypto.randomBytes(2).readUInt16BE(0) % 9000));
-      const taken = await BehaviorConfig.findOne({ housePortalCode: c, schoolId: { $ne: req.schoolId } }).select("_id").lean();
-      if (!taken) { code = c; break; }
+    const wanted = String(req.body?.code || "").trim();
+    if (wanted) {
+      // Custom code: 3–6 digits, not already used by another school.
+      if (!/^\d{3,6}$/.test(wanted)) return res.status(400).json({ ok: false, error: "Code must be 3–6 digits." });
+      const taken = await BehaviorConfig.findOne({ housePortalCode: wanted, schoolId: { $ne: req.schoolId } }).select("_id").lean();
+      if (taken) return res.status(409).json({ ok: false, error: "That code is taken by another school — pick another." });
+      code = wanted;
+    } else {
+      // Auto: random unique 4-digit.
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const c = String(1000 + (crypto.randomBytes(2).readUInt16BE(0) % 9000));
+        const t = await BehaviorConfig.findOne({ housePortalCode: c, schoolId: { $ne: req.schoolId } }).select("_id").lean();
+        if (!t) { code = c; break; }
+      }
+      if (!code) return res.status(500).json({ ok: false, error: "Could not allocate a code — try again" });
     }
-    if (!code) return res.status(500).json({ ok: false, error: "Could not allocate a code — try again" });
     await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { housePortalCode: code, housesEnabled: true } });
     await audit(req.schoolId, "houses.portal_code", req, {});
     res.json({ ok: true, code });
