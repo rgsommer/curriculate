@@ -230,7 +230,7 @@ function ExecutiveSummaryCard() {
     setSummary("");
     setScope(s);
     try {
-      const r = await api<{ summary: string; aiUsed: boolean }>("/executive-summary", { body: { scope: s, months } });
+      const r = await api<{ summary: string; aiUsed: boolean }>("/executive-summary", { body: { scope: s, months }, timeoutMs: 45000 });
       setSummary(r.summary);
       try {
         await navigator.clipboard.writeText(r.summary);

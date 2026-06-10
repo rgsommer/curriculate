@@ -2112,7 +2112,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       try {
         const client = makeDefaultAiClient(config || {});
         if (client) {
-          const out = await Promise.race([client.complete(prompt), new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 20000))]);
+          const out = await Promise.race([client.complete(prompt), new Promise((_, r) => setTimeout(() => r(new Error("AI timeout")), 15000))]);
           if (out && String(out).trim()) { summary = String(out).trim(); aiUsed = true; }
         }
       } catch {

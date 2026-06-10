@@ -32,6 +32,7 @@ type ApiOptions = {
   method?: string;
   body?: any;
   isForm?: boolean;
+  timeoutMs?: number; // abort after this long so the UI never hangs forever
 };
 
 export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise<T> {
@@ -47,11 +48,28 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
     body = JSON.stringify(opts.body);
   }
 
-  const res = await fetch(`${API_BASE}/api/behavior${path}`, {
-    method: opts.method || (opts.body !== undefined ? "POST" : "GET"),
-    headers,
-    body,
-  });
+  let signal: AbortSignal | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  if (opts.timeoutMs) {
+    const ctrl = new AbortController();
+    signal = ctrl.signal;
+    timer = setTimeout(() => ctrl.abort(), opts.timeoutMs);
+  }
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}/api/behavior${path}`, {
+      method: opts.method || (opts.body !== undefined ? "POST" : "GET"),
+      headers,
+      body,
+      signal,
+    });
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw new ApiError("Timed out — please try again.", 0, null);
+    throw e;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 
   let data: any = null;
   try {

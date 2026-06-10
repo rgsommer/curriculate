@@ -84,7 +84,7 @@ export default function StudentPage() {
     setSummaryMsg("");
     setSummary("");
     try {
-      const r = await api<{ summary: string; aiUsed: boolean }>(`/students/${params.id}/admin-summary`, { body: { scope } });
+      const r = await api<{ summary: string; aiUsed: boolean }>(`/students/${params.id}/admin-summary`, { body: { scope }, timeoutMs: 45000 });
       setSummary(r.summary);
       setSummaryScope(scope);
       try {
