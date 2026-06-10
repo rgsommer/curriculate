@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, getToken, loginHref } from "../../_lib/api";
+import { api, getToken, loginHref, type Me } from "../../_lib/api";
 import { Markdown } from "../../_lib/Markdown";
+import { Timeline, buildByMonth } from "../../_components/Timeline";
 
 type TeacherNote = { name?: string; text: string; at: string };
 type StudentDetail = {
@@ -14,7 +15,8 @@ type StudentDetail = {
   noticesHomeCount: number;
   incidents: Array<{
     _id: string;
-    behaviorSnapshot: { name: string; triggerMode: string };
+    teacherId?: string;
+    behaviorSnapshot: { name: string; triggerMode: string; kind?: string; points?: number };
     detailText?: string;
     teacherName?: string;
     teacherNotes?: TeacherNote[];
@@ -31,6 +33,9 @@ type StudentDetail = {
     aiUsed: boolean;
     renderedText: string;
     createdAt: string;
+    sentAt?: string;
+    legacyImport?: boolean;
+    triggeringIncidentIds?: string[];
     cancelUntil?: string;
     autoDispatch?: boolean;
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
@@ -44,8 +49,12 @@ const fmtDT = (d: string) =>
 export default function StudentPage() {
   const params = useParams<{ id: string }>();
   const [data, setData] = useState<StudentDetail | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openNotice, setOpenNotice] = useState<string | null>(null);
+  // Incident edit/delete
+  const [editIncId, setEditIncId] = useState<string | null>(null);
+  const [editDetail, setEditDetail] = useState("");
 
   // Admin summary
   const [summary, setSummary] = useState<string>("");
@@ -70,6 +79,10 @@ export default function StudentPage() {
   }, [params?.id]);
 
   useEffect(() => {
+    if (getToken()) api<Me>("/me").then(setMe).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (!getToken() || !params?.id) return;
     load();
   }, [params?.id, load]);
@@ -80,6 +93,10 @@ export default function StudentPage() {
 
   const s = data.student;
   const pct = Math.min(100, Math.round((data.activeCount / Math.max(1, data.triggerCount)) * 100));
+  const myId = me?.membership?._id;
+  const isAdmin = me?.membership?.role === "originator" || me?.membership?.role === "admin";
+  const canEditInc = (inc: { teacherId?: string }) => isAdmin || (!!myId && String(inc.teacherId) === String(myId));
+  const byMonth = buildByMonth(data.incidents as any, data.notices as any);
 
   async function adminSummary(scope: "all" | "current") {
     setSummaryBusy(scope);
@@ -147,6 +164,25 @@ export default function StudentPage() {
   async function dontSend(id: string) {
     try {
       await api(`/notices/${id}/cancel`, { body: {} });
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  async function saveIncidentEdit(id: string) {
+    try {
+      await api(`/incidents/${id}`, { method: "PUT", body: { detailText: editDetail } });
+      setEditIncId(null);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+  async function deleteIncident(id: string) {
+    if (!window.confirm("Delete this incident? This removes it from the student's strikes and history.")) return;
+    try {
+      await api(`/incidents/${id}`, { method: "DELETE" });
       load();
     } catch (e: any) {
       setError(e.message);
@@ -227,6 +263,16 @@ export default function StudentPage() {
           )}
         </div>
       </section>
+
+      {/* Trend over time */}
+      {Object.keys(byMonth).length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">Trend over time</h2>
+          <div className="mt-3">
+            <Timeline byMonth={byMonth} />
+          </div>
+        </section>
+      )}
 
       {/* Communication history */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -309,15 +355,32 @@ export default function StudentPage() {
         <ul className="mt-2 divide-y divide-slate-100">
           {data.incidents.map((inc) => (
             <li key={inc._id} className="py-3 text-sm">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-2">
                 <span>
                   {inc.behaviorSnapshot.name}
                   {inc.behaviorSnapshot.triggerMode === "IMMEDIATE" && <span className="ml-2 text-xs text-amber-600">immediate</span>}
                   {inc.teacherName ? <span className="text-slate-400"> · {inc.teacherName}</span> : null}
-                  {inc.detailText ? <span className="text-slate-400"> — {inc.detailText}</span> : null}
+                  {editIncId !== inc._id && inc.detailText ? <span className="text-slate-400"> — {inc.detailText}</span> : null}
                 </span>
-                <span className="shrink-0 pl-2 text-slate-400">{fmtDT(inc.timestamp)}</span>
+                <span className="flex shrink-0 items-center gap-2 pl-2 text-slate-400">
+                  {fmtDT(inc.timestamp)}
+                  {canEditInc(inc) && editIncId !== inc._id && (
+                    <>
+                      <button onClick={() => { setEditIncId(inc._id); setEditDetail(inc.detailText || ""); }} className="text-xs text-slate-500 underline">edit</button>
+                      <button onClick={() => deleteIncident(inc._id)} className="text-xs text-red-600 underline">delete</button>
+                    </>
+                  )}
+                </span>
               </div>
+              {editIncId === inc._id && (
+                <div className="mt-1 flex gap-2 pl-3">
+                  <input value={editDetail} onChange={(e) => setEditDetail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && saveIncidentEdit(inc._id)}
+                    placeholder="Detail / comment…" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs" autoFocus />
+                  <button onClick={() => saveIncidentEdit(inc._id)} className="rounded-lg bg-slate-900 px-2 py-1 text-xs text-white">Save</button>
+                  <button onClick={() => setEditIncId(null)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">Cancel</button>
+                </div>
+              )}
 
               {(inc.teacherNotes || []).length > 0 && (
                 <ul className="mt-1 space-y-0.5 pl-3">

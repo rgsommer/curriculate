@@ -13,7 +13,7 @@ import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
 import { EmailProvider } from "./providers/EmailProvider.js";
 import { emailShell, noteToHtml } from "./emailTemplate.js";
 import { EdsbyProvider } from "./providers/EdsbyProvider.js";
-import { decrypt } from "./secretBox.js";
+import { decrypt, encrypt } from "./secretBox.js";
 
 export function getDefaultProviders(edsby = {}) {
   return { email: new EmailProvider(), edsby: new EdsbyProvider(edsby) };
@@ -83,6 +83,21 @@ export async function dispatchNotice(noticeId, { providers } = {}) {
         }
       : {};
     prov = getDefaultProviders(edsby);
+
+    // Refresh the (short-lived) formkey from the stored cookie right before
+    // sending, so Edsby doesn't reject the broadcast and fall over to email
+    // just because the formkey went stale since it was last saved.
+    if (e?.enabled && edsby.cookie && notice.channels?.includes("edsby")) {
+      try {
+        const r = await prov.edsby.testConnection(e.zoomId);
+        if (r?.ok && r.formkey) {
+          prov.edsby.formkey = r.formkey;
+          await BehaviorConfig.updateOne({ schoolId: notice.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+        }
+      } catch {
+        /* fall through with the stored formkey; failover still protects us */
+      }
+    }
   }
   const studentName = student?.preferredName || student?.firstName || "your child";
   const positive = notice.reason === "positive";

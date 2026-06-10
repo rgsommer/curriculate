@@ -63,6 +63,8 @@ export default function LogIncidentPage() {
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<NoticeResult>(null);
   const [positiveNotice, setPositiveNotice] = useState<{ _id: string; status: string } | null>(null);
+  const [createdIds, setCreatedIds] = useState<string[]>([]);
+  const [undone, setUndone] = useState(false);
   const [trigger, setTrigger] = useState<{ date: string; teacher: string; offense: string; comment: string }[]>([]);
   const [triggerCount, setTriggerCount] = useState(3);
   const [done, setDone] = useState(false);
@@ -167,7 +169,7 @@ export default function LogIncidentPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await api<{ notice: NoticeResult; positiveNotice: { _id: string; status: string } | null; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
+      const res = await api<{ notice: NoticeResult; positiveNotice: { _id: string; status: string } | null; incidents?: { _id: string }[]; triggerIncidents: any[]; triggerCount: number }>("/incidents", {
         body: {
           studentId: student._id,
           behaviorIds: [behaviorId],
@@ -178,6 +180,7 @@ export default function LogIncidentPage() {
       });
       setNotice(res.notice);
       setPositiveNotice(res.positiveNotice || null);
+      setCreatedIds((res.incidents || []).map((i) => i._id));
       setTrigger(res.triggerIncidents || []);
       setTriggerCount(res.triggerCount || 3);
       setDone(true);
@@ -185,6 +188,18 @@ export default function LogIncidentPage() {
       setError(e.message);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function undo() {
+    try {
+      // Cancel any queued notice first, then delete the incident(s).
+      if (notice?._id && notice.status === "queued") await api(`/notices/${notice._id}/cancel`, { body: {} }).catch(() => {});
+      if (positiveNotice?._id) await api(`/notices/${positiveNotice._id}/cancel`, { body: {} }).catch(() => {});
+      for (const id of createdIds) await api(`/incidents/${id}`, { method: "DELETE" });
+      setUndone(true);
+    } catch (e: any) {
+      setError(e.message);
     }
   }
 
@@ -220,6 +235,8 @@ export default function LogIncidentPage() {
     setNotice(null);
     setPositiveNotice(null);
     setTrigger([]);
+    setCreatedIds([]);
+    setUndone(false);
     setDone(false);
     setQuery("");
     setSelectedClass("");
@@ -230,10 +247,17 @@ export default function LogIncidentPage() {
   if (done) {
     return (
       <div className="space-y-4">
-        <div className="rounded-xl border border-green-200 bg-green-50 p-5">
-          <h1 className="text-lg font-semibold text-green-800">Logged ✓</h1>
-          <p className="mt-1 text-sm text-green-700">
-            Recorded for {student?.preferredName || student?.firstName} {student?.lastName}.
+        <div className={`rounded-xl border p-5 ${undone ? "border-slate-200 bg-slate-50" : "border-green-200 bg-green-50"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <h1 className={`text-lg font-semibold ${undone ? "text-slate-700" : "text-green-800"}`}>{undone ? "Undone" : "Logged ✓"}</h1>
+            {!undone && createdIds.length > 0 && (
+              <button onClick={undo} className="rounded-lg border border-slate-300 bg-white px-3 py-1 text-xs text-slate-600">Undo</button>
+            )}
+          </div>
+          <p className={`mt-1 text-sm ${undone ? "text-slate-500" : "text-green-700"}`}>
+            {undone
+              ? "The incident was removed (and any queued notice cancelled)."
+              : <>Recorded for {student?.preferredName || student?.firstName} {student?.lastName}.</>}
           </p>
         </div>
 

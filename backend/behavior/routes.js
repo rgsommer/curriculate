@@ -1872,6 +1872,48 @@ router.post("/incidents/:id/notes", authAny, loadMembership, canLog, async (req,
   }
 });
 
+// Can this teacher edit/delete this incident? The teacher who logged it, or an
+// admin/originator.
+function canEditIncident(membership, inc) {
+  if (["originator", "admin"].includes(membership.role)) return true;
+  return String(inc.teacherId) === String(membership._id);
+}
+
+// Edit an incident's detail text and/or its date/time (corrections).
+router.put("/incidents/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const inc = await BehaviorIncident.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
+    if (!canEditIncident(req.membership, inc)) return res.status(403).json({ ok: false, error: "Only the teacher who logged it (or an admin) can edit it." });
+    if ("detailText" in (req.body || {})) inc.detailText = String(req.body.detailText || "");
+    if (req.body?.occurredAt) {
+      const d = new Date(req.body.occurredAt);
+      if (!isNaN(d.getTime())) inc.timestamp = d;
+    }
+    await inc.save();
+    await audit(req.schoolId, "incident.edited", req, { studentId: inc.studentId });
+    res.json({ ok: true, incident: { _id: inc._id, detailText: inc.detailText, timestamp: inc.timestamp } });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Delete an incident (a mis-log). Removes any house points it awarded. Strikes
+// recompute automatically since they're derived from the incident rows.
+router.delete("/incidents/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const inc = await BehaviorIncident.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
+    if (!canEditIncident(req.membership, inc)) return res.status(403).json({ ok: false, error: "Only the teacher who logged it (or an admin) can delete it." });
+    await HousePointEvent.deleteMany({ schoolId: req.schoolId, incidentId: inc._id });
+    await BehaviorIncident.deleteOne({ _id: inc._id });
+    await audit(req.schoolId, "incident.deleted", req, { studentId: inc.studentId, meta: { behavior: inc.behaviorSnapshot?.name } });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // AI "Admin Summary" for a student — scope "all" (full history) or "current"
 // (just the active trigger incidents). Includes private teacher notes. Returns
 // text for the client to copy to the clipboard. Fails safe to a plain digest.

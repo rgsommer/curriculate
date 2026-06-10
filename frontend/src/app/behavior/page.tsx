@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type Me } from "./_lib/api";
+import { api, getToken, loginHref, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
 
 export default function BehaviorDashboard() {
@@ -93,6 +93,8 @@ export default function BehaviorDashboard() {
       </Link>
 
       {canLog && <ReminderToday />}
+
+      {canLog && <StudentsToWatch />}
 
       {housesOn && <HousesCard canLog={canLog} isAdmin={isAdmin} portalCode={me.config?.housePortalCode || ""} />}
 
@@ -220,6 +222,47 @@ function HousesCard({ canLog, isAdmin, portalCode }: { canLog: boolean; isAdmin:
         {houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions ·{" "}
         <a href="/houses" target="_blank" rel="noreferrer" className="underline">student board ↗</a>
       </p>
+    </Card>
+  );
+}
+
+function StudentsToWatch() {
+  const [rows, setRows] = useState<StudentSummary[] | null>(null);
+  const [trigger, setTrigger] = useState(3);
+
+  useEffect(() => {
+    api<{ students: StudentSummary[]; triggerCount: number }>("/students")
+      .then((d) => {
+        const t = d.triggerCount || 3;
+        setTrigger(t);
+        const watch = (d.students || [])
+          .filter((s) => (s.activeCount || 0) >= t - 1)
+          .sort((a, b) => (b.activeCount || 0) - (a.activeCount || 0));
+        setRows(watch);
+      })
+      .catch(() => setRows([]));
+  }, []);
+
+  if (!rows || rows.length === 0) return null;
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Students to watch</h2>
+      <p className="mt-0.5 text-xs text-slate-500">At or one away from the {trigger}-strike trigger (next incident may notify home).</p>
+      <ul className="mt-2 divide-y divide-slate-100">
+        {rows.map((s) => (
+          <li key={s._id}>
+            <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between py-2 text-sm hover:text-slate-600">
+              <span className="font-medium">
+                {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
+              </span>
+              <span className={`shrink-0 font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+                {s.activeCount}/{trigger} →
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
