@@ -636,11 +636,33 @@ export default function EngagementDetailPage() {
         ...careFields,
       })
       .eq("id", engagementId);
-    setSavingEdit(false);
     if (error) {
+      setSavingEdit(false);
       alert("Couldn't save your changes: " + error.message);
       return;
     }
+    // Converting an options poll to open-ended: carry each existing option-vote
+    // over as a text answer (service role — RLS blocks editing others' responses).
+    const convertingToOpen =
+      engagement.type === "poll" &&
+      editPollFormat === "open" &&
+      pollOptions.length > 0 &&
+      responseCount > 0;
+    if (convertingToOpen && session) {
+      try {
+        await fetch("/api/campfire/engagement/poll-to-open", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ engagementId }),
+        });
+      } catch {
+        /* non-fatal — the poll still converts; old votes just won't show as text */
+      }
+    }
+    setSavingEdit(false);
     setEditing(false);
     refresh();
   };
@@ -2856,10 +2878,10 @@ export default function EngagementDetailPage() {
                   {editPollFormat === "open" ? (
                     <p className="text-xs text-slate-500">
                       People type their own answer.
-                      {responseCount > 0 && (
-                        <span className="text-amber-600">
+                      {responseCount > 0 && pollOptions.length > 0 && (
+                        <span className="text-slate-600">
                           {" "}
-                          ⚠️ Existing option votes won&apos;t show once it&apos;s open-ended.
+                          Existing votes carry over as their text answers.
                         </span>
                       )}
                     </p>
