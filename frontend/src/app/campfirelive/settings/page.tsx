@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { supabase } from "@/lib/campfire/supabase";
 
@@ -14,6 +15,27 @@ export default function SettingsPage() {
   }, [profile?.display_name]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const router = useRouter();
+
+  const handleDeleteAccount = async () => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Permanently delete your account and any groups you host? This cannot be undone."
+      )
+    )
+      return;
+    setDeleting(true);
+    const { error } = await supabase.rpc("campfire_delete_account");
+    if (error) {
+      setDeleting(false);
+      alert("Couldn't delete your account: " + error.message);
+      return;
+    }
+    await signOut();
+    router.replace("/campfirelive");
+  };
 
   const handleSave = async () => {
     if (!user || !displayName.trim()) return;
@@ -227,6 +249,23 @@ export default function SettingsPage() {
       >
         Sign Out
       </button>
+
+      {/* Danger zone: permanent account deletion */}
+      <div className="mt-8 rounded-2xl border border-red-200 bg-red-50/50 p-6">
+        <h2 className="font-bold text-red-900 mb-1">Delete account</h2>
+        <p className="text-sm text-red-800/80 mb-4">
+          Permanently deletes your account, your profile, and{" "}
+          <span className="font-semibold">any groups you host</span> (including their
+          activities and everyone&apos;s responses in them). This can&apos;t be undone.
+        </p>
+        <button
+          onClick={handleDeleteAccount}
+          disabled={deleting}
+          className="rounded-full border border-red-400 bg-white px-5 py-2 text-sm font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50"
+        >
+          {deleting ? "Deleting…" : "Delete my account"}
+        </button>
+      </div>
     </div>
   );
 }
