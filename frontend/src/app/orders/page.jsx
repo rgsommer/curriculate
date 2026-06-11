@@ -239,6 +239,20 @@ export default function OrdersPage() {
     } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
   }
 
+  async function clearMyOrder() {
+    if (!window.confirm("Clear your whole order and start over? This removes everything you've added and any order you've already submitted. This can't be undone.")) return;
+    setErr(""); setBusy(true);
+    try {
+      const r = await fetch("/api/orders/clear", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Could not clear your order.");
+      setQty({}); setAmending(null); setResult(null); setQuery("");
+    } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
+  }
+
   // ---------------- render ----------------
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
@@ -420,6 +434,12 @@ export default function OrdersPage() {
                 {busy ? (amending ? "Updating…" : "Sending…") : (amending ? "Update order" : "Send order")}
               </button>
               <p className="text-xs text-slate-400 mt-2 text-center">{amending ? "Replaces your current order. " : ""}Finance and you both get an email copy.</p>
+              {(amending || selected.length > 0) && (
+                <button disabled={busy} onClick={clearMyOrder}
+                  className="w-full mt-3 text-sm text-slate-500 hover:text-red-600 disabled:opacity-50">
+                  Clear my order &amp; start over
+                </button>
+              )}
             </aside>
             </div>
           </div>

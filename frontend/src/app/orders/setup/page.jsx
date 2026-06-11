@@ -41,6 +41,12 @@ function SetupForm({ session }) {
   const [copied, setCopied] = useState("");
   const [showInvite, setShowInvite] = useState(false);
 
+  // new-year reset state
+  const [clearConfirm, setClearConfirm] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
+  const [clearMsg, setClearMsg] = useState("");
+  const [clearErr, setClearErr] = useState("");
+
   useEffect(() => {
     fetch("/api/orders/config").then((r) => r.json()).then((j) => {
       setFinanceEmail(j.financeEmail || ""); setFinanceName(j.financeName || "");
@@ -118,6 +124,20 @@ function SetupForm({ session }) {
       try { await navigator.clipboard.writeText(text); setCopied("text"); } catch { setCopied("fail"); }
     }
     setTimeout(() => setCopied(""), 4000);
+  }
+
+  async function clearAllOrders() {
+    setClearErr(""); setClearMsg(""); setClearBusy(true);
+    try {
+      const r = await fetch("/api/orders/clear", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session, all: true }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Could not clear orders.");
+      setClearMsg(`Cleared ${j.removed} order${j.removed === 1 ? "" : "s"}. Everyone starts fresh.${j.persisted === false ? " (no database in this environment)" : ""}`);
+      setClearConfirm(false);
+    } catch (e2) { setClearErr(e2.message); } finally { setClearBusy(false); }
   }
 
   if (!loaded) return <p className="text-sm text-slate-400">Loading settings…</p>;
@@ -228,6 +248,34 @@ function SetupForm({ session }) {
           </div>
         )}
       </Section>
+
+      {/* New year reset */}
+      <section className="bg-white rounded-xl border border-red-200 p-6 shadow-sm mb-6 max-w-2xl">
+        <h2 className="font-semibold text-red-700 mb-3">Start a new year</h2>
+        <p className="text-sm text-slate-600 mb-3">
+          Clears <strong>every teacher's</strong> submitted orders and in-progress drafts so the school starts the new ordering year from zero. The item catalog and these settings are kept — update the catalog separately above. This can't be undone.
+        </p>
+        {clearErr && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{clearErr}</div>}
+        {clearMsg && <div className="mb-3 rounded-lg bg-green-50 border border-green-200 text-green-700 px-4 py-3 text-sm">{clearMsg}</div>}
+        {!clearConfirm ? (
+          <button onClick={() => { setClearConfirm(true); setClearMsg(""); setClearErr(""); }}
+            className="rounded-lg border border-red-300 text-red-700 bg-white px-4 py-2 text-sm font-medium hover:bg-red-50">
+            Clear all orders…
+          </button>
+        ) : (
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-sm font-medium text-red-700">Delete every teacher's order — are you sure?</span>
+            <button disabled={clearBusy} onClick={clearAllOrders}
+              className="rounded-lg bg-red-600 text-white px-4 py-2 text-sm font-medium hover:bg-red-700 disabled:opacity-50">
+              {clearBusy ? "Clearing…" : "Yes, clear everything"}
+            </button>
+            <button disabled={clearBusy} onClick={() => setClearConfirm(false)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm hover:bg-slate-50">
+              Cancel
+            </button>
+          </div>
+        )}
+      </section>
     </div>
   );
 }
