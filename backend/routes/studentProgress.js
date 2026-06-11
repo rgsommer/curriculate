@@ -10,6 +10,39 @@ import { sendWeeklyDigests } from "../email/gradeNotification.js";
 const router = express.Router();
 
 /**
+ * Build the $or fragment that matches a PublishedResult against ANY of the
+ * given student IDs, in either the singular meta.studentId field (used by
+ * photo/batch grading) or the plural meta.studentIds array (used by group
+ * video performances where a recital is linked to several performers).
+ *
+ * Pass an array or Set of IDs. Returns an object suitable for spread into a
+ * Mongo find filter:
+ *   await PublishedResult.find({ ...byStudentIds(ids), other: ... });
+ */
+function byStudentIds(idsLike) {
+  const ids = Array.isArray(idsLike) ? idsLike : [...idsLike];
+  return {
+    $or: [
+      { "meta.studentId": { $in: ids } },
+      { "meta.studentIds": { $in: ids } },
+    ],
+  };
+}
+
+/**
+ * Given a PublishedResult, list every student id it claims to belong to:
+ * meta.studentId (if present) plus every entry in meta.studentIds.
+ */
+function resultStudentIds(result) {
+  const ids = [];
+  const single = result?.meta?.studentId;
+  if (single) ids.push(String(single));
+  const multi = result?.meta?.studentIds;
+  if (Array.isArray(multi)) for (const id of multi) if (id) ids.push(String(id));
+  return ids;
+}
+
+/**
  * Extract saved capture image URLs from a result payload string.
  * Returns array of URLs (photo only, excludes video).
  */
@@ -265,16 +298,20 @@ router.post("/login", async (req, res) => {
       }
 
       const idArray = [...allStudentIds];
-      const allResults = await PublishedResult.find({
-        "meta.studentId": { $in: idArray },
-      }).sort({ createdAt: -1 }).lean();
+      const allResults = await PublishedResult.find(byStudentIds(idArray))
+        .sort({ createdAt: -1 }).lean();
 
+      const idSet = new Set(idArray);
       const byStudent = {};
       for (const r of allResults) {
-        const sid2 = r.meta?.studentId;
-        if (!sid2) continue;
-        if (!byStudent[sid2]) byStudent[sid2] = [];
-        byStudent[sid2].push(r);
+        // A group video grade can be linked to multiple students via
+        // meta.studentIds — bucket the result under every linked student
+        // that's in this lookup set so each one sees it on their dashboard.
+        for (const sid2 of resultStudentIds(r)) {
+          if (!idSet.has(sid2)) continue;
+          if (!byStudent[sid2]) byStudent[sid2] = [];
+          byStudent[sid2].push(r);
+        }
       }
 
       const students = idArray.map((id) => {
@@ -460,11 +497,10 @@ router.get("/results", studentAuth, async (req, res) => {
     const account = await StudentAccount.findOne({ studentId: req.studentId }).lean();
     if (!account) return res.status(404).json({ error: "Account not found." });
 
-    // Find results by studentId in meta
+    // Find results by studentId in meta (singular or plural — a video grade
+    // for a group recital lists every performer in meta.studentIds).
     const ids = [account.studentId, account.edsbyId, account.last4].filter(Boolean);
-    const results = await PublishedResult.find({
-      $or: ids.map((id) => ({ "meta.studentId": id })),
-    })
+    const results = await PublishedResult.find(byStudentIds(ids))
       .sort({ createdAt: -1 })
       .lean();
 
@@ -721,17 +757,20 @@ router.get("/teacher/students", teacherAuth, async (req, res) => {
     const idArray = [...allStudentIds];
     console.log(`[teacher-overview] ${email}: ${teacherRosters.length} rosters, ${idArray.length} student IDs.`);
 
-    const allResults = await PublishedResult.find({
-      "meta.studentId": { $in: idArray },
-    }).sort({ createdAt: -1 }).lean();
+    const allResults = await PublishedResult.find(byStudentIds(idArray))
+      .sort({ createdAt: -1 }).lean();
 
-    // Group results by student
+    // Group results by student — a group video grade can list every performer
+    // in meta.studentIds, so we bucket the result under each linked student
+    // that's in this teacher's roster.
+    const idSet2 = new Set(idArray);
     const byStudent = {};
     for (const r of allResults) {
-      const sid = r.meta?.studentId;
-      if (!sid) continue;
-      if (!byStudent[sid]) byStudent[sid] = [];
-      byStudent[sid].push(r);
+      for (const sid of resultStudentIds(r)) {
+        if (!idSet2.has(sid)) continue;
+        if (!byStudent[sid]) byStudent[sid] = [];
+        byStudent[sid].push(r);
+      }
     }
 
     // Helper: does a result belong to a class?

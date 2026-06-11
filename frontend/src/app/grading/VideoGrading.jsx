@@ -476,6 +476,13 @@ export default function VideoGrading({
             const linkedClassNames = Array.from(new Set(
               students.map((s) => s.className).filter(Boolean)
             ));
+            // Build a comma-joined name for display in the progress portal.
+            const linkedStudentName = students
+              .filter((s) => s.name)
+              .map((s) => s.name)
+              .join(", ");
+            let teacherEmail = "";
+            try { teacherEmail = localStorage.getItem("curriculate_report_email") || ""; } catch {}
             const pubResp = await fetch(resultsUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -484,9 +491,20 @@ export default function VideoGrading({
                 meta: {
                   source: "video-grading",
                   gradeBand,
-                  studentIds: linkedStudentIds,
+                  // Primary studentId for the progress-portal lookup (matches
+                  // how photo/batch grading pushes results). For group recitals
+                  // this is the first linked student; the others are reached
+                  // via the studentIds[] array (the progress route searches
+                  // both fields).
+                  studentId: linkedStudentIds[0] || undefined,
+                  studentIds: linkedStudentIds.length ? linkedStudentIds : undefined,
+                  studentName: linkedStudentName || undefined,
                   classNames: linkedClassNames.length ? linkedClassNames : undefined,
                   className: linkedClassNames[0] || selectedClassName || undefined,
+                  teacherEmail: teacherEmail || undefined,
+                  title: String(data?.detected_title || "").trim() || undefined,
+                  subject: data?.inferred_subject || undefined,
+                  assessmentType: data?.inferred_assessment_type || undefined,
                 },
               }),
             });
