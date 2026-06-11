@@ -351,8 +351,10 @@ export default function DashboardPage() {
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
                   </div>
-                  <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-3.5 py-1.5 text-xs font-bold text-white group-hover:opacity-90">
-                    Respond →
+                  {/* The whole row is the tap target — just a subtle chevron so the
+                      title keeps the full width on a phone. */}
+                  <span className="flex-shrink-0 text-lg text-orange-400 transition group-hover:translate-x-0.5 group-hover:text-orange-600">
+                    →
                   </span>
                 </Link>
               );
