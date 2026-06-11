@@ -70,19 +70,31 @@ npx cap open ios       # opens Xcode → pick a simulator/device → Run
 npx cap open android   # opens Android Studio → Run
 ```
 
-## 5. Push notifications (phase 2)
+## 5. Push notifications
 
-The web app already requests permission and posts the device token to
-`/api/campfire/push/register` (stored in `campfire_push_tokens`). To actually *send*
-pushes you still need:
+The send pipeline is **already built** — the daily digest cron pushes to devices
+via Firebase Cloud Messaging (FCM v1, which covers both Android and iOS). The web
+app requests permission and registers the device token (`/api/campfire/push/register`
+→ `campfire_push_tokens`), and the cron mints an FCM token and sends. It's inert
+until you provide the credential, so the app builds/runs fine without it.
 
-- **Apple**: an APNs key (.p8) in the Apple Developer portal → add to the app's
-  Push Notifications capability in Xcode.
-- **Android**: a Firebase project → `google-services.json` into `android/app/`.
-- A send step (e.g. an Edge Function or a small server route) that reads
-  `campfire_push_tokens` and pushes via APNs/FCM — hook it into the digest/notify cron.
+To turn it on:
 
-Until then the app builds and runs fine; push is simply inert.
+1. **Create a Firebase project** and add an Android app (`google-services.json` →
+   `android/app/`) and an iOS app (`GoogleService-Info.plist` → Xcode).
+2. **Apple**: upload an APNs **key (.p8)** to Firebase → Project settings → Cloud
+   Messaging, and enable the **Push Notifications** + **Background Modes
+   (Remote notifications)** capabilities in Xcode.
+3. **Service account**: Firebase → Project settings → Service accounts → *Generate
+   new private key*. Add the whole JSON as a Vercel env var:
+   ```
+   FCM_SERVICE_ACCOUNT={"type":"service_account","project_id":"…","private_key":"…", …}
+   ```
+4. Redeploy. The next daily digest run will also push (`pushed` count in the cron's
+   JSON response confirms it).
+
+Tapping a push opens Campfire (the payload carries a `link`). To deep-link to a
+specific engagement later, extend the payload + handle it in `NativeBridge`.
 
 ## 6. Build, sign & submit
 

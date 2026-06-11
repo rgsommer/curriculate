@@ -7,6 +7,7 @@ import {
   activityDigestEmail,
 } from "@/lib/campfire/serverInvites";
 import { resolveTitle, engagementIcon } from "@/lib/campfire/types";
+import { createPushSender } from "@/lib/campfire/push";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -200,17 +201,14 @@ export async function GET(req: Request) {
     }
   }
 
-  // ── Send ──
+  // ── Send (email + native push) ──
+  const pushSend = await createPushSender(); // null when FCM isn't configured
+  let pushed = 0;
   const entries = Array.from(perUser.entries()).filter(
     ([, byGroup]) => byGroup.size > 0
   );
   const built = await Promise.all(
     entries.map(async ([uid, byGroup]) => {
-      const { data: u } = await admin.auth.admin.getUserById(uid);
-      const email = u?.user?.email;
-      if (!email) return null; // guests (anonymous) have no email
-      const recipientName =
-        (u?.user?.user_metadata?.display_name as string | undefined) ?? null;
       const groupsPayload = Array.from(byGroup.entries()).map(([gid, p]) => {
         const g = groupById.get(gid)!;
         return {
@@ -221,6 +219,38 @@ export async function GET(req: Request) {
           newEngagements: p.newEngagements,
         };
       });
+      const events = groupsPayload.reduce(
+        (a, g) =>
+          a +
+          g.responses.reduce((b, r) => b + r.count, 0) +
+          g.newMembers.length +
+          g.newEngagements.length,
+        0
+      );
+
+      // Native push to this user's devices (best-effort, only if FCM is set up).
+      if (pushSend) {
+        const { data: toks } = await admin
+          .from("campfire_push_tokens")
+          .select("token")
+          .eq("user_id", uid);
+        for (const t of toks ?? []) {
+          const ok = await pushSend(t.token as string, {
+            title: "🔥 Campfire",
+            body: `${events} new thing${events === 1 ? "" : "s"} in your group${
+              groupsPayload.length === 1 ? "" : "s"
+            }`,
+            link: `${base}/campfirelive`,
+          });
+          if (ok) pushed++;
+        }
+      }
+
+      const { data: u } = await admin.auth.admin.getUserById(uid);
+      const email = u?.user?.email;
+      if (!email) return null; // guests (anonymous) have no email
+      const recipientName =
+        (u?.user?.user_metadata?.display_name as string | undefined) ?? null;
       const em = activityDigestEmail({
         recipientName,
         url: `${base}/campfirelive`,
@@ -248,5 +278,5 @@ export async function GET(req: Request) {
     sent += msgs.slice(i, i + 100).length;
   }
 
-  return NextResponse.json({ ok: true, sent, candidates: msgs.length });
+  return NextResponse.json({ ok: true, sent, pushed, candidates: msgs.length });
 }
