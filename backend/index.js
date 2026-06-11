@@ -17492,7 +17492,37 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     const studentName = String(req.body?.studentName || "").trim() || null;
     const strictnessBias = Math.max(-3, Math.min(3, Math.round(Number(req.body?.strictnessBias) || 0)));
 
-    console.log(`[audio-grade] type=${performanceType} family=${instrumentFamily} instrument=${instrument} band=${gradeBand} size=${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB`);
+    // Multi-performer support: optional JSON-stringified array of
+    //   { name, instrumentFamily, instrument, studentId, className, role }
+    // When ≥2 named entries are supplied, the model grades each performer
+    // individually AND the ensemble as a whole. `role` is the character/part
+    // the student plays — used for skits (the model can attribute dialogue
+    // from the transcript to a character → student).
+    let students = [];
+    try {
+      if (req.body?.students) {
+        const parsed = JSON.parse(req.body.students);
+        if (Array.isArray(parsed)) {
+          students = parsed
+            .map((s) => ({
+              name: String(s?.name || "").trim(),
+              instrumentFamily: String(s?.instrumentFamily || "").trim(),
+              instrument: String(s?.instrument || "").trim(),
+              studentId: s?.studentId ? String(s.studentId) : null,
+              className: String(s?.className || "").trim(),
+              role: String(s?.role || "").trim(),
+            }))
+            .filter((s) => s.name)
+            .slice(0, 12);
+        }
+      }
+    } catch { /* malformed JSON — ignore and fall back below */ }
+    if (!students.length && studentName) {
+      students = [{ name: studentName, instrumentFamily, instrument, studentId: null, className: "", role: "" }];
+    }
+    const isMultiStudent = students.length >= 2;
+
+    console.log(`[audio-grade] type=${performanceType} family=${instrumentFamily} instrument=${instrument} band=${gradeBand} performers=${students.length} size=${(req.file.buffer.length / 1024 / 1024).toFixed(1)}MB`);
 
     // Step 1: Determine audio format
     const origName = (req.file.originalname || "").toLowerCase();
@@ -17576,6 +17606,8 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
       duration,
       studentName,
       strictnessBias,
+      students,
+      isMultiStudent,
     });
 
     // Step 5: Grade with AI
@@ -17604,8 +17636,34 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
         student_name: { anyOf: [{ type: "string" }, { type: "null" }] },
         inferred_subject: { type: "string" },
         inferred_assessment_type: { type: "string" },
+        // Per-performer grades for group audio (ensemble + skits). Null when
+        // only one student is in the recording. Top-level fields still
+        // describe the ensemble; this array is per-performer.
+        students: {
+          anyOf: [
+            { type: "null" },
+            {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  name: { type: "string", minLength: 1 },
+                  student_id: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  role: { anyOf: [{ type: "string" }, { type: "null" }] },
+                  overall_score: { type: "number", minimum: 0 },
+                  overall_out_of: { type: "number", minimum: 1 },
+                  strengths: { type: "array", items: { type: "string", maxLength: 240 }, minItems: 1, maxItems: 4 },
+                  improvements: { type: "array", items: { type: "string", maxLength: 240 }, minItems: 1, maxItems: 3 },
+                  teacher_comment: { type: "string", minLength: 1, maxLength: 1200 },
+                },
+                required: ["name", "student_id", "role", "overall_score", "overall_out_of", "strengths", "improvements", "teacher_comment"],
+              },
+            },
+          ],
+        },
       },
-      required: ["overall_score", "overall_out_of", "sections", "strengths", "improvements", "teacher_comment", "student_name", "inferred_subject", "inferred_assessment_type"],
+      required: ["overall_score", "overall_out_of", "sections", "strengths", "improvements", "teacher_comment", "student_name", "inferred_subject", "inferred_assessment_type", "students"],
       additionalProperties: false,
     };
 
@@ -17645,6 +17703,56 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     if (grade.overall_out_of !== 10) {
       grade.score_out_of_10 = null;
       grade.final_score_out_of_10 = null;
+    }
+
+    // Multi-performer post-processing — pad missing performers, map back
+    // studentId / role / className by name match. Mirrors video handling.
+    if (isMultiStudent && students.length) {
+      const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const byName = new Map(students.map((s) => [norm(s.name), s]));
+      const returned = Array.isArray(grade.students) ? grade.students : [];
+      const mapped = returned.map((g) => {
+        const matched = byName.get(norm(g?.name));
+        if (matched) {
+          if (!g.student_id) g.student_id = matched.studentId || null;
+          if (!g.role) g.role = matched.role || null;
+        }
+        return g;
+      });
+      const seen = new Set(mapped.map((g) => norm(g?.name)));
+      const padded = students.map((s) => {
+        const key = norm(s.name);
+        const existing = mapped.find((g) => norm(g?.name) === key);
+        if (existing) return existing;
+        return {
+          name: s.name,
+          student_id: s.studentId || null,
+          role: s.role || null,
+          overall_score: Number(grade.overall_score) || 0,
+          overall_out_of: Number(grade.overall_out_of) || 0,
+          strengths: ["Participated as part of the group performance."],
+          improvements: ["No individual feedback available — re-grade or upload a clearer recording for a separate score."],
+          teacher_comment: "The AI could not isolate this performer's contribution from the ensemble. This entry reflects the group grade only.",
+        };
+      });
+      // Append any extras the model invented (no roster link).
+      for (const g of mapped) {
+        if (!seen.has(norm(g?.name))) padded.push(g);
+        seen.add(norm(g?.name));
+      }
+      grade.students = padded;
+    } else if (Array.isArray(grade.students) && students.length) {
+      // Single-student: still attach studentId if linked.
+      const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const byName = new Map(students.map((s) => [norm(s.name), s]));
+      grade.students = grade.students.map((g) => {
+        const matched = byName.get(norm(g?.name));
+        if (matched) {
+          if (!g.student_id) g.student_id = matched.studentId || null;
+          if (!g.role) g.role = matched.role || null;
+        }
+        return g;
+      });
     }
 
     const responseTimeMs = Date.now() - startTime;
@@ -18029,7 +18137,7 @@ function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instru
   `.trim();
 }
 
-function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration, studentName, strictnessBias = 0 }) {
+function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument, gradeBand, standards, feedbackVoice, rubricOverride, transcript, duration, studentName, strictnessBias = 0, students = [], isMultiStudent = false }) {
   const gradeExpectations = {
     "3-5": "Grade 3-5: Be encouraging, focus on effort and basic technique. Age-appropriate expectations.",
     "6-8": "Grade 6-8: Expect developing technique and musicality. Balance encouragement with constructive feedback.",
@@ -18119,6 +18227,57 @@ function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument
 
   const durationNote = duration > 0 ? `\nRecording duration: ${Math.round(duration)} seconds.` : "";
 
+  // Multi-performer block. Audio gives us no visual cues, so we lean hard on
+  // (a) instruments — different instruments = clear sonic separation;
+  // (b) character/role names — for skits, the transcript usually contains the
+  //     character names ("Hamlet, my lord…") or dialogue addressed to them,
+  //     and the model can attribute lines to a character → student;
+  // (c) voice/timbre — only a soft signal, used as a last resort.
+  const multiStudentBlock = isMultiStudent ? `
+    MULTI-PERFORMER AUDIO — MANDATORY OUTPUT FORMAT:
+    This recording contains a group performance with ${students.length} performers.
+    The performers (with assigned instruments / roles, if any) are:
+    ${students.map((s, i) => {
+      const inst = s.instrument
+        ? ` — ${s.instrument}${s.instrumentFamily ? ` (${s.instrumentFamily})` : ""}`
+        : s.instrumentFamily ? ` — ${s.instrumentFamily}` : "";
+      const role = s.role ? ` — playing ${s.role}` : "";
+      return `  ${i + 1}. ${s.name}${inst}${role}`;
+    }).join("\n")}
+
+    HARD RULES — read carefully, these are NOT optional:
+
+    1. The top-level "students" array MUST contain EXACTLY ${students.length}
+       entries, one for EACH listed performer above, in the SAME ORDER, with
+       the name field matching the listed name EXACTLY. Do NOT omit any
+       performer. Do NOT merge or add performers.
+
+    2. Each entry MUST include: name, overall_score, overall_out_of, strengths
+       (at least 1), improvements (at least 1), and teacher_comment (non-empty).
+       Use the SAME out_of denominator as the group's overall_out_of so the
+       per-student scores are directly comparable.
+
+    3. Attribute observations to specific performers using:
+       - Instruments (different instruments = clear sonic separation; if one
+         student plays violin and another plays piano, you can grade them
+         separately by listening to each instrument's part).
+       - Character / role names for skits — the transcript usually contains
+         character names. When you hear dialogue spoken by or addressed to
+         "Hamlet", attribute that line to whichever student is playing Hamlet.
+       - Voice timbre as a soft last-resort signal for vocal performances.
+
+    4. If you genuinely cannot tell what an individual performer contributed,
+       DO NOT skip them. Emit their entry anyway, grade conservatively (near
+       the group's overall score), and explicitly say in their teacher_comment
+       that you could not isolate them ("I could not reliably distinguish this
+       performer's part from the ensemble"). Honesty about uncertainty is
+       fine — omitting is not.
+
+    5. The top-level overall_score / overall_out_of / sections / strengths /
+       improvements / teacher_comment / achievement_summary describe the
+       ENSEMBLE as a whole. student_name MAY be a comma-joined list of names.
+  ` : "";
+
   return `
     ${baseInstructions}
 
@@ -18140,6 +18299,8 @@ function buildAudioGradingPrompt({ performanceType, instrumentFamily, instrument
     ${transcript.slice(0, 50000)}
     ---
     ` : "No transcript available (instrumental performance)."}
+
+    ${multiStudentBlock}
 
     Grade this performance and return your assessment as JSON.
     Set inferred_subject to "Music" for singing/instrumental, or to the appropriate subject for speech.

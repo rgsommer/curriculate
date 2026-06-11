@@ -90,10 +90,18 @@ export default function AudioGrading({
   onClose,
 }) {
   const [file, setFile] = useState(null);
-  const [studentName, setStudentName] = useState("");
   const [performanceType, setPerformanceType] = useState("");
-  const [instrumentFamily, setInstrumentFamily] = useState("");
-  const [instrument, setInstrument] = useState("");
+  // List of performers in the audio. When 2+ named entries are present the
+  // backend grades each individually AND the group/ensemble. Each row carries:
+  //   { name, instrumentFamily, instrument, studentId, className, role }
+  // - role is the character/part the student plays (used for skits/plays where
+  //   voice alone is unreliable — model attributes dialogue → character → student).
+  const [students, setStudents] = useState([{ name: "", instrumentFamily: "", instrument: "", studentId: "", className: "", role: "" }]);
+  // Roster classes (optional — used to link rows to roster students).
+  const [rosterClasses, setRosterClasses] = useState([]);
+  // Optional "primary" class — purely a sort hint so that class's students
+  // appear at the top of the per-row dropdown. Linking is not restricted to it.
+  const [selectedClassName, setSelectedClassName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState("");
   const [progressPct, setProgressPct] = useState(0);
@@ -110,15 +118,88 @@ export default function AudioGrading({
   const backendBase = gradingUrl?.replace(/\/grading$/, "") || process.env.NEXT_PUBLIC_BACKEND_URL || "";
   const resultsUrl = backendBase ? `${backendBase.replace(/\/$/, "")}/results` : "";
 
-  // Reset instrument when family changes
-  useEffect(() => { setInstrument(""); }, [instrumentFamily]);
-  // Reset instrument fields when type changes
+  // Wipe per-row instrument selections when leaving instrumental mode, and
+  // wipe per-row roles when leaving acting/skit mode.
   useEffect(() => {
     if (performanceType !== "instrumental") {
-      setInstrumentFamily("");
-      setInstrument("");
+      setStudents((prev) => prev.map((s) => ({ ...s, instrumentFamily: "", instrument: "" })));
+    }
+    if (performanceType !== "acting") {
+      setStudents((prev) => prev.map((s) => ({ ...s, role: "" })));
     }
   }, [performanceType]);
+
+  // Load the teacher's roster classes so each performer row can be linked to a
+  // roster student (same endpoint + storage key as VideoGrading / main grading).
+  useEffect(() => {
+    let cancelled = false;
+    let teacherEmail = "";
+    try { teacherEmail = localStorage.getItem("curriculate_report_email") || ""; } catch {}
+    if (!teacherEmail.includes("@") || !backendBase) return;
+    fetch(`${backendBase.replace(/\/$/, "")}/class-roster/list?teacherEmail=${encodeURIComponent(teacherEmail)}`)
+      .then((r) => r.ok ? r.json() : { rosters: [] })
+      .then((data) => { if (!cancelled) setRosterClasses(data.rosters || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [backendBase]);
+
+  // Flatten every roster class into a single list of options (grouped by class
+  // for display). Composite value "studentId|className" so the same id in two
+  // classes doesn't collide.
+  const allRosterOptions = React.useMemo(() => {
+    const opts = [];
+    for (const rc of rosterClasses) {
+      const cls = rc.className || "";
+      for (const s of (rc.students || [])) {
+        const id = String(s.studentId || s.edsbyId || s._id || "");
+        if (!id) continue;
+        const label = [s.firstName, s.lastName].filter(Boolean).join(" ").trim() || id;
+        opts.push({ id, className: cls, label, raw: s, composite: `${id}|${cls}` });
+      }
+    }
+    if (selectedClassName) {
+      const primary = opts.filter((o) => o.className === selectedClassName);
+      const rest = opts.filter((o) => o.className !== selectedClassName);
+      return [...primary, ...rest];
+    }
+    return opts;
+  }, [rosterClasses, selectedClassName]);
+
+  const rosterOptionsByClass = React.useMemo(() => {
+    const groups = [];
+    const index = new Map();
+    for (const o of allRosterOptions) {
+      const key = o.className || "(no class)";
+      let group = index.get(key);
+      if (!group) {
+        group = { className: key, options: [] };
+        index.set(key, group);
+        groups.push(group);
+      }
+      group.options.push(o);
+    }
+    return groups;
+  }, [allRosterOptions]);
+
+  // Helpers for the dynamic students list.
+  const updateStudent = (idx, patch) => {
+    setStudents((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  };
+  const addStudent = () => setStudents((prev) => [...prev, { name: "", instrumentFamily: "", instrument: "", studentId: "", className: "", role: "" }]);
+  const removeStudent = (idx) => setStudents((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  const linkStudentToRoster = (idx, composite) => {
+    if (!composite) {
+      updateStudent(idx, { studentId: "", className: "" });
+      return;
+    }
+    const match = allRosterOptions.find((o) => o.composite === composite);
+    if (!match) { updateStudent(idx, { studentId: "", className: "" }); return; }
+    updateStudent(idx, {
+      studentId: match.id,
+      className: match.className,
+      name: match.label || students[idx].name,
+    });
+  };
 
   const handleFileSelect = useCallback((e) => {
     const f = e.target.files?.[0];
@@ -210,8 +291,10 @@ export default function AudioGrading({
 
   const gradeAudio = useCallback(async (biasOverride) => {
     if (!file || !performanceType) return;
-    if (performanceType === "instrumental" && !instrumentFamily) {
-      setError("Please select an instrument family.");
+    // For instrumental, at least the first performer must have an instrument
+    // family picked — otherwise the model has no instrument context at all.
+    if (performanceType === "instrumental" && !students.some((s) => s.instrumentFamily)) {
+      setError("Please pick an instrument family for at least one performer.");
       return;
     }
 
@@ -228,14 +311,32 @@ export default function AudioGrading({
       const formData = new FormData();
       formData.append("audio", file);
       formData.append("performanceType", performanceType);
-      formData.append("instrumentFamily", instrumentFamily || "");
-      formData.append("instrument", instrument || "");
       formData.append("rubricOverride", rubricOverride || "");
       formData.append("gradeBand", gradeBand || "6-8");
       formData.append("standards", standards || "canada");
       formData.append("feedbackVoice", feedbackVoice || "coach");
       formData.append("subjectArea", subjectArea || "");
-      if (studentName.trim()) formData.append("studentName", studentName.trim());
+      // Multi-performer payload. When ≥2 entries are named the backend grades
+      // each individually AND the ensemble. role[] is used for skits (model
+      // maps dialogue → character → student).
+      const namedStudents = students
+        .map((s) => ({
+          name: (s.name || "").trim(),
+          instrumentFamily: s.instrumentFamily || "",
+          instrument: s.instrument || "",
+          studentId: s.studentId || "",
+          className: s.className || "",
+          role: (s.role || "").trim(),
+        }))
+        .filter((s) => s.name);
+      if (namedStudents.length) {
+        formData.append("students", JSON.stringify(namedStudents));
+        // Legacy single-student fields populated from the first entry so
+        // analytics / fallbacks that read these still work.
+        formData.append("studentName", namedStudents[0].name);
+        if (namedStudents[0].instrumentFamily) formData.append("instrumentFamily", namedStudents[0].instrumentFamily);
+        if (namedStudents[0].instrument) formData.append("instrument", namedStudents[0].instrument);
+      }
       if (effectiveBias) formData.append("strictnessBias", String(effectiveBias));
 
       // POST returns a jobId immediately; poll until done. This avoids the
@@ -325,14 +426,43 @@ export default function AudioGrading({
         try { if (window.gtag) window.gtag("event", "grading_complete", { mode: "audio" }); } catch {}
         completeQuest("try_audio_grading");
 
-        // Auto-publish for ref code
+        // Auto-publish for ref code + progress portal push.
         if (resultsUrl) {
           try {
             const payload = buildAudioPayloadText(data);
+            // Roster linking: collect every linked studentId so all performers
+            // see the result on /progress (single studentId for the lookup, plus
+            // the plural array for group recitals — the route searches both).
+            const linkedStudentIds = Array.isArray(data.students)
+              ? data.students.map((s) => s.student_id).filter(Boolean)
+              : students.map((s) => s.studentId).filter(Boolean);
+            const linkedClassNames = Array.from(new Set(
+              students.map((s) => s.className).filter(Boolean)
+            ));
+            const linkedStudentName = students
+              .filter((s) => s.name)
+              .map((s) => s.name)
+              .join(", ");
+            let teacherEmail = "";
+            try { teacherEmail = localStorage.getItem("curriculate_report_email") || ""; } catch {}
             const pubResp = await fetch(resultsUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ payload, meta: { source: "audio-grading", gradeBand } }),
+              body: JSON.stringify({
+                payload,
+                meta: {
+                  source: "audio-grading",
+                  gradeBand,
+                  studentId: linkedStudentIds[0] || undefined,
+                  studentIds: linkedStudentIds.length ? linkedStudentIds : undefined,
+                  studentName: linkedStudentName || undefined,
+                  classNames: linkedClassNames.length ? linkedClassNames : undefined,
+                  className: linkedClassNames[0] || selectedClassName || undefined,
+                  teacherEmail: teacherEmail || undefined,
+                  subject: data?.inferred_subject || undefined,
+                  assessmentType: data?.inferred_assessment_type || undefined,
+                },
+              }),
             });
             const pubData = await pubResp.json().catch(() => ({}));
             if (pubData?.code) setRefCode(String(pubData.code).toUpperCase());
@@ -363,7 +493,7 @@ export default function AudioGrading({
       setProgress("");
       setProgressPct(0);
     }
-  }, [file, performanceType, instrumentFamily, instrument, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, subjectArea, studentName, strictnessBias, startProgressTimer, stopProgressTimer]);
+  }, [file, performanceType, students, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, subjectArea, strictnessBias, startProgressTimer, stopProgressTimer]);
 
   function buildAudioPayloadText(r) {
     const lines = [];
@@ -376,8 +506,8 @@ export default function AudioGrading({
     lines.push("");
     if (r.student_name) { lines.push(`Student: ${r.student_name}`); lines.push(""); }
     lines.push(`Performance Type: ${typeLabel}`);
-    if (instrument) {
-      const instLabel = Object.values(INSTRUMENTS_BY_FAMILY).flat().find(i => i.value === instrument)?.label || instrument;
+    if (r.instrument) {
+      const instLabel = Object.values(INSTRUMENTS_BY_FAMILY).flat().find(i => i.value === r.instrument)?.label || r.instrument;
       lines.push(`Instrument: ${instLabel}`);
     }
     if (r.audioDuration) lines.push(`Duration: ${Math.round(r.audioDuration)}s`);
@@ -401,6 +531,18 @@ export default function AudioGrading({
       lines.push("");
     }
     if (r.teacher_comment) { lines.push("Overall Comment:"); lines.push(r.teacher_comment); lines.push(""); }
+    if (Array.isArray(r.students) && r.students.length > 0) {
+      lines.push("Per-student grades:");
+      r.students.forEach((sg) => {
+        const score = (sg.overall_score != null && sg.overall_out_of != null) ? ` ${sg.overall_score}/${sg.overall_out_of}` : "";
+        const role = sg.role ? ` (as ${sg.role})` : "";
+        lines.push(`- ${sg.name}${score}${role}${sg.student_id ? ` [id ${sg.student_id}]` : ""}`);
+        if (Array.isArray(sg.strengths) && sg.strengths.length) sg.strengths.forEach((x) => lines.push(`    + ${x}`));
+        if (Array.isArray(sg.improvements) && sg.improvements.length) sg.improvements.forEach((x) => lines.push(`    > ${x}`));
+        if (sg.teacher_comment) lines.push(`    ${sg.teacher_comment}`);
+      });
+      lines.push("");
+    }
     if (r.audioSourceUrl) {
       lines.push(`Source Recording: ${r.audioSourceUrl}`);
       if (r.audioSourceExpires) lines.push(`(link expires ${new Date(r.audioSourceExpires).toLocaleDateString()})`);
@@ -433,16 +575,16 @@ export default function AudioGrading({
     setFile(null);
     setResult(null);
     setError("");
-    setStudentName("");
+    setStudents([{ name: "", instrumentFamily: "", instrument: "", studentId: "", className: "", role: "" }]);
     setPerformanceType("");
-    setInstrumentFamily("");
-    setInstrument("");
     setRefCode("");
     setCopiedRef(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
-  const canSubmit = file && performanceType && (performanceType !== "instrumental" || instrumentFamily);
+  const canSubmit = file && performanceType && (
+    performanceType !== "instrumental" || students.some((s) => s.instrumentFamily)
+  );
 
   function adjustStrictnessAndRegrade(delta) {
     const next = Math.max(-3, Math.min(3, strictnessBias + delta));
@@ -533,8 +675,8 @@ export default function AudioGrading({
             </div>
             <div style={{ fontSize: 13, color: "#64748b" }}>
               {typeLabel}
-              {instrument && (() => {
-                const instLabel = Object.values(INSTRUMENTS_BY_FAMILY).flat().find(i => i.value === instrument)?.label;
+              {r.instrument && (() => {
+                const instLabel = Object.values(INSTRUMENTS_BY_FAMILY).flat().find(i => i.value === r.instrument)?.label;
                 return instLabel ? ` (${instLabel})` : "";
               })()}
               {r.audioDuration ? ` • ${Math.round(r.audioDuration)}s` : ""}
@@ -607,6 +749,18 @@ export default function AudioGrading({
           </div>
         )}
 
+        {/* Label the overall block as the GROUP result when per-performer
+            grades are present, so the distinction is clear. */}
+        {Array.isArray(r.students) && r.students.length >= 2 && (
+          <div style={{
+            display: "inline-block", marginBottom: 10, padding: "3px 10px",
+            background: "#eff6ff", color: "#1e40af", borderRadius: 999,
+            fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase",
+          }}>
+            Group performance — overall
+          </div>
+        )}
+
         {/* Strengths */}
         {Array.isArray(r.strengths) && r.strengths.length > 0 && (
           <div style={{ marginBottom: 12 }}>
@@ -655,6 +809,83 @@ export default function AudioGrading({
                   Link expires {new Date(r.audioSourceExpires).toLocaleDateString()}
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Per-performer grades — group recital / skit */}
+        {Array.isArray(r.students) && r.students.length > 0 && (
+          <div style={{ marginBottom: 16, marginTop: 16 }}>
+            <div style={{
+              display: "inline-block", marginBottom: 8, padding: "3px 10px",
+              background: "#f0fdf4", color: "#15803d", borderRadius: 999,
+              fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase",
+            }}>
+              Per-performer grades
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {r.students.map((sg, i) => {
+                const sPct = sg.overall_out_of ? (sg.overall_score / sg.overall_out_of) : 0;
+                const sColor = sPct >= 0.8 ? "#16a34a" : sPct >= 0.6 ? "#ca8a04" : "#dc2626";
+                return (
+                  <div key={i} style={{
+                    padding: 12, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff",
+                  }}>
+                    <div style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      marginBottom: 8, gap: 12,
+                    }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a" }}>{sg.name}</div>
+                        {sg.role ? (
+                          <div style={{ fontSize: 12, color: "#475569", fontStyle: "italic" }}>as {sg.role}</div>
+                        ) : null}
+                        {sg.student_id ? (
+                          <div style={{ fontSize: 11, color: "#64748b" }}>Linked: {sg.student_id}</div>
+                        ) : null}
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 800, color: sColor, fontSize: 18 }}>
+                          {sg.overall_score}/{sg.overall_out_of}
+                        </div>
+                        {sg.overall_out_of ? (
+                          <div style={{ fontSize: 11, color: "#64748b" }}>
+                            {Math.round((sg.overall_score / sg.overall_out_of) * 100)}%
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+                    {Array.isArray(sg.strengths) && sg.strengths.length > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a", marginBottom: 2 }}>Strengths</div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {sg.strengths.map((s, k) => (
+                            <li key={k} style={{ fontSize: 12, marginBottom: 1 }}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {Array.isArray(sg.improvements) && sg.improvements.length > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#ca8a04", marginBottom: 2 }}>Next Steps</div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {sg.improvements.map((s, k) => (
+                            <li key={k} style={{ fontSize: 12, marginBottom: 1 }}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {sg.teacher_comment && (
+                      <div style={{
+                        padding: 8, background: "#f0f9ff", borderRadius: 6,
+                        border: "1px solid #bae6fd", fontSize: 12, color: "#0f172a",
+                      }}>
+                        {sg.teacher_comment}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -744,72 +975,181 @@ export default function AudioGrading({
             </div>
           )}
 
-          {/* Instrument family selector — shown for instrumental */}
-          {performanceType === "instrumental" && (
+          {/* Optional "primary" class — sort hint only. The per-row roster
+              dropdown lists students from EVERY class so a recital can pull
+              performers from multiple classes. */}
+          {file && performanceType && rosterClasses.length > 0 && (
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>
-                Instrument Family
-              </label>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                {INSTRUMENT_FAMILIES.map(f => (
-                  <button
-                    key={f.value}
-                    type="button"
-                    onClick={() => setInstrumentFamily(f.value)}
-                    style={{
-                      padding: "6px 14px", borderRadius: 8, fontSize: 12, fontWeight: 600,
-                      border: instrumentFamily === f.value ? "2px solid #7c3aed" : "1px solid #cbd5e1",
-                      background: instrumentFamily === f.value ? "#f5f3ff" : "#fff",
-                      color: instrumentFamily === f.value ? "#7c3aed" : "#334155",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Specific instrument — shown after family is selected */}
-          {performanceType === "instrumental" && instrumentFamily && INSTRUMENTS_BY_FAMILY[instrumentFamily] && (
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>
-                Instrument
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
+                Primary class (optional — sorted first; you can still link rows to any class)
               </label>
               <select
-                value={instrument}
-                onChange={(e) => setInstrument(e.target.value)}
+                value={selectedClassName}
+                onChange={(e) => setSelectedClassName(e.target.value)}
+                disabled={submitting}
                 style={{
                   width: "100%", padding: "8px 12px", borderRadius: 8,
                   border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
+                  background: "#fff",
                 }}
               >
-                <option value="">Select instrument (optional)...</option>
-                {INSTRUMENTS_BY_FAMILY[instrumentFamily].map(i => (
-                  <option key={i.value} value={i.value}>{i.label}</option>
+                <option value="">All classes (no primary)</option>
+                {rosterClasses.map((rc) => (
+                  <option key={rc._id || rc.className} value={rc.className}>{rc.className}</option>
                 ))}
               </select>
             </div>
           )}
 
-          {/* Student name */}
+          {/* Performers list — name (+ per-row instrument for instrumental, or
+              character/role for acting), with optional roster linking. The
+              backend grades each named performer individually AND the group
+              when 2+ entries are filled in. */}
           {file && performanceType && (
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-                Student Name (optional)
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>
+                Performers (one row per student — at least one optional)
               </label>
-              <input
-                type="text"
-                value={studentName}
-                onChange={(e) => setStudentName(e.target.value)}
-                placeholder="Enter student name..."
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: 8,
-                  border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
-                }}
+              {students.map((s, idx) => {
+                const composite = s.studentId ? `${s.studentId}|${s.className || ""}` : "";
+                const matchedRoster = allRosterOptions.find((o) => o.composite === composite);
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      border: "1px solid #e2e8f0", borderRadius: 10, padding: 10,
+                      marginBottom: 8, background: "#f8fafc",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <input
+                        type="text"
+                        value={s.name}
+                        onChange={(e) => updateStudent(idx, { name: e.target.value, studentId: matchedRoster ? "" : s.studentId, className: matchedRoster ? "" : s.className })}
+                        placeholder={`Student ${idx + 1} name`}
+                        disabled={submitting}
+                        style={{
+                          flex: 1, padding: "8px 12px", borderRadius: 8,
+                          border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
+                        }}
+                      />
+                      {students.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeStudent(idx)}
+                          disabled={submitting}
+                          aria-label={`Remove student ${idx + 1}`}
+                          style={{
+                            padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1",
+                            background: "#fff", color: "#64748b", cursor: submitting ? "not-allowed" : "pointer",
+                            fontSize: 12, fontWeight: 600,
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Roster link — shows students from every class, grouped */}
+                    {rosterOptionsByClass.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <select
+                          value={composite}
+                          onChange={(e) => linkStudentToRoster(idx, e.target.value)}
+                          disabled={submitting}
+                          style={{
+                            width: "100%", padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                            background: "#fff", color: s.studentId ? "#0f172a" : "#94a3b8",
+                          }}
+                        >
+                          <option value="">Link to roster student…</option>
+                          {rosterOptionsByClass.map((g) => (
+                            <optgroup key={g.className} label={g.className}>
+                              {g.options.map((o) => (
+                                <option key={o.composite} value={o.composite}>{o.label}</option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        {s.className ? (
+                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                            From: {s.className}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+
+                    {/* Character / role — only for acting/skit/play. Audio
+                        can't see actors, so the model uses the role mapping
+                        to attribute dialogue lines (from the transcript) to
+                        the right student. */}
+                    {performanceType === "acting" && (
+                      <div style={{ marginTop: 8 }}>
+                        <input
+                          type="text"
+                          value={s.role}
+                          onChange={(e) => updateStudent(idx, { role: e.target.value })}
+                          placeholder='Character / role (e.g. "Hamlet", "Narrator")'
+                          disabled={submitting}
+                          style={{
+                            width: "100%", padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                          }}
+                        />
+                      </div>
+                    )}
+
+                    {/* Per-row instrument fields — instrumental only */}
+                    {performanceType === "instrumental" && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <select
+                          value={s.instrumentFamily}
+                          onChange={(e) => updateStudent(idx, { instrumentFamily: e.target.value, instrument: "" })}
+                          disabled={submitting}
+                          style={{
+                            flex: 1, padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                            background: "#fff",
+                          }}
+                        >
+                          <option value="">Instrument family…</option>
+                          {INSTRUMENT_FAMILIES.map(f => (
+                            <option key={f.value} value={f.value}>{f.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={s.instrument}
+                          onChange={(e) => updateStudent(idx, { instrument: e.target.value })}
+                          disabled={submitting || !s.instrumentFamily}
+                          style={{
+                            flex: 1, padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                            background: "#fff",
+                          }}
+                        >
+                          <option value="">Instrument…</option>
+                          {(INSTRUMENTS_BY_FAMILY[s.instrumentFamily] || []).map(i => (
+                            <option key={i.value} value={i.value}>{i.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addStudent}
                 disabled={submitting}
-              />
+                style={{
+                  padding: "8px 14px", borderRadius: 8, border: "1px dashed #94a3b8",
+                  background: "#fff", color: "#475569", cursor: submitting ? "not-allowed" : "pointer",
+                  fontSize: 13, fontWeight: 600,
+                }}
+              >
+                + Add another student
+              </button>
             </div>
           )}
 
