@@ -558,30 +558,41 @@ export default function DashboardPage() {
                 {g.description && (
                   <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
                 )}
-                {/* Host-only: flip the daily digest right from the card (doesn't
-                    navigate — the toggle swallows the click). */}
-                {mine && (
-                  <label
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                    }}
-                    className="mt-3 flex cursor-pointer items-center gap-2 border-t border-orange-100 pt-2.5 text-xs text-slate-600"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={g.notify_on_response !== false}
-                      onChange={(e) => setGroupNotify(g.id, e.target.checked)}
-                      className="h-3.5 w-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
-                    />
-                    <span>
-                      📬 Daily response digest{" "}
-                      <span className="text-slate-400">
-                        {g.notify_on_response !== false ? "on" : "off"}
-                      </span>
-                    </span>
-                  </label>
-                )}
+                {/* Host-only: flip the daily digest right from the card. It's a
+                    button (not a checkbox) so preventDefault can stop the card's
+                    navigation without also cancelling a native checkbox toggle —
+                    the optimistic state then re-renders instantly. */}
+                {mine &&
+                  (() => {
+                    const on = g.notify_on_response !== false;
+                    return (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setGroupNotify(g.id, !on);
+                        }}
+                        className="mt-3 flex w-full items-center gap-2 border-t border-orange-100 pt-2.5 text-xs text-slate-600"
+                      >
+                        <span
+                          className={`relative inline-flex h-4 w-7 flex-shrink-0 items-center rounded-full transition ${
+                            on ? "bg-orange-500" : "bg-slate-300"
+                          }`}
+                        >
+                          <span
+                            className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
+                              on ? "translate-x-3.5" : "translate-x-0.5"
+                            }`}
+                          />
+                        </span>
+                        <span>
+                          📬 Daily response digest{" "}
+                          <span className="text-slate-400">{on ? "on" : "off"}</span>
+                        </span>
+                      </button>
+                    );
+                  })()}
               </Link>
             );
           })}
