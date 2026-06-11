@@ -790,7 +790,14 @@ export default function EngagementDetailPage() {
       : `${origin}/campfirelive/join/${groupInfo.invite_code}?e=${engagement.id}`;
     const blurb = engagement.description?.trim() || meta?.hook || "";
     const title = resolveTitle(engagement.title, engagement.birth_year, engagement.deadline);
-    const what = meta?.label ? `a group ${meta.label.toLowerCase()}` : "a group activity";
+    // The "birthday" type is really a card (birthday, anniversary, retirement, …),
+    // so call it "a group card" rather than "a group birthday".
+    const what =
+      engagement.type === "birthday"
+        ? "a group card"
+        : meta?.label
+        ? `a group ${meta.label.toLowerCase()}`
+        : "a group activity";
     // A clear date line so the recipient knows what they're opening and by when.
     const dateLine = engagement.deadline
       ? engagement.hold_until_deadline
@@ -810,7 +817,7 @@ export default function EngagementDetailPage() {
             minute: "2-digit",
           })}.`
       : "";
-    const msg = `You're invited to "${title}" — ${what} in ${groupInfo.name} on Campfire 🔥${
+    const msg = `You're invited to "${title}" — ${what} on Campfire 🔥${
       blurb ? `\n\n${blurb}` : ""
     }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)`;
     try {
