@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
+import { supabase } from "@/lib/campfire/supabase";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 
@@ -50,6 +51,35 @@ export default function GroupDetailPage() {
   const joinUrl = group
     ? `${typeof window !== "undefined" ? window.location.origin : "https://www.curriculate.net"}/campfirelive/join/${group.invite_code}`
     : "";
+
+  // Which engagements the CURRENT user has already responded to (RLS lets you read
+  // your own responses), so each card can show "responded" vs "your turn".
+  const [respondedIds, setRespondedIds] = useState<Set<string>>(new Set());
+  const launchedEngIdsKey = engagements
+    .filter((e) => e.launched_at)
+    .map((e) => e.id)
+    .join(",");
+  useEffect(() => {
+    const ids = launchedEngIdsKey ? launchedEngIdsKey.split(",") : [];
+    if (!user?.id || ids.length === 0) {
+      setRespondedIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("responses")
+        .select("engagement_id")
+        .eq("user_id", user.id)
+        .in("engagement_id", ids);
+      if (!cancelled)
+        setRespondedIds(new Set((data ?? []).map((r) => r.engagement_id as string)));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [launchedEngIdsKey, user?.id]);
 
   // Live (launched, still-active) engagements — surfaced in the invite so people
   // know what they're joining into.
@@ -1203,22 +1233,36 @@ See you around the campfire! 🏕️`
                     </div>
                   </div>
 
-                  {/* Status badge */}
-                  {isDraft && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
-                      ✏️ Draft · tap to launch
-                    </span>
-                  )}
-                  {!isDraft && isSealed && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
-                      🔒 Sealed
-                    </span>
-                  )}
-                  {isRevealed && (
-                    <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-semibold text-green-700">
-                      ✓ Revealed
-                    </span>
-                  )}
+                  {/* Status + your-response badges */}
+                  <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
+                    {isDraft && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
+                        ✏️ Draft · tap to launch
+                      </span>
+                    )}
+                    {!isDraft && isSealed && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
+                        🔒 Sealed
+                      </span>
+                    )}
+                    {isRevealed && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-semibold text-green-700">
+                        ✓ Revealed
+                      </span>
+                    )}
+                    {/* Have YOU responded? (skip drafts and the surprise recipient) */}
+                    {!isDraft &&
+                      !(user && (eng.excluded_user_ids ?? []).includes(user.id)) &&
+                      (respondedIds.has(eng.id) ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-green-100 border border-green-300 px-2.5 py-1 text-xs font-semibold text-green-800">
+                          ✓ You responded
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-700">
+                          ● Your turn
+                        </span>
+                      ))}
+                  </div>
                 </div>
 
                 {/* Progress bar */}
