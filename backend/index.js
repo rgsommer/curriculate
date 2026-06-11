@@ -16895,6 +16895,55 @@ async function checkFreemiumGateGlobal(req, res, { inputMode = null } = {}) {
   return true;
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Async-job pattern for /grading/video and /grading/audio.
+//
+// Why: a single HTTP request that does (upload → ffmpeg → Whisper → GPT vision)
+// can easily run 60–120 s on a real classroom video, which is right at the edge
+// of every PaaS request-timeout cap. When it crosses, the client gets a
+// "Failed to fetch" even though the work would have finished fine. Decoupling
+// the long compute from the HTTP request fixes this: the POST returns a jobId
+// the instant the upload is in hand, and the client polls a status endpoint.
+//
+// Jobs live in process memory only — single-instance host assumption. A 2-hour
+// TTL sweeper bounds memory; jobs are tiny (≤ a few hundred KB of JSON).
+// ────────────────────────────────────────────────────────────────────────────
+const videoJobs = new Map(); // jobId -> { status, createdAt, finishedAt?, progress, stage, result?, error? }
+const audioJobs = new Map();
+const JOB_TTL_MS = 2 * 60 * 60 * 1000; // 2h
+setInterval(() => {
+  const cutoff = Date.now() - JOB_TTL_MS;
+  for (const map of [videoJobs, audioJobs]) {
+    for (const [id, job] of map) {
+      if (job.createdAt < cutoff) map.delete(id);
+    }
+  }
+}, 10 * 60 * 1000).unref();
+
+function readJob(map, jobId) {
+  const job = map.get(jobId);
+  if (!job) return null;
+  // Don't include createdAt internals; just the bits the client needs.
+  return {
+    status: job.status,
+    progress: job.progress ?? null,
+    stage: job.stage || null,
+    error: job.error || null,
+    result: job.status === "done" ? job.result : null,
+  };
+}
+
+app.get("/grading/video/job/:id", (req, res) => {
+  const out = readJob(videoJobs, String(req.params.id || ""));
+  if (!out) return res.status(404).json({ ok: false, error: "Job not found or expired." });
+  res.json({ ok: true, ...out });
+});
+app.get("/grading/audio/job/:id", (req, res) => {
+  const out = readJob(audioJobs, String(req.params.id || ""));
+  if (!out) return res.status(404).json({ ok: false, error: "Job not found or expired." });
+  res.json({ ok: true, ...out });
+});
+
 app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (req, res) => {
   let tmpDir = null;
   try {
@@ -16954,6 +17003,29 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     }
     const isMultiStudent = students.length >= 2;
 
+    // ── Async-job pivot ───────────────────────────────────────────────────
+    // We have everything we need from the request; respond with a jobId now so
+    // the client's HTTP request closes before any upstream proxy timeout fires.
+    // The actual grading runs detached below; the client polls
+    // GET /grading/video/job/:id for the result. Do NOT touch `res` past this
+    // point — communicate state and errors via the videoJobs map.
+    const jobId = crypto.randomUUID();
+    const jobCreatedAt = Date.now();
+    videoJobs.set(jobId, {
+      status: "processing",
+      createdAt: jobCreatedAt,
+      progress: 5,
+      stage: "uploaded",
+    });
+    res.json({ ok: true, jobId, status: "processing" });
+    const setJobProgress = (pct, stage) => {
+      const cur = videoJobs.get(jobId);
+      if (!cur) return;
+      videoJobs.set(jobId, { ...cur, progress: pct, stage });
+    };
+
+    (async () => {
+      try {
     // Create temp directory
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "curriculate-video-"));
     const ext = (req.file.mimetype || "").includes("quicktime") ? "mov"
@@ -16976,8 +17048,9 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
       ], { timeout: 60000 });
     } catch (ffErr) {
       console.error("[video-grade] Audio extraction failed:", ffErr.message);
-      return res.status(400).json({ ok: false, error: "Could not extract audio from video. Is the file a valid video?" });
+      throw new Error("Could not extract audio from video. Is the file a valid video?");
     }
+    setJobProgress(20, "transcribing");
 
     let transcript = "";
     let transcriptWithTimestamps = "";
@@ -17234,11 +17307,7 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     const grade = safeJsonParse(response.output_text);
 
     if (!grade) {
-      return res.json({
-        ok: false,
-        error: "Video grading returned invalid JSON",
-        raw: response.output_text || "",
-      });
+      throw new Error("Video grading returned invalid JSON");
     }
 
     // ------------------------------------------------
@@ -17349,8 +17418,9 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
       } catch {}
     })();
 
-    // Return in the same shape as POST /grading so the frontend can handle it identically
-    return res.json({
+    // Result shape mirrors what POST /grading returns so the frontend can
+    // render it with the existing single-grade renderer.
+    const finalResult = {
       ...grade,
       videoUrl,
       transcript,
@@ -17361,16 +17431,38 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
       instrumentFamily: instrumentFamily || null,
       instrument: instrument || null,
       meta: { submissionId, gradeBand, inputType: "video" },
+    };
+    videoJobs.set(jobId, {
+      status: "done",
+      createdAt: jobCreatedAt,
+      finishedAt: Date.now(),
+      progress: 100,
+      stage: "done",
+      result: finalResult,
     });
 
+      } catch (jobErr) {
+        console.error("[video-job]", jobId, "failed:", jobErr?.message || jobErr);
+        videoJobs.set(jobId, {
+          status: "error",
+          createdAt: jobCreatedAt,
+          finishedAt: Date.now(),
+          error: safeErrDetail(jobErr, "Video grading failed."),
+        });
+      } finally {
+        if (tmpDir) {
+          try { await fs.promises.rm(tmpDir, { recursive: true, force: true }); } catch {}
+        }
+      }
+    })();
+    return; // pre-job code path ends here; IIFE owns the rest
+
   } catch (err) {
-    console.error("[video-grade] Error:", err?.message || err);
+    // Pre-job error (gate / multer / ffmpeg version / body parsing). We may
+    // already have responded with jobId at this point; only respond if not.
+    if (res.headersSent) return;
+    console.error("[video-grade] pre-job error:", err?.message || err);
     return res.status(500).json({ ok: false, error: "Video grading failed: " + safeErrDetail(err) });
-  } finally {
-    // Cleanup temp files
-    if (tmpDir) {
-      try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
-    }
   }
 });
 
@@ -17414,9 +17506,33 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     const mimeMap = { mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", ogg: "audio/ogg", flac: "audio/flac", webm: "audio/webm" };
     const mimeType = mimeMap[ext] || "audio/mpeg";
 
+    // ── Async-job pivot ───────────────────────────────────────────────────
+    // Respond with a jobId so the client's HTTP request closes before any
+    // upstream proxy timeout fires. The actual grading runs detached below;
+    // the client polls GET /grading/audio/job/:id for the result.
+    // Do NOT touch `res` past this point.
+    const jobId = crypto.randomUUID();
+    const jobCreatedAt = Date.now();
+    audioJobs.set(jobId, {
+      status: "processing",
+      createdAt: jobCreatedAt,
+      progress: 5,
+      stage: "uploaded",
+    });
+    res.json({ ok: true, jobId, status: "processing" });
+    const setJobProgress = (pct, stage) => {
+      const cur = audioJobs.get(jobId);
+      if (!cur) return;
+      audioJobs.set(jobId, { ...cur, progress: pct, stage });
+    };
+
+    let _audioTmpDir = null;
+    (async () => {
+      try {
     // Step 2: Get audio duration via ffprobe (if available)
     let duration = 0;
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "audio-grade-"));
+    _audioTmpDir = tmpDir;
     const audioPath = path.join(tmpDir, `input.${ext}`);
     await fs.promises.writeFile(audioPath, req.file.buffer);
 
@@ -17511,7 +17627,7 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
     const grade = safeJsonParse(response.output_text);
 
     if (!grade) {
-      return res.json({ error: "Audio grading returned invalid JSON", raw: response.output_text || "" });
+      throw new Error("Audio grading returned invalid JSON");
     }
 
     // Override student name if provided
@@ -17576,7 +17692,7 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
       } catch {}
     })();
 
-    return res.json({
+    const finalResult = {
       ...grade,
       transcript: transcript || null,
       audioDuration: duration,
@@ -17586,10 +17702,35 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
       audioSourceUrl,
       audioSourceExpires,
       meta: { gradeBand, inputType: "audio" },
+    };
+    audioJobs.set(jobId, {
+      status: "done",
+      createdAt: jobCreatedAt,
+      finishedAt: Date.now(),
+      progress: 100,
+      stage: "done",
+      result: finalResult,
     });
 
+      } catch (jobErr) {
+        console.error("[audio-job]", jobId, "failed:", jobErr?.message || jobErr);
+        audioJobs.set(jobId, {
+          status: "error",
+          createdAt: jobCreatedAt,
+          finishedAt: Date.now(),
+          error: safeErrDetail(jobErr, "Audio grading failed."),
+        });
+      } finally {
+        if (_audioTmpDir) {
+          try { await fs.promises.rm(_audioTmpDir, { recursive: true, force: true }); } catch {}
+        }
+      }
+    })();
+    return;
+
   } catch (err) {
-    console.error("[audio-grade] Error:", err?.message || err);
+    if (res.headersSent) return;
+    console.error("[audio-grade] pre-job error:", err?.message || err);
     return res.status(500).json({ error: "Audio grading failed: " + safeErrDetail(err) });
   }
 });

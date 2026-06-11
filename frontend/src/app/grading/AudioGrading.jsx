@@ -238,24 +238,67 @@ export default function AudioGrading({
       if (studentName.trim()) formData.append("studentName", studentName.trim());
       if (effectiveBias) formData.append("strictnessBias", String(effectiveBias));
 
-      const resp = await fetch(`${backendBase}/grading/audio`, {
+      // POST returns a jobId immediately; poll until done. This avoids the
+      // upstream proxy timeout that kills long HTTP requests mid-flight.
+      const postResp = await fetch(`${backendBase}/grading/audio`, {
         method: "POST",
         body: formData,
         signal: abortControllerRef.current?.signal,
       });
+      if (!postResp.ok) {
+        const errData = await postResp.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error ${postResp.status}`);
+      }
+      const postData = await postResp.json();
+      const jobId = postData?.jobId;
+      if (!jobId) throw new Error("Server didn't return a job ID. Try again.");
 
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.error || `Server error ${resp.status}`);
+      const POLL_INTERVAL_MS = 2500;
+      const STAGE_LABELS = {
+        uploaded: "Uploaded, queueing…",
+        transcribing: "Transcribing audio…",
+        done: "Finishing up…",
+      };
+      let data = null;
+      while (true) {
+        if (abortControllerRef.current?.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        await new Promise((resolve) => {
+          const t = setTimeout(resolve, POLL_INTERVAL_MS);
+          abortControllerRef.current?.signal.addEventListener("abort", () => {
+            clearTimeout(t); resolve();
+          }, { once: true });
+        });
+        if (abortControllerRef.current?.signal.aborted) {
+          throw new DOMException("Aborted", "AbortError");
+        }
+        const jobResp = await fetch(
+          `${backendBase}/grading/audio/job/${encodeURIComponent(jobId)}`,
+          { signal: abortControllerRef.current?.signal }
+        );
+        if (!jobResp.ok) {
+          throw new Error(`Job lookup failed (${jobResp.status}). The server may have restarted — please retry.`);
+        }
+        const job = await jobResp.json();
+        if (typeof job?.progress === "number") {
+          setProgressPct((prev) => Math.max(prev || 0, job.progress));
+        }
+        if (job?.stage && STAGE_LABELS[job.stage]) {
+          setProgress(STAGE_LABELS[job.stage]);
+        }
+        if (job?.status === "done") { data = job.result; break; }
+        if (job?.status === "error") {
+          throw new Error(job.error || "Audio grading failed.");
+        }
       }
 
       stopProgressTimer();
       setProgressPct(100);
       setProgress("Done!");
-      const data = await resp.json();
 
-      if (data.error) {
-        setError(data.error);
+      if (!data || data.error) {
+        setError(data?.error || "Audio grading failed.");
       } else {
         setResult(data);
         try { if (window.gtag) window.gtag("event", "grading_complete", { mode: "audio" }); } catch {}
