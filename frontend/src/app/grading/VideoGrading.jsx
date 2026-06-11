@@ -110,6 +110,9 @@ export default function VideoGrading({
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  // True when the error is a transient network failure (lost connection,
+  // upstream timeout) — the form state is intact, so we surface a one-tap Retry.
+  const [errorCanRetry, setErrorCanRetry] = useState(false);
   const [progressPct, setProgressPct] = useState(0);
   const [refCode, setRefCode] = useState("");
   const [copiedRef, setCopiedRef] = useState(false);
@@ -322,6 +325,7 @@ export default function VideoGrading({
     if (!file) return;
     setSubmitting(true);
     setError("");
+    setErrorCanRetry(false);
     setResult(null);
     abortRef.current = false;
     abortControllerRef.current = new AbortController();
@@ -418,8 +422,21 @@ export default function VideoGrading({
     } catch (err) {
       if (err?.name === "AbortError") {
         setError("");
+        setErrorCanRetry(false);
       } else {
-        setError(err.message || "Video grading failed.");
+        // "Failed to fetch" / "NetworkError" / "Load failed" all map here: the
+        // connection dropped (network blip, upstream timeout, browser sleep).
+        // The form state is still intact so a single tap re-runs the same job.
+        const msg = String(err?.message || "");
+        const isNetwork = err?.name === "TypeError"
+          || /failed to fetch|networkerror|load failed/i.test(msg);
+        if (isNetwork) {
+          setError("Connection dropped before the grade came back. Your file is still loaded — tap Retry to try again.");
+          setErrorCanRetry(true);
+        } else {
+          setError(err.message || "Video grading failed.");
+          setErrorCanRetry(false);
+        }
       }
     } finally {
       stopProgressTimer();
@@ -1212,7 +1229,20 @@ export default function VideoGrading({
           border: "1px solid #fecaca", color: "#dc2626", fontSize: 13,
           marginTop: 8,
         }}>
-          {error}
+          <div>{error}</div>
+          {errorCanRetry && file && !submitting && (
+            <button
+              type="button"
+              onClick={() => gradeVideo()}
+              style={{
+                marginTop: 8, padding: "8px 16px", borderRadius: 8,
+                border: "none", background: "#dc2626", color: "#fff",
+                fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 

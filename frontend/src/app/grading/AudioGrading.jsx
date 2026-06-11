@@ -99,6 +99,8 @@ export default function AudioGrading({
   const [progressPct, setProgressPct] = useState(0);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  // Transient network failure — surface a one-tap Retry alongside the message.
+  const [errorCanRetry, setErrorCanRetry] = useState(false);
   const [refCode, setRefCode] = useState("");
   const [copiedRef, setCopiedRef] = useState(false);
   const fileInputRef = useRef(null);
@@ -217,6 +219,7 @@ export default function AudioGrading({
 
     setSubmitting(true);
     setError("");
+    setErrorCanRetry(false);
     setResult(null);
     abortControllerRef.current = new AbortController();
     startProgressTimer();
@@ -275,8 +278,21 @@ export default function AudioGrading({
         }
       }
     } catch (err) {
-      if (err?.name === "AbortError") setError("");
-      else setError(err.message || "Audio grading failed.");
+      if (err?.name === "AbortError") {
+        setError("");
+        setErrorCanRetry(false);
+      } else {
+        const msg = String(err?.message || "");
+        const isNetwork = err?.name === "TypeError"
+          || /failed to fetch|networkerror|load failed/i.test(msg);
+        if (isNetwork) {
+          setError("Connection dropped before the grade came back. Your file is still loaded — tap Retry to try again.");
+          setErrorCanRetry(true);
+        } else {
+          setError(err.message || "Audio grading failed.");
+          setErrorCanRetry(false);
+        }
+      }
     } finally {
       stopProgressTimer();
       setSubmitting(false);
@@ -823,7 +839,20 @@ export default function AudioGrading({
           padding: 12, background: "#fef2f2", borderRadius: 8,
           border: "1px solid #fecaca", color: "#dc2626", fontSize: 13, marginTop: 8,
         }}>
-          {error}
+          <div>{error}</div>
+          {errorCanRetry && file && !submitting && (
+            <button
+              type="button"
+              onClick={() => gradeAudio()}
+              style={{
+                marginTop: 8, padding: "8px 16px", borderRadius: 8,
+                border: "none", background: "#dc2626", color: "#fff",
+                fontWeight: 700, fontSize: 13, cursor: "pointer",
+              }}
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 
