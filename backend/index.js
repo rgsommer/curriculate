@@ -17255,9 +17255,50 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
       grade.final_score_out_of_10 = null;
     }
 
-    // Map studentId back onto each per-student grade by matching the name we
-    // sent in. The model echoes the names we gave it, so this is reliable.
-    if (Array.isArray(grade.students) && students.length) {
+    // Multi-student post-processing.
+    // (1) Map studentId back onto each per-student grade by name.
+    // (2) Pad with a placeholder entry for any listed student the model
+    //     omitted — the teacher must see every name they entered, even if the
+    //     model decided not to grade them.
+    if (isMultiStudent && students.length) {
+      const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const byName = new Map(students.map((s) => [norm(s.name), s]));
+      const returned = Array.isArray(grade.students) ? grade.students : [];
+      // (1) studentId map-back
+      const mapped = returned.map((g) => {
+        const matched = byName.get(norm(g?.name));
+        if (matched && !g.student_id) g.student_id = matched.studentId || null;
+        return g;
+      });
+      // (2) Pad missing students, preserving the input order so the teacher's
+      // list matches what they typed.
+      const seen = new Set(mapped.map((g) => norm(g?.name)));
+      const padded = students.map((s) => {
+        const key = norm(s.name);
+        const existing = mapped.find((g) => norm(g?.name) === key);
+        if (existing) return existing;
+        // Use the group overall as a conservative default so the grade is still
+        // comparable; mark the comment to make it clear the model didn't isolate
+        // this performer.
+        return {
+          name: s.name,
+          student_id: s.studentId || null,
+          overall_score: Number(grade.overall_score) || 0,
+          overall_out_of: Number(grade.overall_out_of) || 0,
+          strengths: ["Participated as part of the group performance."],
+          improvements: ["No individual feedback available — re-grade or upload a clearer recording for a separate score."],
+          teacher_comment: "The AI could not isolate this student's individual contribution from the group. This entry reflects the ensemble grade only.",
+        };
+      });
+      // Append any extras the model invented that don't match a listed name, so
+      // we never lose information (they'll just have no roster link).
+      for (const g of mapped) {
+        if (!seen.has(norm(g?.name))) padded.push(g);
+        seen.add(norm(g?.name));
+      }
+      grade.students = padded;
+    } else if (Array.isArray(grade.students) && students.length) {
+      // Single-student case: still map studentId if present.
       const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
       const byName = new Map(students.map((s) => [norm(s.name), s]));
       grade.students = grade.students.map((g) => {
@@ -17561,29 +17602,43 @@ function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instru
   // this to attribute parts of the performance to each named performer and emit
   // a per-student grade in students[] alongside the group_assessment.
   const multiStudentBlock = isMultiStudent ? `
-    MULTI-STUDENT PERFORMANCE — IMPORTANT:
+    MULTI-STUDENT PERFORMANCE — MANDATORY OUTPUT FORMAT:
     This video contains a group performance with ${students.length} students.
     The students (and their assigned instruments / roles, if any) are:
     ${students.map((s, i) => `  ${i + 1}. ${s.name}${s.instrument ? ` — ${s.instrument}${s.instrumentFamily ? ` (${s.instrumentFamily})` : ""}` : s.instrumentFamily ? ` — ${s.instrumentFamily}` : ""}`).join("\n")}
 
-    You MUST produce BOTH:
-    (a) A per-student grade for EVERY listed student, in the top-level "students" array.
-        Use the SAME rubric / dimensions as the group assessment, scaled to the
-        same out_of. Each entry needs name (matching one of the listed names exactly),
-        an overall_score, overall_out_of, a sections[] breakdown, strengths,
-        improvements, and a teacher_comment focused on THAT student.
-        Attribute observations to specific students using the visual frames (position,
-        instrument, costume) and the transcript (who is speaking / singing / playing).
-        If you genuinely cannot tell who did what for a dimension, say so in the
-        student's teacher_comment and grade conservatively rather than guessing.
-    (b) A group_assessment object reflecting the ENSEMBLE performance — togetherness,
-        coordination, balance, dynamics across the group — with its own overall_score,
-        overall_out_of, sections[], strengths, improvements, and teacher_comment.
+    HARD RULES — read carefully, these are NOT optional:
 
-    The top-level overall_score / overall_out_of, sections[], strengths,
-    improvements, teacher_comment, and achievement_summary fields should mirror
-    the GROUP assessment (so existing single-student readers still see a sensible
-    overall result). student_name MAY be a comma-joined list of the students.
+    1. The top-level "students" array MUST contain EXACTLY ${students.length} entries,
+       one for EACH listed student above, in the SAME ORDER, with the name field
+       matching the listed name EXACTLY (preserve spelling and punctuation).
+       Do NOT omit any student. Do NOT merge students. Do NOT add extra students.
+       If you skip a listed student or change their name, the response is invalid.
+
+    2. Each entry MUST include: name, overall_score, overall_out_of, strengths
+       (at least 1), improvements (at least 1), and teacher_comment (non-empty).
+       Use the SAME out_of denominator as the group's overall_out_of so the per-
+       student scores are directly comparable.
+
+    3. If you cannot reliably tell what an individual student contributed (you
+       can't distinguish their playing/voice/movement from others), DO NOT skip
+       them. Emit their entry anyway:
+         - Grade them at or near the group's overall score (be conservative).
+         - In strengths/improvements, reference traits visible across the group.
+         - In teacher_comment, explicitly say something like "I could not isolate
+           this student's individual contribution from the group; this grade
+           reflects the ensemble performance." Honesty about uncertainty is fine
+           — omitting the student is not.
+
+    4. Use visual cues (left-to-right order on screen, position descriptions in
+       the input list, instrument held, costume/clothing) and the transcript
+       (who is speaking/singing/playing solo passages) to attribute observations
+       to specific students whenever you reasonably can.
+
+    5. The top-level overall_score / overall_out_of / sections / strengths /
+       improvements / teacher_comment / achievement_summary describe the
+       ENSEMBLE as a whole (togetherness, balance, coordination, dynamics).
+       student_name MAY be a comma-joined list of the listed students.
   ` : "";
 
   const commonVideoRules = `

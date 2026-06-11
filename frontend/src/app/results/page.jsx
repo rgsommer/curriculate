@@ -103,6 +103,7 @@ function parseTeacherBlock(payloadText) {
     savedCaptures: [],
     transcript: "",
     videoUrl: "",
+    perStudent: [],               // group video performances — per-student grades
     raw: text,
   };
 
@@ -140,6 +141,7 @@ function parseTeacherBlock(payloadText) {
     "Achievement Categories:",
     "Saved captures (30-day links):",
     "Transcript:",
+    "Per-student grades:",
   ]);
 
   const bucket = {
@@ -154,11 +156,13 @@ function parseTeacherBlock(payloadText) {
     "Achievement Categories:": "achievementSummary",
     "Saved captures (30-day links):": "savedCaptures",
     "Transcript:": "transcript",
+    "Per-student grades:": "perStudent",
   };
 
   let current = null;
   let overallLines = [];
   let currentSection = null;
+  let currentStudent = null;
 
   for (let i = 0; i < lines.length; i++) {
     const ln = lines[i];
@@ -264,6 +268,39 @@ function parseTeacherBlock(payloadText) {
       continue;
     }
 
+    // Per-student grades block from video-grading group performances.
+    // Each "- Name [score/outOf] [id N]" line starts a new student;
+    // indented "+" are strengths, ">" are improvements, anything else is comment.
+    if (current === "Per-student grades:") {
+      const trimmed = ln.trim();
+      if (!trimmed) continue;
+      if (trimmed.startsWith("- ")) {
+        if (currentStudent) out.perStudent.push(currentStudent);
+        const body = trimmed.slice(2);
+        // Optional " <score>/<outOf>", optional " [id <id>]"
+        const m = body.match(/^(.+?)(?:\s+([\d.]+)\s*\/\s*([\d.]+))?(?:\s*\[id\s+([^\]]+)\])?\s*$/);
+        currentStudent = {
+          name: (m && m[1] ? m[1] : body).trim(),
+          score: m && m[2] != null ? Number(m[2]) : null,
+          outOf: m && m[3] != null ? Number(m[3]) : null,
+          studentId: m && m[4] ? m[4].trim() : "",
+          strengths: [],
+          improvements: [],
+          comment: "",
+        };
+        continue;
+      }
+      if (!currentStudent) continue;
+      if (trimmed.startsWith("+")) {
+        currentStudent.strengths.push(trimmed.replace(/^\+\s*/, ""));
+      } else if (trimmed.startsWith(">")) {
+        currentStudent.improvements.push(trimmed.replace(/^>\s*/, ""));
+      } else {
+        currentStudent.comment += (currentStudent.comment ? " " : "") + trimmed;
+      }
+      continue;
+    }
+
     const target = bucket[current];
     if (!target) continue;
 
@@ -297,6 +334,7 @@ function parseTeacherBlock(payloadText) {
     out.overallComment = overallLines.join("\n").trim();
   }
   if (currentSection) out.sections.push(currentSection);
+  if (currentStudent) out.perStudent.push(currentStudent);
 
   // If we didn't find any structure, return null (so we can fallback)
   const hasAny =
@@ -312,7 +350,8 @@ function parseTeacherBlock(payloadText) {
     out.evidenceText.trim() ||
     out.savedCaptures.length ||
     out.transcript.trim() ||
-    out.videoUrl;
+    out.videoUrl ||
+    out.perStudent.length;
 
   return hasAny ? out : null;
 }
@@ -934,6 +973,75 @@ export default function ResultsPage({ initialCode = "", autoLookup = false }) {
                 <Card title="Overall comment">
                   <div style={{ whiteSpace: "pre-wrap", lineHeight: 1.55 }}>
                     {linkifyTextToReactNodes(parsed.overallComment)}
+                  </div>
+                </Card>
+              ) : null}
+
+              {parsed.perStudent.length ? (
+                <Card title="Per-student grades">
+                  <div style={{ display: "grid", gap: 10 }}>
+                    {parsed.perStudent.map((sg, i) => {
+                      const pct = sg.outOf ? (Number(sg.score) / Number(sg.outOf)) : 0;
+                      const color = pct >= 0.8 ? "#16a34a" : pct >= 0.6 ? "#ca8a04" : "#dc2626";
+                      return (
+                        <div key={i} style={{
+                          padding: 12, borderRadius: 10,
+                          border: "1px solid rgba(15,23,42,0.10)",
+                          background: "rgba(15,23,42,0.02)",
+                        }}>
+                          <div style={{
+                            display: "flex", justifyContent: "space-between",
+                            alignItems: "center", gap: 12, marginBottom: 8,
+                          }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: 15 }}>{sg.name}</div>
+                              {sg.studentId ? (
+                                <div style={{ fontSize: 11, opacity: 0.6 }}>Linked: {sg.studentId}</div>
+                              ) : null}
+                            </div>
+                            {sg.outOf ? (
+                              <div style={{ textAlign: "right" }}>
+                                <div style={{ fontWeight: 800, color, fontSize: 18 }}>
+                                  {sg.score}/{sg.outOf}
+                                </div>
+                                <div style={{ fontSize: 11, opacity: 0.6 }}>
+                                  {Math.round((Number(sg.score) / Number(sg.outOf)) * 100)}%
+                                </div>
+                              </div>
+                            ) : null}
+                          </div>
+                          {sg.strengths.length ? (
+                            <div style={{ marginBottom: 6 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a", marginBottom: 2 }}>Strengths</div>
+                              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                {sg.strengths.map((s, k) => (
+                                  <li key={k} style={{ fontSize: 13, marginBottom: 1 }}>{s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {sg.improvements.length ? (
+                            <div style={{ marginBottom: 6 }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: "#ca8a04", marginBottom: 2 }}>Next Steps</div>
+                              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                                {sg.improvements.map((s, k) => (
+                                  <li key={k} style={{ fontSize: 13, marginBottom: 1 }}>{s}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : null}
+                          {sg.comment ? (
+                            <div style={{
+                              padding: 8, borderRadius: 6, fontSize: 13,
+                              background: "rgba(37,99,235,0.06)",
+                              border: "1px solid rgba(37,99,235,0.15)",
+                            }}>
+                              {sg.comment}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 </Card>
               ) : null}
