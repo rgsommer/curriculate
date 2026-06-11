@@ -16942,6 +16942,7 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
               instrumentFamily: String(s?.instrumentFamily || "").trim(),
               instrument: String(s?.instrument || "").trim(),
               studentId: s?.studentId ? String(s.studentId) : null,
+              className: String(s?.className || "").trim(),
             }))
             .filter((s) => s.name)
             .slice(0, 12); // hard cap to keep prompts bounded
@@ -17605,7 +17606,13 @@ function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instru
     MULTI-STUDENT PERFORMANCE — MANDATORY OUTPUT FORMAT:
     This video contains a group performance with ${students.length} students.
     The students (and their assigned instruments / roles, if any) are:
-    ${students.map((s, i) => `  ${i + 1}. ${s.name}${s.instrument ? ` — ${s.instrument}${s.instrumentFamily ? ` (${s.instrumentFamily})` : ""}` : s.instrumentFamily ? ` — ${s.instrumentFamily}` : ""}`).join("\n")}
+    ${students.map((s, i) => {
+      const inst = s.instrument
+        ? ` — ${s.instrument}${s.instrumentFamily ? ` (${s.instrumentFamily})` : ""}`
+        : s.instrumentFamily ? ` — ${s.instrumentFamily}` : "";
+      const cls = s.className ? ` [class: ${s.className}]` : "";
+      return `  ${i + 1}. ${s.name}${inst}${cls}`;
+    }).join("\n")}
 
     HARD RULES — read carefully, these are NOT optional:
 

@@ -97,11 +97,14 @@ export default function VideoGrading({
   const [performanceType, setPerformanceType] = useState("");
   // List of students appearing in the video. When 2+ named entries are present
   // the backend will grade each individually AND the group as a whole.
-  // Each row: { name, instrumentFamily, instrument, studentId } — studentId is
-  // set when the row is linked to a roster entry.
-  const [students, setStudents] = useState([{ name: "", instrumentFamily: "", instrument: "", studentId: "" }]);
+  // Each row: { name, instrumentFamily, instrument, studentId, className }.
+  // studentId + className identify a roster entry (a recital can pull
+  // performers from multiple classes, so className is part of the link key).
+  const [students, setStudents] = useState([{ name: "", instrumentFamily: "", instrument: "", studentId: "", className: "" }]);
   // Roster classes (optional — used to link rows to roster students).
   const [rosterClasses, setRosterClasses] = useState([]);
+  // Optional "primary" class — purely a sort hint so that class's students
+  // appear at the top of the per-row dropdown. Linking is not restricted to it.
   const [selectedClassName, setSelectedClassName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState("");
@@ -139,25 +142,69 @@ export default function VideoGrading({
     return () => { cancelled = true; };
   }, [backendBase]);
 
-  const selectedClassStudents = React.useMemo(() => {
-    const cls = rosterClasses.find((r) => r.className === selectedClassName);
-    return cls?.students || [];
+  // Flatten every roster class into a single list of options. The roster
+  // dropdown on each performer row shows everyone, grouped by class, so a
+  // recital that pulls students from multiple classes is supported. The
+  // composite value below is what each <option> stores — split on "|" to
+  // recover (id, className).
+  const allRosterOptions = React.useMemo(() => {
+    const opts = [];
+    for (const rc of rosterClasses) {
+      const cls = rc.className || "";
+      for (const s of (rc.students || [])) {
+        const id = String(s.studentId || s.edsbyId || s._id || "");
+        if (!id) continue;
+        const label = [s.firstName, s.lastName].filter(Boolean).join(" ").trim() || id;
+        opts.push({ id, className: cls, label, raw: s, composite: `${id}|${cls}` });
+      }
+    }
+    // Sort the primary class to the top, keeping each class's internal order.
+    if (selectedClassName) {
+      const primary = opts.filter((o) => o.className === selectedClassName);
+      const rest = opts.filter((o) => o.className !== selectedClassName);
+      return [...primary, ...rest];
+    }
+    return opts;
   }, [rosterClasses, selectedClassName]);
+
+  // Group the flat list into { className: [options] } in display order so we
+  // can render <optgroup> blocks without losing the primary-class ordering.
+  const rosterOptionsByClass = React.useMemo(() => {
+    const groups = [];
+    const index = new Map();
+    for (const o of allRosterOptions) {
+      const key = o.className || "(no class)";
+      let group = index.get(key);
+      if (!group) {
+        group = { className: key, options: [] };
+        index.set(key, group);
+        groups.push(group);
+      }
+      group.options.push(o);
+    }
+    return groups;
+  }, [allRosterOptions]);
 
   // Helpers for the dynamic students list.
   const updateStudent = (idx, patch) => {
     setStudents((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   };
-  const addStudent = () => setStudents((prev) => [...prev, { name: "", instrumentFamily: "", instrument: "", studentId: "" }]);
+  const addStudent = () => setStudents((prev) => [...prev, { name: "", instrumentFamily: "", instrument: "", studentId: "", className: "" }]);
   const removeStudent = (idx) => setStudents((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
-  // Linking a row to a roster entry auto-fills the name.
-  const linkStudentToRoster = (idx, studentId) => {
-    const match = selectedClassStudents.find((s) => String(s.studentId || s.edsbyId || s._id) === String(studentId));
-    if (!match) { updateStudent(idx, { studentId: "" }); return; }
-    const full = [match.firstName, match.lastName].filter(Boolean).join(" ").trim();
+  // Linking a row to a roster entry auto-fills the name and the className.
+  // The dropdown's value is a composite "studentId|className" so students with
+  // the same id in different classes don't collide.
+  const linkStudentToRoster = (idx, composite) => {
+    if (!composite) {
+      updateStudent(idx, { studentId: "", className: "" });
+      return;
+    }
+    const match = allRosterOptions.find((o) => o.composite === composite);
+    if (!match) { updateStudent(idx, { studentId: "", className: "" }); return; }
     updateStudent(idx, {
-      studentId: String(match.studentId || match.edsbyId || match._id || ""),
-      name: full || students[idx].name,
+      studentId: match.id,
+      className: match.className,
+      name: match.label || students[idx].name,
     });
   };
 
@@ -297,6 +344,7 @@ export default function VideoGrading({
           instrumentFamily: s.instrumentFamily || "",
           instrument: s.instrument || "",
           studentId: s.studentId || "",
+          className: s.className || "",
         }))
         .filter((s) => s.name);
       if (namedStudents.length) {
@@ -341,6 +389,11 @@ export default function VideoGrading({
             const linkedStudentIds = Array.isArray(data.students)
               ? data.students.map((s) => s.student_id).filter(Boolean)
               : students.map((s) => s.studentId).filter(Boolean);
+            // A recital can pull performers from multiple classes — track every
+            // distinct class the linked students came from.
+            const linkedClassNames = Array.from(new Set(
+              students.map((s) => s.className).filter(Boolean)
+            ));
             const pubResp = await fetch(resultsUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -350,7 +403,8 @@ export default function VideoGrading({
                   source: "video-grading",
                   gradeBand,
                   studentIds: linkedStudentIds,
-                  className: selectedClassName || undefined,
+                  classNames: linkedClassNames.length ? linkedClassNames : undefined,
+                  className: linkedClassNames[0] || selectedClassName || undefined,
                 },
               }),
             });
@@ -473,7 +527,7 @@ export default function VideoGrading({
     setPreview(null);
     setResult(null);
     setError("");
-    setStudents([{ name: "", instrumentFamily: "", instrument: "", studentId: "" }]);
+    setStudents([{ name: "", instrumentFamily: "", instrument: "", studentId: "", className: "" }]);
     setPerformanceType("");
     setRefCode("");
     setCopiedRef(false);
@@ -901,12 +955,15 @@ export default function VideoGrading({
             </div>
           )}
 
-          {/* Optional: pick a roster class so each performer row can be linked
-              to a specific student. Hidden when no rosters have been uploaded. */}
+          {/* Optional "primary" class — purely a sort hint. The per-row roster
+              dropdown lists students from ALL of the teacher's classes (a
+              recital can mix performers from multiple classes), but the class
+              picked here is sorted to the top so the most common case stays
+              fast. Hidden when no rosters have been uploaded. */}
           {file && rosterClasses.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-                Link to roster class (optional)
+                Primary class (optional — sorted first; you can still link rows to any class)
               </label>
               <select
                 value={selectedClassName}
@@ -918,7 +975,7 @@ export default function VideoGrading({
                   background: "#fff",
                 }}
               >
-                <option value="">No class selected</option>
+                <option value="">All classes (no primary)</option>
                 {rosterClasses.map((rc) => (
                   <option key={rc._id || rc.className} value={rc.className}>{rc.className}</option>
                 ))}
@@ -935,7 +992,8 @@ export default function VideoGrading({
                 Performers (one row per student — at least one optional)
               </label>
               {students.map((s, idx) => {
-                const matchedRoster = selectedClassStudents.find((rs) => String(rs.studentId || rs.edsbyId || rs._id) === String(s.studentId));
+                const composite = s.studentId ? `${s.studentId}|${s.className || ""}` : "";
+                const matchedRoster = allRosterOptions.find((o) => o.composite === composite);
                 return (
                   <div
                     key={idx}
@@ -948,7 +1006,7 @@ export default function VideoGrading({
                       <input
                         type="text"
                         value={s.name}
-                        onChange={(e) => updateStudent(idx, { name: e.target.value, studentId: matchedRoster ? "" : s.studentId })}
+                        onChange={(e) => updateStudent(idx, { name: e.target.value, studentId: matchedRoster ? "" : s.studentId, className: matchedRoster ? "" : s.className })}
                         placeholder={`Student ${idx + 1} name`}
                         disabled={submitting}
                         style={{
@@ -973,11 +1031,11 @@ export default function VideoGrading({
                       )}
                     </div>
 
-                    {/* Roster link (only when a class is selected) */}
-                    {selectedClassStudents.length > 0 && (
+                    {/* Roster link — shows students from every class, grouped */}
+                    {rosterOptionsByClass.length > 0 && (
                       <div style={{ marginTop: 8 }}>
                         <select
-                          value={s.studentId || ""}
+                          value={composite}
                           onChange={(e) => linkStudentToRoster(idx, e.target.value)}
                           disabled={submitting}
                           style={{
@@ -987,12 +1045,19 @@ export default function VideoGrading({
                           }}
                         >
                           <option value="">Link to roster student…</option>
-                          {selectedClassStudents.map((rs) => {
-                            const id = String(rs.studentId || rs.edsbyId || rs._id || "");
-                            const label = [rs.firstName, rs.lastName].filter(Boolean).join(" ").trim() || id;
-                            return <option key={id} value={id}>{label}</option>;
-                          })}
+                          {rosterOptionsByClass.map((g) => (
+                            <optgroup key={g.className} label={g.className}>
+                              {g.options.map((o) => (
+                                <option key={o.composite} value={o.composite}>{o.label}</option>
+                              ))}
+                            </optgroup>
+                          ))}
                         </select>
+                        {s.className ? (
+                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 4 }}>
+                            From: {s.className}
+                          </div>
+                        ) : null}
                       </div>
                     )}
 
