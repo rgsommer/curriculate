@@ -1,0 +1,6 @@
+node_modules/
+# Generated native projects (regenerate with `npx cap add ios|android`)
+ios/
+android/
+resources/
+.DS_Store

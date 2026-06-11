@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import AppShell from "./AppShell";
 import PwaRegister from "./PwaRegister";
+import NativeBridge from "./NativeBridge";
 import CampfireFeedback from "./CampfireFeedback";
 
 export const metadata: Metadata = {
@@ -69,6 +70,9 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#f97316",
+  // cover lets the page paint under the notch/home-indicator; the native shell
+  // then uses env(safe-area-inset-*) so the header/footer clear them.
+  viewportFit: "cover",
 };
 
 export default function CampfireLiveLayout({
@@ -101,6 +105,7 @@ export default function CampfireLiveLayout({
         }}
       />
       <PwaRegister />
+      <NativeBridge />
       <AppShell>{children}</AppShell>
       <CampfireFeedback />
     </>

@@ -25,9 +25,13 @@ body.capacitor-native .site-header,
 body.capacitor-native .site-footer {
   display: none !important;
 }
+/* Native (Capacitor) shell: clear the notch + home-indicator. The sticky header's
+   background fills the status-bar area while its content sits below the notch. */
 body.capacitor-native {
-  padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+body.capacitor-native header.sticky {
+  padding-top: env(safe-area-inset-top, 0px);
 }
 
 /* ── TeeboPay standalone shell ──

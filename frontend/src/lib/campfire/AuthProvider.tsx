@@ -115,11 +115,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithGoogle = async (next?: string) => {
+    // In the Capacitor native shell, Google blocks OAuth inside the embedded
+    // webview — so open the consent page in the SYSTEM browser and let it deep-link
+    // back via campfire://auth-callback (NativeBridge sets the session on return).
+    const w =
+      typeof window === "undefined"
+        ? null
+        : (window as unknown as {
+            Capacitor?: {
+              isNativePlatform?: () => boolean;
+              Plugins?: { Browser?: { open?: (o: { url: string }) => Promise<void> } };
+            };
+          }).Capacitor;
+    if (w?.isNativePlatform?.()) {
+      const { data } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: "campfire://auth-callback", skipBrowserRedirect: true },
+      });
+      if (data?.url) {
+        if (w.Plugins?.Browser?.open) await w.Plugins.Browser.open({ url: data.url });
+        else window.open(data.url, "_blank");
+      }
+      return;
+    }
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: callbackUrl(next),
-      },
+      options: { redirectTo: callbackUrl(next) },
     });
   };
 

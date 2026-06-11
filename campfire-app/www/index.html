@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Campfire</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #fff7ed;
+        font-family: -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+        color: #9a3412;
+      }
+      .wrap {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        text-align: center;
+        padding: 24px;
+      }
+      .fire {
+        font-size: 56px;
+      }
+      .msg {
+        font-size: 14px;
+        color: #b45309;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- The native shell normally loads the live site (capacitor.config server.url).
+         This page only shows if the device is offline. -->
+    <div class="wrap">
+      <div class="fire">🔥</div>
+      <div><strong>Campfire</strong></div>
+      <div class="msg">You're offline. Reconnect to load your groups.</div>
+    </div>
+  </body>
+</html>
