@@ -388,11 +388,17 @@ export default function VideoGrading({
         done: "Finishing up…",
       };
       let data = null;
+      // Tolerate transient network failures during the poll loop. The job is
+      // alive on the server — a 5G/WiFi switch mid-poll shouldn't lose the
+      // whole grade. We allow ~10 consecutive poll failures (≈25s of
+      // continuous network trouble) before giving up.
+      let pollFailures = 0;
+      const MAX_POLL_FAILURES = 10;
       while (true) {
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException("Aborted", "AbortError");
         }
-        await new Promise((resolve, reject) => {
+        await new Promise((resolve) => {
           const t = setTimeout(resolve, POLL_INTERVAL_MS);
           // If user cancels during the wait, resolve early so the abort check
           // at the top of the next iteration fires.
@@ -404,14 +410,36 @@ export default function VideoGrading({
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException("Aborted", "AbortError");
         }
-        const jobResp = await fetch(
-          `${backendBase}/grading/video/job/${encodeURIComponent(jobId)}`,
-          { signal: abortControllerRef.current?.signal }
-        );
-        if (!jobResp.ok) {
-          throw new Error(`Job lookup failed (${jobResp.status}). The server may have restarted — please retry.`);
+
+        let job = null;
+        try {
+          const jobResp = await fetch(
+            `${backendBase}/grading/video/job/${encodeURIComponent(jobId)}`,
+            { signal: abortControllerRef.current?.signal }
+          );
+          if (jobResp.status === 404) {
+            // The job is genuinely gone (server restart, TTL expired) — no
+            // amount of retrying will bring it back.
+            throw new Error("This grading job is no longer available on the server (it may have restarted). Please retry.");
+          }
+          if (!jobResp.ok) {
+            throw new Error(`Job lookup failed (${jobResp.status}).`);
+          }
+          job = await jobResp.json();
+          pollFailures = 0; // success → reset
+        } catch (pollErr) {
+          // Cancel must always propagate.
+          if (pollErr?.name === "AbortError") throw pollErr;
+          // 404 / explicit "job not available" should not retry forever.
+          if (/no longer available/.test(pollErr?.message || "")) throw pollErr;
+          pollFailures += 1;
+          if (pollFailures >= MAX_POLL_FAILURES) {
+            throw new Error("Lost connection to the server while waiting for the grade. Please retry.");
+          }
+          // Keep looping — the next iteration will sleep and try again.
+          continue;
         }
-        const job = await jobResp.json();
+
         if (typeof job?.progress === "number") {
           setProgressPct((prev) => Math.max(prev || 0, job.progress));
         }

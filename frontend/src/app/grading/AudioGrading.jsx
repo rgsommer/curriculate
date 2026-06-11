@@ -260,6 +260,10 @@ export default function AudioGrading({
         done: "Finishing up…",
       };
       let data = null;
+      // Tolerate transient network failures during polling — the job is alive
+      // on the server, so a network blip should not throw away the whole grade.
+      let pollFailures = 0;
+      const MAX_POLL_FAILURES = 10;
       while (true) {
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException("Aborted", "AbortError");
@@ -273,14 +277,31 @@ export default function AudioGrading({
         if (abortControllerRef.current?.signal.aborted) {
           throw new DOMException("Aborted", "AbortError");
         }
-        const jobResp = await fetch(
-          `${backendBase}/grading/audio/job/${encodeURIComponent(jobId)}`,
-          { signal: abortControllerRef.current?.signal }
-        );
-        if (!jobResp.ok) {
-          throw new Error(`Job lookup failed (${jobResp.status}). The server may have restarted — please retry.`);
+
+        let job = null;
+        try {
+          const jobResp = await fetch(
+            `${backendBase}/grading/audio/job/${encodeURIComponent(jobId)}`,
+            { signal: abortControllerRef.current?.signal }
+          );
+          if (jobResp.status === 404) {
+            throw new Error("This grading job is no longer available on the server (it may have restarted). Please retry.");
+          }
+          if (!jobResp.ok) {
+            throw new Error(`Job lookup failed (${jobResp.status}).`);
+          }
+          job = await jobResp.json();
+          pollFailures = 0;
+        } catch (pollErr) {
+          if (pollErr?.name === "AbortError") throw pollErr;
+          if (/no longer available/.test(pollErr?.message || "")) throw pollErr;
+          pollFailures += 1;
+          if (pollFailures >= MAX_POLL_FAILURES) {
+            throw new Error("Lost connection to the server while waiting for the grade. Please retry.");
+          }
+          continue;
         }
-        const job = await jobResp.json();
+
         if (typeof job?.progress === "number") {
           setProgressPct((prev) => Math.max(prev || 0, job.progress));
         }
