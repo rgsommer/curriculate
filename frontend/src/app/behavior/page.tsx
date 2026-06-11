@@ -125,8 +125,73 @@ export default function BehaviorDashboard() {
               </Link>
             )}
           </div>
+          <ReferColleague />
         </Card>
       )}
+    </div>
+  );
+}
+
+function ReferColleague() {
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState("");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  async function send() {
+    const to = email.trim();
+    if (!/^[\w.+-]+@[\w.-]+\.\w{2,}$/.test(to)) { setMsg("✗ Enter a valid email address."); return; }
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await api<{ sent: string[]; failed: { email: string }[] }>("/refer", { body: { email: to, note: note.trim() } });
+      if (r.sent?.length) {
+        setMsg(`✓ Info email sent to ${r.sent.join(", ")}.`);
+        setEmail(""); setNote("");
+        setOpen(false);
+      } else {
+        setMsg(`✗ Could not send${r.failed?.[0] ? ` (${r.failed[0].email})` : ""} — check email settings.`);
+      }
+    } catch (e: any) {
+      setMsg(`✗ ${e.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t border-slate-100 pt-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm text-slate-600">Know another teacher or admin who&apos;d use this?</p>
+        <button onClick={() => { setOpen((o) => !o); setMsg(""); }} className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
+          {open ? "Cancel" : "Tell a colleague"}
+        </button>
+      </div>
+      {open && (
+        <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            inputMode="email"
+            placeholder="their email address"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            rows={2}
+            placeholder="Optional personal note…"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+          />
+          <p className="text-xs text-slate-400">Sends an info email about Behaviours with a link to try it — it does not create an account or add them to your school.</p>
+          <button onClick={send} disabled={busy || !email.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
+            {busy ? "Sending…" : "Send info email"}
+          </button>
+        </div>
+      )}
+      {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
     </div>
   );
 }

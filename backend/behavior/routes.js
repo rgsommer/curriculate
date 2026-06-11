@@ -628,6 +628,73 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
   }
 });
 
+// "Tell a colleague" — an informational email about Behaviours to a teacher or
+// admin at ANY school, so they can try it for their own division. This is NOT a
+// join-invite (no token, no membership, no domain restriction); it just points
+// them at the overview + setup pages. Admin-only to keep it from being abused.
+router.post("/refer", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const emails = (Array.isArray(req.body?.emails) ? req.body.emails : [req.body?.email])
+      .map((e) => {
+        const m = String(e || "").match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
+        return m ? m[0].toLowerCase() : "";
+      })
+      .filter(Boolean);
+    if (!emails.length) return res.status(400).json({ ok: false, error: "Enter a valid email address." });
+    if (emails.length > 10) return res.status(400).json({ ok: false, error: "Up to 10 recipients at a time." });
+
+    const note = String(req.body?.note || "").trim().slice(0, 600);
+    const sender = (req.user?.name || "").trim();
+    const senderEmail = req.user?.email || "";
+    const by = sender ? `${sender}${senderEmail ? ` (${senderEmail})` : ""}` : "A colleague";
+    const learnUrl = `${appBase()}/behavior/features`;
+    const startUrl = `${appBase()}/behavior`;
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+
+    const blurb =
+      "Behaviours tracks student behaviour across every teacher — one shared strike count per student — and sends history-aware notes home automatically when a threshold is reached. It also handles positive recognition, house points, and AI summaries for administrators.";
+    const sent = [];
+    const failed = [];
+    for (const email of emails) {
+      try {
+        await sendEmail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to: email,
+          replyTo: senderEmail || undefined,
+          subject: `${sender || "A colleague"} thought you'd like Behaviours`,
+          text:
+            `Hi,\n\n` +
+            `${by} thought Behaviours might be useful for you.\n\n` +
+            `${blurb}\n\n` +
+            (note ? `Their note: "${note}"\n\n` : "") +
+            `See what it does: ${learnUrl}\n` +
+            `Try it / set up your division: ${startUrl}\n\n` +
+            `— Behaviours (curriculate.net)`,
+          html: emailShell({
+            title: "A colleague thought you'd like Behaviours",
+            schoolName: "Behaviours",
+            preheader: `${by} thought you'd like Behaviours.`,
+            contentHtml:
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> thought Behaviours might be useful for you.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6">${escapeHtml(blurb)}</p>` +
+              (note ? `<blockquote style="margin:0 0 14px;padding:8px 14px;border-left:3px solid #cbd5e1;color:#475569;font-style:italic">${escapeHtml(note)}</blockquote>` : "") +
+              emailButton("See what it does", learnUrl) +
+              `<p style="margin:14px 0 0;color:#475569;line-height:1.6">Ready to try it for your own division? <a href="${startUrl}" style="color:#0f172a">Set it up here</a>.</p>` +
+              `<p style="color:#94a3b8;font-size:13px;margin:12px 0 0">You received this because a colleague shared it with you; no account has been created. You can ignore this email.</p>`,
+          }),
+        });
+        sent.push(email);
+      } catch (mailErr) {
+        failed.push({ email, error: mailErr?.message || String(mailErr) });
+      }
+    }
+    await audit(req.schoolId, "refer.sent", req, { meta: { sent, failed } });
+    res.json({ ok: true, sent, failed });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/invites", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
     const invites = await BehaviorInvite.find({ schoolId: req.schoolId }).sort({ createdAt: -1 }).lean();
