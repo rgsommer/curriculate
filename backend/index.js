@@ -16927,6 +16927,32 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     const instrument = req.body?.instrument || "";
     const strictnessBias = Math.max(-3, Math.min(3, Math.round(Number(req.body?.strictnessBias) || 0)));
 
+    // Multi-student support: optional JSON-stringified array of
+    //   { name, instrumentFamily, instrument, studentId }
+    // When ≥2 entries are supplied, the model grades each individually AND the
+    // group as a whole. Falls back to the legacy single-student fields when not.
+    let students = [];
+    try {
+      if (req.body?.students) {
+        const parsed = JSON.parse(req.body.students);
+        if (Array.isArray(parsed)) {
+          students = parsed
+            .map((s) => ({
+              name: String(s?.name || "").trim(),
+              instrumentFamily: String(s?.instrumentFamily || "").trim(),
+              instrument: String(s?.instrument || "").trim(),
+              studentId: s?.studentId ? String(s.studentId) : null,
+            }))
+            .filter((s) => s.name)
+            .slice(0, 12); // hard cap to keep prompts bounded
+        }
+      }
+    } catch { /* malformed JSON — ignore and fall back below */ }
+    if (!students.length && studentName) {
+      students = [{ name: studentName, instrumentFamily, instrument, studentId: null }];
+    }
+    const isMultiStudent = students.length >= 2;
+
     // Create temp directory
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "curriculate-video-"));
     const ext = (req.file.mimetype || "").includes("quicktime") ? "mov"
@@ -17053,6 +17079,7 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     const videoPrompt = buildVideoPerformancePrompt({
       performanceType, instrumentFamily, instrument, instructions, transcript,
       frameInterval, studentName, rubricOverride: effectiveRubricOverride,
+      students, isMultiStudent,
     });
 
     // ------------------------------------------------
@@ -17159,6 +17186,26 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
             required: ["category", "level", "score", "out_of", "comment"],
           },
         },
+        // Per-student grades for group-performance videos. Null when only one
+        // student is in the video; otherwise one entry per listed performer.
+        // The top-level overall_score / sections / strengths / improvements /
+        // teacher_comment still describe the ensemble as a whole.
+        students: {
+          type: ["array", "null"],
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              name: { type: "string", minLength: 1 },
+              student_id: { type: ["string", "null"] },
+              overall_score: { type: "number", minimum: 0 },
+              overall_out_of: { type: "number", minimum: 1 },
+              strengths: { type: "array", minItems: 1, maxItems: 4, items: { type: "string", maxLength: 240 } },
+              improvements: { type: "array", minItems: 1, maxItems: 3, items: { type: "string", maxLength: 240 } },
+              teacher_comment: { type: "string", minLength: 1, maxLength: 1200 },
+            },
+            required: ["name", "student_id", "overall_score", "overall_out_of", "strengths", "improvements", "teacher_comment"],
+          },
+        },
       },
       required: [
         "response_format_detected", "inferred_subject", "inferred_assessment_type", "inferred_grade_level",
@@ -17168,6 +17215,7 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
         "rubricText", "rubricConfidence", "rubricDetected",
         "answerKeyText", "answerKeyDetected", "answerKeyConfidence",
         "strengths", "improvements", "teacher_comment", "achievement_summary",
+        "students",
       ],
     };
 
@@ -17205,6 +17253,18 @@ app.post("/grading/video", gradingLimiter, videoUpload.single("video"), async (r
     if (grade.overall_out_of !== 10) {
       grade.score_out_of_10 = null;
       grade.final_score_out_of_10 = null;
+    }
+
+    // Map studentId back onto each per-student grade by matching the name we
+    // sent in. The model echoes the names we gave it, so this is reliable.
+    if (Array.isArray(grade.students) && students.length) {
+      const norm = (s) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+      const byName = new Map(students.map((s) => [norm(s.name), s]));
+      grade.students = grade.students.map((g) => {
+        const matched = byName.get(norm(g?.name));
+        if (matched && !g.student_id) g.student_id = matched.studentId || null;
+        return g;
+      });
     }
 
     // Save to S3 + generate ref code (reuse existing grading save logic)
@@ -17494,8 +17554,37 @@ app.post("/grading/audio", gradingLimiter, audioUpload.single("audio"), async (r
 
 // Build performance-specific grading prompt for audio submissions
 // Build performance-type-aware prompt for video grading
-function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instrument, instructions, transcript, frameInterval, studentName, rubricOverride }) {
+function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instrument, instructions, transcript, frameInterval, studentName, rubricOverride, students = [], isMultiStudent = false }) {
   const frameNote = `The frames are sampled every ~${Math.round(frameInterval)} seconds. Use them to identify PATTERNS, not single moments.`;
+
+  // Build a roster block when multiple students are in the video. The model uses
+  // this to attribute parts of the performance to each named performer and emit
+  // a per-student grade in students[] alongside the group_assessment.
+  const multiStudentBlock = isMultiStudent ? `
+    MULTI-STUDENT PERFORMANCE — IMPORTANT:
+    This video contains a group performance with ${students.length} students.
+    The students (and their assigned instruments / roles, if any) are:
+    ${students.map((s, i) => `  ${i + 1}. ${s.name}${s.instrument ? ` — ${s.instrument}${s.instrumentFamily ? ` (${s.instrumentFamily})` : ""}` : s.instrumentFamily ? ` — ${s.instrumentFamily}` : ""}`).join("\n")}
+
+    You MUST produce BOTH:
+    (a) A per-student grade for EVERY listed student, in the top-level "students" array.
+        Use the SAME rubric / dimensions as the group assessment, scaled to the
+        same out_of. Each entry needs name (matching one of the listed names exactly),
+        an overall_score, overall_out_of, a sections[] breakdown, strengths,
+        improvements, and a teacher_comment focused on THAT student.
+        Attribute observations to specific students using the visual frames (position,
+        instrument, costume) and the transcript (who is speaking / singing / playing).
+        If you genuinely cannot tell who did what for a dimension, say so in the
+        student's teacher_comment and grade conservatively rather than guessing.
+    (b) A group_assessment object reflecting the ENSEMBLE performance — togetherness,
+        coordination, balance, dynamics across the group — with its own overall_score,
+        overall_out_of, sections[], strengths, improvements, and teacher_comment.
+
+    The top-level overall_score / overall_out_of, sections[], strengths,
+    improvements, teacher_comment, and achievement_summary fields should mirror
+    the GROUP assessment (so existing single-student readers still see a sensible
+    overall result). student_name MAY be a comma-joined list of the students.
+  ` : "";
 
   const commonVideoRules = `
     VIDEO-SPECIFIC RULES:
@@ -17732,6 +17821,7 @@ function buildVideoPerformancePrompt({ performanceType, instrumentFamily, instru
     ` : ""}
 
     ${commonVideoRules}
+    ${multiStudentBlock}
     ${inferBlock}
   `.trim();
 }

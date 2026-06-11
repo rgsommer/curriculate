@@ -94,10 +94,15 @@ export default function VideoGrading({
 }) {
   const [file, setFile] = useState(null);
   const [preview, setPreview] = useState(null);
-  const [studentName, setStudentName] = useState("");
   const [performanceType, setPerformanceType] = useState("");
-  const [instrumentFamily, setInstrumentFamily] = useState("");
-  const [instrument, setInstrument] = useState("");
+  // List of students appearing in the video. When 2+ named entries are present
+  // the backend will grade each individually AND the group as a whole.
+  // Each row: { name, instrumentFamily, instrument, studentId } — studentId is
+  // set when the row is linked to a roster entry.
+  const [students, setStudents] = useState([{ name: "", instrumentFamily: "", instrument: "", studentId: "" }]);
+  // Roster classes (optional — used to link rows to roster students).
+  const [rosterClasses, setRosterClasses] = useState([]);
+  const [selectedClassName, setSelectedClassName] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [progress, setProgress] = useState("");
   const [result, setResult] = useState(null);
@@ -118,6 +123,43 @@ export default function VideoGrading({
 
   const backendBase = gradingUrl?.replace(/\/grading$/, "") || process.env.NEXT_PUBLIC_BACKEND_URL || "";
   const resultsUrl = backendBase ? `${backendBase.replace(/\/$/, "")}/results` : "";
+
+  // Load the teacher's roster classes when this view mounts so each performer
+  // row can be linked to a roster student (so results can be looked up later).
+  // Same endpoint + storage key as the main grading page uses.
+  useEffect(() => {
+    let cancelled = false;
+    let teacherEmail = "";
+    try { teacherEmail = localStorage.getItem("curriculate_report_email") || ""; } catch {}
+    if (!teacherEmail.includes("@") || !backendBase) return;
+    fetch(`${backendBase.replace(/\/$/, "")}/class-roster/list?teacherEmail=${encodeURIComponent(teacherEmail)}`)
+      .then((r) => r.ok ? r.json() : { rosters: [] })
+      .then((data) => { if (!cancelled) setRosterClasses(data.rosters || []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [backendBase]);
+
+  const selectedClassStudents = React.useMemo(() => {
+    const cls = rosterClasses.find((r) => r.className === selectedClassName);
+    return cls?.students || [];
+  }, [rosterClasses, selectedClassName]);
+
+  // Helpers for the dynamic students list.
+  const updateStudent = (idx, patch) => {
+    setStudents((prev) => prev.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
+  };
+  const addStudent = () => setStudents((prev) => [...prev, { name: "", instrumentFamily: "", instrument: "", studentId: "" }]);
+  const removeStudent = (idx) => setStudents((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx)));
+  // Linking a row to a roster entry auto-fills the name.
+  const linkStudentToRoster = (idx, studentId) => {
+    const match = selectedClassStudents.find((s) => String(s.studentId || s.edsbyId || s._id) === String(studentId));
+    if (!match) { updateStudent(idx, { studentId: "" }); return; }
+    const full = [match.firstName, match.lastName].filter(Boolean).join(" ").trim();
+    updateStudent(idx, {
+      studentId: String(match.studentId || match.edsbyId || match._id || ""),
+      name: full || students[idx].name,
+    });
+  };
 
   const handleFileSelect = useCallback((e) => {
     const f = e.target.files?.[0];
@@ -247,10 +289,25 @@ export default function VideoGrading({
       formData.append("gradeBand", gradeBand || "6-8");
       formData.append("standards", standards || "canada");
       formData.append("feedbackVoice", feedbackVoice || "coach");
-      if (studentName.trim()) formData.append("studentName", studentName.trim());
+      // Send the multi-student roster as JSON. Backend grades per-student + group
+      // when 2+ entries are named; otherwise it falls back to single-student.
+      const namedStudents = students
+        .map((s) => ({
+          name: (s.name || "").trim(),
+          instrumentFamily: s.instrumentFamily || "",
+          instrument: s.instrument || "",
+          studentId: s.studentId || "",
+        }))
+        .filter((s) => s.name);
+      if (namedStudents.length) {
+        formData.append("students", JSON.stringify(namedStudents));
+        // Keep legacy single-student fields populated from the first entry, so
+        // server-side fallbacks and analytics that read these still work.
+        formData.append("studentName", namedStudents[0].name);
+        if (namedStudents[0].instrumentFamily) formData.append("instrumentFamily", namedStudents[0].instrumentFamily);
+        if (namedStudents[0].instrument) formData.append("instrument", namedStudents[0].instrument);
+      }
       if (performanceType) formData.append("performanceType", performanceType);
-      if (instrumentFamily) formData.append("instrumentFamily", instrumentFamily);
-      if (instrument) formData.append("instrument", instrument);
       if (subjectArea) formData.append("subjectArea", subjectArea);
       if (effectiveBias) formData.append("strictnessBias", String(effectiveBias));
 
@@ -281,10 +338,21 @@ export default function VideoGrading({
         if (resultsUrl) {
           try {
             const payload = buildVideoPayloadText(data);
+            const linkedStudentIds = Array.isArray(data.students)
+              ? data.students.map((s) => s.student_id).filter(Boolean)
+              : students.map((s) => s.studentId).filter(Boolean);
             const pubResp = await fetch(resultsUrl, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ payload, meta: { source: "video-grading", gradeBand } }),
+              body: JSON.stringify({
+                payload,
+                meta: {
+                  source: "video-grading",
+                  gradeBand,
+                  studentIds: linkedStudentIds,
+                  className: selectedClassName || undefined,
+                },
+              }),
             });
             const pubData = await pubResp.json().catch(() => ({}));
             if (pubData?.code) setRefCode(String(pubData.code).toUpperCase());
@@ -305,7 +373,7 @@ export default function VideoGrading({
       setProgress("");
       setProgressPct(0);
     }
-  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, studentName, performanceType, instrumentFamily, instrument, subjectArea, strictnessBias, startProgressTimer, stopProgressTimer]);
+  }, [file, backendBase, rubricOverride, gradeBand, standards, feedbackVoice, students, performanceType, subjectArea, strictnessBias, startProgressTimer, stopProgressTimer]);
 
   function buildVideoPayloadText(r) {
     const lines = [];
@@ -353,6 +421,21 @@ export default function VideoGrading({
       lines.push("");
     }
     if (r.teacher_comment) { lines.push("Overall Comment:"); lines.push(r.teacher_comment); lines.push(""); }
+    if (Array.isArray(r.students) && r.students.length > 0) {
+      lines.push("Per-student grades:");
+      r.students.forEach((sg) => {
+        const score = (sg.overall_score != null && sg.overall_out_of != null) ? ` ${sg.overall_score}/${sg.overall_out_of}` : "";
+        lines.push(`- ${sg.name}${score}${sg.student_id ? ` [id ${sg.student_id}]` : ""}`);
+        if (Array.isArray(sg.strengths) && sg.strengths.length) {
+          sg.strengths.forEach((x) => lines.push(`    + ${x}`));
+        }
+        if (Array.isArray(sg.improvements) && sg.improvements.length) {
+          sg.improvements.forEach((x) => lines.push(`    > ${x}`));
+        }
+        if (sg.teacher_comment) lines.push(`    ${sg.teacher_comment}`);
+      });
+      lines.push("");
+    }
     if (r.videoUrl) {
       lines.push("Saved captures (30-day links):");
       lines.push(`Video recording: ${r.videoUrl}`);
@@ -390,10 +473,8 @@ export default function VideoGrading({
     setPreview(null);
     setResult(null);
     setError("");
-    setStudentName("");
+    setStudents([{ name: "", instrumentFamily: "", instrument: "", studentId: "" }]);
     setPerformanceType("");
-    setInstrumentFamily("");
-    setInstrument("");
     setRefCode("");
     setCopiedRef(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -562,6 +643,18 @@ export default function VideoGrading({
           </div>
         )}
 
+        {/* Label the overall result block as the GROUP result when per-student
+            grades are also present, so the distinction is clear. */}
+        {Array.isArray(r.students) && r.students.length >= 2 && (
+          <div style={{
+            display: "inline-block", marginBottom: 10, padding: "3px 10px",
+            background: "#eff6ff", color: "#1e40af", borderRadius: 999,
+            fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase",
+          }}>
+            Group performance — overall
+          </div>
+        )}
+
         {/* Strengths */}
         {Array.isArray(r.strengths) && r.strengths.length > 0 && (
           <div style={{ marginBottom: 12 }}>
@@ -615,6 +708,91 @@ export default function VideoGrading({
                       {cat.score.toFixed(1)}/{cat.out_of.toFixed(1)}
                     </div>
                     <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{cat.comment}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Per-student grades (group performances only) */}
+        {Array.isArray(r.students) && r.students.length > 0 && (
+          <div style={{ marginBottom: 16, marginTop: 16 }}>
+            <div style={{
+              display: "inline-block", marginBottom: 8, padding: "3px 10px",
+              background: "#f0fdf4", color: "#15803d", borderRadius: 999,
+              fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase",
+            }}>
+              Per-student grades
+            </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {r.students.map((sg, i) => {
+                const sPct = sg.overall_out_of ? (sg.overall_score / sg.overall_out_of) : 0;
+                const sColor = sPct >= 0.8 ? "#16a34a" : sPct >= 0.6 ? "#ca8a04" : "#dc2626";
+                const refUrl = sg.student_id && refCode
+                  ? `https://www.curriculate.net/results/${refCode}?student=${encodeURIComponent(sg.student_id)}`
+                  : null;
+                return (
+                  <div key={i} style={{
+                    padding: 12, borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff",
+                  }}>
+                    <div style={{
+                      display: "flex", justifyContent: "space-between", alignItems: "center",
+                      marginBottom: 8, gap: 12,
+                    }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a" }}>{sg.name}</div>
+                        {sg.student_id ? (
+                          <div style={{ fontSize: 11, color: "#64748b" }}>Linked: {sg.student_id}</div>
+                        ) : null}
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontWeight: 800, color: sColor, fontSize: 18 }}>
+                          {sg.overall_score}/{sg.overall_out_of}
+                        </div>
+                        {sg.overall_out_of ? (
+                          <div style={{ fontSize: 11, color: "#64748b" }}>
+                            {Math.round((sg.overall_score / sg.overall_out_of) * 100)}%
+                          </div>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {Array.isArray(sg.strengths) && sg.strengths.length > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#16a34a", marginBottom: 2 }}>Strengths</div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {sg.strengths.map((s, k) => (
+                            <li key={k} style={{ fontSize: 12, marginBottom: 1 }}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {Array.isArray(sg.improvements) && sg.improvements.length > 0 && (
+                      <div style={{ marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: "#ca8a04", marginBottom: 2 }}>Next Steps</div>
+                        <ul style={{ margin: 0, paddingLeft: 18 }}>
+                          {sg.improvements.map((s, k) => (
+                            <li key={k} style={{ fontSize: 12, marginBottom: 1 }}>{s}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {sg.teacher_comment && (
+                      <div style={{
+                        padding: 8, background: "#f0f9ff", borderRadius: 6,
+                        border: "1px solid #bae6fd", fontSize: 12, color: "#0f172a",
+                      }}>
+                        {sg.teacher_comment}
+                      </div>
+                    )}
+                    {refUrl && (
+                      <div style={{ marginTop: 6 }}>
+                        <a href={refUrl} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: "#2563eb", textDecoration: "underline" }}>
+                          View this student's result page
+                        </a>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -693,24 +871,6 @@ export default function VideoGrading({
             )}
           </div>
 
-          {/* Student name (optional) */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-              Student Name (optional)
-            </label>
-            <input
-              type="text"
-              value={studentName}
-              onChange={(e) => setStudentName(e.target.value)}
-              placeholder="Enter student name..."
-              style={{
-                width: "100%", padding: "8px 12px", borderRadius: 8,
-                border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
-              }}
-              disabled={submitting}
-            />
-          </div>
-
           {/* Performance type selector */}
           {file && (
             <div style={{ marginBottom: 12 }}>
@@ -719,7 +879,13 @@ export default function VideoGrading({
               </label>
               <select
                 value={performanceType}
-                onChange={(e) => { setPerformanceType(e.target.value); setInstrumentFamily(""); setInstrument(""); }}
+                onChange={(e) => {
+                  setPerformanceType(e.target.value);
+                  // Wipe instrument selections when leaving instrumental.
+                  if (e.target.value !== "instrumental") {
+                    setStudents((prev) => prev.map((s) => ({ ...s, instrumentFamily: "", instrument: "" })));
+                  }
+                }}
                 disabled={submitting}
                 style={{
                   width: "100%", padding: "8px 12px", borderRadius: 8,
@@ -735,15 +901,16 @@ export default function VideoGrading({
             </div>
           )}
 
-          {/* Instrument family (instrumental only) */}
-          {performanceType === "instrumental" && (
+          {/* Optional: pick a roster class so each performer row can be linked
+              to a specific student. Hidden when no rosters have been uploaded. */}
+          {file && rosterClasses.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-                Instrument Family
+                Link to roster class (optional)
               </label>
               <select
-                value={instrumentFamily}
-                onChange={(e) => { setInstrumentFamily(e.target.value); setInstrument(""); }}
+                value={selectedClassName}
+                onChange={(e) => setSelectedClassName(e.target.value)}
                 disabled={submitting}
                 style={{
                   width: "100%", padding: "8px 12px", borderRadius: 8,
@@ -751,35 +918,134 @@ export default function VideoGrading({
                   background: "#fff",
                 }}
               >
-                <option value="">Select family...</option>
-                {INSTRUMENT_FAMILIES.map(f => (
-                  <option key={f.value} value={f.value}>{f.label}</option>
+                <option value="">No class selected</option>
+                {rosterClasses.map((rc) => (
+                  <option key={rc._id || rc.className} value={rc.className}>{rc.className}</option>
                 ))}
               </select>
             </div>
           )}
 
-          {/* Specific instrument */}
-          {instrumentFamily && INSTRUMENTS_BY_FAMILY[instrumentFamily] && (
+          {/* Performers list — name + (instrumental only) family/instrument per row.
+              The backend grades each named performer individually AND the group
+              when 2+ entries are filled in. */}
+          {file && (
             <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 4 }}>
-                Instrument
+              <label style={{ fontSize: 12, fontWeight: 600, color: "#64748b", display: "block", marginBottom: 6 }}>
+                Performers (one row per student — at least one optional)
               </label>
-              <select
-                value={instrument}
-                onChange={(e) => setInstrument(e.target.value)}
+              {students.map((s, idx) => {
+                const matchedRoster = selectedClassStudents.find((rs) => String(rs.studentId || rs.edsbyId || rs._id) === String(s.studentId));
+                return (
+                  <div
+                    key={idx}
+                    style={{
+                      border: "1px solid #e2e8f0", borderRadius: 10, padding: 10,
+                      marginBottom: 8, background: "#f8fafc",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                      <input
+                        type="text"
+                        value={s.name}
+                        onChange={(e) => updateStudent(idx, { name: e.target.value, studentId: matchedRoster ? "" : s.studentId })}
+                        placeholder={`Student ${idx + 1} name`}
+                        disabled={submitting}
+                        style={{
+                          flex: 1, padding: "8px 12px", borderRadius: 8,
+                          border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
+                        }}
+                      />
+                      {students.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeStudent(idx)}
+                          disabled={submitting}
+                          aria-label={`Remove student ${idx + 1}`}
+                          style={{
+                            padding: "6px 10px", borderRadius: 8, border: "1px solid #cbd5e1",
+                            background: "#fff", color: "#64748b", cursor: submitting ? "not-allowed" : "pointer",
+                            fontSize: 12, fontWeight: 600,
+                          }}
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Roster link (only when a class is selected) */}
+                    {selectedClassStudents.length > 0 && (
+                      <div style={{ marginTop: 8 }}>
+                        <select
+                          value={s.studentId || ""}
+                          onChange={(e) => linkStudentToRoster(idx, e.target.value)}
+                          disabled={submitting}
+                          style={{
+                            width: "100%", padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                            background: "#fff", color: s.studentId ? "#0f172a" : "#94a3b8",
+                          }}
+                        >
+                          <option value="">Link to roster student…</option>
+                          {selectedClassStudents.map((rs) => {
+                            const id = String(rs.studentId || rs.edsbyId || rs._id || "");
+                            const label = [rs.firstName, rs.lastName].filter(Boolean).join(" ").trim() || id;
+                            return <option key={id} value={id}>{label}</option>;
+                          })}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Per-row instrument fields (instrumental performances only) */}
+                    {performanceType === "instrumental" && (
+                      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                        <select
+                          value={s.instrumentFamily}
+                          onChange={(e) => updateStudent(idx, { instrumentFamily: e.target.value, instrument: "" })}
+                          disabled={submitting}
+                          style={{
+                            flex: 1, padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                            background: "#fff",
+                          }}
+                        >
+                          <option value="">Instrument family…</option>
+                          {INSTRUMENT_FAMILIES.map(f => (
+                            <option key={f.value} value={f.value}>{f.label}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={s.instrument}
+                          onChange={(e) => updateStudent(idx, { instrument: e.target.value })}
+                          disabled={submitting || !s.instrumentFamily}
+                          style={{
+                            flex: 1, padding: "6px 10px", borderRadius: 8,
+                            border: "1px solid #cbd5e1", fontSize: 13, boxSizing: "border-box",
+                            background: "#fff",
+                          }}
+                        >
+                          <option value="">Instrument…</option>
+                          {(INSTRUMENTS_BY_FAMILY[s.instrumentFamily] || []).map(i => (
+                            <option key={i.value} value={i.value}>{i.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              <button
+                type="button"
+                onClick={addStudent}
                 disabled={submitting}
                 style={{
-                  width: "100%", padding: "8px 12px", borderRadius: 8,
-                  border: "1px solid #cbd5e1", fontSize: 14, boxSizing: "border-box",
-                  background: "#fff",
+                  padding: "8px 14px", borderRadius: 8, border: "1px dashed #94a3b8",
+                  background: "#fff", color: "#475569", cursor: submitting ? "not-allowed" : "pointer",
+                  fontSize: 13, fontWeight: 600,
                 }}
               >
-                <option value="">Select instrument...</option>
-                {INSTRUMENTS_BY_FAMILY[instrumentFamily].map(i => (
-                  <option key={i.value} value={i.value}>{i.label}</option>
-                ))}
-              </select>
+                + Add another student
+              </button>
             </div>
           )}
 
