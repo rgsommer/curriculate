@@ -272,6 +272,17 @@ export function useGroup(groupId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Host toggles the daily "new responses" digest for this group.
+  const setNotifyOnResponse = async (on: boolean) => {
+    setGroup((g) => (g ? { ...g, notify_on_response: on } : g)); // optimistic
+    const { error } = await supabase
+      .from("groups")
+      .update({ notify_on_response: on })
+      .eq("id", groupId);
+    if (error) await fetchGroup();
+    return { error: error?.message ?? null };
+  };
+
   // Admin renames the group (RLS allows only the creator/admin to update).
   const renameGroup = async (name: string, description?: string) => {
     const trimmed = name.trim();
@@ -298,6 +309,7 @@ export function useGroup(groupId: string) {
     renameGroup,
     setMyGroupName,
     setAllowMemberInvites,
+    setNotifyOnResponse,
     leaveGroup,
     deleteGroup,
     setMemberRole,

@@ -13,7 +13,7 @@ export default function GroupDetailPage() {
   const router = useRouter();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, leaveGroup, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setNotifyOnResponse, leaveGroup, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -377,6 +377,21 @@ See you around the campfire! 🏕️`
                   placeholder="Description (optional)"
                   className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 outline-none focus:border-orange-500 resize-y"
                 />
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                  <input
+                    type="checkbox"
+                    checked={group.notify_on_response !== false}
+                    onChange={(e) => setNotifyOnResponse(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <span className="text-xs text-slate-600">
+                    <span className="font-medium text-slate-700">
+                      📬 Daily response digest
+                    </span>{" "}
+                    — members get one email a day summarizing new responses in this
+                    group. Turn off to keep it quiet.
+                  </span>
+                </label>
                 <div className="flex items-center gap-2">
                   <button
                     disabled={savingName || !nameInput.trim()}

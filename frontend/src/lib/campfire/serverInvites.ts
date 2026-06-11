@@ -390,6 +390,77 @@ Respond here: ${url}`;
   return { subject, text, html };
 }
 
+// Daily recap of new responses across a member's groups (counts only — never the
+// response content, so nothing sealed leaks).
+export function responseDigestEmail(opts: {
+  recipientName?: string | null;
+  url: string;
+  groups: {
+    name: string;
+    emoji: string;
+    items: { title: string; icon: string; count: number }[];
+  }[];
+}) {
+  const { recipientName, url, groups } = opts;
+  const hi = firstName(recipientName ?? undefined);
+  const total = groups.reduce(
+    (a, g) => a + g.items.reduce((b, i) => b + i.count, 0),
+    0
+  );
+  const subject = `🔥 ${total} new response${total === 1 ? "" : "s"} in your Campfire group${
+    groups.length === 1 ? "" : "s"
+  }`;
+
+  const textBlocks = groups
+    .map(
+      (g) =>
+        `${g.emoji} ${g.name}\n` +
+        g.items
+          .map(
+            (i) =>
+              `  • ${i.title} — ${i.count} new response${i.count === 1 ? "" : "s"}`
+          )
+          .join("\n")
+    )
+    .join("\n\n");
+  const text = `${hi ? hi + ",\n\n" : ""}Here's what happened in your Campfire groups today:
+
+${textBlocks}
+
+See it all: ${url}`;
+
+  const htmlGroups = groups
+    .map(
+      (g) => `
+    <div style="margin:0 0 16px;">
+      <div style="font-weight:700; font-size:15px; margin:0 0 6px;">${g.emoji} ${escapeHtml(
+        g.name
+      )}</div>
+      ${g.items
+        .map(
+          (i) =>
+            `<div style="color:#475569; font-size:14px; margin:0 0 3px;">${i.icon} ${escapeHtml(
+              i.title
+            )} — <strong>${i.count}</strong> new response${i.count === 1 ? "" : "s"}</div>`
+        )
+        .join("")}
+    </div>`
+    )
+    .join("");
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">🔥</div>
+  <h1 style="font-size:20px; margin:8px 0;">New activity in your groups</h1>
+  ${hi ? `<p style="color:#475569; margin:0 0 12px;">Hi ${escapeHtml(hi)}, here's today's recap:</p>` : ""}
+  ${htmlGroups}
+  <p style="text-align:center; margin:24px 0;">
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open Campfire</a>
+  </p>
+  <p style="color:#94a3b8; font-size:12px; margin:0;">The group host can turn this digest off in the group's settings.</p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function inviteEmail(opts: {
   inviter: string;
   groupName: string;

@@ -69,6 +69,7 @@ export interface Group {
   avatar_emoji: string;
   created_at: string;
   allow_member_invites?: boolean; // members (not just host) may invite others
+  notify_on_response?: boolean; // daily "new responses" digest (default on)
 }
 
 export interface GroupMember {
