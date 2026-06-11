@@ -417,6 +417,23 @@ export default function NewEngagementPage() {
       ? new Date(deadline)
       : undefined;
 
+    // A sealed engagement with no chosen date gets a gentle 7-day soft deadline, so
+    // stragglers still get nudged (final call at ~24h) and it can't hang unrevealed
+    // forever. Cards / baby reveals already carry their own date.
+    const sealedReveal =
+      selectedType === "two_truths" ||
+      selectedType === "most_likely" ||
+      selectedType === "accountability" ||
+      selectedType === "scavenger_hunt" ||
+      reveal === "sealed";
+    const finalDeadline =
+      sealedReveal &&
+      !effectiveDeadline &&
+      !isBirthday &&
+      selectedType !== "baby_reveal"
+        ? new Date(Date.now() + 7 * 86400000)
+        : effectiveDeadline;
+
     // Cards + yearly events auto-open a lead time before the date.
     const schedulesOpen = isBirthday || recurrence === "yearly_nth";
     const scheduledOpenAt =
@@ -510,7 +527,7 @@ export default function NewEngagementPage() {
       title: title.trim(),
       description: description.trim() || undefined,
       config,
-      deadline: effectiveDeadline,
+      deadline: finalDeadline,
       reveal:
         selectedType === "two_truths" ||
         selectedType === "baby_reveal" ||

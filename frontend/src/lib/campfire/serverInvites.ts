@@ -370,18 +370,38 @@ export function reminderEmail(opts: {
   url: string;
   responded: number;
   total: number;
+  // Hours until the reveal; when ~24h or less this becomes a "final call".
+  hoursLeft?: number;
 }) {
-  const { groupName, title, url, responded, total } = opts;
-  const subject = `Your response is needed: "${title}" (${groupName})`;
-  const text = `The group "${groupName}" is waiting on you for "${title}".
+  const { groupName, title, url, responded, total, hoursLeft } = opts;
+  const finalCall = typeof hoursLeft === "number" && hoursLeft <= 24;
+  const closes =
+    typeof hoursLeft === "number"
+      ? hoursLeft <= 1
+        ? "within the hour"
+        : `in about ${hoursLeft} hours`
+      : "";
+  const subject = finalCall
+    ? `⏰ Final call: "${title}" closes ${closes} (${groupName})`
+    : `Your response is needed: "${title}" (${groupName})`;
+  const heading = finalCall ? "Final call — last chance to respond" : "Your response is needed";
+  const text = `${
+    finalCall
+      ? `⏰ Final call — "${title}" in "${groupName}" closes ${closes}.`
+      : `The group "${groupName}" is waiting on you for "${title}".`
+  }
 ${responded} of ${total} have responded — be one of the ones that unlocks the reveal!
 
 Respond here: ${url}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">⏰</div>
-  <h1 style="font-size:20px; margin:8px 0;">Your response is needed</h1>
-  <p style="color:#475569; margin:0 0 12px;">The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>. ${responded} of ${total} have responded — nobody sees the results until everyone's in.</p>
+  <h1 style="font-size:20px; margin:8px 0;">${heading}</h1>
+  <p style="color:#475569; margin:0 0 12px;">${
+    finalCall
+      ? `<strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> closes <strong>${closes}</strong>.`
+      : `The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>.`
+  } ${responded} of ${total} have responded — nobody sees the results until everyone's in.</p>
   <p style="text-align:center; margin:24px 0;">
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Respond now</a>
   </p>

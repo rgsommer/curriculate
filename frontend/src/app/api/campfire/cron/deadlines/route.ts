@@ -121,6 +121,8 @@ export async function GET(req: Request) {
           url: engUrl,
           responded: count ?? 0,
           total: (e.total_expected as number) ?? 0,
+          // Within the last day it becomes an urgent "final call".
+          hoursLeft: Math.max(0, Math.round((dl - now) / (60 * 60 * 1000))),
         });
         for (const to of memberEmails) {
           messages.push({ from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() });

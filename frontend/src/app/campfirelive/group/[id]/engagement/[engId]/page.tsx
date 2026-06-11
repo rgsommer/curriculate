@@ -417,6 +417,13 @@ export default function EngagementDetailPage() {
   const isOpenPoll =
     engagement.type === "poll" &&
     (engagement.config?.format === "open" || pollOptions.length === 0);
+  // After a sealed reveal, latecomers may still add their answer — but NOT to a
+  // guessing game (they'd see the answers first) or a tally poll (they'd be swayed).
+  // Cards, care, shares, open-ended polls, etc. are fine.
+  const lateResponseAllowed =
+    isRevealed &&
+    !["two_truths", "most_likely", "baby_reveal"].includes(engagement.type) &&
+    !(engagement.type === "poll" && !isOpenPoll);
   const pollOpenQuestions: string[] = (() => {
     if (engagement.type !== "poll") return [];
     const qs =
@@ -918,7 +925,10 @@ export default function EngagementDetailPage() {
     content: Record<string, unknown>,
     extra?: Record<string, unknown>
   ) => {
-    const r = await submitResponse(content, extra);
+    // Tag responses added after a sealed reveal so the results can flag them.
+    const c =
+      lateResponseAllowed && !hasResponded ? { ...content, _late: true } : content;
+    const r = await submitResponse(c, extra);
     if (!r?.error) setEditingResponse(false);
     return r;
   };
@@ -2579,6 +2589,11 @@ export default function EngagementDetailPage() {
                     🏆 Winner
                   </span>
                 )}
+                {(content as { _late?: boolean })._late && (
+                  <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">
+                    ✚ after reveal
+                  </span>
+                )}
               </div>
 
               {/* Guess who (blind engagements only, not your own response) */}
@@ -3550,7 +3565,7 @@ export default function EngagementDetailPage() {
 
       {/* ── It's your turn: make the action obvious the instant you land (a kid
             tapping an email invite shouldn't have to scroll and figure it out). ── */}
-      {engagement.status === "active" &&
+      {(engagement.status === "active" || lateResponseAllowed) &&
         !hasResponded &&
         !isDraft &&
         !(user && (engagement.excluded_user_ids ?? []).includes(user.id)) && (
@@ -3569,7 +3584,9 @@ export default function EngagementDetailPage() {
                 👋 It&apos;s your turn
               </div>
               <div className="truncate text-xs text-slate-600">
-                {meta?.label ?? "Activity"} · add your response below
+                {lateResponseAllowed
+                  ? "Results are in — you can still add yours"
+                  : `${meta?.label ?? "Activity"} · add your response below`}
               </div>
             </div>
             <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white">
@@ -3964,7 +3981,8 @@ export default function EngagementDetailPage() {
         })()}
 
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
-      {engagement.status === "active" && (!hasResponded || editingResponse) && (
+      {((engagement.status === "active" && (!hasResponded || editingResponse)) ||
+        (lateResponseAllowed && !hasResponded)) && (
         <div
           id="respond"
           className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6"
@@ -3982,6 +4000,15 @@ export default function EngagementDetailPage() {
               </button>
             )}
           </div>
+          {lateResponseAllowed && (
+            <div className="flex items-start gap-2 rounded-xl bg-sky-50 border border-sky-200 px-3 py-2 mb-4">
+              <span>⏰</span>
+              <p className="text-xs text-sky-800">
+                The results are already in, but you can still add yours — it&apos;ll be
+                marked as added after the reveal.
+              </p>
+            </div>
+          )}
           {isBirthdayCard ? (
             <div className="flex items-start gap-2 rounded-xl bg-rose-50 border border-rose-200 px-3 py-2 mb-4">
               <span>🔒</span>
