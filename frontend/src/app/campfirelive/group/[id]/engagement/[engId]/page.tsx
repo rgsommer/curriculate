@@ -1205,7 +1205,10 @@ export default function EngagementDetailPage() {
       return;
     }
     setSubmitting(true);
-    const { error: cErr } = await submitCareAnswers(rows);
+    const { error: cErr } = await submitCareAnswers(
+      rows,
+      lateResponseAllowed && !hasResponded
+    );
     setSubmitting(false);
     if (cErr) {
       alert("Couldn't submit: " + cErr);
@@ -1886,10 +1889,15 @@ export default function EngagementDetailPage() {
                 <div className="space-y-2.5">
                   {rows.map(({ r, v }) => (
                     <div key={r.id} className="border-l-2 border-orange-200 pl-3">
-                      <div className="text-xs font-semibold text-orange-700">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-orange-700">
                         {engagement.is_blind
                           ? "Anonymous"
                           : memberNameOf(r.user_id, r.profile?.display_name)}
+                        {(r.content as { _late?: boolean })._late && (
+                          <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+                            ✚ after reveal
+                          </span>
+                        )}
                       </div>
                       <p className="whitespace-pre-wrap text-sm text-slate-700">
                         {String(v)}
@@ -1970,6 +1978,18 @@ export default function EngagementDetailPage() {
     careMasked(r)
       ? "🙈 Anonymous"
       : memberNameOf(r.user_id, r.profile?.display_name);
+  // A care answer is "late" if that person's check-in was added after the reveal.
+  const careIsLate = (userId: string) =>
+    !!(
+      responses.find((x) => x.user_id === userId)?.content as {
+        _late?: boolean;
+      }
+    )?._late;
+  const lateTag = (
+    <span className="rounded-full bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-700">
+      ✚ after reveal
+    </span>
+  );
 
   const renderCareResults = () => {
     if (!showResults || engagement.type !== "care") return null;
@@ -2033,6 +2053,7 @@ export default function EngagementDetailPage() {
                       {careAuthorName(r)}
                       {isCreator && careHostOnly(r) && <span title="Private to you">🔒</span>}
                       {isCreator && r.anonymous && <span title="Shared anonymously to the group">🙈</span>}
+                      {careIsLate(r.user_id) && lateTag}
                       <span className="font-bold text-teal-700">{Number(v)}/5</span>
                     </span>
                   ))}
@@ -2041,14 +2062,15 @@ export default function EngagementDetailPage() {
                 <div className="space-y-2.5">
                   {rows.map(({ key, r, v }) => (
                     <div key={key} className="border-l-2 border-teal-200 pl-3">
-                      <div className="text-xs font-semibold text-teal-700">
+                      <div className="flex flex-wrap items-center gap-1.5 text-xs font-semibold text-teal-700">
                         {careAuthorName(r)}
                         {isCreator && careHostOnly(r) && (
-                          <span title="Private to you"> 🔒</span>
+                          <span title="Private to you">🔒</span>
                         )}
                         {isCreator && r.anonymous && (
-                          <span title="Shared anonymously to the group"> 🙈</span>
+                          <span title="Shared anonymously to the group">🙈</span>
                         )}
+                        {careIsLate(r.user_id) && lateTag}
                       </div>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{String(v)}</p>
                     </div>

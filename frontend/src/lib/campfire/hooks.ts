@@ -527,7 +527,9 @@ export function useEngagement(engagementId: string) {
       value: string;
       share_to_group: boolean;
       anonymous: boolean;
-    }[]
+    }[],
+    // True when submitted after a reveal — flags the check-in as a late addition.
+    late = false
   ) => {
     if (!user || !engagementId) return { error: "Missing data" };
 
@@ -537,7 +539,7 @@ export function useEngagement(engagementId: string) {
         {
           engagement_id: engagementId,
           user_id: user.id,
-          content: { care: true },
+          content: late ? { care: true, _late: true } : { care: true },
           share_to_group: false,
         },
         { onConflict: "engagement_id,user_id" }
