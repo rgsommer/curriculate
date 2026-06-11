@@ -18,7 +18,7 @@ const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", 
 export default function DashboardPage() {
   const router = useRouter();
   const { profile, isTrialActive, user } = useAuth();
-  const { groups, loading, createGroup, joinGroup } = useGroups();
+  const { groups, loading, createGroup, joinGroup, setGroupNotify } = useGroups();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [newName, setNewName] = useState("");
@@ -557,6 +557,30 @@ export default function DashboardPage() {
                 </div>
                 {g.description && (
                   <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
+                )}
+                {/* Host-only: flip the daily digest right from the card (doesn't
+                    navigate — the toggle swallows the click). */}
+                {mine && (
+                  <label
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    className="mt-3 flex cursor-pointer items-center gap-2 border-t border-orange-100 pt-2.5 text-xs text-slate-600"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={g.notify_on_response !== false}
+                      onChange={(e) => setGroupNotify(g.id, e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                    />
+                    <span>
+                      📬 Daily response digest{" "}
+                      <span className="text-slate-400">
+                        {g.notify_on_response !== false ? "on" : "off"}
+                      </span>
+                    </span>
+                  </label>
                 )}
               </Link>
             );

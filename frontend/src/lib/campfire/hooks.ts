@@ -127,7 +127,28 @@ export function useGroups() {
     return { error: null, groupId: gid as string };
   };
 
-  return { groups, loading, createGroup, joinGroup, joinEngagementAsGuest, refresh: fetchGroups };
+  // Host toggles a group's daily response digest, straight from the dashboard card.
+  const setGroupNotify = async (groupId: string, on: boolean) => {
+    setGroups((gs) =>
+      gs.map((g) => (g.id === groupId ? { ...g, notify_on_response: on } : g))
+    ); // optimistic
+    const { error } = await supabase
+      .from("groups")
+      .update({ notify_on_response: on })
+      .eq("id", groupId);
+    if (error) await fetchGroups();
+    return { error: error?.message ?? null };
+  };
+
+  return {
+    groups,
+    loading,
+    createGroup,
+    joinGroup,
+    joinEngagementAsGuest,
+    setGroupNotify,
+    refresh: fetchGroups,
+  };
 }
 
 // ── Single Group Detail ──
