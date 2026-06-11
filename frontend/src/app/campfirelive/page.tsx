@@ -558,41 +558,57 @@ export default function DashboardPage() {
                 {g.description && (
                   <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
                 )}
-                {/* Host-only: flip the daily digest right from the card. It's a
-                    button (not a checkbox) so preventDefault can stop the card's
-                    navigation without also cancelling a native checkbox toggle —
-                    the optimistic state then re-renders instantly. */}
-                {mine &&
-                  (() => {
-                    const on = g.notify_on_response !== false;
-                    return (
+                {/* Host-only digest controls, flipped right from the card. Buttons
+                    (not checkboxes) so preventDefault stops the card navigation
+                    without cancelling a native toggle — the optimistic state then
+                    re-renders instantly. */}
+                {mine && (
+                  <div className="mt-3 space-y-1.5 border-t border-orange-100 pt-2.5">
+                    {(
+                      [
+                        {
+                          field: "notify_on_response" as const,
+                          on: g.notify_on_response !== false,
+                          emoji: "📬",
+                          label: "Member digest",
+                        },
+                        {
+                          field: "notify_host" as const,
+                          on: g.notify_host !== false,
+                          emoji: "🔔",
+                          label: "Notify me (all activity)",
+                        },
+                      ]
+                    ).map((t) => (
                       <button
+                        key={t.field}
                         type="button"
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          setGroupNotify(g.id, !on);
+                          setGroupNotify(g.id, t.field, !t.on);
                         }}
-                        className="mt-3 flex w-full items-center gap-2 border-t border-orange-100 pt-2.5 text-xs text-slate-600"
+                        className="flex w-full items-center gap-2 text-xs text-slate-600"
                       >
                         <span
                           className={`relative inline-flex h-4 w-7 flex-shrink-0 items-center rounded-full transition ${
-                            on ? "bg-orange-500" : "bg-slate-300"
+                            t.on ? "bg-orange-500" : "bg-slate-300"
                           }`}
                         >
                           <span
                             className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
-                              on ? "translate-x-3.5" : "translate-x-0.5"
+                              t.on ? "translate-x-3.5" : "translate-x-0.5"
                             }`}
                           />
                         </span>
                         <span>
-                          📬 Daily response digest{" "}
-                          <span className="text-slate-400">{on ? "on" : "off"}</span>
+                          {t.emoji} {t.label}{" "}
+                          <span className="text-slate-400">{t.on ? "on" : "off"}</span>
                         </span>
                       </button>
-                    );
-                  })()}
+                    ))}
+                  </div>
+                )}
               </Link>
             );
           })}

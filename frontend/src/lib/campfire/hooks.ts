@@ -127,14 +127,18 @@ export function useGroups() {
     return { error: null, groupId: gid as string };
   };
 
-  // Host toggles a group's daily response digest, straight from the dashboard card.
-  const setGroupNotify = async (groupId: string, on: boolean) => {
+  // Host flips a group's digest settings straight from the dashboard card.
+  const setGroupNotify = async (
+    groupId: string,
+    field: "notify_on_response" | "notify_host",
+    on: boolean
+  ) => {
     setGroups((gs) =>
-      gs.map((g) => (g.id === groupId ? { ...g, notify_on_response: on } : g))
+      gs.map((g) => (g.id === groupId ? { ...g, [field]: on } : g))
     ); // optimistic
     const { error } = await supabase
       .from("groups")
-      .update({ notify_on_response: on })
+      .update({ [field]: on })
       .eq("id", groupId);
     if (error) await fetchGroups();
     return { error: error?.message ?? null };
@@ -293,12 +297,23 @@ export function useGroup(groupId: string) {
     return { error: error?.message ?? null };
   };
 
-  // Host toggles the daily "new responses" digest for this group.
+  // Host toggles the member daily "new responses" digest for this group.
   const setNotifyOnResponse = async (on: boolean) => {
     setGroup((g) => (g ? { ...g, notify_on_response: on } : g)); // optimistic
     const { error } = await supabase
       .from("groups")
       .update({ notify_on_response: on })
+      .eq("id", groupId);
+    if (error) await fetchGroup();
+    return { error: error?.message ?? null };
+  };
+
+  // Host toggles their OWN all-activity digest (independent of the member one).
+  const setNotifyHost = async (on: boolean) => {
+    setGroup((g) => (g ? { ...g, notify_host: on } : g)); // optimistic
+    const { error } = await supabase
+      .from("groups")
+      .update({ notify_host: on })
       .eq("id", groupId);
     if (error) await fetchGroup();
     return { error: error?.message ?? null };
@@ -331,6 +346,7 @@ export function useGroup(groupId: string) {
     setMyGroupName,
     setAllowMemberInvites,
     setNotifyOnResponse,
+    setNotifyHost,
     leaveGroup,
     deleteGroup,
     setMemberRole,

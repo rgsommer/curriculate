@@ -13,7 +13,7 @@ export default function GroupDetailPage() {
   const router = useRouter();
   const groupId = params.id as string;
   const { user, session } = useAuth();
-  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setNotifyOnResponse, leaveGroup, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
+  const { group, members, engagements, streaks, invitations, loading, refresh, renameGroup, setMyGroupName, setNotifyOnResponse, setNotifyHost, leaveGroup, deleteGroup, setMemberRole, setMemberName } = useGroup(groupId);
   const { onlineUsers } = usePresence(groupId);
   const [showMembers, setShowMembers] = useState(false);
   const [showInvitePanel, setShowInvitePanel] = useState(false);
@@ -386,10 +386,25 @@ See you around the campfire! 🏕️`
                   />
                   <span className="text-xs text-slate-600">
                     <span className="font-medium text-slate-700">
-                      📬 Daily response digest
+                      📬 Member digest
                     </span>{" "}
                     — members get one email a day summarizing new responses in this
                     group. Turn off to keep it quiet.
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-slate-200 bg-slate-50 p-2.5">
+                  <input
+                    type="checkbox"
+                    checked={group.notify_host !== false}
+                    onChange={(e) => setNotifyHost(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <span className="text-xs text-slate-600">
+                    <span className="font-medium text-slate-700">
+                      🔔 Notify me of all activity
+                    </span>{" "}
+                    — you (the host) get a daily recap of new responses, members, and
+                    activities, even if the member digest above is off.
                   </span>
                 </label>
                 <div className="flex items-center gap-2">

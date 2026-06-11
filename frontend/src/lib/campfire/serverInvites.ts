@@ -390,73 +390,90 @@ Respond here: ${url}`;
   return { subject, text, html };
 }
 
-// Daily recap of new responses across a member's groups (counts only — never the
-// response content, so nothing sealed leaks).
-export function responseDigestEmail(opts: {
+// Daily recap of activity across a person's groups (counts/titles/names only —
+// never the response content, so nothing sealed leaks). Members get the responses
+// section; the host's groups also carry new members + new activities.
+export function activityDigestEmail(opts: {
   recipientName?: string | null;
   url: string;
   groups: {
     name: string;
     emoji: string;
-    items: { title: string; icon: string; count: number }[];
+    responses: { title: string; icon: string; count: number }[];
+    newMembers: string[];
+    newEngagements: { title: string; icon: string }[];
   }[];
 }) {
   const { recipientName, url, groups } = opts;
   const hi = firstName(recipientName ?? undefined);
-  const total = groups.reduce(
-    (a, g) => a + g.items.reduce((b, i) => b + i.count, 0),
+  const events = groups.reduce(
+    (a, g) =>
+      a +
+      g.responses.reduce((b, r) => b + r.count, 0) +
+      g.newMembers.length +
+      g.newEngagements.length,
     0
   );
-  const subject = `🔥 ${total} new response${total === 1 ? "" : "s"} in your Campfire group${
+  const subject = `🔥 ${events} new thing${events === 1 ? "" : "s"} in your Campfire group${
     groups.length === 1 ? "" : "s"
   }`;
 
-  const textBlocks = groups
-    .map(
-      (g) =>
-        `${g.emoji} ${g.name}\n` +
-        g.items
-          .map(
-            (i) =>
-              `  • ${i.title} — ${i.count} new response${i.count === 1 ? "" : "s"}`
-          )
-          .join("\n")
-    )
-    .join("\n\n");
+  const groupText = (g: (typeof groups)[number]) => {
+    const lines: string[] = [`${g.emoji} ${g.name}`];
+    g.responses.forEach((r) =>
+      lines.push(`  • ${r.title} — ${r.count} new response${r.count === 1 ? "" : "s"}`)
+    );
+    g.newEngagements.forEach((e) => lines.push(`  • New: ${e.title}`));
+    if (g.newMembers.length)
+      lines.push(`  • Joined: ${g.newMembers.join(", ")}`);
+    return lines.join("\n");
+  };
   const text = `${hi ? hi + ",\n\n" : ""}Here's what happened in your Campfire groups today:
 
-${textBlocks}
+${groups.map(groupText).join("\n\n")}
 
 See it all: ${url}`;
 
-  const htmlGroups = groups
-    .map(
-      (g) => `
+  const groupHtml = (g: (typeof groups)[number]) => {
+    const rows: string[] = [];
+    g.responses.forEach((r) =>
+      rows.push(
+        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">${r.icon} ${escapeHtml(
+          r.title
+        )} — <strong>${r.count}</strong> new response${r.count === 1 ? "" : "s"}</div>`
+      )
+    );
+    g.newEngagements.forEach((e) =>
+      rows.push(
+        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">✨ New: ${e.icon} ${escapeHtml(
+          e.title
+        )}</div>`
+      )
+    );
+    if (g.newMembers.length)
+      rows.push(
+        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">👋 Joined: ${escapeHtml(
+          g.newMembers.join(", ")
+        )}</div>`
+      );
+    return `
     <div style="margin:0 0 16px;">
       <div style="font-weight:700; font-size:15px; margin:0 0 6px;">${g.emoji} ${escapeHtml(
         g.name
       )}</div>
-      ${g.items
-        .map(
-          (i) =>
-            `<div style="color:#475569; font-size:14px; margin:0 0 3px;">${i.icon} ${escapeHtml(
-              i.title
-            )} — <strong>${i.count}</strong> new response${i.count === 1 ? "" : "s"}</div>`
-        )
-        .join("")}
-    </div>`
-    )
-    .join("");
+      ${rows.join("")}
+    </div>`;
+  };
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">🔥</div>
   <h1 style="font-size:20px; margin:8px 0;">New activity in your groups</h1>
   ${hi ? `<p style="color:#475569; margin:0 0 12px;">Hi ${escapeHtml(hi)}, here's today's recap:</p>` : ""}
-  ${htmlGroups}
+  ${groups.map(groupHtml).join("")}
   <p style="text-align:center; margin:24px 0;">
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open Campfire</a>
   </p>
-  <p style="color:#94a3b8; font-size:12px; margin:0;">The group host can turn this digest off in the group's settings.</p>
+  <p style="color:#94a3b8; font-size:12px; margin:0;">You can turn these digests off in the group's settings.</p>
 </div>`.trim();
   return { subject, text, html };
 }
