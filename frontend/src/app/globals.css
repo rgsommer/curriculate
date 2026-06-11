@@ -44,3 +44,13 @@ body.teebopay-host .site-footer {
 body.teebopay-host .min-h-\[70vh\] {
   min-height: 100vh;
 }
+
+/* Hide the horizontal scrollbar on the input-mode tabs row — touch swipe still
+   works on mobile, and on desktop the row usually fits so the scrollbar would
+   appear only as a flickering 1px artifact. */
+.input-mode-scroll {
+  -ms-overflow-style: none; /* IE/Edge legacy */
+}
+.input-mode-scroll::-webkit-scrollbar {
+  display: none;
+}

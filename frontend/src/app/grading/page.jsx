@@ -3778,7 +3778,20 @@ export default function GradingPage() {
             <div style={styles.cardTitleRow}>
               <div style={styles.cardTitle}>Input mode</div>
 
-              <div style={{ display: "flex", gap: 10 }}>
+              <div style={{
+                display: "flex",
+                gap: 10,
+                // On a phone in portrait the 5 mode buttons + label can run off
+                // the right edge — make the row swipe-scrollable horizontally so
+                // every option stays reachable.
+                overflowX: "auto",
+                WebkitOverflowScrolling: "touch",
+                flexWrap: "nowrap",
+                minWidth: 0,
+                // The scrollbar isn't useful here on mobile; hide it but keep
+                // scroll functionality (touch swipe still works).
+                scrollbarWidth: "none",
+              }} className="input-mode-scroll">
                 {/* ── Mode buttons with freemium padlocks ── */}
                 {[
                   { mode: "photo", label: photos.length > 0 ? `Photo (${photos.length})` : "Photo",
@@ -3810,6 +3823,10 @@ export default function GradingPage() {
                         ...(inputMode === mode ? styles.modeBtnActive : null),
                         ...(isLocked ? { opacity: 0.55, cursor: "not-allowed" } : null),
                         display: "flex", alignItems: "center", gap: 4,
+                        // Keep each button at its natural width inside the
+                        // horizontally scrollable row.
+                        flexShrink: 0,
+                        whiteSpace: "nowrap",
                       }}
                       disabled={submitting || isLocked}
                       title={isLocked ? `Requires Plus (${FREEMIUM_PLUS_PRICE})` : (title || undefined)}
