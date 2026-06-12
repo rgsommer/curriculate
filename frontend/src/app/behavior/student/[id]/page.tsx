@@ -147,9 +147,22 @@ export default function StudentPage() {
     }
   }
 
+  // Save the edited wording but keep the notice queued (don't send yet).
   async function saveNoticeEdit(id: string) {
     try {
       await api(`/notices/${id}`, { method: "PUT", body: { renderedText: editText } });
+      setEditId(null);
+      load();
+    } catch (e: any) {
+      setError(e.message);
+    }
+  }
+
+  // Save the edited wording AND send it now.
+  async function sendNoticeEdited(id: string) {
+    try {
+      await api(`/notices/${id}`, { method: "PUT", body: { renderedText: editText } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
       setEditId(null);
       load();
     } catch (e: any) {
@@ -367,10 +380,22 @@ export default function StudentPage() {
                     <div className="mt-2">
                       <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={10}
                         className="w-full rounded-lg border border-slate-300 p-2 font-sans text-sm" />
-                      <div className="mt-2 flex gap-2">
-                        <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">Save</button>
+                      {(n.status === "queued" || n.status === "failed") && (
+                        <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                          <input type="checkbox" checked={!!meetingFor[n._id]} onChange={(e) => setMeetingFor((m) => ({ ...m, [n._id]: e.target.checked }))} />
+                          Also request a meeting with the parents
+                        </label>
+                      )}
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        {(n.status === "queued" || n.status === "failed") && (
+                          <button onClick={() => sendNoticeEdited(n._id)} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
+                            {n.status === "failed" ? "Save &amp; retry send" : "Send now"}
+                          </button>
+                        )}
+                        <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Save (keep queued)</button>
                         <button onClick={() => setEditId(null)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
                       </div>
+                      <p className="mt-1 text-xs text-slate-400">Save keeps the note in the queue until you press Send.</p>
                     </div>
                   ) : (
                     <>

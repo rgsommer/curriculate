@@ -133,7 +133,10 @@ export function buildPositivePrompt(ctx) {
   return [
     `You are a teacher writing a short, warm, celebratory note home to a parent. This note is ENTIRELY good news about a student's positive behaviour — there are NO concerns in it.`,
     ctx.toneGuidance ? `Division tone guidance: ${ctx.toneGuidance}` : "",
-    `Student preferred name: ${ctx.studentName}${ctx.pronoun ? ` (pronoun: ${ctx.pronoun})` : ""}.`,
+    `Student preferred name: ${ctx.studentName}${ctx.pronoun ? ` (pronouns: ${ctx.pronoun})` : ""}.`,
+    ctx.pronoun
+      ? `Refer to the student using ${ctx.pronoun} pronouns. Do NOT use singular "they"/"their" for this student — use the correct gendered pronoun or repeat the name.`
+      : `If you refer to the student, repeat ${ctx.studentName}'s name rather than a pronoun. Do NOT use singular "they"/"their", and do not guess he/she.`,
     `School: ${ctx.schoolName || ""}.`,
     `The positive contributions to celebrate:\n${incidentLines}`,
     `Do NOT mention any negative behaviour, discipline, consequences, points, or concerns of any kind. Keep it genuine, specific, and under 150 words.`,
@@ -197,7 +200,10 @@ export function buildPrompt(ctx) {
         ? "Use a first-contact, collaborative, informative tone."
         : "Use a clear escalating tone about the repeated pattern, while staying respectful."
     }`,
-    `Student preferred name: ${ctx.studentName}${ctx.pronoun ? ` (pronoun: ${ctx.pronoun})` : ""}.`,
+    `Student preferred name: ${ctx.studentName}${ctx.pronoun ? ` (pronouns: ${ctx.pronoun})` : ""}.`,
+    ctx.pronoun
+      ? `Refer to the student using ${ctx.pronoun} pronouns. Do NOT use singular "they"/"their" for this student — use the correct gendered pronoun or repeat the name.`
+      : `If you refer to the student, repeat ${ctx.studentName}'s name rather than a pronoun. Do NOT use singular "they"/"their", and do not guess he/she.`,
     `School: ${ctx.schoolName || ""}.`,
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,

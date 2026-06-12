@@ -63,6 +63,18 @@ function escapeHtml(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// The pronoun to use in a note home: the student's explicit pronoun if set,
+// otherwise derived from their gender. Returns "" when unknown — the note then
+// uses the student's name rather than guessing or defaulting to singular "they".
+function derivePronoun(student) {
+  const explicit = String(student?.pronoun || "").trim();
+  if (explicit) return explicit;
+  const g = String(student?.gender || "").trim().toLowerCase();
+  if (["m", "male", "boy", "man", "he", "him"].includes(g)) return "he/him";
+  if (["f", "female", "girl", "woman", "she", "her"].includes(g)) return "she/her";
+  return "";
+}
+
 /** Load the caller's school membership; 404 if they have none yet. */
 async function loadMembership(req, res, next) {
   try {
@@ -1614,7 +1626,7 @@ async function composeAndCreateNotice({
 
   const ctx = {
     studentName,
-    pronoun: student.pronoun || "",
+    pronoun: derivePronoun(student),
     history,
     positives,
     incidents: contextIncidents.map((i) => ({
