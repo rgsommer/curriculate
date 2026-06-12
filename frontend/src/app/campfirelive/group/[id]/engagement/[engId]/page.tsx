@@ -170,6 +170,7 @@ export default function EngagementDetailPage() {
     contributors: number;
   } | null>(null);
   const [chippingIn, setChippingIn] = useState(false);
+  const [signupBusy, setSignupBusy] = useState(false);
   useEffect(() => {
     if (!engagement?.gift_enabled || !engagementId) {
       setGiftSummary(null);
@@ -1065,6 +1066,19 @@ export default function EngagementDetailPage() {
     const r = await submitResponse(c, extra);
     if (!r?.error) setEditingResponse(false);
     return r;
+  };
+
+  // Sign-up: claim or release a slot (your response is your set of claimed indices).
+  const toggleClaim = async (slotIndex: number) => {
+    if (signupBusy) return;
+    setSignupBusy(true);
+    const cur =
+      ((myResponse?.content as { claims?: number[] })?.claims ?? []).slice();
+    const next = cur.includes(slotIndex)
+      ? cur.filter((x) => x !== slotIndex)
+      : [...cur, slotIndex];
+    await saveResponse({ claims: next });
+    setSignupBusy(false);
   };
 
   // Editing isn't wired for Two Truths (its hidden lie + others' guesses make an
@@ -1994,6 +2008,75 @@ export default function EngagementDetailPage() {
   };
 
   // Open-ended poll: each open question with everyone's free-text answers.
+  // Sign-up: the live claimable list (claim/release slots, see who's got what).
+  const renderSignup = () => {
+    if (engagement.type !== "signup") return null;
+    const slots =
+      (engagement.config?.slots as { label: string; capacity: number }[]) ?? [];
+    const myClaims =
+      (myResponse?.content as { claims?: number[] })?.claims ?? [];
+    const claimantsOf = (i: number) =>
+      responses.filter((r) =>
+        ((r.content as { claims?: number[] })?.claims ?? []).includes(i)
+      );
+    const totalCap = slots.reduce((a, s) => a + Math.max(1, s.capacity), 0);
+    const totalClaimed = slots.reduce((a, _s, i) => a + claimantsOf(i).length, 0);
+    const open = engagement.status === "active";
+    return (
+      <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-bold text-slate-900">📋 Sign-up</h2>
+          <span className="text-xs text-slate-500">
+            {totalClaimed}/{totalCap} filled
+          </span>
+        </div>
+        <div className="space-y-2">
+          {slots.map((s, i) => {
+            const claimants = claimantsOf(i);
+            const cap = Math.max(1, s.capacity);
+            const mine = myClaims.includes(i);
+            const full = claimants.length >= cap;
+            return (
+              <div
+                key={i}
+                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-slate-900">
+                    {s.label}
+                  </div>
+                  <div className="truncate text-xs text-slate-500">
+                    {claimants.length}/{cap}
+                    {claimants.length > 0 &&
+                      " · " +
+                        claimants
+                          .map((c) =>
+                            memberNameOf(c.user_id, c.profile?.display_name)
+                          )
+                          .join(", ")}
+                  </div>
+                </div>
+                <button
+                  onClick={() => toggleClaim(i)}
+                  disabled={!open || signupBusy || (full && !mine)}
+                  className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-60 ${
+                    mine
+                      ? "bg-cyan-500 text-white hover:opacity-90"
+                      : full
+                      ? "bg-slate-100 text-slate-400"
+                      : "border border-cyan-300 bg-white text-cyan-700 hover:bg-cyan-50"
+                  }`}
+                >
+                  {mine ? "✓ You — release" : full ? "Full" : "Claim"}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const renderOpenPollResults = () => {
     if (!showResults || engagement.type !== "poll" || !isOpenPoll) return null;
     return (
@@ -2701,7 +2784,8 @@ export default function EngagementDetailPage() {
       engagement.type === "most_likely" ||
       engagement.type === "accountability" ||
       engagement.type === "scavenger_hunt" ||
-      engagement.type === "care"
+      engagement.type === "care" ||
+      engagement.type === "signup"
     )
       return null;
 
@@ -3765,9 +3849,13 @@ export default function EngagementDetailPage() {
         </div>
       </div>
 
+      {/* ── Sign-up: the live claimable list takes the place of a response form ── */}
+      {renderSignup()}
+
       {/* ── It's your turn: make the action obvious the instant you land (a kid
             tapping an email invite shouldn't have to scroll and figure it out). ── */}
-      {(engagement.status === "active" || lateResponseAllowed) &&
+      {engagement.type !== "signup" &&
+        (engagement.status === "active" || lateResponseAllowed) &&
         !hasResponded &&
         !isDraft &&
         !(user && (engagement.excluded_user_ids ?? []).includes(user.id)) && (
@@ -4243,8 +4331,9 @@ export default function EngagementDetailPage() {
       )}
 
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
-      {((engagement.status === "active" && (!hasResponded || editingResponse)) ||
-        (lateResponseAllowed && !hasResponded)) && (
+      {engagement.type !== "signup" &&
+        ((engagement.status === "active" && (!hasResponded || editingResponse)) ||
+          (lateResponseAllowed && !hasResponded)) && (
         <div
           id="respond"
           className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6"
@@ -4306,7 +4395,8 @@ export default function EngagementDetailPage() {
       )}
 
       {/* ── Edit my answer (responded, still active, not already editing) ── */}
-      {engagement.status === "active" &&
+      {engagement.type !== "signup" &&
+        engagement.status === "active" &&
         hasResponded &&
         !editingResponse &&
         canEditResponse && (

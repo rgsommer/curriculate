@@ -137,6 +137,11 @@ export default function NewEngagementPage() {
     "multiple"
   );
   // Truth or Dare: the host writes both; players commit blind, then see theirs.
+  // Sign-up: claimable slots (label + how many people can take each).
+  const [signupSlots, setSignupSlots] = useState<{ label: string; capacity: number }[]>([
+    { label: "", capacity: 1 },
+    { label: "", capacity: 1 },
+  ]);
   const [truthPrompt, setTruthPrompt] = useState("");
   const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
@@ -479,6 +484,21 @@ export default function NewEngagementPage() {
       config.media_type = "photo"; // Default, could be made selectable
     }
 
+    if (selectedType === "signup") {
+      const slots = signupSlots
+        .map((s) => ({
+          label: s.label.trim(),
+          capacity: Math.max(1, s.capacity || 1),
+        }))
+        .filter((s) => s.label);
+      if (slots.length < 1) {
+        setError("Add at least one thing for people to sign up for.");
+        setCreating(false);
+        return;
+      }
+      config.slots = slots;
+    }
+
     if (selectedType === "truth_or_dare") {
       const tp = truthPrompt.trim();
       const dp = darePrompt.trim();
@@ -546,6 +566,8 @@ export default function NewEngagementPage() {
         selectedType === "scavenger_hunt" ||
         isBirthday
           ? "sealed"
+          : selectedType === "signup"
+          ? "as_they_come" // a sign-up is live — everyone sees what's claimed
           : reveal,
       is_blind: isBlind,
       // Every card occasion repeats yearly (birthday, anniversary, Mother's/Father's
@@ -936,6 +958,71 @@ export default function NewEngagementPage() {
                 </div>
               );
             })()}
+
+            {/* Sign-up — claimable slots (label + capacity) */}
+            {selectedType === "signup" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  What can people sign up for?
+                </label>
+                <p className="text-xs text-slate-500 mb-2">
+                  Each row is a slot; set how many people can claim it.
+                </p>
+                {signupSlots.map((s, i) => (
+                  <div key={i} className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={s.label}
+                      onChange={(e) => {
+                        const next = [...signupSlots];
+                        next[i] = { ...next[i], label: e.target.value };
+                        setSignupSlots(next);
+                      }}
+                      placeholder={`e.g. ${
+                        ["Drinks", "Cups & plates", "Cupcakes", "Music"][i] || "Item"
+                      }`}
+                      className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 outline-none"
+                    />
+                    <input
+                      type="number"
+                      min={1}
+                      max={50}
+                      value={s.capacity}
+                      onChange={(e) => {
+                        const next = [...signupSlots];
+                        next[i] = {
+                          ...next[i],
+                          capacity: parseInt(e.target.value || "1", 10),
+                        };
+                        setSignupSlots(next);
+                      }}
+                      title="How many people can claim this"
+                      className="w-16 rounded-xl border border-slate-300 px-2 py-2 text-sm text-center focus:border-orange-500 outline-none"
+                    />
+                    {signupSlots.length > 1 && (
+                      <button
+                        onClick={() =>
+                          setSignupSlots(signupSlots.filter((_, j) => j !== i))
+                        }
+                        className="text-slate-400 hover:text-red-500 px-2"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {signupSlots.length < 30 && (
+                  <button
+                    onClick={() =>
+                      setSignupSlots([...signupSlots, { label: "", capacity: 1 }])
+                    }
+                    className="text-sm text-orange-600 font-medium"
+                  >
+                    + Add slot
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Truth or Dare — host writes both prompts; players pick blind */}
             {selectedType === "truth_or_dare" && (
