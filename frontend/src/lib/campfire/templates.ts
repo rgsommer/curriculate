@@ -25,6 +25,8 @@ export interface EngagementTemplate {
   // Sign-up templates: pre-filled claimable slots + optional party type.
   slots?: { label: string; capacity: number }[];
   partyKind?: string;
+  // Pre-enable a gift exchange (Secret Santa) on a sign-up.
+  giftExchange?: { byGender?: boolean; assign?: "self" | "person" | "gender" };
 }
 
 export interface TemplatePack {
@@ -173,6 +175,23 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
           { label: "Dessert", capacity: 2 },
           { label: "Drinks", capacity: 1 },
         ],
+      },
+      {
+        id: "christmas-party",
+        name: "Christmas Party + Secret Santa 🎄🎁",
+        type: "signup",
+        title: "Christmas party! 🎄",
+        description:
+          "Plan the Christmas party — claim what to bring, RSVP who's coming, and run a Secret Santa. Each person's assignment stays secret until the host reveals it.",
+        partyKind: "Snacks",
+        slots: [
+          { label: "Treats / cookies", capacity: 2 },
+          { label: "Drinks / juice", capacity: 2 },
+          { label: "Cups & plates", capacity: 1 },
+          { label: "Decorations", capacity: 1 },
+        ],
+        // Secret Santa by default; the host can switch to by-gender on the page.
+        giftExchange: { assign: "person" },
       },
     ],
   },

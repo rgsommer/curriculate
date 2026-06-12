@@ -165,6 +165,11 @@ export default function NewEngagementPage() {
   const [partyWhen, setPartyWhen] = useState(""); // when the party is (free text)
   const [partyWhere, setPartyWhere] = useState(""); // where the party is
   const [partyRsvp, setPartyRsvp] = useState(true); // ask who's coming (RSVP)
+  // Pre-enable a gift exchange (from a preset like the Christmas party).
+  const [partyGiftex, setPartyGiftex] = useState<{
+    byGender?: boolean;
+    assign?: "self" | "person" | "gender";
+  } | null>(null);
   const [truthPrompt, setTruthPrompt] = useState("");
   const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
@@ -365,6 +370,7 @@ export default function NewEngagementPage() {
     if (t.type === "signup") {
       if (t.slots && t.slots.length) setSignupSlots(t.slots.map((s) => ({ ...s })));
       if (t.partyKind) setPartyKind(t.partyKind);
+      setPartyGiftex(t.giftExchange ?? null);
     }
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
@@ -566,6 +572,13 @@ export default function NewEngagementPage() {
       if (partyWhen.trim()) config.partyWhen = partyWhen.trim();
       if (partyWhere.trim()) config.partyWhere = partyWhere.trim();
       config.rsvp = partyRsvp;
+      if (partyGiftex) {
+        config.giftex = {
+          on: true,
+          byGender: !!partyGiftex.byGender,
+          assign: partyGiftex.assign ?? "person",
+        };
+      }
     }
 
     if (selectedType === "truth_or_dare") {
