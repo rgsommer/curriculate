@@ -57,16 +57,20 @@ export async function POST(req: Request) {
       .select("content")
       .eq("engagement_id", engagementId);
     const claimedCount: Record<number, number> = {};
+    const extras: string[] = [];
     for (const r of resps ?? []) {
-      const claims = (r.content as { claims?: number[] })?.claims ?? [];
-      for (const i of claims) claimedCount[i] = (claimedCount[i] ?? 0) + 1;
+      const content = r.content as { claims?: number[]; extras?: string[] };
+      for (const i of content?.claims ?? [])
+        claimedCount[i] = (claimedCount[i] ?? 0) + 1;
+      for (const x of content?.extras ?? []) if (x) extras.push(x);
     }
-    const listText = slots
-      .map(
-        (s, i) =>
-          `- ${s.label} (${claimedCount[i] ?? 0}/${s.capacity} claimed)`
-      )
-      .join("\n");
+    const listText = [
+      ...slots.map(
+        (s, i) => `- ${s.label} (${claimedCount[i] ?? 0}/${s.capacity} claimed)`
+      ),
+      // Items members already said they're bringing on their own.
+      ...extras.map((x) => `- ${x} (a member is bringing this)`),
+    ].join("\n");
 
     const system =
       "You help a host plan a group party sign-up list. Given the party type, theme/" +
@@ -95,7 +99,11 @@ export async function POST(req: Request) {
     if (match) {
       try {
         const parsed = JSON.parse(match[0]) as { label?: string; capacity?: number }[];
-        const existing = new Set(slots.map((s) => s.label.trim().toLowerCase()));
+        const existing = new Set(
+          [...slots.map((s) => s.label), ...extras].map((l) =>
+            l.trim().toLowerCase()
+          )
+        );
         suggestions = parsed
           .filter((p) => p?.label && !existing.has(String(p.label).trim().toLowerCase()))
           .slice(0, 10)

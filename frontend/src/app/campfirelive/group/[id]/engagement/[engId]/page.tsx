@@ -183,6 +183,7 @@ export default function EngagementDetailPage() {
     { label: string; capacity: number }[]
   >([]);
   const [suggesting, setSuggesting] = useState(false);
+  const [extraInput, setExtraInput] = useState(""); // member "I'm bringing…" text
   useEffect(() => {
     if (!engagement?.gift_enabled || !engagementId) {
       setGiftSummary(null);
@@ -1134,16 +1135,47 @@ export default function EngagementDetailPage() {
     return r;
   };
 
-  // Sign-up: claim or release a slot (your response is your set of claimed indices).
+  // Sign-up: a member's response is their claimed slot indices plus any free-text
+  // items they're bringing on their own ("extras").
+  const myClaims = () =>
+    ((myResponse?.content as { claims?: number[] })?.claims ?? []).slice();
+  const myExtras = () =>
+    ((myResponse?.content as { extras?: string[] })?.extras ?? []).slice();
+
+  // Claim or release a predefined slot — keep my extras intact.
   const toggleClaim = async (slotIndex: number) => {
     if (signupBusy) return;
     setSignupBusy(true);
-    const cur =
-      ((myResponse?.content as { claims?: number[] })?.claims ?? []).slice();
+    const cur = myClaims();
     const next = cur.includes(slotIndex)
       ? cur.filter((x) => x !== slotIndex)
       : [...cur, slotIndex];
-    await saveResponse({ claims: next });
+    await saveResponse({ claims: next, extras: myExtras() });
+    setSignupBusy(false);
+  };
+
+  // Add / remove a free-text item I'm bringing that isn't a predefined slot.
+  const addExtra = async (label: string) => {
+    const clean = label.trim();
+    if (!clean || signupBusy) return;
+    const cur = myExtras();
+    if (cur.some((x) => x.toLowerCase() === clean.toLowerCase())) {
+      setExtraInput("");
+      return;
+    }
+    setSignupBusy(true);
+    await saveResponse({ claims: myClaims(), extras: [...cur, clean].slice(0, 20) });
+    setExtraInput("");
+    setSignupBusy(false);
+  };
+
+  const removeExtra = async (label: string) => {
+    if (signupBusy) return;
+    setSignupBusy(true);
+    await saveResponse({
+      claims: myClaims(),
+      extras: myExtras().filter((x) => x !== label),
+    });
     setSignupBusy(false);
   };
 
@@ -2117,7 +2149,7 @@ export default function EngagementDetailPage() {
     if (engagement.type !== "signup") return null;
     const slots =
       (engagement.config?.slots as { label: string; capacity: number }[]) ?? [];
-    const myClaims =
+    const myClaimSet =
       (myResponse?.content as { claims?: number[] })?.claims ?? [];
     const claimantsOf = (i: number) =>
       responses.filter((r) =>
@@ -2126,6 +2158,18 @@ export default function EngagementDetailPage() {
     const totalCap = slots.reduce((a, s) => a + Math.max(1, s.capacity), 0);
     const totalClaimed = slots.reduce((a, _s, i) => a + claimantsOf(i).length, 0);
     const open = engagement.status === "active";
+    // Free-text items members said they're bringing (not tied to a slot).
+    const extraItems: { label: string; member: string; mine: boolean }[] = [];
+    responses.forEach((r) => {
+      const ex = (r.content as { extras?: string[] })?.extras ?? [];
+      ex.forEach((label) =>
+        extraItems.push({
+          label,
+          member: memberNameOf(r.user_id, r.profile?.display_name),
+          mine: !!user && r.user_id === user.id,
+        })
+      );
+    });
     return (
       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
@@ -2138,7 +2182,7 @@ export default function EngagementDetailPage() {
           {slots.map((s, i) => {
             const claimants = claimantsOf(i);
             const cap = Math.max(1, s.capacity);
-            const mine = myClaims.includes(i);
+            const mine = myClaimSet.includes(i);
             const full = claimants.length >= cap;
             return (
               <div
@@ -2177,6 +2221,58 @@ export default function EngagementDetailPage() {
             );
           })}
         </div>
+
+        {/* Free-text items members are bringing on their own */}
+        {extraItems.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {extraItems.map((it, i) => (
+              <div
+                key={`x-${i}`}
+                className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2.5"
+              >
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-slate-900">{it.label}</div>
+                  <div className="truncate text-xs text-slate-500">{it.member}</div>
+                </div>
+                {it.mine && open && (
+                  <button
+                    onClick={() => removeExtra(it.label)}
+                    disabled={signupBusy}
+                    className="flex-shrink-0 rounded-full bg-cyan-500 px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-60"
+                  >
+                    ✓ You — remove
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Anyone can add what they're bringing, even if it's not a listed slot */}
+        {open && (
+          <div className="mt-3 flex gap-2">
+            <input
+              type="text"
+              value={extraInput}
+              onChange={(e) => setExtraInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addExtra(extraInput);
+                }
+              }}
+              placeholder="Bringing something else? Add it…"
+              className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm outline-none focus:border-cyan-500"
+            />
+            <button
+              onClick={() => addExtra(extraInput)}
+              disabled={signupBusy || !extraInput.trim()}
+              className="flex-shrink-0 rounded-full bg-cyan-500 px-4 py-2 text-xs font-bold text-white hover:opacity-90 disabled:opacity-40"
+            >
+              Add
+            </button>
+          </div>
+        )}
 
         {/* Host: AI suggestions for what's still needed */}
         {isCreator && open && (
