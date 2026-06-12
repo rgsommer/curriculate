@@ -181,9 +181,6 @@ export default function EngagementDetailPage() {
   const [sendingGift, setSendingGift] = useState(false);
   useEffect(() => setStartGiftCurrency(localeGiftCurrency()), []);
   const [signupBusy, setSignupBusy] = useState(false);
-  const [signupSuggestions, setSignupSuggestions] = useState<
-    { label: string; capacity: number }[]
-  >([]);
   const [suggesting, setSuggesting] = useState(false);
   const [extraInput, setExtraInput] = useState(""); // member "I'm bringing…" text
   const [hostSlotLabel, setHostSlotLabel] = useState(""); // host: type a new list item
@@ -1375,8 +1372,10 @@ export default function EngagementDetailPage() {
     setSignupBusy(false);
   };
 
-  // Sign-up host tools: ask AI what's still needed, and add a slot to the list.
-  const fetchSignupSuggestions = async () => {
+  // Host: let AI plan a BALANCED list for the headcount — set a target (need) and a
+  // sensible hard cap (capacity) on each item, and fill missing essentials. Applied
+  // in place (existing items keep their index, so claims stay valid).
+  const aiBalance = async () => {
     if (suggesting || !session) return;
     setSuggesting(true);
     try {
@@ -1389,14 +1388,49 @@ export default function EngagementDetailPage() {
         body: JSON.stringify({ engagementId }),
       });
       const data = await res.json();
-      if (data?.suggestions) setSignupSuggestions(data.suggestions);
-      else alert(data?.error || "Couldn't get suggestions.");
+      const plan = (data?.plan ?? []) as { label: string; need: number; max: number }[];
+      if (!res.ok || plan.length === 0) {
+        alert(data?.error || "Couldn't get a plan right now.");
+        setSuggesting(false);
+        return;
+      }
+      const cur = (
+        (engagement.config?.slots as {
+          label: string;
+          capacity: number;
+          need?: number;
+        }[]) ?? []
+      ).slice();
+      let added = 0;
+      let adjusted = 0;
+      for (const p of plan) {
+        const idx = cur.findIndex(
+          (s) => s.label.trim().toLowerCase() === p.label.trim().toLowerCase()
+        );
+        if (idx >= 0) {
+          cur[idx] = { ...cur[idx], capacity: p.max, need: p.need };
+          adjusted++;
+        } else {
+          cur.push({ label: p.label, capacity: p.max, need: p.need });
+          added++;
+        }
+      }
+      const { error } = await supabase
+        .from("engagements")
+        .update({ config: { ...(engagement.config ?? {}), slots: cur } })
+        .eq("id", engagementId);
+      if (error) alert("Couldn't apply: " + error.message);
+      else {
+        alert(`AI balanced the list — ${added} added, ${adjusted} adjusted.`);
+        refresh();
+      }
     } catch {
-      alert("Couldn't get suggestions.");
+      alert("Couldn't get a plan right now.");
     }
     setSuggesting(false);
   };
 
+  // Host: append a single item to the list (manual add).
   const addSignupSlot = async (label: string, capacity: number) => {
     const slots =
       ((engagement.config?.slots as { label: string; capacity: number }[]) ?? []).slice();
@@ -1409,7 +1443,6 @@ export default function EngagementDetailPage() {
       alert("Couldn't add: " + error.message);
       return;
     }
-    setSignupSuggestions((prev) => prev.filter((s) => s.label !== label));
     refresh();
   };
 
@@ -2344,7 +2377,11 @@ export default function EngagementDetailPage() {
   const renderSignup = () => {
     if (engagement.type !== "signup") return null;
     const slots =
-      (engagement.config?.slots as { label: string; capacity: number }[]) ?? [];
+      (engagement.config?.slots as {
+        label: string;
+        capacity: number;
+        need?: number;
+      }[]) ?? [];
     const myClaimSet =
       (myResponse?.content as { claims?: number[] })?.claims ?? [];
     const claimantsOf = (i: number) =>
@@ -2449,21 +2486,33 @@ export default function EngagementDetailPage() {
         extra: it.label,
       })
     );
+    // Each slot has a soft target (need) and a hard cap (capacity; 0 = unlimited):
+    //   n < need            → "needed"  (amber, Claim)
+    //   need ≤ n < capacity  → "covered" (green, more welcome)
+    //   n ≥ capacity         → full (drops out — type it below to insist)
     const neededRows = slots
-      .map((s, i) => ({
-        key: `n${i}`,
-        label: s.label,
-        i,
-        unlimited: isUnlimited(s),
-        // unlimited slots are always open ("any number"); finite ones until full.
-        left: isUnlimited(s)
-          ? Infinity
-          : Math.max(1, s.capacity) - claimantsOf(i).length,
-        mine: myClaimSet.includes(i),
-      }))
-      .filter((x) => x.left > 0);
-    // "Covered" ignores unlimited slots (they always welcome more).
-    const finiteStillNeeded = neededRows.some((x) => !x.unlimited);
+      .map((s, i) => {
+        const unlimited = isUnlimited(s);
+        const cap = unlimited ? Infinity : Math.max(1, s.capacity);
+        const n = claimantsOf(i).length;
+        const need = s.need && s.need > 0 ? s.need : unlimited ? null : cap;
+        const full = n >= cap;
+        const state: "needed" | "covered" | "welcome" =
+          need == null ? "welcome" : n < need ? "needed" : "covered";
+        return {
+          key: `n${i}`,
+          label: s.label,
+          i,
+          unlimited,
+          left: need != null ? Math.max(0, need - n) : 0,
+          state,
+          full,
+          mine: myClaimSet.includes(i),
+        };
+      })
+      .filter((x) => !x.full);
+    // Anything still short of its target?
+    const finiteStillNeeded = neededRows.some((x) => x.state === "needed");
 
     // Curated bring-ideas to prompt attendees — essentials (drinks, and tableware
     // if disposables are wanted) plus crowd-pleasers — minus anything already on
@@ -2647,10 +2696,10 @@ export default function EngagementDetailPage() {
             </div>
           </div>
 
-          {/* Still needed — slots with open capacity */}
+          {/* To bring — still-needed (amber), covered-but-welcome (green), any-number */}
           <div>
             <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-              📝 Still needed ({neededRows.length})
+              📝 To bring ({neededRows.length})
             </div>
             <div className="space-y-1.5">
               {neededRows.length === 0 && (
@@ -2660,41 +2709,63 @@ export default function EngagementDetailPage() {
               )}
               {neededRows.length > 0 && !finiteStillNeeded && (
                 <div className="mb-1 text-xs font-medium text-emerald-700">
-                  ✅ Must-haves covered — below is just bonus.
+                  ✅ The essentials are covered — anything below is a bonus.
                 </div>
               )}
-              {neededRows.map((row) => (
-                <div
-                  key={row.key}
-                  className={`flex items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2 ${
-                    row.unlimited
-                      ? "border-cyan-200 bg-cyan-50/40"
-                      : "border-amber-300 bg-amber-50/40"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-medium text-slate-900">
-                      {row.label}
-                    </div>
-                    {row.unlimited ? (
-                      <div className="text-xs text-cyan-600">Any number welcome</div>
-                    ) : (
-                      row.left > 1 && (
-                        <div className="text-xs text-slate-500">
-                          {row.left} more needed
-                        </div>
-                      )
-                    )}
-                  </div>
-                  <button
-                    onClick={() => toggleClaim(row.i)}
-                    disabled={!open || signupBusy || row.mine}
-                    className="flex-shrink-0 rounded-full border border-cyan-300 bg-white px-3 py-1.5 text-xs font-bold text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+              {neededRows.map((row) => {
+                const covered = row.state === "covered";
+                const welcome = row.state === "welcome";
+                return (
+                  <div
+                    key={row.key}
+                    className={`flex items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2 ${
+                      covered
+                        ? "border-emerald-300 bg-emerald-50/50"
+                        : welcome
+                        ? "border-cyan-200 bg-cyan-50/40"
+                        : "border-amber-300 bg-amber-50/40"
+                    }`}
                   >
-                    {row.mine ? "✓ You" : row.unlimited ? "+ Bring" : "Claim"}
-                  </button>
-                </div>
-              ))}
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-slate-900">
+                        {row.label}
+                      </div>
+                      <div
+                        className={`text-xs ${
+                          covered ? "text-emerald-600" : "text-slate-500"
+                        }`}
+                      >
+                        {covered
+                          ? "Got enough — extra welcome"
+                          : welcome
+                          ? "Any number welcome"
+                          : row.left > 1
+                          ? `${row.left} more needed`
+                          : "Needed"}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => toggleClaim(row.i)}
+                      disabled={!open || signupBusy || row.mine}
+                      className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-50 ${
+                        row.mine
+                          ? "bg-cyan-500 text-white"
+                          : covered
+                          ? "border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50"
+                          : "border border-cyan-300 bg-white text-cyan-700 hover:bg-cyan-50"
+                      }`}
+                    >
+                      {row.mine
+                        ? "✓ You"
+                        : covered
+                        ? "Bring more?"
+                        : welcome
+                        ? "+ Bring"
+                        : "Claim"}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -2772,16 +2843,20 @@ export default function EngagementDetailPage() {
           </div>
         )}
 
-        {/* Host: AI suggestions for what's still needed */}
+        {/* Host: AI balances the list (targets + caps) for the headcount */}
         {isCreator && open && (
           <div className="mt-4 border-t border-slate-100 pt-3">
             <button
-              onClick={fetchSignupSuggestions}
+              onClick={aiBalance}
               disabled={suggesting}
-              className="rounded-full border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 hover:bg-cyan-100 disabled:opacity-50"
+              className="rounded-full border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 disabled:opacity-50"
             >
-              {suggesting ? "Thinking…" : "✨ Suggest what's still needed"}
+              {suggesting ? "Planning…" : "✨ AI: balance the list"}
             </button>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Sets a target and a sensible limit on each item for your headcount, and
+              fills any gaps — so a dinner doesn&apos;t end up all salads.
+            </p>
             {/* Host can also type their own item onto the claimable list */}
             <div className="mt-2 flex gap-2">
               <input
@@ -2839,25 +2914,6 @@ export default function EngagementDetailPage() {
                 Add
               </button>
             </div>
-            {signupSuggestions.length > 0 && (
-              <div className="mt-2">
-                <div className="mb-1 text-[11px] text-slate-500">
-                  Tap to add to the list:
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {signupSuggestions.map((s, i) => (
-                    <button
-                      key={i}
-                      onClick={() => addSignupSlot(s.label, s.capacity)}
-                      className="rounded-full border border-dashed border-cyan-400 bg-white px-2.5 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-50"
-                    >
-                      + {s.label}
-                      {s.capacity > 1 ? ` ×${s.capacity}` : ""}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
 
