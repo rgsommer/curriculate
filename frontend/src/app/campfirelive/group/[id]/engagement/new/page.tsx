@@ -549,7 +549,8 @@ export default function NewEngagementPage() {
       const slots = signupSlots
         .map((s) => ({
           label: s.label.trim(),
-          capacity: Math.max(1, s.capacity || 1),
+          // 0 = "any number" (unlimited); otherwise at least 1.
+          capacity: s.capacity === 0 ? 0 : Math.max(1, s.capacity || 1),
         }))
         .filter((s) => s.label);
       const resolvedKind =
@@ -1167,22 +1168,49 @@ export default function NewEngagementPage() {
                       }`}
                       className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 outline-none"
                     />
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={s.capacity}
-                      onChange={(e) => {
-                        const next = [...signupSlots];
-                        next[i] = {
-                          ...next[i],
-                          capacity: parseInt(e.target.value || "1", 10),
-                        };
-                        setSignupSlots(next);
-                      }}
-                      title="How many people can claim this"
-                      className="w-16 rounded-xl border border-slate-300 px-2 py-2 text-sm text-center focus:border-orange-500 outline-none"
-                    />
+                    <div className="flex items-center gap-1">
+                      {s.capacity === 0 ? (
+                        <span
+                          title="Any number can bring this"
+                          className="w-12 rounded-xl border border-cyan-300 bg-cyan-50 py-2 text-center text-sm font-semibold text-cyan-700"
+                        >
+                          ∞
+                        </span>
+                      ) : (
+                        <input
+                          type="number"
+                          min={1}
+                          max={50}
+                          value={s.capacity}
+                          onChange={(e) => {
+                            const next = [...signupSlots];
+                            next[i] = {
+                              ...next[i],
+                              capacity: parseInt(e.target.value || "1", 10),
+                            };
+                            setSignupSlots(next);
+                          }}
+                          title="How many people can bring this"
+                          className="w-12 rounded-xl border border-slate-300 px-2 py-2 text-sm text-center focus:border-orange-500 outline-none"
+                        />
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const next = [...signupSlots];
+                          next[i] = { ...next[i], capacity: s.capacity === 0 ? 1 : 0 };
+                          setSignupSlots(next);
+                        }}
+                        title={
+                          s.capacity === 0
+                            ? "Set a specific number"
+                            : "Any number can bring this"
+                        }
+                        className="rounded-lg px-1.5 py-1 text-sm font-bold text-slate-400 hover:text-cyan-600"
+                      >
+                        {s.capacity === 0 ? "#" : "∞"}
+                      </button>
+                    </div>
                     {signupSlots.length > 1 && (
                       <button
                         onClick={() =>
@@ -1205,6 +1233,11 @@ export default function NewEngagementPage() {
                     + Add slot
                   </button>
                 )}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  The number is how many people can bring it. Tap{" "}
+                  <span className="font-semibold">∞</span> for things where any number
+                  is welcome (e.g. drinks, snacks).
+                </p>
               </div>
             )}
 

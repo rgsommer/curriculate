@@ -2351,8 +2351,16 @@ export default function EngagementDetailPage() {
       responses.filter((r) =>
         ((r.content as { claims?: number[] })?.claims ?? []).includes(i)
       );
-    const totalCap = slots.reduce((a, s) => a + Math.max(1, s.capacity), 0);
-    const totalClaimed = slots.reduce((a, _s, i) => a + claimantsOf(i).length, 0);
+    // capacity 0 = "any number" (unlimited) — excluded from the filled ratio.
+    const isUnlimited = (s: { capacity: number }) => s.capacity === 0;
+    const totalCap = slots.reduce(
+      (a, s) => a + (isUnlimited(s) ? 0 : Math.max(1, s.capacity)),
+      0
+    );
+    const totalClaimed = slots.reduce(
+      (a, s, i) => a + (isUnlimited(s) ? 0 : claimantsOf(i).length),
+      0
+    );
     // A Sign-up stays live (claimable) — it doesn't lock on a reveal.
     const open = engagement.status === "active" || engagement.status === "revealed";
     const partyWhen = (engagement.config?.partyWhen as string | undefined)?.trim();
@@ -2446,10 +2454,16 @@ export default function EngagementDetailPage() {
         key: `n${i}`,
         label: s.label,
         i,
-        left: Math.max(1, s.capacity) - claimantsOf(i).length,
+        unlimited: isUnlimited(s),
+        // unlimited slots are always open ("any number"); finite ones until full.
+        left: isUnlimited(s)
+          ? Infinity
+          : Math.max(1, s.capacity) - claimantsOf(i).length,
         mine: myClaimSet.includes(i),
       }))
       .filter((x) => x.left > 0);
+    // "Covered" ignores unlimited slots (they always welcome more).
+    const finiteStillNeeded = neededRows.some((x) => !x.unlimited);
 
     // Curated bring-ideas to prompt attendees — essentials (drinks, and tableware
     // if disposables are wanted) plus crowd-pleasers — minus anything already on
@@ -2644,17 +2658,32 @@ export default function EngagementDetailPage() {
                   ✅ Everything&apos;s covered — thank you!
                 </div>
               )}
+              {neededRows.length > 0 && !finiteStillNeeded && (
+                <div className="mb-1 text-xs font-medium text-emerald-700">
+                  ✅ Must-haves covered — below is just bonus.
+                </div>
+              )}
               {neededRows.map((row) => (
                 <div
                   key={row.key}
-                  className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 px-3 py-2"
+                  className={`flex items-center justify-between gap-2 rounded-lg border border-dashed px-3 py-2 ${
+                    row.unlimited
+                      ? "border-cyan-200 bg-cyan-50/40"
+                      : "border-amber-300 bg-amber-50/40"
+                  }`}
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900">
                       {row.label}
                     </div>
-                    {row.left > 1 && (
-                      <div className="text-xs text-slate-500">{row.left} more needed</div>
+                    {row.unlimited ? (
+                      <div className="text-xs text-cyan-600">Any number welcome</div>
+                    ) : (
+                      row.left > 1 && (
+                        <div className="text-xs text-slate-500">
+                          {row.left} more needed
+                        </div>
+                      )
                     )}
                   </div>
                   <button
@@ -2662,7 +2691,7 @@ export default function EngagementDetailPage() {
                     disabled={!open || signupBusy || row.mine}
                     className="flex-shrink-0 rounded-full border border-cyan-300 bg-white px-3 py-1.5 text-xs font-bold text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
                   >
-                    {row.mine ? "✓ You" : "Claim"}
+                    {row.mine ? "✓ You" : row.unlimited ? "+ Bring" : "Claim"}
                   </button>
                 </div>
               ))}
@@ -2762,7 +2791,10 @@ export default function EngagementDetailPage() {
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && hostSlotLabel.trim()) {
                     e.preventDefault();
-                    addSignupSlot(hostSlotLabel.trim(), Math.max(1, hostSlotCount));
+                    addSignupSlot(
+                      hostSlotLabel.trim(),
+                      hostSlotCount === 0 ? 0 : Math.max(1, hostSlotCount)
+                    );
                     setHostSlotLabel("");
                     setHostSlotCount(1);
                   }
@@ -2770,20 +2802,34 @@ export default function EngagementDetailPage() {
                 placeholder="Or add your own — e.g. Napkins"
                 className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
               />
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={hostSlotCount}
-                onChange={(e) => setHostSlotCount(parseInt(e.target.value || "1", 10))}
-                title="How many people can bring this"
-                className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-center outline-none focus:border-cyan-500"
-              />
+              {hostSlotCount === 0 ? (
+                <span className="w-10 rounded-lg border border-cyan-300 bg-cyan-50 py-1.5 text-center text-sm font-semibold text-cyan-700">
+                  ∞
+                </span>
+              ) : (
+                <input
+                  type="number"
+                  min={1}
+                  max={50}
+                  value={hostSlotCount}
+                  onChange={(e) => setHostSlotCount(parseInt(e.target.value || "1", 10))}
+                  title="How many people can bring this"
+                  className="w-10 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-center outline-none focus:border-cyan-500"
+                />
+              )}
+              <button
+                type="button"
+                onClick={() => setHostSlotCount(hostSlotCount === 0 ? 1 : 0)}
+                title={hostSlotCount === 0 ? "Set a number" : "Any number can bring this"}
+                className="px-1 text-sm font-bold text-slate-400 hover:text-cyan-600"
+              >
+                {hostSlotCount === 0 ? "#" : "∞"}
+              </button>
               <button
                 onClick={() => {
                   const l = hostSlotLabel.trim();
                   if (!l) return;
-                  addSignupSlot(l, Math.max(1, hostSlotCount));
+                  addSignupSlot(l, hostSlotCount === 0 ? 0 : Math.max(1, hostSlotCount));
                   setHostSlotLabel("");
                   setHostSlotCount(1);
                 }}
