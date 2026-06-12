@@ -270,6 +270,10 @@ export default function EngagementDetailPage() {
     "multiple" | "yes_no" | "open"
   >("multiple");
   const [editPollOptions, setEditPollOptions] = useState<string[]>([]);
+  // Group gift — enable/disable + recipient on an existing engagement.
+  const [editGiftEnabled, setEditGiftEnabled] = useState(false);
+  const [editGiftRecipientEmail, setEditGiftRecipientEmail] = useState("");
+  const [editGiftRecipientName, setEditGiftRecipientName] = useState("");
   const [editLeadDays, setEditLeadDays] = useState(14); // how many days before it opens
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
@@ -579,6 +583,9 @@ export default function EngagementDetailPage() {
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
     setEditCareQuestions(parseCareQuestions(engagement.config));
+    setEditGiftEnabled(!!engagement.gift_enabled);
+    setEditGiftRecipientEmail(engagement.gift_recipient_email ?? "");
+    setEditGiftRecipientName(engagement.gift_recipient_name ?? "");
     {
       const cfg = (engagement.config ?? {}) as {
         truthPrompt?: string;
@@ -703,6 +710,44 @@ export default function EngagementDetailPage() {
         careFields.config = { ...base, format: "multiple", options, questions: [] };
       }
     }
+    // Group gift: validate, and if the host is turning it OFF after people chipped
+    // in, refund those contributions first.
+    if (editGiftEnabled && !editGiftRecipientEmail.trim()) {
+      alert("Add the recipient's email — that's where the gift card is sent.");
+      setSavingEdit(false);
+      return;
+    }
+    const turningGiftOff = engagement.gift_enabled && !editGiftEnabled;
+    if (
+      turningGiftOff &&
+      !engagement.gift_issued_at &&
+      (giftSummary?.contributors ?? 0) > 0 &&
+      session
+    ) {
+      if (
+        typeof window !== "undefined" &&
+        !window.confirm(
+          "Turning off the gift will refund everyone who chipped in. Continue?"
+        )
+      ) {
+        setSavingEdit(false);
+        return;
+      }
+      try {
+        await fetch("/api/campfire/gift/refund", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ engagementId }),
+        });
+      } catch {
+        alert("Couldn't refund the contributions — try again.");
+        setSavingEdit(false);
+        return;
+      }
+    }
     const { error } = await supabase
       .from("engagements")
       .update({
@@ -716,6 +761,13 @@ export default function EngagementDetailPage() {
         allow_member_invites: editAllowMemberInvites,
         excluded_user_ids: editExcludedIds,
         excluded_emails: editExcludedEmails,
+        gift_enabled: editGiftEnabled,
+        gift_recipient_email: editGiftEnabled
+          ? editGiftRecipientEmail.trim() || null
+          : null,
+        gift_recipient_name: editGiftEnabled
+          ? editGiftRecipientName.trim() || null
+          : null,
         ...birthdayFields,
         ...careFields,
       })
@@ -3424,6 +3476,52 @@ export default function EngagementDetailPage() {
                   </div>
                 </div>
               </label>
+
+              {/* Group gift — enable/disable + recipient */}
+              <div>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={editGiftEnabled}
+                    onChange={(e) => setEditGiftEnabled(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">
+                      🎁 Collect a group gift
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      People chip in when they sign; a gift card for the total is emailed
+                      to the recipient on reveal.
+                    </div>
+                  </div>
+                </label>
+                {editGiftEnabled && (
+                  <div className="mt-2 ml-7 space-y-2 rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                    <input
+                      type="email"
+                      value={editGiftRecipientEmail}
+                      onChange={(e) => setEditGiftRecipientEmail(e.target.value)}
+                      placeholder="Recipient's email (where the gift card is sent)"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+                    />
+                    <input
+                      type="text"
+                      value={editGiftRecipientName}
+                      onChange={(e) => setEditGiftRecipientName(e.target.value)}
+                      placeholder="Recipient's name (optional)"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+                    />
+                  </div>
+                )}
+                {engagement.gift_enabled &&
+                  !editGiftEnabled &&
+                  (giftSummary?.contributors ?? 0) > 0 && (
+                    <p className="mt-1 ml-7 text-[11px] text-amber-600">
+                      ⚠️ Turning this off will refund everyone who chipped in.
+                    </p>
+                  )}
+              </div>
 
               {/* Surprise: hide from (members + pending invitees) */}
               {(roster.filter((m) => m.user_id !== user?.id).length > 0 ||
