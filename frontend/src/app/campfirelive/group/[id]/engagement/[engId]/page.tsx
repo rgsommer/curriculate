@@ -924,10 +924,28 @@ export default function EngagementDetailPage() {
     if (
       typeof window !== "undefined" &&
       !window.confirm(
-        "Cancel this engagement? It will be removed for everyone — this can't be undone."
+        engagement.gift_enabled && !engagement.gift_issued_at
+          ? "Cancel this card? Everyone's gift contributions will be refunded, and it'll be removed for everyone — this can't be undone."
+          : "Cancel this engagement? It will be removed for everyone — this can't be undone."
       )
     )
       return;
+    // Refund gift contributions BEFORE deleting (delete cascades the rows away).
+    if (engagement.gift_enabled && !engagement.gift_issued_at && session) {
+      try {
+        await fetch("/api/campfire/gift/refund", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ engagementId }),
+        });
+      } catch {
+        alert("Couldn't refund contributions — cancel paused. Try again.");
+        return;
+      }
+    }
     const { error } = await deleteEngagement();
     if (error) {
       alert("Couldn't cancel: " + error);
