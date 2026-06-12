@@ -15,8 +15,10 @@ create table if not exists public.campfire_referrers (
 );
 
 -- Stamp a group with the referrer whose link started it (for attribution later).
+-- Plain text (no FK) so a stale/unknown ?ref can never block group creation; an
+-- unknown code simply matches no referrer.
 alter table public.groups
-  add column if not exists referrer_code text references public.campfire_referrers(code);
+  add column if not exists referrer_code text;
 
 alter table public.campfire_referrers enable row level security;
 -- Server-only (the cron + admin tooling use the service role); no public policies.

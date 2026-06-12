@@ -59,14 +59,30 @@ export async function POST(req: Request) {
     }
     const currency = ((eng.gift_currency as string | null) ?? "usd").toLowerCase();
 
-    // The contributor covers the card-processing fee, so the recipient gets the
-    // FULL amount they chose. Gross up the Stripe charge so that, after Stripe's
-    // 2.9% + $0.30, the platform nets the gift amount and funds the card for it.
+    // Referral: if this group was started from a partner's link, a 2% service fee
+    // is added on top — 1% to the referrer, 1% to the platform. No referrer → no
+    // service fee (the gift stays as lean as possible).
+    const { data: grp } = await admin
+      .from("groups")
+      .select("referrer_code")
+      .eq("id", eng.group_id)
+      .single();
+    const referrerCode = (grp?.referrer_code as string | null) || null;
+    const SERVICE_PCT = Number(process.env.REFERRAL_SERVICE_PCT ?? "2") / 100;
+    const REFERRER_SHARE = Number(process.env.REFERRAL_REFERRER_SHARE ?? "0.5"); // half
+
+    // The contributor covers the card-processing fee (+ any service fee), so the
+    // recipient gets the FULL amount they chose. Gross up the Stripe charge so that,
+    // after Stripe's 2.9% + $0.30, the platform nets gift + service fee.
     const giftCents = Math.round(amountCents); // counts toward the pool / gift card
+    const serviceCents = referrerCode ? Math.round(giftCents * SERVICE_PCT) : 0;
+    const referrerCutCents = Math.round(serviceCents * REFERRER_SHARE);
     const FEE_PCT = Number(process.env.STRIPE_FEE_PCT ?? "2.9") / 100;
     const FEE_FIXED = Number(process.env.STRIPE_FEE_FIXED_CENTS ?? "30");
-    const chargeCents = Math.ceil((giftCents + FEE_FIXED) / (1 - FEE_PCT));
-    const feeCents = chargeCents - giftCents;
+    const chargeCents = Math.ceil(
+      (giftCents + serviceCents + FEE_FIXED) / (1 - FEE_PCT)
+    );
+    const feeCents = chargeCents - giftCents - serviceCents;
 
     // Record the pending contribution first so the webhook has a row to confirm.
     // amount_cents is the GIFT amount (what the recipient receives).
@@ -78,6 +94,8 @@ export async function POST(req: Request) {
         contributor_name: contributorName,
         amount_cents: giftCents,
         status: "pending",
+        referrer_code: referrerCode,
+        referrer_cut_cents: referrerCutCents,
       })
       .select("id")
       .single();
@@ -106,9 +124,14 @@ export async function POST(req: Request) {
             unit_amount: chargeCents,
             product_data: {
               name: `Group gift — "${eng.title}"`,
-              description: `$${(giftCents / 100).toFixed(2)} to the gift + $${(
-                feeCents / 100
-              ).toFixed(2)} processing, so the recipient gets the full amount.`,
+              description:
+                `$${(giftCents / 100).toFixed(2)} to the gift + $${(
+                  feeCents / 100
+                ).toFixed(2)} processing` +
+                (serviceCents > 0
+                  ? ` + $${(serviceCents / 100).toFixed(2)} service`
+                  : "") +
+                ` — the recipient gets the full amount.`,
             },
           },
         },

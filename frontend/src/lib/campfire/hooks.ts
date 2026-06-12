@@ -74,9 +74,23 @@ export function useGroups() {
   const createGroup = async (name: string, description: string, emoji: string) => {
     if (!user) return { group: null, error: "You're not signed in." };
 
+    // Referral attribution: stamp the code the new group was started from (if any).
+    let referrerCode: string | null = null;
+    try {
+      referrerCode = localStorage.getItem("campfire_ref") || null;
+    } catch {
+      /* ignore */
+    }
+
     const { data: group, error } = await supabase
       .from("groups")
-      .insert({ name, description, creator_id: user.id, avatar_emoji: emoji })
+      .insert({
+        name,
+        description,
+        creator_id: user.id,
+        avatar_emoji: emoji,
+        ...(referrerCode ? { referrer_code: referrerCode } : {}),
+      })
       .select()
       .single();
 

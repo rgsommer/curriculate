@@ -41,6 +41,9 @@ export async function GET(req: Request) {
   const now = new Date();
   const year = now.getUTCFullYear();
   const today = mmdd(now);
+  const qs = new URL(req.url).searchParams;
+  const manual = qs.get("campaign"); // "school" | "xmas" → force-send now (auth'd)
+  const preview = qs.get("preview") === "1"; // render + count, don't send
 
   // 4 weeks (28 days) before each anchor date.
   const fourWeeksBefore = (m: number, d: number) => {
@@ -56,12 +59,34 @@ export async function GET(req: Request) {
   const xmasPromo = fourWeeksBefore(12, 25);
 
   let campaign: "school" | "xmas" | null = null;
-  if (today === schoolPromo) campaign = "school";
+  if (manual === "school" || manual === "xmas") campaign = manual;
+  else if (today === schoolPromo) campaign = "school";
   else if (today === xmasPromo) campaign = "xmas";
   if (!campaign) {
     return NextResponse.json({ ok: true, sent: 0, today, schoolPromo, xmasPromo });
   }
   const campaignId = `${campaign}-${year}`;
+
+  // Preview: render the email for a sample link, list how many would receive it.
+  if (preview) {
+    const { data: prefs } = await admin
+      .from("campfire_referrers")
+      .select("code", { count: "exact", head: false })
+      .eq("active", true);
+    const sample = referralPromoEmail({
+      name: "there",
+      link: `${site}/campfirelive?ref=YOURCODE`,
+      campaign,
+    });
+    return NextResponse.json({
+      ok: true,
+      preview: true,
+      campaign: campaignId,
+      wouldSendTo: (prefs ?? []).length,
+      subject: sample.subject,
+      text: sample.text,
+    });
+  }
 
   const { data: refs } = await admin
     .from("campfire_referrers")

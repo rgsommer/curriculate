@@ -3,11 +3,23 @@
 import { AuthProvider, useAuth } from "@/lib/campfire/AuthProvider";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import GuestUpgrade from "./GuestUpgrade";
 
 function Shell({ children }: { children: React.ReactNode }) {
   const { user, profile, isTrialActive, trialDaysLeft, signOut, loading } = useAuth();
   const pathname = usePathname();
+
+  // Remember a referral code from the link (?ref=CODE) so a group created later is
+  // attributed to that partner.
+  useEffect(() => {
+    try {
+      const ref = new URLSearchParams(window.location.search).get("ref");
+      if (ref) localStorage.setItem("campfire_ref", ref.slice(0, 40));
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   // Auth pages don't need the shell
   if (pathname.startsWith("/campfirelive/auth") || pathname.startsWith("/campfirelive/join")) {
