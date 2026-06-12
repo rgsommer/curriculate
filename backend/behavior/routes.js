@@ -1393,17 +1393,25 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         },
       });
     } else {
-      for (const inc of createdIncidents) {
-        const others = priorIncidents.filter((p) => String(p._id) !== String(inc._id));
-        const decision = evaluateIncident({
-          newIncident: inc,
-          priorIncidents: others,
-          config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
-          student,
-        });
-        if (decision.shouldNotify) {
-          notice = await fireNotice({ req, student, config, decision });
-          break; // one notice per submission; counter reset handled in fireNotice
+      // Don't stack a second notice while one is still awaiting send: its strikes
+      // aren't consumed until it goes home, so a fresh evaluation would re-fire.
+      const pending = await BehaviorNotice.exists({
+        schoolId: req.schoolId, studentId: student._id,
+        reason: { $ne: "positive" }, status: { $in: ["queued", "failed"] },
+      });
+      if (!pending) {
+        for (const inc of createdIncidents) {
+          const others = priorIncidents.filter((p) => String(p._id) !== String(inc._id));
+          const decision = evaluateIncident({
+            newIncident: inc,
+            priorIncidents: others,
+            config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
+            student,
+          });
+          if (decision.shouldNotify) {
+            notice = await fireNotice({ req, student, config, decision });
+            break; // one notice per submission; strikes are consumed on send
+          }
         }
       }
     }
@@ -1421,7 +1429,9 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     // teacher name so the teacher sees who logged each one.
     let triggerRaw;
     if (notice) {
-      triggerRaw = await BehaviorIncident.find({ studentId: student._id, countedInNoticeId: notice._id })
+      // The incidents that fed this notice — by its triggering set, since strikes
+      // aren't marked counted until the notice actually sends.
+      triggerRaw = await BehaviorIncident.find({ _id: { $in: notice.triggeringIncidentIds || [] } })
         .sort({ timestamp: 1 })
         .lean();
     } else {
@@ -1514,7 +1524,15 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         student,
       });
       let notice = null;
-      if (decision.shouldNotify) notice = await fireNotice({ req, student, config, decision });
+      if (decision.shouldNotify) {
+        // Skip if a notice for this student is already awaiting send (its strikes
+        // aren't consumed until it goes home).
+        const pending = await BehaviorNotice.exists({
+          schoolId: req.schoolId, studentId: student._id,
+          reason: { $ne: "positive" }, status: { $in: ["queued", "failed"] },
+        });
+        if (!pending) notice = await fireNotice({ req, student, config, decision });
+      }
 
       // Positive note home if this batch behaviour is a positive and the student
       // has now accumulated enough.
@@ -1708,13 +1726,10 @@ async function fireNotice({ req, student, config, decision }) {
     contextIncidents: contributing, triggeringIncidentIds: contribIds,
   });
 
-  await BehaviorIncident.updateMany(
-    { _id: { $in: contribIds }, countedInNoticeId: null },
-    { $set: { countedInNoticeId: notice._id } }
-  );
-  const counter = { $set: { lastNoticeAt: new Date() }, $inc: { noticesHomeCount: 1 } };
-  if (decision.reason === "threshold") counter.$set.thresholdResetAt = new Date();
-  await BehaviorStudent.updateOne({ _id: student._id }, counter);
+  // NB: the student's strikes are NOT consumed here. They are consumed when the
+  // notice actually goes home (see dispatchNotice), so a queued/edited/cancelled
+  // notice never resets a student before a parent is told. A pending notice
+  // blocks a second one from stacking (guarded at the trigger-evaluation sites).
 
   await createFollowups({
     schoolId: req.schoolId, student, config, contributingIncidents: contributing,
@@ -1784,7 +1799,7 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
       notice.renderedText = parts.join("\n\n");
       await notice.save();
     }
-    const result = await dispatchNotice(notice._id); // re-attempts delivery (e.g. after fixing Edsby)
+    const result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
     await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
     res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
   } catch (err) {

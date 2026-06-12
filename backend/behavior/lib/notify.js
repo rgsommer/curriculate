@@ -8,6 +8,7 @@
 import cron from "node-cron";
 import BehaviorNotice from "../models/BehaviorNotice.js";
 import BehaviorStudent from "../models/BehaviorStudent.js";
+import BehaviorIncident from "../models/BehaviorIncident.js";
 import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
 import { EmailProvider } from "./providers/EmailProvider.js";
@@ -57,11 +58,26 @@ export async function sendWithFailover({ recipient, channels, subject, body, htm
  * Dispatch a queued notice: send to all recipients, persist outcomes, audit.
  * Skips if the notice was cancelled in its cancellable window.
  */
-export async function dispatchNotice(noticeId, { providers } = {}) {
+export async function dispatchNotice(noticeId, { providers, force = false } = {}) {
   const notice = await BehaviorNotice.findById(noticeId);
   if (!notice) return { ok: false, error: "notice not found" };
   if (notice.status === "cancelled") return { ok: false, error: "cancelled" };
   if (notice.status === "sent") return { ok: true, alreadySent: true };
+
+  // Editing a queued note pushes its cancelUntil out (the teacher is still
+  // working on it). The eager per-notice timer must honour that, or it would
+  // send the pre-edit wording. A manual "Send now" passes force to send at once.
+  // The minute-by-minute sweeper only enqueues notices whose window has already
+  // passed, so it never trips this. (1s grace absorbs timer jitter.)
+  if (!force && notice.autoDispatch && notice.cancelUntil && notice.cancelUntil.getTime() - Date.now() > 1000) {
+    const ms = notice.cancelUntil.getTime() - Date.now();
+    setTimeout(() => {
+      dispatchNotice(noticeId, { providers }).catch((err) =>
+        console.error("[behavior/notify] deferred dispatch failed:", err?.message || err)
+      );
+    }, ms).unref?.();
+    return { ok: true, deferred: true };
+  }
 
   const student = await BehaviorStudent.findById(notice.studentId).lean();
 
@@ -132,6 +148,31 @@ export async function dispatchNotice(noticeId, { providers } = {}) {
   notice.status = anyOk ? "sent" : "failed";
   notice.sentAt = anyOk ? new Date() : null;
   await notice.save();
+
+  // Consume the strikes this DISCIPLINARY notice covered — but only now that it
+  // has actually gone home. Marking the contributing incidents counted (which
+  // zeroes the student's active strike total), advancing the notice counter, and
+  // starting a fresh threshold window all happen here, NOT at queue time, so a
+  // notice that is edited, deferred, or cancelled never resets a student early.
+  // Gated on the incidents still being uncounted, which makes it: (a) idempotent
+  // — a re-dispatch finds them already counted and does nothing; and (b) safe for
+  // notices created under the old "reset at queue" model — their incidents are
+  // already counted, so this skips and never double-increments the counter.
+  if (anyOk && notice.reason !== "positive") {
+    const ids = notice.triggeringIncidentIds || [];
+    const uncounted = ids.length
+      ? await BehaviorIncident.countDocuments({ _id: { $in: ids }, countedInNoticeId: null })
+      : 0;
+    if (uncounted > 0) {
+      await BehaviorIncident.updateMany(
+        { _id: { $in: ids }, countedInNoticeId: null },
+        { $set: { countedInNoticeId: notice._id } }
+      );
+      const upd = { $inc: { noticesHomeCount: 1 }, $set: { lastNoticeAt: new Date() } };
+      if (notice.reason === "threshold") upd.$set.thresholdResetAt = new Date();
+      await BehaviorStudent.updateOne({ _id: notice.studentId }, upd);
+    }
+  }
 
   await BehaviorAuditLog.create({
     schoolId: notice.schoolId,
