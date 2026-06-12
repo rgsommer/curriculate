@@ -53,14 +53,24 @@ export async function POST(req: Request) {
       );
     }
 
+    // The contributor covers the card-processing fee, so the recipient gets the
+    // FULL amount they chose. Gross up the Stripe charge so that, after Stripe's
+    // 2.9% + $0.30, the platform nets the gift amount and funds the card for it.
+    const giftCents = Math.round(amountCents); // counts toward the pool / gift card
+    const FEE_PCT = Number(process.env.STRIPE_FEE_PCT ?? "2.9") / 100;
+    const FEE_FIXED = Number(process.env.STRIPE_FEE_FIXED_CENTS ?? "30");
+    const chargeCents = Math.ceil((giftCents + FEE_FIXED) / (1 - FEE_PCT));
+    const feeCents = chargeCents - giftCents;
+
     // Record the pending contribution first so the webhook has a row to confirm.
+    // amount_cents is the GIFT amount (what the recipient receives).
     const { data: contribution, error: cErr } = await admin
       .from("campfire_gift_contributions")
       .insert({
         engagement_id: engagementId,
         user_id: userId,
         contributor_name: contributorName,
-        amount_cents: Math.round(amountCents),
+        amount_cents: giftCents,
         status: "pending",
       })
       .select("id")
@@ -82,10 +92,12 @@ export async function POST(req: Request) {
           quantity: 1,
           price_data: {
             currency: "usd",
-            unit_amount: Math.round(amountCents),
+            unit_amount: chargeCents,
             product_data: {
               name: `Group gift — "${eng.title}"`,
-              description: "Your chip-in toward the group gift card.",
+              description: `$${(giftCents / 100).toFixed(2)} to the gift + $${(
+                feeCents / 100
+              ).toFixed(2)} processing, so the recipient gets the full amount.`,
             },
           },
         },

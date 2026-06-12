@@ -4137,7 +4137,7 @@ export default function EngagementDetailPage() {
               <p className="mt-2 text-[11px] text-slate-400">
                 {chippingIn
                   ? "Opening secure checkout…"
-                  : "Charged now; refunded if the card is canceled before it opens."}
+                  : "A small card-processing fee is added on top so the recipient gets the full amount. Charged now; refunded if the card is canceled before it opens."}
               </p>
             </>
           )}
