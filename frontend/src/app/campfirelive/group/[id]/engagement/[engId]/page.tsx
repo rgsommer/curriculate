@@ -531,7 +531,12 @@ export default function EngagementDetailPage() {
   // Emoji for the card: 🎂 for a real birthday, the preset/🎉 for a celebration.
   const cardEmoji = engagementIcon(engagement);
   // What to call the recipient when nobody's named: avoid "birthday" for celebrations.
-  const recipientNoun = isCelebrationCard ? "the guest of honor" : "the birthday person";
+  const recipientNoun =
+    cardOccasion === "Wedding"
+      ? "the happy couple"
+      : isCelebrationCard
+      ? "the guest of honor"
+      : "the birthday person";
   // The anchor-year field: only a real birthday is a "Birth year". Celebrations get an
   // optional "Start year" (e.g. start of employment → years of service); preset holidays
   // (Mother's/Father's Day) don't use a year at all.

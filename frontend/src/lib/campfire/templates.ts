@@ -19,7 +19,8 @@ export interface EngagementTemplate {
     | "mothers_day"
     | "fathers_day"
     | "custom"
-    | "once";
+    | "once"
+    | "wedding";
   onceLabel?: string;
   // Sign-up templates: pre-filled claimable slots + optional party type.
   slots?: { label: string; capacity: number }[];
@@ -274,6 +275,16 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
           "A surprise Christmas card the group signs for someone special — opens on the day. Add a group gift to send a gift card together.",
         occasion: "once",
         onceLabel: "Christmas",
+        reveal: "sealed",
+      },
+      {
+        id: "wedding-card",
+        name: "Wedding Card 💒",
+        type: "birthday",
+        title: "Wishing you every happiness! 💒",
+        description:
+          "A surprise card the group signs for a couple's wedding — perfect for coworkers and friends, especially anyone who can't make it. Notes stay hidden until the wedding day. Add a group gift so everyone can chip in together, attending or not.",
+        occasion: "wedding",
         reveal: "sealed",
       },
       {

@@ -131,7 +131,13 @@ export default function NewEngagementPage() {
   // dates that repeat yearly) and the floating holidays. A "once" card is a one-off
   // celebration (Retirement, Graduation, Farewell…) — fixed date, NO recurrence.
   const [occasion, setOccasion] = useState<
-    "birthday" | "anniversary" | "mothers_day" | "fathers_day" | "custom" | "once"
+    | "birthday"
+    | "anniversary"
+    | "mothers_day"
+    | "fathers_day"
+    | "custom"
+    | "once"
+    | "wedding"
   >("birthday");
   // Free-text name for a one-off celebration (e.g. "Retirement").
   const [onceLabel, setOnceLabel] = useState("");
@@ -438,7 +444,10 @@ export default function NewEngagementPage() {
         occasion === "custom");
     const isFixedDateCard =
       isBirthday &&
-      (occasion === "birthday" || occasion === "anniversary" || occasion === "once");
+      (occasion === "birthday" ||
+        occasion === "anniversary" ||
+        occasion === "once" ||
+        occasion === "wedding");
     // A floating "Nth weekday" pattern, from a holiday card OR a general yearly_nth pick.
     const nthPattern: NthWeekday | null = isNthCard
       ? occasion === "custom"
@@ -454,6 +463,8 @@ export default function NewEngagementPage() {
       setError(
         occasion === "anniversary"
           ? "Set the anniversary date — that's the day it reveals."
+          : occasion === "wedding"
+          ? "Set the wedding date — that's the day it reveals."
           : occasion === "once"
           ? "Set the date — that's the day it reveals."
           : "Set the birthday — that's the day it reveals."
@@ -579,6 +590,8 @@ export default function NewEngagementPage() {
       }
     } else if (occasion === "anniversary") {
       config.occasion = "Anniversary";
+    } else if (occasion === "wedding") {
+      config.occasion = "Wedding";
     } else if (occasion === "once") {
       // The free-text name (Retirement, etc.) — also drives the 🎉 icon + copy.
       config.occasion = onceLabel.trim() || "Celebration";
@@ -629,7 +642,7 @@ export default function NewEngagementPage() {
       // Every card occasion repeats yearly (birthday, anniversary, Mother's/Father's
       // Day, custom holiday) EXCEPT a one-time card, which never recurs.
       recurrence_rule: isBirthday
-        ? occasion === "once"
+        ? occasion === "once" || occasion === "wedding"
           ? undefined
           : "yearly"
         : recurrence === "yearly_nth"
@@ -1454,6 +1467,7 @@ export default function NewEngagementPage() {
                     [
                       { value: "birthday", label: "🎂 Birthday" },
                       { value: "anniversary", label: "💍 Anniversary" },
+                      { value: "wedding", label: "💒 Wedding" },
                       { value: "once", label: "🎉 One-time" },
                       { value: "mothers_day", label: "💐 Mother's Day" },
                       { value: "fathers_day", label: "👔 Father's Day" },
@@ -1472,6 +1486,11 @@ export default function NewEngagementPage() {
                           setNthMonth(p.nth.month);
                           // Swap a blank or leftover-birthday default title for the preset.
                           if (!title.trim() || title.includes("{age}")) setTitle(p.titleHint);
+                        }
+                        // Wedding: friendly default title; great for a chip-in gift.
+                        if (o.value === "wedding") {
+                          if (!title.trim() || title.includes("{age}"))
+                            setTitle("Wishing you every happiness! 💒");
                         }
                       }}
                       className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
@@ -1509,6 +1528,8 @@ export default function NewEngagementPage() {
                   <>
                     {occasion === "anniversary"
                       ? "💍 Anniversary"
+                      : occasion === "wedding"
+                      ? "💒 Wedding day — reveals then"
                       : occasion === "once"
                       ? "🎉 Reveals on this day"
                       : "🎂 Birthday — reveals on this day"}{" "}
@@ -1537,7 +1558,7 @@ export default function NewEngagementPage() {
               {selectedType === "birthday" && (
                 <div className="mt-2 space-y-2 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
                   <p className="text-xs text-slate-600">
-                    {occasion === "once" ? (
+                    {occasion === "once" || occasion === "wedding" ? (
                       <>
                         A <span className="font-semibold">one-time</span> card — it
                         won&apos;t repeat.
