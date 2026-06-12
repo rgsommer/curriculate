@@ -1093,7 +1093,7 @@ export default function NewEngagementPage() {
                 </label>
                 <p className="text-xs text-slate-500 mb-2">
                   No need to list everything — we&apos;ll suggest the rest as people sign
-                  up. Just add any must-haves (e.g. Wings, Beer) and how many you need.
+                  up. Just add any must-haves (e.g. Wings, Chips) and how many you need.
                 </p>
                 {signupSlots.map((s, i) => (
                   <div key={i} className="flex gap-2 mb-2">
