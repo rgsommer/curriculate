@@ -23,6 +23,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const engagementId = typeof body?.engagementId === "string" ? body.engagementId : "";
     const originIn = typeof body?.origin === "string" ? body.origin : "";
+    // Host re-send (e.g. the first send had a bad link) — bypass the once-only lock.
+    const force = body?.force === true;
     if (!engagementId) {
       return NextResponse.json({ error: "Missing engagement." }, { status: 400 });
     }
@@ -52,19 +54,27 @@ export async function POST(req: Request) {
     }
     const { admin } = auth;
 
-    if (eng.reveal_notified_at) {
+    if (!force && eng.reveal_notified_at) {
       return NextResponse.json({ ok: true, skipped: "already sent" });
     }
 
-    // Claim the lock: only the row update that flips null → now() wins.
-    const { data: claimed } = await admin
-      .from("engagements")
-      .update({ reveal_notified_at: new Date().toISOString() })
-      .eq("id", engagementId)
-      .is("reveal_notified_at", null)
-      .select("id");
-    if (!claimed || claimed.length === 0) {
-      return NextResponse.json({ ok: true, skipped: "already sent" });
+    if (force) {
+      // Re-send: just stamp the time; we're past the once-only guard on purpose.
+      await admin
+        .from("engagements")
+        .update({ reveal_notified_at: new Date().toISOString() })
+        .eq("id", engagementId);
+    } else {
+      // Claim the lock: only the row update that flips null → now() wins.
+      const { data: claimed } = await admin
+        .from("engagements")
+        .update({ reveal_notified_at: new Date().toISOString() })
+        .eq("id", engagementId)
+        .is("reveal_notified_at", null)
+        .select("id");
+      if (!claimed || claimed.length === 0) {
+        return NextResponse.json({ ok: true, skipped: "already sent" });
+      }
     }
 
     const emails = await getGroupMemberEmails(admin, eng.group_id);

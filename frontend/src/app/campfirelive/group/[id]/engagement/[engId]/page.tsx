@@ -1210,6 +1210,38 @@ export default function EngagementDetailPage() {
     if (error) alert("Couldn't update: " + error);
   };
 
+  // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
+  const [resendingReveal, setResendingReveal] = useState(false);
+  const resendReveal = async () => {
+    if (resendingReveal || !session) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Re-send the reveal email to everyone in the group?")
+    )
+      return;
+    setResendingReveal(true);
+    try {
+      const res = await fetch("/api/campfire/engagement/notify-reveal", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          engagementId,
+          origin: window.location.origin,
+          force: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data?.error || "Couldn't re-send.");
+      else alert(`Reveal email re-sent${data?.sent ? ` to ${data.sent}` : ""}.`);
+    } catch {
+      alert("Couldn't re-send.");
+    }
+    setResendingReveal(false);
+  };
+
   // ── Submit handlers ──
 
   // Save a response (first time or an edit) and close edit mode on success.
@@ -4332,7 +4364,12 @@ export default function EngagementDetailPage() {
           <img
             src={engagement.cover_image_url}
             alt=""
-            className="w-full h-40 sm:h-52 object-contain bg-slate-100"
+            className={
+              isBirthdayCard && isRevealed
+                ? // A revealed card reads like a card — ~60% wide, centered.
+                  "mx-auto block w-full max-h-96 bg-white object-contain py-3 sm:w-3/5"
+                : "w-full h-40 sm:h-52 object-contain bg-slate-100"
+            }
           />
         )}
         <div className="p-4 sm:p-6">
@@ -5314,6 +5351,18 @@ export default function EngagementDetailPage() {
             >
               ↩️ Un-reveal (re-seal)
             </button>
+          </div>
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <button
+              onClick={resendReveal}
+              disabled={resendingReveal}
+              className="text-xs font-medium text-sky-600 underline hover:text-sky-700 disabled:opacity-50"
+            >
+              {resendingReveal ? "Sending…" : "📨 Re-send the reveal email to everyone"}
+            </button>
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Use this if an earlier email went out with a broken link.
+            </p>
           </div>
         </div>
       )}
