@@ -171,6 +171,7 @@ export interface Engagement {
   gift_recipient_name?: string | null;
   gift_currency?: string; // ISO code (lowercase), e.g. "usd" | "cad"
   gift_issued_at?: string | null;
+  gift_initiated_by?: string | null; // member who started the chip-in (if not the host)
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   paused?: boolean; // host paused it: no emails go out + cron skips it until resumed
   // Joined: the originator's display name (for "Name's Type" headers)

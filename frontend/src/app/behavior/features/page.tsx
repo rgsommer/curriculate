@@ -54,8 +54,8 @@ const FEATURES = [
     body: "A Students tab and dashboard search open any student's full cross-teacher history — strikes, every incident, and every notice home — in one tap.",
   },
   {
-    title: "Students to watch",
-    body: "The dashboard surfaces anyone at — or one incident away from — the trigger, so the next strike doesn't catch you by surprise. Tap straight through to their record.",
+    title: "Students to encourage",
+    body: "The dashboard surfaces anyone at — or one incident away from — the trigger: a prompt to catch them doing well or check in before the next strike, while the trend can still turn around. Tap straight through to their record.",
   },
   {
     title: "Who needs attention (admin)",

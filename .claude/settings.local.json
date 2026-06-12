@@ -316,7 +316,23 @@
       "Bash(grep -nA20 'taskType: \"make-and-snap\"' student-app/src/demoTasks.js)",
       "Bash(grep -nA15 'taskType: \"mystery-clues\"' student-app/src/demoTasks.js)",
       "Bash(grep -n \"<MakeAndSnapTask\\\\|MakeAndSnapTask$\\\\|/MakeAndSnap\" student-app/src/components/tasks/TaskRunner.jsx)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(awk -F: '$1>16200 && $1<16700')",
+      "Bash(awk -F: '$1>16200 && $1<16800')",
+      "Bash(grep -n \"return \\\\`\\\\|return \\\\\"\\\\\\\\\\\\\\\\n\\\\\"\\\\.\\\\|return \\\\[\\\\|return commonVideoRules\\\\|return prompt\\\\|^}\\\\$\" backend/index.js)",
+      "Bash(awk -F: '$1>17520 && $1<17800')",
+      "Bash(awk -F: '$1>17000 && $1<17400')",
+      "Bash(awk -F: '$1>17200 && $1<17500')",
+      "Bash(grep -n \"pubResp\\\\|publishResult\\\\|JSON.stringify\\({ payload\\\\|resultsUrl, {\" frontend/src/app/grading/VideoGrading.jsx)",
+      "Bash(grep -n \"students.map\\(\\(s, i\\) => \\\\`  \\\\${i + 1}\\\\.\" backend/index.js)",
+      "Bash(awk 'NR>=16898 && /^}\\\\\\)\\\\;/ {print NR; exit}' backend/index.js)",
+      "Bash(awk 'NR>=17382 && /^}\\\\\\)\\\\;/ {print NR; exit}' backend/index.js)",
+      "Bash(awk -F: '$1>17440 && $1<17700')",
+      "Bash(grep -n 'fs.mkdtempSync\\(path.join\\(os.tmpdir\\(\\), \"audio-grade-\"\\\\|\"Audio grading returned invalid\\\\|\"Audio grading failed:\"\\\\|return res.json\\({$\\\\|return res.json\\({\\\\s*\\\\.\\\\.\\\\.\\\\|finally {$' backend/index.js)",
+      "Bash(awk -F: '$1>17470 && $1<17750')",
+      "Bash(grep -n \"meta:\\\\\\\\s*{\\\\\\\\|meta: {\\\\\\\\|studentId:\\\\\\\\|edsbyId:\\\\\\\\|payload, meta\\\\|/results\\\\b\\\\|resultsCreateUrl\" frontend/src/app/grading/page.jsx)",
+      "Bash(node --check backend/routes/studentProgress.js)",
+      "Bash(awk -F: '$1>17460 && $1<17700')"
     ]
   }
 }

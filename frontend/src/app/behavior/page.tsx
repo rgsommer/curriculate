@@ -315,10 +315,10 @@ function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
 
   return (
     <Card>
-      <h2 className="font-semibold">Students to watch</h2>
+      <h2 className="font-semibold">Students to encourage</h2>
       <p className="mt-0.5 text-xs text-slate-500">
-        At or one away from the {trigger}-strike trigger (next incident may notify home).
-        {fadeDays ? ` Strikes fade after ${fadeDays} days.` : ""}
+        At or one away from the {trigger}-strike trigger — a good moment for a positive word or a check-in before the next incident.
+        {fadeDays ? ` Strikes fade after ${fadeDays} days, so the trend can still turn around.` : ""}
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((s) => (

@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 
@@ -170,6 +170,14 @@ export default function EngagementDetailPage() {
     contributors: number;
   } | null>(null);
   const [chippingIn, setChippingIn] = useState(false);
+  // Member-initiated gift on a Sign-up: start a chip-in for one guest.
+  const [showStartGift, setShowStartGift] = useState(false);
+  const [startGiftName, setStartGiftName] = useState("");
+  const [startGiftEmail, setStartGiftEmail] = useState("");
+  const [startGiftCurrency, setStartGiftCurrency] = useState("usd");
+  const [startingGift, setStartingGift] = useState(false);
+  const [sendingGift, setSendingGift] = useState(false);
+  useEffect(() => setStartGiftCurrency(localeGiftCurrency()), []);
   const [signupBusy, setSignupBusy] = useState(false);
   const [signupSuggestions, setSignupSuggestions] = useState<
     { label: string; capacity: number }[]
@@ -535,6 +543,56 @@ export default function EngagementDetailPage() {
       alert("Couldn't start checkout.");
       setChippingIn(false);
     }
+  };
+
+  // Any group member can start a group chip-in (gift) for one guest on this engagement.
+  const startGift = async () => {
+    if (startingGift) return;
+    if (!startGiftEmail.trim()) {
+      alert("Add the recipient's email — that's where the gift card is sent.");
+      return;
+    }
+    setStartingGift(true);
+    const { error } = await supabase.rpc("campfire_start_gift", {
+      _eid: engagementId,
+      _email: startGiftEmail.trim(),
+      _name: startGiftName.trim() || null,
+      _currency: startGiftCurrency,
+    });
+    setStartingGift(false);
+    if (error) {
+      alert("Couldn't start the chip-in: " + error.message);
+      return;
+    }
+    setShowStartGift(false);
+    refresh();
+  };
+
+  // Host or initiator sends the pooled gift now (a Sign-up never auto-reveals).
+  const sendGift = async () => {
+    if (sendingGift || !session) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Send the gift card to the recipient now for the amount raised?")
+    )
+      return;
+    setSendingGift(true);
+    try {
+      const res = await fetch("/api/campfire/gift/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data?.error || "Couldn't send the gift.");
+      else refresh();
+    } catch {
+      alert("Couldn't send the gift.");
+    }
+    setSendingGift(false);
   };
 
   // Human description of WHEN this will reveal — keeps the waiting copy honest.
@@ -2148,6 +2206,68 @@ export default function EngagementDetailPage() {
                   ))}
                 </div>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* Anyone can start a group chip-in toward a gift for one guest */}
+        {open && !engagement.gift_enabled && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            {showStartGift ? (
+              <div className="space-y-2 rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                <div className="text-xs font-medium text-slate-700">
+                  🎁 Chip in for a gift — who&apos;s it for?
+                </div>
+                <input
+                  type="email"
+                  value={startGiftEmail}
+                  onChange={(e) => setStartGiftEmail(e.target.value)}
+                  placeholder="Recipient's email (where the gift card is sent)"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={startGiftName}
+                    onChange={(e) => setStartGiftName(e.target.value)}
+                    placeholder="Their name (optional)"
+                    className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+                  />
+                  <select
+                    value={startGiftCurrency}
+                    onChange={(e) => setStartGiftCurrency(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-2 py-2 text-sm outline-none focus:border-orange-500"
+                  >
+                    {GIFT_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={startGift}
+                    disabled={startingGift}
+                    className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {startingGift ? "Starting…" : "Start chip-in"}
+                  </button>
+                  <button
+                    onClick={() => setShowStartGift(false)}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowStartGift(true)}
+                className="rounded-full border border-orange-300 bg-orange-50 px-3 py-1.5 text-xs font-semibold text-orange-700 hover:bg-orange-100"
+              >
+                🎁 Start a group chip-in for someone
+              </button>
             )}
           </div>
         )}
@@ -4418,6 +4538,25 @@ export default function EngagementDetailPage() {
                   ? "Opening secure checkout…"
                   : "A small card-processing fee is added on top so the recipient gets the full amount. Charged now; refunded if the card is canceled before it opens."}
               </p>
+              {/* For a Sign-up there's no reveal — the host or whoever started the
+                  chip-in sends the pooled gift when everyone's chipped in. */}
+              {engagement.type === "signup" &&
+                (isCreator || engagement.gift_initiated_by === user?.id) &&
+                giftSummary &&
+                giftSummary.total_cents > 0 && (
+                  <button
+                    onClick={sendGift}
+                    disabled={sendingGift}
+                    className="mt-3 w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {sendingGift
+                      ? "Sending…"
+                      : `Send the gift now (${formatMoney(
+                          giftSummary.total_cents,
+                          engagement.gift_currency
+                        )}) →`}
+                  </button>
+                )}
             </>
           )}
         </div>
