@@ -4959,11 +4959,11 @@ export default function EngagementDetailPage() {
                 .getElementById("respond")
                 ?.scrollIntoView({ behavior: "smooth", block: "start" });
             }}
-            className="mb-6 flex items-center justify-between gap-3 rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-rose-50 px-5 py-4 shadow-sm transition hover:border-orange-400"
+            className="mb-6 flex items-center justify-between gap-3 rounded-2xl border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-cyan-50 px-5 py-4 shadow-sm transition hover:border-sky-400"
           >
             <div className="min-w-0">
               <div className="text-base font-extrabold text-slate-900">
-                👋 It&apos;s your turn
+                ✍️ Respond to this
               </div>
               <div className="truncate text-xs text-slate-600">
                 {lateResponseAllowed
@@ -4971,7 +4971,7 @@ export default function EngagementDetailPage() {
                   : `${meta?.label ?? "Activity"} · add your response below`}
               </div>
             </div>
-            <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white">
+            <span className="flex-shrink-0 rounded-full bg-sky-600 px-4 py-2 text-sm font-bold text-white">
               ✍️ Respond
             </span>
           </a>
@@ -5429,11 +5429,11 @@ export default function EngagementDetailPage() {
           (lateResponseAllowed && !hasResponded)) && (
         <div
           id="respond"
-          className="scroll-mt-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mb-6"
+          className="scroll-mt-4 rounded-2xl border-2 border-sky-200 bg-sky-50/40 p-6 shadow-sm mb-6"
         >
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-slate-900">
-              {editingResponse ? "Edit your response" : "Your Response"}
+            <h2 className="font-bold text-sky-900">
+              ✍️ {editingResponse ? "Edit your response" : "Your response"}
             </h2>
             {editingResponse && (
               <button
@@ -5496,7 +5496,7 @@ export default function EngagementDetailPage() {
           <div className="mb-6 -mt-2 text-center">
             <button
               onClick={startEditResponse}
-              className="text-xs font-medium text-slate-500 underline hover:text-orange-600"
+              className="text-xs font-medium text-sky-600 underline hover:text-sky-700"
             >
               ✏️ Edit my answer{!isRevealed ? " — you can still change it until the reveal" : ""}
             </button>
@@ -5662,31 +5662,33 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {/* ── Your turn: nudge the participant to start their own ── */}
+      {/* ── Start a NEW activity (distinct from responding to THIS one) ── */}
       {(hasResponded || isRevealed) && (
         <Link
           href={`/campfirelive/group/${groupId}/engagement/new`}
           className={`block rounded-2xl border-2 border-dashed p-5 text-center transition mb-6 ${
             iWon
               ? "border-amber-400 bg-amber-50 hover:bg-amber-100"
-              : "border-orange-300 bg-orange-50/60 hover:bg-orange-50"
+              : "border-indigo-300 bg-indigo-50/60 hover:bg-indigo-50"
           }`}
         >
-          <div className="text-2xl mb-1">{iWon ? "🏆" : "🔥"}</div>
+          <div className="mb-1 text-2xl">{iWon ? "🏆" : "✨"}</div>
           <div className="font-bold text-slate-900">
-            {iWon
-              ? "You won! Start the next engagement"
-              : isRevealed
-              ? "Your turn — start the next one"
-              : "While you wait, start your own"}
+            {iWon ? "You won! Start a new activity" : "Start a new activity"}
           </div>
-          <p className="text-sm text-slate-600 mt-0.5">
+          <p className="mt-0.5 text-sm text-slate-600">
             {iWon
               ? "Winner's privilege — pose the next one for the group. 🎉"
-              : "Pose a question, challenge, or check-in and keep the group going."}
+              : "A different poll, card, sign-up, or challenge — separate from this one."}
           </p>
-          <span className="inline-block mt-3 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-5 py-2 text-sm font-semibold text-white">
-            + Start an engagement
+          <span
+            className={`mt-3 inline-block rounded-full px-5 py-2 text-sm font-semibold text-white ${
+              iWon
+                ? "bg-gradient-to-r from-amber-500 to-orange-500"
+                : "bg-indigo-600"
+            }`}
+          >
+            + New activity
           </span>
         </Link>
       )}
