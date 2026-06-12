@@ -42,6 +42,25 @@ export async function POST(request: NextRequest) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+
+      // Group-gift contribution → mark it paid (the reveal cron issues the card).
+      if (session.metadata?.kind === "gift_contribution") {
+        const contributionId = session.metadata?.contribution_id;
+        if (contributionId) {
+          await supabaseAdmin
+            .from("campfire_gift_contributions")
+            .update({
+              status: "paid",
+              stripe_session_id: session.id,
+              stripe_payment_intent:
+                (session.payment_intent as string | null) ?? null,
+            })
+            .eq("id", contributionId);
+        }
+        break;
+      }
+
+      // Otherwise it's a premium subscription checkout.
       const userId = session.metadata?.user_id;
       const customerId = session.customer as string;
 

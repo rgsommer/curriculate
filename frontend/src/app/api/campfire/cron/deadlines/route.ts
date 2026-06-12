@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 import { createClient } from "@supabase/supabase-js";
+import { issueGiftCard, giftProviderConfigured } from "@/lib/campfire/gifts";
 import {
   getNonResponderEmails,
   getGroupMemberEmails,
@@ -445,5 +446,58 @@ export async function GET(req: Request) {
     notifiedReveals++;
   }
 
-  return NextResponse.json({ ok: true, revealed, nudged, opened, spawned, notifiedReveals });
+  // ── Group gifts: issue the gift card for any revealed, gift-enabled engagement
+  //    that hasn't been issued yet (covers both auto and manual reveals; the
+  //    external_id keeps it at-most-once even if a run overlaps). ──
+  let giftsIssued = 0;
+  if (giftProviderConfigured()) {
+    const { data: giftEngs } = await admin
+      .from("engagements")
+      .select("id, title, gift_recipient_email, gift_recipient_name")
+      .eq("gift_enabled", true)
+      .eq("status", "revealed")
+      .is("gift_issued_at", null)
+      .not("gift_recipient_email", "is", null);
+    for (const e of giftEngs ?? []) {
+      const { data: contribs } = await admin
+        .from("campfire_gift_contributions")
+        .select("amount_cents")
+        .eq("engagement_id", e.id)
+        .eq("status", "paid");
+      const totalCents = (contribs ?? []).reduce(
+        (a, c) => a + (c.amount_cents as number),
+        0
+      );
+      if (totalCents <= 0) continue;
+      const result = await issueGiftCard({
+        amountCents: totalCents,
+        recipientEmail: e.gift_recipient_email as string,
+        recipientName: (e.gift_recipient_name as string | null) ?? undefined,
+        note: `A group gift from everyone who signed "${e.title}" 🎉`,
+        idempotencyKey: e.id as string,
+      });
+      if (!result.ok) {
+        console.error(`Gift issue failed for ${e.id}:`, result.error);
+        continue;
+      }
+      await admin
+        .from("engagements")
+        .update({
+          gift_issued_at: new Date(now).toISOString(),
+          gift_order_id: result.orderId ?? null,
+        })
+        .eq("id", e.id);
+      giftsIssued++;
+    }
+  }
+
+  return NextResponse.json({
+    ok: true,
+    revealed,
+    nudged,
+    opened,
+    spawned,
+    notifiedReveals,
+    giftsIssued,
+  });
 }
