@@ -94,7 +94,7 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
-      {canLog && <StudentsToWatch />}
+      {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
 
       {housesOn && <HousesCard canLog={canLog} isAdmin={isAdmin} portalCode={me.config?.housePortalCode || ""} />}
 
@@ -294,7 +294,7 @@ function HousesCard({ canLog, isAdmin, portalCode }: { canLog: boolean; isAdmin:
   );
 }
 
-function StudentsToWatch() {
+function StudentsToWatch({ fadeDays }: { fadeDays?: number }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
 
@@ -316,7 +316,10 @@ function StudentsToWatch() {
   return (
     <Card>
       <h2 className="font-semibold">Students to watch</h2>
-      <p className="mt-0.5 text-xs text-slate-500">At or one away from the {trigger}-strike trigger (next incident may notify home).</p>
+      <p className="mt-0.5 text-xs text-slate-500">
+        At or one away from the {trigger}-strike trigger (next incident may notify home).
+        {fadeDays ? ` Strikes fade after ${fadeDays} days.` : ""}
+      </p>
       <ul className="mt-2 divide-y divide-slate-100">
         {rows.map((s) => (
           <li key={s._id}>
