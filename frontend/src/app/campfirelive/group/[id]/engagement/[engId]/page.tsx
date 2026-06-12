@@ -2355,10 +2355,6 @@ export default function EngagementDetailPage() {
     const totalClaimed = slots.reduce((a, _s, i) => a + claimantsOf(i).length, 0);
     // A Sign-up stays live (claimable) — it doesn't lock on a reveal.
     const open = engagement.status === "active" || engagement.status === "revealed";
-    // What's still needed: slots that aren't fully claimed yet.
-    const stillNeeded = slots
-      .map((s, i) => ({ s, i, left: Math.max(1, s.capacity) - claimantsOf(i).length }))
-      .filter((x) => x.left > 0);
     const partyWhen = (engagement.config?.partyWhen as string | undefined)?.trim();
     const partyWhere = (engagement.config?.partyWhere as string | undefined)?.trim();
     // RSVP — who's coming. Gated on a host flag (config.rsvp).
@@ -2414,6 +2410,80 @@ export default function EngagementDetailPage() {
         })
       );
     });
+
+    // Two columns: what's COMMITTED (claimed slots + free-text brings) and what's
+    // STILL NEEDED (slots with open capacity).
+    const committedRows: {
+      key: string;
+      label: string;
+      who: string;
+      mine: boolean;
+      slotIndex?: number;
+      extra?: string;
+    }[] = [];
+    slots.forEach((s, i) => {
+      claimantsOf(i).forEach((c) => {
+        committedRows.push({
+          key: `s${i}-${c.user_id}`,
+          label: s.label,
+          who: memberNameOf(c.user_id, c.profile?.display_name),
+          mine: !!user && c.user_id === user.id,
+          slotIndex: i,
+        });
+      });
+    });
+    extraItems.forEach((it, i) =>
+      committedRows.push({
+        key: `e${i}`,
+        label: it.label,
+        who: it.member,
+        mine: it.mine,
+        extra: it.label,
+      })
+    );
+    const neededRows = slots
+      .map((s, i) => ({
+        key: `n${i}`,
+        label: s.label,
+        i,
+        left: Math.max(1, s.capacity) - claimantsOf(i).length,
+        mine: myClaimSet.includes(i),
+      }))
+      .filter((x) => x.left > 0);
+
+    // Curated bring-ideas to prompt attendees — essentials (drinks, and tableware
+    // if disposables are wanted) plus crowd-pleasers — minus anything already on
+    // the list or being brought.
+    const covered = new Set(
+      [
+        ...slots.map((s) => s.label),
+        ...extraItems.map((e) => e.label),
+      ].map((l) => l.trim().toLowerCase())
+    );
+    const disposables = !!engagement.config?.disposables;
+    const essentials = [
+      "Drinks / juice",
+      "Water",
+      "Ice",
+      ...(disposables ? ["Cups", "Plates", "Napkins", "Cutlery"] : []),
+    ];
+    const niceToHave = [
+      "Chips & dip",
+      "Veggie tray",
+      "Fruit platter",
+      "Cheese & crackers",
+      "Cookies / dessert",
+      "Popcorn",
+      "Decorations",
+      "Music playlist",
+      "A game / activity",
+      "Serving spoons",
+      "Trash bags",
+    ];
+    const ideaFresh = (l: string) => !covered.has(l.trim().toLowerCase());
+    const essentialIdeas = essentials.filter(ideaFresh);
+    const niceIdeas = niceToHave.filter(ideaFresh);
+
     return (
       <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
@@ -2523,91 +2593,127 @@ export default function EngagementDetailPage() {
           </button>
         )}
 
-        <div className="space-y-2">
-          {slots.map((s, i) => {
-            const claimants = claimantsOf(i);
-            const cap = Math.max(1, s.capacity);
-            const mine = myClaimSet.includes(i);
-            const full = claimants.length >= cap;
-            return (
-              <div
-                key={i}
-                className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-900">
-                    {s.label}
-                  </div>
-                  <div className="truncate text-xs text-slate-500">
-                    {claimants.length}/{cap}
-                    {claimants.length > 0 &&
-                      " · " +
-                        claimants
-                          .map((c) =>
-                            memberNameOf(c.user_id, c.profile?.display_name)
-                          )
-                          .join(", ")}
-                  </div>
-                </div>
-                <button
-                  onClick={() => toggleClaim(i)}
-                  disabled={!open || signupBusy || (full && !mine)}
-                  className={`flex-shrink-0 rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-60 ${
-                    mine
-                      ? "bg-cyan-500 text-white hover:opacity-90"
-                      : full
-                      ? "bg-slate-100 text-slate-400"
-                      : "border border-cyan-300 bg-white text-cyan-700 hover:bg-cyan-50"
-                  }`}
+        <div className="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
+          {/* Committed — claimed slots + free-text brings */}
+          <div>
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
+              ✅ Committed ({committedRows.length})
+            </div>
+            <div className="space-y-1.5">
+              {committedRows.length === 0 && (
+                <div className="text-xs text-slate-400">Nothing yet — be the first!</div>
+              )}
+              {committedRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 px-3 py-2"
                 >
-                  {mine ? "✓ You — release" : full ? "Full" : "Claim"}
-                </button>
-              </div>
-            );
-          })}
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-slate-900">
+                      {row.label}
+                    </div>
+                    <div className="truncate text-xs text-slate-500">{row.who}</div>
+                  </div>
+                  {row.mine && open && (
+                    <button
+                      onClick={() =>
+                        row.extra !== undefined
+                          ? removeExtra(row.extra)
+                          : toggleClaim(row.slotIndex as number)
+                      }
+                      disabled={signupBusy}
+                      title="Remove"
+                      className="flex-shrink-0 text-slate-400 hover:text-rose-500 disabled:opacity-50"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Still needed — slots with open capacity */}
+          <div>
+            <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+              📝 Still needed ({neededRows.length})
+            </div>
+            <div className="space-y-1.5">
+              {neededRows.length === 0 && (
+                <div className="text-xs font-medium text-emerald-700">
+                  ✅ Everything&apos;s covered — thank you!
+                </div>
+              )}
+              {neededRows.map((row) => (
+                <div
+                  key={row.key}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50/40 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-slate-900">
+                      {row.label}
+                    </div>
+                    {row.left > 1 && (
+                      <div className="text-xs text-slate-500">{row.left} more needed</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => toggleClaim(row.i)}
+                    disabled={!open || signupBusy || row.mine}
+                    className="flex-shrink-0 rounded-full border border-cyan-300 bg-white px-3 py-1.5 text-xs font-bold text-cyan-700 hover:bg-cyan-50 disabled:opacity-50"
+                  >
+                    {row.mine ? "✓ You" : "Claim"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
 
-        {/* At-a-glance: what's still needed */}
-        {slots.length > 0 && (
-          <div className="mt-3 text-xs">
-            {stillNeeded.length > 0 ? (
-              <span className="text-slate-500">
-                <span className="font-semibold text-slate-700">Still needed:</span>{" "}
-                {stillNeeded
-                  .map((x) => x.s.label + (x.left > 1 ? ` (×${x.left})` : ""))
-                  .join(", ")}
-              </span>
-            ) : (
-              <span className="font-semibold text-emerald-700">
-                ✅ Everything&apos;s covered — thank you!
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Free-text items members are bringing on their own */}
-        {extraItems.length > 0 && (
-          <div className="mt-2 space-y-2">
-            {extraItems.map((it, i) => (
-              <div
-                key={`x-${i}`}
-                className="flex items-center justify-between gap-3 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-3 py-2.5"
-              >
-                <div className="min-w-0">
-                  <div className="text-sm font-medium text-slate-900">{it.label}</div>
-                  <div className="truncate text-xs text-slate-500">{it.member}</div>
+        {/* Bring-ideas to prompt attendees — tap to add what you'll bring */}
+        {open && (essentialIdeas.length > 0 || niceIdeas.length > 0) && (
+          <div className="mt-3 rounded-xl border border-cyan-100 bg-cyan-50/50 p-3">
+            <div className="mb-1.5 text-xs font-medium text-slate-600">
+              💡 Need ideas? Tap to add what you&apos;ll bring:
+            </div>
+            {essentialIdeas.length > 0 && (
+              <div className="mb-2">
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-rose-500">
+                  Essentials
                 </div>
-                {it.mine && open && (
-                  <button
-                    onClick={() => removeExtra(it.label)}
-                    disabled={signupBusy}
-                    className="flex-shrink-0 rounded-full bg-cyan-500 px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-60"
-                  >
-                    ✓ You — remove
-                  </button>
-                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {essentialIdeas.map((label) => (
+                    <button
+                      key={label}
+                      onClick={() => addExtra(label)}
+                      disabled={signupBusy}
+                      className="rounded-full border border-rose-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      + {label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
+            {niceIdeas.length > 0 && (
+              <div>
+                <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  Nice to have
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {niceIdeas.map((label) => (
+                    <button
+                      key={label}
+                      onClick={() => addExtra(label)}
+                      disabled={signupBusy}
+                      className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-cyan-50 disabled:opacity-50"
+                    >
+                      + {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
