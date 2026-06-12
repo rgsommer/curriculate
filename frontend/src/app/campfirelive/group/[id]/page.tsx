@@ -1293,8 +1293,14 @@ See you around the campfire! 🏕️`
                           ● Your turn
                         </span>
                       ))}
-                    {/* Group gift running total */}
-                    {eng.gift_enabled && (giftTotals[eng.id] ?? 0) > 0 && (
+                    {/* Group gift running total — hidden from the surprise recipient */}
+                    {eng.gift_enabled &&
+                      (giftTotals[eng.id] ?? 0) > 0 &&
+                      !(
+                        user &&
+                        ((eng.gift_hidden_from ?? []).includes(user.id) ||
+                          (eng.excluded_user_ids ?? []).includes(user.id))
+                      ) && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
                         🎁 {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)} chipped in
                       </span>

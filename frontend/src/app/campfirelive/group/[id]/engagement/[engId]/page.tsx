@@ -175,6 +175,7 @@ export default function EngagementDetailPage() {
   const [startGiftName, setStartGiftName] = useState("");
   const [startGiftEmail, setStartGiftEmail] = useState("");
   const [startGiftCurrency, setStartGiftCurrency] = useState("usd");
+  const [startGiftSurpriseUid, setStartGiftSurpriseUid] = useState(""); // hide from this member
   const [startingGift, setStartingGift] = useState(false);
   const [sendingGift, setSendingGift] = useState(false);
   useEffect(() => setStartGiftCurrency(localeGiftCurrency()), []);
@@ -515,6 +516,11 @@ export default function EngagementDetailPage() {
     ].join(", ") || recipientNoun;
   const isRecipient =
     !!user && (engagement.excluded_user_ids ?? []).includes(user.id);
+  // Hide the chip-in from the gift recipient so it stays a surprise — either the
+  // whole-engagement surprise target, or a Sign-up recipient flagged gift-only.
+  const isGiftHidden =
+    isRecipient ||
+    (!!user && (engagement.gift_hidden_from ?? []).includes(user.id));
 
   // Chip in toward the group gift — opens Stripe Checkout for the chosen amount.
   const chipIn = async (amountCents: number) => {
@@ -559,6 +565,7 @@ export default function EngagementDetailPage() {
       _email: startGiftEmail.trim(),
       _name: startGiftName.trim() || null,
       _currency: startGiftCurrency,
+      _surprise_uid: startGiftSurpriseUid || null,
     });
     setStartingGift(false);
     if (error) {
@@ -2341,6 +2348,37 @@ export default function EngagementDetailPage() {
                     ))}
                   </select>
                 </div>
+                {/* "All except" — keep it a surprise for a group member */}
+                {roster.filter((m) => m.user_id !== user?.id).length > 0 && (
+                  <div>
+                    <select
+                      value={startGiftSurpriseUid}
+                      onChange={(e) => {
+                        const uid = e.target.value;
+                        setStartGiftSurpriseUid(uid);
+                        // Prefill the name from the chosen member if it's empty.
+                        const m = roster.find((r) => r.user_id === uid);
+                        if (m && !startGiftName.trim()) setStartGiftName(m.name);
+                      }}
+                      className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm outline-none focus:border-orange-500"
+                    >
+                      <option value="">Surprise a group member? (optional)</option>
+                      {roster
+                        .filter((m) => m.user_id !== user?.id)
+                        .map((m) => (
+                          <option key={m.user_id} value={m.user_id}>
+                            Everyone except {m.name}
+                          </option>
+                        ))}
+                    </select>
+                    {startGiftSurpriseUid && (
+                      <p className="mt-1 text-[11px] text-orange-700">
+                        🤫 They won&apos;t see the chip-in — but can still join the
+                        sign-up.
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="flex gap-2">
                   <button
                     onClick={startGift}
@@ -4580,7 +4618,7 @@ export default function EngagementDetailPage() {
 
       {/* ── GROUP GIFT: chip in toward a gift card for the recipient (hidden from
             the recipient to keep it a surprise) ── */}
-      {engagement.gift_enabled && !isRecipient && (
+      {engagement.gift_enabled && !isGiftHidden && (
         <div className="mb-6 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">🎁 Group gift</h2>
