@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
+import { campfireSiteUrl } from "@/lib/campfire/serverInvites";
 
 // Lazy clients so a missing env var can't crash `next build`.
 function getStripe() {
@@ -130,12 +131,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Couldn't start the contribution." }, { status: 500 });
     }
 
-    const envSite = process.env.NEXT_PUBLIC_SITE_URL;
-    const site =
-      originIn ||
-      (envSite && /^https?:\/\//.test(envSite)
-        ? envSite.replace(/\/$/, "")
-        : "https://www.curriculate.net");
+    const site = originIn || campfireSiteUrl();
     const back = `${site}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
 
     const stripe = getStripe();

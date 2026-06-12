@@ -9,6 +9,7 @@ import {
   cardRevealEmail,
   campfireFrom,
   mailDefaults,
+  campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { resolveTitle, engagementIcon } from "@/lib/campfire/types";
 
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
 
     const base = (/^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
       ? originIn
-      : process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net"
+      : campfireSiteUrl()
     ).replace(/\/$/, "");
     const { data: group } = await admin
       .from("groups")

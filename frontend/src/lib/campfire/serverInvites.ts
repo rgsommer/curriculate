@@ -80,11 +80,21 @@ export async function authorizeGroupRequester(
   return { admin, requesterId: requester.id, role: membership.role };
 }
 
+// The public Campfire app URL. Deliberately NOT NEXT_PUBLIC_SITE_URL — in this
+// project that's pointed at the API/backend host (api.curriculate.net), which
+// yields dead links ("Cannot GET /campfirelive/..."). CAMPFIRE_PUBLIC_URL (a
+// runtime var) can override; otherwise the canonical site.
+export function campfireSiteUrl(): string {
+  return (
+    process.env.CAMPFIRE_PUBLIC_URL || "https://www.curriculate.net"
+  ).replace(/\/$/, "");
+}
+
 // Build the join link only from a verified curriculate origin (no injected links).
 export function buildJoinUrl(originIn: string, inviteCode: string) {
   const base = /^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
     ? originIn
-    : process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
+    : campfireSiteUrl();
   return `${base.replace(/\/$/, "")}/campfirelive/join/${inviteCode}`;
 }
 

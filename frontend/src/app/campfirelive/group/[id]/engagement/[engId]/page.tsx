@@ -186,6 +186,8 @@ export default function EngagementDetailPage() {
   >([]);
   const [suggesting, setSuggesting] = useState(false);
   const [extraInput, setExtraInput] = useState(""); // member "I'm bringing…" text
+  const [hostSlotLabel, setHostSlotLabel] = useState(""); // host: type a new list item
+  const [hostSlotCount, setHostSlotCount] = useState(1);
   useEffect(() => {
     if (!engagement?.gift_enabled || !engagementId) {
       setGiftSummary(null);
@@ -2359,6 +2361,46 @@ export default function EngagementDetailPage() {
             >
               {suggesting ? "Thinking…" : "✨ Suggest what's still needed"}
             </button>
+            {/* Host can also type their own item onto the claimable list */}
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                value={hostSlotLabel}
+                onChange={(e) => setHostSlotLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && hostSlotLabel.trim()) {
+                    e.preventDefault();
+                    addSignupSlot(hostSlotLabel.trim(), Math.max(1, hostSlotCount));
+                    setHostSlotLabel("");
+                    setHostSlotCount(1);
+                  }
+                }}
+                placeholder="Or add your own — e.g. Napkins"
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
+              />
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={hostSlotCount}
+                onChange={(e) => setHostSlotCount(parseInt(e.target.value || "1", 10))}
+                title="How many people can bring this"
+                className="w-14 rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-center outline-none focus:border-cyan-500"
+              />
+              <button
+                onClick={() => {
+                  const l = hostSlotLabel.trim();
+                  if (!l) return;
+                  addSignupSlot(l, Math.max(1, hostSlotCount));
+                  setHostSlotLabel("");
+                  setHostSlotCount(1);
+                }}
+                disabled={!hostSlotLabel.trim()}
+                className="flex-shrink-0 rounded-full bg-cyan-500 px-4 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-40"
+              >
+                Add
+              </button>
+            </div>
             {signupSuggestions.length > 0 && (
               <div className="mt-2">
                 <div className="mb-1 text-[11px] text-slate-500">

@@ -9,6 +9,7 @@ import {
   buildJoinUrl,
   mailDefaults,
   campfireFrom,
+  campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
 
@@ -53,7 +54,7 @@ export async function POST(req: Request) {
     }
     const { admin } = auth;
 
-    const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
+    const base = campfireSiteUrl();
     const from = campfireFrom();
     const engUrl = `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
     const engTitle = resolveTitle(

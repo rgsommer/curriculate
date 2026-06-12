@@ -15,6 +15,7 @@ import {
   inviteEmail,
   mailDefaults,
   campfireFrom,
+  campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, type NthWeekday } from "@/lib/campfire/types";
 
@@ -42,7 +43,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Not configured" }, { status: 500 });
   }
   const admin = createClient(url, serviceKey);
-  const base = process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
+  const base = campfireSiteUrl();
   const from = campfireFrom();
   const now = Date.now();
 

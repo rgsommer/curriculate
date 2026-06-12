@@ -7,6 +7,7 @@ import {
   newEngagementEmail,
   campfireFrom,
   mailDefaults,
+  campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
 
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
     const meta = ENGAGEMENT_TYPES[eng.type as keyof typeof ENGAGEMENT_TYPES];
     const base = (/^https:\/\/([a-z0-9-]+\.)?curriculate\.net$/.test(originIn)
       ? originIn
-      : process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net"
+      : campfireSiteUrl()
     ).replace(/\/$/, "");
     const engUrl = `${base}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
     const from = campfireFrom();
