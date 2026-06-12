@@ -331,6 +331,7 @@ export default function EngagementDetailPage() {
   // Media upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [resendingReveal, setResendingReveal] = useState(false);
 
   // Creator edit state
   const [editing, setEditing] = useState(false);
@@ -1211,7 +1212,6 @@ export default function EngagementDetailPage() {
   };
 
   // Host: re-send the reveal email (e.g. if a first send went out with a bad link).
-  const [resendingReveal, setResendingReveal] = useState(false);
   const resendReveal = async () => {
     if (resendingReveal || !session) return;
     if (
