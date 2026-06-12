@@ -156,6 +156,8 @@ export default function NewEngagementPage() {
   const [partyTheme, setPartyTheme] = useState(""); // e.g. "Traditional Thanksgiving"
   const [partyHeadcount, setPartyHeadcount] = useState("");
   const [partyDisposables, setPartyDisposables] = useState(false);
+  const [partyWhen, setPartyWhen] = useState(""); // when the party is (free text)
+  const [partyWhere, setPartyWhere] = useState(""); // where the party is
   const [truthPrompt, setTruthPrompt] = useState("");
   const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
@@ -549,6 +551,8 @@ export default function NewEngagementPage() {
       if (partyHeadcount.trim())
         config.headcount = Math.max(1, parseInt(partyHeadcount, 10) || 0);
       config.disposables = partyDisposables;
+      if (partyWhen.trim()) config.partyWhen = partyWhen.trim();
+      if (partyWhere.trim()) config.partyWhere = partyWhere.trim();
     }
 
     if (selectedType === "truth_or_dare") {
@@ -1054,6 +1058,22 @@ export default function NewEngagementPage() {
                     className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
                   />
                 )}
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <input
+                    type="text"
+                    value={partyWhen}
+                    onChange={(e) => setPartyWhen(e.target.value)}
+                    placeholder="When? e.g. Fri Jun 20, 6pm"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
+                  />
+                  <input
+                    type="text"
+                    value={partyWhere}
+                    onChange={(e) => setPartyWhere(e.target.value)}
+                    placeholder="Where? e.g. Room 12 / 5 Oak St"
+                    className="min-w-0 flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
+                  />
+                </div>
                 <div className="flex flex-wrap items-center gap-3 text-sm">
                   <label className="flex items-center gap-1.5 text-slate-600">
                     Headcount

@@ -521,6 +521,10 @@ export default function EngagementDetailPage() {
   const isGiftHidden =
     isRecipient ||
     (!!user && (engagement.gift_hidden_from ?? []).includes(user.id));
+  // Only whoever started the chip-in (or the host) sees the running total — others
+  // can chip in without seeing how much has been raised.
+  const canSeeGiftTotal =
+    isCreator || (!!user && engagement.gift_initiated_by === user.id);
 
   // Chip in toward the group gift — opens Stripe Checkout for the chosen amount.
   const chipIn = async (amountCents: number) => {
@@ -2165,6 +2169,8 @@ export default function EngagementDetailPage() {
     const totalCap = slots.reduce((a, s) => a + Math.max(1, s.capacity), 0);
     const totalClaimed = slots.reduce((a, _s, i) => a + claimantsOf(i).length, 0);
     const open = engagement.status === "active";
+    const partyWhen = (engagement.config?.partyWhen as string | undefined)?.trim();
+    const partyWhere = (engagement.config?.partyWhere as string | undefined)?.trim();
     // Free-text items members said they're bringing (not tied to a slot).
     const extraItems: { label: string; member: string; mine: boolean }[] = [];
     responses.forEach((r) => {
@@ -2185,6 +2191,20 @@ export default function EngagementDetailPage() {
             {totalClaimed}/{totalCap} filled
           </span>
         </div>
+        {(partyWhen || partyWhere) && (
+          <div className="mb-3 flex flex-wrap gap-x-4 gap-y-1 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            {partyWhen && (
+              <span className="inline-flex items-center gap-1.5">
+                📅 <span className="font-medium">{partyWhen}</span>
+              </span>
+            )}
+            {partyWhere && (
+              <span className="inline-flex items-center gap-1.5">
+                📍 <span className="font-medium">{partyWhere}</span>
+              </span>
+            )}
+          </div>
+        )}
         <div className="space-y-2">
           {slots.map((s, i) => {
             const claimants = claimantsOf(i);
@@ -4622,7 +4642,7 @@ export default function EngagementDetailPage() {
         <div className="mb-6 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">🎁 Group gift</h2>
-            {giftSummary && giftSummary.contributors > 0 && (
+            {giftSummary && giftSummary.contributors > 0 && canSeeGiftTotal && (
               <span className="text-sm font-bold text-orange-700">
                 {formatMoney(giftSummary.total_cents, engagement.gift_currency)} from{" "}
                 {giftSummary.contributors}{" "}
