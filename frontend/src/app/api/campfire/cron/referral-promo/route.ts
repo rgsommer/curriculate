@@ -33,8 +33,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Not configured" }, { status: 500 });
   }
   const admin = createClient(url, serviceKey);
+  // The public Campfire app URL for the referral link. Deliberately NOT
+  // NEXT_PUBLIC_SITE_URL — that's pointed at the API/backend host in this project,
+  // which would produce dead links. CAMPFIRE_PUBLIC_URL (a runtime, non-public var)
+  // can override; otherwise the canonical site.
   const site = (
-    process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net"
+    process.env.CAMPFIRE_PUBLIC_URL || "https://www.curriculate.net"
   ).replace(/\/$/, "");
   const from = campfireFrom();
 
