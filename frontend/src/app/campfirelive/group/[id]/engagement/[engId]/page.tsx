@@ -10,6 +10,7 @@ import {
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency } from "@/lib/campfire/types";
+import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 
@@ -207,6 +208,43 @@ export default function EngagementDetailPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engagement?.gift_enabled, engagementId, responses.length]);
+
+  // Sign-up chip-ins: a list of gifts on this engagement + each one's paid total.
+  const [gifts, setGifts] = useState<CampfireGift[]>([]);
+  const [giftTotals, setGiftTotals] = useState<
+    Record<string, { total_cents: number; contributors: number }>
+  >({});
+  const isSignup = engagement?.type === "signup";
+  const refreshGifts = useCallback(async () => {
+    if (!isSignup || !engagementId) {
+      setGifts([]);
+      setGiftTotals({});
+      return;
+    }
+    const { data: rows } = await supabase
+      .from("campfire_gifts")
+      .select("*")
+      .eq("engagement_id", engagementId)
+      .order("created_at", { ascending: true });
+    setGifts((rows as CampfireGift[]) ?? []);
+    const { data: sums } = await supabase.rpc("gift_summaries_for_engagement", {
+      _eid: engagementId,
+    });
+    const map: Record<string, { total_cents: number; contributors: number }> = {};
+    (Array.isArray(sums) ? sums : []).forEach(
+      (s: { gift_id: string; total_cents: number; contributors: number }) => {
+        map[s.gift_id] = {
+          total_cents: s.total_cents ?? 0,
+          contributors: s.contributors ?? 0,
+        };
+      }
+    );
+    setGiftTotals(map);
+  }, [isSignup, engagementId]);
+  useEffect(() => {
+    refreshGifts();
+  }, [refreshGifts, responses.length]);
+
   // Editing an already-submitted answer (before the reveal).
   const [editingResponse, setEditingResponse] = useState(false);
   // Host view: user_ids that have responded so far (names resolved below).
@@ -527,7 +565,7 @@ export default function EngagementDetailPage() {
     isCreator || (!!user && engagement.gift_initiated_by === user.id);
 
   // Chip in toward the group gift — opens Stripe Checkout for the chosen amount.
-  const chipIn = async (amountCents: number) => {
+  const chipIn = async (amountCents: number, giftId?: string) => {
     if (chippingIn || !engagementId) return;
     setChippingIn(true);
     try {
@@ -536,6 +574,7 @@ export default function EngagementDetailPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           engagementId,
+          giftId: giftId ?? undefined,
           amountCents,
           contributorName: memberNameOf(user?.id) || null,
           userId: user?.id ?? null,
@@ -576,12 +615,16 @@ export default function EngagementDetailPage() {
       alert("Couldn't start the chip-in: " + error.message);
       return;
     }
+    // Reset the form for the next one and reveal the new chip-in.
     setShowStartGift(false);
-    refresh();
+    setStartGiftName("");
+    setStartGiftEmail("");
+    setStartGiftSurpriseUid("");
+    refreshGifts();
   };
 
-  // Host or initiator sends the pooled gift now (a Sign-up never auto-reveals).
-  const sendGift = async () => {
+  // Host or initiator sends a pooled chip-in now (a Sign-up never auto-reveals).
+  const sendGift = async (giftId: string) => {
     if (sendingGift || !session) return;
     if (
       typeof window !== "undefined" &&
@@ -596,11 +639,11 @@ export default function EngagementDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ engagementId }),
+        body: JSON.stringify({ giftId }),
       });
       const data = await res.json();
       if (!res.ok) alert(data?.error || "Couldn't send the gift.");
-      else refresh();
+      else refreshGifts();
     } catch {
       alert("Couldn't send the gift.");
     }
@@ -2333,10 +2376,88 @@ export default function EngagementDetailPage() {
           </div>
         )}
 
-        {/* Anyone can start a group chip-in toward a gift for one guest */}
-        {open && !engagement.gift_enabled && (
-          <div className="mt-4 border-t border-slate-100 pt-3">
-            {showStartGift ? (
+        {/* Group chip-ins — an engagement can have several (one per guest). Each
+            member starts at most one; the host can start more. */}
+        {(gifts.length > 0 || open) && (
+          <div className="mt-4 space-y-3 border-t border-slate-100 pt-3">
+            {gifts.map((g) => {
+              const t = giftTotals[g.id] ?? { total_cents: 0, contributors: 0 };
+              const canSee = isCreator || g.initiated_by === user?.id;
+              const who = g.recipient_name || "the recipient";
+              return (
+                <div
+                  key={g.id}
+                  className="rounded-xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-4"
+                >
+                  <div className="mb-1 flex items-center justify-between gap-2">
+                    <div className="text-sm font-bold text-slate-900">
+                      🎁 Gift for {who}
+                    </div>
+                    {t.contributors > 0 && canSee && (
+                      <span className="text-sm font-bold text-orange-700">
+                        {formatMoney(t.total_cents, g.currency)} · {t.contributors}{" "}
+                        {t.contributors === 1 ? "person" : "people"}
+                      </span>
+                    )}
+                  </div>
+                  {g.issued_at ? (
+                    <p className="text-sm text-slate-600">
+                      ✅ The gift card was sent to {who}. Thank you!
+                    </p>
+                  ) : (
+                    <>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[500, 1000, 2000].map((cents) => (
+                          <button
+                            key={cents}
+                            onClick={() => chipIn(cents, g.id)}
+                            disabled={chippingIn}
+                            className="rounded-full border border-orange-300 bg-white px-3.5 py-1.5 text-sm font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+                          >
+                            {formatMoney(cents, g.currency)}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => {
+                            const cur = (g.currency || "usd").toUpperCase();
+                            const v = window.prompt(`Chip in how much? (${cur})`);
+                            const n = v ? Math.round(parseFloat(v) * 100) : 0;
+                            if (n >= 100) chipIn(n, g.id);
+                            else if (v) alert("Minimum is 1.");
+                          }}
+                          disabled={chippingIn}
+                          className="rounded-full border border-slate-300 bg-white px-3.5 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          Other…
+                        </button>
+                      </div>
+                      {(isCreator || g.initiated_by === user?.id) &&
+                        t.total_cents > 0 && (
+                          <button
+                            onClick={() => sendGift(g.id)}
+                            disabled={sendingGift}
+                            className="mt-3 w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                          >
+                            {sendingGift
+                              ? "Sending…"
+                              : `Send the gift now (${formatMoney(
+                                  t.total_cents,
+                                  g.currency
+                                )}) →`}
+                          </button>
+                        )}
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        Fees are added on top so {who} gets the full amount.
+                      </p>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Start a chip-in — host can start several; others, one each. */}
+            {open && (isCreator || !gifts.some((g) => g.initiated_by === user?.id)) && (
+              showStartGift ? (
               <div className="space-y-2 rounded-xl border border-orange-200 bg-orange-50/50 p-3">
                 <div className="text-xs font-medium text-slate-700">
                   🎁 Chip in for a gift — who&apos;s it for?
@@ -2422,6 +2543,7 @@ export default function EngagementDetailPage() {
               >
                 🎁 Start a group chip-in for someone
               </button>
+            )
             )}
           </div>
         )}
@@ -4692,25 +4814,6 @@ export default function EngagementDetailPage() {
                   ? "Opening secure checkout…"
                   : "A small card-processing fee is added on top so the recipient gets the full amount. Charged now; refunded if the card is canceled before it opens."}
               </p>
-              {/* For a Sign-up there's no reveal — the host or whoever started the
-                  chip-in sends the pooled gift when everyone's chipped in. */}
-              {engagement.type === "signup" &&
-                (isCreator || engagement.gift_initiated_by === user?.id) &&
-                giftSummary &&
-                giftSummary.total_cents > 0 && (
-                  <button
-                    onClick={sendGift}
-                    disabled={sendingGift}
-                    className="mt-3 w-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
-                  >
-                    {sendingGift
-                      ? "Sending…"
-                      : `Send the gift now (${formatMoney(
-                          giftSummary.total_cents,
-                          engagement.gift_currency
-                        )}) →`}
-                  </button>
-                )}
             </>
           )}
         </div>

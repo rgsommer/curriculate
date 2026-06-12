@@ -22,6 +22,8 @@ export async function POST(req: Request) {
     const body = await req.json().catch(() => null);
     const engagementId =
       typeof body?.engagementId === "string" ? body.engagementId : "";
+    // A Sign-up chip-in targets a specific gift row (engagement can have several).
+    const giftId = typeof body?.giftId === "string" ? body.giftId : "";
     const amountCents = Number(body?.amountCents);
     const contributorName =
       typeof body?.contributorName === "string"
@@ -51,13 +53,37 @@ export async function POST(req: Request) {
       .select("id, group_id, gift_enabled, title, gift_currency")
       .eq("id", engagementId)
       .single();
-    if (!eng || !eng.gift_enabled) {
+    if (!eng) {
+      return NextResponse.json({ error: "Activity not found." }, { status: 404 });
+    }
+
+    // Resolve which gift this contribution is for: a Sign-up chip-in (giftId → a
+    // campfire_gifts row) or the engagement's embedded card gift (gift_enabled).
+    let gift: { id: string; currency: string } | null = null;
+    if (giftId) {
+      const { data: g } = await admin
+        .from("campfire_gifts")
+        .select("id, engagement_id, currency, issued_at")
+        .eq("id", giftId)
+        .single();
+      if (!g || g.engagement_id !== engagementId || g.issued_at) {
+        return NextResponse.json(
+          { error: "This chip-in isn't open." },
+          { status: 400 }
+        );
+      }
+      gift = { id: g.id as string, currency: (g.currency as string) ?? "usd" };
+    } else if (!eng.gift_enabled) {
       return NextResponse.json(
         { error: "This activity isn't collecting a gift." },
         { status: 400 }
       );
     }
-    const currency = ((eng.gift_currency as string | null) ?? "usd").toLowerCase();
+    const currency = (
+      gift?.currency ??
+      (eng.gift_currency as string | null) ??
+      "usd"
+    ).toLowerCase();
 
     // Referral: if this group was started from a partner's link, a 2% service fee
     // is added on top — 1% to the referrer, 1% to the platform. No referrer → no
@@ -90,6 +116,7 @@ export async function POST(req: Request) {
       .from("campfire_gift_contributions")
       .insert({
         engagement_id: engagementId,
+        gift_id: gift?.id ?? null,
         user_id: userId,
         contributor_name: contributorName,
         amount_cents: giftCents,

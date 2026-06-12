@@ -9,15 +9,14 @@ function getAdmin() {
   );
 }
 
-// Manually send the pooled gift now (for engagements that don't auto-reveal, like a
-// Sign-up). The host OR whoever started the chip-in may trigger it. Idempotent.
+// Manually send a pooled Sign-up chip-in now (a Sign-up never auto-reveals). The
+// engagement's host OR whoever started this chip-in may trigger it. Idempotent.
 export async function POST(req: Request) {
   try {
     const body = await req.json().catch(() => null);
-    const engagementId =
-      typeof body?.engagementId === "string" ? body.engagementId : "";
-    if (!engagementId) {
-      return NextResponse.json({ error: "Missing engagement." }, { status: 400 });
+    const giftId = typeof body?.giftId === "string" ? body.giftId : "";
+    if (!giftId) {
+      return NextResponse.json({ error: "Missing gift." }, { status: 400 });
     }
     const admin = getAdmin();
     const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
@@ -26,31 +25,38 @@ export async function POST(req: Request) {
     const uid = u?.user?.id;
     if (!uid) return NextResponse.json({ error: "Not signed in." }, { status: 401 });
 
-    const { data: e } = await admin
-      .from("engagements")
+    const { data: g } = await admin
+      .from("campfire_gifts")
       .select(
-        "id, title, creator_id, gift_initiated_by, gift_enabled, gift_issued_at, gift_recipient_email, gift_recipient_name, gift_currency"
+        "id, engagement_id, initiated_by, issued_at, recipient_email, recipient_name, currency"
       )
-      .eq("id", engagementId)
+      .eq("id", giftId)
       .single();
-    if (!e) return NextResponse.json({ error: "Not found." }, { status: 404 });
-    if (uid !== e.creator_id && uid !== e.gift_initiated_by) {
+    if (!g) return NextResponse.json({ error: "Not found." }, { status: 404 });
+
+    // Auth: the engagement's creator, or whoever started this chip-in.
+    const { data: eng } = await admin
+      .from("engagements")
+      .select("creator_id, title")
+      .eq("id", g.engagement_id)
+      .single();
+    if (uid !== eng?.creator_id && uid !== g.initiated_by) {
       return NextResponse.json(
         { error: "Only the host or whoever started the chip-in can send it." },
         { status: 403 }
       );
     }
-    if (!e.gift_enabled || !e.gift_recipient_email) {
-      return NextResponse.json({ error: "No gift to send." }, { status: 400 });
+    if (!g.recipient_email) {
+      return NextResponse.json({ error: "No recipient set." }, { status: 400 });
     }
-    if (e.gift_issued_at) {
+    if (g.issued_at) {
       return NextResponse.json({ ok: true, alreadySent: true });
     }
 
     const { data: contribs } = await admin
       .from("campfire_gift_contributions")
       .select("amount_cents")
-      .eq("engagement_id", engagementId)
+      .eq("gift_id", giftId)
       .eq("status", "paid");
     const totalCents = (contribs ?? []).reduce(
       (a, c) => a + (c.amount_cents as number),
@@ -62,19 +68,19 @@ export async function POST(req: Request) {
 
     const result = await issueGiftCard({
       amountCents: totalCents,
-      currency: (e.gift_currency as string | null) ?? "usd",
-      recipientEmail: e.gift_recipient_email as string,
-      recipientName: (e.gift_recipient_name as string | null) ?? undefined,
-      note: `A group gift from everyone in "${e.title}" 🎉`,
-      idempotencyKey: e.id as string,
+      currency: (g.currency as string | null) ?? "usd",
+      recipientEmail: g.recipient_email as string,
+      recipientName: (g.recipient_name as string | null) ?? undefined,
+      note: `A group gift from everyone in "${eng?.title ?? "the group"}" 🎉`,
+      idempotencyKey: g.id as string,
     });
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: 502 });
     }
     await admin
-      .from("engagements")
-      .update({ gift_issued_at: new Date().toISOString(), gift_order_id: result.orderId })
-      .eq("id", engagementId);
+      .from("campfire_gifts")
+      .update({ issued_at: new Date().toISOString(), order_id: result.orderId })
+      .eq("id", giftId);
 
     return NextResponse.json({ ok: true, sentCents: totalCents });
   } catch (e) {

@@ -179,6 +179,21 @@ export interface Engagement {
   creator?: { display_name: string } | null;
 }
 
+// A Sign-up chip-in: an engagement can have several (one per member who starts one,
+// host can start more). Card gifts use the engagement.gift_* columns instead.
+export interface CampfireGift {
+  id: string;
+  engagement_id: string;
+  initiated_by: string | null;
+  recipient_email: string;
+  recipient_name: string | null;
+  currency: string;
+  hidden_from: string[];
+  issued_at: string | null;
+  order_id: string | null;
+  created_at: string;
+}
+
 export interface Response {
   id: string;
   engagement_id: string;
