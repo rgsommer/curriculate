@@ -516,6 +516,7 @@ export default function EngagementDetailPage() {
           contributorName: memberNameOf(user?.id) || null,
           userId: user?.id ?? null,
           email: user?.email ?? undefined,
+          origin: window.location.origin,
         }),
       });
       const data = await res.json();

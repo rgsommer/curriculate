@@ -29,6 +29,11 @@ export async function POST(req: Request) {
         : null;
     const userId = typeof body?.userId === "string" ? body.userId : null;
     const email = typeof body?.email === "string" ? body.email : undefined;
+    // Redirect back to the exact host the user is on (always absolute, right scheme).
+    const originIn =
+      typeof body?.origin === "string" && /^https?:\/\//.test(body.origin)
+        ? body.origin.replace(/\/$/, "")
+        : null;
 
     if (!engagementId || !Number.isFinite(amountCents) || amountCents < 100) {
       return NextResponse.json(
@@ -79,7 +84,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Couldn't start the contribution." }, { status: 500 });
     }
 
-    const site = process.env.NEXT_PUBLIC_SITE_URL || "https://www.curriculate.net";
+    const envSite = process.env.NEXT_PUBLIC_SITE_URL;
+    const site =
+      originIn ||
+      (envSite && /^https?:\/\//.test(envSite)
+        ? envSite.replace(/\/$/, "")
+        : "https://www.curriculate.net");
     const back = `${site}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
 
     const stripe = getStripe();

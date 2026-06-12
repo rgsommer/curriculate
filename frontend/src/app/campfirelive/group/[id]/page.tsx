@@ -81,6 +81,37 @@ export default function GroupDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [launchedEngIdsKey, user?.id]);
 
+  // Running gift total (cents) per gift-enabled engagement, for the card badge.
+  const [giftTotals, setGiftTotals] = useState<Record<string, number>>({});
+  const giftEngIdsKey = engagements
+    .filter((e) => e.gift_enabled)
+    .map((e) => e.id)
+    .join(",");
+  useEffect(() => {
+    const ids = giftEngIdsKey ? giftEngIdsKey.split(",") : [];
+    if (ids.length === 0) {
+      setGiftTotals({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        ids.map(async (id) => {
+          const { data } = await supabase.rpc("gift_contribution_summary", {
+            _eid: id,
+          });
+          const row = Array.isArray(data) ? data[0] : data;
+          return [id, (row?.total_cents as number) ?? 0] as const;
+        })
+      );
+      if (!cancelled) setGiftTotals(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [giftEngIdsKey, respondedIds]);
+
   // Live (launched, still-active) engagements — surfaced in the invite so people
   // know what they're joining into.
   const liveEngagements = engagements.filter(
@@ -1262,6 +1293,12 @@ See you around the campfire! 🏕️`
                           ● Your turn
                         </span>
                       ))}
+                    {/* Group gift running total */}
+                    {eng.gift_enabled && (giftTotals[eng.id] ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
+                        🎁 ${((giftTotals[eng.id] ?? 0) / 100).toFixed(0)} chipped in
+                      </span>
+                    )}
                   </div>
                 </div>
 
