@@ -481,7 +481,10 @@ export default function EngagementDetailPage() {
 
   const meta = ENGAGEMENT_TYPES[engagement.type];
   const isSealed = engagement.reveal === "sealed" && engagement.status === "active";
-  const isRevealed = engagement.status === "revealed";
+  // A Sign-up is a live list, not a reveal — it never has a "revealed" phase (the
+  // host's un-reveal/re-seal controls, late-response tagging, etc. don't apply).
+  const isRevealed =
+    engagement.status === "revealed" && engagement.type !== "signup";
   // Live modes show responses as they arrive; all_at_once waits for the creator.
   const liveMode =
     engagement.reveal === "as_they_come" || engagement.reveal === "instant";
@@ -2248,7 +2251,12 @@ export default function EngagementDetailPage() {
       );
     const totalCap = slots.reduce((a, s) => a + Math.max(1, s.capacity), 0);
     const totalClaimed = slots.reduce((a, _s, i) => a + claimantsOf(i).length, 0);
-    const open = engagement.status === "active";
+    // A Sign-up stays live (claimable) — it doesn't lock on a reveal.
+    const open = engagement.status === "active" || engagement.status === "revealed";
+    // What's still needed: slots that aren't fully claimed yet.
+    const stillNeeded = slots
+      .map((s, i) => ({ s, i, left: Math.max(1, s.capacity) - claimantsOf(i).length }))
+      .filter((x) => x.left > 0);
     const partyWhen = (engagement.config?.partyWhen as string | undefined)?.trim();
     const partyWhere = (engagement.config?.partyWhere as string | undefined)?.trim();
     // RSVP — who's coming. Gated on a host flag (config.rsvp).
@@ -2402,6 +2410,24 @@ export default function EngagementDetailPage() {
             );
           })}
         </div>
+
+        {/* At-a-glance: what's still needed */}
+        {slots.length > 0 && (
+          <div className="mt-3 text-xs">
+            {stillNeeded.length > 0 ? (
+              <span className="text-slate-500">
+                <span className="font-semibold text-slate-700">Still needed:</span>{" "}
+                {stillNeeded
+                  .map((x) => x.s.label + (x.left > 1 ? ` (×${x.left})` : ""))
+                  .join(", ")}
+              </span>
+            ) : (
+              <span className="font-semibold text-emerald-700">
+                ✅ Everything&apos;s covered — thank you!
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Free-text items members are bringing on their own */}
         {extraItems.length > 0 && (

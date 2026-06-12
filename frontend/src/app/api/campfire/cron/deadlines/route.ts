@@ -49,7 +49,7 @@ export async function GET(req: Request) {
 
   const { data: engs } = await admin
     .from("engagements")
-    .select("id, group_id, title, total_expected, deadline, reveal, deadline_nudged_at, hold_until_deadline, birth_year")
+    .select("id, group_id, title, total_expected, deadline, reveal, type, deadline_nudged_at, hold_until_deadline, birth_year")
     .eq("status", "active")
     .eq("paused", false) // paused → no auto-reveal / auto-nudge
     .not("deadline", "is", null);
@@ -60,16 +60,20 @@ export async function GET(req: Request) {
   for (const e of engs ?? []) {
     const dl = new Date(e.deadline as string).getTime();
 
+    // A Sign-up is a live list with no reveal phase — the deadline just marks the
+    // party date. Never auto-reveal it (nudges below still apply).
+    const isSignupEng = e.type === "signup";
+
     // "Hold until deadline" engagements reveal AT the deadline regardless of how
     // many responded — that's the whole point of waiting for the date.
-    if (e.hold_until_deadline && now >= dl) {
+    if (!isSignupEng && e.hold_until_deadline && now >= dl) {
       await admin.from("engagements").update({ status: "revealed" }).eq("id", e.id);
       revealed++;
       continue;
     }
 
     // Past the grace window → reveal with whoever's in, so it never freezes.
-    if (now > dl + GRACE_MS) {
+    if (!isSignupEng && now > dl + GRACE_MS) {
       await admin.from("engagements").update({ status: "revealed" }).eq("id", e.id);
       revealed++;
       continue;
