@@ -1266,9 +1266,10 @@ export default function EngagementDetailPage() {
     setSignupBusy(false);
   };
 
-  // Host: turn the RSVP ("who's coming") question on/off for this sign-up.
+  // Host: turn the RSVP ("who's coming") question on/off (default on for sign-ups).
   const toggleRsvp = async () => {
-    const next = !engagement.config?.rsvp;
+    const next = engagement.config?.rsvp === false; // off → on, otherwise → off
+
     const { error } = await supabase
       .from("engagements")
       .update({ config: { ...(engagement.config ?? {}), rsvp: next } })
@@ -2361,7 +2362,9 @@ export default function EngagementDetailPage() {
     const partyWhen = (engagement.config?.partyWhen as string | undefined)?.trim();
     const partyWhere = (engagement.config?.partyWhere as string | undefined)?.trim();
     // RSVP — who's coming. Gated on a host flag (config.rsvp).
-    const rsvpOn = !!engagement.config?.rsvp;
+    // RSVP is part of the sign-up by default — people answer it when they respond,
+    // not as a separate ask. A host can opt out (config.rsvp === false).
+    const rsvpOn = engagement.config?.rsvp !== false;
     const rsvpOf = (v: string) =>
       responses
         .filter((r) => (r.content as { attending?: string })?.attending === v)
@@ -2510,13 +2513,13 @@ export default function EngagementDetailPage() {
           </div>
         )}
 
-        {/* Host can turn RSVP on for an existing sign-up */}
-        {isCreator && open && !rsvpOn && (
+        {/* Host opt-out — RSVP is on by default (no separate ask) */}
+        {isCreator && open && (
           <button
             onClick={toggleRsvp}
-            className="mb-3 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+            className="mb-3 text-[11px] font-medium text-slate-400 hover:text-slate-600"
           >
-            + Ask who&apos;s coming (RSVP)
+            {rsvpOn ? "Don't ask who's coming" : "+ Ask who's coming (RSVP)"}
           </button>
         )}
 
