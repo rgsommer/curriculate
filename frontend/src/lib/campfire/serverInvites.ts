@@ -498,6 +498,52 @@ See it all: ${url}`;
   return { subject, text, html };
 }
 
+// Seasonal nudge to a referral partner with a ready-to-post message + their link.
+export function referralPromoEmail(opts: {
+  name?: string | null;
+  link: string;
+  campaign: "school" | "xmas";
+}) {
+  const { name, link, campaign } = opts;
+  const hi = firstName(name ?? undefined);
+  const school = campaign === "school";
+  const subject = school
+    ? "🎁 Teacher gift season is coming — your Campfire link inside"
+    : "🎄 Christmas card season — your Campfire link inside";
+
+  // The blurb is written for THEM to copy-paste into a class/parent/team chat.
+  const post = school
+    ? `🎁 End of the school year is almost here! Let's get the class together for a teacher thank-you card on Campfire — everyone signs the card AND can chip in for a group gift card that's emailed automatically. No app, no accounts — just your name. Start here: ${link}`
+    : `🎄 Christmas card time! Let's all sign one card for [name] on Campfire and chip in together for a group gift — it's sent automatically when the card opens. No app or account needed. Add yours here: ${link}`;
+
+  const intro = `${hi ? hi + ",\n\n" : ""}${
+    school
+      ? "It's almost teacher-gift season — the perfect time to share Campfire with your school and parent groups."
+      : "Christmas is around the corner — a great time to share Campfire for group cards and gifts."
+  } Copy the message below into a class WhatsApp/Facebook group, team chat, or email — your referral link is built in.`;
+
+  const text = `${intro}
+
+— — — — — — — — — —
+${post}
+— — — — — — — — — —
+
+Your link: ${link}`;
+
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:520px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">${school ? "🎁" : "🎄"}</div>
+  <h1 style="font-size:20px; margin:8px 0;">Time to share Campfire</h1>
+  <p style="color:#475569; margin:0 0 12px;">${escapeHtml(intro)}</p>
+  <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; padding:14px; color:#7c2d12; font-size:14px;">
+    ${escapeHtml(post)}
+  </div>
+  <p style="margin:16px 0 0;"><a href="${link}" style="color:#ea580c; font-weight:700; word-break:break-all;">${link}</a></p>
+  <p style="color:#94a3b8; font-size:12px; margin:14px 0 0;">You're getting this because you're a Campfire referral partner.</p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function inviteEmail(opts: {
   inviter: string;
   groupName: string;
