@@ -45,11 +45,20 @@ export async function GET(req: Request) {
   const manual = qs.get("campaign"); // "school" | "xmas" → force-send now (auth'd)
   const preview = qs.get("preview") === "1"; // render + count, don't send
 
-  // 4 weeks (28 days) before each anchor date.
+  // The send window for a campaign: from 4 weeks (28 days) before the anchor up to
+  // the anchor itself. Firing anywhere in the window (not just on day 1) means a
+  // missed daily run — or a late start — self-heals; the per-partner dedupe below
+  // keeps it to a single email each per season.
   const fourWeeksBefore = (m: number, d: number) => {
     const dt = new Date(Date.UTC(year, m - 1, d));
     dt.setUTCDate(dt.getUTCDate() - 28);
     return mmdd(dt);
+  };
+  const inWindow = (m: number, d: number) => {
+    const anchor = new Date(Date.UTC(year, m - 1, d, 23, 59, 59));
+    const start = new Date(anchor);
+    start.setUTCDate(start.getUTCDate() - 28);
+    return now >= start && now <= anchor;
   };
   // School-end anchor is configurable (default late June, Ontario-ish).
   const [sm, sd] = (process.env.REFERRAL_SCHOOL_END || "06-26")
@@ -60,8 +69,8 @@ export async function GET(req: Request) {
 
   let campaign: "school" | "xmas" | null = null;
   if (manual === "school" || manual === "xmas") campaign = manual;
-  else if (today === schoolPromo) campaign = "school";
-  else if (today === xmasPromo) campaign = "xmas";
+  else if (inWindow(sm || 6, sd || 26)) campaign = "school";
+  else if (inWindow(12, 25)) campaign = "xmas";
   if (!campaign) {
     return NextResponse.json({ ok: true, sent: 0, today, schoolPromo, xmasPromo });
   }
