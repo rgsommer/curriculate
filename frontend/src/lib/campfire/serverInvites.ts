@@ -522,11 +522,19 @@ export function referralPromoEmail(opts: {
       : "Christmas is around the corner — a great time to share Campfire for group cards and gifts."
   } Copy the message below into a class WhatsApp/Facebook group, team chat, or email — your referral link is built in.`;
 
+  // The referrer's personal incentive — kept OUT of the paste-ready blurb (which
+  // goes to their group). Roughly 1% of each contribution, added on top so it
+  // costs the groups nothing.
+  const earnings =
+    "💸 And there's something in it for you: you earn about 1% of every group gift your linked groups chip in for — it's added on top, so it costs your groups nothing extra. Track your earnings any time on your Campfire referral dashboard.";
+
   const text = `${intro}
 
 — — — — — — — — — —
 ${post}
 — — — — — — — — — —
+
+${earnings}
 
 Your link: ${link}`;
 
@@ -538,6 +546,9 @@ Your link: ${link}`;
   <div style="background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; padding:14px; color:#7c2d12; font-size:14px;">
     ${escapeHtml(post)}
   </div>
+  <p style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:12px; padding:12px 14px; color:#065f46; font-size:13px; margin:14px 0 0;">${escapeHtml(
+    earnings
+  )}</p>
   <p style="margin:16px 0 0;"><a href="${link}" style="color:#ea580c; font-weight:700; word-break:break-all;">${link}</a></p>
   <p style="color:#94a3b8; font-size:12px; margin:14px 0 0;">You're getting this because you're a Campfire referral partner.</p>
 </div>`.trim();
