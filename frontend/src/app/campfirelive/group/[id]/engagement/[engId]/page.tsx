@@ -171,6 +171,10 @@ export default function EngagementDetailPage() {
   } | null>(null);
   const [chippingIn, setChippingIn] = useState(false);
   const [signupBusy, setSignupBusy] = useState(false);
+  const [signupSuggestions, setSignupSuggestions] = useState<
+    { label: string; capacity: number }[]
+  >([]);
+  const [suggesting, setSuggesting] = useState(false);
   useEffect(() => {
     if (!engagement?.gift_enabled || !engagementId) {
       setGiftSummary(null);
@@ -1083,6 +1087,44 @@ export default function EngagementDetailPage() {
       : [...cur, slotIndex];
     await saveResponse({ claims: next });
     setSignupBusy(false);
+  };
+
+  // Sign-up host tools: ask AI what's still needed, and add a slot to the list.
+  const fetchSignupSuggestions = async () => {
+    if (suggesting || !session) return;
+    setSuggesting(true);
+    try {
+      const res = await fetch("/api/campfire/signup/suggest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId }),
+      });
+      const data = await res.json();
+      if (data?.suggestions) setSignupSuggestions(data.suggestions);
+      else alert(data?.error || "Couldn't get suggestions.");
+    } catch {
+      alert("Couldn't get suggestions.");
+    }
+    setSuggesting(false);
+  };
+
+  const addSignupSlot = async (label: string, capacity: number) => {
+    const slots =
+      ((engagement.config?.slots as { label: string; capacity: number }[]) ?? []).slice();
+    slots.push({ label, capacity });
+    const { error } = await supabase
+      .from("engagements")
+      .update({ config: { ...(engagement.config ?? {}), slots } })
+      .eq("id", engagementId);
+    if (error) {
+      alert("Couldn't add: " + error.message);
+      return;
+    }
+    setSignupSuggestions((prev) => prev.filter((s) => s.label !== label));
+    refresh();
   };
 
   // Editing isn't wired for Two Truths (its hidden lie + others' guesses make an
@@ -2077,6 +2119,38 @@ export default function EngagementDetailPage() {
             );
           })}
         </div>
+
+        {/* Host: AI suggestions for what's still needed */}
+        {isCreator && open && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            <button
+              onClick={fetchSignupSuggestions}
+              disabled={suggesting}
+              className="rounded-full border border-cyan-300 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-700 hover:bg-cyan-100 disabled:opacity-50"
+            >
+              {suggesting ? "Thinking…" : "✨ Suggest what's still needed"}
+            </button>
+            {signupSuggestions.length > 0 && (
+              <div className="mt-2">
+                <div className="mb-1 text-[11px] text-slate-500">
+                  Tap to add to the list:
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {signupSuggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => addSignupSlot(s.label, s.capacity)}
+                      className="rounded-full border border-dashed border-cyan-400 bg-white px-2.5 py-1 text-xs font-medium text-cyan-700 hover:bg-cyan-50"
+                    >
+                      + {s.label}
+                      {s.capacity > 1 ? ` ×${s.capacity}` : ""}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
     );
   };

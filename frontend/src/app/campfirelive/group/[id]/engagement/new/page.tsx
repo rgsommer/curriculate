@@ -150,6 +150,10 @@ export default function NewEngagementPage() {
     { label: "", capacity: 1 },
     { label: "", capacity: 1 },
   ]);
+  // Party context — feeds the AI "what's still needed" suggestions.
+  const [partyKind, setPartyKind] = useState("");
+  const [partyHeadcount, setPartyHeadcount] = useState("");
+  const [partyDisposables, setPartyDisposables] = useState(false);
   const [truthPrompt, setTruthPrompt] = useState("");
   const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
@@ -505,6 +509,10 @@ export default function NewEngagementPage() {
         return;
       }
       config.slots = slots;
+      if (partyKind.trim()) config.partyKind = partyKind.trim();
+      if (partyHeadcount.trim())
+        config.headcount = Math.max(1, parseInt(partyHeadcount, 10) || 0);
+      config.disposables = partyDisposables;
     }
 
     if (selectedType === "truth_or_dare") {
@@ -967,6 +975,60 @@ export default function NewEngagementPage() {
                 </div>
               );
             })()}
+
+            {/* Sign-up: party context (powers AI "what's still needed" suggestions) */}
+            {selectedType === "signup" && (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50/50 p-3">
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Party type <span className="text-slate-400">(optional)</span>
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {["Snacks", "Full meal", "Dessert", "BBQ", "Drinks & apps", "Potluck"].map(
+                    (k) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setPartyKind(k)}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                          partyKind === k
+                            ? "border-cyan-500 bg-cyan-500 text-white"
+                            : "border-slate-200 bg-white text-slate-600 hover:border-cyan-300"
+                        }`}
+                      >
+                        {k}
+                      </button>
+                    )
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <label className="flex items-center gap-1.5 text-slate-600">
+                    Headcount
+                    <input
+                      type="number"
+                      min={1}
+                      max={500}
+                      value={partyHeadcount}
+                      onChange={(e) => setPartyHeadcount(e.target.value)}
+                      placeholder="~"
+                      className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-cyan-500"
+                    />
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={partyDisposables}
+                      onChange={(e) => setPartyDisposables(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    Using disposable plates/cups/cutlery
+                  </label>
+                </div>
+                <p className="mt-2 text-[11px] text-cyan-700">
+                  ✨ Once it&apos;s live, you can ask AI to suggest what&apos;s still
+                  needed as people sign up.
+                </p>
+              </div>
+            )}
 
             {/* Sign-up — claimable slots (label + capacity) */}
             {selectedType === "signup" && (
