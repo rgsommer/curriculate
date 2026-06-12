@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroups } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
+import { seasonalCardPrompt } from "@/lib/campfire/templates";
 import {
   ENGAGEMENT_TYPES,
   engagementIcon,
@@ -362,6 +363,33 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Seasonal card nudge — surfaces the right card around Dec / May–June */}
+      {(() => {
+        const season = seasonalCardPrompt();
+        if (!season || groups.length === 0) return null;
+        return (
+          <Link
+            href={`/campfirelive/group/${groups[0].id}/engagement/new?template=${season.templateId}`}
+            className="group mb-6 flex items-center justify-between gap-3 rounded-2xl border-2 border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 px-5 py-4 shadow-sm transition hover:border-rose-300"
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-3xl flex-shrink-0">{season.emoji}</span>
+              <div className="min-w-0">
+                <div className="text-sm font-extrabold text-slate-900">
+                  {season.headline}
+                </div>
+                <div className="text-xs text-slate-600">
+                  Everyone signs the card — add a group gift to chip in together.
+                </div>
+              </div>
+            </div>
+            <span className="flex-shrink-0 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-2 text-sm font-bold text-white group-hover:opacity-90">
+              Start →
+            </span>
+          </Link>
+        );
+      })()}
 
       {/* Trending across all of Campfire — click to start one in a group */}
       {trendingMeta && trending && (

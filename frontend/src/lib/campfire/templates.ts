@@ -30,6 +30,34 @@ export interface TemplatePack {
   templates: EngagementTemplate[];
 }
 
+// If we're in a card "season", suggest the matching preset (surfaced on the
+// dashboard). Returns null outside any window.
+export function seasonalCardPrompt(
+  now: Date = new Date()
+): { templateId: string; emoji: string; headline: string } | null {
+  const m = now.getMonth() + 1; // 1–12
+  const d = now.getDate();
+  if ((m === 11 && d >= 25) || (m === 12 && d <= 25))
+    return {
+      templateId: "christmas-card",
+      emoji: "🎄",
+      headline: "Christmas card season — sign one for someone special",
+    };
+  if (m === 5 && d <= 10)
+    return {
+      templateId: "teacher-appreciation",
+      emoji: "🍎",
+      headline: "Teacher Appreciation Week — start a class card",
+    };
+  if ((m === 5 && d >= 20) || m === 6)
+    return {
+      templateId: "thank-you-card",
+      emoji: "💌",
+      headline: "Year-end is here — start a thank-you card for a teacher or coach",
+    };
+  return null;
+}
+
 export const TEMPLATE_PACKS: TemplatePack[] = [
   {
     id: "icebreaker",

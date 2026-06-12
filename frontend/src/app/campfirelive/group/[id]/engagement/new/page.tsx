@@ -354,6 +354,23 @@ export default function NewEngagementPage() {
     setStep("details");
   };
 
+  // Deep-link: apply a template from ?template=ID (e.g. the dashboard's seasonal card).
+  const tplApplied = useRef(false);
+  useEffect(() => {
+    if (tplApplied.current || typeof window === "undefined") return;
+    const id = new URLSearchParams(window.location.search).get("template");
+    if (!id) return;
+    for (const pack of TEMPLATE_PACKS) {
+      const tpl = pack.templates.find((t) => t.id === id);
+      if (tpl) {
+        tplApplied.current = true;
+        applyTemplate(tpl);
+        break;
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSubmit = async () => {
     if (!selectedType || !title.trim()) return;
     setCreating(true);
