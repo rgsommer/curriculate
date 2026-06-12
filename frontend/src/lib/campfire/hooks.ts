@@ -857,6 +857,10 @@ export function useCreateEngagement(defaultGroupId?: string) {
     launched_at?: string | null;
     private_to_host?: boolean;
     allow_anon_replies?: boolean;
+    gift_enabled?: boolean;
+    gift_recipient_email?: string | null;
+    gift_recipient_name?: string | null;
+    gift_suggested_cents?: number[];
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -889,6 +893,14 @@ export function useCreateEngagement(defaultGroupId?: string) {
         birth_year: params.birth_year ?? null,
         private_to_host: params.private_to_host ?? false,
         allow_anon_replies: params.allow_anon_replies ?? false,
+        ...(params.gift_enabled
+          ? {
+              gift_enabled: true,
+              gift_recipient_email: params.gift_recipient_email ?? null,
+              gift_recipient_name: params.gift_recipient_name ?? null,
+              gift_suggested_cents: params.gift_suggested_cents ?? [500, 1000, 2000],
+            }
+          : {}),
         ...(params.launched_at !== undefined ? { launched_at: params.launched_at } : {}),
       })
       .select()

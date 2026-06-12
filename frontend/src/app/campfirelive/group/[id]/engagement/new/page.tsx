@@ -113,6 +113,10 @@ export default function NewEngagementPage() {
   const [leadDays, setLeadDays] = useState(14);
   // Keep each person's response visible only to them + the host (default off).
   const [privateToHost, setPrivateToHost] = useState(false);
+  // Group gift: chip in toward a gift card that's emailed to the recipient on reveal.
+  const [giftEnabled, setGiftEnabled] = useState(false);
+  const [giftRecipientEmail, setGiftRecipientEmail] = useState("");
+  const [giftRecipientName, setGiftRecipientName] = useState("");
   // Let members reply to each other anonymously after release (default off).
   const [allowAnonReplies, setAllowAnonReplies] = useState(false);
   // Occasion for a card. Recurring-by-nature ones: birthday, anniversary (fixed
@@ -521,6 +525,12 @@ export default function NewEngagementPage() {
       destGroupId = group.id;
     }
 
+    if (giftEnabled && !giftRecipientEmail.trim()) {
+      setError("Add the recipient's email — that's where the gift card is sent.");
+      setCreating(false);
+      return;
+    }
+
     const result = await create({
       groupId: destGroupId,
       type: selectedType,
@@ -571,6 +581,10 @@ export default function NewEngagementPage() {
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
+      // Group gift — collect contributions toward a card for the recipient.
+      gift_enabled: giftEnabled,
+      gift_recipient_email: giftEnabled ? giftRecipientEmail.trim() || null : null,
+      gift_recipient_name: giftEnabled ? giftRecipientName.trim() || null : null,
       // Keep responses visible only to each author + the host.
       private_to_host: privateToHost,
       // Let members reply to each other anonymously after release.
@@ -1725,6 +1739,49 @@ export default function NewEngagementPage() {
                 </div>
               </div>
             </label>
+
+            {/* Group gift — chip in toward a gift card for the recipient */}
+            <div>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={giftEnabled}
+                  onChange={(e) => setGiftEnabled(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                />
+                <div>
+                  <div className="text-sm font-medium text-slate-700">
+                    🎁 Collect a group gift
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    People can chip in when they sign. On reveal, a gift card for the
+                    total is emailed to the recipient.
+                  </div>
+                </div>
+              </label>
+              {giftEnabled && (
+                <div className="mt-2 ml-7 space-y-2 rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                  <input
+                    type="email"
+                    value={giftRecipientEmail}
+                    onChange={(e) => setGiftRecipientEmail(e.target.value)}
+                    placeholder="Recipient's email (where the gift card is sent)"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+                  />
+                  <input
+                    type="text"
+                    value={giftRecipientName}
+                    onChange={(e) => setGiftRecipientName(e.target.value)}
+                    placeholder="Recipient's name (optional)"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    Contributions are charged when someone chips in, and refunded if the
+                    card is canceled before reveal.
+                  </p>
+                </div>
+              )}
+            </div>
 
             {/* Let members reply anonymously after release */}
             {!privateToHost && (

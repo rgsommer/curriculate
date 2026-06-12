@@ -113,6 +113,10 @@ export interface Engagement {
   share_code?: string | null; // short code for the friendly /c/<code> card link
   private_to_host?: boolean; // responses visible only to the author + the host
   allow_anon_replies?: boolean; // members may post replies/comments anonymously
+  gift_enabled?: boolean; // collecting a group gift (chip-in toward a gift card)
+  gift_recipient_email?: string | null;
+  gift_recipient_name?: string | null;
+  gift_issued_at?: string | null;
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   paused?: boolean; // host paused it: no emails go out + cron skips it until resumed
   // Joined: the originator's display name (for "Name's Type" headers)

@@ -164,6 +164,34 @@ export default function EngagementDetailPage() {
   const [todPhoto, setTodPhoto] = useState<string | null>(null);
   const [todUploading, setTodUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Group gift: running total + chip-in state.
+  const [giftSummary, setGiftSummary] = useState<{
+    total_cents: number;
+    contributors: number;
+  } | null>(null);
+  const [chippingIn, setChippingIn] = useState(false);
+  useEffect(() => {
+    if (!engagement?.gift_enabled || !engagementId) {
+      setGiftSummary(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("gift_contribution_summary", {
+        _eid: engagementId,
+      });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!cancelled && row)
+        setGiftSummary({
+          total_cents: row.total_cents ?? 0,
+          contributors: row.contributors ?? 0,
+        });
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagement?.gift_enabled, engagementId, responses.length]);
   // Editing an already-submitted answer (before the reveal).
   const [editingResponse, setEditingResponse] = useState(false);
   // Host view: user_ids that have responded so far (names resolved below).
@@ -468,6 +496,35 @@ export default function EngagementDetailPage() {
     ].join(", ") || recipientNoun;
   const isRecipient =
     !!user && (engagement.excluded_user_ids ?? []).includes(user.id);
+
+  // Chip in toward the group gift — opens Stripe Checkout for the chosen amount.
+  const chipIn = async (amountCents: number) => {
+    if (chippingIn || !engagementId) return;
+    setChippingIn(true);
+    try {
+      const res = await fetch("/api/campfire/gift/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          engagementId,
+          amountCents,
+          contributorName: memberNameOf(user?.id) || null,
+          userId: user?.id ?? null,
+          email: user?.email ?? undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data?.url) {
+        window.location.href = data.url as string;
+      } else {
+        alert(data?.error || "Couldn't start checkout.");
+        setChippingIn(false);
+      }
+    } catch {
+      alert("Couldn't start checkout.");
+      setChippingIn(false);
+    }
+  };
 
   // Human description of WHEN this will reveal — keeps the waiting copy honest.
   const deadlineStr = engagement.deadline
@@ -4008,6 +4065,66 @@ export default function EngagementDetailPage() {
             </div>
           );
         })()}
+
+      {/* ── GROUP GIFT: chip in toward a gift card for the recipient (hidden from
+            the recipient to keep it a surprise) ── */}
+      {engagement.gift_enabled && !isRecipient && (
+        <div className="mb-6 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-2 mb-1">
+            <h2 className="font-bold text-slate-900">🎁 Group gift</h2>
+            {giftSummary && giftSummary.contributors > 0 && (
+              <span className="text-sm font-bold text-orange-700">
+                ${(giftSummary.total_cents / 100).toFixed(0)} from{" "}
+                {giftSummary.contributors}{" "}
+                {giftSummary.contributors === 1 ? "person" : "people"}
+              </span>
+            )}
+          </div>
+          {engagement.gift_issued_at ? (
+            <p className="text-sm text-slate-600">
+              ✅ The gift card was sent to{" "}
+              {engagement.gift_recipient_name || "the recipient"}. Thank you!
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-slate-600 mb-3">
+                Chip in toward a gift card for{" "}
+                {engagement.gift_recipient_name || "the recipient"} — it&apos;s emailed
+                to them when the card opens.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {[500, 1000, 2000].map((cents) => (
+                  <button
+                    key={cents}
+                    onClick={() => chipIn(cents)}
+                    disabled={chippingIn}
+                    className="rounded-full bg-white border border-orange-300 px-4 py-2 text-sm font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+                  >
+                    ${cents / 100}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    const v = window.prompt("Chip in how much? (USD)");
+                    const n = v ? Math.round(parseFloat(v) * 100) : 0;
+                    if (n >= 100) chipIn(n);
+                    else if (v) alert("Minimum is $1.");
+                  }}
+                  disabled={chippingIn}
+                  className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Other…
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-slate-400">
+                {chippingIn
+                  ? "Opening secure checkout…"
+                  : "Charged now; refunded if the card is canceled before it opens."}
+              </p>
+            </>
+          )}
+        </div>
+      )}
 
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
       {((engagement.status === "active" && (!hasResponded || editingResponse)) ||
