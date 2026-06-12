@@ -345,6 +345,11 @@ export default function NewEngagementPage() {
     } else if (t.questions && t.questions.length) {
       setQuestions(t.questions);
     }
+    // Card templates can pre-select the occasion (e.g. a one-time year-end card).
+    if (t.type === "birthday" && t.occasion) {
+      setOccasion(t.occasion);
+      if (t.onceLabel) setOnceLabel(t.onceLabel);
+    }
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };

@@ -11,6 +11,16 @@ export interface EngagementTemplate {
   questions?: string[]; // accountability / most-likely / scavenger items
   careQuestions?: CareQuestion[]; // Care Check-in: prompt + response type per question
   reveal?: RevealMode; // override the default reveal mode (e.g. host-triggered)
+  // For card (type "birthday") templates: which occasion to pre-select, and the
+  // free-text label for a one-time card (e.g. "Year-End").
+  occasion?:
+    | "birthday"
+    | "anniversary"
+    | "mothers_day"
+    | "fathers_day"
+    | "custom"
+    | "once";
+  onceLabel?: string;
 }
 
 export interface TemplatePack {
@@ -174,6 +184,18 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         type: "poll",
         title: "How are you doing this week?",
         options: ["🔥 Thriving", "🙂 Good", "😐 Surviving", "😔 Struggling", "🆘 Need support"],
+      },
+      {
+        id: "thank-you-card",
+        name: "Thank-You Card 💌",
+        type: "birthday",
+        title: "Thank you so much! 💌",
+        description:
+          "A surprise card the whole group signs — perfect for year-end, Christmas, or saying thanks to a teacher, coach, or leader. Each note stays hidden from them until it opens. Add a group gift to chip in together.",
+        occasion: "once",
+        onceLabel: "Year-End",
+        // A card holds until the date and opens for the recipient then.
+        reveal: "sealed",
       },
     ],
   },
