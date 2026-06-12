@@ -1196,14 +1196,25 @@ export default function EngagementDetailPage() {
     return r;
   };
 
-  // Sign-up: a member's response is their claimed slot indices plus any free-text
-  // items they're bringing on their own ("extras").
-  const myClaims = () =>
-    ((myResponse?.content as { claims?: number[] })?.claims ?? []).slice();
-  const myExtras = () =>
-    ((myResponse?.content as { extras?: string[] })?.extras ?? []).slice();
+  // Sign-up: a member's response holds their claimed slot indices, any free-text
+  // items they're bringing ("extras"), and their RSVP ("attending").
+  const myContent = () =>
+    (myResponse?.content as Record<string, unknown> | undefined) ?? {};
+  const myClaims = () => ((myContent().claims as number[]) ?? []).slice();
+  const myExtras = () => ((myContent().extras as string[]) ?? []).slice();
+  const myAttending = () => myContent().attending as string | undefined;
+  // Save a patch without dropping the other sign-up fields.
+  const saveSignup = (patch: Record<string, unknown>) => {
+    const att = myAttending();
+    return saveResponse({
+      claims: myClaims(),
+      extras: myExtras(),
+      ...(att ? { attending: att } : {}),
+      ...patch,
+    });
+  };
 
-  // Claim or release a predefined slot — keep my extras intact.
+  // Claim or release a predefined slot.
   const toggleClaim = async (slotIndex: number) => {
     if (signupBusy) return;
     setSignupBusy(true);
@@ -1211,8 +1222,30 @@ export default function EngagementDetailPage() {
     const next = cur.includes(slotIndex)
       ? cur.filter((x) => x !== slotIndex)
       : [...cur, slotIndex];
-    await saveResponse({ claims: next, extras: myExtras() });
+    await saveSignup({ claims: next });
     setSignupBusy(false);
+  };
+
+  // RSVP — will I be there? (going / maybe / can't)
+  const setAttending = async (value: "yes" | "maybe" | "no") => {
+    if (signupBusy) return;
+    setSignupBusy(true);
+    await saveSignup({ attending: myAttending() === value ? null : value });
+    setSignupBusy(false);
+  };
+
+  // Host: turn the RSVP ("who's coming") question on/off for this sign-up.
+  const toggleRsvp = async () => {
+    const next = !engagement.config?.rsvp;
+    const { error } = await supabase
+      .from("engagements")
+      .update({ config: { ...(engagement.config ?? {}), rsvp: next } })
+      .eq("id", engagementId);
+    if (error) {
+      alert("Couldn't update: " + error.message);
+      return;
+    }
+    refresh();
   };
 
   // Add / remove a free-text item I'm bringing that isn't a predefined slot.
@@ -1225,7 +1258,7 @@ export default function EngagementDetailPage() {
       return;
     }
     setSignupBusy(true);
-    await saveResponse({ claims: myClaims(), extras: [...cur, clean].slice(0, 20) });
+    await saveSignup({ extras: [...cur, clean].slice(0, 20) });
     setExtraInput("");
     setSignupBusy(false);
   };
@@ -1233,10 +1266,7 @@ export default function EngagementDetailPage() {
   const removeExtra = async (label: string) => {
     if (signupBusy) return;
     setSignupBusy(true);
-    await saveResponse({
-      claims: myClaims(),
-      extras: myExtras().filter((x) => x !== label),
-    });
+    await saveSignup({ extras: myExtras().filter((x) => x !== label) });
     setSignupBusy(false);
   };
 
@@ -2221,6 +2251,16 @@ export default function EngagementDetailPage() {
     const open = engagement.status === "active";
     const partyWhen = (engagement.config?.partyWhen as string | undefined)?.trim();
     const partyWhere = (engagement.config?.partyWhere as string | undefined)?.trim();
+    // RSVP — who's coming. Gated on a host flag (config.rsvp).
+    const rsvpOn = !!engagement.config?.rsvp;
+    const rsvpOf = (v: string) =>
+      responses
+        .filter((r) => (r.content as { attending?: string })?.attending === v)
+        .map((r) => memberNameOf(r.user_id, r.profile?.display_name));
+    const goingNames = rsvpOf("yes");
+    const maybeNames = rsvpOf("maybe");
+    const cantCount = rsvpOf("no").length;
+    const myRsvp = (myResponse?.content as { attending?: string })?.attending;
     // Free-text items members said they're bringing (not tied to a slot).
     const extraItems: { label: string; member: string; mine: boolean }[] = [];
     responses.forEach((r) => {
@@ -2255,6 +2295,70 @@ export default function EngagementDetailPage() {
             )}
           </div>
         )}
+
+        {/* RSVP — will you be there? + who's coming */}
+        {rsvpOn && (
+          <div className="mb-4">
+            {open && (
+              <div className="mb-2">
+                <div className="mb-1 text-sm font-medium text-slate-700">
+                  Will you be there?
+                </div>
+                <div className="flex gap-2">
+                  {([
+                    ["yes", "✅ Going"],
+                    ["maybe", "🤔 Maybe"],
+                    ["no", "❌ Can't"],
+                  ] as const).map(([v, label]) => (
+                    <button
+                      key={v}
+                      onClick={() => setAttending(v)}
+                      disabled={signupBusy}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-60 ${
+                        myRsvp === v
+                          ? "bg-emerald-500 text-white hover:opacity-90"
+                          : "border border-emerald-300 bg-white text-emerald-700 hover:bg-emerald-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(goingNames.length > 0 || maybeNames.length > 0 || cantCount > 0) && (
+              <div className="rounded-xl bg-emerald-50 px-3 py-2">
+                <div className="text-sm font-semibold text-emerald-800">
+                  🎉 Coming ({goingNames.length})
+                </div>
+                {goingNames.length > 0 && (
+                  <div className="text-xs text-slate-600">{goingNames.join(", ")}</div>
+                )}
+                {maybeNames.length > 0 && (
+                  <div className="mt-1 text-xs text-slate-500">
+                    Maybe ({maybeNames.length}): {maybeNames.join(", ")}
+                  </div>
+                )}
+                {cantCount > 0 && (
+                  <div className="mt-1 text-xs text-slate-400">
+                    Can&apos;t make it: {cantCount}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Host can turn RSVP on for an existing sign-up */}
+        {isCreator && open && !rsvpOn && (
+          <button
+            onClick={toggleRsvp}
+            className="mb-3 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+          >
+            + Ask who&apos;s coming (RSVP)
+          </button>
+        )}
+
         <div className="space-y-2">
           {slots.map((s, i) => {
             const claimants = claimantsOf(i);

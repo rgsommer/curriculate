@@ -164,6 +164,7 @@ export default function NewEngagementPage() {
   const [partyDisposables, setPartyDisposables] = useState(false);
   const [partyWhen, setPartyWhen] = useState(""); // when the party is (free text)
   const [partyWhere, setPartyWhere] = useState(""); // where the party is
+  const [partyRsvp, setPartyRsvp] = useState(true); // ask who's coming (RSVP)
   const [truthPrompt, setTruthPrompt] = useState("");
   const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
@@ -564,6 +565,7 @@ export default function NewEngagementPage() {
       config.disposables = partyDisposables;
       if (partyWhen.trim()) config.partyWhen = partyWhen.trim();
       if (partyWhere.trim()) config.partyWhere = partyWhere.trim();
+      config.rsvp = partyRsvp;
     }
 
     if (selectedType === "truth_or_dare") {
@@ -1108,6 +1110,15 @@ export default function NewEngagementPage() {
                       className="h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
                     />
                     Using disposable plates/cups/cutlery
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={partyRsvp}
+                      onChange={(e) => setPartyRsvp(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-cyan-500 focus:ring-cyan-500"
+                    />
+                    Ask who&apos;s coming (RSVP)
                   </label>
                 </div>
                 <p className="mt-2 text-[11px] text-cyan-700">
