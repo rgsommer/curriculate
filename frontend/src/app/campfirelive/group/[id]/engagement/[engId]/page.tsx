@@ -247,6 +247,35 @@ export default function EngagementDetailPage() {
     refreshGifts();
   }, [refreshGifts, responses.length]);
 
+  // Gift exchange (Secret Santa): each buyer can read only their OWN assignment.
+  const [myGiftexAssignment, setMyGiftexAssignment] = useState<{
+    recipient_user_id?: string | null;
+    buy_for_gender?: string | null;
+  } | null>(null);
+  const [giftexBusy, setGiftexBusy] = useState(false);
+  const giftexCfg = (engagement?.config?.giftex ?? null) as {
+    on?: boolean;
+    byGender?: boolean;
+    assign?: "self" | "person" | "gender";
+  } | null;
+  const giftexOn = !!giftexCfg?.on;
+  const refreshMyAssignment = useCallback(async () => {
+    if (!giftexOn || !engagementId || !user) {
+      setMyGiftexAssignment(null);
+      return;
+    }
+    const { data } = await supabase
+      .from("campfire_giftex_assignments")
+      .select("recipient_user_id, buy_for_gender")
+      .eq("engagement_id", engagementId)
+      .eq("buyer_user_id", user.id)
+      .maybeSingle();
+    setMyGiftexAssignment(data ?? null);
+  }, [giftexOn, engagementId, user]);
+  useEffect(() => {
+    refreshMyAssignment();
+  }, [refreshMyAssignment, responses.length]);
+
   // Editing an already-submitted answer (before the reveal).
   const [editingResponse, setEditingResponse] = useState(false);
   // Host view: user_ids that have responded so far (names resolved below).
@@ -1246,6 +1275,78 @@ export default function EngagementDetailPage() {
       .eq("id", engagementId);
     if (error) {
       alert("Couldn't update: " + error.message);
+      return;
+    }
+    refresh();
+  };
+
+  // Participant: my gender (for a by-gender exchange) and who I'm shopping for
+  // (self-pick mode). Both live in my sign-up response.
+  const setMyGender = async (g: "male" | "female") => {
+    if (signupBusy) return;
+    setSignupBusy(true);
+    await saveSignup({ gender: myContent().gender === g ? null : g });
+    setSignupBusy(false);
+  };
+  const setGiftFor = async (g: "male" | "female" | "either") => {
+    if (signupBusy) return;
+    setSignupBusy(true);
+    await saveSignup({ giftFor: myContent().giftFor === g ? null : g });
+    setSignupBusy(false);
+  };
+
+  // Host: enable/configure the gift exchange (stored on the engagement config).
+  const setGiftexConfig = async (patch: Record<string, unknown>) => {
+    const giftex = { ...(giftexCfg ?? {}), ...patch };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ config: { ...(engagement.config ?? {}), giftex } })
+      .eq("id", engagementId);
+    if (error) {
+      alert("Couldn't update: " + error.message);
+      return;
+    }
+    refresh();
+  };
+
+  // Host: roll the random assignments (Secret Santa / by-gender), then reveal all.
+  const runGiftexAssign = async (mode: "person" | "gender") => {
+    if (giftexBusy) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Randomly assign everyone who RSVP'd yes? This replaces any existing assignments."
+      )
+    )
+      return;
+    setGiftexBusy(true);
+    const { data, error } = await supabase.rpc("campfire_giftex_assign", {
+      _eid: engagementId,
+      _mode: mode,
+    });
+    setGiftexBusy(false);
+    if (error) {
+      alert("Couldn't assign: " + error.message);
+      return;
+    }
+    alert(`Assigned ${data} people. Each can now see only their own.`);
+    refreshMyAssignment();
+    refresh();
+  };
+  const runGiftexReveal = async () => {
+    if (giftexBusy) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm("Reveal who bought for whom to everyone? This can't be undone.")
+    )
+      return;
+    setGiftexBusy(true);
+    const { error } = await supabase.rpc("campfire_giftex_reveal", {
+      _eid: engagementId,
+    });
+    setGiftexBusy(false);
+    if (error) {
+      alert("Couldn't reveal: " + error.message);
       return;
     }
     refresh();
@@ -2269,6 +2370,35 @@ export default function EngagementDetailPage() {
     const maybeNames = rsvpOf("maybe");
     const cantCount = rsvpOf("no").length;
     const myRsvp = (myResponse?.content as { attending?: string })?.attending;
+
+    // ── Gift exchange ──
+    const gx = giftexCfg;
+    const gxByGender = !!gx?.byGender;
+    const gxAssign = gx?.assign ?? "person";
+    const goingResponses = responses.filter(
+      (r) => (r.content as { attending?: string })?.attending === "yes"
+    );
+    const genderOf = (r: (typeof responses)[number]) =>
+      (r.content as { gender?: string })?.gender;
+    const maleRecip = goingResponses.filter((r) => genderOf(r) === "male").length;
+    const femaleRecip = goingResponses.filter((r) => genderOf(r) === "female").length;
+    const pickedMale = responses.filter(
+      (r) => (r.content as { giftFor?: string })?.giftFor === "male"
+    ).length;
+    const pickedFemale = responses.filter(
+      (r) => (r.content as { giftFor?: string })?.giftFor === "female"
+    ).length;
+    const maleLeft = Math.max(0, maleRecip - pickedMale);
+    const femaleLeft = Math.max(0, femaleRecip - pickedFemale);
+    const myGender = myContent().gender as string | undefined;
+    const myGiftFor = myContent().giftFor as string | undefined;
+    const gxRevealedAt = engagement.config?.giftexRevealedAt as string | undefined;
+    const gxRevealList = (engagement.config?.giftexReveal ?? []) as Array<{
+      buyer: string;
+      recipient: string | null;
+      gender: string | null;
+    }>;
+
     // Free-text items members said they're bringing (not tied to a slot).
     const extraItems: { label: string; member: string; mine: boolean }[] = [];
     responses.forEach((r) => {
@@ -2332,6 +2462,29 @@ export default function EngagementDetailPage() {
                     </button>
                   ))}
                 </div>
+                {giftexOn && gxByGender && myRsvp === "yes" && (
+                  <div className="mt-2">
+                    <div className="mb-1 text-xs text-slate-500">
+                      You are (for the gift exchange):
+                    </div>
+                    <div className="flex gap-2">
+                      {(["male", "female"] as const).map((g) => (
+                        <button
+                          key={g}
+                          onClick={() => setMyGender(g)}
+                          disabled={signupBusy}
+                          className={`rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-60 ${
+                            myGender === g
+                              ? "bg-violet-500 text-white hover:opacity-90"
+                              : "border border-violet-300 bg-white text-violet-700 hover:bg-violet-50"
+                          }`}
+                        >
+                          {g === "male" ? "👦 Boy / Man" : "👧 Girl / Woman"}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
             {(goingNames.length > 0 || maybeNames.length > 0 || cantCount > 0) && (
@@ -2721,6 +2874,171 @@ export default function EngagementDetailPage() {
                 🎁 Start a group chip-in for someone
               </button>
             )
+            )}
+          </div>
+        )}
+
+        {/* ── 🎁 Gift exchange (Secret Santa) ── */}
+        {(giftexOn || (isCreator && open)) && (
+          <div className="mt-4 border-t border-slate-100 pt-3">
+            {/* Host setup */}
+            {isCreator && open && (
+              <div className="mb-3 space-y-2 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+                <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={giftexOn}
+                    onChange={(e) => setGiftexConfig({ on: e.target.checked })}
+                    className="h-4 w-4 rounded border-slate-300 text-violet-500 focus:ring-violet-500"
+                  />
+                  🎁 Gift exchange (Secret Santa)
+                </label>
+                {giftexOn && (
+                  <>
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={gxByGender}
+                        onChange={(e) => setGiftexConfig({ byGender: e.target.checked })}
+                        className="h-4 w-4 rounded border-slate-300 text-violet-500 focus:ring-violet-500"
+                      />
+                      Match by gender (everyone picks Boy/Girl when they RSVP)
+                    </label>
+                    <div>
+                      <div className="mb-1 text-xs text-slate-500">How are buyers matched?</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {([
+                          ["self", "Let people pick"],
+                          ["person", "Random Secret Santa"],
+                          ["gender", "Random by gender"],
+                        ] as const).map(([v, label]) => {
+                          const needsGender = v === "self" || v === "gender";
+                          const disabled = needsGender && !gxByGender;
+                          return (
+                            <button
+                              key={v}
+                              onClick={() => setGiftexConfig({ assign: v })}
+                              disabled={disabled}
+                              title={disabled ? "Turn on 'Match by gender' first" : ""}
+                              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition disabled:opacity-40 ${
+                                gxAssign === v
+                                  ? "border-violet-500 bg-violet-500 text-white"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-violet-300"
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {(gxAssign === "person" || gxAssign === "gender") && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <button
+                          onClick={() =>
+                            runGiftexAssign(gxAssign === "gender" ? "gender" : "person")
+                          }
+                          disabled={giftexBusy}
+                          className="rounded-full bg-violet-500 px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+                        >
+                          🎲 {gxRevealedAt ? "Re-assign" : "Assign now"}
+                        </button>
+                        {!gxRevealedAt && (
+                          <button
+                            onClick={runGiftexReveal}
+                            disabled={giftexBusy}
+                            className="rounded-full border border-violet-300 bg-white px-3 py-1.5 text-xs font-bold text-violet-700 hover:bg-violet-50 disabled:opacity-50"
+                          >
+                            👀 Reveal to everyone
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Participant: pick who you're buying for (by-gender, self-pick) */}
+            {giftexOn && gxAssign === "self" && gxByGender && open && (
+              <div className="mb-3">
+                <div className="mb-1 text-sm font-medium text-slate-700">
+                  Who are you buying a gift for?
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {([
+                    ["male", `👦 A boy${maleLeft > 0 ? ` · ${maleLeft} left` : ""}`, maleLeft <= 0 && myGiftFor !== "male"],
+                    ["female", `👧 A girl${femaleLeft > 0 ? ` · ${femaleLeft} left` : ""}`, femaleLeft <= 0 && myGiftFor !== "female"],
+                    ["either", "🎁 Either", false],
+                  ] as const).map(([v, label, capFull]) => (
+                    <button
+                      key={v}
+                      onClick={() => setGiftFor(v)}
+                      disabled={signupBusy || capFull}
+                      className={`rounded-full px-3 py-1.5 text-xs font-bold transition disabled:opacity-40 ${
+                        myGiftFor === v
+                          ? "bg-violet-500 text-white hover:opacity-90"
+                          : "border border-violet-300 bg-white text-violet-700 hover:bg-violet-50"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Participant: my secret assignment (random modes) — only I can see this */}
+            {giftexOn &&
+              (gxAssign === "person" || gxAssign === "gender") &&
+              myGiftexAssignment && (
+                <div className="mb-3 rounded-xl border border-violet-200 bg-violet-50 px-3 py-2">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
+                    🤫 Your secret assignment
+                  </div>
+                  <div className="text-sm font-bold text-slate-900">
+                    {myGiftexAssignment.recipient_user_id
+                      ? `🎁 Buy a gift for ${memberNameOf(
+                          myGiftexAssignment.recipient_user_id
+                        )}`
+                      : `🎁 Buy a gift for a ${
+                          myGiftexAssignment.buy_for_gender === "male"
+                            ? "boy"
+                            : myGiftexAssignment.buy_for_gender === "female"
+                            ? "girl"
+                            : "anyone"
+                        }`}
+                  </div>
+                  <div className="text-[11px] text-slate-400">Only you can see this.</div>
+                </div>
+              )}
+
+            {/* Everyone: the full reveal (after the host reveals) */}
+            {giftexOn && gxRevealedAt && gxRevealList.length > 0 && (
+              <div className="rounded-xl bg-violet-50 px-3 py-2">
+                <div className="mb-1 text-sm font-semibold text-violet-800">
+                  🎉 Who bought for whom
+                </div>
+                <div className="space-y-0.5">
+                  {gxRevealList.map((a, i) => (
+                    <div key={i} className="text-xs text-slate-600">
+                      <span className="font-medium text-slate-800">
+                        {memberNameOf(a.buyer)}
+                      </span>{" "}
+                      →{" "}
+                      {a.recipient
+                        ? memberNameOf(a.recipient)
+                        : `a ${
+                            a.gender === "male"
+                              ? "boy"
+                              : a.gender === "female"
+                              ? "girl"
+                              : "anyone"
+                          }`}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
