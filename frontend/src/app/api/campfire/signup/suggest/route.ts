@@ -45,6 +45,7 @@ export async function POST(req: Request) {
     const cfg = (eng.config ?? {}) as {
       slots?: { label: string; capacity: number }[];
       partyKind?: string;
+      partyTheme?: string;
       headcount?: number;
       disposables?: boolean;
     };
@@ -68,16 +69,21 @@ export async function POST(req: Request) {
       .join("\n");
 
     const system =
-      "You help a host plan a group party sign-up list. Given the party type, " +
-      "headcount, whether disposable tableware is used, and the items already on the " +
-      "list (with how many are claimed), suggest the ADDITIONAL items still needed so " +
-      "the party is well covered. Include practical essentials (plates, cups, cutlery, " +
-      "napkins, serving utensils, ice, trash bags) sized to the headcount ONLY when " +
-      "disposables are in use. Do NOT duplicate items already on the list. Keep labels " +
-      'short. Return ONLY a JSON array of objects {"label": string, "capacity": number}, ' +
-      "at most 10 items, capacity = how many people should bring that item (usually 1).";
+      "You help a host plan a group party sign-up list. Given the party type, theme/" +
+      "cuisine, headcount, whether disposable tableware is used, and the items already " +
+      "on the list (with how many are claimed), suggest the ADDITIONAL items still " +
+      "needed so the party is well covered. When a theme or cuisine is given, suggest " +
+      "dishes that fit it (e.g. a traditional Thanksgiving → turkey, stuffing, mashed " +
+      "potatoes, cranberry sauce, pumpkin pie); if the theme is open-ended or asks for " +
+      "ideas, propose a sensible, crowd-pleasing menu. Include practical essentials " +
+      "(plates, cups, cutlery, napkins, serving utensils, ice, trash bags) sized to the " +
+      "headcount ONLY when disposables are in use. Do NOT duplicate items already on the " +
+      "list. Keep labels short. Return ONLY a JSON array of objects " +
+      '{"label": string, "capacity": number}, at most 10 items, capacity = how many ' +
+      "people should bring that item (usually 1).";
     const user =
       `Party type: ${cfg.partyKind || "unspecified"}\n` +
+      `Theme / cuisine: ${cfg.partyTheme || "unspecified"}\n` +
       `Headcount: ${cfg.headcount || "unspecified"}\n` +
       `Disposable tableware wanted: ${cfg.disposables ? "yes" : "no"}\n\n` +
       `Items already on the list:\n${listText || "(none yet)"}\n\n` +

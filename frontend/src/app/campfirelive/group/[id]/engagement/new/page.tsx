@@ -152,6 +152,8 @@ export default function NewEngagementPage() {
   ]);
   // Party context — feeds the AI "what's still needed" suggestions.
   const [partyKind, setPartyKind] = useState("");
+  const [partyKindOther, setPartyKindOther] = useState(""); // free-text when "Other"
+  const [partyTheme, setPartyTheme] = useState(""); // e.g. "Traditional Thanksgiving"
   const [partyHeadcount, setPartyHeadcount] = useState("");
   const [partyDisposables, setPartyDisposables] = useState(false);
   const [truthPrompt, setTruthPrompt] = useState("");
@@ -530,13 +532,20 @@ export default function NewEngagementPage() {
           capacity: Math.max(1, s.capacity || 1),
         }))
         .filter((s) => s.label);
-      if (slots.length < 1) {
-        setError("Add at least one thing for people to sign up for.");
+      const resolvedKind =
+        partyKind === "Other" ? partyKindOther.trim() : partyKind.trim();
+      // A host needn't list everything — either set a party type (we'll suggest
+      // what to bring) or add at least one slot of their own.
+      if (slots.length < 1 && !resolvedKind) {
+        setError(
+          "Pick a party type so we can suggest what's needed — or add a slot yourself."
+        );
         setCreating(false);
         return;
       }
       config.slots = slots;
-      if (partyKind.trim()) config.partyKind = partyKind.trim();
+      if (resolvedKind) config.partyKind = resolvedKind;
+      if (partyTheme.trim()) config.partyTheme = partyTheme.trim();
       if (partyHeadcount.trim())
         config.headcount = Math.max(1, parseInt(partyHeadcount, 10) || 0);
       config.disposables = partyDisposables;
@@ -1010,7 +1019,7 @@ export default function NewEngagementPage() {
                   Party type <span className="text-slate-400">(optional)</span>
                 </label>
                 <div className="flex flex-wrap gap-1.5 mb-2">
-                  {["Snacks", "Full meal", "Dessert", "BBQ", "Drinks & apps", "Potluck"].map(
+                  {["Snacks", "Full meal", "Dessert", "BBQ", "Drinks & apps", "Potluck", "Other"].map(
                     (k) => (
                       <button
                         key={k}
@@ -1027,6 +1036,24 @@ export default function NewEngagementPage() {
                     )
                   )}
                 </div>
+                {partyKind === "Other" && (
+                  <input
+                    type="text"
+                    value={partyKindOther}
+                    onChange={(e) => setPartyKindOther(e.target.value)}
+                    placeholder="What kind of gathering? e.g. Brunch, Movie night"
+                    className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
+                  />
+                )}
+                {partyKind && (
+                  <input
+                    type="text"
+                    value={partyTheme}
+                    onChange={(e) => setPartyTheme(e.target.value)}
+                    placeholder="Any theme or cuisine? e.g. Traditional Thanksgiving — or leave it to us"
+                    className="mb-2 w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-cyan-500"
+                  />
+                )}
                 <div className="flex flex-wrap items-center gap-3 text-sm">
                   <label className="flex items-center gap-1.5 text-slate-600">
                     Headcount
@@ -1051,8 +1078,8 @@ export default function NewEngagementPage() {
                   </label>
                 </div>
                 <p className="mt-2 text-[11px] text-cyan-700">
-                  ✨ Once it&apos;s live, you can ask AI to suggest what&apos;s still
-                  needed as people sign up.
+                  ✨ Once it&apos;s live, we&apos;ll suggest what&apos;s still needed as
+                  people sign up.
                 </p>
               </div>
             )}
@@ -1061,10 +1088,12 @@ export default function NewEngagementPage() {
             {selectedType === "signup" && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  What can people sign up for?
+                  Anything specific you want?{" "}
+                  <span className="text-slate-400">(optional)</span>
                 </label>
                 <p className="text-xs text-slate-500 mb-2">
-                  Each row is a slot; set how many people can claim it.
+                  No need to list everything — we&apos;ll suggest the rest as people sign
+                  up. Just add any must-haves (e.g. Wings, Beer) and how many you need.
                 </p>
                 {signupSlots.map((s, i) => (
                   <div key={i} className="flex gap-2 mb-2">
