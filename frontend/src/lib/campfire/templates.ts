@@ -21,6 +21,9 @@ export interface EngagementTemplate {
     | "custom"
     | "once";
   onceLabel?: string;
+  // Sign-up templates: pre-filled claimable slots + optional party type.
+  slots?: { label: string; capacity: number }[];
+  partyKind?: string;
 }
 
 export interface TemplatePack {
@@ -155,6 +158,21 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         description:
           "A surprise card everyone signs — birthday, anniversary, Mother's/Father's Day. Hidden from the recipient, opens on the special day.",
       },
+      {
+        id: "party-potluck",
+        name: "Party Sign-up 📋",
+        type: "signup",
+        title: "What can you bring? 🎉",
+        description:
+          "Everyone claims what they'll bring — see what's still needed, live. Ask AI to fill in plates, cups, and more as people sign up.",
+        partyKind: "Potluck",
+        slots: [
+          { label: "Main dish", capacity: 2 },
+          { label: "Side / salad", capacity: 2 },
+          { label: "Dessert", capacity: 2 },
+          { label: "Drinks", capacity: 1 },
+        ],
+      },
     ],
   },
   {
@@ -257,6 +275,21 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         occasion: "once",
         onceLabel: "Christmas",
         reveal: "sealed",
+      },
+      {
+        id: "meal-train",
+        name: "Meal Train 🍲",
+        type: "signup",
+        title: "Bring a meal 🍲",
+        description:
+          "Rally the group to bring meals for someone who needs support (a new baby, illness, loss). People claim a day — see what's still open, live.",
+        partyKind: "Full meal",
+        slots: [
+          { label: "Meal — day 1", capacity: 1 },
+          { label: "Meal — day 2", capacity: 1 },
+          { label: "Meal — day 3", capacity: 1 },
+          { label: "Meal — day 4", capacity: 1 },
+        ],
       },
     ],
   },

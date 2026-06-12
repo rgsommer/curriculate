@@ -350,6 +350,11 @@ export default function NewEngagementPage() {
       setOccasion(t.occasion);
       if (t.onceLabel) setOnceLabel(t.onceLabel);
     }
+    // Sign-up templates pre-fill the claimable slots + party type.
+    if (t.type === "signup") {
+      if (t.slots && t.slots.length) setSignupSlots(t.slots.map((s) => ({ ...s })));
+      if (t.partyKind) setPartyKind(t.partyKind);
+    }
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };
