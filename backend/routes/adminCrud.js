@@ -21,6 +21,26 @@ const adminCheck = (req, res, next) => {
 
 const adminRequired = [authRequired, adminCheck];
 
+// Mirror an agent referral code into Campfire (campfire_referrers) so the SAME code
+// earns on Campfire chip-ins and gets the seasonal promo. Fire-and-forget: never
+// blocks or fails the admin action — Campfire is a separate database/app. No-ops
+// unless both CAMPFIRE_SYNC_URL and REFERRAL_SYNC_SECRET are configured.
+function syncCampfireReferrer({ code, email, name, active }) {
+  const url = process.env.CAMPFIRE_SYNC_URL;
+  const secret = process.env.REFERRAL_SYNC_SECRET;
+  if (!url || !secret || !code || !email) return;
+  fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${secret}`,
+    },
+    body: JSON.stringify({ code, email, name, active }),
+  }).catch((err) => {
+    console.error("[campfire-referrer-sync] failed:", err?.message || err);
+  });
+}
+
 // ============================================================
 // Admin: Access Codes (create + list)
 // ============================================================
@@ -417,6 +437,14 @@ router.post("/referral-codes", ...adminRequired, async (req, res) => {
       conversions: [],
     });
 
+    // Mirror into Campfire so the same code works there too.
+    syncCampfireReferrer({
+      code: doc.code,
+      email: doc.agentEmail,
+      name: doc.agentName,
+      active: !doc.disabled,
+    });
+
     return res.json({
       ok: true,
       referralCode: {
@@ -455,6 +483,14 @@ router.put("/referral-codes/:id", ...adminRequired, async (req, res) => {
     const updated = await ReferralCode.findByIdAndUpdate(id, { $set: patch }, { new: true }).lean();
     if (!updated) return res.status(404).json({ ok: false, error: "Referral code not found." });
 
+    // Mirror name/email/disabled changes into Campfire.
+    syncCampfireReferrer({
+      code: updated.code,
+      email: updated.agentEmail,
+      name: updated.agentName,
+      active: !updated.disabled,
+    });
+
     return res.json({ ok: true, referralCode: updated });
   } catch (err) {
     console.error("[admin-referral-codes] update failed:", err);
@@ -479,6 +515,15 @@ router.delete("/referral-codes/:id", ...adminRequired, async (req, res) => {
     }
 
     await ReferralCode.deleteOne({ _id: id });
+
+    // Deactivate in Campfire (keep the row so past attribution/earnings survive).
+    syncCampfireReferrer({
+      code: doc.code,
+      email: doc.agentEmail,
+      name: doc.agentName,
+      active: false,
+    });
+
     return res.json({ ok: true });
   } catch (err) {
     console.error("[admin-referral-codes] delete failed:", err);
