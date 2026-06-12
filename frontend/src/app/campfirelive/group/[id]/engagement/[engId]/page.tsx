@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
 
@@ -275,6 +275,7 @@ export default function EngagementDetailPage() {
   const [editGiftEnabled, setEditGiftEnabled] = useState(false);
   const [editGiftRecipientEmail, setEditGiftRecipientEmail] = useState("");
   const [editGiftRecipientName, setEditGiftRecipientName] = useState("");
+  const [editGiftCurrency, setEditGiftCurrency] = useState("usd");
   const [editLeadDays, setEditLeadDays] = useState(14); // how many days before it opens
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
@@ -588,6 +589,7 @@ export default function EngagementDetailPage() {
     setEditGiftEnabled(!!engagement.gift_enabled);
     setEditGiftRecipientEmail(engagement.gift_recipient_email ?? "");
     setEditGiftRecipientName(engagement.gift_recipient_name ?? "");
+    setEditGiftCurrency(engagement.gift_currency ?? "usd");
     {
       const cfg = (engagement.config ?? {}) as {
         truthPrompt?: string;
@@ -770,6 +772,7 @@ export default function EngagementDetailPage() {
         gift_recipient_name: editGiftEnabled
           ? editGiftRecipientName.trim() || null
           : null,
+        gift_currency: editGiftCurrency,
         ...birthdayFields,
         ...careFields,
       })
@@ -3597,6 +3600,20 @@ export default function EngagementDetailPage() {
                       placeholder="Recipient's name (optional)"
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
                     />
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-600">Currency</label>
+                      <select
+                        value={editGiftCurrency}
+                        onChange={(e) => setEditGiftCurrency(e.target.value)}
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-orange-500"
+                      >
+                        {GIFT_CURRENCIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                 )}
                 {engagement.gift_enabled &&
@@ -4279,7 +4296,7 @@ export default function EngagementDetailPage() {
             <h2 className="font-bold text-slate-900">🎁 Group gift</h2>
             {giftSummary && giftSummary.contributors > 0 && (
               <span className="text-sm font-bold text-orange-700">
-                ${(giftSummary.total_cents / 100).toFixed(0)} from{" "}
+                {formatMoney(giftSummary.total_cents, engagement.gift_currency)} from{" "}
                 {giftSummary.contributors}{" "}
                 {giftSummary.contributors === 1 ? "person" : "people"}
               </span>
@@ -4305,15 +4322,16 @@ export default function EngagementDetailPage() {
                     disabled={chippingIn}
                     className="rounded-full bg-white border border-orange-300 px-4 py-2 text-sm font-bold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
                   >
-                    ${cents / 100}
+                    {formatMoney(cents, engagement.gift_currency)}
                   </button>
                 ))}
                 <button
                   onClick={() => {
-                    const v = window.prompt("Chip in how much? (USD)");
+                    const cur = (engagement.gift_currency || "usd").toUpperCase();
+                    const v = window.prompt(`Chip in how much? (${cur})`);
                     const n = v ? Math.round(parseFloat(v) * 100) : 0;
                     if (n >= 100) chipIn(n);
-                    else if (v) alert("Minimum is $1.");
+                    else if (v) alert("Minimum is 1.");
                   }}
                   disabled={chippingIn}
                   className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"

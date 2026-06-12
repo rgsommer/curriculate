@@ -15,6 +15,9 @@ import {
   ORDINAL_WEEK,
   WEEKDAY_NAMES,
   MONTH_NAMES,
+  GIFT_CURRENCIES,
+  formatMoney,
+  localeGiftCurrency,
   type NthWeekday,
   type EngagementType,
   type RevealMode,
@@ -117,6 +120,11 @@ export default function NewEngagementPage() {
   const [giftEnabled, setGiftEnabled] = useState(false);
   const [giftRecipientEmail, setGiftRecipientEmail] = useState("");
   const [giftRecipientName, setGiftRecipientName] = useState("");
+  const [giftCurrency, setGiftCurrency] = useState("usd");
+  // Default the gift currency to the host's region (overridable below).
+  useEffect(() => {
+    setGiftCurrency(localeGiftCurrency());
+  }, []);
   // Let members reply to each other anonymously after release (default off).
   const [allowAnonReplies, setAllowAnonReplies] = useState(false);
   // Occasion for a card. Recurring-by-nature ones: birthday, anniversary (fixed
@@ -607,6 +615,7 @@ export default function NewEngagementPage() {
       gift_enabled: giftEnabled,
       gift_recipient_email: giftEnabled ? giftRecipientEmail.trim() || null : null,
       gift_recipient_name: giftEnabled ? giftRecipientName.trim() || null : null,
+      gift_currency: giftCurrency,
       // Keep responses visible only to each author + the host.
       private_to_host: privateToHost,
       // Let members reply to each other anonymously after release.
@@ -1862,6 +1871,25 @@ export default function NewEngagementPage() {
                     placeholder="Recipient's name (optional)"
                     className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
                   />
+                  <div className="flex items-center gap-2">
+                    <label className="text-xs text-slate-600">Currency</label>
+                    <select
+                      value={giftCurrency}
+                      onChange={(e) => setGiftCurrency(e.target.value)}
+                      className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-orange-500"
+                    >
+                      {GIFT_CURRENCIES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-[11px] text-slate-400">
+                      e.g. {formatMoney(500, giftCurrency)} /{" "}
+                      {formatMoney(1000, giftCurrency)} /{" "}
+                      {formatMoney(2000, giftCurrency)}
+                    </span>
+                  </div>
                   <p className="text-[11px] text-slate-400">
                     Contributions are charged when someone chips in, and refunded if the
                     card is canceled before reveal.

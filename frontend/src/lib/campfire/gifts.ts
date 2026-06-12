@@ -17,6 +17,7 @@ export function giftProviderConfigured(): boolean {
 
 export async function issueGiftCard(opts: {
   amountCents: number;
+  currency?: string; // ISO code, default USD
   recipientEmail: string;
   recipientName?: string;
   note?: string;
@@ -42,7 +43,7 @@ export async function issueGiftCard(opts: {
       {
         value: {
           denomination: Math.round(opts.amountCents) / 100,
-          currency_code: "USD",
+          currency_code: (opts.currency || "usd").toUpperCase(),
         },
         delivery: { method: "EMAIL" },
         recipient: {

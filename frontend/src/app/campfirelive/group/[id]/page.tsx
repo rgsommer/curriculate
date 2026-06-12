@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney } from "@/lib/campfire/types";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
@@ -1296,7 +1296,7 @@ See you around the campfire! 🏕️`
                     {/* Group gift running total */}
                     {eng.gift_enabled && (giftTotals[eng.id] ?? 0) > 0 && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
-                        🎁 ${((giftTotals[eng.id] ?? 0) / 100).toFixed(0)} chipped in
+                        🎁 {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)} chipped in
                       </span>
                     )}
                   </div>

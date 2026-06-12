@@ -453,7 +453,7 @@ export async function GET(req: Request) {
   if (giftProviderConfigured()) {
     const { data: giftEngs } = await admin
       .from("engagements")
-      .select("id, title, gift_recipient_email, gift_recipient_name")
+      .select("id, title, gift_recipient_email, gift_recipient_name, gift_currency")
       .eq("gift_enabled", true)
       .eq("status", "revealed")
       .is("gift_issued_at", null)
@@ -471,6 +471,7 @@ export async function GET(req: Request) {
       if (totalCents <= 0) continue;
       const result = await issueGiftCard({
         amountCents: totalCents,
+        currency: (e.gift_currency as string | null) ?? "usd",
         recipientEmail: e.gift_recipient_email as string,
         recipientName: (e.gift_recipient_name as string | null) ?? undefined,
         note: `A group gift from everyone who signed "${e.title}" 🎉`,

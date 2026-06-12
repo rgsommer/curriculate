@@ -27,6 +27,55 @@ export type EngagementType =
 // A Sign-up slot: a label + how many people can claim it.
 export type SignupSlot = { label: string; capacity: number };
 
+// Currencies the group gift supports (Stripe + Tremendous both handle these).
+export const GIFT_CURRENCIES = [
+  { code: "usd", label: "USD" },
+  { code: "cad", label: "CAD" },
+  { code: "gbp", label: "GBP" },
+  { code: "eur", label: "EUR" },
+  { code: "aud", label: "AUD" },
+  { code: "nzd", label: "NZD" },
+] as const;
+
+// Format minor units (cents) in the given currency for the viewer's locale.
+export function formatMoney(cents: number, currency = "usd"): string {
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currency.toUpperCase(),
+      minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    }).format(cents / 100);
+  } catch {
+    return `$${(cents / 100).toFixed(2)}`;
+  }
+}
+
+// Best-guess gift currency from the browser's region (host can override).
+export function localeGiftCurrency(): string {
+  const map: Record<string, string> = {
+    CA: "cad",
+    US: "usd",
+    GB: "gbp",
+    AU: "aud",
+    NZ: "nzd",
+    IE: "eur",
+    DE: "eur",
+    FR: "eur",
+    ES: "eur",
+    IT: "eur",
+    NL: "eur",
+  };
+  try {
+    const region =
+      (typeof navigator !== "undefined" &&
+        navigator.language?.split("-")[1]?.toUpperCase()) ||
+      "";
+    return map[region] || "usd";
+  } catch {
+    return "usd";
+  }
+}
+
 // A Care Check-in question: a prompt + how people answer it.
 export type CareQuestion = { prompt: string; kind: "text" | "star" };
 
@@ -120,6 +169,7 @@ export interface Engagement {
   gift_enabled?: boolean; // collecting a group gift (chip-in toward a gift card)
   gift_recipient_email?: string | null;
   gift_recipient_name?: string | null;
+  gift_currency?: string; // ISO code (lowercase), e.g. "usd" | "cad"
   gift_issued_at?: string | null;
   lies_revealed_at?: string | null; // two_truths: phase-2 (lies + scores) revealed
   paused?: boolean; // host paused it: no emails go out + cron skips it until resumed

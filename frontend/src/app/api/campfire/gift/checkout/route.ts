@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     const admin = getAdmin();
     const { data: eng } = await admin
       .from("engagements")
-      .select("id, group_id, gift_enabled, title")
+      .select("id, group_id, gift_enabled, title, gift_currency")
       .eq("id", engagementId)
       .single();
     if (!eng || !eng.gift_enabled) {
@@ -57,6 +57,7 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+    const currency = ((eng.gift_currency as string | null) ?? "usd").toLowerCase();
 
     // The contributor covers the card-processing fee, so the recipient gets the
     // FULL amount they chose. Gross up the Stripe charge so that, after Stripe's
@@ -101,7 +102,7 @@ export async function POST(req: Request) {
         {
           quantity: 1,
           price_data: {
-            currency: "usd",
+            currency,
             unit_amount: chargeCents,
             product_data: {
               name: `Group gift — "${eng.title}"`,

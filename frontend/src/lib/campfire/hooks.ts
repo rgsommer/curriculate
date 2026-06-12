@@ -861,6 +861,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
     gift_recipient_email?: string | null;
     gift_recipient_name?: string | null;
     gift_suggested_cents?: number[];
+    gift_currency?: string;
     groupId?: string; // target group (defaults to the bound one)
   }) => {
     if (!user) return { error: "Not logged in", engagement: null };
@@ -899,6 +900,7 @@ export function useCreateEngagement(defaultGroupId?: string) {
               gift_recipient_email: params.gift_recipient_email ?? null,
               gift_recipient_name: params.gift_recipient_name ?? null,
               gift_suggested_cents: params.gift_suggested_cents ?? [500, 1000, 2000],
+              gift_currency: params.gift_currency ?? "usd",
             }
           : {}),
         ...(params.launched_at !== undefined ? { launched_at: params.launched_at } : {}),
