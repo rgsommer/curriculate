@@ -1242,6 +1242,53 @@ export default function EngagementDetailPage() {
     setResendingReveal(false);
   };
 
+  // Play the "Happy Birthday" melody (public-domain tune) via Web Audio — no audio
+  // file needed, works on any device. Triggered on a revealed birthday card.
+  const playHappyBirthday = () => {
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext?: typeof AudioContext })
+          .webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
+      const beat = 0.34;
+      // [frequency Hz, length in beats] — Happy Birthday to You.
+      const G4 = 392.0,
+        A4 = 440.0,
+        B4 = 493.88,
+        C5 = 523.25,
+        D5 = 587.33,
+        E5 = 659.25,
+        F5 = 698.46,
+        G5 = 783.99;
+      const seq: [number, number][] = [
+        [G4, 0.75], [G4, 0.25], [A4, 1], [G4, 1], [C5, 1], [B4, 2],
+        [G4, 0.75], [G4, 0.25], [A4, 1], [G4, 1], [D5, 1], [C5, 2],
+        [G4, 0.75], [G4, 0.25], [G5, 1], [E5, 1], [C5, 1], [B4, 1], [A4, 2],
+        [F5, 0.75], [F5, 0.25], [E5, 1], [C5, 1], [D5, 1], [C5, 2],
+      ];
+      let t = ctx.currentTime + 0.06;
+      for (const [freq, beats] of seq) {
+        const dur = beats * beat;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "triangle";
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.28, t + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.92);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(t);
+        osc.stop(t + dur);
+        t += dur;
+      }
+      window.setTimeout(() => ctx.close().catch(() => {}), (t - ctx.currentTime + 0.4) * 1000);
+    } catch {
+      /* audio not available — no-op */
+    }
+  };
+
   // ── Submit handlers ──
 
   // Save a response (first time or an edit) and close edit mode on success.
@@ -5669,6 +5716,14 @@ export default function EngagementDetailPage() {
                 </>
               )}
             </div>
+          )}
+          {isRealBirthday && isRevealed && (
+            <button
+              onClick={playHappyBirthday}
+              className="mb-4 w-full rounded-2xl bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:opacity-90"
+            >
+              🎵 Play Happy Birthday 🎂
+            </button>
           )}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-900">
