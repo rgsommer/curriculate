@@ -197,6 +197,39 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         // A card holds until the date and opens for the recipient then.
         reveal: "sealed",
       },
+      {
+        id: "teacher-appreciation",
+        name: "Teacher Appreciation 🍎",
+        type: "birthday",
+        title: "Thank you for all you do! 🍎",
+        description:
+          "A surprise card the class signs for a teacher during Teacher Appreciation Week. Notes stay hidden until it opens — add a group gift so everyone can chip in for a thank-you.",
+        occasion: "once",
+        onceLabel: "Teacher Appreciation",
+        reveal: "sealed",
+      },
+      {
+        id: "coach-gift",
+        name: "Coach Thank-You 🏆",
+        type: "birthday",
+        title: "Thanks for a great season, Coach! 🏆",
+        description:
+          "An end-of-season surprise card the team signs for their coach. Add a group gift so the team can chip in together.",
+        occasion: "once",
+        onceLabel: "End of Season",
+        reveal: "sealed",
+      },
+      {
+        id: "christmas-card",
+        name: "Christmas Card 🎄",
+        type: "birthday",
+        title: "Merry Christmas! 🎄",
+        description:
+          "A surprise Christmas card the group signs for someone special — opens on the day. Add a group gift to send a gift card together.",
+        occasion: "once",
+        onceLabel: "Christmas",
+        reveal: "sealed",
+      },
     ],
   },
 ];
