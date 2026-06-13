@@ -1211,12 +1211,22 @@ See you around the campfire! 🏕️`
             Anyone can start an engagement — a question, a challenge, a check-in.
             Nobody sees the answers until everyone&apos;s in.
           </p>
-          <Link
-            href={`/campfirelive/group/${groupId}/engagement/new`}
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
-          >
-            + Start an engagement
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href={`/campfirelive/group/${groupId}/engagement/new`}
+              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:opacity-90"
+            >
+              + Start an engagement
+            </Link>
+            {isAdmin && (
+              <Link
+                href={`/campfirelive/group/${groupId}/birthdays`}
+                className="inline-flex items-center gap-2 rounded-full border border-orange-300 bg-white px-5 py-2.5 text-sm font-semibold text-orange-700 hover:bg-orange-50"
+              >
+                🎂 Bulk add birthdays
+              </Link>
+            )}
+          </div>
         </div>
       )}
 
