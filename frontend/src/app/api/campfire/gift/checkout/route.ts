@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { campfireSiteUrl } from "@/lib/campfire/serverInvites";
-import { isHouseSchool } from "@/lib/campfire/types";
+import { isHouseSchool, raffleOf } from "@/lib/campfire/types";
 
 // Lazy clients so a missing env var can't crash `next build`.
 function getStripe() {
@@ -52,7 +52,7 @@ export async function POST(req: Request) {
     const admin = getAdmin();
     const { data: eng } = await admin
       .from("engagements")
-      .select("id, group_id, gift_enabled, title, gift_currency")
+      .select("id, group_id, gift_enabled, title, gift_currency, config")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -103,7 +103,15 @@ export async function POST(req: Request) {
       ? null
       : (grp?.referrer_code as string | null) || null;
     const PLATFORM_PCT = Number(process.env.CAMPFIRE_PLATFORM_PCT ?? "1") / 100;
-    const REFERRER_PCT = Number(process.env.REFERRAL_REFERRER_PCT ?? "1") / 100;
+    // Raffle Challenge chip-ins carry a higher referrer cut (the incentive to push
+    // them to prospects); ordinary chip-ins use the standard 1%.
+    const isRaffle = !!raffleOf(eng.config as Record<string, unknown> | null);
+    const REFERRER_PCT =
+      Number(
+        isRaffle
+          ? process.env.REFERRAL_REFERRER_PCT_RAFFLE ?? "3"
+          : process.env.REFERRAL_REFERRER_PCT ?? "1"
+      ) / 100;
 
     // The contributor covers the card-processing fee (+ the service fee), so the
     // recipient gets the FULL amount they chose. Gross up the Stripe charge so that,

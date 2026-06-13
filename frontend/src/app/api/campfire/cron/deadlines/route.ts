@@ -17,8 +17,9 @@ import {
   campfireFrom,
   campfireSiteUrl,
   getPendingInviteeEmails,
+  escapeHtml,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, type NthWeekday } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, type NthWeekday } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -50,7 +51,7 @@ export async function GET(req: Request) {
 
   const { data: engs } = await admin
     .from("engagements")
-    .select("id, group_id, title, total_expected, deadline, reveal, type, deadline_nudged_at, hold_until_deadline, birth_year")
+    .select("id, group_id, title, total_expected, deadline, reveal, type, deadline_nudged_at, hold_until_deadline, birth_year, config")
     .eq("status", "active")
     .eq("paused", false) // paused → no auto-reveal / auto-nudge
     .not("deadline", "is", null);
@@ -64,6 +65,42 @@ export async function GET(req: Request) {
     // A Sign-up is a live list with no reveal phase — the deadline just marks the
     // party date. Never auto-reveal it (nudges below still apply).
     const isSignupEng = e.type === "signup";
+
+    // Raffle Challenge: reveal (→ open voting) when the participation gate is met,
+    // or at the deadline as a hard backstop. On reveal, stamp when voting closes.
+    const raffle = raffleOf(e.config as Record<string, unknown> | null);
+    if (!isSignupEng && raffle) {
+      const gate = raffle.participationGate ?? 0;
+      let gateMet = false;
+      if (gate > 0) {
+        const { count: entries } = await admin
+          .from("responses")
+          .select("*", { count: "exact", head: true })
+          .eq("engagement_id", e.id);
+        const expected = (e.total_expected as number) || 0;
+        gateMet =
+          expected > 0 && (entries ?? 0) >= Math.ceil((expected * gate) / 100);
+      }
+      if (gateMet || now >= dl) {
+        const voteDays = raffle.voteDays ?? 5;
+        const voteClosesAt = new Date(now + voteDays * 86400000).toISOString();
+        await admin
+          .from("engagements")
+          .update({
+            status: "revealed",
+            config: {
+              ...((e.config as Record<string, unknown>) ?? {}),
+              raffle: { ...raffle, voteClosesAt },
+            },
+          })
+          .eq("id", e.id);
+        revealed++;
+        continue;
+      }
+      // Not revealed yet (gate unmet, before the deadline) → fall through to the
+      // standard nudge logic. The generic reveal blocks below are no-ops here
+      // because now < dl whenever a raffle reaches this point.
+    }
 
     // "Hold until deadline" engagements reveal AT the deadline regardless of how
     // many responded — that's the whole point of waiting for the date.
@@ -161,6 +198,161 @@ export async function GET(req: Request) {
           .eq("id", e.id);
         nudged++;
       }
+    }
+  }
+
+  // ── Raffle auto-award: voting window closed → pay the voted winner ──
+  let awarded = 0;
+  const { data: raffleEngs } = await admin
+    .from("engagements")
+    .select("id, group_id, creator_id, title, config, gift_currency, gift_enabled")
+    .eq("status", "revealed")
+    .eq("gift_enabled", true)
+    .is("gift_issued_at", null);
+  for (const e of raffleEngs ?? []) {
+    const raffle = raffleOf(e.config as Record<string, unknown> | null);
+    if (!raffle?.voteClosesAt) continue;
+    if (new Date(raffle.voteClosesAt).getTime() > now) continue; // still voting
+
+    // Entries, earliest-first so ties (and zero-vote) resolve to the earliest.
+    const { data: entries } = await admin
+      .from("responses")
+      .select("id, user_id, created_at")
+      .eq("engagement_id", e.id)
+      .order("created_at", { ascending: true });
+    if (!entries || entries.length === 0) continue; // no entries → host can cancel/refund
+
+    const { data: votes } = await admin
+      .from("campfire_challenge_votes")
+      .select("response_id")
+      .eq("engagement_id", e.id);
+    const counts: Record<string, number> = {};
+    for (const v of votes ?? [])
+      counts[v.response_id as string] = (counts[v.response_id as string] ?? 0) + 1;
+    let winner = entries[0];
+    let best = -1;
+    for (const r of entries) {
+      const c = counts[r.id as string] ?? 0;
+      if (c > best) {
+        best = c;
+        winner = r;
+      }
+    }
+    const winnerUid = winner.user_id as string;
+
+    // Resolve the winner's email (login email, else host-linked notify email).
+    const { data: wUser } = await admin.auth.admin.getUserById(winnerUid);
+    let winnerEmail = wUser?.user?.email || null;
+    let winnerName =
+      (wUser?.user?.user_metadata?.name as string | undefined) || undefined;
+    const { data: wGm } = await admin
+      .from("group_members")
+      .select("notify_email, display_name")
+      .eq("group_id", e.group_id)
+      .eq("user_id", winnerUid)
+      .maybeSingle();
+    if (!winnerEmail) winnerEmail = (wGm?.notify_email as string | null) || null;
+    winnerName = winnerName || (wGm?.display_name as string | undefined) || undefined;
+
+    // Pool = paid contributions on this engagement.
+    const { data: contribs } = await admin
+      .from("campfire_gift_contributions")
+      .select("amount_cents")
+      .eq("engagement_id", e.id)
+      .eq("status", "paid");
+    const totalCents = (contribs ?? []).reduce(
+      (a, c) => a + ((c.amount_cents as number) || 0),
+      0
+    );
+
+    // Can't pay (no funds, no email, or Tremendous unconfigured) → just record the
+    // winner so the UI can show it; leave it unissued and retry next run.
+    if (totalCents <= 0 || !winnerEmail || !giftProviderConfigured()) {
+      await admin
+        .from("engagements")
+        .update({
+          config: {
+            ...((e.config as Record<string, unknown>) ?? {}),
+            raffle: { ...raffle, winnerUserId: winnerUid },
+          },
+        })
+        .eq("id", e.id);
+      continue;
+    }
+
+    const hostPct = raffle.hostSplitPct ?? 0;
+    const hostCents = Math.round((totalCents * hostPct) / 100);
+    const winnerCents = totalCents - hostCents;
+    const currency = (e.gift_currency as string | null) ?? "usd";
+
+    const won = await issueGiftCard({
+      amountCents: winnerCents,
+      currency,
+      recipientEmail: winnerEmail,
+      recipientName: winnerName,
+      note: `You won "${e.title}"! 🏆 The group voted your entry the winner.`,
+      idempotencyKey: `${e.id}:winner`,
+    });
+    if (!won.ok) {
+      console.error("Raffle winner payout failed:", won.error);
+      continue; // retry next run
+    }
+    // Host's split (if any) → the engagement creator's email.
+    if (hostCents > 0) {
+      const { data: hUser } = await admin.auth.admin.getUserById(
+        e.creator_id as string
+      );
+      const hostEmail = hUser?.user?.email || null;
+      if (hostEmail) {
+        await issueGiftCard({
+          amountCents: hostCents,
+          currency,
+          recipientEmail: hostEmail,
+          note: `Host's ${hostPct}% share of the "${e.title}" prize pot.`,
+          idempotencyKey: `${e.id}:host`,
+        });
+      }
+    }
+
+    await admin
+      .from("engagements")
+      .update({
+        gift_issued_at: new Date(now).toISOString(),
+        gift_recipient_email: winnerEmail,
+        gift_recipient_name: winnerName ?? null,
+        config: {
+          ...((e.config as Record<string, unknown>) ?? {}),
+          raffle: { ...raffle, winnerUserId: winnerUid },
+        },
+      })
+      .eq("id", e.id);
+    awarded++;
+
+    // Tell the group who won.
+    try {
+      const memberEmails = await getGroupMemberEmails(admin, e.group_id as string);
+      const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+      const pot = `${currency.toUpperCase()} $${(winnerCents / 100).toFixed(2)}`;
+      const who = winnerName || "The winner";
+      const subject = `🏆 We have a winner — "${e.title}"`;
+      const text = `${who} won the ${pot} prize pot for "${e.title}". See the entry: ${engUrl}`;
+      const html = `<p>🏆 <b>${escapeHtml(who)}</b> won the ${pot} prize pot for "${escapeHtml(
+        e.title as string
+      )}".</p><p><a href="${engUrl}">See the winning entry →</a></p>`;
+      for (let i = 0; i < memberEmails.length; i += 100) {
+        await resend.batch.send(
+          memberEmails.slice(i, i + 100).map((to) => ({
+            from,
+            to: [to],
+            subject,
+            text,
+            html,
+            ...mailDefaults(),
+          }))
+        );
+      }
+    } catch (err) {
+      console.error("Raffle winner notify failed:", err);
     }
   }
 
@@ -519,5 +711,6 @@ export async function GET(req: Request) {
     spawned,
     notifiedReveals,
     giftsIssued,
+    awarded,
   });
 }

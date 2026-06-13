@@ -199,6 +199,24 @@ export interface Engagement {
   creator?: { display_name: string } | null;
 }
 
+// Raffle Challenge: a challenge whose chip-in pool goes to the voted winner.
+// Stored on engagement.config.raffle. The pool reuses the embedded gift_* columns;
+// the winner's email is written to gift_recipient_* at award time.
+export interface RaffleConfig {
+  on: boolean;
+  hostSplitPct?: number; // % of the pot the host keeps (0 = winner takes all)
+  voteDays?: number; // voting window length, in days after the entries close
+  participationGate?: number; // hold reveal until this % of the group has entered (0 = off)
+  voteClosesAt?: string | null; // set at reveal: when voting closes + auto-award fires
+  winnerUserId?: string | null; // recorded at award
+}
+export function raffleOf(
+  config: Record<string, unknown> | null | undefined
+): RaffleConfig | null {
+  const r = (config ?? {})["raffle"] as RaffleConfig | undefined;
+  return r && r.on ? r : null;
+}
+
 // A Sign-up chip-in: an engagement can have several (one per member who starts one,
 // host can start more). Card gifts use the engagement.gift_* columns instead.
 export interface CampfireGift {

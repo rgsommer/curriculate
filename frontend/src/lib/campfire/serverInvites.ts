@@ -626,6 +626,53 @@ Your link: ${link}
   return { subject, text, html };
 }
 
+// New-feature nudge for referral partners: introduce the Raffle Challenge and give
+// them a prospect-ready link (their code baked in). Raffle chip-ins pay a higher
+// referrer cut, so this is the one to push.
+export function raffleReferrerEmail(opts: { name?: string | null; link: string }) {
+  const { name, link } = opts;
+  const hi = firstName(name ?? undefined);
+  const subject = "🏆 New on Campfire: Raffle Challenges (and a bigger cut for you)";
+
+  // Paste-ready blurb for THEM to send to a club, team, or class.
+  const post = `🏆 New on Campfire: Raffle Challenges! Pick a theme — say a Fishing Challenge: "post your best catch of the season." Everyone chips in to a prize pot all season long; when it closes the group votes, and the winner takes the gift card. No app or account needed — just your name and a photo. Start one here: ${link}`;
+
+  const intro = `${hi ? hi + ",\n\n" : ""}There's a new way to use Campfire that's perfect for clubs, teams, and classes: the Raffle Challenge. A host sets a themed photo challenge with a closing date, the group chips in to a pot all season, then votes on the winner — who takes the pot as a gift card. Share it with your groups using the paste-ready message below (your referral link is built in).`;
+
+  // Higher incentive on raffles — kept out of the paste-ready blurb.
+  const earnings =
+    "💸 Why push these: you earn about 3% of every raffle chip-in your linked groups make — three times the usual rate, added on top so it costs your groups nothing. Track it on your Campfire referral dashboard.";
+
+  const text = `${intro}
+
+— — — — — — — — — —
+${post}
+— — — — — — — — — —
+
+${earnings}
+
+Your link: ${link}
+
+— Campfire is operated by 10323594 Canada Corp, a company separate from any school or its staff. Challenges, pots & gifts are organized by participants.`;
+
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:520px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">🏆</div>
+  <h1 style="font-size:20px; margin:8px 0;">New: Raffle Challenges</h1>
+  <p style="color:#475569; margin:0 0 12px;">${escapeHtml(intro)}</p>
+  <div style="background:#fffbeb; border:1px solid #fde68a; border-radius:12px; padding:14px; color:#78350f; font-size:14px;">
+    ${escapeHtml(post)}
+  </div>
+  <p style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:12px; padding:12px 14px; color:#065f46; font-size:13px; margin:14px 0 0;">${escapeHtml(
+    earnings
+  )}</p>
+  <p style="margin:16px 0 0;"><a href="${link}" style="color:#d97706; font-weight:700; word-break:break-all;">${link}</a></p>
+  <p style="color:#94a3b8; font-size:12px; margin:14px 0 0;">You're getting this because you're a Campfire referral partner.</p>
+  <p style="color:#cbd5e1; font-size:11px; margin:8px 0 0;">Campfire is operated by 10323594 Canada Corp — a company separate from any school or its staff. Challenges, pots &amp; gifts are organized by participants.</p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function inviteEmail(opts: {
   inviter: string;
   groupName: string;

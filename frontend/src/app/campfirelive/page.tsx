@@ -23,6 +23,7 @@ const START_TEMPLATE_LABELS: Record<string, string> = {
   "teacher-appreciation": "teacher appreciation card 🍎",
   "thank-you-card": "thank-you card 💌",
   "christmas-card": "Christmas card 🎄",
+  "raffle-challenge": "prize challenge 🏆",
 };
 
 export default function DashboardPage() {

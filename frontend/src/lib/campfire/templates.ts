@@ -27,6 +27,8 @@ export interface EngagementTemplate {
   partyKind?: string;
   // Pre-enable a gift exchange (Secret Santa) on a sign-up.
   giftExchange?: { byGender?: boolean; assign?: "self" | "person" | "gender" };
+  // Pre-enable a Raffle Challenge: the chip-in pool goes to the voted winner.
+  raffle?: boolean;
 }
 
 export interface TemplatePack {
@@ -320,6 +322,22 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
           { label: "Meal — day 3", capacity: 1 },
           { label: "Meal — day 4", capacity: 1 },
         ],
+      },
+    ],
+  },
+  {
+    id: "prize-challenges",
+    name: "Prize Challenges",
+    emoji: "🏆",
+    templates: [
+      {
+        id: "raffle-challenge",
+        name: "Raffle Challenge",
+        type: "challenge",
+        title: "Best photo of your catch this season 🎣",
+        description:
+          "Post your best entry. Everyone chips in to the pot all season — when it closes, the group votes and the winner takes the gift card.",
+        raffle: true,
       },
     ],
   },

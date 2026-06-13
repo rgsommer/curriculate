@@ -121,6 +121,11 @@ export default function NewEngagementPage() {
   const [giftRecipientEmail, setGiftRecipientEmail] = useState("");
   const [giftRecipientName, setGiftRecipientName] = useState("");
   const [giftCurrency, setGiftCurrency] = useState("usd");
+  // Raffle Challenge: pot goes to the voted winner (challenge type only).
+  const [raffleOn, setRaffleOn] = useState(false);
+  const [raffleSplit, setRaffleSplit] = useState(0); // host's cut, %
+  const [raffleVoteDays, setRaffleVoteDays] = useState(5); // voting window after close
+  const [raffleGate, setRaffleGate] = useState(0); // hold reveal until this % entered
   // Default the gift currency to the host's region (overridable below).
   useEffect(() => {
     setGiftCurrency(localeGiftCurrency());
@@ -372,6 +377,7 @@ export default function NewEngagementPage() {
       if (t.partyKind) setPartyKind(t.partyKind);
       setPartyGiftex(t.giftExchange ?? null);
     }
+    if (t.raffle) setRaffleOn(true);
     if (t.reveal) setReveal(t.reveal);
     setStep("details");
   };
@@ -543,6 +549,15 @@ export default function NewEngagementPage() {
 
     if (selectedType === "challenge") {
       config.media_type = "photo"; // Default, could be made selectable
+      if (raffleOn) {
+        // Pot goes to the voted winner — recipient is resolved at award time.
+        config.raffle = {
+          on: true,
+          hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
+          voteDays: Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
+          participationGate: raffleGate || 0,
+        };
+      }
     }
 
     if (selectedType === "signup") {
@@ -636,6 +651,15 @@ export default function NewEngagementPage() {
       return;
     }
 
+    // A raffle pools toward the winner; it needs a closing date (entries end + voting
+    // begins there) but no preset recipient.
+    const challengeRaffle = selectedType === "challenge" && raffleOn;
+    if (challengeRaffle && !deadline) {
+      setError("Set a closing date — that's when the challenge ends and voting begins.");
+      setCreating(false);
+      return;
+    }
+
     const result = await create({
       groupId: destGroupId,
       type: selectedType,
@@ -643,17 +667,18 @@ export default function NewEngagementPage() {
       description: description.trim() || undefined,
       config,
       deadline: finalDeadline,
-      reveal:
-        selectedType === "two_truths" ||
-        selectedType === "baby_reveal" ||
-        selectedType === "most_likely" ||
-        selectedType === "accountability" ||
-        selectedType === "scavenger_hunt" ||
-        isBirthday
-          ? "sealed"
-          : selectedType === "signup"
-          ? "as_they_come" // a sign-up is live — everyone sees what's claimed
-          : reveal,
+      reveal: challengeRaffle
+        ? "sealed" // entries stay sealed so voting on them is fair
+        : selectedType === "two_truths" ||
+          selectedType === "baby_reveal" ||
+          selectedType === "most_likely" ||
+          selectedType === "accountability" ||
+          selectedType === "scavenger_hunt" ||
+          isBirthday
+        ? "sealed"
+        : selectedType === "signup"
+        ? "as_they_come" // a sign-up is live — everyone sees what's claimed
+        : reveal,
       is_blind: isBlind,
       // Every card occasion repeats yearly (birthday, anniversary, Mother's/Father's
       // Day, custom holiday) EXCEPT a one-time card, which never recurs.
@@ -667,9 +692,11 @@ export default function NewEngagementPage() {
         ? undefined
         : recurrence,
       notify: true, // launching always notifies the group
-      // Birthday + Baby Reveal always hold until the date; others only when opted in.
+      // Birthday + Baby Reveal always hold until the date; a raffle holds too (the
+      // cron reveals it on the date or once the participation gate is met). Others
+      // only when opted in.
       hold_until_deadline:
-        isBirthday || selectedType === "baby_reveal"
+        isBirthday || selectedType === "baby_reveal" || challengeRaffle
           ? true
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
       // Birthday: schedule the auto-open and store the age basis.
@@ -688,10 +715,19 @@ export default function NewEngagementPage() {
       // Wait for the full invite list to join + respond (sealed only).
       wait_for_all_invited:
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
-      // Group gift — collect contributions toward a card for the recipient.
-      gift_enabled: giftEnabled,
-      gift_recipient_email: giftEnabled ? giftRecipientEmail.trim() || null : null,
-      gift_recipient_name: giftEnabled ? giftRecipientName.trim() || null : null,
+      // Group gift — collect contributions toward a card for the recipient. A raffle
+      // also pools, but the recipient (winner) is resolved at award time → no email.
+      gift_enabled: giftEnabled || challengeRaffle,
+      gift_recipient_email: challengeRaffle
+        ? null
+        : giftEnabled
+        ? giftRecipientEmail.trim() || null
+        : null,
+      gift_recipient_name: challengeRaffle
+        ? null
+        : giftEnabled
+        ? giftRecipientName.trim() || null
+        : null,
       gift_currency: giftCurrency,
       // Keep responses visible only to each author + the host.
       private_to_host: privateToHost,
@@ -2103,7 +2139,96 @@ export default function NewEngagementPage() {
               </div>
             </label>
 
+            {/* Raffle Challenge — pot goes to the voted winner (challenge only) */}
+            {selectedType === "challenge" && (
+              <div>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={raffleOn}
+                    onChange={(e) => setRaffleOn(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-500"
+                  />
+                  <div>
+                    <div className="text-sm font-medium text-slate-700">
+                      🏆 Make it a prize challenge (raffle)
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      People chip in toward a pot until the closing date. After entries
+                      close, the group votes — one vote each — and the winner gets the
+                      gift card.
+                    </div>
+                  </div>
+                </label>
+                {raffleOn && (
+                  <div className="mt-2 ml-7 space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                    <div className="flex items-center gap-2">
+                      <label className="w-36 text-xs text-slate-600">Your cut (host)</label>
+                      <select
+                        value={raffleSplit}
+                        onChange={(e) => setRaffleSplit(Number(e.target.value))}
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                      >
+                        <option value={0}>Winner takes all</option>
+                        <option value={10}>90% winner / 10% you</option>
+                        <option value={25}>75% / 25%</option>
+                        <option value={50}>50 / 50</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-36 text-xs text-slate-600">Voting window</label>
+                      <select
+                        value={raffleVoteDays}
+                        onChange={(e) => setRaffleVoteDays(Number(e.target.value))}
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                      >
+                        <option value={2}>2 days</option>
+                        <option value={3}>3 days</option>
+                        <option value={5}>5 days</option>
+                        <option value={7}>7 days</option>
+                      </select>
+                      <span className="text-[11px] text-slate-400">after entries close</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-36 text-xs text-slate-600">Hold reveal until</label>
+                      <select
+                        value={raffleGate}
+                        onChange={(e) => setRaffleGate(Number(e.target.value))}
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                      >
+                        <option value={0}>Off — reveal on the date</option>
+                        <option value={80}>80% have entered</option>
+                        <option value={90}>90% have entered</option>
+                        <option value={100}>everyone has entered</option>
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-36 text-xs text-slate-600">Pot currency</label>
+                      <select
+                        value={giftCurrency}
+                        onChange={(e) => setGiftCurrency(e.target.value)}
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                      >
+                        {GIFT_CURRENCIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <p className="text-[11px] text-slate-400">
+                      Set a closing date below — entries end and voting begins there
+                      {raffleGate > 0
+                        ? ". The date is the hard backstop if the participation goal isn't met first."
+                        : "."}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Group gift — chip in toward a gift card for the recipient */}
+            {!(selectedType === "challenge" && raffleOn) && (
             <div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
@@ -2164,6 +2289,7 @@ export default function NewEngagementPage() {
                 </div>
               )}
             </div>
+            )}
 
             {/* Let members reply anonymously after release */}
             {!privateToHost && (

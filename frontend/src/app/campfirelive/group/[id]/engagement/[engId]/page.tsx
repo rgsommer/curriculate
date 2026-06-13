@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf } from "@/lib/campfire/types";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
@@ -218,6 +218,44 @@ export default function EngagementDetailPage() {
   const [startingGift, setStartingGift] = useState(false);
   const [sendingGift, setSendingGift] = useState(false);
   useEffect(() => setStartGiftCurrency(localeGiftCurrency()), []);
+  // Raffle Challenge: one-vote-each tallies + this member's current vote.
+  const [voteTallies, setVoteTallies] = useState<Record<string, number>>({});
+  const [myVote, setMyVote] = useState<string | null>(null);
+  const [votingBusy, setVotingBusy] = useState(false);
+  useEffect(() => {
+    const isRaffle = !!raffleOf(engagement?.config);
+    if (!isRaffle || engagement?.status !== "revealed" || !engagementId) {
+      setVoteTallies({});
+      setMyVote(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: tallies } = await supabase.rpc("campfire_challenge_tallies", {
+        _eid: engagementId,
+      });
+      const map: Record<string, number> = {};
+      (Array.isArray(tallies) ? tallies : []).forEach(
+        (t: { response_id: string; votes: number }) => {
+          map[t.response_id] = Number(t.votes) || 0;
+        }
+      );
+      if (user?.id) {
+        const { data: mine } = await supabase
+          .from("campfire_challenge_votes")
+          .select("response_id")
+          .eq("engagement_id", engagementId)
+          .eq("voter_user_id", user.id)
+          .maybeSingle();
+        if (!cancelled) setMyVote((mine?.response_id as string | null) ?? null);
+      }
+      if (!cancelled) setVoteTallies(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagement?.status, engagement?.config, engagementId, user?.id, confirmTick]);
   const [signupBusy, setSignupBusy] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
   const [extraInput, setExtraInput] = useState(""); // member "I'm bringing…" text
@@ -609,6 +647,18 @@ export default function EngagementDetailPage() {
   const allIn = responseCount >= displayExpected;
   const isCreator = engagement.creator_id === user?.id;
   const isDraft = !engagement.launched_at;
+  // ── Raffle Challenge: pot goes to the voted winner ──
+  const raffle = raffleOf(engagement.config);
+  const voteClosesAt = raffle?.voteClosesAt
+    ? new Date(raffle.voteClosesAt).getTime()
+    : null;
+  const votingOpen =
+    !!raffle &&
+    isRevealed &&
+    !engagement.gift_issued_at &&
+    (!voteClosesAt || voteClosesAt > Date.now());
+  // Winner crown: for a raffle, only the awarded winner (after the cron pays out).
+  const raffleWinnerUserId = raffle?.winnerUserId ?? null;
   // Resolve a member's per-group name (falls back to their global/profile name).
   const memberNameOf = (userId: string | null | undefined, fallback?: string | null) =>
     roster.find((m) => m.user_id === userId)?.name || fallback || "Someone";
@@ -724,6 +774,39 @@ export default function EngagementDetailPage() {
     }
   };
 
+  // Raffle Challenge: cast (or change) your single vote for the best entry.
+  const castVote = async (responseId: string) => {
+    if (votingBusy || !user || !engagementId) return;
+    setVotingBusy(true);
+    const prev = myVote;
+    try {
+      const { error } = await supabase.from("campfire_challenge_votes").upsert(
+        {
+          engagement_id: engagementId,
+          voter_user_id: user.id,
+          response_id: responseId,
+        },
+        { onConflict: "engagement_id,voter_user_id" }
+      );
+      if (error) {
+        alert("Couldn't record your vote: " + error.message);
+      } else {
+        // Optimistic tally update: move one vote from the old pick to the new.
+        setVoteTallies((t) => {
+          const next = { ...t };
+          if (prev && prev !== responseId)
+            next[prev] = Math.max(0, (next[prev] ?? 0) - 1);
+          if (prev !== responseId) next[responseId] = (next[responseId] ?? 0) + 1;
+          return next;
+        });
+        setMyVote(responseId);
+      }
+    } catch {
+      alert("Couldn't record your vote.");
+    }
+    setVotingBusy(false);
+  };
+
   // Any group member can start a group chip-in (gift) for one guest on this engagement.
   const startGift = async () => {
     if (startingGift) return;
@@ -819,6 +902,12 @@ export default function EngagementDetailPage() {
     ? responses.find((r) => r.id === winnerResponseId)?.user_id ?? null
     : null;
   const iWon = isRevealed && !!winnerUserId && winnerUserId === user?.id;
+  // The crowned entry: for a raffle, the awarded winner (by votes); else by rating.
+  const crownResponseId = raffle
+    ? raffleWinnerUserId
+      ? responses.find((r) => r.user_id === raffleWinnerUserId)?.id ?? null
+      : null
+    : winnerResponseId;
 
   // ── Creator: edit the prompt ──
 
@@ -4288,7 +4377,7 @@ export default function EngagementDetailPage() {
                     {content.mode === "truth" ? "🤐 Truth" : "🔥 Dare"}
                   </span>
                 )}
-                {r.id === winnerResponseId && (
+                {r.id === crownResponseId && (
                   <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
                     🏆 Winner
                   </span>
@@ -4446,7 +4535,30 @@ export default function EngagementDetailPage() {
                 })}
               </div>
 
-              {/* Rating */}
+              {/* Rating — or, for a raffle, one-vote-each */}
+              {raffle ? (
+                <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2">
+                  {r.user_id === user?.id ? (
+                    <span className="text-xs text-slate-400">Your entry — others vote for it</span>
+                  ) : votingOpen ? (
+                    <button
+                      onClick={() => castVote(r.id)}
+                      disabled={votingBusy}
+                      className={`rounded-full px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                        myVote === r.id
+                          ? "bg-amber-500 text-white"
+                          : "border border-amber-300 text-amber-700 hover:bg-amber-50"
+                      }`}
+                    >
+                      {myVote === r.id ? "✓ Your vote" : "🗳 Vote"}
+                    </button>
+                  ) : null}
+                  <span className="text-xs font-medium text-slate-600">
+                    {voteTallies[r.id] ?? 0}{" "}
+                    {(voteTallies[r.id] ?? 0) === 1 ? "vote" : "votes"}
+                  </span>
+                </div>
+              ) : (
               <div className="mt-3 flex items-center gap-2 border-t border-slate-100 pt-2">
                 {r.user_id === user?.id ? (
                   <span className="text-xs text-slate-400">Your entry — others rate it</span>
@@ -4475,6 +4587,7 @@ export default function EngagementDetailPage() {
                   );
                 })()}
               </div>
+              )}
               <div className="mt-2 flex items-center gap-3 text-[11px]">
                 {r.user_id !== user?.id &&
                   (reportedIds.has(r.id) ? (
@@ -5895,12 +6008,14 @@ export default function EngagementDetailPage() {
           );
         })()}
 
-      {/* ── GROUP GIFT: chip in toward a gift card for the recipient (hidden from
-            the recipient to keep it a surprise) ── */}
+      {/* ── GROUP GIFT / PRIZE POT: chip in toward a gift card (the recipient for a
+            card; the voted winner for a raffle) ── */}
       {engagement.gift_enabled && !isGiftHidden && (
         <div className="mb-6 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
-            <h2 className="font-bold text-slate-900">🎁 Group gift</h2>
+            <h2 className="font-bold text-slate-900">
+              {raffle ? "🏆 Prize pot" : "🎁 Group gift"}
+            </h2>
             {giftSummary && giftSummary.contributors > 0 && canSeeGiftTotal && (
               <span className="text-sm font-bold text-orange-700">
                 {formatMoney(giftSummary.total_cents, engagement.gift_currency)} from{" "}
@@ -5909,7 +6024,82 @@ export default function EngagementDetailPage() {
               </span>
             )}
           </div>
-          {engagement.gift_issued_at ? (
+          {raffle ? (
+            // ── Raffle: pot → voted winner ──
+            engagement.gift_issued_at ? (
+              <p className="text-sm text-slate-600">
+                ✅ The{" "}
+                {formatMoney(giftSummary?.total_cents ?? 0, engagement.gift_currency)}{" "}
+                pot went to{" "}
+                <b>{raffleWinnerUserId ? memberNameOf(raffleWinnerUserId) : "the winner"}</b>
+                {(raffle.hostSplitPct ?? 0) > 0
+                  ? ` (you kept ${raffle.hostSplitPct}%).`
+                  : "."}{" "}
+                🎉
+              </p>
+            ) : votingOpen ? (
+              <p className="text-sm text-slate-600">
+                🗳 Voting is open — tap <b>Vote</b> on your favourite entry below.
+                {voteClosesAt
+                  ? ` Closes ${new Date(voteClosesAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}.`
+                  : ""}{" "}
+                The winner gets{" "}
+                {formatMoney(
+                  Math.round(
+                    (giftSummary?.total_cents ?? 0) * (1 - (raffle.hostSplitPct ?? 0) / 100)
+                  ),
+                  engagement.gift_currency
+                )}
+                {(raffle.hostSplitPct ?? 0) > 0
+                  ? `, the host keeps ${raffle.hostSplitPct}%.`
+                  : "."}
+              </p>
+            ) : (
+              <>
+                <p className="text-xs text-slate-600 mb-3">
+                  Chip in toward the pot. When entries close
+                  {deadlineStr ? ` (${deadlineStr})` : ""}, the group votes — one vote
+                  each — and the winner takes it
+                  {(raffle.hostSplitPct ?? 0) > 0
+                    ? ` (the host keeps ${raffle.hostSplitPct}%).`
+                    : "."}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {[500, 1000, 2000].map((cents) => (
+                    <button
+                      key={cents}
+                      onClick={() => chipIn(cents)}
+                      disabled={chippingIn}
+                      className="rounded-full bg-white border border-amber-300 px-4 py-2 text-sm font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      {formatMoney(cents, engagement.gift_currency)}
+                    </button>
+                  ))}
+                  <button
+                    onClick={() => {
+                      const cur = (engagement.gift_currency || "usd").toUpperCase();
+                      const v = window.prompt(`Chip in how much? (${cur})`);
+                      const n = v ? Math.round(parseFloat(v) * 100) : 0;
+                      if (n >= 100) chipIn(n);
+                      else if (v) alert("Minimum is 1.");
+                    }}
+                    disabled={chippingIn}
+                    className="rounded-full bg-white border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Other…
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-400">
+                  {chippingIn
+                    ? "Opening secure checkout…"
+                    : "A small card-processing fee is added on top so the winner gets the full pot. Charged now; refunded if the challenge is canceled."}
+                </p>
+              </>
+            )
+          ) : engagement.gift_issued_at ? (
             <p className="text-sm text-slate-600">
               ✅ The gift card was sent to{" "}
               {engagement.gift_recipient_name || "the recipient"}. Thank you!
