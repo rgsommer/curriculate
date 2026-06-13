@@ -2,6 +2,16 @@
 // Campfire Live — TypeScript Types
 // ============================================================
 
+// Schools where the referral program is WAIVED (no service fee, no referrer cut) —
+// the operator's own community, to avoid any conflict of interest. A group marked
+// for one of these isn't stamped with a referrer code, so chip-ins stay fee-free.
+// Matched loosely (case-insensitive substring) so naming variations still catch.
+export const HOUSE_SCHOOLS = ["brampton christian"];
+export function isHouseSchool(name?: string | null): boolean {
+  const n = (name ?? "").trim().toLowerCase();
+  return !!n && HOUSE_SCHOOLS.some((h) => n.includes(h));
+}
+
 export type EngagementType =
   | "poll"
   | "challenge"

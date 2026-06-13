@@ -11,6 +11,7 @@ import {
   ENGAGEMENT_TYPES,
   engagementIcon,
   resolveTitle,
+  isHouseSchool,
   type EngagementType,
 } from "@/lib/campfire/types";
 
@@ -25,6 +26,8 @@ export default function DashboardPage() {
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newEmoji, setNewEmoji] = useState("🔥");
+  const [newIsOrg, setNewIsOrg] = useState(false); // for a school/organization?
+  const [newSchool, setNewSchool] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -248,7 +251,8 @@ export default function DashboardPage() {
     const { group, error: createError } = await createGroup(
       newName.trim(),
       newDesc.trim(),
-      newEmoji
+      newEmoji,
+      newIsOrg ? newSchool.trim() : null
     );
     if (!group) {
       setError(createError ?? "Failed to create group. Try again.");
@@ -483,6 +487,35 @@ export default function DashboardPage() {
               placeholder="What's this group about?"
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
             />
+          </div>
+
+          <div className="mb-4">
+            <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-slate-700">
+              <input
+                type="checkbox"
+                checked={newIsOrg}
+                onChange={(e) => setNewIsOrg(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+              />
+              This is for a school or organization
+            </label>
+            {newIsOrg && (
+              <>
+                <input
+                  type="text"
+                  value={newSchool}
+                  onChange={(e) => setNewSchool(e.target.value)}
+                  placeholder="School / organization name"
+                  className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                />
+                {isHouseSchool(newSchool) && (
+                  <p className="mt-1 text-xs font-medium text-emerald-700">
+                    ✓ Referral fees are waived for this school — no charge beyond the
+                    gift, and no commission to anyone.
+                  </p>
+                )}
+              </>
+            )}
           </div>
 
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}

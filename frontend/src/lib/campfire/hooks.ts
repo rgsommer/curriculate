@@ -21,6 +21,7 @@ import type {
   RevealAnswer,
   CareAnswer,
 } from "./types";
+import { isHouseSchool } from "./types";
 
 // ── Groups ──
 
@@ -71,16 +72,26 @@ export function useGroups() {
     fetchGroups();
   }, [fetchGroups]);
 
-  const createGroup = async (name: string, description: string, emoji: string) => {
+  const createGroup = async (
+    name: string,
+    description: string,
+    emoji: string,
+    school?: string | null
+  ) => {
     if (!user) return { group: null, error: "You're not signed in." };
 
-    // Referral attribution: stamp the code the new group was started from (if any).
+    // Referral attribution: stamp the code the new group was started from (if any) —
+    // EXCEPT inside a "house" school, where the referral program is waived (no fee /
+    // no cut) to avoid a conflict of interest.
     let referrerCode: string | null = null;
-    try {
-      referrerCode = localStorage.getItem("campfire_ref") || null;
-    } catch {
-      /* ignore */
+    if (!isHouseSchool(school)) {
+      try {
+        referrerCode = localStorage.getItem("campfire_ref") || null;
+      } catch {
+        /* ignore */
+      }
     }
+    const schoolTrim = (school ?? "").trim();
 
     const { data: group, error } = await supabase
       .from("groups")
@@ -89,6 +100,7 @@ export function useGroups() {
         description,
         creator_id: user.id,
         avatar_emoji: emoji,
+        ...(schoolTrim ? { school: schoolTrim } : {}),
         ...(referrerCode ? { referrer_code: referrerCode } : {}),
       })
       .select()
