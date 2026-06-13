@@ -6036,6 +6036,37 @@ export default function EngagementDetailPage() {
           )
         )}
 
+      {/* Post-entry nudge: a competitor who's entered can still support the pot. */}
+      {raffle &&
+        entryFeeCents === 0 &&
+        hasResponded &&
+        engagement.status === "active" &&
+        !engagement.gift_issued_at && (
+          <a
+            href="#prizepot"
+            onClick={(e) => {
+              e.preventDefault();
+              document
+                .getElementById("prizepot")
+                ?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+            className="mb-6 flex items-center justify-between gap-3 rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-5 py-4 shadow-sm transition hover:border-amber-400"
+          >
+            <div className="min-w-0">
+              <div className="text-base font-extrabold text-slate-900">
+                🎉 You&apos;re in! Want to chip in too?
+              </div>
+              <div className="truncate text-xs text-slate-600">
+                Competing and supporting aren&apos;t either/or — grow the pot for the
+                winner.
+              </div>
+            </div>
+            <span className="flex-shrink-0 rounded-full bg-amber-500 px-4 py-2 text-sm font-bold text-white">
+              💸 Chip in
+            </span>
+          </a>
+        )}
+
       {/* ── Surprise: who it's hidden from until the reveal ── */}
       {((engagement.excluded_user_ids?.length ?? 0) > 0 ||
         (engagement.excluded_emails?.length ?? 0) > 0) &&
