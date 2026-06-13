@@ -213,7 +213,9 @@ export interface RaffleConfig {
   entryFeeCents?: number; // >0 = paid entry (must pay to submit; funds the pot, no refund)
   voteClosesAt?: string | null; // set at reveal: when voting closes + auto-award fires
   noVoteGraceUntil?: string | null; // if voting closed with zero votes: extended deadline
-  winnerUserId?: string | null; // recorded at award
+  winnerUserId?: string | null; // recorded at award (a member)
+  winnerName?: string | null; // recorded at award when the winner is an anonymous (QR) contributor
+  winnerUnpaid?: boolean; // winner has no email on file — host pays them in person
   // Raffle Draw (no contest): a random winner is drawn from the people who chipped in.
   draw?: boolean;
   drawWeighted?: boolean; // true = chances scale with amount chipped in; false = one each

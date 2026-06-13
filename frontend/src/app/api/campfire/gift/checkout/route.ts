@@ -162,6 +162,9 @@ export async function POST(req: Request) {
               pledge_max_cents: pledgeMaxCents,
             }
           : {}),
+        // Store the email only for anonymous (no-account) contributors — lets a raffle
+        // winner with no member account still be reached/paid. (Needs migration 068.)
+        ...(!userId && email ? { contributor_email: email } : {}),
       })
       .select("id")
       .single();

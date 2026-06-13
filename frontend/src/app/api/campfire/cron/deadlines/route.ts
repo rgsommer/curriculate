@@ -229,7 +229,7 @@ export async function GET(req: Request) {
           gift_currency: e.gift_currency as string | null,
           gift_issued_at: null,
         });
-        if (r.ok && r.winnerUserId) awarded++;
+        if (r.ok) awarded++;
       }
       continue;
     }

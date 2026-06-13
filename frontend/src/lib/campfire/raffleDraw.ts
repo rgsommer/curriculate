@@ -33,51 +33,92 @@ export async function runRaffleDraw(
   if (!raffle?.draw) return { ok: false, error: "Not a raffle draw." };
   if (eng.gift_issued_at) return { ok: true };
 
-  const { data: contribs } = await admin
-    .from("campfire_gift_contributions")
-    .select("user_id, amount_cents")
-    .eq("engagement_id", eng.id)
-    .eq("status", "paid")
-    .not("user_id", "is", null);
-  const totals: Record<string, number> = {};
-  for (const c of contribs ?? []) {
-    const cu = c.user_id as string;
-    totals[cu] = (totals[cu] ?? 0) + ((c.amount_cents as number) || 0);
+  // Everyone who chipped in (paid) — members (user_id) AND named anonymous (QR /give)
+  // contributors are both eligible. Pool by identity, weighted by amount.
+  type Contrib = {
+    user_id: string | null;
+    amount_cents: number | null;
+    contributor_name: string | null;
+    contributor_email?: string | null;
+  };
+  let contribs = (
+    await admin
+      .from("campfire_gift_contributions")
+      .select("user_id, amount_cents, contributor_name, contributor_email")
+      .eq("engagement_id", eng.id)
+      .eq("status", "paid")
+  ).data as Contrib[] | null;
+  if (!contribs) {
+    // contributor_email column not present yet (migration 068) — fall back without it.
+    const fb = await admin
+      .from("campfire_gift_contributions")
+      .select("user_id, amount_cents, contributor_name")
+      .eq("engagement_id", eng.id)
+      .eq("status", "paid");
+    contribs = (fb.data as Contrib[] | null) ?? null;
   }
-  const uids = Object.keys(totals);
-  if (uids.length === 0) return { ok: false, error: "Nobody's chipped in yet." };
+  type Ident = {
+    key: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    cents: number;
+  };
+  const pool: Record<string, Ident> = {};
+  for (const c of contribs ?? []) {
+    const uidVal = (c.user_id as string | null) ?? null;
+    const name = (c.contributor_name as string | null) ?? null;
+    const email = (c.contributor_email as string | null) ?? null;
+    // A member is always eligible; an anonymous entry needs a name to be drawable.
+    if (!uidVal && !name) continue;
+    const key = uidVal
+      ? `u:${uidVal}`
+      : `a:${(name || "").toLowerCase()}:${(email || "").toLowerCase()}`;
+    const cents = (c.amount_cents as number) || 0;
+    if (!pool[key]) pool[key] = { key, userId: uidVal, name, email, cents: 0 };
+    pool[key].cents += cents;
+    if (!pool[key].email && email) pool[key].email = email;
+    if (!pool[key].name && name) pool[key].name = name;
+  }
+  const entries = Object.values(pool);
+  if (entries.length === 0) return { ok: false, error: "Nobody's chipped in yet." };
 
   // Weighted by amount (default) or one entry each.
   const weighted = raffle.drawWeighted !== false;
-  let winnerUid = uids[uids.length - 1];
+  let winner = entries[entries.length - 1];
   if (weighted) {
-    const totalWeight = uids.reduce((s, x) => s + totals[x], 0);
+    const totalWeight = entries.reduce((s, x) => s + x.cents, 0);
     let r = Math.random() * totalWeight;
-    for (const x of uids) {
-      r -= totals[x];
+    for (const x of entries) {
+      r -= x.cents;
       if (r <= 0) {
-        winnerUid = x;
+        winner = x;
         break;
       }
     }
   } else {
-    winnerUid = uids[Math.floor(Math.random() * uids.length)];
+    winner = entries[Math.floor(Math.random() * entries.length)];
   }
 
-  const { data: wUser } = await admin.auth.admin.getUserById(winnerUid);
-  let winnerEmail = wUser?.user?.email || null;
-  let winnerName =
-    (wUser?.user?.user_metadata?.name as string | undefined) || undefined;
-  const { data: wGm } = await admin
-    .from("group_members")
-    .select("notify_email, display_name")
-    .eq("group_id", eng.group_id)
-    .eq("user_id", winnerUid)
-    .maybeSingle();
-  if (!winnerEmail) winnerEmail = (wGm?.notify_email as string | null) || null;
-  winnerName = winnerName || (wGm?.display_name as string | undefined) || undefined;
+  // Resolve the winner's email + name (member account, or the anonymous details).
+  let winnerEmail = winner.email || null;
+  let winnerName = winner.name || undefined;
+  if (winner.userId) {
+    const { data: wUser } = await admin.auth.admin.getUserById(winner.userId);
+    winnerEmail = wUser?.user?.email || winnerEmail;
+    winnerName =
+      (wUser?.user?.user_metadata?.name as string | undefined) || winnerName;
+    const { data: wGm } = await admin
+      .from("group_members")
+      .select("notify_email, display_name")
+      .eq("group_id", eng.group_id)
+      .eq("user_id", winner.userId)
+      .maybeSingle();
+    if (!winnerEmail) winnerEmail = (wGm?.notify_email as string | null) || null;
+    winnerName = winnerName || (wGm?.display_name as string | undefined) || undefined;
+  }
 
-  const totalCents = Object.values(totals).reduce((a, b) => a + b, 0);
+  const totalCents = entries.reduce((a, b) => a + b.cents, 0);
   const hostPct = raffle.hostSplitPct ?? 0;
   const hostCents = Math.round((totalCents * hostPct) / 100);
   const winnerCents = totalCents - hostCents;
@@ -109,6 +150,8 @@ export async function runRaffleDraw(
       }
     }
   }
+  // Winner picked but no way to auto-pay (no email / provider off) → host pays in person.
+  const winnerUnpaid = winnerCents > 0 && !issued;
 
   const nowIso = new Date().toISOString();
   await admin
@@ -120,7 +163,12 @@ export async function runRaffleDraw(
       gift_recipient_name: winnerName ?? null,
       config: {
         ...(eng.config ?? {}),
-        raffle: { ...raffle, winnerUserId: winnerUid },
+        raffle: {
+          ...raffle,
+          winnerUserId: winner.userId,
+          winnerName: winner.userId ? null : winnerName ?? null,
+          winnerUnpaid,
+        },
       },
     })
     .eq("id", eng.id);
@@ -130,11 +178,14 @@ export async function runRaffleDraw(
     const url = `${campfireSiteUrl()}/campfirelive/group/${eng.group_id}/engagement/${eng.id}`;
     const pot = `${currency.toUpperCase()} $${(winnerCents / 100).toFixed(2)}`;
     const who = winnerName || "The winner";
+    const unpaidNote = winnerUnpaid
+      ? ` The host will arrange the ${pot} prize${winner.userId ? "" : " — reach out to the winner"}.`
+      : "";
     const subject = `🎟️ We have a raffle winner — "${eng.title}"`;
-    const text = `${who} won the ${pot} raffle pot for "${eng.title}"! ${url}`;
+    const text = `${who} won the ${pot} raffle pot for "${eng.title}"!${unpaidNote} ${url}`;
     const html = `<p>🎟️ <b>${escapeHtml(who)}</b> won the ${pot} raffle pot for "${escapeHtml(
       eng.title
-    )}"! 🎉</p><p><a href="${url}">See it →</a></p>`;
+    )}"! 🎉</p>${unpaidNote ? `<p>${escapeHtml(unpaidNote.trim())}</p>` : ""}<p><a href="${url}">See it →</a></p>`;
     const from = campfireFrom();
     for (let i = 0; i < emails.length; i += 100) {
       await resend.batch.send(
@@ -145,5 +196,5 @@ export async function runRaffleDraw(
     console.error("Raffle draw notify failed:", e);
   }
 
-  return { ok: true, winnerUserId: winnerUid, winnerCents };
+  return { ok: true, winnerUserId: winner.userId ?? undefined, winnerCents };
 }

@@ -735,6 +735,9 @@ export default function EngagementDetailPage() {
     (!voteClosesAt || voteClosesAt > Date.now());
   // Winner crown: for a raffle, only the awarded winner (after the cron pays out).
   const raffleWinnerUserId = raffle?.winnerUserId ?? null;
+  // A raffle draw is settled once a winner (member or anonymous) is recorded — even if
+  // the prize is still to be paid in person (no email on file).
+  const raffleDrawn = !!(raffle?.winnerUserId || raffle?.winnerName);
   // Paid entry: must pay the fee before submitting (funds the pot, no refund).
   const entryFeeCents = raffle?.entryFeeCents ?? 0;
   const hasPaidEntry = entryFeeCents === 0 || myPaidCents >= entryFeeCents;
@@ -6932,17 +6935,33 @@ export default function EngagementDetailPage() {
             )}
           </div>
           {raffle ? (
-            // ── Raffle: pot → voted winner ──
-            engagement.gift_issued_at ? (
+            // ── Raffle: pot → winner (voted or drawn) ──
+            engagement.gift_issued_at || raffleDrawn ? (
               <p className="text-sm text-slate-600">
-                ✅ The{" "}
-                {formatMoney(giftSummary?.total_cents ?? 0, engagement.gift_currency)}{" "}
-                pot went to{" "}
-                <b>{raffleWinnerUserId ? memberNameOf(raffleWinnerUserId) : "the winner"}</b>
-                {(raffle.hostSplitPct ?? 0) > 0
-                  ? ` (you kept ${raffle.hostSplitPct}%).`
-                  : "."}{" "}
-                🎉
+                {raffle.winnerUnpaid ? "🎉 The winner is " : "✅ The "}
+                {!raffle.winnerUnpaid && (
+                  <>
+                    {formatMoney(giftSummary?.total_cents ?? 0, engagement.gift_currency)}{" "}
+                    pot went to{" "}
+                  </>
+                )}
+                <b>
+                  {raffleWinnerUserId
+                    ? memberNameOf(raffleWinnerUserId)
+                    : raffle.winnerName || "the winner"}
+                </b>
+                {raffle.winnerUnpaid
+                  ? ` — they won the ${formatMoney(
+                      giftSummary?.total_cents ?? 0,
+                      engagement.gift_currency
+                    )} pot. ${
+                      isCreator
+                        ? "No email on file, so arrange the prize with them directly."
+                        : "The host will arrange the prize."
+                    }`
+                  : (raffle.hostSplitPct ?? 0) > 0
+                  ? ` (you kept ${raffle.hostSplitPct}%). 🎉`
+                  : ". 🎉"}
               </p>
             ) : votingOpen ? (
               <p className="text-sm text-slate-600">

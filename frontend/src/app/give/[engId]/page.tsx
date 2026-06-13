@@ -61,6 +61,12 @@ export default function GivePage() {
 
   const give = async (amountCents: number) => {
     if (busy || !s) return;
+    // A raffle draws a winner from its contributors, so a no-account entrant must give
+    // a name (to be eligible + identifiable). A thon donation can stay anonymous.
+    if (s.isRaffle && !name.trim()) {
+      alert("Please add your name — it's how you're entered in the raffle.");
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/campfire/gift/checkout", {
@@ -162,17 +168,31 @@ export default function GivePage() {
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Your name (optional)"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-fuchsia-500"
+              placeholder={
+                s.isRaffle ? "Your name (required to enter)" : "Your name (optional)"
+              }
+              className={`w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-fuchsia-500 ${
+                s.isRaffle && !name.trim() ? "border-fuchsia-300" : "border-slate-300"
+              }`}
             />
             <input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Email for a receipt (optional)"
+              placeholder={
+                s.isRaffle
+                  ? "Email (optional — so we can reach you if you win)"
+                  : "Email for a receipt (optional)"
+              }
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-fuchsia-500"
             />
           </div>
+          {s.isRaffle && (
+            <p className="mt-1.5 text-[11px] text-fuchsia-700">
+              🎟️ Your name enters you in the raffle. Add an email so we can send your
+              prize if you win.
+            </p>
+          )}
           <p className="mt-3 text-[11px] text-slate-400">
             {busy
               ? "Opening secure checkout…"
