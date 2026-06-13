@@ -673,6 +673,64 @@ Your link: ${link}
   return { subject, text, html };
 }
 
+// Sent ONCE when a new referral partner is added: the full opportunity in one
+// place — both earning streams, their code, ready-to-share links, and where to
+// track it. Keep it the canonical "here's everything" so partners aren't guessing.
+export function referrerWelcomeEmail(opts: {
+  name?: string | null;
+  code: string;
+  site: string; // canonical app URL, no trailing slash
+}) {
+  const { name, code, site } = opts;
+  const hi = firstName(name ?? undefined);
+  const enc = encodeURIComponent(code);
+  const campfireLink = `${site}/campfirelive?ref=${enc}`;
+  const raffleLink = `${site}/campfirelive?start=raffle-challenge&ref=${enc}`;
+  const dashboard = `${site}/referrals`;
+  const subject = `🔥 Welcome aboard — your Campfire partner code is "${code}"`;
+
+  const text = `${hi ? hi + ",\n\n" : ""}Welcome! You're now a Campfire / Curriculate referral partner. Your code is ${code}. Here's the full opportunity:
+
+TWO WAYS YOU EARN (both added on top — they never cost your groups anything):
+1. Curriculate subscriptions — a commission on every subscription that uses your code at checkout.
+2. Campfire group gifts — about 1% of every group-gift / card chip-in your linked groups make.
+3. Campfire Raffle Challenges — 3% (triple) of every chip-in on a prize-pot challenge. These drive the biggest pots, so they're the ones to push.
+
+HOW TO SHARE — just send a link; your code rides along automatically and sticks:
+• Anything on Campfire (cards, gifts, sign-ups): ${campfireLink}
+• Start a Raffle Challenge (great for clubs, teams, classes): ${raffleLink}
+
+Anyone who clicks, then starts a group, is tied to your code — no codes to type, no app or account needed for their members. Track everything on your dashboard: ${dashboard}
+
+— Campfire is operated by 10323594 Canada Corp, a company separate from any school or its staff. Group cards, gifts & pots are organized by participants.`;
+
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:560px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">🔥</div>
+  <h1 style="font-size:22px; margin:8px 0;">Welcome aboard${hi ? ", " + escapeHtml(hi) : ""}!</h1>
+  <p style="color:#475569; margin:0 0 14px;">You're now a Campfire / Curriculate referral partner. Your code is <b style="font-family:ui-monospace,monospace;">${escapeHtml(
+    code
+  )}</b>. Here's the full opportunity.</p>
+
+  <h2 style="font-size:15px; margin:18px 0 6px;">Three ways you earn</h2>
+  <p style="color:#475569; font-size:13px; margin:0 0 10px;">All added <i>on top</i> — they never cost your groups anything.</p>
+  <table style="width:100%; border-collapse:collapse; font-size:14px;">
+    <tr><td style="padding:8px 0; border-bottom:1px solid #f1f5f9;"><b>Curriculate subscriptions</b><br><span style="color:#64748b;">a commission on every subscription that uses your code at checkout.</span></td></tr>
+    <tr><td style="padding:8px 0; border-bottom:1px solid #f1f5f9;"><b>Campfire group gifts &amp; cards</b><br><span style="color:#64748b;">≈ 1% of every chip-in your linked groups make.</span></td></tr>
+    <tr><td style="padding:8px 0;"><b>Campfire Raffle Challenges</b> 🏆<br><span style="color:#64748b;"><b>3%</b> (triple) of every chip-in on a prize-pot challenge — the biggest pots, the ones to push.</span></td></tr>
+  </table>
+
+  <h2 style="font-size:15px; margin:20px 0 6px;">How to share</h2>
+  <p style="color:#475569; font-size:13px; margin:0 0 8px;">Just send a link — your code rides along automatically and sticks. Anyone who clicks and starts a group is tied to you. No codes to type; their members need no app or account.</p>
+  <p style="margin:6px 0;"><a href="${campfireLink}" style="color:#ea580c; font-weight:700; word-break:break-all;">${campfireLink}</a><br><span style="color:#94a3b8; font-size:12px;">anything on Campfire — cards, gifts, sign-ups</span></p>
+  <p style="margin:10px 0;"><a href="${raffleLink}" style="color:#d97706; font-weight:700; word-break:break-all;">${raffleLink}</a><br><span style="color:#94a3b8; font-size:12px;">start a Raffle Challenge — clubs, teams, classes</span></p>
+
+  <p style="margin:18px 0 0;"><a href="${dashboard}" style="display:inline-block; background:#0f172a; color:#fff; text-decoration:none; padding:10px 18px; border-radius:10px; font-weight:700; font-size:14px;">See the full program &amp; track earnings →</a></p>
+  <p style="color:#cbd5e1; font-size:11px; margin:16px 0 0;">Campfire is operated by 10323594 Canada Corp — a company separate from any school or its staff. Group cards, gifts &amp; pots are organized by participants.</p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function inviteEmail(opts: {
   inviter: string;
   groupName: string;

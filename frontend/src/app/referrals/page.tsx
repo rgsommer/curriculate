@@ -210,6 +210,56 @@ export default function ReferralsPage() {
           </div>
         </div>
 
+        {/* Campfire opportunity — the second & third earning streams */}
+        <div className="mt-10 bg-gradient-to-br from-orange-50 to-amber-50 rounded-3xl shadow-2xl border border-orange-200 p-10">
+          <div className="text-4xl mb-2">🔥</div>
+          <h3 className="text-2xl font-extrabold text-gray-900 mb-2">
+            Plus: earn on Campfire group gifts &amp; raffles
+          </h3>
+          <p className="text-gray-700 font-medium mb-6">
+            Your code does more than subscriptions. Campfire lets groups run cards,
+            group gifts, and prize challenges — and you earn on every chip-in, added
+            <i> on top</i> so it never costs your groups anything.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="bg-white rounded-2xl border border-orange-200 p-5">
+              <div className="text-xl mb-1">🎁</div>
+              <div className="font-extrabold text-gray-900">Group gifts &amp; cards</div>
+              <div className="text-sm text-gray-600 mt-1">
+                ≈ <b>1%</b> of every chip-in toward a group gift card.
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-amber-300 p-5">
+              <div className="text-xl mb-1">🏆</div>
+              <div className="font-extrabold text-gray-900">Raffle Challenges</div>
+              <div className="text-sm text-gray-600 mt-1">
+                <b>3%</b> (triple) of every chip-in on a prize-pot challenge — the
+                biggest pots, the ones to push.
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl border border-gray-200 p-5">
+              <div className="text-xl mb-1">🔗</div>
+              <div className="font-extrabold text-gray-900">Just share a link</div>
+              <div className="text-sm text-gray-600 mt-1">
+                Your code rides along and sticks. No codes to type; members need no
+                app or account.
+              </div>
+            </div>
+          </div>
+          <p className="text-sm text-gray-500">
+            Once you have a code, your share links are{" "}
+            <code className="px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-700">
+              curriculate.net/campfirelive?ref=YOURCODE
+            </code>{" "}
+            (anything on Campfire) and{" "}
+            <code className="px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-700">
+              …?start=raffle-challenge&amp;ref=YOURCODE
+            </code>{" "}
+            (start a prize challenge). We email you these the moment your code is
+            issued.
+          </p>
+        </div>
+
         {/* Application form */}
         <div className="mt-10 bg-white rounded-3xl shadow-2xl border border-gray-200 p-10">
           <h3 className="text-2xl font-extrabold text-gray-900 mb-2">Apply to become a referral partner</h3>

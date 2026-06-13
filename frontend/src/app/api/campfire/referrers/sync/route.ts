@@ -1,5 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { Resend } from "resend";
+import {
+  campfireFrom,
+  mailDefaults,
+  campfireSiteUrl,
+  referrerWelcomeEmail,
+} from "@/lib/campfire/serverInvites";
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 function getAdmin() {
   return createClient(
@@ -35,6 +44,14 @@ export async function POST(req: Request) {
   }
 
   const admin = getAdmin();
+  // Is this a brand-new partner? (Decides whether to send the welcome below.)
+  const { data: existing } = await admin
+    .from("campfire_referrers")
+    .select("code")
+    .eq("code", code)
+    .maybeSingle();
+  const isNew = !existing;
+
   // Upsert by code. Only the provided columns are written, so an existing row's
   // user_id / last_promo_campaign / created_at are preserved.
   const { error } = await admin
@@ -44,5 +61,25 @@ export async function POST(req: Request) {
     console.error("Referrer sync error:", error);
     return NextResponse.json({ error: "Upsert failed" }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, code, active });
+
+  // New + active partner → send the one-time full-opportunity welcome.
+  let welcomed = false;
+  if (isNew && active) {
+    try {
+      const em = referrerWelcomeEmail({ name, code, site: campfireSiteUrl() });
+      await resend.emails.send({
+        from: campfireFrom(),
+        to: [email],
+        subject: em.subject,
+        text: em.text,
+        html: em.html,
+        ...mailDefaults(),
+      });
+      welcomed = true;
+    } catch (e) {
+      console.error("Referrer welcome email failed:", e);
+    }
+  }
+
+  return NextResponse.json({ ok: true, code, active, welcomed });
 }
