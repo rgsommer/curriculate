@@ -17,12 +17,35 @@ import {
 
 const GROUP_EMOJIS = ["🔥", "🏕️", "⭐", "🌙", "🎯", "💪", "🙏", "🎉", "🎮", "📖", "💑", "🏠"];
 
+// Friendly labels for the ?start=<template> deep link (social-post landing).
+const START_TEMPLATE_LABELS: Record<string, string> = {
+  "coach-gift": "coach thank-you card 🏆",
+  "teacher-appreciation": "teacher appreciation card 🍎",
+  "thank-you-card": "thank-you card 💌",
+  "christmas-card": "Christmas card 🎄",
+};
+
 export default function DashboardPage() {
   const router = useRouter();
   const { profile, isTrialActive, user } = useAuth();
   const { groups, loading, createGroup, joinGroup, setGroupNotify } = useGroups();
   const [showCreate, setShowCreate] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
+  // Deep link (?start=<template>): after this group is made, jump straight into a
+  // new engagement with that template pre-loaded.
+  const [startTemplate, setStartTemplate] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      const start = qs.get("start") || localStorage.getItem("campfire_start");
+      if (start) {
+        setStartTemplate(start);
+        setShowCreate(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
   const [newName, setNewName] = useState("");
   const [newDesc, setNewDesc] = useState("");
   const [newEmoji, setNewEmoji] = useState("🔥");
@@ -257,6 +280,18 @@ export default function DashboardPage() {
     if (!group) {
       setError(createError ?? "Failed to create group. Try again.");
       setCreating(false);
+    } else if (startTemplate) {
+      // Deep link: drop straight into the pre-loaded thank-you card.
+      try {
+        localStorage.removeItem("campfire_start");
+      } catch {
+        /* ignore */
+      }
+      router.push(
+        `/campfirelive/group/${group.id}/engagement/new?template=${encodeURIComponent(
+          startTemplate
+        )}`
+      );
     } else {
       // Drop straight into the new group so the next steps are obvious.
       router.push(`/campfirelive/group/${group.id}`);
@@ -446,6 +481,17 @@ export default function DashboardPage() {
       {/* Create Group Modal */}
       {showCreate && (
         <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          {startTemplate && (
+            <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900">
+              🍎{" "}
+              <span className="font-semibold">
+                You&apos;re starting a {START_TEMPLATE_LABELS[startTemplate] ?? "thank-you card"}.
+              </span>{" "}
+              First, name the group (e.g. &ldquo;Coach Smith&apos;s team&rdquo; or
+              &ldquo;Mrs. Lee&apos;s class&rdquo;) — then we&apos;ll open the card for
+              you to fill in.
+            </div>
+          )}
           <h2 className="text-lg font-bold text-slate-900 mb-4">Create a group</h2>
 
           <div className="mb-4">

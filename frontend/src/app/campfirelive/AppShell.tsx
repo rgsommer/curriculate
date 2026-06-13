@@ -14,8 +14,12 @@ function Shell({ children }: { children: React.ReactNode }) {
   // attributed to that partner.
   useEffect(() => {
     try {
-      const ref = new URLSearchParams(window.location.search).get("ref");
+      const qs = new URLSearchParams(window.location.search);
+      const ref = qs.get("ref");
       if (ref) localStorage.setItem("campfire_ref", ref.slice(0, 40));
+      // Deep link from a social post: pre-load a template once a group exists.
+      const start = qs.get("start");
+      if (start) localStorage.setItem("campfire_start", start.slice(0, 40));
     } catch {
       /* ignore */
     }
