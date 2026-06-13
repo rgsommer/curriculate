@@ -777,6 +777,50 @@ export default function NewEngagementPage() {
     );
   };
 
+  // Card header copy adapts to the occasion — a Teacher Appreciation (or any
+  // one-time) card isn't a "birthday" and doesn't recur.
+  const isCardType = selectedType === "birthday";
+  const cardHeaderLabel = !isCardType
+    ? null
+    : occasion === "birthday"
+    ? "Birthday"
+    : occasion === "anniversary"
+    ? "Anniversary"
+    : occasion === "mothers_day"
+    ? "Mother's Day"
+    : occasion === "fathers_day"
+    ? "Father's Day"
+    : occasion === "wedding"
+    ? "Wedding"
+    : occasion === "custom"
+    ? "Holiday card"
+    : `${onceLabel.trim() || "Celebration"} card`;
+  const cardHeaderIcon = !isCardType
+    ? null
+    : occasion === "anniversary"
+    ? "💍"
+    : occasion === "wedding"
+    ? "💒"
+    : occasion === "mothers_day"
+    ? "💐"
+    : occasion === "fathers_day"
+    ? "👔"
+    : occasion === "custom"
+    ? "🗓️"
+    : occasion === "once"
+    ? "🎉"
+    : "🎂";
+  const cardRecurs = isCardType && occasion !== "once" && occasion !== "wedding";
+  const cardRecipientNoun =
+    occasion === "birthday"
+      ? "the birthday person"
+      : occasion === "wedding"
+      ? "the happy couple"
+      : "the recipient";
+  const cardHeaderDesc = `A surprise card everyone signs — hidden from ${cardRecipientNoun}, opens before the day and reveals on it.${
+    cardRecurs ? " Runs every year." : ""
+  }`;
+
   return (
     <div>
       <Link
@@ -844,9 +888,13 @@ export default function NewEngagementPage() {
       {step === "details" && selectedType && (
         <div>
           <div className="flex items-center gap-3 mb-6">
-            <span className="text-3xl">{ENGAGEMENT_TYPES[selectedType].icon}</span>
+            <span className="text-3xl">
+              {isCardType ? cardHeaderIcon : ENGAGEMENT_TYPES[selectedType].icon}
+            </span>
             <div>
-              <h2 className="font-bold text-slate-900">{ENGAGEMENT_TYPES[selectedType].label}</h2>
+              <h2 className="font-bold text-slate-900">
+                {isCardType ? cardHeaderLabel : ENGAGEMENT_TYPES[selectedType].label}
+              </h2>
               <button
                 onClick={() => setStep("type")}
                 className="text-xs text-orange-600 underline"
@@ -859,7 +907,10 @@ export default function NewEngagementPage() {
           {/* How this type works + what each person sees */}
           <div className="mb-6 max-w-lg rounded-2xl border border-orange-200 bg-orange-50/50 p-4">
             <p className="text-sm text-slate-700">
-              {TYPE_HELP[selectedType]?.how ?? ENGAGEMENT_TYPES[selectedType].description}
+              {isCardType
+                ? cardHeaderDesc
+                : TYPE_HELP[selectedType]?.how ??
+                  ENGAGEMENT_TYPES[selectedType].description}
             </p>
             {TYPE_HELP[selectedType]?.sees && (
               <p className="mt-2 text-xs text-slate-500">
