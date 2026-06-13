@@ -81,7 +81,9 @@ export async function POST(req: Request) {
         );
       }
       gift = { id: g.id as string, currency: (g.currency as string) ?? "usd" };
-    } else if (!eng.gift_enabled) {
+    } else if (!eng.gift_enabled && !raffleOf(eng.config as Record<string, unknown> | null)) {
+      // A raffle's pot is intrinsic — accept chip-ins even if the gift_enabled flag
+      // wasn't set on older cards.
       return NextResponse.json(
         { error: "This activity isn't collecting a gift." },
         { status: 400 }

@@ -311,7 +311,8 @@ export default function EngagementDetailPage() {
   const [hostSlotLabel, setHostSlotLabel] = useState(""); // host: type a new list item
   const [hostSlotCount, setHostSlotCount] = useState(1);
   useEffect(() => {
-    if (!engagement?.gift_enabled || !engagementId) {
+    // A raffle pot may exist even if the gift_enabled flag wasn't set (older cards).
+    if ((!engagement?.gift_enabled && !raffleOf(engagement?.config)) || !engagementId) {
       setGiftSummary(null);
       return;
     }
@@ -1260,7 +1261,7 @@ export default function EngagementDetailPage() {
         allow_member_invites: editAllowMemberInvites,
         excluded_user_ids: editExcludedIds,
         excluded_emails: editExcludedEmails,
-        gift_enabled: editGiftEnabled,
+        gift_enabled: isRaffleEng ? true : editGiftEnabled,
         gift_recipient_email: editGiftEnabled
           ? editGiftRecipientEmail.trim() || null
           : null,
@@ -6792,7 +6793,7 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
-      {engagement.gift_enabled && !isGiftHidden && !pledge && (
+      {(engagement.gift_enabled || !!raffle) && !isGiftHidden && !pledge && (
         <div id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">
@@ -6981,7 +6982,9 @@ export default function EngagementDetailPage() {
         >
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-sky-900">
-              ✍️ {editingResponse ? "Edit your response" : "Your response"}
+              {raffle
+                ? `📸 ${editingResponse ? "Edit your entry" : "Enter your photo"}`
+                : `✍️ ${editingResponse ? "Edit your response" : "Your response"}`}
             </h2>
             {editingResponse && (
               <button

@@ -203,11 +203,12 @@ export async function GET(req: Request) {
 
   // ── Raffle auto-award: voting window closed → pay the voted winner ──
   let awarded = 0;
+  // Not filtered on gift_enabled: a raffle's pot is intrinsic (older cards may not
+  // have the flag set). The raffleOf() check below gates which rows actually award.
   const { data: raffleEngs } = await admin
     .from("engagements")
     .select("id, group_id, creator_id, title, config, gift_currency, gift_enabled")
     .eq("status", "revealed")
-    .eq("gift_enabled", true)
     .is("gift_issued_at", null);
   for (const e of raffleEngs ?? []) {
     const raffle = raffleOf(e.config as Record<string, unknown> | null);
