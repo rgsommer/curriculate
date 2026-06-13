@@ -217,6 +217,7 @@ export default function EngagementDetailPage() {
   const [pledgeMaxInput, setPledgeMaxInput] = useState(""); // $ cap (optional)
   const [pledgeResultInput, setPledgeResultInput] = useState(""); // host: actual achieved
   const [settlingPledge, setSettlingPledge] = useState(false);
+  const [drawingWinner, setDrawingWinner] = useState(false); // Raffle Draw: drawing now
   // Anonymized pledge leaderboard (amounts, biggest first — no names).
   const [pledgeAmounts, setPledgeAmounts] = useState<
     { amount_cents: number; per_unit_cents: number }[]
@@ -716,6 +717,7 @@ export default function EngagementDetailPage() {
   const raffle = raffleOf(engagement.config);
   const tourn = tournamentOf(engagement.config);
   const pledge = pledgeOf(engagement.config); // Pledge Drive (Read-A-Thon…)
+  const draw = raffle?.draw === true; // Raffle Draw — random winner, no contest
   // Effective close = the grace deadline if voting closed with zero votes, else the
   // normal vote-close. Voting stays open through whichever is later.
   const voteClosesAt = raffle?.noVoteGraceUntil
@@ -963,6 +965,39 @@ export default function EngagementDetailPage() {
       alert("Couldn't settle the drive.");
     }
     setSettlingPledge(false);
+  };
+
+  // Raffle Draw: host draws the winner now (declare it at the dinner). Picks a random
+  // winner among everyone who chipped in, then pays the pot.
+  const drawWinner = async () => {
+    if (drawingWinner || !session) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Draw the winner now? A random winner will be picked from everyone who chipped in and paid the pot. This can't be undone."
+      )
+    )
+      return;
+    setDrawingWinner(true);
+    try {
+      const res = await fetch("/api/campfire/gift/raffle-draw", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data?.error || "Couldn't draw the winner.");
+      else {
+        setConfirmTick((t) => t + 1);
+        await refresh();
+      }
+    } catch {
+      alert("Couldn't draw the winner.");
+    }
+    setDrawingWinner(false);
   };
 
   // Any group member can start a group chip-in (gift) for one guest on this engagement.
@@ -4852,6 +4887,7 @@ export default function EngagementDetailPage() {
       engagement.type === "scavenger_hunt" ||
       engagement.type === "tournament" ||
       engagement.type === "pledge_drive" ||
+      engagement.type === "raffle_draw" ||
       engagement.type === "care" ||
       engagement.type === "signup"
     )
@@ -6082,6 +6118,7 @@ export default function EngagementDetailPage() {
             tapping an email invite shouldn't have to scroll and figure it out). ── */}
       {engagement.type !== "signup" &&
         engagement.type !== "pledge_drive" &&
+        engagement.type !== "raffle_draw" &&
         (engagement.status === "active" || lateResponseAllowed) &&
         !hasResponded &&
         !isDraft &&
@@ -6797,7 +6834,7 @@ export default function EngagementDetailPage() {
         <div id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">
-              {raffle ? "🏆 Prize pot" : "🎁 Group gift"}
+              {draw ? "🎟️ Raffle pot" : raffle ? "🏆 Prize pot" : "🎁 Group gift"}
             </h2>
             {giftSummary && giftSummary.contributors > 0 && canSeeGiftTotal && (
               <span className="text-sm font-bold text-orange-700">
@@ -6857,12 +6894,19 @@ export default function EngagementDetailPage() {
             ) : (
               <>
                 <p className="text-xs text-slate-600 mb-3">
-                  Chip in toward the pot.{" "}
-                  {tourn
-                    ? `When scores lock${deadlineStr ? ` (${deadlineStr})` : ""}, the best total wins it`
-                    : `When entries close${deadlineStr ? ` (${deadlineStr})` : ""}, the group votes — one vote each — and the winner takes it`}
+                  {draw
+                    ? `Chip in for a chance to win${
+                        raffle.drawWeighted !== false ? " — more chips, better odds" : ""
+                      }. A winner is drawn${deadlineStr ? ` at the close (${deadlineStr})` : " at the close"}, or when the host draws.`
+                    : `Chip in toward the pot. ${
+                        tourn
+                          ? `When scores lock${deadlineStr ? ` (${deadlineStr})` : ""}, the best total wins it`
+                          : `When entries close${deadlineStr ? ` (${deadlineStr})` : ""}, the group votes — one vote each — and the winner takes it`
+                      }`}
                   {(raffle.hostSplitPct ?? 0) > 0
-                    ? ` (the host keeps ${raffle.hostSplitPct}%).`
+                    ? ` (${draw ? "winner keeps" : "the host keeps"} ${
+                        draw ? 100 - (raffle.hostSplitPct ?? 0) : raffle.hostSplitPct
+                      }%).`
                     : "."}
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -6895,6 +6939,16 @@ export default function EngagementDetailPage() {
                     ? "Opening secure checkout…"
                     : "A small card-processing fee is added on top so the winner gets the full pot. Charged now; refunded if the challenge is canceled."}
                 </p>
+                {/* Raffle Draw: the host can draw the winner now (at the event) */}
+                {draw && isCreator && (giftSummary?.contributors ?? 0) > 0 && (
+                  <button
+                    onClick={drawWinner}
+                    disabled={drawingWinner}
+                    className="mt-3 w-full rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                  >
+                    {drawingWinner ? "Drawing…" : "🎲 Draw the winner now"}
+                  </button>
+                )}
               </>
             )
           ) : engagement.gift_issued_at ? (
@@ -6973,6 +7027,7 @@ export default function EngagementDetailPage() {
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
       {engagement.type !== "signup" &&
         engagement.type !== "pledge_drive" &&
+        engagement.type !== "raffle_draw" &&
         hasPaidEntry &&
         ((engagement.status === "active" && (!hasResponded || editingResponse)) ||
           (lateResponseAllowed && !hasResponded)) && (

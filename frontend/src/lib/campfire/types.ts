@@ -41,6 +41,7 @@ export type EngagementType =
   | "most_likely"
   | "scavenger_hunt"
   | "tournament"
+  | "raffle_draw"
   | "pledge_drive"
   | "birthday"
   | "care"
@@ -213,6 +214,9 @@ export interface RaffleConfig {
   voteClosesAt?: string | null; // set at reveal: when voting closes + auto-award fires
   noVoteGraceUntil?: string | null; // if voting closed with zero votes: extended deadline
   winnerUserId?: string | null; // recorded at award
+  // Raffle Draw (no contest): a random winner is drawn from the people who chipped in.
+  draw?: boolean;
+  drawWeighted?: boolean; // true = chances scale with amount chipped in; false = one each
 }
 export function raffleOf(
   config: Record<string, unknown> | null | undefined
@@ -427,6 +431,7 @@ export const ENGAGEMENT_TYPES: Record<
   scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
   tournament: { icon: "⛳", label: "Tournament", description: "A score leaderboard — players enter a number per round/hole; lowest or highest total wins. Add a cash prize. Players don't have to be in the same place", hook: "Post your scores — best total wins!", color: "bg-green-50 text-green-700" },
   pledge_drive: { icon: "🎗️", label: "Pledge Drive", description: "A sponsored challenge (Read-A-Thon, Bike-A-Thon…). Set a goal, invite sponsors who pledge a lump sum or per page/km. On the date the host posts the result and each pledge settles automatically — pay only for what's achieved", hook: "Pledge your support — pay only for what's achieved!", color: "bg-rose-50 text-rose-700" },
+  raffle_draw: { icon: "🎟️", label: "Raffle Draw", description: "A straight-up raffle — everyone chips in to the pot (more chips, better odds), and a winner is drawn at random. Great for family reunions, 50-50 draws and fundraisers. No contest to enter", hook: "Chip in for a chance to win the pot!", color: "bg-fuchsia-50 text-fuchsia-700" },
   signup: { icon: "📋", label: "Sign-up", description: "List slots (bring drinks, plates, music…); everyone claims what they'll cover. Live — see who's got what. Great for parties, potlucks, field trips", hook: "Claim a slot — see what's still needed!", color: "bg-cyan-50 text-cyan-700" },
   birthday: { icon: "🎂", label: "Birthday", description: "A surprise card everyone signs — hidden from the birthday person, opens before the day and reveals on it. Runs every year", hook: "Sign the card — it opens on the big day! 🎂", color: "bg-pink-50 text-pink-700" },
   care: { icon: "🤝", label: "Care Check-in", description: "One form with several sections — how you're doing, prayer requests, praise, reflection. Fill in any or all. Can be kept private to the host", hook: "Share what you'd like — fill any or all sections.", color: "bg-teal-50 text-teal-700" },

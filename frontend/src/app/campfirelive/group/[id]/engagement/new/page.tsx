@@ -127,6 +127,7 @@ export default function NewEngagementPage() {
   const [raffleVoteDays, setRaffleVoteDays] = useState(5); // voting window after close
   const [raffleGate, setRaffleGate] = useState(0); // hold reveal until this % entered
   const [raffleEntryFee, setRaffleEntryFee] = useState(0); // 0 = optional chip-in; >0 = $ to enter
+  const [drawWeighted, setDrawWeighted] = useState(true); // Raffle Draw odds: weighted vs one-each
   // Tournament (leaderboard): scoring direction + optional scorecard photo.
   const [tournDirection, setTournDirection] = useState<"low" | "high">("low");
   const [tournScorecard, setTournScorecard] = useState(false);
@@ -319,6 +320,12 @@ export default function NewEngagementPage() {
       if (!description.trim())
         setDescription("Post your score each round — best total wins. Play from anywhere!");
       setQuestions(["Round 1", "Round 2", "Round 3"]);
+      setReveal("sealed");
+    }
+    if (type === "raffle_draw") {
+      if (!title.trim()) setTitle("Family Raffle 🎟️");
+      if (!description.trim())
+        setDescription("Chip in for a chance to win the pot — a winner is drawn at the end!");
       setReveal("sealed");
     }
     if (type === "pledge_drive") {
@@ -528,6 +535,7 @@ export default function NewEngagementPage() {
       selectedType === "scavenger_hunt" ||
       selectedType === "tournament" ||
       selectedType === "pledge_drive" ||
+      selectedType === "raffle_draw" ||
       reveal === "sealed";
     const finalDeadline =
       sealedReveal &&
@@ -605,6 +613,23 @@ export default function NewEngagementPage() {
         return;
       }
       config.pledge = { unit, goalUnits: goal };
+    }
+
+    if (selectedType === "raffle_draw") {
+      if (!deadline) {
+        setError("Set a date — that's the backstop for drawing the winner.");
+        setCreating(false);
+        return;
+      }
+      config.raffle = {
+        on: true,
+        draw: true,
+        drawWeighted,
+        hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
+        voteDays: 0, // drawn at the deadline (or earlier by the host)
+        participationGate: 0,
+        entryFeeCents: 0,
+      };
     }
 
     if (selectedType === "signup") {
@@ -743,6 +768,7 @@ export default function NewEngagementPage() {
           selectedType === "scavenger_hunt" ||
           selectedType === "tournament" ||
           selectedType === "pledge_drive" ||
+          selectedType === "raffle_draw" ||
           isBirthday
         ? "sealed"
         : selectedType === "signup"
@@ -769,6 +795,7 @@ export default function NewEngagementPage() {
         selectedType === "baby_reveal" ||
         selectedType === "tournament" ||
         selectedType === "pledge_drive" ||
+        selectedType === "raffle_draw" ||
         challengeRaffle
           ? true
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
@@ -791,7 +818,10 @@ export default function NewEngagementPage() {
       // Group gift — collect contributions toward a card for the recipient. A raffle
       // also pools, but the recipient (winner) is resolved at award time → no email.
       gift_enabled:
-        giftEnabled || challengeRaffle || selectedType === "pledge_drive",
+        giftEnabled ||
+        challengeRaffle ||
+        selectedType === "pledge_drive" ||
+        selectedType === "raffle_draw",
       gift_recipient_email: challengeRaffle
         ? null
         : giftEnabled || selectedType === "pledge_drive"
@@ -2461,13 +2491,62 @@ export default function NewEngagementPage() {
               </div>
             )}
 
+            {/* Raffle Draw — odds + host cut (the pot is funded by chip-ins) */}
+            {selectedType === "raffle_draw" && (
+              <div className="rounded-xl border border-fuchsia-200 bg-fuchsia-50/50 p-4 space-y-3">
+                <div className="text-sm font-bold text-fuchsia-800">🎟️ Raffle settings</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-slate-600">Odds</label>
+                  <select
+                    value={drawWeighted ? "weighted" : "flat"}
+                    onChange={(e) => setDrawWeighted(e.target.value === "weighted")}
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-fuchsia-500"
+                  >
+                    <option value="weighted">More chips = better odds</option>
+                    <option value="flat">One entry each (equal odds)</option>
+                  </select>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-slate-600">Winner&apos;s cut</label>
+                  <select
+                    value={raffleSplit}
+                    onChange={(e) => setRaffleSplit(Number(e.target.value))}
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-fuchsia-500"
+                  >
+                    <option value={0}>Winner takes all</option>
+                    <option value={50}>50 / 50 (half to you/a cause)</option>
+                    <option value={25}>75% winner / 25% you</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-600">Pot currency</label>
+                  <select
+                    value={giftCurrency}
+                    onChange={(e) => setGiftCurrency(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-fuchsia-500"
+                  >
+                    {GIFT_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Everyone chips in to the pot. At the closing date (or when you draw at
+                  the event), a random winner is picked and paid the pot.
+                </p>
+              </div>
+            )}
+
             {/* Group gift — chip in toward a gift card for the recipient */}
             {!(
               ((selectedType === "challenge" ||
                 selectedType === "scavenger_hunt" ||
                 selectedType === "tournament") &&
                 raffleOn) ||
-              selectedType === "pledge_drive"
+              selectedType === "pledge_drive" ||
+              selectedType === "raffle_draw"
             ) && (
             <div>
               <label className="flex items-start gap-3 cursor-pointer">
