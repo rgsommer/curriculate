@@ -1319,11 +1319,23 @@ See you around the campfire! 🏕️`
 
                   {/* Status + your-response badges */}
                   <div className="flex flex-shrink-0 flex-col items-end gap-1.5">
-                    {isDraft && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
-                        ✏️ Draft · tap to launch
-                      </span>
-                    )}
+                    {isDraft &&
+                      (eng.scheduled_open_at &&
+                      new Date(eng.scheduled_open_at).getTime() > Date.now() ? (
+                        // Auto-scheduled (e.g. next year's recurring card) — it opens
+                        // itself; no manual launch needed.
+                        <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 border border-violet-300 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                          🗓️ Opens{" "}
+                          {new Date(eng.scheduled_open_at).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-orange-100 border border-orange-300 px-2.5 py-1 text-xs font-semibold text-orange-800">
+                          ✏️ Draft · tap to launch
+                        </span>
+                      ))}
                     {!isDraft && isSealed && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-xs font-semibold text-amber-800">
                         🔒 Sealed
