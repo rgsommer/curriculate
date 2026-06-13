@@ -586,7 +586,12 @@ export default function EngagementDetailPage() {
     // Legacy/simple open poll with no explicit questions → the title is the question.
     return isOpenPoll ? [engagement.title] : [];
   })();
-  const canEdit = isCreator && engagement.status === "active";
+  // Cards stay editable after reveal so the host can fix who it's addressed to
+  // (the "All Except" recipient list) and re-send.
+  const canEdit =
+    isCreator &&
+    (engagement.status === "active" ||
+      (engagement.type === "birthday" && engagement.status === "revealed"));
 
   // Birthday card = private to the recipient. Each wish is seen only by its author
   // and the recipient — never the rest of the group, even after the reveal. The same
@@ -4966,7 +4971,9 @@ export default function EngagementDetailPage() {
                 pendingInvitees.length > 0) && (
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">
-                    🎁 Hide from (surprise) — they don&apos;t see it until the reveal
+                    {isRevealed
+                      ? "🎁 Who the card is for — the reveal email addresses them (re-send after editing)"
+                      : "🎁 Hide from (surprise) — they don't see it until the reveal"}
                   </label>
                   <div className="flex flex-wrap gap-1.5">
                     {roster
