@@ -622,7 +622,7 @@ router.post("/referral-codes/:id/send", ...adminRequired, async (req, res) => {
     };
 
     const subject = _render(template.subject || "", vars);
-    const html = _render(template.html || "", vars);
+    const html = renderReferralEmailHtml(template.html, vars);
 
     await sendSystemEmail({ to: toEmail, subject, html });
 
@@ -632,6 +632,40 @@ router.post("/referral-codes/:id/send", ...adminRequired, async (req, res) => {
     return res.status(500).json({ ok: false, error: "Failed to send email: " + (err?.message || err) });
   }
 });
+
+// The "more ways your code earns" block. Factored out so it can be injected into
+// the stored email template too (existing DB templates predate it).
+const REFERRAL_BONUS_HTML = `
+  <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e2e8f0;">
+    <p style="color:#1e293b;font-size:15px;font-weight:800;margin:0 0 6px;">⭐ Bonus: more ways your code earns</p>
+    <p style="color:#475569;font-size:13px;margin:0 0 14px;">Your code isn't just for subscriptions — it earns across everything Curriculate, all added <em>on top</em> so it never costs your groups anything.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">📊 <strong>AI Grading (Pulse)</strong><br><span style="color:#64748b;">Commission on every teacher/school subscription that uses your code.</span></td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">🔥 <strong>Campfire — group cards &amp; gifts</strong><br><span style="color:#64748b;">Classes, teams, families run cards and chip in for group gift cards. You earn ~1% of every chip-in.</span><br><a href="https://www.curriculate.net/campfirelive?ref={{REFERRAL_CODE}}" style="color:#ea580c;font-weight:700;">Share Campfire &rarr;</a></td></tr>
+      <tr><td style="padding:10px 0;">🏆 <strong>Field Day — prize challenges &amp; scavenger hunts</strong> <span style="color:#16a34a;font-weight:700;">(3% to you)</span><br><span style="color:#64748b;">A themed photo challenge or scavenger hunt with a cash pot the group votes on. The best part: players <strong>don't have to be in the same place</strong> — everyone submits their own photos from wherever they are. Or run a <strong>score tournament</strong> — golf, runs, games — where players post their scores against rivals anywhere.</span><br><a href="https://www.curriculate.net/campfirelive?start=raffle-challenge&ref={{REFERRAL_CODE}}" style="color:#d97706;font-weight:700;">Start a prize event &rarr;</a></td></tr>
+    </table>
+  </div>
+`.trim();
+
+// Render a referral email, guaranteeing the Bonus section is present even when the
+// stored DB template predates it (no {{REFERRAL_BONUS}} slot) — idempotent.
+function renderReferralEmailHtml(templateHtml, vars) {
+  const bonus = _render(REFERRAL_BONUS_HTML, vars); // resolve {{REFERRAL_CODE}} first
+  let html = _render(templateHtml || "", { ...vars, REFERRAL_BONUS: bonus });
+  if (!html.includes("Bonus: more ways your code earns")) {
+    const marker = "Curriculate — AI-Powered";
+    const fIdx = html.indexOf(marker);
+    if (fIdx >= 0) {
+      const pStart = html.lastIndexOf("<p", fIdx);
+      const at = pStart >= 0 ? pStart : fIdx;
+      html = html.slice(0, at) + bonus + "\n  " + html.slice(at);
+    } else {
+      const lastDiv = html.lastIndexOf("</div>");
+      html = lastDiv >= 0 ? html.slice(0, lastDiv) + bonus + html.slice(lastDiv) : html + bonus;
+    }
+  }
+  return html;
+}
 
 const DEFAULT_REFERRAL_AGENT_HTML = `
 <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;max-width:560px;margin:0 auto;padding:24px;">
@@ -665,15 +699,7 @@ const DEFAULT_REFERRAL_AGENT_HTML = `
   </ol>
   {{CUSTOM_MESSAGE}}
 
-  <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e2e8f0;">
-    <p style="color:#1e293b;font-size:15px;font-weight:800;margin:0 0 6px;">⭐ Bonus: more ways your code earns</p>
-    <p style="color:#475569;font-size:13px;margin:0 0 14px;">Your code isn't just for subscriptions — it earns across everything Curriculate, all added <em>on top</em> so it never costs your groups anything.</p>
-    <table style="width:100%;border-collapse:collapse;font-size:14px;">
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">📊 <strong>AI Grading (Pulse)</strong><br><span style="color:#64748b;">Commission on every teacher/school subscription that uses your code.</span></td></tr>
-      <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">🔥 <strong>Campfire — group cards &amp; gifts</strong><br><span style="color:#64748b;">Classes, teams, families run cards and chip in for group gift cards. You earn ~1% of every chip-in.</span><br><a href="https://www.curriculate.net/campfirelive?ref={{REFERRAL_CODE}}" style="color:#ea580c;font-weight:700;">Share Campfire &rarr;</a></td></tr>
-      <tr><td style="padding:10px 0;">🏆 <strong>Field Day — prize challenges &amp; scavenger hunts</strong> <span style="color:#16a34a;font-weight:700;">(3% to you)</span><br><span style="color:#64748b;">A themed photo challenge or scavenger hunt with a cash pot the group votes on. The best part: players <strong>don't have to be in the same place</strong> — everyone submits their own photos from wherever they are. Or run a <strong>score tournament</strong> — golf, runs, games — where players post their scores against rivals anywhere.</span><br><a href="https://www.curriculate.net/campfirelive?start=raffle-challenge&ref={{REFERRAL_CODE}}" style="color:#d97706;font-weight:700;">Start a prize event &rarr;</a></td></tr>
-    </table>
-  </div>
+  {{REFERRAL_BONUS}}
 
   <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Curriculate — AI-Powered Station-Based Learning</p>
 </div>
@@ -883,7 +909,7 @@ router.put("/referral-applications/:id/approve", ...adminRequired, async (req, r
       };
 
       const subject = _render(template.subject || "", vars);
-      const html = _render(template.html || "", vars);
+      const html = renderReferralEmailHtml(template.html, vars);
       await sendSystemEmail({ to: app.email, subject, html });
     } catch (emailErr) {
       console.warn("[admin-referral-applications] approval email failed:", emailErr.message);
