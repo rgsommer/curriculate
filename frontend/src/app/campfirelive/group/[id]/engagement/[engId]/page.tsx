@@ -273,6 +273,42 @@ export default function EngagementDetailPage() {
     refreshMyAssignment();
   }, [refreshMyAssignment, responses.length]);
 
+  // Card read-receipt: when the recipient opens their revealed card, record it once
+  // so the host can see it landed. (Hooks live above the early returns — use plain
+  // optional chaining, not the derived isRecipient/isRevealed below.)
+  const [thanksSending, setThanksSending] = useState(false);
+  const [thanksMsg, setThanksMsg] = useState("");
+  const [showThanks, setShowThanks] = useState(false);
+  useEffect(() => {
+    if (
+      session &&
+      user &&
+      engagementId &&
+      engagement?.type === "birthday" &&
+      engagement?.status === "revealed" &&
+      ((engagement?.excluded_user_ids as string[] | undefined) ?? []).includes(
+        user.id
+      ) &&
+      !(engagement?.config as { cardViewedAt?: string } | null)?.cardViewedAt
+    ) {
+      fetch("/api/campfire/card/viewed", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId }),
+      }).catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    engagement?.status,
+    engagement?.type,
+    engagementId,
+    user,
+    session,
+  ]);
+
   // Editing an already-submitted answer (before the reveal).
   const [editingResponse, setEditingResponse] = useState(false);
   // Host view: user_ids that have responded so far (names resolved below).
@@ -1240,6 +1276,31 @@ export default function EngagementDetailPage() {
       alert("Couldn't re-send.");
     }
     setResendingReveal(false);
+  };
+
+  // Recipient: thank everyone who signed the card (emails the group, once).
+  const sendThanks = async () => {
+    if (thanksSending || !session) return;
+    setThanksSending(true);
+    try {
+      const res = await fetch("/api/campfire/card/thanks", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId, message: thanksMsg.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data?.error || "Couldn't send thanks.");
+      else {
+        setShowThanks(false);
+        refresh();
+      }
+    } catch {
+      alert("Couldn't send thanks.");
+    }
+    setThanksSending(false);
   };
 
   // Play the "Happy Birthday" melody (public-domain tune) via Web Audio — no audio
@@ -5411,6 +5472,27 @@ export default function EngagementDetailPage() {
               Use this if an earlier email went out with a broken link.
             </p>
           </div>
+          {isBirthdayCard && (
+            <div className="mt-3 border-t border-slate-100 pt-3 text-xs">
+              {engagement.config?.cardViewedAt ? (
+                <div className="font-medium text-emerald-700">
+                  👀 {recipientLabel} opened the card on{" "}
+                  {new Date(
+                    engagement.config.cardViewedAt as string
+                  ).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                </div>
+              ) : (
+                <div className="text-slate-500">
+                  ⏳ {recipientLabel} hasn&apos;t opened the card yet.
+                </div>
+              )}
+              {!!engagement.config?.thanksSentAt && (
+                <div className="mt-0.5 font-medium text-rose-600">
+                  💛 They sent a thank-you to everyone.
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -5725,6 +5807,65 @@ export default function EngagementDetailPage() {
               🎵 Play Happy Birthday 🎂
             </button>
           )}
+
+          {/* Recipient: thank everyone who signed */}
+          {isBirthdayCard && isRevealed && isRecipient &&
+            (engagement.config?.thanksSentAt ? (
+              <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800">
+                💛 Thanks sent to everyone who signed!
+              </div>
+            ) : showThanks ? (
+              <div className="mb-4 space-y-2 rounded-2xl border border-rose-200 bg-rose-50/60 p-4">
+                <div className="text-sm font-semibold text-rose-800">
+                  Send a thank-you to everyone 💛
+                </div>
+                <textarea
+                  value={thanksMsg}
+                  onChange={(e) => setThanksMsg(e.target.value)}
+                  rows={2}
+                  maxLength={280}
+                  placeholder="Add a note (optional) — e.g. Thank you all so much, I loved it!"
+                  className="w-full rounded-xl border border-rose-200 px-3 py-2 text-sm outline-none focus:border-rose-400"
+                />
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={sendThanks}
+                    disabled={thanksSending}
+                    className="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {thanksSending ? "Sending…" : "Send thanks 💛"}
+                  </button>
+                  <button
+                    onClick={() => setShowThanks(false)}
+                    className="text-xs font-medium text-slate-500 hover:text-slate-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowThanks(true)}
+                className="mb-4 w-full rounded-2xl border-2 border-rose-300 bg-white px-4 py-3 text-sm font-bold text-rose-600 transition hover:bg-rose-50"
+              >
+                💛 Thank everyone!
+              </button>
+            ))}
+
+          {/* Everyone else: the recipient's thank-you */}
+          {isBirthdayCard &&
+            isRevealed &&
+            !isRecipient &&
+            !!engagement.config?.thanksSentAt && (
+              <div className="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                💛 <span className="font-semibold">{recipientLabel} said thank you!</span>
+                {!!engagement.config?.thanksMessage && (
+                  <div className="mt-1 italic text-rose-700">
+                    &ldquo;{engagement.config.thanksMessage as string}&rdquo;
+                  </div>
+                )}
+              </div>
+            )}
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-bold text-slate-900">
               {isBirthdayCard

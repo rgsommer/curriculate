@@ -215,6 +215,41 @@ export function cardRevealEmail(opts: {
   return { subject, text, html };
 }
 
+// The card recipient sent a thank-you to everyone who signed.
+export function cardThanksEmail(opts: {
+  recipientName: string;
+  groupName: string;
+  message?: string | null;
+  url: string;
+  icon?: string;
+}) {
+  const { recipientName, groupName, message, url, icon = "💛" } = opts;
+  const subject = `${icon} ${recipientName} says thank you!`;
+  const note = message && message.trim() ? message.trim() : null;
+  const lead = `${escapeHtml(
+    recipientName
+  )} loved the card the group signed in ${escapeHtml(groupName)} and wanted to say thanks.`;
+  const text =
+    `${recipientName} loved the card from ${groupName} and says thank you!` +
+    (note ? `\n\n"${note}"` : "") +
+    `\n\nSee the card: ${url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">${icon}</div>
+  <h1 style="font-size:22px; margin:8px 0;">${escapeHtml(recipientName)} says thank you!</h1>
+  <p style="color:#475569; margin:0 0 12px;">${lead}</p>
+  ${
+    note
+      ? `<div style="background:#fef2f2; border:1px solid #fecdd3; border-radius:12px; padding:14px; color:#9f1239; font-size:15px; margin:0 0 12px;">${escapeHtml(
+          note
+        )}</div>`
+      : ""
+  }
+  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
 export function revealEmail(opts: { groupName: string; title: string; url: string }) {
   const { groupName, title, url } = opts;
   const subject = `Results are in: "${title}" (${groupName})`;
