@@ -224,11 +224,17 @@ export async function GET(req: Request) {
 
     const { data: votes } = await admin
       .from("campfire_challenge_votes")
-      .select("response_id")
+      .select("response_id, voter_user_id")
       .eq("engagement_id", e.id);
+    // Map each entry to its author so self-votes can't count.
+    const authorOf: Record<string, string> = {};
+    for (const r of entries) authorOf[r.id as string] = r.user_id as string;
     const counts: Record<string, number> = {};
-    for (const v of votes ?? [])
-      counts[v.response_id as string] = (counts[v.response_id as string] ?? 0) + 1;
+    for (const v of votes ?? []) {
+      const rid = v.response_id as string;
+      if (authorOf[rid] === (v.voter_user_id as string)) continue; // no self-votes
+      counts[rid] = (counts[rid] ?? 0) + 1;
+    }
     let winner = entries[0];
     let best = -1;
     for (const r of entries) {
