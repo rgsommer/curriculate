@@ -6,49 +6,58 @@ import Link from "next/link";
 import { supabase } from "@/lib/campfire/supabase";
 import { useCreateEngagement } from "@/lib/campfire/hooks";
 
-// Pre-filled from the family list — REVIEW before creating. Format: Name, date
-// (YYYY-MM-DD or "Month D, YYYY"), one per line.
-const DEFAULT_LIST = `Laura, 1973-09-04
-Amber, 1995-09-18
-Andie Jocelyn, 2021-09-25
-Stephanie Irene, 1997-10-03
-Michael William, 2023-10-07
-Mila Joy, 2022-11-30
-Zack Stares, 1994-01-23
-Evan Emmanuel, 1996-04-14
-Davey Bruce Bennett, 2025-04-18
-Peregrin Zackary, 2022-04-19
-Brock Reggie, 2024-04-29
-Richard, 1967-05-03
-Ulissa Grace, 1999-05-08
-Maverick Job, 2025-05-23
-Jonathan Richard, 1994-05-29
-Sarah-Lynn Naomi, 2001-02-08
-Krew Wesley, 2021-02-15
-Archie Zion Sommer, 2026-02-16
-Isaiah, 1998-02-21
-Katherine Laura Stares, 2025-03-13
-Taylor, 1997-03-28
-Tamara Sommer, 2005-02-16`;
+// Pre-filled from the family list — REVIEW before creating. Format per line:
+//   Name, date[, recipient]
+// where date is YYYY-MM-DD or "Month D, YYYY", and the optional 3rd field is the
+// "All Except" recipient — the person the card is hidden from (a member NAME, or an
+// email). For little ones, change it to a PARENT. Defaults to the birthday person.
+const DEFAULT_LIST = `Laura, 1973-09-04, Laura
+Amber, 1995-09-18, Amber
+Andie Jocelyn, 2021-09-25, Andie Jocelyn
+Stephanie Irene, 1997-10-03, Stephanie Irene
+Michael William, 2023-10-07, Michael William
+Mila Joy, 2022-11-30, Mila Joy
+Zack Stares, 1994-01-23, Zack Stares
+Evan Emmanuel, 1996-04-14, Evan Emmanuel
+Davey Bruce Bennett, 2025-04-18, Davey Bruce Bennett
+Peregrin Zackary, 2022-04-19, Peregrin Zackary
+Brock Reggie, 2024-04-29, Brock Reggie
+Richard, 1967-05-03, Richard
+Ulissa Grace, 1999-05-08, Ulissa Grace
+Maverick Job, 2025-05-23, Maverick Job
+Jonathan Richard, 1994-05-29, Jonathan Richard
+Sarah-Lynn Naomi, 2001-02-08, Sarah-Lynn Naomi
+Krew Wesley, 2021-02-15, Krew Wesley
+Archie Zion Sommer, 2026-02-16, Archie Zion Sommer
+Isaiah, 1998-02-21, Isaiah
+Katherine Laura Stares, 2025-03-13, Katherine Laura Stares
+Taylor, 1997-03-28, Taylor
+Tamara Sommer, 2005-02-16, Tamara Sommer`;
 
 const DAY = 24 * 60 * 60 * 1000;
 const LEAD_DAYS = 14;
 
-type Parsed = { name: string; date: Date };
+type Parsed = { name: string; date: Date; recipient: string };
 
 function parseLine(line: string): Parsed | null {
   const s = line.trim();
   if (!s) return null;
-  const i = s.lastIndexOf(",");
-  if (i < 0) return null;
-  const name = s.slice(0, i).trim();
-  let ds = s.slice(i + 1).trim();
-  if (!name || !ds) return null;
-  // Anchor to noon to dodge timezone day-shifts on bare ISO dates.
-  if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(ds)) ds = ds + "T12:00:00";
+  const firstComma = s.indexOf(",");
+  if (firstComma < 0) return null;
+  const name = s.slice(0, firstComma).trim();
+  const rest = s.slice(firstComma + 1).trim();
+  if (!name || !rest) return null;
+  // Pull the date off the start of `rest` (handles ISO and "Month D, YYYY", which
+  // itself contains a comma); anything after the date is the recipient.
+  const iso = rest.match(/^(\d{4}-\d{1,2}-\d{1,2})/);
+  const mon = rest.match(/^([A-Za-z]+\.?\s+\d{1,2},?\s+\d{4})/);
+  const dateStr = iso ? iso[1] : mon ? mon[1] : "";
+  if (!dateStr) return null;
+  const recipient = rest.slice(dateStr.length).replace(/^\s*,?\s*/, "").trim();
+  const ds = /^\d{4}-\d{1,2}-\d{1,2}$/.test(dateStr) ? dateStr + "T12:00:00" : dateStr;
   const d = new Date(ds);
   if (isNaN(d.getTime())) return null;
-  return { name, date: d };
+  return { name, date: d, recipient };
 }
 
 export default function BulkBirthdaysPage() {
@@ -62,6 +71,7 @@ export default function BulkBirthdaysPage() {
   const [templates, setTemplates] = useState<
     { id: string; title: string; urls: string[] }[]
   >([]);
+  const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [done, setDone] = useState(false);
@@ -84,8 +94,40 @@ export default function BulkBirthdaysPage() {
         .filter((e) => e.urls.length > 0);
       setTemplates(t);
       if (t[0]) setCoverFrom(t[0].id);
+
+      const { data: mem } = await supabase
+        .from("group_members")
+        .select("user_id, display_name, profile:profiles(display_name)")
+        .eq("group_id", groupId);
+      setRoster(
+        (mem ?? []).map((m) => {
+          const p = Array.isArray(m.profile) ? m.profile[0] : m.profile;
+          return {
+            user_id: m.user_id as string,
+            name:
+              (m.display_name as string | null) ||
+              (p as { display_name?: string } | null)?.display_name ||
+              "",
+          };
+        })
+      );
     })();
   }, [groupId]);
+
+  // Resolve a recipient string to a member id (by name) or an email.
+  const resolveRecipient = (r: string): { uid?: string; email?: string } => {
+    const v = r.trim();
+    if (!v) return {};
+    if (v.includes("@")) return { email: v.toLowerCase() };
+    const lc = v.toLowerCase();
+    const m =
+      roster.find((x) => x.name.toLowerCase() === lc) ||
+      roster.find(
+        (x) =>
+          x.name && (x.name.toLowerCase().includes(lc) || lc.includes(x.name.toLowerCase()))
+      );
+    return m ? { uid: m.user_id } : {};
+  };
 
   const parsed = useMemo(
     () => text.split("\n").map(parseLine).filter(Boolean) as Parsed[],
@@ -118,6 +160,14 @@ export default function BulkBirthdaysPage() {
       let next = new Date(new Date().getFullYear(), month, day, 9, 0, 0);
       if (next.getTime() <= now) next = new Date(next.getFullYear() + 1, month, day, 9, 0, 0);
       const scheduledOpen = new Date(next.getTime() - LEAD_DAYS * DAY);
+      const rec = resolveRecipient(p.recipient);
+      const recNote = !p.recipient
+        ? " · no recipient (set later)"
+        : rec.uid
+        ? ` · hidden from ${p.recipient}`
+        : rec.email
+        ? ` · hidden from ${rec.email}`
+        : ` · ⚠️ recipient "${p.recipient}" not matched — set it on the card`;
       try {
         const r = await create({
           groupId,
@@ -134,6 +184,8 @@ export default function BulkBirthdaysPage() {
           birth_year: birthYear,
           launched_at: null,
           notify: true,
+          excluded_user_ids: rec.uid ? [rec.uid] : undefined,
+          excluded_emails: rec.email ? [rec.email] : undefined,
           cover_image_urls: urls.length ? urls : undefined,
           cover_image_url: urls[0],
         });
@@ -143,7 +195,7 @@ export default function BulkBirthdaysPage() {
           ok++;
           setLog((l) => [
             ...l,
-            `✅ ${p.name} — opens ${scheduledOpen.toLocaleDateString()}`,
+            `✅ ${p.name} — opens ${scheduledOpen.toLocaleDateString()}${recNote}`,
           ]);
         }
       } catch (e) {
@@ -167,10 +219,14 @@ export default function BulkBirthdaysPage() {
         🎂 Bulk add birthdays
       </h1>
       <p className="mt-1 text-sm text-slate-600">
-        One per line: <span className="font-medium">Name, date</span> (e.g.{" "}
-        <code>Laura, 1973-09-04</code> or <code>Laura, September 4 1973</code>). Each
-        becomes a <strong>recurring</strong> birthday card that auto-opens ~
-        {LEAD_DAYS} days before the day. Review the list before creating.
+        One per line:{" "}
+        <span className="font-medium">Name, date, recipient</span> — e.g.{" "}
+        <code>Laura, 1973-09-04, Laura</code>. The 3rd field is the{" "}
+        <strong>&ldquo;All Except&rdquo;</strong> recipient the card is hidden from (a
+        member&apos;s name, or an email). For little ones, change it to a{" "}
+        <strong>parent</strong>; leave it blank to set per-card later. Each becomes a{" "}
+        <strong>recurring</strong> card that auto-opens ~{LEAD_DAYS} days before the
+        day. Review before creating — unmatched recipients are flagged in the log.
       </p>
 
       <textarea
