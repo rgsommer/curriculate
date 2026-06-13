@@ -1095,8 +1095,10 @@ export default function EngagementDetailPage() {
       }
     }
     // Group gift: validate, and if the host is turning it OFF after people chipped
-    // in, refund those contributions first.
-    if (editGiftEnabled && !editGiftRecipientEmail.trim()) {
+    // in, refund those contributions first. A raffle/tournament pot has no preset
+    // recipient (the winner is decided at the end), so skip the recipient check.
+    const isRaffleEng = !!raffleOf(engagement.config);
+    if (!isRaffleEng && editGiftEnabled && !editGiftRecipientEmail.trim()) {
       alert("Add the recipient's email — that's where the gift card is sent.");
       setSavingEdit(false);
       return;
@@ -5579,6 +5581,10 @@ export default function EngagementDetailPage() {
                 </div>
               </label>
 
+              {/* For a raffle/tournament the pot goes to the VOTED winner, so the
+                  generic group-gift toggle + recipient picker don't apply — hide them. */}
+              {!raffle && (
+              <>
               {/* Group gift — enable/disable + recipient */}
               <div>
                 <label className="flex items-start gap-3 cursor-pointer">
@@ -5757,6 +5763,8 @@ export default function EngagementDetailPage() {
                     </button>
                   </div>
                 </div>
+              )}
+              </>
               )}
 
               {responseCount > 0 && (
@@ -5962,6 +5970,43 @@ export default function EngagementDetailPage() {
         !hasResponded &&
         !isDraft &&
         !(user && (engagement.excluded_user_ids ?? []).includes(user.id)) && (
+          raffle && entryFeeCents === 0 ? (
+            // A chip-in raffle has two ways to take part: enter (compete) or chip in (support).
+            <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-5 py-4 shadow-sm">
+              <div className="text-base font-extrabold text-slate-900">
+                🔥 Two ways to join
+              </div>
+              <div className="mt-0.5 text-xs text-slate-600">
+                Enter the challenge to compete for the pot — or just chip in to grow it.
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                <a
+                  href="#respond"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document
+                      .getElementById("respond")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="flex-1 rounded-full bg-amber-500 px-4 py-2.5 text-center text-sm font-bold text-white hover:bg-amber-600"
+                >
+                  📸 Enter your photo
+                </a>
+                <a
+                  href="#prizepot"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document
+                      .getElementById("prizepot")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }}
+                  className="flex-1 rounded-full border border-amber-300 bg-white px-4 py-2.5 text-center text-sm font-bold text-amber-700 hover:bg-amber-50"
+                >
+                  💸 Just chip in
+                </a>
+              </div>
+            </div>
+          ) : (
           <a
             href="#respond"
             onClick={(e) => {
@@ -5986,6 +6031,7 @@ export default function EngagementDetailPage() {
               ✍️ Respond
             </span>
           </a>
+          )
         )}
 
       {/* ── Surprise: who it's hidden from until the reveal ── */}
@@ -6409,7 +6455,7 @@ export default function EngagementDetailPage() {
       {/* ── GROUP GIFT / PRIZE POT: chip in toward a gift card (the recipient for a
             card; the voted winner for a raffle) ── */}
       {engagement.gift_enabled && !isGiftHidden && (
-        <div className="mb-6 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
+        <div id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">
               {raffle ? "🏆 Prize pot" : "🎁 Group gift"}
