@@ -235,6 +235,59 @@ export async function GET(req: Request) {
       if (authorOf[rid] === (v.voter_user_id as string)) continue; // no self-votes
       counts[rid] = (counts[rid] ?? 0) + 1;
     }
+
+    // No votes at the close → don't award arbitrarily. Nudge the group and extend
+    // voting 14 days; only after that grace does it fall back to the earliest entry.
+    const totalVotes = Object.values(counts).reduce((a, b) => a + b, 0);
+    if (totalVotes === 0) {
+      const graceUntil = raffle.noVoteGraceUntil
+        ? new Date(raffle.noVoteGraceUntil).getTime()
+        : null;
+      if (!graceUntil) {
+        const noVoteGraceUntil = new Date(now + 14 * 86400000).toISOString();
+        await admin
+          .from("engagements")
+          .update({
+            config: {
+              ...((e.config as Record<string, unknown>) ?? {}),
+              raffle: { ...raffle, noVoteGraceUntil },
+            },
+          })
+          .eq("id", e.id);
+        // One nudge to vote before the prize defaults to the first entry.
+        try {
+          const memberEmails = await getGroupMemberEmails(admin, e.group_id as string);
+          const engUrl = `${base}/campfirelive/group/${e.group_id}/engagement/${e.id}`;
+          const by = new Date(now + 14 * 86400000).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+          const subject = `🗳 No votes yet — "${e.title}"`;
+          const text = `Nobody's voted on "${e.title}" yet. Vote by ${by} or the prize goes to the first entry. ${engUrl}`;
+          const html = `<p>🗳 Nobody's voted on "<b>${escapeHtml(
+            e.title as string
+          )}</b>" yet.</p><p>Vote by <b>${by}</b> or the prize defaults to the first entry.</p><p><a href="${engUrl}">Vote now →</a></p>`;
+          for (let i = 0; i < memberEmails.length; i += 100) {
+            await resend.batch.send(
+              memberEmails.slice(i, i + 100).map((to) => ({
+                from,
+                to: [to],
+                subject,
+                text,
+                html,
+                ...mailDefaults(),
+              }))
+            );
+          }
+        } catch (err) {
+          console.error("Raffle no-vote nudge failed:", err);
+        }
+        continue; // wait out the grace window
+      }
+      if (now < graceUntil) continue; // still in grace, hoping for votes
+      // Grace expired, still zero votes → fall through, award the earliest entry.
+    }
+
     let winner = entries[0];
     let best = -1;
     for (const r of entries) {

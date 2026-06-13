@@ -208,6 +208,7 @@ export interface RaffleConfig {
   voteDays?: number; // voting window length, in days after the entries close
   participationGate?: number; // hold reveal until this % of the group has entered (0 = off)
   voteClosesAt?: string | null; // set at reveal: when voting closes + auto-award fires
+  noVoteGraceUntil?: string | null; // if voting closed with zero votes: extended deadline
   winnerUserId?: string | null; // recorded at award
 }
 export function raffleOf(

@@ -649,7 +649,11 @@ export default function EngagementDetailPage() {
   const isDraft = !engagement.launched_at;
   // ── Raffle Challenge: pot goes to the voted winner ──
   const raffle = raffleOf(engagement.config);
-  const voteClosesAt = raffle?.voteClosesAt
+  // Effective close = the grace deadline if voting closed with zero votes, else the
+  // normal vote-close. Voting stays open through whichever is later.
+  const voteClosesAt = raffle?.noVoteGraceUntil
+    ? new Date(raffle.noVoteGraceUntil).getTime()
+    : raffle?.voteClosesAt
     ? new Date(raffle.voteClosesAt).getTime()
     : null;
   const votingOpen =
