@@ -1281,6 +1281,15 @@ See you around the campfire! 🏕️`
                         ✓ Revealed
                       </span>
                     )}
+                    {/* Card opened by the recipient */}
+                    {isRevealed &&
+                      eng.type === "birthday" &&
+                      !!(eng.config as { cardViewedAt?: string } | null)
+                        ?.cardViewedAt && (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700">
+                          ✓ Opened
+                        </span>
+                      )}
                     {/* Have YOU responded? (skip drafts and the surprise recipient) */}
                     {!isDraft &&
                       !(user && (eng.excluded_user_ids ?? []).includes(user.id)) &&
