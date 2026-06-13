@@ -145,6 +145,15 @@ export default function EngagementDetailPage() {
               .filter((r) => r.status === "pending")
               .map((r) => ({ email: r.email as string, name: (r.name as string) ?? null }))
           );
+          setAllInvitees(
+            data
+              .filter((r) => r.status !== "revoked")
+              .map((r) => ({
+                email: r.email as string,
+                name: (r.name as string) ?? null,
+                joined: r.status === "joined",
+              }))
+          );
         }
         setPendingCount((pc as number) ?? 0);
         if (g) setGroupInfo(g as { name: string; invite_code: string });
@@ -399,6 +408,11 @@ export default function EngagementDetailPage() {
   const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
   const [addRecipEmail, setAddRecipEmail] = useState(""); // add a recipient by email
   const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
+  // All non-revoked invitees (pending OR joined) — the card recipient picker shows
+  // these so an email-invited person is selectable even if they're not in the roster.
+  const [allInvitees, setAllInvitees] = useState<
+    { email: string; name: string | null; joined: boolean }[]
+  >([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
@@ -4967,9 +4981,9 @@ export default function EngagementDetailPage() {
                   )}
               </div>
 
-              {/* Surprise: hide from (members + pending invitees) */}
+              {/* Surprise: hide from (members + everyone on the invited-email list) */}
               {(roster.filter((m) => m.user_id !== user?.id).length > 0 ||
-                pendingInvitees.length > 0) && (
+                allInvitees.length > 0) && (
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">
                     {isRevealed
@@ -5003,7 +5017,7 @@ export default function EngagementDetailPage() {
                           </button>
                         );
                       })}
-                    {pendingInvitees.map((p) => {
+                    {allInvitees.map((p) => {
                       const on = editExcludedEmails.includes(p.email);
                       return (
                         <button
@@ -5014,6 +5028,7 @@ export default function EngagementDetailPage() {
                               on ? prev.filter((e) => e !== p.email) : [...prev, p.email]
                             )
                           }
+                          title={p.email}
                           className={`rounded-full border px-3 py-1 text-xs font-medium ${
                             on
                               ? "border-rose-500 bg-rose-500 text-white"
@@ -5022,13 +5037,15 @@ export default function EngagementDetailPage() {
                         >
                           {on ? "🙈 " : ""}
                           {p.name || p.email}{" "}
-                          <span className={on ? "text-rose-100" : "text-slate-400"}>· not joined</span>
+                          <span className={on ? "text-rose-100" : "text-slate-400"}>
+                            · {p.joined ? "by email" : "not joined"}
+                          </span>
                         </button>
                       );
                     })}
-                    {/* Emails added directly (not a member or pending invitee) */}
+                    {/* Emails added directly (not on the invited list) */}
                     {editExcludedEmails
-                      .filter((e) => !pendingInvitees.some((p) => p.email === e))
+                      .filter((e) => !allInvitees.some((p) => p.email === e))
                       .map((e) => (
                         <button
                           key={e}
