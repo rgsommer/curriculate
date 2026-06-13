@@ -4,7 +4,7 @@ import Link from "next/link";
 export const metadata: Metadata = {
   title: "How Campfire Works — Group Engagement Reimagined",
   description:
-    "New to Campfire? Here's how it works: join a group, answer the question, and nobody sees the results until everyone responds. Then it all opens at once. A friendly walkthrough plus the full feature tour — 12 activity types, sealed reveals, streaks, and template packs for families, friends, churches, classes, and communities.",
+    "New to Campfire? Here's how it works: join a group, answer the question, and nobody sees the results until everyone responds. Then it all opens at once. A friendly walkthrough plus the full feature tour — sealed reveals, celebration cards, group gifts, party sign-ups, streaks, and template packs for families, friends, churches, classes, and communities.",
   keywords: [
     "campfire app",
     "how campfire works",
@@ -224,7 +224,7 @@ export default function AboutCampfirePage() {
             applicationCategory: "SocialNetworkingApplication",
             operatingSystem: "iOS, Android, Web",
             description:
-              "Campfire is a group engagement app with 12 activity types. Results stay sealed until everyone responds — turning every poll, challenge, and game into a shared reveal event.",
+              "Campfire is a group engagement app: polls, challenges and games, plus celebration cards, group gifts, and party sign-ups. Results stay sealed until everyone responds — turning every activity into a shared reveal event.",
             url: "https://curriculate.net/aboutcampfire",
             offers: [
               {
@@ -252,12 +252,18 @@ export default function AboutCampfirePage() {
             featureList: [
               "Sealed results — nobody sees answers until everyone responds",
               "12 engagement types: polls, challenges, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
-              "Celebration Cards — private surprise cards for birthdays, anniversaries, Mother's/Father's Day",
+              "Celebration Cards — private surprise cards for birthdays, anniversaries, weddings, Mother's/Father's Day, holidays and one-time occasions; sealed until the special day, recurring yearly",
+              "Group gifts — everyone chips in toward one gift card; the recipient gets the full amount because contributors cover the processing fee; running total visible to all but the recipient",
+              "Secret Santa gift exchange — auto-assign who buys for whom, optionally matched by preference; assignments stay private to each person",
+              "Party Sign-ups — potlucks and meal trains with RSVP, claimable bring-slots (unlimited slots supported), free-text items, and AI dish suggestions that balance the menu",
+              "Bulk-add birthdays — seed a whole family or class of recurring cards from one list, reusing a template's photos",
+              "Multi-photo posts — share up to three photos in a single photo challenge",
               "Care Check-in — multi-section pastoral check-ins (how you're doing, prayer requests, praise)",
               "Leader-private responses — answers visible only to the host",
               "Anonymous replies — encourage each other without a name attached",
               "Guest signing — sign a single card with just your name, no account",
               "Edit your response any time before the reveal",
+              "Read receipts and one-tap thank-you to everyone who signed",
               "Voice responses",
               "Blind/anonymous mode",
               "Group streaks and health scores",
@@ -530,7 +536,7 @@ export default function AboutCampfirePage() {
             title="🔥 Campfire = Structure + Suspense"
             desc="Gives groups a reason to engage — and a reason to wait. Results stay sealed until every member responds."
             bullets={[
-              "12 engagement types from polls to games",
+              "Polls, games, celebration cards, group gifts, and party sign-ups",
               "Sealed results — nobody sees anything until everyone is in",
               "The reveal is the event, not just the answer",
               "Deadline-driven participation with nudges",
@@ -543,8 +549,8 @@ export default function AboutCampfirePage() {
         {/* ── Engagement Types ── */}
         <SectionHeader
           eyebrow="Engagement Types"
-          title="12 ways to bring your group to life"
-          desc="From lighthearted games to meaningful accountability, Campfire offers a rich toolkit for group interaction. Every one uses the same sealed-reveal magic."
+          title="Every way to bring your group to life"
+          desc="From lighthearted games to celebration cards, group gifts, and party sign-ups, Campfire is a rich toolkit for group connection. Every one uses the same sealed-reveal magic."
         />
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           <EngCard icon="📊" name="Poll" desc="Multiple choice, yes/no, or open questions. Shareable via QR code." />
@@ -558,7 +564,10 @@ export default function AboutCampfirePage() {
           <EngCard icon="⚖️" name="Anonymous Judge" desc="Submit entries anonymously. Group rates blind." />
           <EngCard icon="🔍" name="Guess" desc="Post a mystery photo for the group to guess." />
           <EngCard icon="🎉" name="Surprise" desc="Coordinate greetings or video mash-ups, hidden from the recipient." />
-          <EngCard icon="🎂" name="Celebration Card" desc="A surprise card everyone signs — birthday, anniversary, Mother's/Father's Day. Each wish stays private to the recipient; it opens on the special day and recurs yearly." />
+          <EngCard icon="🎂" name="Celebration Card" desc="A surprise card everyone signs — birthday, anniversary, wedding, Mother's/Father's Day, holidays. Each wish stays private to the recipient; it opens on the special day and recurs yearly. Add a group gift everyone chips into." />
+          <EngCard icon="🥗" name="Party Sign-up" desc="Potlucks and meal trains: set when & where, see who's coming (RSVP), and let people claim slots or add what they're bringing. AI balances the menu so you're not all-salad, no mains." />
+          <EngCard icon="🎁" name="Group Gift" desc="Everyone chips in toward one gift card. Contributors cover the fees, so the recipient gets the full amount — and the running total stays hidden from them." />
+          <EngCard icon="🎅" name="Secret Santa" desc="Run a gift exchange: Campfire randomly assigns who buys for whom and keeps each match private until the reveal." />
           <EngCard icon="🤝" name="Care Check-in" desc="One form, several optional sections (how you're doing, prayer/support, praise, reflection). Fill any or all. Can be kept private to the host, with optional anonymous replies." />
           <EngCard icon="💡" name="Advice" desc="Ask your group or filtered random users for counsel." />
           <EngCard icon="🎤" name="Voice Response" desc="Leave voice notes instead of text. Lower friction, higher personality." />
