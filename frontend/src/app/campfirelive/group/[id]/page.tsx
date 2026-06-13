@@ -997,17 +997,17 @@ See you around the campfire! 🏕️`
                     </div>
                   )}
 
-                  {/* Link this email to a guest who joined by the LINK (no email) —
-                      available whether the invite is still pending OR already marked
-                      joined, since a joined invite could have been a link-joiner too. */}
-                  {isAdmin && inv.status !== "revoked" && members.length > 0 && (
+                  {/* Pending invite who actually joined via the LINK as a guest (no
+                      email)? Link them so emails — including a card reveal — reach
+                      them at this address. */}
+                  {isAdmin && inv.status === "pending" && members.length > 0 && (
                     <div className="mt-1.5">
                       <select
                         defaultValue=""
                         onChange={(e) => {
                           if (e.target.value) linkGuest(inv.email, e.target.value);
                         }}
-                        title="Joined as a guest (via the link, no email)? Link them so emails — including a card reveal — reach them at this address."
+                        title="Joined as a guest (via the link, no email)? Link them so emails reach them at this address."
                         className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-500"
                       >
                         <option value="">↔ joined here as a guest?…</option>
