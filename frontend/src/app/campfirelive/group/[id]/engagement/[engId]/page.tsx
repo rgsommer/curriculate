@@ -6941,13 +6941,22 @@ export default function EngagementDetailPage() {
                 </p>
                 {/* Raffle Draw: the host can draw the winner now (at the event) */}
                 {draw && isCreator && (giftSummary?.contributors ?? 0) > 0 && (
-                  <button
-                    onClick={drawWinner}
-                    disabled={drawingWinner}
-                    className="mt-3 w-full rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
-                  >
-                    {drawingWinner ? "Drawing…" : "🎲 Draw the winner now"}
-                  </button>
+                  <>
+                    <button
+                      onClick={drawWinner}
+                      disabled={drawingWinner}
+                      className="mt-3 w-full rounded-full bg-gradient-to-r from-fuchsia-500 to-purple-600 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                    >
+                      {drawingWinner ? "Drawing…" : "🎲 Draw the winner now"}
+                    </button>
+                    <p className="mt-1.5 text-center text-[11px] text-slate-400">
+                      {raffle.autoDraw !== false
+                        ? `Or leave it — it draws automatically at the close${
+                            deadlineStr ? ` (${deadlineStr})` : ""
+                          }. The pick is 100% random.`
+                        : "The pick is 100% random — weighted by what each person chipped in."}
+                    </p>
+                  </>
                 )}
               </>
             )

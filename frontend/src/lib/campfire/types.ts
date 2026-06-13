@@ -217,6 +217,7 @@ export interface RaffleConfig {
   // Raffle Draw (no contest): a random winner is drawn from the people who chipped in.
   draw?: boolean;
   drawWeighted?: boolean; // true = chances scale with amount chipped in; false = one each
+  autoDraw?: boolean; // true (default) = drawn automatically at the close; false = host draws live
 }
 export function raffleOf(
   config: Record<string, unknown> | null | undefined

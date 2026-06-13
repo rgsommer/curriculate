@@ -128,6 +128,7 @@ export default function NewEngagementPage() {
   const [raffleGate, setRaffleGate] = useState(0); // hold reveal until this % entered
   const [raffleEntryFee, setRaffleEntryFee] = useState(0); // 0 = optional chip-in; >0 = $ to enter
   const [drawWeighted, setDrawWeighted] = useState(true); // Raffle Draw odds: weighted vs one-each
+  const [drawAuto, setDrawAuto] = useState(true); // Raffle Draw: auto at close vs host draws live
   // Tournament (leaderboard): scoring direction + optional scorecard photo.
   const [tournDirection, setTournDirection] = useState<"low" | "high">("low");
   const [tournScorecard, setTournScorecard] = useState(false);
@@ -625,6 +626,7 @@ export default function NewEngagementPage() {
         on: true,
         draw: true,
         drawWeighted,
+        autoDraw: drawAuto,
         hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
         voteDays: 0, // drawn at the deadline (or earlier by the host)
         participationGate: 0,
@@ -2518,6 +2520,22 @@ export default function NewEngagementPage() {
                     <option value={25}>75% winner / 25% you</option>
                   </select>
                 </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-slate-600">The draw</label>
+                  <select
+                    value={drawAuto ? "auto" : "manual"}
+                    onChange={(e) => setDrawAuto(e.target.value === "auto")}
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-fuchsia-500"
+                  >
+                    <option value="auto">Automatically at the closing date</option>
+                    <option value="manual">I&apos;ll draw it live at the event</option>
+                  </select>
+                </div>
+                <p className="text-[11px] text-fuchsia-700">
+                  🔒 Either way the pick is 100% random — Campfire draws it, weighting by
+                  how much each person chipped in (if you chose that). No one, not even
+                  you, can influence who wins.
+                </p>
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-slate-600">Pot currency</label>
                   <select

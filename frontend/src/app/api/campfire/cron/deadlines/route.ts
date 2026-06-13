@@ -20,6 +20,7 @@ import {
   escapeHtml,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, tournamentOf, type NthWeekday } from "@/lib/campfire/types";
+import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -214,6 +215,24 @@ export async function GET(req: Request) {
     const raffle = raffleOf(e.config as Record<string, unknown> | null);
     if (!raffle?.voteClosesAt) continue;
     if (new Date(raffle.voteClosesAt).getTime() > now) continue; // still voting
+
+    // Raffle Draw: no entries/votes. Auto-draw at the close if the host opted in;
+    // otherwise wait for them to draw it live at the event.
+    if (raffle.draw) {
+      if (raffle.autoDraw !== false) {
+        const r = await runRaffleDraw(admin, {
+          id: e.id as string,
+          group_id: e.group_id as string,
+          creator_id: e.creator_id as string,
+          title: e.title as string,
+          config: e.config as Record<string, unknown> | null,
+          gift_currency: e.gift_currency as string | null,
+          gift_issued_at: null,
+        });
+        if (r.ok && r.winnerUserId) awarded++;
+      }
+      continue;
+    }
 
     // Entries, earliest-first so ties (and zero-vote) resolve to the earliest.
     const { data: entries } = await admin
