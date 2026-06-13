@@ -44,6 +44,14 @@ export async function POST(req: Request) {
       typeof body?.origin === "string" && /^https?:\/\//.test(body.origin)
         ? body.origin.replace(/\/$/, "")
         : null;
+    // A public contribute (QR) page passes its own return URL so an anonymous donor
+    // lands back on a public thank-you, not the member-only engagement page. Restricted
+    // to a curriculate.net path for safety.
+    const returnUrlIn =
+      typeof body?.returnUrl === "string" &&
+      /^https:\/\/([a-z0-9-]+\.)?curriculate\.net\/[^\s]*$/.test(body.returnUrl)
+        ? body.returnUrl.replace(/[?#].*$/, "")
+        : null;
 
     if (!engagementId || !Number.isFinite(amountCents) || amountCents < 100) {
       return NextResponse.json(
@@ -166,7 +174,9 @@ export async function POST(req: Request) {
     }
 
     const site = originIn || campfireSiteUrl();
-    const back = `${site}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
+    const back =
+      returnUrlIn ||
+      `${site}/campfirelive/group/${eng.group_id}/engagement/${engagementId}`;
 
     const stripe = getStripe();
     const session = await stripe.checkout.sessions.create({

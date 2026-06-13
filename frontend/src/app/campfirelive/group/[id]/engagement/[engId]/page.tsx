@@ -11,6 +11,7 @@ import {
 } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
+import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
@@ -218,6 +219,8 @@ export default function EngagementDetailPage() {
   const [pledgeResultInput, setPledgeResultInput] = useState(""); // host: actual achieved
   const [settlingPledge, setSettlingPledge] = useState(false);
   const [drawingWinner, setDrawingWinner] = useState(false); // Raffle Draw: drawing now
+  // QR-to-contribute: a printable code that lets people chip in / donate at an event.
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   // Anonymized pledge leaderboard (amounts, biggest first — no names).
   const [pledgeAmounts, setPledgeAmounts] = useState<
     { amount_cents: number; per_unit_cents: number }[]
@@ -998,6 +1001,41 @@ export default function EngagementDetailPage() {
       alert("Couldn't draw the winner.");
     }
     setDrawingWinner(false);
+  };
+
+  // QR to contribute: generate a code linking to the public /give page, show it (and
+  // let the host print a sheet to set out at the event).
+  const openQr = async () => {
+    if (typeof window === "undefined") return;
+    const url = `${window.location.origin}/give/${engagementId}`;
+    try {
+      const dataUrl = await QRCode.toDataURL(url, { width: 600, margin: 2 });
+      setQrDataUrl(dataUrl);
+    } catch {
+      alert("Couldn't make the QR code.");
+    }
+  };
+  const printQr = () => {
+    if (!qrDataUrl || typeof window === "undefined") return;
+    const w = window.open("", "_blank", "width=720,height=900");
+    if (!w) return;
+    const give = `${window.location.origin}/give/${engagementId}`;
+    const verb = pledge ? "donate" : raffle ? "chip in" : "chip in";
+    w.document.write(
+      `<html><head><title>${engagement.title}</title><style>
+        body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;text-align:center;padding:48px 24px;color:#0f172a}
+        h1{font-size:30px;margin:0 0 8px}p{color:#475569;font-size:18px;margin:6px 0}
+        img{width:340px;height:340px;margin:24px auto}.u{font-size:13px;color:#94a3b8;word-break:break-all}
+      </style></head><body>
+        <h1>📸 Scan to ${verb}!</h1>
+        <p><b>${engagement.title.replace(/</g, "&lt;")}</b></p>
+        <img src="${qrDataUrl}" alt="QR code"/>
+        <p>Point your phone camera at the code.</p>
+        <p class="u">${give}</p>
+      </body></html>`
+    );
+    w.document.close();
+    setTimeout(() => w.print(), 300);
   };
 
   // Any group member can start a group chip-in (gift) for one guest on this engagement.
@@ -6220,6 +6258,47 @@ export default function EngagementDetailPage() {
           </a>
         )}
 
+      {/* QR-to-contribute modal (host) */}
+      {qrDataUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setQrDataUrl(null)}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-black text-slate-900">
+              📸 Scan to {pledge ? "donate" : "chip in"}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Set this out at the event — anyone can scan and contribute, no account
+              needed.
+            </p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={qrDataUrl}
+              alt="QR code"
+              className="mx-auto my-4 h-56 w-56 rounded-lg"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={printQr}
+                className="flex-1 rounded-full bg-slate-900 px-4 py-2.5 text-sm font-bold text-white hover:bg-slate-800"
+              >
+                🖨️ Print
+              </button>
+              <button
+                onClick={() => setQrDataUrl(null)}
+                className="flex-1 rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Surprise: who it's hidden from until the reveal ── */}
       {((engagement.excluded_user_ids?.length ?? 0) > 0 ||
         (engagement.excluded_emails?.length ?? 0) > 0) &&
@@ -6805,6 +6884,14 @@ export default function EngagementDetailPage() {
                   </div>
                 </div>
               )}
+              {isCreator && (
+                <button
+                  onClick={openQr}
+                  className="mt-3 w-full rounded-full border border-rose-300 bg-white px-4 py-2 text-xs font-bold text-rose-700 hover:bg-rose-50"
+                >
+                  📱 Show / print a QR for in-person donations
+                </button>
+              )}
             </>
           )}
 
@@ -6957,6 +7044,14 @@ export default function EngagementDetailPage() {
                         : "The pick is 100% random — weighted by what each person chipped in."}
                     </p>
                   </>
+                )}
+                {isCreator && (
+                  <button
+                    onClick={openQr}
+                    className="mt-2 w-full rounded-full border border-fuchsia-300 bg-white px-4 py-2 text-xs font-bold text-fuchsia-700 hover:bg-fuchsia-50"
+                  >
+                    📱 Show / print a QR to collect at an event
+                  </button>
                 )}
               </>
             )

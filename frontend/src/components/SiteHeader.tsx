@@ -49,6 +49,8 @@ export default function SiteHeader() {
   if (pathname?.startsWith("/campfirelive")) return null;
   // Paid-traffic landing pages stay distraction-free (single CTA, no top nav).
   if (pathname?.startsWith("/play")) return null;
+  // Public QR contribute page — minimal chrome.
+  if (pathname?.startsWith("/give")) return null;
 
   return (
     <header className="site-header sticky top-0 z-50 border-b bg-white/75 backdrop-blur">
