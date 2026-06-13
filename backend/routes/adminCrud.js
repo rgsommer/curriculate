@@ -664,6 +664,17 @@ const DEFAULT_REFERRAL_AGENT_HTML = `
     <li>Commissions are tracked and paid out by the Curriculate team</li>
   </ol>
   {{CUSTOM_MESSAGE}}
+
+  <div style="margin-top:24px;padding-top:20px;border-top:1px solid #e2e8f0;">
+    <p style="color:#1e293b;font-size:15px;font-weight:800;margin:0 0 6px;">⭐ Bonus: more ways your code earns</p>
+    <p style="color:#475569;font-size:13px;margin:0 0 14px;">Your code isn't just for subscriptions — it earns across everything Curriculate, all added <em>on top</em> so it never costs your groups anything.</p>
+    <table style="width:100%;border-collapse:collapse;font-size:14px;">
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">📊 <strong>AI Grading (Pulse)</strong><br><span style="color:#64748b;">Commission on every teacher/school subscription that uses your code.</span></td></tr>
+      <tr><td style="padding:10px 0;border-bottom:1px solid #f1f5f9;">🔥 <strong>Campfire — group cards &amp; gifts</strong><br><span style="color:#64748b;">Classes, teams, families run cards and chip in for group gift cards. You earn ~1% of every chip-in.</span><br><a href="https://www.curriculate.net/campfirelive?ref={{REFERRAL_CODE}}" style="color:#ea580c;font-weight:700;">Share Campfire &rarr;</a></td></tr>
+      <tr><td style="padding:10px 0;">🏆 <strong>Field Day — prize challenges &amp; scavenger hunts</strong> <span style="color:#16a34a;font-weight:700;">(3% to you)</span><br><span style="color:#64748b;">A themed photo challenge or scavenger hunt with a cash pot the group votes on. The best part: players <strong>don't have to be in the same place</strong> — everyone submits their own photos from wherever they are. (Sports score tournaments — submit your golf/run/game scores against players anywhere — coming soon.)</span><br><a href="https://www.curriculate.net/campfirelive?start=raffle-challenge&ref={{REFERRAL_CODE}}" style="color:#d97706;font-weight:700;">Start a prize event &rarr;</a></td></tr>
+    </table>
+  </div>
+
   <p style="color:#94a3b8;font-size:13px;margin-top:24px;">Curriculate — AI-Powered Station-Based Learning</p>
 </div>
 `.trim();

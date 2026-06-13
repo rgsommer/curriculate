@@ -231,10 +231,13 @@ export default function ReferralsPage() {
             </div>
             <div className="bg-white rounded-2xl border border-amber-300 p-5">
               <div className="text-xl mb-1">🏆</div>
-              <div className="font-extrabold text-gray-900">Raffle Challenges</div>
+              <div className="font-extrabold text-gray-900">
+                Prize challenges &amp; scavenger hunts
+              </div>
               <div className="text-sm text-gray-600 mt-1">
-                <b>3%</b> (triple) of every chip-in on a prize-pot challenge — the
-                biggest pots, the ones to push.
+                <b>3%</b> (triple) of every chip-in on a cash-pot photo challenge or
+                scavenger hunt — players don&apos;t even have to be in the same place.
+                Score tournaments coming soon.
               </div>
             </div>
             <div className="bg-white rounded-2xl border border-gray-200 p-5">
