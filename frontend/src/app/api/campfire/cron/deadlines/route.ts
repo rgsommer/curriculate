@@ -379,14 +379,15 @@ export async function GET(req: Request) {
     .is("reveal_notified_at", null);
 
   for (const e of toNotify ?? []) {
-    // Members + invited-but-not-joined (a reveal nudge), minus an email-only recipient.
+    // Members + invited-but-not-joined (a reveal nudge) AND the surprise recipient(s)
+    // by email — at reveal the recipient SHOULD get their card.
     const memberEmails = await getGroupMemberEmails(admin, e.group_id);
     const pendingEmails = await getPendingInviteeEmails(admin, e.group_id);
-    const exEmails = new Set(
-      ((e.excluded_emails as string[] | null) ?? []).map((x) => x.toLowerCase())
+    const recipientByEmail = ((e.excluded_emails as string[] | null) ?? []).map(
+      (x) => x.toLowerCase()
     );
-    const emails = Array.from(new Set([...memberEmails, ...pendingEmails])).filter(
-      (em) => !exEmails.has(em.toLowerCase())
+    const emails = Array.from(
+      new Set([...memberEmails, ...pendingEmails, ...recipientByEmail])
     );
     if (emails.length) {
       const { data: group } = await admin
@@ -415,6 +416,10 @@ export async function GET(req: Request) {
             ? "the guest of honor"
             : "The birthday person"
         );
+        const recipientSet = new Set([
+          ...Array.from(recipientEmails),
+          ...recipientByEmail,
+        ]);
         const msgs = emails.map((to) => {
           const cm = cardRevealEmail({
             groupName: group?.name ?? "your group",
@@ -422,7 +427,7 @@ export async function GET(req: Request) {
             recipientName: label,
             count: count ?? 0,
             url: engUrl,
-            forRecipient: recipientEmails.has(to.toLowerCase()),
+            forRecipient: recipientSet.has(to.toLowerCase()),
             icon: engagementIcon({
               type: e.type as string,
               config: e.config as { occasion?: string } | null,

@@ -78,15 +78,17 @@ export async function POST(req: Request) {
       }
     }
 
-    // Members + invited-but-not-joined (a "you missed it" nudge), minus anyone who
-    // was invited by email as the surprise recipient (don't spoiler-FYI them).
+    // Recipients: members + invited-but-not-joined (a "you missed it" nudge) AND the
+    // surprise recipient(s) addressed by email ("All Except" address) — at REVEAL the
+    // recipient SHOULD get their card (the forRecipient version below). It's the
+    // PRE-reveal nudges, not this, that must skip them.
     const memberEmails = await getGroupMemberEmails(admin, eng.group_id);
     const pendingEmails = await getPendingInviteeEmails(admin, eng.group_id);
-    const excludedEmails = new Set(
-      ((eng.excluded_emails as string[] | null) ?? []).map((e) => e.toLowerCase())
+    const recipientByEmail = ((eng.excluded_emails as string[] | null) ?? []).map(
+      (e) => e.toLowerCase()
     );
-    const emails = Array.from(new Set([...memberEmails, ...pendingEmails])).filter(
-      (em) => !excludedEmails.has(em.toLowerCase())
+    const emails = Array.from(
+      new Set([...memberEmails, ...pendingEmails, ...recipientByEmail])
     );
     if (emails.length === 0) {
       return NextResponse.json({ ok: true, sent: 0 });
@@ -124,6 +126,12 @@ export async function POST(req: Request) {
           ? "the guest of honor"
           : "The birthday person"
       );
+      // The recipient set for the "Your card!" version = member recipients +
+      // email-only ("All Except") recipients.
+      const recipientSet = new Set([
+        ...Array.from(recipientEmails),
+        ...recipientByEmail,
+      ]);
       const msgs = emails.map((to) => {
         const m = cardRevealEmail({
           groupName: group?.name ?? "your group",
@@ -131,7 +139,7 @@ export async function POST(req: Request) {
           recipientName: label,
           count: count ?? 0,
           url: engUrl,
-          forRecipient: recipientEmails.has(to.toLowerCase()),
+          forRecipient: recipientSet.has(to.toLowerCase()),
           icon: engagementIcon({
             type: eng.type as string,
             config: eng.config as { occasion?: string } | null,
