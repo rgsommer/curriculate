@@ -5397,6 +5397,18 @@ export default function EngagementDetailPage() {
               " — held until then, even if everyone responds early."}
           </p>
         )}
+        {/* Group-gift running total (in the engagement header too) */}
+        {engagement.gift_enabled &&
+          !isGiftHidden &&
+          canSeeGiftTotal &&
+          giftSummary &&
+          giftSummary.contributors > 0 && (
+            <p className="mt-2 text-xs font-semibold text-orange-700">
+              🎁 {formatMoney(giftSummary.total_cents, engagement.gift_currency)} chipped
+              in from {giftSummary.contributors}{" "}
+              {giftSummary.contributors === 1 ? "person" : "people"}
+            </p>
+          )}
         </div>
       </div>
 
