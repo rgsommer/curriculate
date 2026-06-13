@@ -128,7 +128,11 @@ export async function POST(req: Request) {
       .select("id")
       .single();
     if (cErr || !contribution) {
-      return NextResponse.json({ error: "Couldn't start the contribution." }, { status: 500 });
+      console.error("Gift contribution insert failed:", cErr);
+      return NextResponse.json(
+        { error: "Couldn't start the contribution: " + (cErr?.message ?? "unknown") },
+        { status: 500 }
+      );
     }
 
     const site = originIn || campfireSiteUrl();
