@@ -174,6 +174,35 @@ export default function EngagementDetailPage() {
   const [todPhoto, setTodPhoto] = useState<string | null>(null);
   const [todUploading, setTodUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  // Bumped after we confirm a returning Stripe contribution, to refetch totals.
+  const [confirmTick, setConfirmTick] = useState(0);
+  // On return from Stripe checkout (?cs=<session>), confirm the payment directly so
+  // the contribution flips to paid even if the webhook isn't set up.
+  useEffect(() => {
+    if (typeof window === "undefined" || !engagementId) return;
+    const qs = new URLSearchParams(window.location.search);
+    const cs = qs.get("cs");
+    if (!cs) return;
+    (async () => {
+      try {
+        await fetch("/api/campfire/gift/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: cs }),
+        });
+      } catch {
+        /* webhook may still confirm it */
+      }
+      qs.delete("cs");
+      window.history.replaceState(
+        {},
+        "",
+        window.location.pathname + (qs.toString() ? `?${qs}` : "")
+      );
+      setConfirmTick((t) => t + 1);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagementId]);
   // Group gift: running total + chip-in state.
   const [giftSummary, setGiftSummary] = useState<{
     total_cents: number;
@@ -215,7 +244,7 @@ export default function EngagementDetailPage() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engagement?.gift_enabled, engagementId, responses.length]);
+  }, [engagement?.gift_enabled, engagementId, responses.length, confirmTick]);
 
   // Sign-up chip-ins: a list of gifts on this engagement + each one's paid total.
   const [gifts, setGifts] = useState<CampfireGift[]>([]);
@@ -251,7 +280,7 @@ export default function EngagementDetailPage() {
   }, [isSignup, engagementId]);
   useEffect(() => {
     refreshGifts();
-  }, [refreshGifts, responses.length]);
+  }, [refreshGifts, responses.length, confirmTick]);
 
   // Gift exchange (Secret Santa): each buyer can read only their OWN assignment.
   const [myGiftexAssignment, setMyGiftexAssignment] = useState<{

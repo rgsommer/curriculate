@@ -168,7 +168,7 @@ export async function POST(req: Request) {
         contribution_id: contribution.id as string,
         engagement_id: engagementId,
       },
-      success_url: `${back}?gift=thanks`,
+      success_url: `${back}?gift=thanks&cs={CHECKOUT_SESSION_ID}`,
       cancel_url: `${back}?gift=cancel`,
     });
 
