@@ -600,7 +600,9 @@ ${post}
 
 ${earnings}
 
-Your link: ${link}`;
+Your link: ${link}
+
+— Campfire is operated by 10323594 Canada Corp, a company separate from any school or its staff. Group cards & gifts are organized by participants.`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:520px; margin:0 auto; line-height:1.6; color:#0f172a;">
@@ -615,6 +617,7 @@ Your link: ${link}`;
   )}</p>
   <p style="margin:16px 0 0;"><a href="${link}" style="color:#ea580c; font-weight:700; word-break:break-all;">${link}</a></p>
   <p style="color:#94a3b8; font-size:12px; margin:14px 0 0;">You're getting this because you're a Campfire referral partner.</p>
+  <p style="color:#cbd5e1; font-size:11px; margin:8px 0 0;">Campfire is operated by 10323594 Canada Corp — a company separate from any school or its staff. Group cards &amp; gifts are organized by participants.</p>
 </div>`.trim();
   return { subject, text, html };
 }

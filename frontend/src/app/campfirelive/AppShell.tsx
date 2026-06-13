@@ -121,6 +121,15 @@ function Shell({ children }: { children: React.ReactNode }) {
 
       {/* Main content */}
       <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+
+      {/* Attribution — Campfire is operated by the corporation, and group cards /
+          gifts are organized by participants (not any school or its staff). */}
+      <footer className="mx-auto max-w-5xl px-4 pb-10 pt-2 text-center text-[11px] leading-relaxed text-slate-400">
+        Campfire is operated by{" "}
+        <span className="font-medium text-slate-500">10323594 Canada Corp</span> — a
+        company separate from any school or its staff. Group cards, gifts, and
+        contributions are organized by the participants themselves.
+      </footer>
     </div>
   );
 }
