@@ -217,7 +217,6 @@ export default function EngagementDetailPage() {
   const [startGiftSurpriseUid, setStartGiftSurpriseUid] = useState(""); // hide from this member
   const [startingGift, setStartingGift] = useState(false);
   const [sendingGift, setSendingGift] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
   useEffect(() => setStartGiftCurrency(localeGiftCurrency()), []);
   const [signupBusy, setSignupBusy] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
@@ -723,38 +722,6 @@ export default function EngagementDetailPage() {
       alert("Couldn't start checkout.");
       setChippingIn(false);
     }
-  };
-
-  // Webhook fallback: reconcile this engagement's chip-ins against Stripe so any
-  // that landed "pending" (e.g. before the webhook was set up) flip to paid.
-  const reconcilePayments = async () => {
-    if (reconciling || !engagementId || !session) return;
-    setReconciling(true);
-    try {
-      const res = await fetch("/api/campfire/gift/reconcile-engagement", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ engagementId }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        alert(data?.error || "Couldn't refresh payments.");
-      } else {
-        const fixed = data?.paidFixed ?? 0;
-        setConfirmTick((t) => t + 1); // refetch totals + gifts
-        alert(
-          fixed > 0
-            ? `Reconnected ${fixed} payment${fixed === 1 ? "" : "s"}.`
-            : "No new payments to reconnect — everything's up to date."
-        );
-      }
-    } catch {
-      alert("Couldn't refresh payments.");
-    }
-    setReconciling(false);
   };
 
   // Any group member can start a group chip-in (gift) for one guest on this engagement.
@@ -5984,15 +5951,6 @@ export default function EngagementDetailPage() {
                   ? "Opening secure checkout…"
                   : "A small card-processing fee is added on top so the recipient gets the full amount. Charged now; refunded if the card is canceled before it opens."}
               </p>
-              {!!session && (
-                <button
-                  onClick={reconcilePayments}
-                  disabled={reconciling}
-                  className="mt-2 text-[11px] font-medium text-slate-400 underline decoration-dotted hover:text-slate-600 disabled:opacity-50"
-                >
-                  {reconciling ? "Checking…" : "Just paid but not showing? Refresh payments"}
-                </button>
-              )}
             </>
           )}
         </div>
