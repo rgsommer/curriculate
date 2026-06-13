@@ -129,6 +129,7 @@ export default function NewEngagementPage() {
   const [raffleEntryFee, setRaffleEntryFee] = useState(0); // 0 = optional chip-in; >0 = $ to enter
   const [drawWeighted, setDrawWeighted] = useState(true); // Raffle Draw odds: weighted vs one-each
   const [drawAuto, setDrawAuto] = useState(true); // Raffle Draw: auto at close vs host draws live
+  const [causeInput, setCauseInput] = useState(""); // thon/raffle: optional declared cause
   // Tournament (leaderboard): scoring direction + optional scorecard photo.
   const [tournDirection, setTournDirection] = useState<"low" | "high">("low");
   const [tournScorecard, setTournScorecard] = useState(false);
@@ -752,6 +753,17 @@ export default function NewEngagementPage() {
         participationGate: raffleGate || 0,
         entryFeeCents: Math.max(0, Math.round(raffleEntryFee) || 0),
       };
+    }
+
+    // Optional declared cause (thons + raffles). Informational — Campfire pays the
+    // host/recipient, who is responsible for forwarding it to the cause.
+    if (
+      causeInput.trim() &&
+      (selectedType === "pledge_drive" ||
+        selectedType === "raffle_draw" ||
+        challengeRaffle)
+    ) {
+      config.cause = causeInput.trim().slice(0, 120);
     }
 
     const result = await create({
@@ -2553,6 +2565,33 @@ export default function NewEngagementPage() {
                 <p className="text-[11px] text-slate-400">
                   Everyone chips in to the pot. At the closing date (or when you draw at
                   the event), a random winner is picked and paid the pot.
+                </p>
+              </div>
+            )}
+
+            {/* Optional declared cause (thons + raffles) */}
+            {(selectedType === "pledge_drive" ||
+              selectedType === "raffle_draw" ||
+              ((selectedType === "challenge" ||
+                selectedType === "scavenger_hunt" ||
+                selectedType === "tournament") &&
+                raffleOn)) && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+                <label className="block text-sm font-bold text-emerald-800 mb-1">
+                  💛 For a cause? (optional)
+                </label>
+                <input
+                  type="text"
+                  value={causeInput}
+                  onChange={(e) => setCauseInput(e.target.value)}
+                  placeholder="e.g. proceeds to the local food bank"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                />
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Shown to everyone who contributes. Campfire pays the funds to the
+                  host/recipient — <b>you&apos;re responsible for passing them on to the
+                  cause</b>. (Campfire isn&apos;t a charity and doesn&apos;t issue tax
+                  receipts.)
                 </p>
               </div>
             )}

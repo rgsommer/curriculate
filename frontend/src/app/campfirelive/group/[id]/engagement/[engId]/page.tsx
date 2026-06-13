@@ -721,6 +721,7 @@ export default function EngagementDetailPage() {
   const tourn = tournamentOf(engagement.config);
   const pledge = pledgeOf(engagement.config); // Pledge Drive (Read-A-Thon…)
   const draw = raffle?.draw === true; // Raffle Draw — random winner, no contest
+  const cause = (engagement.config?.cause as string | undefined) || null; // declared cause
   // Effective close = the grace deadline if voting closed with zero votes, else the
   // normal vote-close. Voting stays open through whichever is later.
   const voteClosesAt = raffle?.noVoteGraceUntil
@@ -6749,6 +6750,12 @@ export default function EngagementDetailPage() {
               ""
             )}
           </p>
+          {cause && (
+            <p className="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs text-emerald-800">
+              💛 In support of <b>{cause}</b>
+              {isCreator ? " — you'll forward the funds to the cause." : "."}
+            </p>
+          )}
 
           {engagement.gift_issued_at || pledge.settledAt ? (
             <p className="mt-3 text-sm text-slate-600">
@@ -6934,6 +6941,12 @@ export default function EngagementDetailPage() {
               </span>
             )}
           </div>
+          {cause && (
+            <p className="mb-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs text-emerald-800">
+              💛 In support of <b>{cause}</b>
+              {isCreator ? " — you'll forward the funds to the cause." : "."}
+            </p>
+          )}
           {raffle ? (
             // ── Raffle: pot → winner (voted or drawn) ──
             engagement.gift_issued_at || raffleDrawn ? (

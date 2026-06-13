@@ -63,6 +63,9 @@ export async function GET(req: Request) {
       isDraw: raffle?.draw === true,
       isPledge: !!pledge,
       recipientName: (eng.gift_recipient_name as string | null) ?? null,
+      cause:
+        ((eng.config as { cause?: string } | null)?.cause as string | undefined) ??
+        null,
       groupName: (group?.name as string | null) ?? null,
       groupEmoji: (group?.avatar_emoji as string | null) ?? "🔥",
       potCents,

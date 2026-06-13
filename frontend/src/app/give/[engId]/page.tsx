@@ -12,6 +12,7 @@ type Summary = {
   isDraw: boolean;
   isPledge: boolean;
   recipientName: string | null;
+  cause: string | null;
   groupName: string | null;
   groupEmoji: string | null;
   potCents: number;
@@ -127,6 +128,12 @@ export default function GivePage() {
         <p className="mt-0.5 text-sm text-slate-500">{s.groupName}</p>
       )}
       <p className="mt-3 text-sm text-slate-600">{lead}</p>
+      {s.cause && (
+        <p className="mt-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-1.5 text-xs text-emerald-800">
+          💛 In support of <b>{s.cause}</b>. Funds go to the organizer, who passes
+          them on to the cause.
+        </p>
+      )}
       {s.potCents > 0 && (
         <p className="mt-1 text-sm font-bold text-fuchsia-700">
           {money(s.potCents, s.currency)} in the pot so far
