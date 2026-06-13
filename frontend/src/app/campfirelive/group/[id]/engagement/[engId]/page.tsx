@@ -376,6 +376,8 @@ export default function EngagementDetailPage() {
   // Media upload state
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  // Photo challenge: up to 3 photos/videos per response.
+  const [mediaItems, setMediaItems] = useState<{ url: string; type: string }[]>([]);
   const [resendingReveal, setResendingReveal] = useState(false);
 
   // Creator edit state
@@ -1642,6 +1644,14 @@ export default function EngagementDetailPage() {
     }
     if (c.mode === "truth" || c.mode === "dare") setTodMode(c.mode);
     setTodPhoto(typeof c.photo === "string" ? c.photo : null);
+    if (engagement.type === "photo_pose") {
+      const items = Array.isArray(c.media_items)
+        ? (c.media_items as { url: string; type: string }[])
+        : typeof c.media_url === "string" && c.media_url
+        ? [{ url: c.media_url, type: (c.media_type as string) ?? "photo" }]
+        : [];
+      setMediaItems(items);
+    }
     if (engagement.type === "most_likely" && c.answers)
       setMlVotes(c.answers as Record<number, string>);
     if (engagement.type === "accountability" && c.answers) {
@@ -1905,35 +1915,59 @@ export default function EngagementDetailPage() {
     }
   };
 
+  // Photo challenge: add up to 3 photos/videos (uploaded but not submitted yet).
   const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-    setUploading(true);
-
-    const fileExt = file.name.split(".").pop();
-    const filePath = `${user.id}/${engagementId}/${Date.now()}.${fileExt}`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("campfire-media")
-      .upload(filePath, file);
-
-    if (uploadError) {
-      alert("Upload failed: " + uploadError.message);
-      setUploading(false);
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !user) return;
+    const room = Math.max(0, 3 - mediaItems.length);
+    if (room === 0) {
+      alert("You can add up to 3.");
+      e.target.value = "";
       return;
     }
+    setUploading(true);
+    const added: { url: string; type: string }[] = [];
+    let idx = 0;
+    for (const file of files.slice(0, room)) {
+      const fileExt = file.name.split(".").pop();
+      const filePath = `${user.id}/${engagementId}/${Date.now()}-${idx++}.${fileExt}`;
+      const { error: uploadError } = await supabase.storage
+        .from("campfire-media")
+        .upload(filePath, file);
+      if (uploadError) {
+        alert("Upload failed: " + uploadError.message);
+        continue;
+      }
+      const { data: urlData } = supabase.storage
+        .from("campfire-media")
+        .getPublicUrl(filePath);
+      added.push({
+        url: urlData.publicUrl,
+        type: file.type.startsWith("video") ? "video" : "photo",
+      });
+    }
+    setMediaItems((prev) => [...prev, ...added].slice(0, 3));
+    setUploading(false);
+    e.target.value = ""; // let the same file be re-picked
+  };
 
-    const { data: urlData } = supabase.storage
-      .from("campfire-media")
-      .getPublicUrl(filePath);
-
+  // Submit the photo-challenge response (the collected photos + optional caption).
+  const submitPhotos = async () => {
+    if (mediaItems.length === 0 && !textInput.trim()) {
+      alert("Add a photo (or a caption).");
+      return;
+    }
+    setSubmitting(true);
     await saveResponse({
-      media_url: urlData.publicUrl,
-      media_type: file.type.startsWith("video") ? "video" : "photo",
+      media_items: mediaItems,
+      // Keep the single fields for back-compat with older readers.
+      media_url: mediaItems[0]?.url,
+      media_type: mediaItems[0]?.type,
       caption: textInput.trim() || undefined,
     });
-    setUploading(false);
+    setSubmitting(false);
     setTextInput("");
+    setMediaItems([]);
   };
 
   const handleCommentSubmit = async () => {
@@ -2338,19 +2372,57 @@ export default function EngagementDetailPage() {
               rows={3}
               className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm focus:border-orange-500 outline-none resize-none"
             />
+            {mediaItems.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {mediaItems.map((m, i) => (
+                  <div key={i} className="relative overflow-hidden rounded-lg">
+                    {m.type === "video" ? (
+                      // eslint-disable-next-line jsx-a11y/media-has-caption
+                      <video src={m.url} className="h-24 w-full object-cover" />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={m.url} alt="" className="h-24 w-full object-cover" />
+                    )}
+                    <button
+                      onClick={() =>
+                        setMediaItems((prev) => prev.filter((_, j) => j !== i))
+                      }
+                      aria-label="Remove"
+                      className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 text-xs text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*,video/*"
+              multiple
               onChange={handleMediaUpload}
               className="hidden"
             />
+            {mediaItems.length < 3 && (
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="w-full rounded-xl border-2 border-dashed border-orange-300 bg-orange-50 px-4 py-3 text-sm font-bold text-orange-700 disabled:opacity-50"
+              >
+                {uploading
+                  ? "Uploading…"
+                  : mediaItems.length === 0
+                  ? "📸 Add Photos or Video (up to 3)"
+                  : `📸 Add more (${mediaItems.length}/3)`}
+              </button>
+            )}
             <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
+              onClick={submitPhotos}
+              disabled={submitting || uploading || (mediaItems.length === 0 && !textInput.trim())}
               className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-rose-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
-              {uploading ? "Uploading..." : "📸 Upload Photo or Video"}
+              {submitting ? "Submitting…" : "Submit"}
             </button>
           </div>
         );
@@ -4253,7 +4325,45 @@ export default function EngagementDetailPage() {
               {content.option && (
                 <p className="text-sm text-slate-700 font-medium">Voted: {content.option as string}</p>
               )}
-              {content.media_url && (
+              {Array.isArray(content.media_items) &&
+              (content.media_items as unknown[]).length > 0 ? (
+                <div className="mt-2">
+                  <div
+                    className={`grid gap-1 ${
+                      (content.media_items as unknown[]).length === 1
+                        ? "grid-cols-1"
+                        : (content.media_items as unknown[]).length === 2
+                        ? "grid-cols-2"
+                        : "grid-cols-3"
+                    }`}
+                  >
+                    {(content.media_items as { url: string; type: string }[]).map(
+                      (m, i) =>
+                        m.type === "video" ? (
+                          <video
+                            key={i}
+                            src={m.url}
+                            controls
+                            className="max-h-64 w-full rounded-lg object-cover"
+                          />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            key={i}
+                            src={m.url}
+                            alt="Response"
+                            className="max-h-64 w-full rounded-lg object-cover"
+                          />
+                        )
+                    )}
+                  </div>
+                  {content.caption ? (
+                    <p className="mt-1 text-sm text-slate-600">
+                      {content.caption as string}
+                    </p>
+                  ) : null}
+                </div>
+              ) : content.media_url ? (
                 <div className="mt-2 rounded-lg overflow-hidden">
                   {(content.media_type as string) === "video" ? (
                     <video
@@ -4272,7 +4382,7 @@ export default function EngagementDetailPage() {
                     <p className="text-sm text-slate-600 mt-1">{content.caption as string}</p>
                   )}
                 </div>
-              )}
+              ) : null}
 
               {/* Reactions & rating only after a true reveal */}
               {isRevealed && (
