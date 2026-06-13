@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 import { createClient } from "@supabase/supabase-js";
 import { campfireSiteUrl } from "@/lib/campfire/serverInvites";
+import { isHouseSchool } from "@/lib/campfire/types";
 
 // Lazy clients so a missing env var can't crash `next build`.
 function getStripe() {
@@ -86,24 +87,31 @@ export async function POST(req: Request) {
       "usd"
     ).toLowerCase();
 
-    // Referral: if this group was started from a partner's link, a 2% service fee
-    // is added on top — 1% to the referrer, 1% to the platform. No referrer → no
-    // service fee (the gift stays as lean as possible).
+    // Service fee (added on top, never skimmed from the gift):
+    //   • a base 1% PLATFORM fee on every chip-in, EXCEPT inside a "house" school
+    //     (Brampton Christian / BCS), which is fully waived for conflict-of-interest.
+    //   • if the group was started from a partner's referral link, the referrer's
+    //     1% STACKS on top → organic = 1%, referred = 2% total. Referrer share is
+    //     also waived inside a house school (those groups carry no referrer code).
     const { data: grp } = await admin
       .from("groups")
-      .select("referrer_code")
+      .select("referrer_code, school")
       .eq("id", eng.group_id)
       .single();
-    const referrerCode = (grp?.referrer_code as string | null) || null;
-    const SERVICE_PCT = Number(process.env.REFERRAL_SERVICE_PCT ?? "2") / 100;
-    const REFERRER_SHARE = Number(process.env.REFERRAL_REFERRER_SHARE ?? "0.5"); // half
+    const houseSchool = isHouseSchool((grp?.school as string | null) ?? null);
+    const referrerCode = houseSchool
+      ? null
+      : (grp?.referrer_code as string | null) || null;
+    const PLATFORM_PCT = Number(process.env.CAMPFIRE_PLATFORM_PCT ?? "1") / 100;
+    const REFERRER_PCT = Number(process.env.REFERRAL_REFERRER_PCT ?? "1") / 100;
 
-    // The contributor covers the card-processing fee (+ any service fee), so the
+    // The contributor covers the card-processing fee (+ the service fee), so the
     // recipient gets the FULL amount they chose. Gross up the Stripe charge so that,
     // after Stripe's 2.9% + $0.30, the platform nets gift + service fee.
     const giftCents = Math.round(amountCents); // counts toward the pool / gift card
-    const serviceCents = referrerCode ? Math.round(giftCents * SERVICE_PCT) : 0;
-    const referrerCutCents = Math.round(serviceCents * REFERRER_SHARE);
+    const platformCents = houseSchool ? 0 : Math.round(giftCents * PLATFORM_PCT);
+    const referrerCutCents = referrerCode ? Math.round(giftCents * REFERRER_PCT) : 0;
+    const serviceCents = platformCents + referrerCutCents;
     const FEE_PCT = Number(process.env.STRIPE_FEE_PCT ?? "2.9") / 100;
     const FEE_FIXED = Number(process.env.STRIPE_FEE_FIXED_CENTS ?? "30");
     const chargeCents = Math.ceil(
