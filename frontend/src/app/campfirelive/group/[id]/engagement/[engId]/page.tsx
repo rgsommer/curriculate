@@ -223,6 +223,26 @@ export default function EngagementDetailPage() {
   const [voteTallies, setVoteTallies] = useState<Record<string, number>>({});
   const [myVote, setMyVote] = useState<string | null>(null);
   const [votingBusy, setVotingBusy] = useState(false);
+  // Paid-entry contests: how much THIS member has paid into the pot (the entry gate).
+  const [myPaidCents, setMyPaidCents] = useState(0);
+  useEffect(() => {
+    const r = raffleOf(engagement?.config);
+    if (!r?.entryFeeCents || !engagementId || !user?.id) {
+      setMyPaidCents(0);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("campfire_my_paid_cents", {
+        _eid: engagementId,
+      });
+      if (!cancelled) setMyPaidCents(Number(data) || 0);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagement?.config, engagementId, user?.id, confirmTick]);
   useEffect(() => {
     const isRaffle = !!raffleOf(engagement?.config);
     if (!isRaffle || engagement?.status !== "revealed" || !engagementId) {
@@ -670,6 +690,9 @@ export default function EngagementDetailPage() {
     (!voteClosesAt || voteClosesAt > Date.now());
   // Winner crown: for a raffle, only the awarded winner (after the cron pays out).
   const raffleWinnerUserId = raffle?.winnerUserId ?? null;
+  // Paid entry: must pay the fee before submitting (funds the pot, no refund).
+  const entryFeeCents = raffle?.entryFeeCents ?? 0;
+  const hasPaidEntry = entryFeeCents === 0 || myPaidCents >= entryFeeCents;
   // Resolve a member's per-group name (falls back to their global/profile name).
   const memberNameOf = (userId: string | null | undefined, fallback?: string | null) =>
     roster.find((m) => m.user_id === userId)?.name || fallback || "Someone";
@@ -6170,6 +6193,19 @@ export default function EngagementDetailPage() {
                   ? `, the host keeps ${raffle.hostSplitPct}%.`
                   : "."}
               </p>
+            ) : entryFeeCents > 0 ? (
+              // Paid-entry contest: the pot is funded by entry fees, not chip-ins.
+              <p className="text-xs text-slate-600">
+                Entry is{" "}
+                <b>{formatMoney(entryFeeCents, engagement.gift_currency)}</b> — every
+                entry feeds the pot. When entries close
+                {deadlineStr ? ` (${deadlineStr})` : ""}, the group votes and the winner
+                takes it
+                {(raffle.hostSplitPct ?? 0) > 0
+                  ? ` (the host keeps ${raffle.hostSplitPct}%).`
+                  : "."}{" "}
+                {hasPaidEntry ? "You're in. 🎟️" : ""}
+              </p>
             ) : (
               <>
                 <p className="text-xs text-slate-600 mb-3">
@@ -6259,8 +6295,35 @@ export default function EngagementDetailPage() {
         </div>
       )}
 
+      {/* ── PAID ENTRY GATE: must pay the fee before the entry form unlocks ── */}
+      {entryFeeCents > 0 &&
+        !hasPaidEntry &&
+        !hasResponded &&
+        engagement.status === "active" && (
+          <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-6 shadow-sm text-center">
+            <div className="text-3xl mb-1">🎟️</div>
+            <h2 className="font-bold text-amber-900">
+              Entry: {formatMoney(entryFeeCents, engagement.gift_currency)}
+            </h2>
+            <p className="mx-auto mt-1 mb-4 max-w-md text-sm text-amber-800">
+              Pay your entry to submit. It goes straight into the prize pot the winner
+              takes — it isn&apos;t refundable.
+            </p>
+            <button
+              onClick={() => chipIn(entryFeeCents)}
+              disabled={chippingIn}
+              className="rounded-full bg-amber-500 px-6 py-3 text-sm font-bold text-white hover:bg-amber-600 disabled:opacity-50"
+            >
+              {chippingIn
+                ? "Opening checkout…"
+                : `Pay ${formatMoney(entryFeeCents, engagement.gift_currency)} to enter`}
+            </button>
+          </div>
+        )}
+
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
       {engagement.type !== "signup" &&
+        hasPaidEntry &&
         ((engagement.status === "active" && (!hasResponded || editingResponse)) ||
           (lateResponseAllowed && !hasResponded)) && (
         <div

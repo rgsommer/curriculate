@@ -43,3 +43,18 @@ as $$
   group by v.response_id;
 $$;
 grant execute on function public.campfire_challenge_tallies(uuid) to authenticated;
+
+-- Paid-entry contests: how much has the CALLER paid into this engagement's pot
+-- (their entry fee). Lets the client gate the entry form behind payment without a
+-- broad read policy on the contributions table.
+create or replace function public.campfire_my_paid_cents(_eid uuid)
+returns bigint
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce(sum(amount_cents), 0)::bigint
+  from public.campfire_gift_contributions
+  where engagement_id = _eid and user_id = auth.uid() and status = 'paid';
+$$;
+grant execute on function public.campfire_my_paid_cents(uuid) to authenticated;

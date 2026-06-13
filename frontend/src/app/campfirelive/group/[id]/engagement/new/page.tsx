@@ -126,6 +126,7 @@ export default function NewEngagementPage() {
   const [raffleSplit, setRaffleSplit] = useState(0); // host's cut, %
   const [raffleVoteDays, setRaffleVoteDays] = useState(5); // voting window after close
   const [raffleGate, setRaffleGate] = useState(0); // hold reveal until this % entered
+  const [raffleEntryFee, setRaffleEntryFee] = useState(0); // 0 = optional chip-in; >0 = $ to enter
   // Default the gift currency to the host's region (overridable below).
   useEffect(() => {
     setGiftCurrency(localeGiftCurrency());
@@ -658,6 +659,7 @@ export default function NewEngagementPage() {
         hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
         voteDays: Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
         participationGate: raffleGate || 0,
+        entryFeeCents: Math.max(0, Math.round(raffleEntryFee) || 0),
       };
     }
 
@@ -2203,6 +2205,46 @@ export default function NewEngagementPage() {
                         <option value={100}>everyone has entered</option>
                       </select>
                     </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-36 text-xs text-slate-600">Funding</label>
+                      <select
+                        value={raffleEntryFee > 0 ? "paid" : "chipin"}
+                        onChange={(e) =>
+                          setRaffleEntryFee(e.target.value === "paid" ? 1000 : 0)
+                        }
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                      >
+                        <option value="chipin">Free entry + optional chip-ins</option>
+                        <option value="paid">Paid entry (set fee →)</option>
+                      </select>
+                      {raffleEntryFee > 0 && (
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs text-slate-500">
+                            {giftCurrency.toUpperCase()} $
+                          </span>
+                          <input
+                            type="number"
+                            min={1}
+                            step={1}
+                            value={(raffleEntryFee / 100).toString()}
+                            onChange={(e) =>
+                              setRaffleEntryFee(
+                                Math.max(0, Math.round(parseFloat(e.target.value) * 100) || 0)
+                              )
+                            }
+                            className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                          />
+                          <span className="text-[11px] text-slate-400">to enter</span>
+                        </div>
+                      )}
+                    </div>
+                    {raffleEntryFee > 0 && (
+                      <p className="text-[11px] text-amber-700">
+                        Players pay {giftCurrency.toUpperCase()} $
+                        {(raffleEntryFee / 100).toFixed(2)} to submit an entry — it funds
+                        the pot and isn&apos;t refundable.
+                      </p>
+                    )}
                     <div className="flex items-center gap-2">
                       <label className="w-36 text-xs text-slate-600">Pot currency</label>
                       <select
