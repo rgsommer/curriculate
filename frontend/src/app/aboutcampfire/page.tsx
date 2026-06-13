@@ -251,10 +251,14 @@ export default function AboutCampfirePage() {
             ],
             featureList: [
               "Sealed results — nobody sees answers until everyone responds",
-              "12 engagement types: polls, challenges, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
+              "Engagement types: polls, prize challenges, scavenger hunts, tournaments, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
               "Celebration Cards — private surprise cards for birthdays, anniversaries, weddings, Mother's/Father's Day, holidays and one-time occasions; sealed until the special day, recurring yearly",
               "Group gifts — everyone chips in toward one gift card; the recipient gets the full amount because contributors cover the processing fee; running total visible to all but the recipient",
               "Secret Santa gift exchange — auto-assign who buys for whom, optionally matched by preference; assignments stay private to each person",
+              "Prize Challenges — photo challenges with a cash pot the group votes on (one vote each); the winner takes the gift card; players don't have to be in the same place",
+              "Scavenger Hunts — a multi-stop photo checklist done in any order, with an optional cash pot; photos are EXIF date-checked for fair play",
+              "Tournaments — a score leaderboard for golf, runs, games and more; lowest or highest total wins the pot, with rivals anywhere",
+              "Prize-pot funding — fund a prize event by optional chip-ins or a set entry fee; a referrer earns 3% on these",
               "Party Sign-ups — potlucks and meal trains with RSVP, claimable bring-slots (unlimited slots supported), free-text items, and AI dish suggestions that balance the menu",
               "Bulk-add birthdays — seed a whole family or class of recurring cards from one list, reusing a template's photos",
               "Multi-photo posts — share up to three photos in a single photo challenge",
@@ -554,7 +558,7 @@ export default function AboutCampfirePage() {
         />
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
           <EngCard icon="📊" name="Poll" desc="Multiple choice, yes/no, or open questions. Shareable via QR code." />
-          <EngCard icon="🏆" name="Challenge" desc="Video, photo, or task-based challenges with deadlines and ratings." />
+          <EngCard icon="🏆" name="Prize Challenge" desc="Photo or video challenges with a deadline. Add a cash pot (chip-ins or a paid entry); the group votes one-each, and the winner takes the gift card. Players don't have to be in the same place." />
           <EngCard icon="🎯" name="Truth or Dare" desc="Classic game with the option to put real money on the line." />
           <EngCard icon="📸" name="Photo Pose" desc="Request a picture in a specific scenario." />
           <EngCard icon="💬" name="Share" desc="Request a favourite recipe, memory, or anything meaningful." />
@@ -568,6 +572,8 @@ export default function AboutCampfirePage() {
           <EngCard icon="🥗" name="Party Sign-up" desc="Potlucks and meal trains: set when & where, see who's coming (RSVP), and let people claim slots or add what they're bringing. AI balances the menu so you're not all-salad, no mains." />
           <EngCard icon="🎁" name="Group Gift" desc="Everyone chips in toward one gift card. Contributors cover the fees, so the recipient gets the full amount — and the running total stays hidden from them." />
           <EngCard icon="🎅" name="Secret Santa" desc="Run a gift exchange: Campfire randomly assigns who buys for whom and keeps each match private until the reveal." />
+          <EngCard icon="🔍" name="Scavenger Hunt" desc="A multi-stop photo checklist — 'you at Yonge & Bloor', 'you in a boat' — done in any order. Add a cash pot the group votes on. Photos are EXIF date-checked for fair play." />
+          <EngCard icon="⛳" name="Tournament" desc="A score leaderboard — players post a number each round; lowest or highest total wins the pot. Golf, runs, step counts, games — rivals don't have to be in the same place." />
           <EngCard icon="🤝" name="Care Check-in" desc="One form, several optional sections (how you're doing, prayer/support, praise, reflection). Fill any or all. Can be kept private to the host, with optional anonymous replies." />
           <EngCard icon="💡" name="Advice" desc="Ask your group or filtered random users for counsel." />
           <EngCard icon="🎤" name="Voice Response" desc="Leave voice notes instead of text. Lower friction, higher personality." />
