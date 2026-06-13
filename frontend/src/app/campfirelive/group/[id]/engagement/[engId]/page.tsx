@@ -5971,13 +5971,15 @@ export default function EngagementDetailPage() {
         !isDraft &&
         !(user && (engagement.excluded_user_ids ?? []).includes(user.id)) && (
           raffle && entryFeeCents === 0 ? (
-            // A chip-in raffle has two ways to take part: enter (compete) or chip in (support).
+            // A chip-in raffle: enter to compete and/or chip in to grow the pot —
+            // not either/or. Competitors can support too.
             <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-gradient-to-br from-amber-50 to-orange-50 px-5 py-4 shadow-sm">
               <div className="text-base font-extrabold text-slate-900">
-                🔥 Two ways to join
+                🔥 Join in
               </div>
               <div className="mt-0.5 text-xs text-slate-600">
-                Enter the challenge to compete for the pot — or just chip in to grow it.
+                Enter your best photo to compete, and chip in to grow the pot — do one
+                or both.
               </div>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                 <a
@@ -6002,7 +6004,7 @@ export default function EngagementDetailPage() {
                   }}
                   className="flex-1 rounded-full border border-amber-300 bg-white px-4 py-2.5 text-center text-sm font-bold text-amber-700 hover:bg-amber-50"
                 >
-                  💸 Just chip in
+                  💸 Chip in to the pot
                 </a>
               </div>
             </div>
