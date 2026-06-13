@@ -215,6 +215,8 @@ export default function EngagementDetailPage() {
   const [pledgeRateInput, setPledgeRateInput] = useState(""); // $/unit
   const [pledgeLumpInput, setPledgeLumpInput] = useState(""); // $ flat
   const [pledgeMaxInput, setPledgeMaxInput] = useState(""); // $ cap (optional)
+  const [pledgeResultInput, setPledgeResultInput] = useState(""); // host: actual achieved
+  const [settlingPledge, setSettlingPledge] = useState(false);
   // Anonymized pledge leaderboard (amounts, biggest first — no names).
   const [pledgeAmounts, setPledgeAmounts] = useState<
     { amount_cents: number; per_unit_cents: number }[]
@@ -919,6 +921,47 @@ export default function EngagementDetailPage() {
       return;
     }
     chipIn(charged, undefined, { perUnitCents: rateCents, maxCents: charged });
+  };
+
+  // Pledge Drive host: post the actual result → settle all pledges (auto-refund the
+  // shortfall, pay the recipient, thank everyone).
+  const settlePledge = async () => {
+    const p = pledgeOf(engagement.config);
+    if (!p || settlingPledge || !session) return;
+    const actual = Math.round(parseFloat(pledgeResultInput) || 0);
+    if (!Number.isFinite(actual) || actual < 0) {
+      alert(`Enter the number of ${p.unit}s achieved.`);
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Post ${actual} ${p.unit}s as the result? Sponsors will be charged for what was achieved (shortfalls refunded) and the funds sent to ${
+          engagement.gift_recipient_name || "the participant"
+        }. This can't be undone.`
+      )
+    )
+      return;
+    setSettlingPledge(true);
+    try {
+      const res = await fetch("/api/campfire/gift/pledge-settle", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ engagementId, actualUnits: actual }),
+      });
+      const data = await res.json();
+      if (!res.ok) alert(data?.error || "Couldn't settle the drive.");
+      else {
+        setConfirmTick((t) => t + 1);
+        await refresh();
+      }
+    } catch {
+      alert("Couldn't settle the drive.");
+    }
+    setSettlingPledge(false);
   };
 
   // Any group member can start a group chip-in (gift) for one guest on this engagement.
@@ -6692,6 +6735,38 @@ export default function EngagementDetailPage() {
                   {chippingIn ? "Opening secure checkout…" : "🎗️ Pledge"}
                 </button>
               </div>
+
+              {/* Host: post the result → settle all pledges */}
+              {isCreator && (
+                <div className="mt-3 rounded-xl border-2 border-rose-300 bg-white p-3">
+                  <div className="text-sm font-bold text-slate-800">
+                    📣 Post the result
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    When the challenge is done, enter what was achieved. Sponsors are
+                    charged for that (shortfalls auto-refunded) and {""}
+                    {engagement.gift_recipient_name || "the participant"} is paid.
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      value={pledgeResultInput}
+                      onChange={(e) => setPledgeResultInput(e.target.value)}
+                      placeholder={String(pledge.goalUnits)}
+                      className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                    />
+                    <span className="text-xs text-slate-600">{pledge.unit}s achieved</span>
+                    <button
+                      onClick={settlePledge}
+                      disabled={settlingPledge || !pledgeResultInput}
+                      className="rounded-full bg-rose-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-rose-700 disabled:opacity-50"
+                    >
+                      {settlingPledge ? "Settling…" : "Settle & pay out"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </>
           )}
 
