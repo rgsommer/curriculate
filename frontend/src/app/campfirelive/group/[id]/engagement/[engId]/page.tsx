@@ -401,6 +401,7 @@ export default function EngagementDetailPage() {
   const [editPollOptions, setEditPollOptions] = useState<string[]>([]);
   // Group gift — enable/disable + recipient on an existing engagement.
   const [editGiftEnabled, setEditGiftEnabled] = useState(false);
+  const [editGiftShowTotal, setEditGiftShowTotal] = useState(true); // total to all?
   const [editGiftRecipientEmail, setEditGiftRecipientEmail] = useState("");
   const [editGiftRecipientName, setEditGiftRecipientName] = useState("");
   const [editGiftCurrency, setEditGiftCurrency] = useState("usd");
@@ -654,10 +655,14 @@ export default function EngagementDetailPage() {
   const isGiftHidden =
     isRecipient ||
     (!!user && (engagement.gift_hidden_from ?? []).includes(user.id));
-  // Only whoever started the chip-in (or the host) sees the running total — others
-  // can chip in without seeing how much has been raised.
+  // Who sees the running total. Default: everyone who can see the gift card (which
+  // already excludes the recipient via isGiftHidden). The host can restrict it to
+  // just themselves + the initiator via config.giftShowTotal === false.
+  const giftShowTotal = engagement.config?.giftShowTotal !== false;
   const canSeeGiftTotal =
-    isCreator || (!!user && engagement.gift_initiated_by === user.id);
+    giftShowTotal ||
+    isCreator ||
+    (!!user && engagement.gift_initiated_by === user.id);
 
   // Chip in toward the group gift — opens Stripe Checkout for the chosen amount.
   const chipIn = async (amountCents: number, giftId?: string) => {
@@ -799,6 +804,7 @@ export default function EngagementDetailPage() {
     setEditExcludedEmails(engagement.excluded_emails ?? []);
     setEditCareQuestions(parseCareQuestions(engagement.config));
     setEditGiftEnabled(!!engagement.gift_enabled);
+    setEditGiftShowTotal(engagement.config?.giftShowTotal !== false);
     setEditGiftRecipientEmail(engagement.gift_recipient_email ?? "");
     setEditGiftRecipientName(engagement.gift_recipient_name ?? "");
     setEditGiftCurrency(engagement.gift_currency ?? "usd");
@@ -985,6 +991,7 @@ export default function EngagementDetailPage() {
           ? editGiftRecipientName.trim() || null
           : null,
         gift_currency: editGiftCurrency,
+        config: { ...(engagement.config ?? {}), giftShowTotal: editGiftShowTotal },
         ...birthdayFields,
         ...careFields,
       })
@@ -3170,7 +3177,8 @@ export default function EngagementDetailPage() {
           <div className="mt-4 space-y-3 border-t border-slate-100 pt-3">
             {gifts.map((g) => {
               const t = giftTotals[g.id] ?? { total_cents: 0, contributors: 0 };
-              const canSee = isCreator || g.initiated_by === user?.id;
+              const canSee =
+                giftShowTotal || isCreator || g.initiated_by === user?.id;
               const who = g.recipient_name || "the recipient";
               return (
                 <div
@@ -5059,6 +5067,16 @@ export default function EngagementDetailPage() {
                       placeholder="Recipient's email (where the gift card is sent)"
                       className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-orange-500"
                     />
+                    <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={editGiftShowTotal}
+                        onChange={(e) => setEditGiftShowTotal(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      Show the running total to everyone (the recipient never sees it).
+                      Off = only you + whoever started it.
+                    </label>
                     <input
                       type="text"
                       value={editGiftRecipientName}

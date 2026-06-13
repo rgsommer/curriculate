@@ -1377,12 +1377,18 @@ See you around the campfire! 🏕️`
                           ● Your turn
                         </span>
                       ))}
-                    {/* Group gift running total — only the host or whoever started
-                        the chip-in sees the amount (and never the surprise recipient) */}
+                    {/* Group gift running total — everyone sees it by default (never
+                        the surprise recipient); the host can restrict via giftShowTotal */}
                     {eng.gift_enabled &&
                       (giftTotals[eng.id] ?? 0) > 0 &&
                       !!user &&
-                      (eng.creator_id === user.id ||
+                      !(
+                        (eng.gift_hidden_from ?? []).includes(user.id) ||
+                        (eng.excluded_user_ids ?? []).includes(user.id)
+                      ) &&
+                      ((eng.config as { giftShowTotal?: boolean } | null)
+                        ?.giftShowTotal !== false ||
+                        eng.creator_id === user.id ||
                         eng.gift_initiated_by === user.id) && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
                         🎁 {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)} chipped in
