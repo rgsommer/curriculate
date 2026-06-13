@@ -72,6 +72,9 @@ export default function BulkBirthdaysPage() {
     { id: string; title: string; urls: string[] }[]
   >([]);
   const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
+  const [invitees, setInvitees] = useState<{ name: string; email: string }[]>([]);
+  const [createdIds, setCreatedIds] = useState<string[]>([]);
+  const [undoing, setUndoing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<string[]>([]);
   const [done, setDone] = useState(false);
@@ -111,10 +114,23 @@ export default function BulkBirthdaysPage() {
           };
         })
       );
+
+      const { data: inv } = await supabase
+        .from("campfire_invitations")
+        .select("email, name, status")
+        .eq("group_id", groupId)
+        .neq("status", "revoked");
+      setInvitees(
+        (inv ?? []).map((i) => ({
+          email: (i.email as string) ?? "",
+          name: ((i.name as string | null) ?? "").trim(),
+        }))
+      );
     })();
   }, [groupId]);
 
-  // Resolve a recipient string to a member id (by name) or an email.
+  // Resolve a recipient string to a member id (by name), else an invitee's email
+  // (by name), else a raw email.
   const resolveRecipient = (r: string): { uid?: string; email?: string } => {
     const v = r.trim();
     if (!v) return {};
@@ -126,7 +142,15 @@ export default function BulkBirthdaysPage() {
         (x) =>
           x.name && (x.name.toLowerCase().includes(lc) || lc.includes(x.name.toLowerCase()))
       );
-    return m ? { uid: m.user_id } : {};
+    if (m) return { uid: m.user_id };
+    // Not a member — try the invited-email list by name → their email.
+    const iv =
+      invitees.find((x) => x.name.toLowerCase() === lc) ||
+      invitees.find(
+        (x) =>
+          x.name && (x.name.toLowerCase().includes(lc) || lc.includes(x.name.toLowerCase()))
+      );
+    return iv?.email ? { email: iv.email.toLowerCase() } : {};
   };
 
   const parsed = useMemo(
@@ -150,8 +174,10 @@ export default function BulkBirthdaysPage() {
     setBusy(true);
     setLog([]);
     setDone(false);
+    setCreatedIds([]);
     const urls = templates.find((t) => t.id === coverFrom)?.urls ?? [];
     const now = Date.now();
+    const newIds: string[] = [];
     let ok = 0;
     for (const p of parsed) {
       const month = p.date.getMonth();
@@ -189,10 +215,12 @@ export default function BulkBirthdaysPage() {
           cover_image_urls: urls.length ? urls : undefined,
           cover_image_url: urls[0],
         });
-        if ((r as { error?: unknown })?.error) {
-          setLog((l) => [...l, `❌ ${p.name}: ${(r as { error?: string }).error}`]);
+        const rr = r as { error?: string; engagement?: { id?: string } | null };
+        if (rr?.error) {
+          setLog((l) => [...l, `❌ ${p.name}: ${rr.error}`]);
         } else {
           ok++;
+          if (rr.engagement?.id) newIds.push(rr.engagement.id);
           setLog((l) => [
             ...l,
             `✅ ${p.name} — opens ${scheduledOpen.toLocaleDateString()}${recNote}`,
@@ -202,9 +230,33 @@ export default function BulkBirthdaysPage() {
         setLog((l) => [...l, `❌ ${p.name}: ${(e as Error).message}`]);
       }
     }
+    setCreatedIds(newIds);
     setLog((l) => [...l, `— Done. ${ok}/${parsed.length} created.`]);
     setBusy(false);
     setDone(true);
+  };
+
+  // Undo: delete exactly the cards this run created (drafts; safe to remove).
+  const undo = async () => {
+    if (undoing || createdIds.length === 0) return;
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(`Delete the ${createdIds.length} cards just created?`)
+    )
+      return;
+    setUndoing(true);
+    const { error } = await supabase
+      .from("engagements")
+      .delete()
+      .in("id", createdIds);
+    setUndoing(false);
+    if (error) {
+      setLog((l) => [...l, `❌ Undo failed: ${error.message}`]);
+      return;
+    }
+    setLog((l) => [...l, `↩ Deleted ${createdIds.length} cards.`]);
+    setCreatedIds([]);
+    setDone(false);
   };
 
   return (
@@ -278,6 +330,15 @@ export default function BulkBirthdaysPage() {
         >
           {busy ? "Creating…" : `Create ${parsed.length} recurring birthday cards`}
         </button>
+        {createdIds.length > 0 && (
+          <button
+            onClick={undo}
+            disabled={undoing}
+            className="rounded-full border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+          >
+            {undoing ? "Deleting…" : `↩ Undo (delete these ${createdIds.length})`}
+          </button>
+        )}
         {done && (
           <button
             onClick={() => router.push(`/campfirelive/group/${groupId}`)}
