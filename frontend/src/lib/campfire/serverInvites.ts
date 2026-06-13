@@ -637,7 +637,7 @@ export function raffleReferrerEmail(opts: { name?: string | null; link: string }
   // Paste-ready blurb for THEM to send to a club, team, or class.
   const post = `🏆 New on Campfire: Prize Challenges & Scavenger Hunts! Pick a theme — a Fishing Challenge ("best catch of the season"), or a multi-stop photo scavenger hunt ("you at Yonge & Bloor", "you in a boat", "you waterskiing"). Everyone chips in to a cash pot (or pays a small entry); when it closes the group votes, and the winner takes the gift card. The best part: players don't have to be in the same place — everyone snaps their own photos from wherever they are. No app or account needed — just your name and a photo. Start one here: ${link}`;
 
-  const intro = `${hi ? hi + ",\n\n" : ""}There are new ways to use Campfire that are perfect for clubs, teams, and classes: Prize Challenges and Scavenger Hunts. A host sets a themed photo challenge (or a multi-item hunt) with a closing date, the group funds a pot — by optional chip-ins or a set entry fee — then votes on the winner, who takes the pot as a gift card. Because everyone submits their own photos, the group doesn't need to be in one place. (Sports score tournaments — golf, runs, games against players anywhere — are coming soon.) Share it with your groups using the paste-ready message below (your referral link is built in).`;
+  const intro = `${hi ? hi + ",\n\n" : ""}There are new ways to use Campfire that are perfect for clubs, teams, and classes: Prize Challenges and Scavenger Hunts. A host sets a themed photo challenge (or a multi-item hunt) with a closing date, the group funds a pot — by optional chip-ins or a set entry fee — then votes on the winner, who takes the pot as a gift card. Because everyone submits their own photos, the group doesn't need to be in one place. There are also score Tournaments — golf, runs, games — where players post scores against rivals anywhere, best total wins. Share it with your groups using the paste-ready message below (your referral link is built in).`;
 
   // Higher incentive on prize events — kept out of the paste-ready blurb.
   const earnings =
@@ -694,7 +694,7 @@ export function referrerWelcomeEmail(opts: {
 TWO WAYS YOU EARN (both added on top — they never cost your groups anything):
 1. Curriculate subscriptions — a commission on every subscription that uses your code at checkout.
 2. Campfire group gifts — about 1% of every group-gift / card chip-in your linked groups make.
-3. Campfire prize events — 3% (triple) of every chip-in on a Prize Challenge or Scavenger Hunt (cash pot the group votes on; players don't even have to be in the same place). These drive the biggest pots, so they're the ones to push. (Sports score tournaments coming soon.)
+3. Campfire prize events — 3% (triple) of every chip-in on a Prize Challenge, Scavenger Hunt, or score Tournament (cash pot; players don't even have to be in the same place). These drive the biggest pots, so they're the ones to push.
 
 HOW TO SHARE — just send a link; your code rides along automatically and sticks:
 • Anything on Campfire (cards, gifts, sign-ups): ${campfireLink}
@@ -717,7 +717,7 @@ Anyone who clicks, then starts a group, is tied to your code — no codes to typ
   <table style="width:100%; border-collapse:collapse; font-size:14px;">
     <tr><td style="padding:8px 0; border-bottom:1px solid #f1f5f9;"><b>Curriculate subscriptions</b><br><span style="color:#64748b;">a commission on every subscription that uses your code at checkout.</span></td></tr>
     <tr><td style="padding:8px 0; border-bottom:1px solid #f1f5f9;"><b>Campfire group gifts &amp; cards</b><br><span style="color:#64748b;">≈ 1% of every chip-in your linked groups make.</span></td></tr>
-    <tr><td style="padding:8px 0;"><b>Campfire prize events</b> 🏆<br><span style="color:#64748b;"><b>3%</b> (triple) of every chip-in on a Prize Challenge or Scavenger Hunt — a cash pot the group votes on, and players don't have to be in the same place. The biggest pots, the ones to push. (Score tournaments coming soon.)</span></td></tr>
+    <tr><td style="padding:8px 0;"><b>Campfire prize events</b> 🏆<br><span style="color:#64748b;"><b>3%</b> (triple) of every chip-in on a Prize Challenge, Scavenger Hunt, or score Tournament — a cash pot, and players don't have to be in the same place. The biggest pots, the ones to push.</span></td></tr>
   </table>
 
   <h2 style="font-size:15px; margin:20px 0 6px;">How to share</h2>

@@ -40,6 +40,7 @@ export type EngagementType =
   | "baby_reveal"
   | "most_likely"
   | "scavenger_hunt"
+  | "tournament"
   | "birthday"
   | "care"
   | "signup";
@@ -219,6 +220,19 @@ export function raffleOf(
   return r && r.on ? r : null;
 }
 
+// Tournament: a numeric score leaderboard. Events are the per-round labels (holes,
+// rounds…); direction picks whether the lowest or highest total wins.
+export interface TournamentConfig {
+  direction: "low" | "high"; // "low" = golf (fewest wins); "high" = points
+  scorecard?: boolean; // require a scorecard photo with each submission
+}
+export function tournamentOf(
+  config: Record<string, unknown> | null | undefined
+): TournamentConfig | null {
+  const t = (config ?? {})["tournament"] as TournamentConfig | undefined;
+  return t && (t.direction === "low" || t.direction === "high") ? t : null;
+}
+
 // A Sign-up chip-in: an engagement can have several (one per member who starts one,
 // host can start more). Card gifts use the engagement.gift_* columns instead.
 export interface CampfireGift {
@@ -393,6 +407,7 @@ export const ENGAGEMENT_TYPES: Record<
   baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Set the choices (Boy/Girl, name, date…); everyone guesses, and it unseals on the big day with winners", hook: "Place your guess — all is revealed on the big day!", color: "bg-sky-50 text-sky-700" },
   most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
   scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
+  tournament: { icon: "⛳", label: "Tournament", description: "A score leaderboard — players enter a number per round/hole; lowest or highest total wins. Add a cash prize. Players don't have to be in the same place", hook: "Post your scores — best total wins!", color: "bg-green-50 text-green-700" },
   signup: { icon: "📋", label: "Sign-up", description: "List slots (bring drinks, plates, music…); everyone claims what they'll cover. Live — see who's got what. Great for parties, potlucks, field trips", hook: "Claim a slot — see what's still needed!", color: "bg-cyan-50 text-cyan-700" },
   birthday: { icon: "🎂", label: "Birthday", description: "A surprise card everyone signs — hidden from the birthday person, opens before the day and reveals on it. Runs every year", hook: "Sign the card — it opens on the big day! 🎂", color: "bg-pink-50 text-pink-700" },
   care: { icon: "🤝", label: "Care Check-in", description: "One form with several sections — how you're doing, prayer requests, praise, reflection. Fill in any or all. Can be kept private to the host", hook: "Share what you'd like — fill any or all sections.", color: "bg-teal-50 text-teal-700" },

@@ -127,6 +127,9 @@ export default function NewEngagementPage() {
   const [raffleVoteDays, setRaffleVoteDays] = useState(5); // voting window after close
   const [raffleGate, setRaffleGate] = useState(0); // hold reveal until this % entered
   const [raffleEntryFee, setRaffleEntryFee] = useState(0); // 0 = optional chip-in; >0 = $ to enter
+  // Tournament (leaderboard): scoring direction + optional scorecard photo.
+  const [tournDirection, setTournDirection] = useState<"low" | "high">("low");
+  const [tournScorecard, setTournScorecard] = useState(false);
   // Default the gift currency to the host's region (overridable below).
   useEffect(() => {
     setGiftCurrency(localeGiftCurrency());
@@ -305,6 +308,13 @@ export default function NewEngagementPage() {
         "The oldest thing you can find",
         "A word that starts with Q",
       ]);
+      setReveal("sealed");
+    }
+    if (type === "tournament") {
+      if (!title.trim()) setTitle("Tournament ⛳");
+      if (!description.trim())
+        setDescription("Post your score each round — best total wins. Play from anywhere!");
+      setQuestions(["Round 1", "Round 2", "Round 3"]);
       setReveal("sealed");
     }
     if (type === "accountability") {
@@ -502,6 +512,7 @@ export default function NewEngagementPage() {
       selectedType === "most_likely" ||
       selectedType === "accountability" ||
       selectedType === "scavenger_hunt" ||
+      selectedType === "tournament" ||
       reveal === "sealed";
     const finalDeadline =
       sealedReveal &&
@@ -531,7 +542,8 @@ export default function NewEngagementPage() {
     } else if (
       selectedType === "most_likely" ||
       selectedType === "accountability" ||
-      selectedType === "scavenger_hunt"
+      selectedType === "scavenger_hunt" ||
+      selectedType === "tournament"
     ) {
       const qs = questions.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
@@ -540,12 +552,17 @@ export default function NewEngagementPage() {
             ? "Add at least one check-in question."
             : selectedType === "scavenger_hunt"
             ? "Add at least one item to find."
+            : selectedType === "tournament"
+            ? "Add at least one round to score."
             : "Add at least one award (a “Most likely to…” question)."
         );
         setCreating(false);
         return;
       }
       config.questions = qs;
+      if (selectedType === "tournament") {
+        config.tournament = { direction: tournDirection, scorecard: tournScorecard };
+      }
     }
 
     if (selectedType === "challenge") {
@@ -646,10 +663,18 @@ export default function NewEngagementPage() {
     // A prize contest (photo Challenge or Scavenger Hunt) pools toward the voted
     // winner; it needs a closing date (entries end + voting begins there) but no
     // preset recipient.
+    const isTournament = selectedType === "tournament";
     const challengeRaffle =
-      (selectedType === "challenge" || selectedType === "scavenger_hunt") && raffleOn;
+      (selectedType === "challenge" ||
+        selectedType === "scavenger_hunt" ||
+        isTournament) &&
+      raffleOn;
     if (challengeRaffle && !deadline) {
-      setError("Set a closing date — that's when entries end and voting begins.");
+      setError(
+        isTournament
+          ? "Set a closing date — that's when scores lock and the pot is awarded."
+          : "Set a closing date — that's when entries end and voting begins."
+      );
       setCreating(false);
       return;
     }
@@ -657,7 +682,8 @@ export default function NewEngagementPage() {
       config.raffle = {
         on: true,
         hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
-        voteDays: Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
+        // A tournament is decided by score, not votes → award at close (no window).
+        voteDays: isTournament ? 0 : Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
         participationGate: raffleGate || 0,
         entryFeeCents: Math.max(0, Math.round(raffleEntryFee) || 0),
       };
@@ -677,6 +703,7 @@ export default function NewEngagementPage() {
           selectedType === "most_likely" ||
           selectedType === "accountability" ||
           selectedType === "scavenger_hunt" ||
+          selectedType === "tournament" ||
           isBirthday
         ? "sealed"
         : selectedType === "signup"
@@ -699,7 +726,10 @@ export default function NewEngagementPage() {
       // cron reveals it on the date or once the participation gate is met). Others
       // only when opted in.
       hold_until_deadline:
-        isBirthday || selectedType === "baby_reveal" || challengeRaffle
+        isBirthday ||
+        selectedType === "baby_reveal" ||
+        selectedType === "tournament" ||
+        challengeRaffle
           ? true
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
       // Birthday: schedule the auto-open and store the age basis.
@@ -1441,16 +1471,19 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Most Likely To… / Accountability / Scavenger Hunt — list of items */}
+            {/* Most Likely / Accountability / Scavenger Hunt / Tournament — list of items */}
             {(selectedType === "most_likely" ||
               selectedType === "accountability" ||
-              selectedType === "scavenger_hunt") && (
+              selectedType === "scavenger_hunt" ||
+              selectedType === "tournament") && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   {selectedType === "accountability"
                     ? "The check-in questions (each rated 1–5)"
                     : selectedType === "scavenger_hunt"
                     ? "The items to find (each answered with a photo or text)"
+                    : selectedType === "tournament"
+                    ? "The rounds / holes (each scored with a number)"
                     : "The awards (each one becomes a vote)"}
                 </label>
                 {questions.map((q, i) => (
@@ -1458,7 +1491,8 @@ export default function NewEngagementPage() {
                     <span className="text-slate-400 text-sm">
                       {selectedType === "accountability"
                         ? "🙏"
-                        : selectedType === "scavenger_hunt"
+                        : selectedType === "scavenger_hunt" ||
+                          selectedType === "tournament"
                         ? `${i + 1}.`
                         : "🏆"}
                     </span>
@@ -1475,6 +1509,8 @@ export default function NewEngagementPage() {
                           ? "Have you…?"
                           : selectedType === "scavenger_hunt"
                           ? "Find / answer…"
+                          : selectedType === "tournament"
+                          ? "Hole 1 / Round 1 / Event…"
                           : "Most likely to…"
                       }
                       className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
@@ -1498,14 +1534,44 @@ export default function NewEngagementPage() {
                       ? "+ Add question"
                       : selectedType === "scavenger_hunt"
                       ? "+ Add item"
+                      : selectedType === "tournament"
+                      ? "+ Add round"
                       : "+ Add award"}
                   </button>
+                )}
+                {selectedType === "tournament" && (
+                  <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-green-200 bg-green-50/50 p-3">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-slate-600">Winner is the</label>
+                      <select
+                        value={tournDirection}
+                        onChange={(e) =>
+                          setTournDirection(e.target.value as "low" | "high")
+                        }
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-green-500"
+                      >
+                        <option value="low">lowest total (golf)</option>
+                        <option value="high">highest total (points)</option>
+                      </select>
+                    </div>
+                    <label className="flex items-center gap-2 text-xs text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={tournScorecard}
+                        onChange={(e) => setTournScorecard(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-green-500 focus:ring-green-500"
+                      />
+                      Require a scorecard photo
+                    </label>
+                  </div>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
                   {selectedType === "accountability"
                     ? "Each person rates themselves 1–5 on every question. Turn on Blind below to keep answers anonymous."
                     : selectedType === "scavenger_hunt"
                     ? "Players answer each with a photo or a typed answer, in any order. Sealed until you reveal (use 🎬 Reveal now or a deadline)."
+                    : selectedType === "tournament"
+                    ? "Players enter a number for each round; the best total wins. Add a prize below — players don't have to be in the same place. Set a closing date to lock scores."
                     : "Everyone votes a group-mate for each award; winners are crowned at the reveal."}
                 </p>
               </div>
@@ -2142,8 +2208,10 @@ export default function NewEngagementPage() {
               </div>
             </label>
 
-            {/* Prize pot — goes to the voted winner (photo Challenge or Scavenger Hunt) */}
-            {(selectedType === "challenge" || selectedType === "scavenger_hunt") && (
+            {/* Prize pot — goes to the winner (photo Challenge / Scavenger Hunt / Tournament) */}
+            {(selectedType === "challenge" ||
+              selectedType === "scavenger_hunt" ||
+              selectedType === "tournament") && (
               <div>
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
@@ -2154,12 +2222,17 @@ export default function NewEngagementPage() {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      🏆 Make it a prize {selectedType === "scavenger_hunt" ? "hunt" : "challenge"}
+                      🏆 Make it a prize{" "}
+                      {selectedType === "scavenger_hunt"
+                        ? "hunt"
+                        : selectedType === "tournament"
+                        ? "tournament"
+                        : "challenge"}
                     </div>
                     <div className="text-xs text-slate-500">
-                      People chip in toward a pot until the closing date. After entries
-                      close, the group votes — one vote each — and the winner gets the
-                      gift card.
+                      {selectedType === "tournament"
+                        ? "People fund a pot (optional chip-ins or an entry fee). When scores lock at the closing date, the best total wins the gift card."
+                        : "People chip in toward a pot until the closing date. After entries close, the group votes — one vote each — and the winner gets the gift card."}
                     </div>
                   </div>
                 </label>
@@ -2178,20 +2251,22 @@ export default function NewEngagementPage() {
                         <option value={50}>50 / 50</option>
                       </select>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <label className="w-36 text-xs text-slate-600">Voting window</label>
-                      <select
-                        value={raffleVoteDays}
-                        onChange={(e) => setRaffleVoteDays(Number(e.target.value))}
-                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
-                      >
-                        <option value={2}>2 days</option>
-                        <option value={3}>3 days</option>
-                        <option value={5}>5 days</option>
-                        <option value={7}>7 days</option>
-                      </select>
-                      <span className="text-[11px] text-slate-400">after entries close</span>
-                    </div>
+                    {selectedType !== "tournament" && (
+                      <div className="flex items-center gap-2">
+                        <label className="w-36 text-xs text-slate-600">Voting window</label>
+                        <select
+                          value={raffleVoteDays}
+                          onChange={(e) => setRaffleVoteDays(Number(e.target.value))}
+                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-amber-500"
+                        >
+                          <option value={2}>2 days</option>
+                          <option value={3}>3 days</option>
+                          <option value={5}>5 days</option>
+                          <option value={7}>7 days</option>
+                        </select>
+                        <span className="text-[11px] text-slate-400">after entries close</span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <label className="w-36 text-xs text-slate-600">Hold reveal until</label>
                       <select
@@ -2272,7 +2347,9 @@ export default function NewEngagementPage() {
 
             {/* Group gift — chip in toward a gift card for the recipient */}
             {!(
-              (selectedType === "challenge" || selectedType === "scavenger_hunt") &&
+              (selectedType === "challenge" ||
+                selectedType === "scavenger_hunt" ||
+                selectedType === "tournament") &&
               raffleOn
             ) && (
             <div>

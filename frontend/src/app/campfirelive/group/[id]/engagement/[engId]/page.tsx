@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
@@ -428,6 +428,14 @@ export default function EngagementDetailPage() {
     >
   >({});
   const [shUploading, setShUploading] = useState<number | null>(null);
+  // Tournament: a number per round + an optional scorecard photo (with EXIF flag).
+  const [tournScores, setTournScores] = useState<Record<number, string>>({});
+  const [tournCard, setTournCard] = useState<{
+    photo?: string;
+    takenAt?: number | null;
+    early?: boolean;
+  }>({});
+  const [tournCardUploading, setTournCardUploading] = useState(false);
   // Care Check-in: free text / star per section (fill any/all)
   const [careAnswers, setCareAnswers] = useState<Record<number, string | number>>({});
   // Care Check-in: per-question visibility — each prompt is host-only / shared / anon.
@@ -674,8 +682,10 @@ export default function EngagementDetailPage() {
   const allIn = responseCount >= displayExpected;
   const isCreator = engagement.creator_id === user?.id;
   const isDraft = !engagement.launched_at;
-  // ── Raffle Challenge: pot goes to the voted winner ──
+  // ── Prize contests: pot goes to the voted winner (raffle/hunt) or the best score
+  // (tournament). `tourn` flips the copy to "best total wins" instead of "votes". ──
   const raffle = raffleOf(engagement.config);
+  const tourn = tournamentOf(engagement.config);
   // Effective close = the grace deadline if voting closed with zero votes, else the
   // normal vote-close. Voting stays open through whichever is later.
   const voteClosesAt = raffle?.noVoteGraceUntil
@@ -1819,6 +1829,24 @@ export default function EngagementDetailPage() {
     }
     if (engagement.type === "scavenger_hunt" && c.answers)
       setShItems(c.answers as Record<number, { text?: string; photo?: string }>);
+    if (engagement.type === "tournament") {
+      const tc = c as {
+        scores?: Record<string, number>;
+        scorecard?: string;
+        photoTakenAt?: number | null;
+        photoEarly?: boolean;
+      };
+      const sc: Record<number, string> = {};
+      Object.entries(tc.scores ?? {}).forEach(([k, v]) => {
+        sc[Number(k)] = String(v);
+      });
+      setTournScores(sc);
+      setTournCard(
+        tc.scorecard
+          ? { photo: tc.scorecard, takenAt: tc.photoTakenAt ?? null, early: !!tc.photoEarly }
+          : {}
+      );
+    }
     if (engagement.type === "care") {
       // Pre-fill from this person's saved per-question answer rows.
       const mine = careAnswerRows.filter((a) => a.user_id === user?.id);
@@ -2045,6 +2073,72 @@ export default function EngagementDetailPage() {
     if (shErr) alert("Couldn't submit: " + shErr);
   };
 
+  // Tournament: upload the optional scorecard photo (with EXIF date flag).
+  const handleTournamentCardUpload = async (file: File | undefined) => {
+    if (!file || !user) return;
+    setTournCardUploading(true);
+    const takenAt = await readExifTakenAt(file);
+    const startMs = new Date(
+      engagement.launched_at || engagement.created_at
+    ).getTime();
+    const early = takenAt != null && takenAt < startMs;
+    const ext = file.name.split(".").pop();
+    const path = `${user.id}/${engagementId}/scorecard-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from("campfire-media")
+      .upload(path, file);
+    if (upErr) {
+      alert("Upload failed: " + upErr.message);
+      setTournCardUploading(false);
+      return;
+    }
+    const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
+    setTournCard({ photo: data.publicUrl, takenAt, early });
+    setTournCardUploading(false);
+  };
+
+  const handleTournamentSubmit = async () => {
+    const rounds = (engagement.config?.questions as string[]) ?? [];
+    const tcfg = tournamentOf(engagement.config);
+    const scores: Record<string, number> = {};
+    let total = 0;
+    let any = false;
+    for (let i = 0; i < rounds.length; i++) {
+      const raw = tournScores[i];
+      if (raw === undefined || raw === "" || raw === null) continue;
+      const n = Number(raw);
+      if (!Number.isFinite(n)) {
+        alert(`"${rounds[i]}" needs a number.`);
+        return;
+      }
+      scores[i] = n;
+      total += n;
+      any = true;
+    }
+    if (!any) {
+      alert("Enter a score for at least one round.");
+      return;
+    }
+    if (tcfg?.scorecard && !tournCard.photo) {
+      alert("A scorecard photo is required for this tournament.");
+      return;
+    }
+    setSubmitting(true);
+    const { error } = await saveResponse({
+      scores,
+      total,
+      ...(tournCard.photo
+        ? {
+            scorecard: tournCard.photo,
+            photoTakenAt: tournCard.takenAt ?? null,
+            photoEarly: !!tournCard.early,
+          }
+        : {}),
+    });
+    setSubmitting(false);
+    if (error) alert("Couldn't submit: " + error);
+  };
+
   const handleCareSubmit = async () => {
     const qs = parseCareQuestions(engagement.config);
     const defVis: "host" | "group" | "anon" = engagement.private_to_host
@@ -2230,6 +2324,73 @@ export default function EngagementDetailPage() {
               className="w-full rounded-xl bg-gradient-to-r from-lime-500 to-green-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
               {submitting ? "Submitting..." : "🔒 Lock In My Hunt"}
+            </button>
+          </div>
+        );
+      }
+
+      case "tournament": {
+        const rounds = (engagement.config?.questions as string[]) ?? [];
+        const tcfg = tournamentOf(engagement.config);
+        const total = rounds.reduce((sum, _r, i) => {
+          const n = Number(tournScores[i]);
+          return Number.isFinite(n) && tournScores[i] !== "" ? sum + n : sum;
+        }, 0);
+        return (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Enter your score for each round. {tcfg?.direction === "low" ? "Lowest" : "Highest"}{" "}
+              total wins.
+            </p>
+            {rounds.map((r, i) => (
+              <div key={i} className="flex items-center gap-3">
+                <div className="flex-1 text-sm font-medium text-slate-700">
+                  {i + 1}. {r}
+                </div>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={tournScores[i] ?? ""}
+                  onChange={(e) =>
+                    setTournScores({ ...tournScores, [i]: e.target.value })
+                  }
+                  placeholder="—"
+                  className="w-24 rounded-lg border border-slate-300 px-3 py-2 text-sm text-right outline-none focus:border-green-500"
+                />
+              </div>
+            ))}
+            <div className="flex items-center justify-between border-t border-slate-100 pt-2 text-sm font-bold text-slate-800">
+              <span>Total</span>
+              <span>{total}</span>
+            </div>
+            <div>
+              <label className="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                {tournCardUploading
+                  ? "Uploading…"
+                  : tournCard.photo
+                  ? "📷 Replace scorecard"
+                  : `📷 Add scorecard photo${tcfg?.scorecard ? " (required)" : " (optional)"}`}
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => handleTournamentCardUpload(e.target.files?.[0])}
+                />
+              </label>
+              {tournCard.photo && (
+                <img
+                  src={tournCard.photo}
+                  alt="scorecard"
+                  className="mt-2 max-h-32 rounded-lg object-cover"
+                />
+              )}
+            </div>
+            <button
+              onClick={handleTournamentSubmit}
+              disabled={submitting || tournCardUploading}
+              className="w-full rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock In My Scores"}
             </button>
           </div>
         );
@@ -3897,6 +4058,106 @@ export default function EngagementDetailPage() {
     </span>
   );
 
+  const renderTournamentResults = () => {
+    if (!showResults || engagement.type !== "tournament") return null;
+    const rounds = (engagement.config?.questions as string[]) ?? [];
+    const tcfg = tournamentOf(engagement.config);
+    const dir = tcfg?.direction ?? "low";
+    const rows = responses
+      .map((r) => {
+        const c = r.content as {
+          scores?: Record<string, number>;
+          total?: number;
+          scorecard?: string;
+          photoEarly?: boolean;
+          photoTakenAt?: number | null;
+        };
+        return {
+          r,
+          total: Number(c?.total ?? 0),
+          scores: (c?.scores ?? {}) as Record<string, number>,
+          scorecard: c?.scorecard,
+          early: !!c?.photoEarly,
+          takenAt: c?.photoTakenAt ?? null,
+        };
+      })
+      .sort((a, b) =>
+        a.total !== b.total
+          ? dir === "low"
+            ? a.total - b.total
+            : b.total - a.total
+          : new Date(a.r.created_at).getTime() - new Date(b.r.created_at).getTime()
+      );
+    return (
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <span>{dir === "low" ? "Lowest total wins ⛳" : "Highest total wins 🏆"}</span>
+          <span>
+            {rows.length} {rows.length === 1 ? "player" : "players"}
+          </span>
+        </div>
+        {rows.map((row, idx) => (
+          <div
+            key={row.r.id}
+            className={`rounded-xl border p-3 ${
+              idx === 0 && isRevealed
+                ? "border-amber-300 bg-amber-50/60"
+                : "border-slate-200 bg-white"
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                <span className="w-5 text-center text-slate-400">{idx + 1}</span>
+                {idx === 0 && isRevealed && "🏆 "}
+                {memberNameOf(row.r.user_id, row.r.profile?.display_name)}
+              </div>
+              <div className="text-base font-extrabold text-slate-900">{row.total}</div>
+            </div>
+            {rounds.length > 0 && (
+              <div className="mt-1 ml-7 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                {rounds.map((rn, i) => (
+                  <span key={i}>
+                    {rn}:{" "}
+                    <b className="text-slate-700">{row.scores[String(i)] ?? "—"}</b>
+                  </span>
+                ))}
+              </div>
+            )}
+            {row.scorecard && (
+              <div className="mt-1.5 ml-7">
+                <img
+                  src={row.scorecard}
+                  alt="scorecard"
+                  className="max-h-28 rounded-lg object-cover"
+                />
+                {row.early ? (
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                    ⚠️ scorecard dated before the start
+                  </div>
+                ) : row.takenAt == null ? (
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                    ⓘ no date on scorecard
+                  </div>
+                ) : (
+                  <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                    ✓ taken{" "}
+                    {new Date(row.takenAt).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+        {rows.length === 0 && (
+          <p className="text-xs text-slate-400">No scores posted yet.</p>
+        )}
+      </div>
+    );
+  };
+
   const renderCareResults = () => {
     if (!showResults || engagement.type !== "care") return null;
     const qs = parseCareQuestions(engagement.config);
@@ -4473,6 +4734,7 @@ export default function EngagementDetailPage() {
       engagement.type === "most_likely" ||
       engagement.type === "accountability" ||
       engagement.type === "scavenger_hunt" ||
+      engagement.type === "tournament" ||
       engagement.type === "care" ||
       engagement.type === "signup"
     )
@@ -6198,9 +6460,10 @@ export default function EngagementDetailPage() {
               <p className="text-xs text-slate-600">
                 Entry is{" "}
                 <b>{formatMoney(entryFeeCents, engagement.gift_currency)}</b> — every
-                entry feeds the pot. When entries close
-                {deadlineStr ? ` (${deadlineStr})` : ""}, the group votes and the winner
-                takes it
+                entry feeds the pot.{" "}
+                {tourn
+                  ? `When scores lock${deadlineStr ? ` (${deadlineStr})` : ""}, the best total wins it`
+                  : `When entries close${deadlineStr ? ` (${deadlineStr})` : ""}, the group votes and the winner takes it`}
                 {(raffle.hostSplitPct ?? 0) > 0
                   ? ` (the host keeps ${raffle.hostSplitPct}%).`
                   : "."}{" "}
@@ -6209,9 +6472,10 @@ export default function EngagementDetailPage() {
             ) : (
               <>
                 <p className="text-xs text-slate-600 mb-3">
-                  Chip in toward the pot. When entries close
-                  {deadlineStr ? ` (${deadlineStr})` : ""}, the group votes — one vote
-                  each — and the winner takes it
+                  Chip in toward the pot.{" "}
+                  {tourn
+                    ? `When scores lock${deadlineStr ? ` (${deadlineStr})` : ""}, the best total wins it`
+                    : `When entries close${deadlineStr ? ` (${deadlineStr})` : ""}, the group votes — one vote each — and the winner takes it`}
                   {(raffle.hostSplitPct ?? 0) > 0
                     ? ` (the host keeps ${raffle.hostSplitPct}%).`
                     : "."}
@@ -6550,6 +6814,9 @@ export default function EngagementDetailPage() {
 
           {/* Scavenger Hunt — per-item answers */}
           {renderScavengerResults()}
+
+          {/* Tournament — score leaderboard */}
+          {renderTournamentResults()}
 
           {/* Care Check-in — per-section responses */}
           {renderCareResults()}

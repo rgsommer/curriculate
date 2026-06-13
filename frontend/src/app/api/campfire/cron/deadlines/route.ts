@@ -19,7 +19,7 @@ import {
   getPendingInviteeEmails,
   escapeHtml,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, type NthWeekday } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, tournamentOf, type NthWeekday } from "@/lib/campfire/types";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -217,10 +217,28 @@ export async function GET(req: Request) {
     // Entries, earliest-first so ties (and zero-vote) resolve to the earliest.
     const { data: entries } = await admin
       .from("responses")
-      .select("id, user_id, created_at")
+      .select("id, user_id, created_at, content")
       .eq("engagement_id", e.id)
       .order("created_at", { ascending: true });
     if (!entries || entries.length === 0) continue; // no entries → host can cancel/refund
+
+    // A tournament is decided by SCORE (best total), not votes — pick the winner
+    // here and skip the vote tally / no-votes grace below.
+    const tcfg = tournamentOf(e.config as Record<string, unknown> | null);
+    let tournWinner: (typeof entries)[number] | null = null;
+    if (tcfg) {
+      let bestTotal: number | null = null;
+      for (const r of entries) {
+        const total = Number((r.content as { total?: number } | null)?.total ?? 0);
+        if (
+          bestTotal === null ||
+          (tcfg.direction === "low" ? total < bestTotal : total > bestTotal)
+        ) {
+          bestTotal = total;
+          tournWinner = r;
+        }
+      }
+    }
 
     const { data: votes } = await admin
       .from("campfire_challenge_votes")
@@ -239,7 +257,7 @@ export async function GET(req: Request) {
     // No votes at the close → don't award arbitrarily. Nudge the group and extend
     // voting 14 days; only after that grace does it fall back to the earliest entry.
     const totalVotes = Object.values(counts).reduce((a, b) => a + b, 0);
-    if (totalVotes === 0) {
+    if (!tcfg && totalVotes === 0) {
       const graceUntil = raffle.noVoteGraceUntil
         ? new Date(raffle.noVoteGraceUntil).getTime()
         : null;
@@ -288,13 +306,15 @@ export async function GET(req: Request) {
       // Grace expired, still zero votes → fall through, award the earliest entry.
     }
 
-    let winner = entries[0];
-    let best = -1;
-    for (const r of entries) {
-      const c = counts[r.id as string] ?? 0;
-      if (c > best) {
-        best = c;
-        winner = r;
+    let winner = tournWinner ?? entries[0];
+    if (!tcfg) {
+      let best = -1;
+      for (const r of entries) {
+        const c = counts[r.id as string] ?? 0;
+        if (c > best) {
+          best = c;
+          winner = r;
+        }
       }
     }
     const winnerUid = winner.user_id as string;
@@ -349,7 +369,9 @@ export async function GET(req: Request) {
       currency,
       recipientEmail: winnerEmail,
       recipientName: winnerName,
-      note: `You won "${e.title}"! 🏆 The group voted your entry the winner.`,
+      note: tcfg
+        ? `You won "${e.title}"! 🏆 Best total score takes the pot.`
+        : `You won "${e.title}"! 🏆 The group voted your entry the winner.`,
       idempotencyKey: `${e.id}:winner`,
     });
     if (!won.ok) {

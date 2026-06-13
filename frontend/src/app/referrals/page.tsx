@@ -235,9 +235,9 @@ export default function ReferralsPage() {
                 Prize challenges &amp; scavenger hunts
               </div>
               <div className="text-sm text-gray-600 mt-1">
-                <b>3%</b> (triple) of every chip-in on a cash-pot photo challenge or
-                scavenger hunt — players don&apos;t even have to be in the same place.
-                Score tournaments coming soon.
+                <b>3%</b> (triple) of every chip-in on a cash-pot photo challenge,
+                scavenger hunt, or score tournament — players don&apos;t even have to be
+                in the same place.
               </div>
             </div>
             <div className="bg-white rounded-2xl border border-gray-200 p-5">
