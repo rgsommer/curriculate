@@ -129,12 +129,13 @@ export async function getGroupMemberEmails(
 ): Promise<string[]> {
   const { data: members } = await admin
     .from("group_members")
-    .select("user_id")
+    .select("user_id, notify_email")
     .eq("group_id", groupId);
   const emails: string[] = [];
   for (const m of members ?? []) {
     const { data } = await admin.auth.admin.getUserById(m.user_id as string);
-    const email = data?.user?.email;
+    // Login email, else a host-linked notify-email (guest who joined by link).
+    const email = data?.user?.email || (m.notify_email as string | null);
     if (email) emails.push(email);
   }
   return emails;
@@ -173,14 +174,17 @@ export async function getCardRecipients(
   const names: string[] = [];
   for (const uid of excludedUserIds ?? []) {
     const { data: u } = await admin.auth.admin.getUserById(uid);
-    const em = u?.user?.email?.toLowerCase();
-    if (em) emails.add(em);
     const { data: gm } = await admin
       .from("group_members")
-      .select("display_name")
+      .select("display_name, notify_email")
       .eq("group_id", groupId)
       .eq("user_id", uid)
       .maybeSingle();
+    // Login email, else a host-linked notify-email (guest recipient).
+    const em = (
+      u?.user?.email || (gm?.notify_email as string | null) || ""
+    ).toLowerCase();
+    if (em) emails.add(em);
     let name = (gm?.display_name as string | null) ?? null;
     if (!name) {
       const { data: p } = await admin

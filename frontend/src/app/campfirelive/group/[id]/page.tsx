@@ -280,6 +280,24 @@ See you around the campfire! 🏕️`
   const nudgeAllPending = () => inviteAction("/api/campfire/invite/nudge");
   const revokeOne = (email: string) => inviteAction("/api/campfire/invite/revoke", [email]);
   const markJoined = (email: string) => inviteAction("/api/campfire/invite/mark-joined", [email]);
+  // Link an email invite to a guest member (joined via link, no email) so the reveal
+  // and all emails reach them at the invited address.
+  const linkGuest = async (email: string, userId: string) => {
+    if (!group || !session || !userId) return;
+    try {
+      await fetch("/api/campfire/invite/link-guest", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ groupId, email, userId }),
+      });
+    } catch {
+      /* surfaced via refreshed list */
+    }
+    await refresh();
+  };
 
   // Inline-rename a tracked invitee (host only).
   const renameInvite = async (email: string, name: string) => {
@@ -976,6 +994,24 @@ See you around the campfire! 🏕️`
                       >
                         ✕ revoke
                       </button>
+                      {/* Link this email to a guest who joined by link (no email) */}
+                      {members.length > 0 && (
+                        <select
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (e.target.value) linkGuest(inv.email, e.target.value);
+                          }}
+                          title="Joined as a guest under a different name? Link them so emails reach them."
+                          className="rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-500"
+                        >
+                          <option value="">↔ is a guest here…</option>
+                          {members.map((m) => (
+                            <option key={m.user_id} value={m.user_id}>
+                              {nameOf(m.user_id)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   )}
                 </div>
