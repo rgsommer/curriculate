@@ -147,10 +147,30 @@ export async function POST(req: Request) {
         });
         return { from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults() };
       });
+      let sendErr: string | null = null;
       for (let i = 0; i < msgs.length; i += 100) {
-        await resend.batch.send(msgs.slice(i, i + 100));
+        const { error: be } = await resend.batch.send(msgs.slice(i, i + 100));
+        if (be) sendErr = be.message ?? String(be);
       }
-      return NextResponse.json({ ok: true, sent: emails.length, card: true });
+      // Diagnostics: which recipients actually got an email, and how many can't be
+      // reached (guest accounts with no email on file).
+      const recipientsReached = emails.filter((e) =>
+        recipientSet.has(e.toLowerCase())
+      );
+      const noEmailCount = Math.max(
+        0,
+        ((eng.excluded_user_ids as string[]) ?? []).length +
+          recipientByEmail.length -
+          recipientSet.size
+      );
+      return NextResponse.json({
+        ok: !sendErr,
+        sent: emails.length,
+        card: true,
+        recipientsReached,
+        noEmailCount,
+        sendError: sendErr,
+      });
     }
 
     const m = revealEmail({

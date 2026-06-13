@@ -1270,8 +1270,23 @@ export default function EngagementDetailPage() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) alert(data?.error || "Couldn't re-send.");
-      else alert(`Reveal email re-sent${data?.sent ? ` to ${data.sent}` : ""}.`);
+      if (!res.ok || data?.sendError) {
+        alert(data?.error || data?.sendError || "Couldn't re-send.");
+      } else {
+        const reached: string[] = data?.recipientsReached ?? [];
+        const noEmail = data?.noEmailCount ?? 0;
+        const lines = [`Reveal email re-sent to ${data?.sent ?? 0} people.`];
+        lines.push(
+          reached.length
+            ? `🎉 Recipient(s) emailed: ${reached.join(", ")}`
+            : "⚠️ No surprise recipient was emailed (see below)."
+        );
+        if (noEmail > 0)
+          lines.push(
+            `⚠️ ${noEmail} recipient(s) have no email on file (guest accounts) — they'll see the card when they open Campfire, but can't be emailed.`
+          );
+        alert(lines.join("\n\n"));
+      }
     } catch {
       alert("Couldn't re-send.");
     }
