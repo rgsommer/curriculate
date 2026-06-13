@@ -16,6 +16,7 @@ import {
   mailDefaults,
   campfireFrom,
   campfireSiteUrl,
+  getPendingInviteeEmails,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, type NthWeekday } from "@/lib/campfire/types";
 
@@ -372,13 +373,21 @@ export async function GET(req: Request) {
   let notifiedReveals = 0;
   const { data: toNotify } = await admin
     .from("engagements")
-    .select("id, group_id, title, birth_year, deadline, type, config, excluded_user_ids")
+    .select("id, group_id, title, birth_year, deadline, type, config, excluded_user_ids, excluded_emails")
     .eq("status", "revealed")
     .eq("paused", false) // paused → hold the reveal email too
     .is("reveal_notified_at", null);
 
   for (const e of toNotify ?? []) {
-    const emails = await getGroupMemberEmails(admin, e.group_id);
+    // Members + invited-but-not-joined (a reveal nudge), minus an email-only recipient.
+    const memberEmails = await getGroupMemberEmails(admin, e.group_id);
+    const pendingEmails = await getPendingInviteeEmails(admin, e.group_id);
+    const exEmails = new Set(
+      ((e.excluded_emails as string[] | null) ?? []).map((x) => x.toLowerCase())
+    );
+    const emails = Array.from(new Set([...memberEmails, ...pendingEmails])).filter(
+      (em) => !exEmails.has(em.toLowerCase())
+    );
     if (emails.length) {
       const { data: group } = await admin
         .from("groups")

@@ -140,6 +140,25 @@ export async function getGroupMemberEmails(
   return emails;
 }
 
+// Emails invited to the group but not yet joined (status 'pending') — used to nudge
+// them at reveal too ("you missed it") since they're already in the loop.
+export async function getPendingInviteeEmails(
+  admin: SupabaseClient,
+  groupId: string
+): Promise<string[]> {
+  const { data } = await admin
+    .from("campfire_invitations")
+    .select("email")
+    .eq("group_id", groupId)
+    .eq("status", "pending");
+  const set = new Set<string>();
+  for (const r of data ?? []) {
+    const em = (r.email as string | null)?.trim();
+    if (em) set.add(em);
+  }
+  return Array.from(set);
+}
+
 // Resolve a card's recipient(s) from the excluded surprise user ids: a display
 // label ("Mom" / "Mom & Dad") plus the set of their lowercased emails.
 export async function getCardRecipients(

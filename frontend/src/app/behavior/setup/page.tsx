@@ -81,7 +81,7 @@ function ReadOnlySettings({ me }: { me: Me }) {
           <Row label="Trigger count" val={c.triggerCount ?? 3} />
           <Row label="Fade window (days)" val={c.fadeWindowDays ?? 30} />
           <Row label="VP" val={c.vp?.name ? `${c.vp.name}${c.vp.email ? ` (${c.vp.email})` : ""}` : ""} />
-          <Row label="Notice channels" val={[c.channels?.email && "email", c.channels?.edsby && "Edsby"].filter(Boolean).join(", ")} />
+          <Row label="Parent channel" val={[c.channels?.edsby && "Edsby", c.channels?.emailToParents && "email parents ⚠"].filter(Boolean).join(", ") || "none set"} />
           <Row label="AI send mode" val={c.aiSendMode === "draft" ? "Draft (one-tap send)" : "Automatic on trigger"} />
           <Row label="Morning reminder time" val={c.reminderTime || "07:30"} />
         </div>
@@ -138,10 +138,11 @@ function ConfigSection({ config }: { config: any }) {
     fadeWindowDays: config?.fadeWindowDays ?? 30,
     vpName: config?.vp?.name ?? "",
     vpEmail: config?.vp?.email ?? "",
+    vpEdsbyId: config?.vp?.edsbyId ?? "",
     schoolName: config?.branding?.schoolName ?? "",
     signatureBlock: config?.branding?.signatureBlock ?? "",
-    email: config?.channels?.email ?? true,
-    edsby: config?.channels?.edsby ?? false,
+    edsby: config?.channels?.edsby ?? true,
+    emailToParents: config?.channels?.emailToParents ?? false,
     aiSendMode: config?.aiSendMode ?? "auto",
     reminderTime: config?.reminderTime ?? "07:30",
   }));
@@ -156,9 +157,9 @@ function ConfigSection({ config }: { config: any }) {
         body: {
           triggerCount: Number(c.triggerCount),
           fadeWindowDays: Number(c.fadeWindowDays),
-          vp: { name: c.vpName, email: c.vpEmail },
+          vp: { name: c.vpName, email: c.vpEmail, edsbyId: c.vpEdsbyId },
           branding: { schoolName: c.schoolName, signatureBlock: c.signatureBlock },
-          channels: { email: c.email, edsby: c.edsby },
+          channels: { edsby: c.edsby, emailToParents: c.emailToParents, email: false },
           aiSendMode: c.aiSendMode,
           reminderTime: c.reminderTime,
         },
@@ -186,8 +187,11 @@ function ConfigSection({ config }: { config: any }) {
         <Field label="VP name">
           <input value={c.vpName} onChange={(e) => setC({ ...c, vpName: e.target.value })} className={inputCls} />
         </Field>
-        <Field label="VP email (CC on 2nd+ notice)">
-          <input value={c.vpEmail} onChange={(e) => setC({ ...c, vpEmail: e.target.value })} className={inputCls} />
+        <Field label="VP name (CC on 2nd+ notice)">
+          <input value={c.vpEmail} onChange={(e) => setC({ ...c, vpEmail: e.target.value })} className={inputCls} placeholder="VP email (only used if email is enabled below)" />
+        </Field>
+        <Field label="VP Edsby id (so the CC reaches them on Edsby)">
+          <input value={c.vpEdsbyId} onChange={(e) => setC({ ...c, vpEdsbyId: e.target.value })} className={inputCls} placeholder="e.g. 7571466" />
         </Field>
         <Field label="School name (on notices)">
           <input value={c.schoolName} onChange={(e) => setC({ ...c, schoolName: e.target.value })} className={inputCls} />
@@ -207,13 +211,26 @@ function ConfigSection({ config }: { config: any }) {
         <textarea value={c.signatureBlock} onChange={(e) => setC({ ...c, signatureBlock: e.target.value })}
           rows={2} className={inputCls} />
       </Field>
-      <div className="mt-3 flex gap-4 text-sm">
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={c.email} onChange={(e) => setC({ ...c, email: e.target.checked })} /> Email
+      <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <p className="text-sm font-medium text-slate-700">How parents &amp; the VP are contacted</p>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={c.edsby} onChange={(e) => setC({ ...c, edsby: e.target.checked })} />
+          Edsby <span className="text-slate-400">(recommended — parents see who it&apos;s from)</span>
         </label>
-        <label className="flex items-center gap-2">
-          <input type="checkbox" checked={c.edsby} onChange={(e) => setC({ ...c, edsby: e.target.checked })} /> Edsby (Phase 3)
+        <label className="mt-2 flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={c.emailToParents} onChange={(e) => setC({ ...c, emailToParents: e.target.checked })} className="mt-0.5" />
+          <span>
+            <span className="font-medium text-red-700">Email parents directly</span> — off by default.
+            {c.emailToParents && (
+              <span className="mt-1 block rounded bg-red-50 px-2 py-1 text-xs text-red-700">
+                ⚠ With this on, notices are emailed to parents from a curriculate.net address. Parents who don&apos;t recognise it may be alarmed. Leave it OFF and use Edsby unless your division has explicitly agreed to email.
+              </span>
+            )}
+          </span>
         </label>
+        <p className="mt-2 text-xs text-slate-500">
+          Either way, the logging teacher always gets an email copy of each notice <span className="font-medium">before</span> it goes out, and can cancel or edit it. Only an admin can change these settings.
+        </p>
       </div>
       <button onClick={save} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-white">
         {saved ? "Saved ✓" : "Save configuration"}

@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   authorizeGroupRequester,
   getGroupMemberEmails,
+  getPendingInviteeEmails,
   getCardRecipients,
   revealEmail,
   cardRevealEmail,
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
     const svc = createClient(url, serviceKey);
     const { data: eng } = await svc
       .from("engagements")
-      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline, type, config, excluded_user_ids")
+      .select("id, group_id, title, status, reveal_notified_at, birth_year, deadline, type, config, excluded_user_ids, excluded_emails")
       .eq("id", engagementId)
       .single();
     if (!eng) {
@@ -77,7 +78,16 @@ export async function POST(req: Request) {
       }
     }
 
-    const emails = await getGroupMemberEmails(admin, eng.group_id);
+    // Members + invited-but-not-joined (a "you missed it" nudge), minus anyone who
+    // was invited by email as the surprise recipient (don't spoiler-FYI them).
+    const memberEmails = await getGroupMemberEmails(admin, eng.group_id);
+    const pendingEmails = await getPendingInviteeEmails(admin, eng.group_id);
+    const excludedEmails = new Set(
+      ((eng.excluded_emails as string[] | null) ?? []).map((e) => e.toLowerCase())
+    );
+    const emails = Array.from(new Set([...memberEmails, ...pendingEmails])).filter(
+      (em) => !excludedEmails.has(em.toLowerCase())
+    );
     if (emails.length === 0) {
       return NextResponse.json({ ok: true, sent: 0 });
     }
