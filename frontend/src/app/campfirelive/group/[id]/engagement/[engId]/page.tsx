@@ -3692,6 +3692,55 @@ export default function EngagementDetailPage() {
     const items = (engagement.config?.questions as string[]) ?? [];
     return (
       <div className="space-y-3">
+        {/* Prize hunt: vote for the best overall hunt (one vote each) */}
+        {raffle && (
+          <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
+            <div className="mb-2 text-sm font-bold text-amber-800">
+              🏆 Vote for the best hunt
+            </div>
+            <div className="space-y-2">
+              {responses.map((r) => {
+                const finds = Object.keys(
+                  (r.content as { answers?: Record<string, unknown> })?.answers ?? {}
+                ).length;
+                return (
+                  <div
+                    key={r.id}
+                    className="flex items-center justify-between gap-2 rounded-lg border border-amber-100 bg-white px-3 py-2"
+                  >
+                    <div className="text-sm font-medium text-slate-800">
+                      {r.id === crownResponseId && "🏆 "}
+                      {memberNameOf(r.user_id, r.profile?.display_name)}
+                      <span className="text-xs text-slate-400">
+                        {" "}· {finds} {finds === 1 ? "find" : "finds"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {r.user_id === user?.id ? (
+                        <span className="text-xs text-slate-400">Your hunt</span>
+                      ) : votingOpen ? (
+                        <button
+                          onClick={() => castVote(r.id)}
+                          disabled={votingBusy}
+                          className={`rounded-full px-3 py-1 text-xs font-bold transition disabled:opacity-50 ${
+                            myVote === r.id
+                              ? "bg-amber-500 text-white"
+                              : "border border-amber-300 text-amber-700 hover:bg-amber-50"
+                          }`}
+                        >
+                          {myVote === r.id ? "✓ Your vote" : "🗳 Vote"}
+                        </button>
+                      ) : null}
+                      <span className="text-xs font-medium text-slate-600">
+                        {voteTallies[r.id] ?? 0}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {items.map((item, i) => {
           const ans = responses
             .map((r) => ({

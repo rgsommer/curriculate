@@ -549,15 +549,6 @@ export default function NewEngagementPage() {
 
     if (selectedType === "challenge") {
       config.media_type = "photo"; // Default, could be made selectable
-      if (raffleOn) {
-        // Pot goes to the voted winner — recipient is resolved at award time.
-        config.raffle = {
-          on: true,
-          hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
-          voteDays: Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
-          participationGate: raffleGate || 0,
-        };
-      }
     }
 
     if (selectedType === "signup") {
@@ -651,13 +642,23 @@ export default function NewEngagementPage() {
       return;
     }
 
-    // A raffle pools toward the winner; it needs a closing date (entries end + voting
-    // begins there) but no preset recipient.
-    const challengeRaffle = selectedType === "challenge" && raffleOn;
+    // A prize contest (photo Challenge or Scavenger Hunt) pools toward the voted
+    // winner; it needs a closing date (entries end + voting begins there) but no
+    // preset recipient.
+    const challengeRaffle =
+      (selectedType === "challenge" || selectedType === "scavenger_hunt") && raffleOn;
     if (challengeRaffle && !deadline) {
-      setError("Set a closing date — that's when the challenge ends and voting begins.");
+      setError("Set a closing date — that's when entries end and voting begins.");
       setCreating(false);
       return;
+    }
+    if (challengeRaffle) {
+      config.raffle = {
+        on: true,
+        hostSplitPct: Math.min(90, Math.max(0, Math.round(raffleSplit) || 0)),
+        voteDays: Math.min(30, Math.max(1, Math.round(raffleVoteDays) || 5)),
+        participationGate: raffleGate || 0,
+      };
     }
 
     const result = await create({
@@ -2139,8 +2140,8 @@ export default function NewEngagementPage() {
               </div>
             </label>
 
-            {/* Raffle Challenge — pot goes to the voted winner (challenge only) */}
-            {selectedType === "challenge" && (
+            {/* Prize pot — goes to the voted winner (photo Challenge or Scavenger Hunt) */}
+            {(selectedType === "challenge" || selectedType === "scavenger_hunt") && (
               <div>
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
@@ -2151,7 +2152,7 @@ export default function NewEngagementPage() {
                   />
                   <div>
                     <div className="text-sm font-medium text-slate-700">
-                      🏆 Make it a prize challenge (raffle)
+                      🏆 Make it a prize {selectedType === "scavenger_hunt" ? "hunt" : "challenge"}
                     </div>
                     <div className="text-xs text-slate-500">
                       People chip in toward a pot until the closing date. After entries
@@ -2228,7 +2229,10 @@ export default function NewEngagementPage() {
             )}
 
             {/* Group gift — chip in toward a gift card for the recipient */}
-            {!(selectedType === "challenge" && raffleOn) && (
+            {!(
+              (selectedType === "challenge" || selectedType === "scavenger_hunt") &&
+              raffleOn
+            ) && (
             <div>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
