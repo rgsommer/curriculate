@@ -397,6 +397,7 @@ export default function EngagementDetailPage() {
   const [editAllowMemberInvites, setEditAllowMemberInvites] = useState(false);
   const [editExcludedIds, setEditExcludedIds] = useState<string[]>([]);
   const [editExcludedEmails, setEditExcludedEmails] = useState<string[]>([]);
+  const [addRecipEmail, setAddRecipEmail] = useState(""); // add a recipient by email
   const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
   const [savingEdit, setSavingEdit] = useState(false);
   const [launching, setLaunching] = useState(false);
@@ -5025,6 +5026,50 @@ export default function EngagementDetailPage() {
                         </button>
                       );
                     })}
+                    {/* Emails added directly (not a member or pending invitee) */}
+                    {editExcludedEmails
+                      .filter((e) => !pendingInvitees.some((p) => p.email === e))
+                      .map((e) => (
+                        <button
+                          key={e}
+                          type="button"
+                          onClick={() =>
+                            setEditExcludedEmails((prev) => prev.filter((x) => x !== e))
+                          }
+                          className="rounded-full border border-rose-500 bg-rose-500 px-3 py-1 text-xs font-medium text-white"
+                        >
+                          🙈 {e}{" "}
+                          <span className="text-rose-100">· by email ✕</span>
+                        </button>
+                      ))}
+                  </div>
+                  {/* Add a recipient by email — for someone not in the list above
+                      (e.g. they joined under a guest account) */}
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="email"
+                      value={addRecipEmail}
+                      onChange={(e) => setAddRecipEmail(e.target.value)}
+                      placeholder="Add a recipient by email…"
+                      className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-rose-400"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const em = addRecipEmail.trim().toLowerCase();
+                        if (
+                          /\S+@\S+\.\S+/.test(em) &&
+                          !editExcludedEmails.includes(em)
+                        ) {
+                          setEditExcludedEmails((prev) => [...prev, em]);
+                          setAddRecipEmail("");
+                        }
+                      }}
+                      disabled={!addRecipEmail.trim()}
+                      className="flex-shrink-0 rounded-full bg-rose-500 px-4 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-40"
+                    >
+                      Add
+                    </button>
                   </div>
                 </div>
               )}
