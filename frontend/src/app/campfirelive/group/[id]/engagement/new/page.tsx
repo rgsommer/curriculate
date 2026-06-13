@@ -130,6 +130,10 @@ export default function NewEngagementPage() {
   // Tournament (leaderboard): scoring direction + optional scorecard photo.
   const [tournDirection, setTournDirection] = useState<"low" | "high">("low");
   const [tournScorecard, setTournScorecard] = useState(false);
+  // Pledge Drive (Read-A-Thon…): unit, goal, suggested per-unit rate ($).
+  const [pledgeUnit, setPledgeUnit] = useState("page");
+  const [pledgeGoal, setPledgeGoal] = useState("");
+  const [pledgeRate, setPledgeRate] = useState(""); // suggested $/unit, optional
   // Default the gift currency to the host's region (overridable below).
   useEffect(() => {
     setGiftCurrency(localeGiftCurrency());
@@ -315,6 +319,16 @@ export default function NewEngagementPage() {
       if (!description.trim())
         setDescription("Post your score each round — best total wins. Play from anywhere!");
       setQuestions(["Round 1", "Round 2", "Round 3"]);
+      setReveal("sealed");
+    }
+    if (type === "pledge_drive") {
+      if (!title.trim()) setTitle("Read-A-Thon 🎗️");
+      if (!description.trim())
+        setDescription(
+          "Sponsor my challenge! Pledge a lump sum or per page — you only pay for what's achieved."
+        );
+      setPledgeUnit("page");
+      setPledgeGoal("100");
       setReveal("sealed");
     }
     if (type === "accountability") {
@@ -513,6 +527,7 @@ export default function NewEngagementPage() {
       selectedType === "accountability" ||
       selectedType === "scavenger_hunt" ||
       selectedType === "tournament" ||
+      selectedType === "pledge_drive" ||
       reveal === "sealed";
     const finalDeadline =
       sealedReveal &&
@@ -567,6 +582,29 @@ export default function NewEngagementPage() {
 
     if (selectedType === "challenge") {
       config.media_type = "photo"; // Default, could be made selectable
+    }
+
+    if (selectedType === "pledge_drive") {
+      const unit = pledgeUnit.trim() || "unit";
+      const goal = Math.round(Number(pledgeGoal) || 0);
+      if (goal < 1) {
+        setError("Set a goal (e.g. read 100 pages, walk 10 km).");
+        setCreating(false);
+        return;
+      }
+      if (!giftRecipientEmail.trim()) {
+        setError(
+          "Add the recipient's email — that's where the funds (gift card) are sent."
+        );
+        setCreating(false);
+        return;
+      }
+      if (!deadline) {
+        setError("Set a date — that's when the result is posted and pledges settle.");
+        setCreating(false);
+        return;
+      }
+      config.pledge = { unit, goalUnits: goal };
     }
 
     if (selectedType === "signup") {
@@ -704,6 +742,7 @@ export default function NewEngagementPage() {
           selectedType === "accountability" ||
           selectedType === "scavenger_hunt" ||
           selectedType === "tournament" ||
+          selectedType === "pledge_drive" ||
           isBirthday
         ? "sealed"
         : selectedType === "signup"
@@ -729,6 +768,7 @@ export default function NewEngagementPage() {
         isBirthday ||
         selectedType === "baby_reveal" ||
         selectedType === "tournament" ||
+        selectedType === "pledge_drive" ||
         challengeRaffle
           ? true
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
@@ -750,15 +790,16 @@ export default function NewEngagementPage() {
         (selectedType === "two_truths" || reveal === "sealed") && waitForAllInvited,
       // Group gift — collect contributions toward a card for the recipient. A raffle
       // also pools, but the recipient (winner) is resolved at award time → no email.
-      gift_enabled: giftEnabled || challengeRaffle,
+      gift_enabled:
+        giftEnabled || challengeRaffle || selectedType === "pledge_drive",
       gift_recipient_email: challengeRaffle
         ? null
-        : giftEnabled
+        : giftEnabled || selectedType === "pledge_drive"
         ? giftRecipientEmail.trim() || null
         : null,
       gift_recipient_name: challengeRaffle
         ? null
-        : giftEnabled
+        : giftEnabled || selectedType === "pledge_drive"
         ? giftRecipientName.trim() || null
         : null,
       gift_currency: giftCurrency,
@@ -2345,12 +2386,88 @@ export default function NewEngagementPage() {
               </div>
             )}
 
+            {/* Pledge Drive — goal, per-unit rate, and who receives the funds */}
+            {selectedType === "pledge_drive" && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-4 space-y-3">
+                <div className="text-sm font-bold text-rose-800">🎗️ Pledge details</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-slate-600">Goal: read / do</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={pledgeGoal}
+                    onChange={(e) => setPledgeGoal(e.target.value)}
+                    placeholder="100"
+                    className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                  />
+                  <input
+                    type="text"
+                    value={pledgeUnit}
+                    onChange={(e) => setPledgeUnit(e.target.value)}
+                    placeholder="pages"
+                    className="w-28 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                  />
+                  <span className="text-[11px] text-slate-400">(e.g. 100 pages, 10 km)</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <label className="text-xs text-slate-600">Suggested pledge</label>
+                  <span className="text-xs text-slate-500">{giftCurrency.toUpperCase()} $</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={pledgeRate}
+                    onChange={(e) => setPledgeRate(e.target.value)}
+                    placeholder="0.10"
+                    className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                  />
+                  <span className="text-[11px] text-slate-400">
+                    per {pledgeUnit || "unit"} (optional — sponsors can set their own)
+                  </span>
+                </div>
+                <input
+                  type="email"
+                  value={giftRecipientEmail}
+                  onChange={(e) => setGiftRecipientEmail(e.target.value)}
+                  placeholder="Who receives the funds — the participant's email"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-rose-500"
+                />
+                <input
+                  type="text"
+                  value={giftRecipientName}
+                  onChange={(e) => setGiftRecipientName(e.target.value)}
+                  placeholder="Participant's name (e.g. Mila)"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-rose-500"
+                />
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-slate-600">Currency</label>
+                  <select
+                    value={giftCurrency}
+                    onChange={(e) => setGiftCurrency(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                  >
+                    {GIFT_CURRENCIES.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Sponsors pledge a lump sum or a per-{pledgeUnit || "unit"} rate (with a
+                  cap). They&apos;re charged the estimate upfront and auto-refunded the
+                  shortfall once you post the result on the date. Set a date below.
+                </p>
+              </div>
+            )}
+
             {/* Group gift — chip in toward a gift card for the recipient */}
             {!(
-              (selectedType === "challenge" ||
+              ((selectedType === "challenge" ||
                 selectedType === "scavenger_hunt" ||
                 selectedType === "tournament") &&
-              raffleOn
+                raffleOn) ||
+              selectedType === "pledge_drive"
             ) && (
             <div>
               <label className="flex items-start gap-3 cursor-pointer">

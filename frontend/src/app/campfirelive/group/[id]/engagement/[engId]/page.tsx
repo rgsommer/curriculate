@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
@@ -210,6 +210,32 @@ export default function EngagementDetailPage() {
     contributors: number;
   } | null>(null);
   const [chippingIn, setChippingIn] = useState(false);
+  // Pledge Drive sponsor form: per-unit rate vs lump, with an optional cap.
+  const [pledgeMode, setPledgeMode] = useState<"per_unit" | "lump">("per_unit");
+  const [pledgeRateInput, setPledgeRateInput] = useState(""); // $/unit
+  const [pledgeLumpInput, setPledgeLumpInput] = useState(""); // $ flat
+  const [pledgeMaxInput, setPledgeMaxInput] = useState(""); // $ cap (optional)
+  // Anonymized pledge leaderboard (amounts, biggest first — no names).
+  const [pledgeAmounts, setPledgeAmounts] = useState<
+    { amount_cents: number; per_unit_cents: number }[]
+  >([]);
+  useEffect(() => {
+    if (!pledgeOf(engagement?.config) || !engagementId) {
+      setPledgeAmounts([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("campfire_pledge_amounts", {
+        _eid: engagementId,
+      });
+      if (!cancelled) setPledgeAmounts(Array.isArray(data) ? data : []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagement?.config, engagementId, confirmTick]);
   // Member-initiated gift on a Sign-up: start a chip-in for one guest.
   const [showStartGift, setShowStartGift] = useState(false);
   const [startGiftName, setStartGiftName] = useState("");
@@ -686,6 +712,7 @@ export default function EngagementDetailPage() {
   // (tournament). `tourn` flips the copy to "best total wins" instead of "votes". ──
   const raffle = raffleOf(engagement.config);
   const tourn = tournamentOf(engagement.config);
+  const pledge = pledgeOf(engagement.config); // Pledge Drive (Read-A-Thon…)
   // Effective close = the grace deadline if voting closed with zero votes, else the
   // normal vote-close. Voting stays open through whichever is later.
   const voteClosesAt = raffle?.noVoteGraceUntil
@@ -788,7 +815,11 @@ export default function EngagementDetailPage() {
     (!!user && engagement.gift_initiated_by === user.id);
 
   // Chip in toward the group gift — opens Stripe Checkout for the chosen amount.
-  const chipIn = async (amountCents: number, giftId?: string) => {
+  const chipIn = async (
+    amountCents: number,
+    giftId?: string,
+    pledgeFields?: { perUnitCents: number; maxCents: number }
+  ) => {
     if (chippingIn || !engagementId) return;
     setChippingIn(true);
     try {
@@ -803,6 +834,12 @@ export default function EngagementDetailPage() {
           userId: user?.id ?? null,
           email: user?.email ?? undefined,
           origin: window.location.origin,
+          ...(pledgeFields
+            ? {
+                pledgePerUnitCents: pledgeFields.perUnitCents,
+                pledgeMaxCents: pledgeFields.maxCents,
+              }
+            : {}),
         }),
       });
       const data = await res.json();
@@ -849,6 +886,39 @@ export default function EngagementDetailPage() {
       alert("Couldn't record your vote.");
     }
     setVotingBusy(false);
+  };
+
+  // Pledge Drive: a sponsor pledges. Per-unit → charge the estimate (goal × rate,
+  // capped at their max) upfront; the release flow refunds the shortfall. Lump →
+  // charge it flat. pledge fields let the cron settle each pledge to the result.
+  const submitPledge = async () => {
+    const p = pledgeOf(engagement.config);
+    if (!p || chippingIn) return;
+    if (pledgeMode === "lump") {
+      const lump = Math.round((parseFloat(pledgeLumpInput) || 0) * 100);
+      if (lump < 100) {
+        alert("Enter a pledge of at least 1.");
+        return;
+      }
+      chipIn(lump, undefined, { perUnitCents: 0, maxCents: lump });
+      return;
+    }
+    // Per-unit.
+    const rateCents = Math.round((parseFloat(pledgeRateInput) || 0) * 100);
+    if (rateCents <= 0) {
+      alert(`Enter an amount per ${p.unit}.`);
+      return;
+    }
+    const estimate = p.goalUnits * rateCents;
+    const capCents = pledgeMaxInput
+      ? Math.round((parseFloat(pledgeMaxInput) || 0) * 100)
+      : estimate;
+    const charged = Math.min(estimate, capCents > 0 ? capCents : estimate);
+    if (charged < 100) {
+      alert("That pledge is below the 1 minimum — raise the rate or the cap.");
+      return;
+    }
+    chipIn(charged, undefined, { perUnitCents: rateCents, maxCents: charged });
   };
 
   // Any group member can start a group chip-in (gift) for one guest on this engagement.
@@ -4737,6 +4807,7 @@ export default function EngagementDetailPage() {
       engagement.type === "accountability" ||
       engagement.type === "scavenger_hunt" ||
       engagement.type === "tournament" ||
+      engagement.type === "pledge_drive" ||
       engagement.type === "care" ||
       engagement.type === "signup"
     )
@@ -5966,6 +6037,7 @@ export default function EngagementDetailPage() {
       {/* ── It's your turn: make the action obvious the instant you land (a kid
             tapping an email invite shouldn't have to scroll and figure it out). ── */}
       {engagement.type !== "signup" &&
+        engagement.type !== "pledge_drive" &&
         (engagement.status === "active" || lateResponseAllowed) &&
         !hasResponded &&
         !isDraft &&
@@ -6487,7 +6559,165 @@ export default function EngagementDetailPage() {
 
       {/* ── GROUP GIFT / PRIZE POT: chip in toward a gift card (the recipient for a
             card; the voted winner for a raffle) ── */}
-      {engagement.gift_enabled && !isGiftHidden && (
+      {/* ── PLEDGE DRIVE: sponsor form + anonymized leaderboard ── */}
+      {pledge && engagement.gift_enabled && (
+        <div
+          id="prizepot"
+          className="mb-6 scroll-mt-4 rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 shadow-sm"
+        >
+          <div className="mb-1 flex items-center justify-between gap-2">
+            <h2 className="font-bold text-slate-900">🎗️ Sponsor this</h2>
+            {giftSummary && giftSummary.contributors > 0 && (
+              <span className="text-sm font-bold text-rose-700">
+                {formatMoney(giftSummary.total_cents, engagement.gift_currency)} ·{" "}
+                {giftSummary.contributors}{" "}
+                {giftSummary.contributors === 1 ? "sponsor" : "sponsors"}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-600">
+            Goal: <b>{pledge.goalUnits.toLocaleString()} {pledge.unit}s</b>
+            {pledge.actualUnits != null ? (
+              <>
+                {" "}· Result:{" "}
+                <b>{pledge.actualUnits.toLocaleString()} {pledge.unit}s</b> 🎉
+              </>
+            ) : (
+              ""
+            )}
+          </p>
+
+          {engagement.gift_issued_at || pledge.settledAt ? (
+            <p className="mt-3 text-sm text-slate-600">
+              ✅ The drive is settled — sponsors were charged for what was achieved and
+              the funds went to{" "}
+              {engagement.gift_recipient_name || "the participant"}. Thank you! 🙌
+            </p>
+          ) : (
+            <>
+              {/* Sponsor form */}
+              <div className="mt-3 rounded-xl border border-rose-200 bg-white p-3 space-y-2.5">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setPledgeMode("per_unit")}
+                    className={`flex-1 rounded-full px-3 py-1.5 text-xs font-bold ${
+                      pledgeMode === "per_unit"
+                        ? "bg-rose-500 text-white"
+                        : "border border-rose-300 text-rose-700"
+                    }`}
+                  >
+                    Per {pledge.unit}
+                  </button>
+                  <button
+                    onClick={() => setPledgeMode("lump")}
+                    className={`flex-1 rounded-full px-3 py-1.5 text-xs font-bold ${
+                      pledgeMode === "lump"
+                        ? "bg-rose-500 text-white"
+                        : "border border-rose-300 text-rose-700"
+                    }`}
+                  >
+                    Lump sum
+                  </button>
+                </div>
+                {pledgeMode === "per_unit" ? (
+                  <>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs text-slate-500">
+                        {(engagement.gift_currency || "usd").toUpperCase()} $
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={pledgeRateInput}
+                        onChange={(e) => setPledgeRateInput(e.target.value)}
+                        placeholder="0.10"
+                        className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                      />
+                      <span className="text-xs text-slate-600">per {pledge.unit}</span>
+                      <span className="text-xs text-slate-400">· cap (optional)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="1"
+                        value={pledgeMaxInput}
+                        onChange={(e) => setPledgeMaxInput(e.target.value)}
+                        placeholder="max $"
+                        className="w-20 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                      />
+                    </div>
+                    {(() => {
+                      const rate = Math.round((parseFloat(pledgeRateInput) || 0) * 100);
+                      if (rate <= 0) return null;
+                      const est = pledge.goalUnits * rate;
+                      const cap = pledgeMaxInput
+                        ? Math.round((parseFloat(pledgeMaxInput) || 0) * 100)
+                        : est;
+                      const charged = Math.min(est, cap > 0 ? cap : est);
+                      return (
+                        <p className="text-[11px] text-slate-500">
+                          At the goal that&apos;s{" "}
+                          <b>{formatMoney(est, engagement.gift_currency)}</b> — you&apos;re
+                          charged{" "}
+                          <b>{formatMoney(charged, engagement.gift_currency)}</b> now and
+                          refunded the shortfall if the goal isn&apos;t reached.
+                        </p>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-slate-500">
+                      {(engagement.gift_currency || "usd").toUpperCase()} $
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      step="1"
+                      value={pledgeLumpInput}
+                      onChange={(e) => setPledgeLumpInput(e.target.value)}
+                      placeholder="20"
+                      className="w-24 rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-rose-500"
+                    />
+                    <span className="text-[11px] text-slate-400">
+                      flat — charged now, regardless of the result
+                    </span>
+                  </div>
+                )}
+                <button
+                  onClick={submitPledge}
+                  disabled={chippingIn}
+                  className="w-full rounded-full bg-gradient-to-r from-rose-500 to-orange-500 px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {chippingIn ? "Opening secure checkout…" : "🎗️ Pledge"}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Anonymized leaderboard */}
+          {pledgeAmounts.length > 0 && (
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-slate-400">
+                Pledges
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {pledgeAmounts.slice(0, 24).map((a, i) => (
+                  <span
+                    key={i}
+                    className="rounded-full bg-white border border-rose-200 px-2 py-0.5 text-xs font-semibold text-rose-700"
+                  >
+                    {formatMoney(a.amount_cents, engagement.gift_currency)}
+                    {a.per_unit_cents > 0 ? "" : " ·flat"}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {engagement.gift_enabled && !isGiftHidden && !pledge && (
         <div id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">
@@ -6666,6 +6896,7 @@ export default function EngagementDetailPage() {
 
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
       {engagement.type !== "signup" &&
+        engagement.type !== "pledge_drive" &&
         hasPaidEntry &&
         ((engagement.status === "active" && (!hasResponded || editingResponse)) ||
           (lateResponseAllowed && !hasResponded)) && (

@@ -33,6 +33,12 @@ export async function POST(req: Request) {
         : null;
     const userId = typeof body?.userId === "string" ? body.userId : null;
     const email = typeof body?.email === "string" ? body.email : undefined;
+    // Pledge Drive: a per-unit rate (0 = lump) + the sponsor's cap. Only sent for a
+    // pledge — included in the insert conditionally so ordinary chip-ins never touch
+    // these columns (they don't exist until migration 067 is applied).
+    const pledgePerUnitCents = Math.max(0, Math.round(Number(body?.pledgePerUnitCents) || 0));
+    const pledgeMaxCents = Math.max(0, Math.round(Number(body?.pledgeMaxCents) || 0));
+    const isPledge = pledgeMaxCents > 0;
     // Redirect back to the exact host the user is on (always absolute, right scheme).
     const originIn =
       typeof body?.origin === "string" && /^https?:\/\//.test(body.origin)
@@ -140,6 +146,12 @@ export async function POST(req: Request) {
         status: "pending",
         referrer_code: referrerCode,
         referrer_cut_cents: referrerCutCents,
+        ...(isPledge
+          ? {
+              pledge_per_unit_cents: pledgePerUnitCents,
+              pledge_max_cents: pledgeMaxCents,
+            }
+          : {}),
       })
       .select("id")
       .single();
