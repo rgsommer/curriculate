@@ -5,11 +5,21 @@
 // Schools where the referral program is WAIVED (no service fee, no referrer cut) —
 // the operator's own community, to avoid any conflict of interest. A group marked
 // for one of these isn't stamped with a referrer code, so chip-ins stay fee-free.
-// Matched loosely (case-insensitive substring) so naming variations still catch.
-export const HOUSE_SCHOOLS = ["brampton christian"];
+//
+// Matching is forgiving so naming/spacing/punctuation variants all catch:
+//   - any name containing "brampton christian" (full or partial) — substring
+//   - the acronym "BCS" / "B.C.S." — exact (so "bcsomething" doesn't false-match)
+export const HOUSE_SCHOOL_NAMES = ["brampton christian"];
+export const HOUSE_SCHOOL_ACRONYMS = ["bcs"];
 export function isHouseSchool(name?: string | null): boolean {
-  const n = (name ?? "").trim().toLowerCase();
-  return !!n && HOUSE_SCHOOLS.some((h) => n.includes(h));
+  // Strip everything but letters, lowercased: "B.C.S." → "bcs", "Brampton
+  // Christian School" → "bramptonchristianschool".
+  const compact = (name ?? "").toLowerCase().replace(/[^a-z]/g, "");
+  if (!compact) return false;
+  if (HOUSE_SCHOOL_NAMES.some((h) => compact.includes(h.replace(/[^a-z]/g, ""))))
+    return true;
+  if (HOUSE_SCHOOL_ACRONYMS.includes(compact)) return true;
+  return false;
 }
 
 export type EngagementType =
