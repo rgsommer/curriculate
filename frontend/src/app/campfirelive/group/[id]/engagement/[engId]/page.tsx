@@ -10,6 +10,7 @@ import {
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf } from "@/lib/campfire/types";
+import { readExifTakenAt } from "@/lib/campfire/exif";
 import type { CampfireGift } from "@/lib/campfire/types";
 import { supabase } from "@/lib/campfire/supabase";
 import { hasProfanity } from "@/lib/campfire/profanity";
@@ -398,8 +399,14 @@ export default function EngagementDetailPage() {
   // Accountability: 1–5 self-rating per question + an optional note to the group
   const [acRatings, setAcRatings] = useState<Record<number, number>>({});
   const [acNote, setAcNote] = useState("");
-  // Scavenger Hunt: per-item { text, photo } + which item is uploading
-  const [shItems, setShItems] = useState<Record<number, { text?: string; photo?: string }>>({});
+  // Scavenger Hunt: per-item { text, photo } (+ EXIF date taken / early flag) and
+  // which item is uploading.
+  const [shItems, setShItems] = useState<
+    Record<
+      number,
+      { text?: string; photo?: string; photoTakenAt?: number | null; photoEarly?: boolean }
+    >
+  >({});
   const [shUploading, setShUploading] = useState<number | null>(null);
   // Care Check-in: free text / star per section (fill any/all)
   const [careAnswers, setCareAnswers] = useState<Record<number, string | number>>({});
@@ -1956,6 +1963,13 @@ export default function EngagementDetailPage() {
   const handleScavengerUpload = async (i: number, file: File | undefined) => {
     if (!file || !user) return;
     setShUploading(i);
+    // Honesty check (best-effort): when the photo carries an EXIF "date taken",
+    // flag it if it predates the contest start. No EXIF → unverifiable, not flagged.
+    const takenAt = await readExifTakenAt(file);
+    const startMs = new Date(
+      engagement.launched_at || engagement.created_at
+    ).getTime();
+    const early = takenAt != null && takenAt < startMs;
     const ext = file.name.split(".").pop();
     const path = `${user.id}/${engagementId}/${i}-${Date.now()}.${ext}`;
     const { error: upErr } = await supabase.storage.from("campfire-media").upload(path, file);
@@ -1965,13 +1979,19 @@ export default function EngagementDetailPage() {
       return;
     }
     const { data } = supabase.storage.from("campfire-media").getPublicUrl(path);
-    setShItems((prev) => ({ ...prev, [i]: { ...prev[i], photo: data.publicUrl } }));
+    setShItems((prev) => ({
+      ...prev,
+      [i]: { ...prev[i], photo: data.publicUrl, photoTakenAt: takenAt, photoEarly: early },
+    }));
     setShUploading(null);
   };
 
   const handleScavengerSubmit = async () => {
     const items = (engagement.config?.questions as string[]) ?? [];
-    const answers: Record<string, { text?: string; photo?: string }> = {};
+    const answers: Record<
+      string,
+      { text?: string; photo?: string; photoTakenAt?: number | null; photoEarly?: boolean }
+    > = {};
     for (let i = 0; i < items.length; i++) {
       const it = shItems[i];
       const text = it?.text?.trim();
@@ -1980,7 +2000,16 @@ export default function EngagementDetailPage() {
         return;
       }
       if (text || it?.photo) {
-        answers[i] = { ...(text ? { text } : {}), ...(it?.photo ? { photo: it.photo } : {}) };
+        answers[i] = {
+          ...(text ? { text } : {}),
+          ...(it?.photo
+            ? {
+                photo: it.photo,
+                photoTakenAt: it.photoTakenAt ?? null,
+                photoEarly: !!it.photoEarly,
+              }
+            : {}),
+        };
       }
     }
     if (Object.keys(answers).length === 0) {
@@ -3745,8 +3774,19 @@ export default function EngagementDetailPage() {
           const ans = responses
             .map((r) => ({
               r,
-              a: (r.content as { answers?: Record<string, { text?: string; photo?: string }> })
-                ?.answers?.[String(i)],
+              a: (
+                r.content as {
+                  answers?: Record<
+                    string,
+                    {
+                      text?: string;
+                      photo?: string;
+                      photoTakenAt?: number | null;
+                      photoEarly?: boolean;
+                    }
+                  >;
+                }
+              )?.answers?.[String(i)],
             }))
             .filter((x) => x.a);
           return (
@@ -3764,13 +3804,33 @@ export default function EngagementDetailPage() {
                     {a?.text && (
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{a.text}</p>
                     )}
-                    {a?.photo && (
-                      <img
-                        src={a.photo}
-                        alt=""
-                        className="mt-1 max-h-48 rounded-lg object-cover"
-                      />
-                    )}
+                {a?.photo && (
+                  <>
+                    <img
+                      src={a.photo}
+                      alt=""
+                      className="mt-1 max-h-48 rounded-lg object-cover"
+                    />
+                    {raffle &&
+                      (a.photoEarly ? (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          ⚠️ photo dated before the start
+                        </div>
+                      ) : a.photoTakenAt == null ? (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">
+                          ⓘ no date on photo
+                        </div>
+                      ) : (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+                          ✓ taken{" "}
+                          {new Date(a.photoTakenAt).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </div>
+                      ))}
+                  </>
+                )}
                   </div>
                 ))}
                 {ans.length === 0 && (
