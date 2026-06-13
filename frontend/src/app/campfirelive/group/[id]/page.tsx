@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf } from "@/lib/campfire/types";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
@@ -84,7 +84,8 @@ export default function GroupDetailPage() {
   // Running gift total (cents) per gift-enabled engagement, for the card badge.
   const [giftTotals, setGiftTotals] = useState<Record<string, number>>({});
   const giftEngIdsKey = engagements
-    .filter((e) => e.gift_enabled)
+    // A raffle's pot is intrinsic even if the gift_enabled flag wasn't set.
+    .filter((e) => e.gift_enabled || raffleOf(e.config))
     .map((e) => e.id)
     .join(",");
   useEffect(() => {
@@ -1379,7 +1380,7 @@ See you around the campfire! 🏕️`
                       ))}
                     {/* Group gift running total — everyone sees it by default (never
                         the surprise recipient); the host can restrict via giftShowTotal */}
-                    {eng.gift_enabled &&
+                    {(eng.gift_enabled || !!raffleOf(eng.config)) &&
                       (giftTotals[eng.id] ?? 0) > 0 &&
                       !!user &&
                       !(
@@ -1391,7 +1392,9 @@ See you around the campfire! 🏕️`
                         eng.creator_id === user.id ||
                         eng.gift_initiated_by === user.id) && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 border border-cyan-200 px-2.5 py-1 text-xs font-semibold text-cyan-700">
-                        🎁 {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)} chipped in
+                        {raffleOf(eng.config) ? "🏆" : "🎁"}{" "}
+                        {formatMoney(giftTotals[eng.id] ?? 0, eng.gift_currency)}{" "}
+                        {raffleOf(eng.config) ? "in the pot" : "chipped in"}
                       </span>
                     )}
                   </div>
