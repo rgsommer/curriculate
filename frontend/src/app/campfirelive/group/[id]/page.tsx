@@ -280,6 +280,7 @@ See you around the campfire! 🏕️`
   const nudgeAllPending = () => inviteAction("/api/campfire/invite/nudge");
   const revokeOne = (email: string) => inviteAction("/api/campfire/invite/revoke", [email]);
   const markJoined = (email: string) => inviteAction("/api/campfire/invite/mark-joined", [email]);
+  const unjoin = (email: string) => inviteAction("/api/campfire/invite/unjoin", [email]);
   // Link an email invite to a guest member (joined via link, no email) so the reveal
   // and all emails reach them at the invited address.
   const linkGuest = async (email: string, userId: string) => {
@@ -920,11 +921,22 @@ See you around the campfire! 🏕️`
                           </button>
                         )}
                       </span>
-                      <span className="flex-shrink-0">
+                      <span className="flex flex-shrink-0 items-center gap-2">
                         {inv.status === "joined" && (
-                          <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">
-                            ✓ joined
-                          </span>
+                          <>
+                            <span className="rounded-full bg-green-100 px-2 py-0.5 font-semibold text-green-700">
+                              ✓ joined
+                            </span>
+                            {isAdmin && (
+                              <button
+                                onClick={() => unjoin(inv.email)}
+                                title="Marked the wrong person? Set this invite back to pending."
+                                className="text-[11px] font-medium text-slate-400 underline hover:text-amber-600"
+                              >
+                                ↩ un-join
+                              </button>
+                            )}
+                          </>
                         )}
                         {inv.status === "revoked" && (
                           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-400">
