@@ -18,6 +18,7 @@ import {
   GIFT_CURRENCIES,
   formatMoney,
   localeGiftCurrency,
+  selectPoolQuestions,
   type NthWeekday,
   type EngagementType,
   type RevealMode,
@@ -553,15 +554,21 @@ export default function NewEngagementPage() {
         : null;
 
     if (selectedType === "care") {
-      const cqs = careQuestions
-        .map((q) => ({ prompt: q.prompt.trim(), kind: q.kind }))
-        .filter((q) => q.prompt);
-      if (cqs.length < 1) {
+      // Each category may carry several wordings (one per line) — store the pool, and
+      // lock in a random pick per category for this occurrence.
+      const pool = careQuestions
+        .map((q) => ({
+          kind: q.kind,
+          prompts: q.prompt.split("\n").map((s) => s.trim()).filter(Boolean),
+        }))
+        .filter((c) => c.prompts.length > 0);
+      if (pool.length < 1) {
         setError("Add at least one question for people to answer.");
         setCreating(false);
         return;
       }
-      config.questions = cqs;
+      config.questionPool = pool;
+      config.questions = selectPoolQuestions(pool, "care");
     } else if (
       selectedType === "most_likely" ||
       selectedType === "accountability" ||
@@ -582,7 +589,19 @@ export default function NewEngagementPage() {
         setCreating(false);
         return;
       }
-      config.questions = qs;
+      if (selectedType === "accountability") {
+        // Each question may carry several wordings (one per line) — store the pool and
+        // lock in a random pick per category for this occurrence (varies each time).
+        const pool = questions
+          .map((q) => ({
+            prompts: q.split("\n").map((s) => s.trim()).filter(Boolean),
+          }))
+          .filter((c) => c.prompts.length > 0);
+        config.questionPool = pool;
+        config.questions = selectPoolQuestions(pool, "accountability");
+      } else {
+        config.questions = qs;
+      }
       if (selectedType === "tournament") {
         config.tournament = { direction: tournDirection, scorecard: tournScorecard };
       }
@@ -1488,16 +1507,16 @@ export default function NewEngagementPage() {
                   <div key={i} className="mb-2 rounded-xl border border-slate-200 p-2.5">
                     <div className="flex gap-2 items-start">
                       <span className="text-slate-400 text-sm pt-2">{i + 1}.</span>
-                      <input
-                        type="text"
+                      <textarea
                         value={q.prompt}
                         onChange={(e) => {
                           const next = [...careQuestions];
                           next[i] = { ...next[i], prompt: e.target.value };
                           setCareQuestions(next);
                         }}
-                        placeholder="Your question / prompt…"
-                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+                        rows={2}
+                        placeholder="Your prompt — add more wordings on new lines to vary it each time…"
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
                       />
                       {careQuestions.length > 1 && (
                         <button
@@ -1579,25 +1598,37 @@ export default function NewEngagementPage() {
                         ? `${i + 1}.`
                         : "🏆"}
                     </span>
-                    <input
-                      type="text"
-                      value={q}
-                      onChange={(e) => {
-                        const next = [...questions];
-                        next[i] = e.target.value;
-                        setQuestions(next);
-                      }}
-                      placeholder={
-                        selectedType === "accountability"
-                          ? "Have you…?"
-                          : selectedType === "scavenger_hunt"
-                          ? "Find / answer…"
-                          : selectedType === "tournament"
-                          ? "Hole 1 / Round 1 / Event…"
-                          : "Most likely to…"
-                      }
-                      className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
-                    />
+                    {selectedType === "accountability" ? (
+                      <textarea
+                        value={q}
+                        onChange={(e) => {
+                          const next = [...questions];
+                          next[i] = e.target.value;
+                          setQuestions(next);
+                        }}
+                        rows={2}
+                        placeholder="Have you…? — add more wordings on new lines to vary it each time"
+                        className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={q}
+                        onChange={(e) => {
+                          const next = [...questions];
+                          next[i] = e.target.value;
+                          setQuestions(next);
+                        }}
+                        placeholder={
+                          selectedType === "scavenger_hunt"
+                            ? "Find / answer…"
+                            : selectedType === "tournament"
+                            ? "Hole 1 / Round 1 / Event…"
+                            : "Most likely to…"
+                        }
+                        className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                      />
+                    )}
                     {questions.length > 1 && (
                       <button
                         onClick={() => setQuestions(questions.filter((_, j) => j !== i))}
@@ -2588,6 +2619,8 @@ export default function NewEngagementPage() {
                 <p className="mt-1.5 text-[11px] text-slate-500">
                   Guests propose a boy name + a girl name and guess the gender. The person
                   above privately sets the real name &amp; gender, revealed on the big day.
+                  Just for fun anticipating the arrival — it doesn&apos;t replace your own
+                  special reveal. 💙
                 </p>
               </div>
             )}

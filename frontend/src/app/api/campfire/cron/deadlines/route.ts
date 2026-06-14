@@ -19,7 +19,7 @@ import {
   getPendingInviteeEmails,
   escapeHtml,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, tournamentOf, type NthWeekday } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, tournamentOf, selectPoolQuestions, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -577,6 +577,19 @@ export async function GET(req: Request) {
 
     const DAY = 24 * 60 * 60 * 1000;
 
+    // Care/Accountability variety: if the host gave a question pool (alternate
+    // wordings per category), lock in a fresh random pick for THIS occurrence so it
+    // differs from last time. Everyone in the group still gets the same set.
+    const qPool = (e.config as { questionPool?: QuestionCategory[] } | null)
+      ?.questionPool;
+    const spawnConfig =
+      qPool && qPool.length
+        ? {
+            ...((e.config as Record<string, unknown>) ?? {}),
+            questions: selectPoolQuestions(qPool, e.type as string),
+          }
+        : e.config;
+
     // Yearly (birthday/anniversary/holiday): re-open a lead time before next year's
     // date as a draft (the auto-open step above launches it). A fixed-date birthday
     // anchors to the same calendar day; a floating holiday (config.recurrence_nth,
@@ -604,7 +617,7 @@ export async function GET(req: Request) {
         type: e.type,
         title: e.title,
         description: e.description,
-        config: e.config,
+        config: spawnConfig,
         reveal: e.reveal,
         is_blind: e.is_blind,
         recurrence_rule: "yearly",
@@ -648,7 +661,7 @@ export async function GET(req: Request) {
       type: e.type,
       title: e.title,
       description: e.description,
-      config: e.config,
+      config: spawnConfig,
       reveal: e.reveal,
       is_blind: e.is_blind,
       recurrence_rule: e.recurrence_rule,

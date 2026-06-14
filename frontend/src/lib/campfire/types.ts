@@ -102,6 +102,27 @@ export function localeGiftCurrency(): string {
 // A Care Check-in question: a prompt + how people answer it.
 export type CareQuestion = { prompt: string; kind: "text" | "star" };
 
+// Care / Accountability prompt variety: each category holds one or more alternative
+// wordings (config.questionPool). Each time a recurring check-in goes out, ONE wording
+// per category is picked at random and locked into config.questions for that whole
+// occurrence — so it varies month to month (everyone still gets the same set).
+export type QuestionCategory = { kind?: "text" | "star"; prompts: string[] };
+export function selectPoolQuestions(
+  pool: QuestionCategory[] | null | undefined,
+  type: string
+): Array<CareQuestion | string> {
+  if (!pool || pool.length === 0) return [];
+  return pool
+    .map((c) => ({ kind: c.kind, prompts: (c.prompts ?? []).filter((p) => p.trim()) }))
+    .filter((c) => c.prompts.length > 0)
+    .map((c) => {
+      const prompt = c.prompts[Math.floor(Math.random() * c.prompts.length)].trim();
+      return type === "care"
+        ? ({ prompt, kind: c.kind ?? "text" } as CareQuestion)
+        : prompt;
+    });
+}
+
 // config.questions for a Care Check-in may be the new {prompt,kind} objects or a
 // legacy string[] (treated as text). Normalise to CareQuestion[].
 export function parseCareQuestions(config: unknown): CareQuestion[] {

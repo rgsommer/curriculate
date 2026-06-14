@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, type QuestionCategory } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
@@ -1174,7 +1174,17 @@ export default function EngagementDetailPage() {
     setEditAllowMemberInvites(!!engagement.allow_member_invites);
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
-    setEditCareQuestions(parseCareQuestions(engagement.config));
+    {
+      // Preload the multi-wording pool (one wording per line) if present, else the
+      // single saved questions.
+      const pool = (engagement.config as { questionPool?: QuestionCategory[] } | null)
+        ?.questionPool;
+      setEditCareQuestions(
+        pool && pool.length
+          ? pool.map((c) => ({ prompt: c.prompts.join("\n"), kind: c.kind ?? "text" }))
+          : parseCareQuestions(engagement.config)
+      );
+    }
     setEditGiftEnabled(!!engagement.gift_enabled);
     setEditGiftShowTotal(engagement.config?.giftShowTotal !== false);
     setEditGiftRecipientEmail(engagement.gift_recipient_email ?? "");
@@ -1255,15 +1265,22 @@ export default function EngagementDetailPage() {
     // Care Check-in: persist the edited question list (prompt + response type).
     const careFields: Record<string, unknown> = {};
     if (engagement.type === "care") {
-      const cqs = editCareQuestions
-        .map((q) => ({ prompt: q.prompt.trim(), kind: q.kind }))
-        .filter((q) => q.prompt);
-      if (cqs.length < 1) {
+      const pool = editCareQuestions
+        .map((q) => ({
+          kind: q.kind,
+          prompts: q.prompt.split("\n").map((s) => s.trim()).filter(Boolean),
+        }))
+        .filter((c) => c.prompts.length > 0);
+      if (pool.length < 1) {
         alert("Keep at least one question.");
         setSavingEdit(false);
         return;
       }
-      careFields.config = { ...(engagement.config ?? {}), questions: cqs };
+      careFields.config = {
+        ...(engagement.config ?? {}),
+        questionPool: pool,
+        questions: selectPoolQuestions(pool, "care"),
+      };
     }
     // Truth or Dare: persist the edited prompts.
     if (engagement.type === "truth_or_dare") {
@@ -5665,16 +5682,16 @@ export default function EngagementDetailPage() {
                     <div key={i} className="mb-2 rounded-lg border border-slate-200 p-2.5">
                       <div className="flex gap-2 items-start">
                         <span className="text-slate-400 text-sm pt-2">{i + 1}.</span>
-                        <input
-                          type="text"
+                        <textarea
                           value={q.prompt}
                           onChange={(e) => {
                             const next = [...editCareQuestions];
                             next[i] = { ...next[i], prompt: e.target.value };
                             setEditCareQuestions(next);
                           }}
-                          placeholder="Your question / prompt…"
-                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none"
+                          rows={2}
+                          placeholder="Your prompt — add more wordings on new lines to vary it each time…"
+                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
                         />
                         {editCareQuestions.length > 1 && (
                           <button
