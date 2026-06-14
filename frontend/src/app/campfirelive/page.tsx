@@ -250,15 +250,22 @@ export default function DashboardPage() {
     }
     let cancelled = false;
     (async () => {
-      const { data: engs } = await supabase
-        .from("engagements")
-        .select(
-          "id, group_id, title, type, config, deadline, birth_year, excluded_user_ids, revealed_at"
-        )
-        .in("group_id", ids)
-        .eq("status", "revealed");
+      const cols =
+        "id, group_id, title, type, config, deadline, birth_year, excluded_user_ids, revealed_at";
+      const sel = (c: string) =>
+        supabase
+          .from("engagements")
+          .select(c)
+          .in("group_id", ids)
+          .eq("status", "revealed");
+      let res = await sel(cols);
+      if (res.error) {
+        // revealed_at column not present yet (migration 070) — retry without it.
+        res = await sel(cols.replace(", revealed_at", ""));
+      }
       if (cancelled) return;
-      const list: TodoEng[] = (engs ?? [])
+      const rows = (res.data ?? []) as unknown as Array<Record<string, unknown>>;
+      const list: TodoEng[] = rows
         .filter(
           (e) =>
             e.type !== "signup" &&
@@ -275,16 +282,6 @@ export default function DashboardPage() {
           revealedAt:
             (e as { revealed_at?: string | null }).revealed_at ?? null,
         }));
-      // First-ever load: seed everything as seen so old reveals don't flood the list.
-      try {
-        if (localStorage.getItem("campfire_seen_reveals") === null) {
-          const seeded = list.map((e) => e.id);
-          localStorage.setItem("campfire_seen_reveals", JSON.stringify(seeded));
-          if (!cancelled) setSeenReveals(new Set(seeded));
-        }
-      } catch {
-        /* ignore */
-      }
       if (!cancelled) setReveals(list);
     })();
     return () => {
@@ -292,19 +289,32 @@ export default function DashboardPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey, user?.id]);
-  // Show a reveal if you haven't tapped it yet, OR it unlocked today/yesterday (fresh
-  // news surfaces for ~2 days even if you've glanced at it or it predates seeding).
-  const recentCutoff = (() => {
+  // Which reveals to surface. A reveal shows if it's within the last week AND either
+  // it unlocked today/yesterday (fresh — always shows) or you haven't tapped it yet
+  // (stays until you look). No first-load seeding — the 1-week window + cap prevent a
+  // flood, and reveal time falls back to the deadline when revealed_at isn't set.
+  const nowMs2 = Date.now();
+  const startOfYesterday = (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - 1); // start of yesterday
+    d.setDate(d.getDate() - 1);
     return d.getTime();
   })();
-  const newReveals = reveals.filter(
-    (e) =>
-      !seenReveals.has(e.id) ||
-      (!!e.revealedAt && new Date(e.revealedAt).getTime() >= recentCutoff)
-  );
+  const weekAgo = nowMs2 - 7 * 86400000;
+  const newReveals = reveals
+    .map((e) => {
+      const rt = e.revealedAt ? new Date(e.revealedAt).getTime() : null;
+      const ref = rt ?? (e.deadline ? new Date(e.deadline).getTime() : 0);
+      return { e, rt, ref };
+    })
+    .filter(({ e, rt, ref }) => {
+      const isRecent = rt !== null && rt >= startOfYesterday; // today / yesterday
+      const isUnseen = !seenReveals.has(e.id);
+      return ref >= weekAgo && (isRecent || isUnseen);
+    })
+    .sort((a, b) => b.ref - a.ref)
+    .slice(0, 12)
+    .map(({ e }) => e);
   const markRevealSeen = (id: string) => {
     setSeenReveals((prev) => {
       const next = new Set(prev);
