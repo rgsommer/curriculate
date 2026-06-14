@@ -52,7 +52,8 @@ export default function SiteHeader() {
     pathname?.startsWith("/play") ||
     pathname?.startsWith("/raffle") ||
     pathname?.startsWith("/pledge") ||
-    pathname?.startsWith("/groupcards")
+    pathname?.startsWith("/groupcards") ||
+    pathname?.startsWith("/campfirehub")
   )
     return null;
   // Public QR contribute page — minimal chrome.
