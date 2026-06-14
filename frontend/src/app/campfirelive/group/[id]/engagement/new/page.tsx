@@ -100,6 +100,8 @@ export default function NewEngagementPage() {
   const [allowMemberInvites, setAllowMemberInvites] = useState(false);
   // Surprise / "All Except": members hidden from it until the reveal.
   const [groupMembers, setGroupMembers] = useState<{ user_id: string; name: string }[]>([]);
+  // Baby Reveal: who reveals the name + gender ("" = me, the host).
+  const [babyRevealerId, setBabyRevealerId] = useState("");
   const [excludedIds, setExcludedIds] = useState<string[]>([]);
   const [pendingInvitees, setPendingInvitees] = useState<{ email: string; name: string | null }[]>([]);
   const [excludedEmails, setExcludedEmails] = useState<string[]>([]);
@@ -285,7 +287,7 @@ export default function NewEngagementPage() {
     if (type === "baby_reveal") {
       if (!title.trim()) setTitle("Boy or girl? 🍼");
       if (!description.trim())
-        setDescription("Lock in your guess — all is revealed on the big day!");
+        setDescription("Suggest a boy name + a girl name, and guess the gender — all revealed on the big day!");
       setPollOptions(["Boy", "Girl"]);
       setReveal("sealed"); // guesses stay sealed until the reveal date
     }
@@ -442,13 +444,9 @@ export default function NewEngagementPage() {
 
     // Type-specific config
     if (selectedType === "baby_reveal") {
-      const opts = pollOptions.filter((o) => o.trim());
-      if (opts.length < 2) {
-        setError("Add at least 2 choices to guess between.");
-        setCreating(false);
-        return;
-      }
-      config.options = opts;
+      config.options = ["Boy", "Girl"]; // the gender guess
+      // Who reveals the name + gender — the host, or a designated member (the parent).
+      config.babyReveal = { revealerUserId: babyRevealerId || user?.id || null };
     } else if (selectedType === "poll") {
       config.format = pollFormat;
       if (pollFormat === "open") {
@@ -2565,6 +2563,31 @@ export default function NewEngagementPage() {
                 <p className="text-[11px] text-slate-400">
                   Everyone chips in to the pot. At the closing date (or when you draw at
                   the event), a random winner is picked and paid the pot.
+                </p>
+              </div>
+            )}
+
+            {/* Baby Reveal — who reveals the name + gender (the person having the baby) */}
+            {selectedType === "baby_reveal" && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-4">
+                <label className="block text-sm font-bold text-sky-800 mb-1">
+                  🍼 Who&apos;s having the baby? (they reveal the name &amp; gender)
+                </label>
+                <select
+                  value={babyRevealerId}
+                  onChange={(e) => setBabyRevealerId(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                >
+                  <option value="">Me — I&apos;ll do the reveal</option>
+                  {groupMembers.map((m) => (
+                    <option key={m.user_id} value={m.user_id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1.5 text-[11px] text-slate-500">
+                  Guests propose a boy name + a girl name and guess the gender. The person
+                  above privately sets the real name &amp; gender, revealed on the big day.
                 </p>
               </div>
             )}

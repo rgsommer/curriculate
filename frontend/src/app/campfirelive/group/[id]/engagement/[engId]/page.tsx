@@ -9,7 +9,7 @@ import {
   useRealtimeEngagement,
   useCreateEngagement,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
@@ -168,6 +168,20 @@ export default function EngagementDetailPage() {
 
   // Local UI state
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
+  // Baby Reveal: a proposed boy name, girl name, and a gender guess.
+  const [babyBoyName, setBabyBoyName] = useState("");
+  const [babyGirlName, setBabyGirlName] = useState("");
+  const [babyGuess, setBabyGuess] = useState<string | null>(null);
+  // Revealer's secret answer: gender + the real name.
+  const [babyAnswerGender, setBabyAnswerGender] = useState<string | null>(null);
+  const [babyAnswerName, setBabyAnswerName] = useState("");
+  useEffect(() => {
+    const parsed = parseBabyAnswer(revealAnswer?.answer);
+    if (parsed) {
+      setBabyAnswerGender(parsed.gender);
+      setBabyAnswerName(parsed.name ?? "");
+    }
+  }, [revealAnswer]);
   const [textInput, setTextInput] = useState("");
   // Open-ended poll: free-text answer per question (keyed by question index).
   const [openPollAnswers, setOpenPollAnswers] = useState<Record<number, string>>({});
@@ -722,6 +736,11 @@ export default function EngagementDetailPage() {
   const pledge = pledgeOf(engagement.config); // Pledge Drive (Read-A-Thon…)
   const draw = raffle?.draw === true; // Raffle Draw — random winner, no contest
   const cause = (engagement.config?.cause as string | undefined) || null; // declared cause
+  // Baby Reveal: the host, or the designated parent, may set/reveal the real answer.
+  const babyRevealerId = babyRevealOf(engagement.config)?.revealerUserId ?? null;
+  const canRevealBaby =
+    engagement.type === "baby_reveal" &&
+    (isCreator || (!!user && babyRevealerId === user.id));
   // Effective close = the grace deadline if voting closed with zero votes, else the
   // normal vote-close. Voting stays open through whichever is later.
   const voteClosesAt = raffle?.noVoteGraceUntil
@@ -1993,6 +2012,11 @@ export default function EngagementDetailPage() {
   const startEditResponse = () => {
     const c = (myResponse?.content ?? {}) as Record<string, unknown>;
     if (typeof c.option === "string") setSelectedOption(c.option);
+    if (engagement.type === "baby_reveal") {
+      if (typeof c.option === "string") setBabyGuess(c.option);
+      if (typeof c.boyName === "string") setBabyBoyName(c.boyName);
+      if (typeof c.girlName === "string") setBabyGirlName(c.girlName);
+    }
     if (typeof c.text === "string") setTextInput(c.text);
     if (typeof c.caption === "string") setTextInput(c.caption);
     if (engagement.type === "poll" && isOpenPoll) {
@@ -2070,6 +2094,26 @@ export default function EngagementDetailPage() {
     setSubmitting(true);
     await saveResponse({ option: selectedOption });
     setSubmitting(false);
+  };
+
+  // Baby Reveal: a name suggestion for each gender + a gender guess.
+  const handleBabySubmit = async () => {
+    if (!babyGuess) return;
+    const boy = babyBoyName.trim();
+    const girl = babyGirlName.trim();
+    if ([boy, girl].some((n) => n && hasProfanity(n))) {
+      alert("Let's keep it kind — please reword.");
+      return;
+    }
+    setSubmitting(true);
+    // `option` carries the gender guess so existing tally/winner logic still works.
+    const { error } = await saveResponse({
+      option: babyGuess,
+      boyName: boy || undefined,
+      girlName: girl || undefined,
+    });
+    setSubmitting(false);
+    if (error) alert("Couldn't submit: " + error);
   };
 
   // Open-ended poll: one free-text answer per question.
@@ -2764,29 +2808,66 @@ export default function EngagementDetailPage() {
 
       case "baby_reveal":
         return (
-          <div className="space-y-2">
+          <div className="space-y-3">
             <p className="text-xs text-slate-500">
-              Lock in your guess — it stays sealed until the reveal date.
+              Suggest a name for each, and guess the gender — all sealed until the reveal.
             </p>
-            {pollOptions.map((opt) => (
-              <button
-                key={opt}
-                onClick={() => setSelectedOption(opt)}
-                className={`w-full text-left rounded-xl border p-3 text-sm transition ${
-                  selectedOption === opt
-                    ? "border-sky-500 bg-sky-50 font-semibold"
-                    : "border-slate-200 bg-white hover:border-slate-300"
-                }`}
-              >
-                {opt}
-              </button>
-            ))}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs font-medium text-blue-700 mb-1">
+                  👦 Boy name
+                </label>
+                <input
+                  value={babyBoyName}
+                  onChange={(e) => setBabyBoyName(e.target.value)}
+                  placeholder="e.g. Liam"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-pink-600 mb-1">
+                  👧 Girl name
+                </label>
+                <input
+                  value={babyGirlName}
+                  onChange={(e) => setBabyGirlName(e.target.value)}
+                  placeholder="e.g. Emma"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+                />
+              </div>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                My guess
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {["Boy", "Girl"].map((opt) => (
+                  <button
+                    key={opt}
+                    onClick={() => setBabyGuess(opt)}
+                    className={`rounded-xl border p-3 text-sm font-semibold transition ${
+                      babyGuess === opt
+                        ? opt === "Boy"
+                          ? "border-blue-500 bg-blue-50 text-blue-700"
+                          : "border-pink-500 bg-pink-50 text-pink-700"
+                        : "border-slate-200 bg-white hover:border-slate-300"
+                    }`}
+                  >
+                    {opt === "Boy" ? "👦 Boy" : "👧 Girl"}
+                  </button>
+                ))}
+              </div>
+            </div>
             <button
-              onClick={handlePollSubmit}
-              disabled={!selectedOption || submitting}
+              onClick={handleBabySubmit}
+              disabled={
+                submitting ||
+                !babyGuess ||
+                (!babyBoyName.trim() && !babyGirlName.trim())
+              }
               className="w-full rounded-xl bg-gradient-to-r from-sky-500 to-indigo-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
-              {submitting ? "Submitting..." : "🍼 Lock In My Guess"}
+              {submitting ? "Submitting..." : "🍼 Lock It In"}
             </button>
           </div>
         );
@@ -4573,9 +4654,10 @@ export default function EngagementDetailPage() {
 
   const renderBabyRevealResults = () => {
     if (!showResults || engagement.type !== "baby_reveal") return null;
-    const answer = revealAnswer?.answer ?? null;
-    const tally: Record<string, number> = {};
-    pollOptions.forEach((o) => (tally[o] = 0));
+    const parsed = parseBabyAnswer(revealAnswer?.answer);
+    const answer = parsed?.gender ?? null;
+    const babyName = parsed?.name ?? null;
+    const tally: Record<string, number> = { Boy: 0, Girl: 0 };
     responses.forEach((r) => {
       const opt = (r.content as { option?: string })?.option;
       if (opt) tally[opt] = (tally[opt] ?? 0) + 1;
@@ -4584,16 +4666,39 @@ export default function EngagementDetailPage() {
     const winners = answer
       ? responses.filter((r) => (r.content as { option?: string })?.option === answer)
       : [];
+    // Everyone's name suggestions for the actual gender (the fun part).
+    const nameKey = answer === "Boy" ? "boyName" : answer === "Girl" ? "girlName" : null;
+    const suggestions = nameKey
+      ? responses
+          .map((r) => ({
+            who: memberNameOf(r.user_id, r.profile?.display_name),
+            name: ((r.content as Record<string, string>)?.[nameKey] ?? "").trim(),
+          }))
+          .filter((s) => s.name)
+      : [];
 
     return (
       <div className="space-y-3">
         {answer ? (
-          <div className="rounded-2xl border-2 border-sky-300 bg-gradient-to-br from-sky-50 to-indigo-50 p-5 text-center">
-            <div className="text-4xl mb-1">🎉</div>
-            <div className="text-xl font-extrabold text-slate-900">It&apos;s {answer}!</div>
-            <p className="mt-1 text-sm text-slate-600">
+          <div
+            className={`rounded-2xl border-2 p-5 text-center ${
+              answer === "Boy"
+                ? "border-blue-300 bg-gradient-to-br from-blue-50 to-sky-50"
+                : "border-pink-300 bg-gradient-to-br from-pink-50 to-rose-50"
+            }`}
+          >
+            <div className="text-4xl mb-1">{answer === "Boy" ? "👦" : "👧"}</div>
+            <div className="text-2xl font-black text-slate-900">
+              It&apos;s a {answer}!
+            </div>
+            {babyName && (
+              <div className="mt-1 text-lg font-extrabold text-slate-800">
+                Meet {babyName} 🎉
+              </div>
+            )}
+            <p className="mt-2 text-sm text-slate-600">
               {winners.length === 0
-                ? "Nobody guessed it!"
+                ? "Nobody guessed the gender!"
                 : `${winners.length} guessed right: ${winners
                     .map((w) => memberNameOf(w.user_id, w.profile?.display_name))
                     .join(", ")}`}
@@ -4601,7 +4706,31 @@ export default function EngagementDetailPage() {
           </div>
         ) : (
           <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-            Guesses are in — waiting for the host to set the real answer.
+            Guesses are in — waiting for the reveal.
+          </div>
+        )}
+
+        {/* Name suggestions for the actual gender — just for fun */}
+        {answer && suggestions.length > 0 && (
+          <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              Name ideas for a {answer.toLowerCase()}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {suggestions.map((s, i) => (
+                <span
+                  key={i}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                    babyName && s.name.toLowerCase() === babyName.toLowerCase()
+                      ? "border-emerald-400 bg-emerald-50 font-bold text-emerald-700"
+                      : "border-slate-200 bg-slate-50 text-slate-700"
+                  }`}
+                >
+                  {s.name}
+                  <span className="text-slate-400"> · {s.who}</span>
+                </span>
+              ))}
+            </div>
           </div>
         )}
 
@@ -6376,32 +6505,54 @@ export default function EngagementDetailPage() {
       )}
 
       {/* ── BABY REVEAL: host sets the secret answer (hidden until reveal) ── */}
-      {isCreator && engagement.type === "baby_reveal" && (
+      {canRevealBaby && (
         <div className="mb-6 rounded-2xl border border-sky-200 bg-sky-50/60 p-4">
           <div className="text-sm font-bold text-slate-900">
-            🤫 The real answer
-            {revealAnswer ? " — set, kept secret until the reveal" : " (only you can set this)"}
+            🤫 The real name &amp; gender
+            {revealAnswer ? " — set, kept secret until the reveal" : ""}
           </div>
-          <p className="text-xs text-slate-500 mt-0.5 mb-2">
-            Pick the true answer. It stays hidden from everyone until
-            {deadlineStr ? ` ${deadlineStr}` : " the reveal"} — then winners light up.
+          <p className="text-xs text-slate-500 mt-0.5 mb-3">
+            Only you can set this. It stays hidden from everyone until
+            {deadlineStr ? ` ${deadlineStr}` : " the reveal"} — then it&apos;s announced.
           </p>
-          <div className="flex flex-wrap gap-2">
-            {pollOptions.map((opt) => (
+          <div className="flex flex-wrap gap-2 mb-2">
+            {["Boy", "Girl"].map((opt) => (
               <button
                 key={opt}
-                onClick={() => setRevealAnswer(opt)}
-                className={`rounded-full border px-4 py-1.5 text-sm font-medium ${
-                  revealAnswer?.answer === opt
-                    ? "border-sky-500 bg-sky-500 text-white"
+                onClick={() => setBabyAnswerGender(opt)}
+                className={`rounded-full border px-4 py-1.5 text-sm font-bold ${
+                  babyAnswerGender === opt
+                    ? opt === "Boy"
+                      ? "border-blue-500 bg-blue-500 text-white"
+                      : "border-pink-500 bg-pink-500 text-white"
                     : "border-slate-300 bg-white text-slate-700 hover:border-sky-400"
                 }`}
               >
-                {opt}
-                {revealAnswer?.answer === opt ? " ✓" : ""}
+                {opt === "Boy" ? "👦 Boy" : "👧 Girl"}
               </button>
             ))}
           </div>
+          <input
+            value={babyAnswerName}
+            onChange={(e) => setBabyAnswerName(e.target.value)}
+            placeholder="The baby's name (optional)"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-sky-500"
+          />
+          <button
+            onClick={() =>
+              babyAnswerGender &&
+              setRevealAnswer(
+                JSON.stringify({
+                  gender: babyAnswerGender,
+                  name: babyAnswerName.trim() || null,
+                })
+              )
+            }
+            disabled={!babyAnswerGender}
+            className="mt-2 rounded-full bg-sky-600 px-5 py-1.5 text-sm font-bold text-white hover:bg-sky-700 disabled:opacity-50"
+          >
+            {revealAnswer ? "Update the secret" : "Save the secret"}
+          </button>
         </div>
       )}
 

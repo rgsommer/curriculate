@@ -241,6 +241,35 @@ export function tournamentOf(
   return t && (t.direction === "low" || t.direction === "high") ? t : null;
 }
 
+// Baby Reveal: who reveals the real name + gender (the person having the baby).
+// Guests propose a boy name + a girl name and guess the gender; the revealer (host
+// or this designated member) sets the secret answer (stored as JSON in
+// campfire_reveal_answers.answer: { gender, name }).
+export interface BabyRevealConfig {
+  revealerUserId?: string | null;
+}
+export function babyRevealOf(
+  config: Record<string, unknown> | null | undefined
+): BabyRevealConfig | null {
+  const b = (config ?? {})["babyReveal"] as BabyRevealConfig | undefined;
+  return b ?? null;
+}
+// Parse the secret answer: new format is JSON { gender, name }; legacy was a plain
+// gender string ("Boy" / "Girl").
+export function parseBabyAnswer(
+  raw: string | null | undefined
+): { gender: string; name: string | null } | null {
+  if (!raw) return null;
+  try {
+    const o = JSON.parse(raw);
+    if (o && typeof o === "object" && o.gender)
+      return { gender: String(o.gender), name: o.name ? String(o.name) : null };
+  } catch {
+    /* legacy plain string */
+  }
+  return { gender: raw, name: null };
+}
+
 // Pledge Drive (Read-A-Thon, Bike-A-Thon…): a sponsored challenge. Sponsors pledge
 // a lump sum or a per-unit rate toward a goal; on the date the host posts the result
 // and each pledge settles (auto-refund the shortfall). Money goes to the embedded
@@ -429,7 +458,7 @@ export const ENGAGEMENT_TYPES: Record<
   advice: { icon: "💡", label: "Advice", description: "Ask your group for counsel", hook: "Weigh in — the group wants your honest take.", color: "bg-teal-50 text-teal-700" },
   voice_response: { icon: "🎤", label: "Voice Response", description: "Leave voice notes instead of text", hook: "Say it out loud — drop a quick voice note.", color: "bg-rose-50 text-rose-700" },
   two_truths: { icon: "🕵️", label: "Two Truths & a Lie", description: "Everyone shares 3 statements — 2 true, 1 lie — then the group guesses the lie", hook: "Two truths and a lie — can the group spot your fib?", color: "bg-purple-50 text-purple-700" },
-  baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Set the choices (Boy/Girl, name, date…); everyone guesses, and it unseals on the big day with winners", hook: "Place your guess — all is revealed on the big day!", color: "bg-sky-50 text-sky-700" },
+  baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Guests suggest a boy name + a girl name and guess the gender. The parent (host or a chosen member) privately sets the real name & gender — revealed on the big day. Just for fun", hook: "Suggest names + guess the gender — revealed on the big day!", color: "bg-sky-50 text-sky-700" },
   most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
   scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
   tournament: { icon: "⛳", label: "Tournament", description: "A score leaderboard — players enter a number per round/hole; lowest or highest total wins. Add a cash prize. Players don't have to be in the same place", hook: "Post your scores — best total wins!", color: "bg-green-50 text-green-700" },
