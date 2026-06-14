@@ -138,6 +138,7 @@ export default function DashboardPage() {
     config: { occasion?: string } | null;
     deadline: string | null;
     birth_year: number | null;
+    revealedAt?: string | null;
   };
   const [todo, setTodo] = useState<TodoEng[]>([]);
 
@@ -252,7 +253,7 @@ export default function DashboardPage() {
       const { data: engs } = await supabase
         .from("engagements")
         .select(
-          "id, group_id, title, type, config, deadline, birth_year, excluded_user_ids"
+          "id, group_id, title, type, config, deadline, birth_year, excluded_user_ids, revealed_at"
         )
         .in("group_id", ids)
         .eq("status", "revealed");
@@ -271,6 +272,8 @@ export default function DashboardPage() {
           config: (e.config as { occasion?: string } | null) ?? null,
           deadline: (e.deadline as string | null) ?? null,
           birth_year: (e.birth_year as number | null) ?? null,
+          revealedAt:
+            (e as { revealed_at?: string | null }).revealed_at ?? null,
         }));
       // First-ever load: seed everything as seen so old reveals don't flood the list.
       try {
@@ -289,7 +292,19 @@ export default function DashboardPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey, user?.id]);
-  const newReveals = reveals.filter((e) => !seenReveals.has(e.id));
+  // Show a reveal if you haven't tapped it yet, OR it unlocked today/yesterday (fresh
+  // news surfaces for ~2 days even if you've glanced at it or it predates seeding).
+  const recentCutoff = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - 1); // start of yesterday
+    return d.getTime();
+  })();
+  const newReveals = reveals.filter(
+    (e) =>
+      !seenReveals.has(e.id) ||
+      (!!e.revealedAt && new Date(e.revealedAt).getTime() >= recentCutoff)
+  );
   const markRevealSeen = (id: string) => {
     setSeenReveals((prev) => {
       const next = new Set(prev);
