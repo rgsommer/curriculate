@@ -538,13 +538,24 @@ export default function NewEngagementPage() {
       selectedType === "pledge_drive" ||
       selectedType === "raffle_draw" ||
       reveal === "sealed";
-    const finalDeadline =
-      sealedReveal &&
-      !effectiveDeadline &&
-      !isBirthday &&
-      selectedType !== "baby_reveal"
-        ? new Date(Date.now() + 7 * 86400000)
-        : effectiveDeadline;
+    // A recurring engagement (e.g. a monthly check-in) needs a close date so it
+    // reveals and the cron spawns the next instance — otherwise it just stays open
+    // forever and never cycles. Default it to the repeat interval.
+    const recurDays =
+      recurrence === "daily"
+        ? 1
+        : recurrence === "weekly"
+        ? 7
+        : recurrence === "monthly"
+        ? 30
+        : 0;
+    const finalDeadline = effectiveDeadline
+      ? effectiveDeadline
+      : recurDays > 0 && !isBirthday
+      ? new Date(Date.now() + recurDays * 86400000)
+      : sealedReveal && !isBirthday && selectedType !== "baby_reveal"
+      ? new Date(Date.now() + 7 * 86400000)
+      : effectiveDeadline;
 
     // Cards + yearly events auto-open a lead time before the date.
     const schedulesOpen = isBirthday || recurrence === "yearly_nth";

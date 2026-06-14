@@ -1378,6 +1378,19 @@ See you around the campfire! 🏕️`
                           ● Your turn
                         </span>
                       ))}
+                    {/* Recurring series indicator */}
+                    {eng.recurrence_rule && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-50 border border-violet-200 px-2.5 py-1 text-xs font-semibold text-violet-700">
+                        🔁{" "}
+                        {eng.recurrence_rule === "daily"
+                          ? "Daily"
+                          : eng.recurrence_rule === "weekly"
+                          ? "Weekly"
+                          : eng.recurrence_rule === "monthly"
+                          ? "Monthly"
+                          : "Yearly"}
+                      </span>
+                    )}
                     {/* Group gift running total — everyone sees it by default (never
                         the surprise recipient); the host can restrict via giftShowTotal */}
                     {(eng.gift_enabled || !!raffleOf(eng.config)) &&
