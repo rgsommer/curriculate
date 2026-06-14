@@ -227,6 +227,85 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey, user?.id]);
 
+  // "Revealed!" — engagements across your groups that have just unlocked, so a reveal
+  // announces itself instead of silently sliding into the Revealed tab. Per-person:
+  // each item stays until you tap it (tracked in localStorage). First load seeds the
+  // current reveals as already-seen, so existing ones don't flood the list.
+  const [reveals, setReveals] = useState<TodoEng[]>([]);
+  const [seenReveals, setSeenReveals] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("campfire_seen_reveals");
+      if (raw) setSeenReveals(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+  useEffect(() => {
+    const ids = groupIdsKey ? groupIdsKey.split(",") : [];
+    if (ids.length === 0 || !user?.id) {
+      setReveals([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data: engs } = await supabase
+        .from("engagements")
+        .select(
+          "id, group_id, title, type, config, deadline, birth_year, excluded_user_ids"
+        )
+        .in("group_id", ids)
+        .eq("status", "revealed");
+      if (cancelled) return;
+      const list: TodoEng[] = (engs ?? [])
+        .filter(
+          (e) =>
+            e.type !== "signup" &&
+            !((e.excluded_user_ids as string[] | null) ?? []).includes(user.id)
+        )
+        .map((e) => ({
+          id: e.id as string,
+          group_id: e.group_id as string,
+          title: e.title as string,
+          type: e.type as string,
+          config: (e.config as { occasion?: string } | null) ?? null,
+          deadline: (e.deadline as string | null) ?? null,
+          birth_year: (e.birth_year as number | null) ?? null,
+        }));
+      // First-ever load: seed everything as seen so old reveals don't flood the list.
+      try {
+        if (localStorage.getItem("campfire_seen_reveals") === null) {
+          const seeded = list.map((e) => e.id);
+          localStorage.setItem("campfire_seen_reveals", JSON.stringify(seeded));
+          if (!cancelled) setSeenReveals(new Set(seeded));
+        }
+      } catch {
+        /* ignore */
+      }
+      if (!cancelled) setReveals(list);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groupIdsKey, user?.id]);
+  const newReveals = reveals.filter((e) => !seenReveals.has(e.id));
+  const markRevealSeen = (id: string) => {
+    setSeenReveals((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      try {
+        localStorage.setItem(
+          "campfire_seen_reveals",
+          JSON.stringify(Array.from(next))
+        );
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  };
+
   // Host name for groups you JOINED — keyed by GROUP id, preferring the host's
   // per-group display name ("Dad" in Family) over their global profile name.
   const [creatorNames, setCreatorNames] = useState<Record<string, string>>({});
@@ -399,6 +478,50 @@ export default function DashboardPage() {
                       title keeps the full width on a phone. */}
                   <span className="flex-shrink-0 text-lg text-orange-400 transition group-hover:translate-x-0.5 group-hover:text-orange-600">
                     →
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Revealed! — newly-unlocked results, one per person until they look. */}
+      {newReveals.length > 0 && (
+        <div className="mb-8 rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 p-5 shadow-sm">
+          <div className="mb-3 flex items-center gap-2">
+            <span className="text-xl">🎉</span>
+            <h2 className="text-base font-extrabold text-slate-900">
+              Revealed!
+              <span className="ml-2 rounded-full bg-emerald-500 px-2 py-0.5 text-xs font-bold text-white align-middle">
+                {newReveals.length}
+              </span>
+            </h2>
+            <span className="text-xs text-slate-500">the results are in — tap to see</span>
+          </div>
+          <div className="space-y-2">
+            {newReveals.map((e) => {
+              const g = groups.find((gr) => gr.id === e.group_id);
+              const meta = ENGAGEMENT_TYPES[e.type as EngagementType];
+              return (
+                <Link
+                  key={e.id}
+                  href={`/campfirelive/group/${e.group_id}/engagement/${e.id}`}
+                  onClick={() => markRevealSeen(e.id)}
+                  className="group flex items-center gap-3 rounded-xl border border-emerald-200 bg-white px-4 py-3 transition hover:border-emerald-400 hover:shadow-sm"
+                >
+                  <span className="flex-shrink-0 text-2xl">{engagementIcon(e)}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-semibold text-slate-900">
+                      {resolveTitle(e.title, e.birth_year, e.deadline)}
+                    </div>
+                    <div className="truncate text-xs text-slate-500">
+                      {meta?.label ?? "Activity"}
+                      {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
+                    </div>
+                  </div>
+                  <span className="flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
+                    See it
                   </span>
                 </Link>
               );
