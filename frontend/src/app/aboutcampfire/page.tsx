@@ -251,13 +251,18 @@ export default function AboutCampfirePage() {
             ],
             featureList: [
               "Sealed results — nobody sees answers until everyone responds",
-              "Engagement types: polls, prize challenges, scavenger hunts, tournaments, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
+              "Engagement types: polls, prize challenges, scavenger hunts, tournaments, raffle draws, pledge drives, truth or dare, photo pose, share, accountability, games, trivia, anonymous judge, guess, surprise, advice",
               "Celebration Cards — private surprise cards for birthdays, anniversaries, weddings, Mother's/Father's Day, holidays and one-time occasions; sealed until the special day, recurring yearly",
               "Group gifts — everyone chips in toward one gift card; the recipient gets the full amount because contributors cover the processing fee; running total visible to all but the recipient",
               "Secret Santa gift exchange — auto-assign who buys for whom, optionally matched by preference; assignments stay private to each person",
               "Prize Challenges — photo challenges with a cash pot the group votes on (one vote each); the winner takes the gift card; players don't have to be in the same place",
               "Scavenger Hunts — a multi-stop photo checklist done in any order, with an optional cash pot; photos are EXIF date-checked for fair play",
               "Tournaments — a score leaderboard for golf, runs, games and more; lowest or highest total wins the pot, with rivals anywhere",
+              "Raffle Draw — a straight-up raffle: everyone chips in (weighted odds) and a random winner takes the pot; draw live at the event or automatically, always 100% random",
+              "Pledge Drives — sponsored Read-A-Thons / Bike-A-Thons; sponsors pledge a lump sum or per-unit rate, charged the estimate upfront and auto-refunded the shortfall once the host posts the result",
+              "QR to contribute — print a QR code so anyone at an event can chip in or donate from their phone, no account needed",
+              "Anonymous donations — give to a fundraiser without an account; raffle entrants leave a name (optional email) so a winner can be reached",
+              "Declared cause — hosts can name a cause for the funds (the host forwards the proceeds; Campfire isn't a charity)",
               "Prize-pot funding — fund a prize event by optional chip-ins or a set entry fee; a referrer earns 3% on these",
               "Party Sign-ups — potlucks and meal trains with RSVP, claimable bring-slots (unlimited slots supported), free-text items, and AI dish suggestions that balance the menu",
               "Bulk-add birthdays — seed a whole family or class of recurring cards from one list, reusing a template's photos",
@@ -574,6 +579,8 @@ export default function AboutCampfirePage() {
           <EngCard icon="🎅" name="Secret Santa" desc="Run a gift exchange: Campfire randomly assigns who buys for whom and keeps each match private until the reveal." />
           <EngCard icon="🔍" name="Scavenger Hunt" desc="A multi-stop photo checklist — 'you at Yonge & Bloor', 'you in a boat' — done in any order. Add a cash pot the group votes on. Photos are EXIF date-checked for fair play." />
           <EngCard icon="⛳" name="Tournament" desc="A score leaderboard — players post a number each round; lowest or highest total wins the pot. Golf, runs, step counts, games — rivals don't have to be in the same place." />
+          <EngCard icon="🎟️" name="Raffle Draw" desc="A straight-up raffle — everyone chips in (more chips, better odds), and a random winner takes the pot. Family reunions, 50-50 draws. Draw it live at the event or automatically — always 100% random." />
+          <EngCard icon="🎗️" name="Pledge Drive" desc="A sponsored Read-A-Thon / Bike-A-Thon. Sponsors pledge a lump sum or per page/km; post the result and each pledge settles automatically — pay only for what's achieved, shortfalls auto-refunded." />
           <EngCard icon="🤝" name="Care Check-in" desc="One form, several optional sections (how you're doing, prayer/support, praise, reflection). Fill any or all. Can be kept private to the host, with optional anonymous replies." />
           <EngCard icon="💡" name="Advice" desc="Ask your group or filtered random users for counsel." />
           <EngCard icon="🎤" name="Voice Response" desc="Leave voice notes instead of text. Lower friction, higher personality." />
