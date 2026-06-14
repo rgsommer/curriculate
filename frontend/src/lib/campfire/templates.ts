@@ -277,6 +277,16 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         reveal: "sealed",
       },
       {
+        id: "celebration-card",
+        name: "Celebration Card 🎂",
+        type: "birthday",
+        title: "A card for someone special 🎉",
+        description:
+          "Everyone secretly signs the card — each wish stays private until it opens on the day. Add a group gift to chip in together.",
+        occasion: "birthday",
+        reveal: "sealed",
+      },
+      {
         id: "coach-gift",
         name: "Coach Thank-You 🏆",
         type: "birthday",
@@ -327,7 +337,7 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
   },
   {
     id: "prize-challenges",
-    name: "Prize Challenges",
+    name: "Prize & Fundraisers",
     emoji: "🏆",
     templates: [
       {
@@ -338,6 +348,22 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         description:
           "Post your best entry. Everyone chips in to the pot all season — when it closes, the group votes and the winner takes the gift card.",
         raffle: true,
+      },
+      {
+        id: "raffle-draw",
+        name: "Raffle Draw",
+        type: "raffle_draw",
+        title: "Family Raffle 🎟️",
+        description:
+          "Chip in for a chance to win the pot — a winner is drawn at the end!",
+      },
+      {
+        id: "pledge-drive",
+        name: "Pledge Drive",
+        type: "pledge_drive",
+        title: "Read-A-Thon 🎗️",
+        description:
+          "Sponsor my challenge! Pledge a lump sum or per page — you only pay for what's achieved.",
       },
     ],
   },

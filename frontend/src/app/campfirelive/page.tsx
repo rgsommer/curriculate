@@ -24,6 +24,9 @@ const START_TEMPLATE_LABELS: Record<string, string> = {
   "thank-you-card": "thank-you card 💌",
   "christmas-card": "Christmas card 🎄",
   "raffle-challenge": "prize challenge 🏆",
+  "raffle-draw": "raffle 🎟️",
+  "pledge-drive": "pledge drive 🎗️",
+  "celebration-card": "celebration card 🎂",
 };
 
 export default function DashboardPage() {

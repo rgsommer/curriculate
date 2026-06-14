@@ -48,7 +48,13 @@ export default function SiteHeader() {
   // The footer stays, so they can still reach the other Curriculate products.
   if (pathname?.startsWith("/campfirelive")) return null;
   // Paid-traffic landing pages stay distraction-free (single CTA, no top nav).
-  if (pathname?.startsWith("/play")) return null;
+  if (
+    pathname?.startsWith("/play") ||
+    pathname?.startsWith("/raffle") ||
+    pathname?.startsWith("/pledge") ||
+    pathname?.startsWith("/groupcards")
+  )
+    return null;
   // Public QR contribute page — minimal chrome.
   if (pathname?.startsWith("/give")) return null;
 
