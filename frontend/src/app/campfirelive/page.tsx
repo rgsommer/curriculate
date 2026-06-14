@@ -234,12 +234,29 @@ export default function DashboardPage() {
   // current reveals as already-seen, so existing ones don't flood the list.
   const [reveals, setReveals] = useState<TodoEng[]>([]);
   const [seenReveals, setSeenReveals] = useState<Set<string>>(new Set());
+  // A fixed floor (set once): reveals from the floor onward stay in the box until you
+  // tap them — no expiry. The first time, the floor reaches back ~1 day so recent
+  // reveals surface, and the old (possibly-stale) seen set is cleared for a fresh start.
+  const [revealFloor, setRevealFloor] = useState<number>(() => Date.now());
   useEffect(() => {
     try {
-      const raw = localStorage.getItem("campfire_seen_reveals");
-      if (raw) setSeenReveals(new Set(JSON.parse(raw) as string[]));
+      const f = localStorage.getItem("campfire_reveal_floor");
+      if (f === null) {
+        const d = new Date(); // reach back to the start of yesterday, once
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - 1);
+        const floor = d.getTime();
+        localStorage.setItem("campfire_reveal_floor", String(floor));
+        localStorage.setItem("campfire_seen_reveals", JSON.stringify([]));
+        setRevealFloor(floor);
+        setSeenReveals(new Set());
+      } else {
+        setRevealFloor(Number(f) || 0);
+        const raw = localStorage.getItem("campfire_seen_reveals");
+        if (raw) setSeenReveals(new Set(JSON.parse(raw) as string[]));
+      }
     } catch {
-      /* ignore */
+      setRevealFloor(0);
     }
   }, []);
   useEffect(() => {
@@ -289,31 +306,18 @@ export default function DashboardPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey, user?.id]);
-  // Which reveals to surface. A reveal shows if it's within the last week AND either
-  // it unlocked today/yesterday (fresh — always shows) or you haven't tapped it yet
-  // (stays until you look). No first-load seeding — the 1-week window + cap prevent a
-  // flood, and reveal time falls back to the deadline when revealed_at isn't set.
-  const nowMs2 = Date.now();
-  const startOfYesterday = (() => {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-    d.setDate(d.getDate() - 1);
-    return d.getTime();
-  })();
-  const weekAgo = nowMs2 - 7 * 86400000;
+  // A reveal stays in the box until you tap it — every reveal from the floor onward,
+  // no time-based expiry. (Reveal time falls back to the deadline when revealed_at is
+  // missing on older rows.)
   const newReveals = reveals
     .map((e) => {
       const rt = e.revealedAt ? new Date(e.revealedAt).getTime() : null;
       const ref = rt ?? (e.deadline ? new Date(e.deadline).getTime() : 0);
-      return { e, rt, ref };
+      return { e, ref };
     })
-    .filter(({ e, rt, ref }) => {
-      const isRecent = rt !== null && rt >= startOfYesterday; // today / yesterday
-      const isUnseen = !seenReveals.has(e.id);
-      return ref >= weekAgo && (isRecent || isUnseen);
-    })
+    .filter(({ e, ref }) => !seenReveals.has(e.id) && ref >= revealFloor)
     .sort((a, b) => b.ref - a.ref)
-    .slice(0, 12)
+    .slice(0, 20)
     .map(({ e }) => e);
   const markRevealSeen = (id: string) => {
     setSeenReveals((prev) => {
