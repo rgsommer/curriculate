@@ -35,16 +35,28 @@ $("save").addEventListener("click", async () => {
   load();
 });
 
-$("testNow").addEventListener("click", async () => {
-  $("testNow").textContent = "Pushing…";
-  // Save first so the push uses the latest values.
+async function saveFields() {
   await chrome.storage.local.set({
     edsbyHost: $("edsbyHost").value.trim(),
     ingestToken: $("token").value.trim(),
     ingestUrl: $("ingestUrl").value.trim(),
   });
+}
+
+$("testNow").addEventListener("click", async () => {
+  $("testNow").textContent = "Pushing…";
+  await saveFields(); // use the latest values
   const r = await chrome.runtime.sendMessage({ type: "pushNow" });
   $("testNow").textContent = "Push current cookie now";
+  await load();
+  $("lastPush").textContent = JSON.stringify(r || { ok: false, error: "no response" }, null, 2);
+});
+
+$("oneShot").addEventListener("click", async () => {
+  $("oneShot").textContent = "Syncing…";
+  await saveFields();
+  const r = await chrome.runtime.sendMessage({ type: "pushOneShot" });
+  $("oneShot").textContent = "Sync one-time session (honour roll)";
   await load();
   $("lastPush").textContent = JSON.stringify(r || { ok: false, error: "no response" }, null, 2);
 });

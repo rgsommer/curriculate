@@ -45,7 +45,9 @@ async function readCookieHeader(host) {
 
 // ---- push ------------------------------------------------------------------
 
-async function pushNow() {
+// oneShot=true pushes the cookie into a short-lived, single-run slot (for an
+// honour-roll run) instead of the persistent session — so it isn't stored warm.
+async function pushNow(oneShot = false) {
   const cfg = await getConfig();
   if (!cfg.edsbyHost) return setLast({ ok: false, error: "Set your Edsby host on the options page." });
   if (!cfg.ingestToken) return setLast({ ok: false, error: "Set your Behaviours ingest token on the options page." });
@@ -62,6 +64,7 @@ async function pushNow() {
   for (const k of ["jver", "cver", "userNid", "formkey"]) {
     if (pageCreds && pageCreds[k]) payload[k] = pageCreds[k];
   }
+  if (oneShot) { payload.oneShot = true; payload.ttlMinutes = 10; }
 
   try {
     const resp = await fetch(cfg.ingestUrl, {
@@ -165,7 +168,11 @@ chrome.action.onClicked.addListener(async () => {
 // Options page → manual push for testing.
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.type === "pushNow") {
-    pushNow().then(sendResponse);
+    pushNow(false).then(sendResponse);
+    return true; // async response
+  }
+  if (msg && msg.type === "pushOneShot") {
+    pushNow(true).then(sendResponse);
     return true; // async response
   }
 });

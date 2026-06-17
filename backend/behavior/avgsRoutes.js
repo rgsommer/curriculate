@@ -48,9 +48,19 @@ async function loadEdsbySession(schoolId, overrideCookie) {
   if (!e.baseUrl) {
     return { error: "Edsby base URL isn't set — an admin sets it once in Behaviours Setup → Edsby." };
   }
-  const cookie = pasted || (e.cookieEnc ? decrypt(e.cookieEnc) : "");
+
+  // Session priority: (1) cookie pasted for this run, (2) one-shot run slot the
+  // Cookie Sync extension pushed (if still within its TTL), (3) the stored
+  // persistent session. (1) and (2) are transient — nothing derived is saved.
+  let cookie = pasted;
+  let fromRunSlot = false;
+  if (!cookie && e.runCookieEnc && e.runCookieExpiresAt && new Date(e.runCookieExpiresAt).getTime() > Date.now()) {
+    cookie = decrypt(e.runCookieEnc);
+    fromRunSlot = true;
+  }
+  if (!cookie) cookie = e.cookieEnc ? decrypt(e.cookieEnc) : "";
   if (!cookie) {
-    return { error: "Edsby isn't connected. Either paste a session below to run without storing it, or connect Edsby in Behaviours Setup." };
+    return { error: "Edsby isn't connected. Sync a one-time session from the Cookie Sync extension, paste a session below, or connect Edsby in Behaviours Setup." };
   }
   return {
     session: {
@@ -59,9 +69,15 @@ async function loadEdsbySession(schoolId, overrideCookie) {
       jver: e.jver || "",
       cver: e.cver || "",
       userNid: e.userNid || "", // used to refresh the formkey from the bootstrap
-      transient: !!pasted, // pasted session → never persist anything derived from it
+      transient: !!pasted || fromRunSlot, // pasted/one-shot → never persist anything derived
+      fromRunSlot, // so the run can clear the one-shot slot when it's done
     },
   };
+}
+
+// Clear the one-shot run slot once a run has used it (single-use semantics).
+async function clearRunSlot(schoolId) {
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "edsby.runCookieEnc": "", "edsby.runCookieExpiresAt": null } });
 }
 
 async function getOrCreateConfig(schoolId) {
@@ -445,6 +461,9 @@ export function buildAvgsRouter({ requireAdmin }) {
           classesWithNoMarks: classDiag,
         },
       });
+
+      // A one-shot session is single-use: clear it once the run has finished.
+      if (session.fromRunSlot) await clearRunSlot(req.schoolId);
 
       res.json({ ok: true, snapshot });
     } catch (err) {

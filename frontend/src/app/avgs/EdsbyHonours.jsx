@@ -304,17 +304,23 @@ export default function EdsbyHonours() {
       <div className="mt-2">
         <button type="button" onClick={() => setShowRunCookie((v) => !v)}
           className="text-xs font-medium text-slate-500 hover:text-slate-700">
-          {showRunCookie ? "▾" : "▸"} Run without storing my session (paste each time)
+          {showRunCookie ? "▾" : "▸"} Run without storing my session
         </button>
         {showRunCookie && (
-          <div className="mt-1">
+          <div className="mt-1 space-y-2">
+            <p className="text-xs text-slate-500">
+              <strong>Easiest:</strong> in the Cookie Sync extension, click <em>“Sync one-time session (honour roll)”</em>,
+              then come back and run below. It pushes your session into a short-lived slot the run uses once — nothing is
+              stored on the server. (A browser can&apos;t read your Edsby cookie from this page, so the extension does it.)
+            </p>
+            <p className="text-xs text-slate-400">Or paste it manually for this run only:</p>
             <input type="password" value={runCookie} onChange={(e) => setRunCookie(e.target.value)}
               placeholder="paste your Edsby session cookie — used for this run only, never saved"
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
-            <p className="mt-1 text-xs text-slate-400">
-              When filled, this session is used for the next Extract/Probe/Refresh and is held only in memory on the
-              server — nothing is written to the database. Best for the school-wide (admin) run, so the admin session
-              never sits stored. Leave blank to use the connection saved in Behaviours Setup.
+            <p className="text-xs text-slate-400">
+              Either way the session is held only in memory for the run — nothing is written to the database. Best for the
+              school-wide (admin) run, so the admin session never sits stored. Leave blank to use the connection saved in
+              Behaviours Setup.
             </p>
           </div>
         )}

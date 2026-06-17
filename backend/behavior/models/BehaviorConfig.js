@@ -61,6 +61,12 @@ const BehaviorConfigSchema = new mongoose.Schema(
       // Bearer token a browser script includes to PUSH fresh creds (cookie etc.)
       // into the app without a login — see POST /edsby/ingest. Revocable.
       ingestToken: { type: String, default: "" },
+      // One-shot session slot for an honour-roll run: the Cookie Sync extension
+      // can push a cookie here (oneShot:true) instead of into the persistent
+      // cookieEnc. The /avgs run uses it, and it auto-expires + is cleared after
+      // the run — so the (often admin) session isn't left warm on the server.
+      runCookieEnc: { type: String, default: "" },
+      runCookieExpiresAt: { type: Date, default: null },
       updatedAt: { type: Date, default: null },
     },
 
