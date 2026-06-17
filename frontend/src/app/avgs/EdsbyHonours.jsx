@@ -45,6 +45,8 @@ export default function EdsbyHonours() {
   const [diagnostics, setDiagnostics] = useState(null); // raw Edsby diagnostics to show on a parse miss
   const [showClasses, setShowClasses] = useState(false);
   const [openStudent, setOpenStudent] = useState(null); // accordion: one student's course breakdown at a time
+  const [runCookie, setRunCookie] = useState(""); // paste a session to run without storing it
+  const [showRunCookie, setShowRunCookie] = useState(false);
 
   useEffect(() => {
     const token = getToken();
@@ -93,6 +95,10 @@ export default function EdsbyHonours() {
     }
   }
 
+  // Body for an Edsby run. A pasted session is sent for this run only — the
+  // server uses it in memory and never stores it.
+  const runBody = () => (runCookie.trim() ? { edsbyCookie: runCookie.trim() } : {});
+
   async function extractIds() {
     setBusy("extract");
     setNotice(null);
@@ -100,7 +106,7 @@ export default function EdsbyHonours() {
     try {
       // Route path stays /harvest-nids (internal, never shown) so the button
       // doesn't 404 during the backend's deploy lag; the UI says "Extract".
-      const r = await api("/avgs/harvest-nids", { method: "POST", body: {}, timeoutMs: 120000 });
+      const r = await api("/avgs/harvest-nids", { method: "POST", body: runBody(), timeoutMs: 120000 });
       if (!r.ok) {
         // Keep the diagnostics Edsby returned so the parser can be tuned.
         if (r.diagnostics) setDiagnostics(r.diagnostics);
@@ -129,7 +135,7 @@ export default function EdsbyHonours() {
     setNotice(null);
     setDiagnostics(null);
     try {
-      const r = await api("/avgs/probe", { method: "POST", body: {}, timeoutMs: 120000 });
+      const r = await api("/avgs/probe", { method: "POST", body: runBody(), timeoutMs: 120000 });
       if (!r.ok) throw new Error(r.error);
       setCfg(r.config);
       setShowClasses(true);
@@ -153,7 +159,7 @@ export default function EdsbyHonours() {
     setBusy("refresh");
     setNotice(null);
     try {
-      const r = await api("/avgs/refresh", { method: "POST", body: {}, timeoutMs: 300000 });
+      const r = await api("/avgs/refresh", { method: "POST", body: runBody(), timeoutMs: 300000 });
       if (!r.ok) throw new Error(r.error);
       setSnapshot(r.snapshot);
       const d = r.snapshot.diagnostics || {};
@@ -294,6 +300,25 @@ export default function EdsbyHonours() {
         A complete, weighted honour roll needs an <strong>admin</strong> Edsby session connected (a teacher login only
         sees its own classes). Set it up under <a href="/behavior/setup#edsby" className="text-blue-600 hover:underline">Behaviours → Edsby connection</a>.
       </p>
+
+      <div className="mt-2">
+        <button type="button" onClick={() => setShowRunCookie((v) => !v)}
+          className="text-xs font-medium text-slate-500 hover:text-slate-700">
+          {showRunCookie ? "▾" : "▸"} Run without storing my session (paste each time)
+        </button>
+        {showRunCookie && (
+          <div className="mt-1">
+            <input type="password" value={runCookie} onChange={(e) => setRunCookie(e.target.value)}
+              placeholder="paste your Edsby session cookie — used for this run only, never saved"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <p className="mt-1 text-xs text-slate-400">
+              When filled, this session is used for the next Extract/Probe/Refresh and is held only in memory on the
+              server — nothing is written to the database. Best for the school-wide (admin) run, so the admin session
+              never sits stored. Leave blank to use the connection saved in Behaviours Setup.
+            </p>
+          </div>
+        )}
+      </div>
 
       {notice && (
         <p className={`mt-3 rounded-lg p-3 text-sm ${

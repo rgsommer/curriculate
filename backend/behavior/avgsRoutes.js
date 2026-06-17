@@ -36,19 +36,30 @@ import {
 const MAX_STUDENTS_PER_REFRESH = 600;
 const FETCH_CONCURRENCY = 4;
 
-async function loadEdsbySession(schoolId) {
+// Build the Edsby session for an honour-roll run. If `overrideCookie` is given
+// (pasted in the panel for this run), use it and mark the session TRANSIENT —
+// it's held only in memory for this request and never written to the database,
+// so the high-value (often admin) session isn't left warm on the server. Only
+// the non-secret base URL / version headers come from the stored config.
+async function loadEdsbySession(schoolId, overrideCookie) {
   const config = await BehaviorConfig.findOne({ schoolId }).lean();
   const e = config?.edsby || {};
-  if (!e.baseUrl || !e.cookieEnc) {
-    return { error: "Edsby is not connected for this school — connect it in Behaviours Setup first (base URL + session cookie, ideally via the Cookie Sync extension)." };
+  const pasted = String(overrideCookie || "").trim();
+  if (!e.baseUrl) {
+    return { error: "Edsby base URL isn't set — an admin sets it once in Behaviours Setup → Edsby." };
+  }
+  const cookie = pasted || (e.cookieEnc ? decrypt(e.cookieEnc) : "");
+  if (!cookie) {
+    return { error: "Edsby isn't connected. Either paste a session below to run without storing it, or connect Edsby in Behaviours Setup." };
   }
   return {
     session: {
       baseUrl: e.baseUrl,
-      cookie: decrypt(e.cookieEnc),
+      cookie,
       jver: e.jver || "",
       cver: e.cver || "",
       userNid: e.userNid || "", // used to refresh the formkey from the bootstrap
+      transient: !!pasted, // pasted session → never persist anything derived from it
     },
   };
 }
@@ -82,7 +93,10 @@ async function loadZoomRoster(schoolId, session, bodyZoomId) {
     const r = await fetchZoomStudents(session, nodeId, savedFormkey);
     if (r.formkey && r.formkey !== savedFormkey) {
       savedFormkey = r.formkey;
-      await BehaviorConfig.updateOne({ schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+      // Don't persist anything derived from a pasted (transient) session.
+      if (!session.transient) {
+        await BehaviorConfig.updateOne({ schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+      }
     }
     if (r.sessionExpired) return { sessionExpired: true };
     if (r.view) view = r.view;
@@ -167,7 +181,7 @@ export function buildAvgsRouter({ requireAdmin }) {
   // This is the prerequisite the probe/refresh error messages point at.
   router.post("/harvest-nids", requireAdmin, async (req, res, next) => {
     try {
-      const { session, error } = await loadEdsbySession(req.schoolId);
+      const { session, error } = await loadEdsbySession(req.schoolId, req.body?.edsbyCookie);
       if (error) return res.json({ ok: false, error });
 
       const r = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
@@ -296,7 +310,7 @@ export function buildAvgsRouter({ requireAdmin }) {
   router.post("/probe", requireAdmin, async (req, res, next) => {
     try {
       const cfg = await getOrCreateConfig(req.schoolId);
-      const { session, error } = await loadEdsbySession(req.schoolId);
+      const { session, error } = await loadEdsbySession(req.schoolId, req.body?.edsbyCookie);
       if (error) return res.json({ ok: false, error });
 
       const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
@@ -359,7 +373,7 @@ export function buildAvgsRouter({ requireAdmin }) {
   router.post("/refresh", async (req, res, next) => {
     try {
       const cfg = await getOrCreateConfig(req.schoolId);
-      const { session, error } = await loadEdsbySession(req.schoolId);
+      const { session, error } = await loadEdsbySession(req.schoolId, req.body?.edsbyCookie);
       if (error) return res.json({ ok: false, error });
 
       const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
