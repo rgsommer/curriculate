@@ -151,12 +151,18 @@ code.k{background:var(--lt);color:var(--navy);padding:1px 6px;border-radius:5px;
 <body>
 <div id="root"></div>
 <div id="modal"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* ========================================================================
    InSite — School Management System (complete clickable front-end)
    Single-file demo aligned to the InSite Blueprint (Ontario Grades 9–12).
    Synthetic, deterministic demo data; edits persist to localStorage.
    ===================================================================== */
+
+/* ----------------------- Supabase backend (optional) ------------------ */
+const SUPABASE_URL='https://fwznyemohapnblohnqwg.supabase.co';
+const SUPABASE_KEY='sb_publishable__MA77fjfYkr8SKgrU0PxrA_6YO3XYeR';
+const sb=(window.supabase&&SUPABASE_URL)?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
 
 /* ----------------------- seeded RNG (deterministic) ------------------- */
 let _seed = 1987;
@@ -553,6 +559,12 @@ function loginScreen(){
       <button class="role-btn" onclick="login('student')"><div class="ric" style="background:#7b4ca0">🎓</div><div><b>Student</b><span>Marks, assignments, quizzes, grad path</span></div></button>
       <button class="role-btn" onclick="login('parent')"><div class="ric" style="background:#bb5c2a">👨‍👩‍👧</div><div><b>Parent / Guardian</b><span>Your child's portal</span></div></button>
       <div class="pf" style="margin-top:14px">🔒 Role-based access control — each role sees only what it should.</div>
+      <div class="hr" style="margin:16px 0"></div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:8px">CONNECT TO THE LIVE BACKEND (BETA)</div>
+      <input id="beEmail" placeholder="Email" style="width:100%;margin-bottom:7px">
+      <input id="bePw" type="password" placeholder="Password" style="width:100%;margin-bottom:7px">
+      <div class="row"><button class="btn sm" onclick="backendAuth('signin')">Sign in</button><button class="btn ghost sm" onclick="backendAuth('signup')">Create account</button></div>
+      <div id="beMsg" class="pf" style="margin-top:8px"></div>
     </div>
   </div></div>`;
 }
@@ -562,8 +574,57 @@ function login(role){
   if(role==='parent'){ SESSION.child=demoChild(); ROLES.parent.name=SESSION.child.g1.name; }
   bootApp();
 }
-function logout(){ SESSION=null; closeModal(); loginScreen(); }
+function logout(){ if(SESSION&&SESSION.backend&&sb){sb.auth.signOut();} SESSION=null; closeModal(); loginScreen(); }
 window.login=login; window.logout=logout;
+
+/* ----------------------- live backend auth --------------------------- */
+window.backendAuth=async(mode)=>{
+  const msg=document.getElementById('beMsg');
+  if(!sb){ msg.style.color='var(--red)'; msg.textContent='Backend client not loaded.'; return; }
+  const email=document.getElementById('beEmail').value.trim();
+  const pw=document.getElementById('bePw').value;
+  if(!email||!pw){ msg.style.color='var(--red)'; msg.textContent='Enter email and password.'; return; }
+  msg.style.color='var(--muted)'; msg.textContent='Working…';
+  try{
+    const res = mode==='signup'
+      ? await sb.auth.signUp({email,password:pw})
+      : await sb.auth.signInWithPassword({email,password:pw});
+    if(res.error){ msg.style.color='var(--red)'; msg.textContent=res.error.message; return; }
+    if(mode==='signup' && !res.data.session){ msg.style.color='var(--green)'; msg.textContent='Account created — check your email to confirm, then Sign in.'; return; }
+    await enterBackend();
+  }catch(e){ msg.style.color='var(--red)'; msg.textContent=e.message; }
+};
+async function enterBackend(){
+  const { data:{ user } } = await sb.auth.getUser();
+  if(!user){ loginScreen(); return; }
+  let prof=null;
+  try{ const r=await sb.from('profiles').select('*').eq('id',user.id).single(); prof=r.data; }catch(e){}
+  const role=(prof&&prof.role)||'student';
+  SESSION={ role, backend:true, user, profile:prof };
+  if(role==='student') SESSION.student=demoStudent();
+  if(role==='parent') SESSION.child=demoChild();
+  if(prof&&prof.full_name) ROLES[role].name=prof.full_name;
+  showBackendConnected(user, prof, role);
+}
+async function backendSignOut(){ if(sb) await sb.auth.signOut(); SESSION=null; loginScreen(); }
+window.backendSignOut=backendSignOut;
+function showBackendConnected(user, prof, role){
+  document.getElementById('root').innerHTML=`
+  <div class="login-wrap"><div class="login-card" style="grid-template-columns:1fr;max-width:560px">
+    <div class="login-right" style="padding:34px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:18px"><span style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#3a86d4,#5aa0e6);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff">iS</span> <b style="font-size:18px;color:var(--navy)">InSite</b></div>
+      <h2 style="margin:0 0 6px">✅ Connected to the live backend</h2>
+      <div class="sub" style="color:var(--muted);margin-bottom:18px">Authenticated against your Supabase project (Postgres, Canadian region) with Row-Level Security.</div>
+      <div class="kv" style="grid-template-columns:130px 1fr;font-size:13px">
+        <div class="k">Email</div><div>${user.email}</div>
+        <div class="k">User ID</div><div><code class="k">${user.id.slice(0,8)}…</code></div>
+        <div class="k">Role (from DB)</div><div><span class="badge b-blue">${role}</span> ${prof?'':'<span class="muted">(profile pending)</span>'}</div>
+      </div>
+      <div class="notice blue" style="margin-top:16px">Auth → the <code class="k">profiles</code> trigger → RLS is working end-to-end. Module data is still the demo dataset until we migrate records into Postgres (next step).</div>
+      <div class="row" style="margin-top:8px"><button class="btn" onclick="bootApp()">Explore the app →</button><button class="btn ghost" onclick="backendSignOut()">Sign out</button></div>
+    </div>
+  </div></div>`;
+}
 
 /* ========================================================================
    PAGES
@@ -1159,7 +1220,8 @@ PAGES.pann=()=>{
 };
 
 /* ============================ BOOT =================================== */
-loginScreen();
+if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
+else loginScreen();
 </script>
 </body>
 </html>
