@@ -11,7 +11,7 @@
  * High Honours by the configured thresholds.
  */
 
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api, getToken, loginHref, ApiError } from "../behavior/_lib/api";
 
 const TIER_LABEL = { "high-honours": "High Honours", honours: "Honours" };
@@ -44,6 +44,7 @@ export default function EdsbyHonours() {
   const [notice, setNotice] = useState(null); // { kind: "ok"|"err", text }
   const [diagnostics, setDiagnostics] = useState(null); // raw Edsby diagnostics to show on a parse miss
   const [showClasses, setShowClasses] = useState(false);
+  const [openStudent, setOpenStudent] = useState(null); // accordion: one student's course breakdown at a time
 
   useEffect(() => {
     const token = getToken();
@@ -385,27 +386,67 @@ export default function EdsbyHonours() {
               <div className="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-700">{label}</div>
               <table className="w-full text-sm">
                 <tbody>
-                  {list.map((s, i) => (
-                    <tr key={`${label}-${s.name}-${i}`} className="border-t border-slate-100">
-                      <td className="w-10 px-4 py-2 text-slate-400">{i + 1}</td>
-                      <td className="py-2 font-medium text-slate-800">
-                        {s.name} <span className="text-xs font-normal text-slate-400">{s.classGroup}</span>
-                        {s.error && <span className="ml-2 text-xs text-red-500">{s.error}</span>}
-                      </td>
-                      <td className="py-2 text-right font-semibold text-slate-800">
-                        {s.weightedAvg === null || s.weightedAvg === undefined ? "—" : `${s.weightedAvg.toFixed(1)}%`}
-                      </td>
-                      <td className="w-32 px-4 py-2 text-right">
-                        {s.tier && (
-                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                            s.tier === "high-honours" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
-                          }`}>
-                            {TIER_LABEL[s.tier]}
-                          </span>
+                  {list.map((s, i) => {
+                    const key = `${label}::${s.edsbyNid || s.name}::${i}`;
+                    const open = openStudent === key;
+                    const courses = s.courses || [];
+                    return (
+                      <Fragment key={key}>
+                        <tr
+                          className="cursor-pointer border-t border-slate-100 hover:bg-slate-50"
+                          onClick={() => setOpenStudent(open ? null : key)}
+                        >
+                          <td className="w-10 px-4 py-2 text-slate-400">{i + 1}</td>
+                          <td className="py-2 font-medium text-slate-800">
+                            <span className="mr-1 inline-block w-3 text-slate-400">{open ? "▾" : "▸"}</span>
+                            {s.name} <span className="text-xs font-normal text-slate-400">{s.classGroup}</span>
+                            {s.error && <span className="ml-2 text-xs text-red-500">{s.error}</span>}
+                          </td>
+                          <td className="py-2 text-right font-semibold text-slate-800">
+                            {s.weightedAvg === null || s.weightedAvg === undefined ? "—" : `${s.weightedAvg.toFixed(1)}%`}
+                          </td>
+                          <td className="w-32 px-4 py-2 text-right">
+                            {s.tier && (
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                                s.tier === "high-honours" ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700"
+                              }`}>
+                                {TIER_LABEL[s.tier]}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                        {open && (
+                          <tr className="border-t border-slate-100 bg-slate-50/60">
+                            <td />
+                            <td colSpan={3} className="px-4 py-2">
+                              {courses.length === 0 ? (
+                                <span className="text-xs text-slate-400">No classes pulled for this student.</span>
+                              ) : (
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-left text-slate-400">
+                                      <th className="py-1 font-medium">Class</th>
+                                      <th className="py-1 text-right font-medium">Grade pulled</th>
+                                      <th className="py-1 text-right font-medium">Weight</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {courses.map((c, ci) => (
+                                      <tr key={ci} className={c.weight > 0 ? "" : "text-slate-400"}>
+                                        <td className="py-1 pr-2">{c.name}{c.weight > 0 ? "" : " (excluded)"}</td>
+                                        <td className="py-1 text-right tabular-nums">{c.pct === null || c.pct === undefined ? "—" : `${c.pct}%`}</td>
+                                        <td className="py-1 text-right tabular-nums">{c.weight}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              )}
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                    </tr>
-                  ))}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
