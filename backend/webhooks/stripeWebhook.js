@@ -18,7 +18,10 @@ export async function stripeWebhookHandler(req, res) {
 
   try {
     event = stripe.webhooks.constructEvent(
-      req.body,
+      // Stripe signature verification needs the UN-parsed bytes. express.json() has
+      // already parsed req.body into an object, but the raw bytes were captured as
+      // req.rawBody (see the express.json verify hook in index.js).
+      req.rawBody,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );

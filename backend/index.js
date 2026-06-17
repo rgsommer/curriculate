@@ -86,6 +86,7 @@ import { authRequired } from "./middleware/authRequired.js";
 // 10) Routes
 import authRoutes from "./routes/auth.js";
 import stripeRoutes from "./routes/stripe.js";
+import { stripeWebhookHandler } from "./webhooks/stripeWebhook.js";
 import subscriptionRoutes from "./routes/subscriptionRoutes.js";
 import demoTasksetStreamRoutes from "./routes/demoTasksetStream.js";
 import demoRoutes from "./routes/demo.js";
@@ -513,6 +514,12 @@ app.get("/health", async (_req, res) => {
 
 // 2) Auth + misc routes that don't depend on tasksets
 app.use("/api/auth", authLimiter, authRoutes);
+
+// Stripe webhook — mounted BEFORE the stripe router so it isn't caught by that
+// router's authAny middleware (Stripe sends a signature header, not an auth token).
+// The raw request bytes are captured globally as req.rawBody (see express.json verify),
+// which the handler uses for signature verification.
+app.post("/api/stripe/webhook", stripeWebhookHandler);
 
 stripeRoutes.use(cors(corsOptions));
 stripeRoutes.options("*", cors(corsOptions));
