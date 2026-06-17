@@ -561,6 +561,8 @@ function loginScreen(){
       <div class="pf" style="margin-top:14px">🔒 Role-based access control — each role sees only what it should.</div>
       <div class="hr" style="margin:16px 0"></div>
       <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:var(--muted);margin-bottom:8px">CONNECT TO THE LIVE BACKEND (BETA)</div>
+      <button class="btn ghost" style="width:100%;margin-bottom:9px" onclick="backendOAuth('google')">Continue with Google</button>
+      <div style="text-align:center;font-size:11px;color:var(--muted);margin-bottom:9px">— or with email —</div>
       <input id="beEmail" placeholder="Email" style="width:100%;margin-bottom:7px">
       <input id="bePw" type="password" placeholder="Password" style="width:100%;margin-bottom:7px">
       <div class="row"><button class="btn sm" onclick="backendAuth('signin')">Sign in</button><button class="btn ghost sm" onclick="backendAuth('signup')">Create account</button></div>
@@ -593,6 +595,12 @@ window.backendAuth=async(mode)=>{
     if(mode==='signup' && !res.data.session){ msg.style.color='var(--green)'; msg.textContent='Account created — check your email to confirm, then Sign in.'; return; }
     await enterBackend();
   }catch(e){ msg.style.color='var(--red)'; msg.textContent=e.message; }
+};
+window.backendOAuth=async(provider)=>{
+  const msg=document.getElementById('beMsg');
+  if(!sb){ if(msg){msg.style.color='var(--red)';msg.textContent='Backend client not loaded.';} return; }
+  const { error } = await sb.auth.signInWithOAuth({ provider, options:{ redirectTo: location.origin+location.pathname } });
+  if(error && msg){ msg.style.color='var(--red)'; msg.textContent=error.message; }
 };
 async function enterBackend(){
   const { data:{ user } } = await sb.auth.getUser();
