@@ -163,6 +163,7 @@ code.k{background:var(--lt);color:var(--navy);padding:1px 6px;border-radius:5px;
 const SUPABASE_URL='https://fwznyemohapnblohnqwg.supabase.co';
 const SUPABASE_KEY='sb_publishable__MA77fjfYkr8SKgrU0PxrA_6YO3XYeR';
 const sb=(window.supabase&&SUPABASE_URL)?window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY):null;
+const DEMO_SCHOOL='00000000-0000-0000-0000-0000000000de';  // Demo Academy tenant
 
 /* ----------------------- seeded RNG (deterministic) ------------------- */
 let _seed = 1987;
@@ -496,7 +497,7 @@ function bootApp(){
       <div class="role-foot">Signed in as <b style="color:#fff">${r.name}</b><br>${r.label} • <a onclick="logout()">Switch role</a></div>
     </aside>
     <div class="main">
-      <div class="demo-banner">Working prototype • synthetic demo data • aligned to Ontario Growing Success &amp; OSSD requirements</div>
+      <div class="demo-banner">${SESSION.backend ? ('🟢 Live backend • '+esc(SESSION.schoolName||'no school')+' • '+(SESSION.platform?'platform admin':SESSION.role)+' • Students = live data, other modules = demo') : 'Working prototype • synthetic demo data • aligned to Ontario Growing Success &amp; OSSD requirements'}</div>
       <div class="top">
         <div><h1 id="pgTitle">Dashboard</h1><div class="crumb" id="pgCrumb">Overview of today</div></div>
         <div class="spacer"></div>
@@ -605,18 +606,24 @@ window.backendOAuth=async(provider)=>{
 async function enterBackend(){
   const { data:{ user } } = await sb.auth.getUser();
   if(!user){ loginScreen(); return; }
-  let prof=null;
+  let prof=null, memberships=[];
   try{ const r=await sb.from('profiles').select('*').eq('id',user.id).single(); prof=r.data; }catch(e){}
-  const role=(prof&&prof.role)||'student';
-  SESSION={ role, backend:true, user, profile:prof };
+  try{ const m=await sb.from('memberships').select('school_id,role').eq('user_id',user.id); memberships=m.data||[]; }catch(e){}
+  const platform = !!(prof && prof.is_platform_admin);
+  let schoolId=null, role='student';
+  if(memberships.length){ schoolId=memberships[0].school_id; role=memberships[0].role; }
+  if(platform){ role='admin'; if(!schoolId) schoolId=DEMO_SCHOOL; }
+  let schoolName='';
+  if(schoolId){ try{ const s=await sb.from('schools').select('name').eq('id',schoolId).single(); schoolName=s.data?s.data.name:''; }catch(e){} }
+  SESSION={ role, backend:true, user, profile:prof, schoolId, schoolName, platform, memberships };
   if(role==='student') SESSION.student=demoStudent();
   if(role==='parent') SESSION.child=demoChild();
   if(prof&&prof.full_name) ROLES[role].name=prof.full_name;
-  showBackendConnected(user, prof, role);
+  showBackendConnected(user, prof, role, schoolName, platform, schoolId);
 }
 async function backendSignOut(){ if(sb) await sb.auth.signOut(); SESSION=null; loginScreen(); }
 window.backendSignOut=backendSignOut;
-function showBackendConnected(user, prof, role){
+function showBackendConnected(user, prof, role, schoolName, platform, schoolId){
   document.getElementById('root').innerHTML=`
   <div class="login-wrap"><div class="login-card" style="grid-template-columns:1fr;max-width:560px">
     <div class="login-right" style="padding:34px">
@@ -625,11 +632,14 @@ function showBackendConnected(user, prof, role){
       <div class="sub" style="color:var(--muted);margin-bottom:18px">Authenticated against your Supabase project (Postgres, Canadian region) with Row-Level Security.</div>
       <div class="kv" style="grid-template-columns:130px 1fr;font-size:13px">
         <div class="k">Email</div><div>${user.email}</div>
-        <div class="k">User ID</div><div><code class="k">${user.id.slice(0,8)}…</code></div>
-        <div class="k">Role (from DB)</div><div><span class="badge b-blue">${role}</span> ${prof?'':'<span class="muted">(profile pending)</span>'}</div>
+        <div class="k">Platform admin</div><div>${platform?'<span class="badge b-green">yes</span>':'<span class="badge b-grey">no</span>'}</div>
+        <div class="k">Acting role</div><div><span class="badge b-blue">${role}</span></div>
+        <div class="k">School context</div><div>${schoolName? esc(schoolName) : '<span class="muted">none yet</span>'}</div>
       </div>
-      <div class="notice blue" style="margin-top:16px">Auth → the <code class="k">profiles</code> trigger → RLS is working end-to-end. Module data is still the demo dataset until we migrate records into Postgres (next step).</div>
-      <div class="row" style="margin-top:8px"><button class="btn" onclick="bootApp()">Explore the app →</button><button class="btn ghost" onclick="backendSignOut()">Sign out</button></div>
+      ${schoolId
+        ? `<div class="notice blue" style="margin-top:16px">Live, RLS-scoped reads are wired for <b>Students</b>. Other modules still show demo data while we convert them.</div>`
+        : `<div class="notice" style="margin-top:16px">No school membership yet — RLS shows you no records. Become platform admin (or accept an invite) to see data.</div>`}
+      <div class="row" style="margin-top:8px"><button class="btn" onclick="bootApp()">Enter InSite →</button><button class="btn ghost" onclick="backendSignOut()">Sign out</button></div>
     </div>
   </div></div>`;
 }
@@ -722,6 +732,7 @@ function dashStudent(){
 
 /* ---------- STUDENTS (SIS) ------------------------------------------- */
 PAGES.students=()=>{
+  if(SESSION.backend && SESSION.schoolId) return studentsLive();
   let list=STUDENTS;
   if(SESSION.role==='teacher'){ const ids=new Set(); SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id).forEach(s=>s.roster.forEach(r=>ids.add(r.id))); if(ids.size) list=STUDENTS.filter(s=>ids.has(s.id)); }
   const render=(q='',gf='')=>{
@@ -1225,6 +1236,86 @@ PAGES.pmsg=()=>{ PAGES.mymsg(); };
 PAGES.pptc=()=>{ PAGES.ptc(); };
 PAGES.pann=()=>{
   $('#view').innerHTML=`<div class="card"><h2>Announcements</h2><div class="sub">From the school</div><div>${DB.ann.map(annHtml).join('')}</div></div>`;
+};
+
+/* ====================== LIVE (Supabase) PAGES ======================= */
+async function studentsLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading students from the database…</div></div>';
+  const { data, error } = await sb.from('students')
+    .select('id,first_name,last_name,grade,homeroom,oen,grad_year,status')
+    .eq('school_id', SESSION.schoolId).order('last_name');
+  if(error){ v.innerHTML=`<div class="card"><div class="notice">Could not load students: ${esc(error.message)}</div></div>`; return; }
+  const rows=(data||[]);
+  const render=(q='')=>{
+    const l=rows.filter(s=>((s.first_name+' '+s.last_name+' '+(s.oen||'')).toLowerCase().includes(q.toLowerCase())));
+    $('#stbody').innerHTML=l.map(s=>{
+      const col=C[(s.last_name.charCodeAt(0))%C.length];
+      return `<tr class="click" onclick="openStudentLive('${s.id}')">
+      <td><div class="row" style="gap:9px"><div class="avatar" style="width:30px;height:30px;background:${col}">${(s.first_name[0]+s.last_name[0]).toUpperCase()}</div><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></div></td>
+      <td>Grade ${s.grade}</td><td>${esc(s.homeroom||'')}</td><td><code class="k">${esc(s.oen||'—')}</code></td><td>${s.grad_year||''}</td><td><span class="badge b-green">${esc(s.status)}</span></td></tr>`;
+    }).join('')||`<tr><td colspan="6" class="muted">No students.</td></tr>`;
+  };
+  v.innerHTML=`<div class="card"><div class="row" style="margin-bottom:12px">
+    <input class="search" id="stsearch" placeholder="Search by name or OEN…">
+    <span class="pill">🟢 ${rows.length} live records • ${esc(SESSION.schoolName||'')}</span></div>
+    <table><thead><tr><th>Student</th><th>Grade</th><th>Homeroom</th><th>OEN</th><th>Grad year</th><th>Status</th></tr></thead><tbody id="stbody"></tbody></table>
+    <div class="pf" style="margin-top:8px">Read live from Postgres under Row-Level Security — you see only your school's records.</div></div>`;
+  $('#stsearch').oninput=e=>render(e.target.value); render();
+}
+async function liveStudentCourses(studentId){
+  const { data: enr } = await sb.from('enrolments')
+    .select('section:sections(id,period,room,teacher_name,course:courses(code,name,grade,credit))')
+    .eq('student_id', studentId);
+  const secs=(enr||[]).map(e=>e.section).filter(Boolean);
+  const sectionIds=secs.map(s=>s.id);
+  let scrs=[], cats=[];
+  if(sectionIds.length){
+    const sc=await sb.from('scores').select('score,assignment:assignments(denominator,category_id,section_id)').eq('student_id',studentId);
+    scrs=sc.data||[];
+    const ct=await sb.from('assessment_categories').select('id,weight,section_id').in('section_id',sectionIds);
+    cats=ct.data||[];
+  }
+  return secs.map(sec=>{
+    const secCats=cats.filter(c=>c.section_id===sec.id);
+    let tot=0,wsum=0;
+    secCats.forEach(cat=>{
+      const cs=scrs.filter(s=>s.assignment && s.assignment.section_id===sec.id && s.assignment.category_id===cat.id && s.score!=null && s.assignment.denominator);
+      if(cs.length){ let sum=0; cs.forEach(s=>sum+=(s.score/s.assignment.denominator)*100); tot+=(sum/cs.length)*cat.weight; wsum+=cat.weight; }
+    });
+    const mark = wsum? Math.round(tot/wsum) : '';
+    return { code:sec.course?.code, name:sec.course?.name, grade:sec.course?.grade, teacher:sec.teacher_name, mark };
+  });
+}
+window.openStudentLive=async(id)=>{
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading student…</div></div>';
+  const { data: s, error } = await sb.from('students').select('*').eq('id',id).single();
+  if(error){ v.innerHTML=`<div class="card"><div class="notice">${esc(error.message)}</div></div>`; return; }
+  let health=null; try{ const h=await sb.from('student_health').select('*').eq('student_id',id).single(); health=h.data; }catch(e){}
+  let hours=0; try{ const hr=await sb.from('community_hours').select('hours').eq('student_id',id); hours=(hr.data||[]).reduce((a,b)=>a+(+b.hours||0),0); }catch(e){}
+  const courses=await liveStudentCourses(id);
+  const col=C[(s.last_name.charCodeAt(0))%C.length];
+  v.innerHTML=`<button class="btn ghost sm" onclick="go('students')">← All students</button>
+  <div class="card" style="margin-top:12px"><div class="profile-hd"><div class="avatar" style="width:64px;height:64px;background:${col}">${(s.first_name[0]+s.last_name[0]).toUpperCase()}</div>
+    <div><h2 style="margin:0">${esc(s.first_name)} ${esc(s.last_name)}</h2><div class="muted">Grade ${s.grade} • Homeroom ${esc(s.homeroom||'')} • Graduating ${s.grad_year||''} • OEN ${esc(s.oen||'—')}</div>
+    <div style="margin-top:8px">${health&&health.iep?'<span class="badge b-amber">IEP</span> ':''}${health&&health.allergies?`<span class="badge b-red">⚠ ${esc(health.allergies)}</span> `:''}${hours>=40?'<span class="badge b-green">40h met</span>':''}</div></div>
+    <span class="pill" style="margin-left:auto">🟢 live</span></div></div>
+  <div class="grid g2">
+    <div class="card"><h2>Record</h2><div class="kv">
+      <div class="k">OEN</div><div><code class="k">${esc(s.oen||'—')}</code></div>
+      <div class="k">Date of birth</div><div>${esc(s.date_of_birth||'—')}</div>
+      <div class="k">Gender</div><div>${esc(s.gender||'—')}</div>
+      <div class="k">Entered Grade 9</div><div>${s.entered_g9_year||'—'}</div>
+      <div class="k">Community hours</div><div>${hours} / 40 ${hours>=40?'<span class="badge b-green">Met</span>':'<span class="badge b-amber">In progress</span>'}</div>
+      <div class="k">Tuition</div><div>${esc(s.tuition_status||'—')}</div>
+      <div class="k">Status</div><div><span class="badge b-green">${esc(s.status)}</span></div>
+    </div></div>
+    <div class="card"><h2>Current courses &amp; marks</h2>
+      <table><thead><tr><th>Course</th><th>Teacher</th><th>Mark</th><th>Level</th></tr></thead><tbody>
+      ${courses.length? courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b><div class="muted" style="font-size:11px">${esc(c.name||'')}</div></td><td>${esc(c.teacher||'—')}</td><td><b>${c.mark===''?'—':c.mark+'%'}</b></td><td><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('') : '<tr><td colspan="4" class="muted">No current enrolments.</td></tr>'}
+      </tbody></table>
+      <div class="pf" style="margin-top:8px">Marks computed live from this student's scores under Growing Success category weights.</div>
+    </div>
+  </div>`;
 };
 
 /* ============================ BOOT =================================== */
