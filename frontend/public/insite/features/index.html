@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InSite — Features</title>
+<meta name="description" content="InSite is a full K–12 school management platform for Ontario schools: gradebook, attendance, reporting, parent communication, OSSD tracking and OnSIS reporting in one place.">
+<style>
+:root{
+  --navy:#1f3864; --navy2:#16294a; --blue:#2e75b6; --blue2:#3a86d4; --lt:#eaf0f9; --lt2:#f5f8fd;
+  --green:#2e6b3e; --ltgreen:#e2efda; --amber:#9c6500; --ltamber:#fff2cc; --red:#b23b3b;
+  --purple:#7b4ca0; --ltpurple:#efe6f6; --teal:#1f8a8a; --ltteal:#dcf0f0; --orange:#bb5c2a;
+  --ink:#1d2433; --muted:#6b7280; --line:#e5e9f0; --bg:#ffffff; --soft:#f4f7fc;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg);font-size:16px;line-height:1.55}
+a{color:var(--blue);text-decoration:none}
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+.btn{display:inline-flex;align-items:center;gap:8px;background:var(--blue);color:#fff;border:none;border-radius:10px;padding:12px 22px;font-weight:700;font-size:15px;cursor:pointer;transition:.15s}
+.btn:hover{background:var(--blue2);transform:translateY(-1px)}
+.btn.ghost{background:transparent;color:#fff;border:1.5px solid rgba(255,255,255,.4)}
+.btn.ghost:hover{background:rgba(255,255,255,.1)}
+.btn.dark{background:#fff;color:var(--navy)}
+.btn.dark:hover{background:var(--lt)}
+.btn.lg{padding:14px 28px;font-size:16px}
+
+/* header */
+header{position:sticky;top:0;z-index:50;background:rgba(255,255,255,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;gap:10px;height:64px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:800;font-size:19px;color:var(--navy)}
+.brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,#3a86d4,#5aa0e6);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:15px}
+.nav .links{margin-left:auto;display:flex;align-items:center;gap:26px}
+.nav .links a{color:var(--ink);font-weight:600;font-size:14.5px}
+.nav .links a:hover{color:var(--blue)}
+.nav .cta{background:var(--blue);color:#fff;border-radius:9px;padding:9px 16px;font-size:14px}
+.nav .cta:hover{background:var(--blue2)}
+@media(max-width:820px){.nav .links a:not(.cta){display:none}}
+
+/* hero */
+.hero{background:linear-gradient(160deg,#1f3864 0%,#214a86 55%,#2e75b6 100%);color:#fff;padding:74px 0 90px;position:relative;overflow:hidden}
+.hero:after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 80% 20%,rgba(90,160,230,.35),transparent 45%);pointer-events:none}
+.hero .wrap{position:relative;z-index:1;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
+@media(max-width:920px){.hero .wrap{grid-template-columns:1fr;gap:34px}}
+.kicker{display:inline-block;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.2);color:#dbe6f7;padding:6px 13px;border-radius:20px;font-size:12.5px;font-weight:600;letter-spacing:.3px;margin-bottom:18px}
+.hero h1{font-size:46px;line-height:1.08;margin:0 0 18px;letter-spacing:-.5px}
+.hero p.sub{font-size:18px;color:#cddcf2;margin:0 0 28px;max-width:540px}
+.hero .actions{display:flex;gap:13px;flex-wrap:wrap}
+.hero .note{margin-top:18px;color:#9fb6da;font-size:13px}
+@media(max-width:560px){.hero h1{font-size:34px}}
+
+/* app mockup */
+.mock{background:#fff;border-radius:14px;box-shadow:0 30px 70px rgba(0,0,0,.4);overflow:hidden;color:var(--ink)}
+.mock .bar{background:#f0f3f8;border-bottom:1px solid var(--line);padding:10px 13px;display:flex;gap:6px;align-items:center}
+.mock .bar i{width:11px;height:11px;border-radius:50%;display:block}
+.mock .bar .u{margin-left:12px;background:#fff;border:1px solid var(--line);border-radius:6px;font-size:11px;color:var(--muted);padding:3px 10px;flex:1;max-width:280px}
+.mock .body{display:flex;min-height:260px}
+.mock .side{width:120px;background:linear-gradient(180deg,#1f3864,#16294a);padding:12px 8px}
+.mock .side .m{height:9px;border-radius:5px;background:rgba(255,255,255,.14);margin:0 4px 9px;}
+.mock .side .m.on{background:var(--blue)}
+.mock .main{flex:1;padding:14px;background:var(--soft)}
+.mock .cards{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:11px}
+.mock .stat{background:#fff;border:1px solid var(--line);border-radius:9px;padding:10px}
+.mock .stat b{font-size:20px;color:var(--navy);display:block}
+.mock .stat span{font-size:10px;color:var(--muted)}
+.mock .rowline{background:#fff;border:1px solid var(--line);border-radius:9px;padding:9px 11px;display:flex;align-items:center;gap:8px;margin-bottom:7px;font-size:11px}
+.mock .pill{margin-left:auto;font-weight:800;color:var(--green);font-size:11px}
+.mock .dot{width:20px;height:20px;border-radius:50%;background:var(--blue);color:#fff;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:700}
+
+/* trust bar */
+.trust{background:var(--navy2);color:#aebfda;padding:16px 0}
+.trust .wrap{display:flex;flex-wrap:wrap;gap:10px 28px;justify-content:center;font-size:13.5px;font-weight:600}
+.trust b{color:#fff}
+
+/* sections */
+section.block{padding:74px 0}
+section.block.soft{background:var(--soft)}
+.eyebrow{color:var(--blue);font-weight:700;font-size:13px;letter-spacing:1px;text-transform:uppercase;margin-bottom:10px}
+.h2{font-size:33px;margin:0 0 12px;letter-spacing:-.4px}
+.lead{color:var(--muted);font-size:17px;max-width:680px;margin:0 0 36px}
+.center{text-align:center}
+.center .lead{margin-left:auto;margin-right:auto}
+
+/* pillars */
+.pillars{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+@media(max-width:920px){.pillars{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.pillars{grid-template-columns:1fr}}
+.pillar{background:#fff;border:1px solid var(--line);border-radius:14px;padding:22px}
+.pillar .ic{width:46px;height:46px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:14px;color:#fff}
+.pillar h3{margin:0 0 7px;font-size:17px}
+.pillar p{margin:0;color:var(--muted);font-size:14px}
+
+/* modules */
+.modcat{font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--navy);margin:34px 0 14px;padding-bottom:8px;border-bottom:2px solid var(--lt)}
+.mods{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+@media(max-width:920px){.mods{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.mods{grid-template-columns:1fr}}
+.mod{background:#fff;border:1px solid var(--line);border-radius:13px;padding:18px;display:flex;gap:13px;transition:.15s}
+.mod:hover{border-color:var(--blue2);box-shadow:0 8px 24px rgba(31,56,100,.09);transform:translateY(-2px)}
+.mod .ic{width:40px;height:40px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:19px;color:#fff}
+.mod h4{margin:0 0 4px;font-size:15.5px}
+.mod p{margin:0;color:var(--muted);font-size:13.5px;line-height:1.5}
+
+/* roles */
+.roles{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+@media(max-width:920px){.roles{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.roles{grid-template-columns:1fr}}
+.role{border-radius:14px;padding:22px;color:#fff;position:relative;overflow:hidden}
+.role h3{margin:0 0 10px;font-size:18px}
+.role ul{margin:0;padding-left:18px;font-size:13.5px;line-height:1.8;color:rgba(255,255,255,.92)}
+.role .badge{position:absolute;top:18px;right:18px;font-size:22px;opacity:.5}
+
+/* ontario panel */
+.panel{background:#fff;border:1px solid var(--line);border-radius:16px;padding:30px;display:grid;grid-template-columns:1fr 1fr;gap:30px}
+@media(max-width:760px){.panel{grid-template-columns:1fr}}
+.panel h3{margin:0 0 14px;font-size:19px}
+.lvl-row{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:14px}
+.lvl-tag{font-weight:800;font-size:12px;border-radius:6px;padding:3px 9px;min-width:38px;text-align:center}
+.checks{margin:0;padding:0;list-style:none}
+.checks li{padding:8px 0;border-bottom:1px solid var(--line);font-size:14.5px;display:flex;gap:10px;align-items:flex-start}
+.checks li:last-child{border-bottom:none}
+.checks .ck{color:var(--green);font-weight:800}
+
+/* security */
+.secgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:760px){.secgrid{grid-template-columns:1fr}}
+.sec{background:#fff;border:1px solid var(--line);border-radius:13px;padding:20px}
+.sec .ic{font-size:22px;margin-bottom:10px}
+.sec h4{margin:0 0 6px;font-size:16px}
+.sec p{margin:0;color:var(--muted);font-size:14px}
+
+/* CTA band */
+.ctaband{background:linear-gradient(135deg,#1f3864,#2e75b6);color:#fff;border-radius:18px;padding:46px;text-align:center}
+.ctaband h2{font-size:30px;margin:0 0 12px}
+.ctaband p{color:#cddcf2;font-size:17px;margin:0 0 26px}
+.ctaband .actions{display:flex;gap:13px;justify-content:center;flex-wrap:wrap}
+
+/* footer */
+footer{background:var(--navy2);color:#9fb6da;padding:38px 0;font-size:13.5px}
+footer .wrap{display:flex;flex-wrap:wrap;gap:18px;align-items:center}
+footer .brand{color:#fff}
+footer .brand .logo{font-size:14px}
+footer .sp{flex:1}
+footer a{color:#bcccea}
+.tag{display:inline-block;background:var(--lt);color:var(--navy);border-radius:7px;padding:3px 10px;font-size:12px;font-weight:700;margin:0 6px 6px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand"><span class="logo">iS</span> InSite</div>
+    <nav class="links">
+      <a href="#why">Why InSite</a>
+      <a href="#modules">Modules</a>
+      <a href="#roles">For everyone</a>
+      <a href="#ontario">Ontario</a>
+      <a class="cta" href="../">Launch demo →</a>
+    </nav>
+  </div>
+</header>
+
+<!-- HERO -->
+<div class="hero">
+  <div class="wrap">
+    <div>
+      <span class="kicker">K–12 School Management • Built for Ontario</span>
+      <h1>Everything your school runs on — in one place.</h1>
+      <p class="sub">InSite unifies the student record, gradebook, attendance, report cards, graduation tracking, parent communication and Ministry reporting into a single web platform — refined over 25 years, rebuilt for the browser.</p>
+      <div class="actions">
+        <a class="btn dark lg" href="../">Launch the live demo</a>
+        <a class="btn ghost lg" href="#modules">Explore the modules</a>
+      </div>
+      <div class="note">Working prototype • synthetic demo data • aligned to Ontario Growing Success &amp; OSSD requirements</div>
+    </div>
+    <!-- App mockup -->
+    <div class="mock" aria-hidden="true">
+      <div class="bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="u">curriculate.net/insite</span></div>
+      <div class="body">
+        <div class="side"><div class="m on"></div><div class="m"></div><div class="m"></div><div class="m"></div><div class="m"></div><div class="m"></div><div class="m"></div></div>
+        <div class="main">
+          <div class="cards">
+            <div class="stat"><b>612</b><span>Enrolled students</span></div>
+            <div class="stat"><b>96.4%</b><span>Attendance today</span></div>
+            <div class="stat"><b>74%</b><span>Avg. mark</span></div>
+            <div class="stat"><b>38</b><span>Class sections</span></div>
+          </div>
+          <div class="rowline"><span class="dot">SF</span> Ferreira, Sofia — ENG3U <span class="pill">L4 · 86%</span></div>
+          <div class="rowline"><span class="dot" style="background:#7b4ca0">OK</span> Okonkwo, Liam — MCR3U <span class="pill" style="color:var(--blue)">L3 · 78%</span></div>
+          <div class="rowline"><span class="dot" style="background:#bb5c2a">AS</span> Singh, Ava — SCH3U <span class="pill" style="color:var(--amber)">L2 · 67%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TRUST BAR -->
+<div class="trust"><div class="wrap">
+  <span><b>18</b> integrated modules</span>
+  <span><b>K–12</b> coverage</span>
+  <span><b>4</b> secure roles</span>
+  <span>Ontario <b>Growing Success</b></span>
+  <span><b>OSSD</b> tracking</span>
+  <span><b>OnSIS</b> export</span>
+</div></div>
+
+<!-- WHY -->
+<section class="block" id="why">
+  <div class="wrap">
+    <div class="eyebrow">Why InSite</div>
+    <h2 class="h2">One source of truth — designed around how schools actually work.</h2>
+    <p class="lead">A student's demographics, schedule, marks, attendance and hours exist once and flow everywhere. No re-keying between systems, no marks living in a teacher's spreadsheet.</p>
+    <div class="pillars">
+      <div class="pillar"><div class="ic" style="background:var(--blue)">◎</div><h3>One source of truth</h3><p>Every module reads and writes the same record — the gradebook feeds the report card, which feeds OnSIS.</p></div>
+      <div class="pillar"><div class="ic" style="background:var(--green)">▦</div><h3>Evidence-based marks</h3><p>Reported marks are calculated from real assignments and quizzes, with a recorded teacher override.</p></div>
+      <div class="pillar"><div class="ic" style="background:var(--purple)">🔒</div><h3>Role-based &amp; private</h3><p>Least-privilege access for staff, students and parents. Health and discipline notes are compartmentalized.</p></div>
+      <div class="pillar"><div class="ic" style="background:var(--orange)">🍁</div><h3>Ontario-compliant</h3><p>Growing Success, the Provincial Report Card, OSSD diploma rules and OnSIS are first-class, not bolt-ons.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- MODULES -->
+<section class="block soft" id="modules">
+  <div class="wrap">
+    <div class="eyebrow">The platform</div>
+    <h2 class="h2">Every module, working together.</h2>
+    <p class="lead">From the daily attendance call to the Ministry submission file — each capability is reachable from one secure interface.</p>
+
+    <div class="modcat">Academics &amp; the classroom</div>
+    <div class="mods">
+      <div class="mod"><div class="ic" style="background:var(--blue)">▦</div><div><h4>Gradebook</h4><p>Achievement-chart categories &amp; weights, live mark calculation, Ontario levels, 70/30 split, and a class distribution view.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--blue)">⤴</div><div><h4>Assignments &amp; submissions</h4><p>Post → submit → grade. Students upload work; grading posts straight to the gradebook.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--blue)">❓</div><div><h4>Online quizzing</h4><p>Reusable question banks, auto-graded items, a manual queue, IEP accommodations and item analysis.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--teal)">🗓</div><div><h4>Scheduling &amp; timetable</h4><p>Master timetable with conflict detection; rosters auto-populate gradebook and attendance.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--teal)">✓</div><div><h4>Attendance</h4><p>Daily (K–8) and per-period (9–12) from the roster; unexplained absences auto-notify guardians.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--green)">▤</div><div><h4>Report cards</h4><p>Kindergarten, Elementary and the Secondary Provincial Report Card — Learning Skills, comments, PDF &amp; release.</p></div></div>
+    </div>
+
+    <div class="modcat">Students &amp; community</div>
+    <div class="mods">
+      <div class="mod"><div class="ic" style="background:var(--navy)">👥</div><div><h4>Student information</h4><p>Demographics, guardians, schedule, marks, hours, tests — with restricted health &amp; counsellor sections.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--green)">📜</div><div><h4>Transcripts</h4><p>Ontario OST and a GPA transcript, with credits and cumulative GPA computed from history.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--green)">🎓</div><div><h4>Graduation (OSSD)</h4><p>Live path-to-graduation: credits, cohort-aware compulsory split, OSSLT, 40 hours, online credits.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--amber)">⚑</div><div><h4>Behaviour &amp; incidents</h4><p>Report → review → action → follow-up, with restricted visibility and optional guardian contact.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--amber)">🏅</div><div><h4>Awards &amp; honour roll</h4><p>Honour-roll eligibility auto-suggested from calculated marks; recognition on the profile.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--purple)">★</div><div><h4>Groups &amp; clubs</h4><p>One model for clubs, teams, committees and homerooms — rosters, sponsors, sign-ups, community hours.</p></div></div>
+    </div>
+
+    <div class="modcat">Communication &amp; Ministry</div>
+    <div class="mods">
+      <div class="mod"><div class="ic" style="background:var(--orange)">⌂</div><div><h4>Parent portal</h4><p>Guardians see only their own children: marks as released, attendance, hours and outstanding work.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--orange)">✉</div><div><h4>Communication</h4><p>Announcements with audiences &amp; read receipts; two-way messaging logged per student, consent-aware.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--orange)">🤝</div><div><h4>PTC booking</h4><p>Self-service parent–teacher conference scheduling, replacing manual slot management.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--red)">⛗</div><div><h4>OnSIS export</h4><p>Class enrolment &amp; final-mark segments keyed to the OEN, with validation before sign-off.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--navy)">⚙</div><div><h4>Admin &amp; audit</h4><p>Role matrix, privacy &amp; residency settings, and a comprehensive audit log of sensitive access.</p></div></div>
+      <div class="mod"><div class="ic" style="background:var(--blue)">▣</div><div><h4>Dashboards</h4><p>A role-specific home that surfaces what needs attention today, auto-flagged across modules.</p></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ROLES -->
+<section class="block" id="roles">
+  <div class="wrap">
+    <div class="eyebrow">For everyone</div>
+    <h2 class="h2">One platform, four tailored experiences.</h2>
+    <p class="lead">Each role signs in to a different view — and the database itself enforces who sees what.</p>
+    <div class="roles">
+      <div class="role" style="background:linear-gradient(160deg,#1f3864,#2c4f8a)"><span class="badge">🏛</span><h3>Administrators</h3><ul><li>Whole-school dashboards</li><li>Every module &amp; report</li><li>OnSIS &amp; compliance</li><li>Roles, settings &amp; audit log</li></ul></div>
+      <div class="role" style="background:linear-gradient(160deg,#2e6b3e,#3f8a53)"><span class="badge">👩‍🏫</span><h3>Teachers</h3><ul><li>Their sections' gradebook</li><li>Attendance &amp; submissions</li><li>Quizzing &amp; report cards</li><li>Class &amp; parent messaging</li></ul></div>
+      <div class="role" style="background:linear-gradient(160deg,#7b4ca0,#9560bd)"><span class="badge">🎓</span><h3>Students</h3><ul><li>Live marks &amp; feedback</li><li>Assignments &amp; quizzes</li><li>Timetable &amp; clubs</li><li>Personal graduation path</li></ul></div>
+      <div class="role" style="background:linear-gradient(160deg,#bb5c2a,#d27a45)"><span class="badge">👨‍👩‍👧</span><h3>Parents</h3><ul><li>Only their own children</li><li>Marks, attendance, hours</li><li>Report cards &amp; messages</li><li>Book conferences online</li></ul></div>
+    </div>
+  </div>
+</section>
+
+<!-- ONTARIO -->
+<section class="block soft" id="ontario">
+  <div class="wrap">
+    <div class="eyebrow">Built for Ontario</div>
+    <h2 class="h2">Compliance baked in, not bolted on.</h2>
+    <p class="lead">InSite encodes the rules teachers and administrators already follow — so the marks, report cards and submissions come out right.</p>
+    <div class="panel">
+      <div>
+        <h3>Growing Success — achievement levels</h3>
+        <div class="lvl-row"><span class="lvl-tag" style="background:var(--lt);color:var(--blue)">L4</span> 80–100% — surpasses the provincial standard</div>
+        <div class="lvl-row"><span class="lvl-tag" style="background:var(--ltgreen);color:var(--green)">L3</span> 70–79% — meets the standard (the target)</div>
+        <div class="lvl-row"><span class="lvl-tag" style="background:var(--ltamber);color:var(--amber)">L2</span> 60–69% — approaches the standard</div>
+        <div class="lvl-row"><span class="lvl-tag" style="background:var(--ltamber);color:var(--amber)">L1</span> 50–59% — below the standard</div>
+        <div class="lvl-row"><span class="lvl-tag" style="background:var(--ltred);color:var(--red)">R</span> below 50% — remediation required</div>
+        <p style="color:var(--muted);font-size:14px;margin-top:14px">Final marks apply the <b>70% term / 30% final</b> split. The six Learning Skills (E/G/S/N) are reported separately from achievement.</p>
+      </div>
+      <div>
+        <h3>OSSD diploma tracking</h3>
+        <ul class="checks">
+          <li><span class="ck">✓</span> 30 credits — cohort-aware compulsory split (18+12, or 17+13 for Fall 2024+)</li>
+          <li><span class="ck">✓</span> OSSLT literacy requirement</li>
+          <li><span class="ck">✓</span> 40 community-involvement hours, tracked live</li>
+          <li><span class="ck">✓</span> 2 online learning credits (2020–21 cohort+)</li>
+          <li><span class="ck">✓</span> OnSIS class-enrolment &amp; final marks, keyed to the OEN</li>
+          <li><span class="ck">✓</span> Three report-card formats: Kindergarten, Elementary &amp; Secondary</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECURITY / ARCHITECTURE -->
+<section class="block">
+  <div class="wrap">
+    <div class="eyebrow">Architecture &amp; privacy</div>
+    <h2 class="h2">A platform you can trust with student data.</h2>
+    <p class="lead">A modern three-tier web platform — a shared Postgres database, a secured API, and responsive role-based interfaces.</p>
+    <div class="secgrid">
+      <div class="sec"><div class="ic">🇨🇦</div><h4>Canadian data residency</h4><p>Hosted in a Canadian region to keep student data in Canada and ease FIPPA/MFIPPA compliance.</p></div>
+      <div class="sec"><div class="ic">🔐</div><h4>Row-level security</h4><p>"Teachers see their classes, parents see their children" is enforced in the database itself.</p></div>
+      <div class="sec"><div class="ic">🪪</div><h4>Single sign-on</h4><p>One login per person via Google Workspace or Microsoft 365 — no extra password to manage.</p></div>
+      <div class="sec"><div class="ic">📋</div><h4>Audit logging</h4><p>Comprehensive logs on sensitive views and changes, with encryption in transit and at rest.</p></div>
+      <div class="sec"><div class="ic">♿</div><h4>Accessible (AODA)</h4><p>Interfaces target WCAG-based AODA requirements — important for a public parent portal.</p></div>
+      <div class="sec"><div class="ic">🗄</div><h4>Preserve, don't discard</h4><p>Migrates 25 years of data and institutional rules — InSite grown up, not a replacement to relearn.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="block soft">
+  <div class="wrap">
+    <div class="ctaband">
+      <h2>See it for yourself.</h2>
+      <p>Sign in as an administrator, teacher, student or parent — and click through the whole system.</p>
+      <div class="actions">
+        <a class="btn dark lg" href="../">Launch the live demo</a>
+        <a class="btn ghost lg" href="#modules">Back to modules</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="brand"><span class="logo">iS</span> InSite</div>
+    <div class="sp"></div>
+    <div>School Management System • Ontario K–12 &nbsp;·&nbsp; <a href="../">Launch demo</a></div>
+  </div>
+  <div class="wrap" style="margin-top:14px;font-size:12px;color:#7e95bd">Working prototype with synthetic demo data — no real student records. Aligned to Ontario Growing Success &amp; OSSD requirements; verify against current Ministry guidance before each reporting cycle.</div>
+</footer>
+
+</body>
+</html>

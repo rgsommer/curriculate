@@ -28,6 +28,10 @@ const nextConfig = {
       { source: "/streetproperties/services",  destination: "/streetproperties/services.html" },
       { source: "/streetproperties/portfolio", destination: "/streetproperties/portfolio.html" },
       { source: "/streetproperties/contact",   destination: "/streetproperties/contact.html" },
+      // InSite — school management demo. Static files in public/insite/.
+      // Map clean URLs to the underlying index.html files.
+      { source: "/insite",          destination: "/insite/index.html" },
+      { source: "/insite/features", destination: "/insite/features/index.html" },
     ];
   },
   async redirects() {

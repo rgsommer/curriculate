@@ -1,0 +1,1165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>InSite — School Management System</title>
+<style>
+:root{
+  --navy:#1f3864; --navy2:#16294a; --blue:#2e75b6; --blue2:#3a86d4; --lt:#eaf0f9; --lt2:#f5f8fd;
+  --green:#2e6b3e; --ltgreen:#e2efda; --amber:#9c6500; --ltamber:#fff2cc; --red:#b23b3b; --ltred:#fbe4e4;
+  --purple:#7b4ca0; --ltpurple:#efe6f6; --teal:#1f8a8a; --ltteal:#dcf0f0;
+  --ink:#1d2433; --muted:#6b7280; --line:#e2e8f0; --bg:#f1f4f9; --card:#ffffff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--ink);font-size:14px}
+a{color:var(--blue);text-decoration:none;cursor:pointer}
+.app{display:flex;min-height:100vh}
+/* sidebar */
+.side{width:236px;background:linear-gradient(180deg,var(--navy),var(--navy2));color:#cdd8ec;flex-shrink:0;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{padding:18px 18px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.08)}
+.brand .logo{width:34px;height:34px;border-radius:8px;background:linear-gradient(135deg,#3a86d4,#5aa0e6);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:16px}
+.brand b{color:#fff;font-size:18px;letter-spacing:.5px}
+.brand small{display:block;color:#8ea6cc;font-size:10px;letter-spacing:.4px}
+.nav{padding:8px}
+.nav .grp{color:#7e95bd;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:14px 12px 6px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:8px;color:#cdd8ec;cursor:pointer;font-weight:500;font-size:13.5px}
+.nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav a.active{background:var(--blue);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.nav a .ic{width:18px;text-align:center;font-size:15px}
+.side .role-foot{padding:12px 16px;border-top:1px solid rgba(255,255,255,.08);font-size:11px;color:#8ea6cc}
+.side .role-foot a{color:#9fb6da}
+/* main */
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.top{background:var(--card);border-bottom:1px solid var(--line);padding:12px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:20}
+.top h1{font-size:18px;margin:0;font-weight:700}
+.top .crumb{color:var(--muted);font-size:12px;margin-top:2px}
+.top .spacer{flex:1}
+.pill{background:var(--lt);color:var(--navy);border-radius:20px;padding:5px 12px;font-size:12px;font-weight:600;white-space:nowrap}
+.who{display:flex;align-items:center;gap:9px}
+.who .av{width:32px;height:32px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.content{padding:22px 24px;max-width:1240px;width:100%}
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:18px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.card h2{margin:0 0 4px;font-size:16px}
+.card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+.grid{display:grid;gap:16px}
+.g5{grid-template-columns:repeat(5,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g2{grid-template-columns:repeat(2,1fr)}
+@media(max-width:1000px){.g5,.g4{grid-template-columns:repeat(2,1fr)}.g3,.g2{grid-template-columns:1fr 1fr}}
+@media(max-width:640px){.g5,.g4,.g3,.g2{grid-template-columns:1fr}}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+.stat .n{font-size:28px;font-weight:800;color:var(--navy);line-height:1}
+.stat .l{color:var(--muted);font-size:12.5px;margin-top:6px}
+.stat .t{font-size:11px;color:var(--green);margin-top:8px;font-weight:600}
+/* table */
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;border-bottom:2px solid var(--line)}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr.click{cursor:pointer}
+tr.click:hover{background:var(--lt2)}
+.badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.b-green{background:var(--ltgreen);color:var(--green)}
+.b-blue{background:var(--lt);color:var(--blue)}
+.b-amber{background:var(--ltamber);color:var(--amber)}
+.b-red{background:var(--ltred);color:var(--red)}
+.b-purple{background:var(--ltpurple);color:var(--purple)}
+.b-teal{background:var(--ltteal);color:var(--teal)}
+.b-grey{background:#eef1f5;color:#5b6472}
+.lvl{font-weight:800;font-size:12px}
+input,select,textarea{font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:#fff;color:var(--ink)}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--blue)}
+.btn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:9px 16px;font-weight:600;cursor:pointer;font-size:13px}
+.btn:hover{background:var(--blue2)}
+.btn.ghost{background:#fff;color:var(--navy);border:1px solid var(--line)}
+.btn.ghost:hover{background:var(--lt2)}
+.btn.sm{padding:6px 11px;font-size:12px}
+.btn.danger{background:var(--red)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.search{flex:1;min-width:180px}
+.score-in{width:54px;text-align:center;padding:5px}
+.muted{color:var(--muted)}
+.hr{height:1px;background:var(--line);margin:14px 0}
+.tag{display:inline-flex;align-items:center;gap:6px;background:var(--lt);color:var(--navy);padding:4px 10px;border-radius:7px;font-size:12px;font-weight:600;margin:0 6px 6px 0}
+.progress{height:9px;background:#eef1f5;border-radius:6px;overflow:hidden}
+.progress > i{display:block;height:100%;background:var(--blue);border-radius:6px}
+.progress.green > i{background:var(--green)}
+.progress.amber > i{background:var(--amber)}
+.avatar{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;font-size:12px;flex-shrink:0}
+.profile-hd{display:flex;gap:16px;align-items:center}
+.kv{display:grid;grid-template-columns:150px 1fr;gap:6px 14px;font-size:13px}
+.kv .k{color:var(--muted)}
+.notice{background:var(--ltamber);border:1px solid #f0dca0;color:#7a5200;border-radius:10px;padding:12px 14px;font-size:13px;margin-bottom:18px}
+.notice.blue{background:var(--lt);border-color:#cdddf3;color:var(--navy)}
+.feed-item{border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:10px}
+.feed-item .meta{color:var(--muted);font-size:11.5px;margin-top:6px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:16px;flex-wrap:wrap}
+.tabs button{background:none;border:none;padding:9px 14px;font-weight:600;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-size:13px}
+.tabs button.active{color:var(--navy);border-bottom-color:var(--blue)}
+.demo-banner{background:#fff7e6;border-bottom:1px solid #f0dca0;color:#7a5200;font-size:12px;padding:7px 24px;text-align:center}
+.rc{border:2px solid var(--navy);border-radius:10px;overflow:hidden}
+.rc .rc-hd{background:var(--navy);color:#fff;padding:14px 18px}
+.rc .rc-hd b{font-size:16px}
+.rc .rc-body{padding:16px 18px}
+.ls-grid{display:grid;grid-template-columns:1fr 60px;gap:6px;max-width:440px}
+.pf{font-size:11px;color:var(--muted)}
+code.k{background:var(--lt);color:var(--navy);padding:1px 6px;border-radius:5px;font-size:12px;font-family:ui-monospace,Menlo,monospace}
+/* timetable */
+.tt{display:grid;grid-template-columns:70px repeat(5,1fr);gap:6px}
+.tt .hd{font-weight:700;font-size:11px;color:var(--muted);text-transform:uppercase;text-align:center;padding:6px}
+.tt .per{font-size:11px;color:var(--muted);display:flex;align-items:center;justify-content:center;text-align:center}
+.tt .cell{border:1px solid var(--line);border-radius:8px;padding:8px;min-height:54px;font-size:12px}
+.tt .cell.f{background:var(--lt);border-color:#cdddf3}
+.tt .cell b{display:block;font-size:12.5px}
+/* login */
+.login-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#1f3864,#2e75b6);padding:24px}
+.login-card{background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.3);width:100%;max-width:880px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr}
+@media(max-width:760px){.login-card{grid-template-columns:1fr}}
+.login-left{background:linear-gradient(160deg,#1f3864,#16294a);color:#dbe6f7;padding:38px 34px}
+.login-left .logo{width:50px;height:50px;border-radius:12px;background:linear-gradient(135deg,#3a86d4,#5aa0e6);display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:22px;margin-bottom:18px}
+.login-left h1{margin:0 0 6px;font-size:26px;color:#fff}
+.login-left p{font-size:13px;line-height:1.6;color:#aebfda}
+.login-left ul{padding-left:18px;font-size:12.5px;color:#9fb6da;line-height:1.9;margin:14px 0 0}
+.login-right{padding:38px 34px}
+.login-right h2{margin:0 0 4px;font-size:19px}
+.login-right .sub{color:var(--muted);font-size:13px;margin-bottom:20px}
+.role-btn{display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:1px solid var(--line);background:#fff;border-radius:11px;padding:13px 15px;margin-bottom:11px;cursor:pointer;transition:.12s}
+.role-btn:hover{border-color:var(--blue);background:var(--lt2);transform:translateY(-1px)}
+.role-btn .ric{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;flex-shrink:0}
+.role-btn b{display:block;font-size:14.5px}
+.role-btn span{font-size:12px;color:var(--muted)}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal{background:#fff;border-radius:14px;max-width:560px;width:100%;max-height:88vh;overflow:auto;box-shadow:0 24px 60px rgba(0,0,0,.3)}
+.modal .m-hd{padding:16px 20px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.modal .m-hd b{font-size:16px}
+.modal .m-bd{padding:18px 20px}
+.x{margin-left:auto;cursor:pointer;font-size:20px;color:var(--muted);background:none;border:none}
+.chip{display:inline-block;background:var(--lt);color:var(--navy);border-radius:7px;padding:3px 9px;font-size:11.5px;font-weight:600;margin:0 5px 5px 0}
+.heat{display:inline-block;width:26px;text-align:center;border-radius:5px;font-weight:700;font-size:12px;padding:3px 0}
+@media print{
+  .side,.top,.demo-banner,.no-print{display:none!important}
+  .content{max-width:100%;padding:0}
+  body{background:#fff}
+  .card{box-shadow:none;border:none}
+}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="modal"></div>
+<script>
+/* ========================================================================
+   InSite — School Management System (complete clickable front-end)
+   Single-file demo aligned to the InSite Blueprint (Ontario Grades 9–12).
+   Synthetic, deterministic demo data; edits persist to localStorage.
+   ===================================================================== */
+
+/* ----------------------- seeded RNG (deterministic) ------------------- */
+let _seed = 1987;
+function srand(){ _seed = (_seed*1103515245 + 12345) & 0x7fffffff; return _seed/0x7fffffff; }
+function rnd(a){ return a[Math.floor(srand()*a.length)]; }
+function ri(a,b){ return Math.floor(srand()*(b-a+1))+a; }
+function chance(p){ return srand()<p; }
+
+/* ----------------------- persistence layer ---------------------------- */
+const STORE_KEY='insite_demo_v2';
+let DB = { scores:{}, att:{}, ann:null, threads:null, hours:{}, ls:{} };
+function loadDB(){ try{ const r=localStorage.getItem(STORE_KEY); if(r) DB=Object.assign(DB,JSON.parse(r)); }catch(e){} }
+function saveDB(){ try{ localStorage.setItem(STORE_KEY, JSON.stringify(DB)); }catch(e){} }
+function resetDB(){ localStorage.removeItem(STORE_KEY); location.reload(); }
+loadDB();
+
+/* ----------------------- reference data ------------------------------- */
+const C = ['#2e75b6','#2e6b3e','#9c6500','#7b4ca0','#b23b3b','#1f8a8a','#bb5c2a','#3a5ba0','#8a1f5c','#2a7d5f'];
+// Ontario achievement chart categories
+const cats=[{k:'K',n:'Knowledge & Understanding',w:25},{k:'T',n:'Thinking',w:25},{k:'C',n:'Communication',w:20},{k:'A',n:'Application',w:30}];
+// Learning skills (Growing Success — reported separately)
+const lsKeys={resp:'Responsibility',org:'Organization',ind:'Independent Work',collab:'Collaboration',init:'Initiative',self:'Self-Regulation'};
+
+// Course catalogue across grades 9–12 (Ontario codes), with credit/area/transcript order
+const COURSES=[
+  {code:'ENG1D',name:'English',grade:9,area:'English',credit:1,type:'D',ord:1,compulsory:true},
+  {code:'MTH1W',name:'Mathematics',grade:9,area:'Mathematics',credit:1,type:'W',ord:2,compulsory:true},
+  {code:'SNC1W',name:'Science',grade:9,area:'Science',credit:1,type:'W',ord:3,compulsory:true},
+  {code:'CGC1D',name:'Geography of Canada',grade:9,area:'Canadian & World Studies',credit:1,type:'D',ord:4,compulsory:true},
+  {code:'FSF1D',name:'Core French',grade:9,area:'French',credit:1,type:'D',ord:5,compulsory:true},
+  {code:'PPL1O',name:'Healthy Active Living',grade:9,area:'Health & Phys. Ed.',credit:1,type:'O',ord:6,compulsory:true},
+  {code:'AMU1O',name:'Music',grade:9,area:'The Arts',credit:1,type:'O',ord:7,compulsory:false},
+  {code:'ENG2D',name:'English',grade:10,area:'English',credit:1,type:'D',ord:8,compulsory:true},
+  {code:'MPM2D',name:'Principles of Mathematics',grade:10,area:'Mathematics',credit:1,type:'D',ord:9,compulsory:true},
+  {code:'SNC2D',name:'Science',grade:10,area:'Science',credit:1,type:'D',ord:10,compulsory:true},
+  {code:'CHC2D',name:'Canadian History',grade:10,area:'Canadian & World Studies',credit:1,type:'D',ord:11,compulsory:true},
+  {code:'CHV2O',name:'Civics & Citizenship',grade:10,area:'Canadian & World Studies',credit:0.5,type:'O',ord:12,compulsory:true},
+  {code:'GLC2O',name:'Career Studies',grade:10,area:'Guidance',credit:0.5,type:'O',ord:13,compulsory:true},
+  {code:'BBI2O',name:'Intro to Business',grade:10,area:'Business',credit:1,type:'O',ord:14,compulsory:false},
+  {code:'ENG3U',name:'English',grade:11,area:'English',credit:1,type:'U',ord:15,compulsory:true},
+  {code:'MCR3U',name:'Functions',grade:11,area:'Mathematics',credit:1,type:'U',ord:16,compulsory:true},
+  {code:'SCH3U',name:'Chemistry',grade:11,area:'Science',credit:1,type:'U',ord:17,compulsory:false},
+  {code:'SBI3U',name:'Biology',grade:11,area:'Science',credit:1,type:'U',ord:18,compulsory:false},
+  {code:'SPH3U',name:'Physics',grade:11,area:'Science',credit:1,type:'U',ord:19,compulsory:false},
+  {code:'CHA3U',name:'American History',grade:11,area:'Canadian & World Studies',credit:1,type:'U',ord:20,compulsory:false},
+  {code:'FSF3U',name:'Core French',grade:11,area:'French',credit:1,type:'U',ord:21,compulsory:false},
+  {code:'AVI3M',name:'Visual Arts',grade:11,area:'The Arts',credit:1,type:'M',ord:22,compulsory:false},
+  {code:'PPL3O',name:'Healthy Active Living',grade:11,area:'Health & Phys. Ed.',credit:1,type:'O',ord:23,compulsory:false},
+  {code:'BAF3M',name:'Financial Accounting',grade:11,area:'Business',credit:1,type:'M',ord:24,compulsory:false},
+  {code:'ENG4U',name:'English',grade:12,area:'English',credit:1,type:'U',ord:25,compulsory:true},
+  {code:'MHF4U',name:'Advanced Functions',grade:12,area:'Mathematics',credit:1,type:'U',ord:26,compulsory:false},
+  {code:'MCV4U',name:'Calculus & Vectors',grade:12,area:'Mathematics',credit:1,type:'U',ord:27,compulsory:false},
+  {code:'SCH4U',name:'Chemistry',grade:12,area:'Science',credit:1,type:'U',ord:28,compulsory:false},
+  {code:'SBI4U',name:'Biology',grade:12,area:'Science',credit:1,type:'U',ord:29,compulsory:false},
+  {code:'SPH4U',name:'Physics',grade:12,area:'Science',credit:1,type:'U',ord:30,compulsory:false},
+  {code:'BBB4M',name:'International Business',grade:12,area:'Business',credit:1,type:'M',ord:31,compulsory:false},
+  {code:'AVI4M',name:'Visual Arts',grade:12,area:'The Arts',credit:1,type:'M',ord:32,compulsory:false},
+];
+
+const TEACHERS=[
+  {id:'T1',name:'Ms. A. Reyes',dept:'English',color:'#2e75b6'},
+  {id:'T2',name:'Mr. D. Okafor',dept:'Mathematics',color:'#2e6b3e'},
+  {id:'T3',name:'Mme L. Tremblay',dept:'French / Arts',color:'#7b4ca0'},
+  {id:'T4',name:'Mr. J. Whitefeather',dept:'Canadian & World Studies',color:'#bb5c2a'},
+  {id:'T5',name:'Ms. P. Kaur',dept:'Science',color:'#1f8a8a'},
+  {id:'T6',name:'Mr. T. Brandt',dept:'Science / Tech',color:'#b23b3b'},
+  {id:'T7',name:'Ms. R. Cohen',dept:'Business',color:'#3a5ba0'},
+  {id:'T8',name:'Mr. S. Idris',dept:'Phys. Ed.',color:'#9c6500'},
+];
+function teacherInitials(n){ const p=n.replace(/^(Ms\.|Mr\.|Mme|Mrs\.|Dr\.)\s*/,'').split(/[\s.]+/).filter(Boolean); return (p[0][0]+(p[p.length-1][0]||'')).toUpperCase(); }
+
+const fnames=['Olivia','Liam','Emma','Noah','Ava','Ethan','Sophia','Mason','Isabella','Lucas','Mia','Aiden','Charlotte','Caleb','Amara','Ravi','Mei','Yusuf','Sofia','Daniel','Hannah','Elijah','Grace','Samuel','Naomi','Jonah','Leah','Micah','Ruth','Asher','Priya','Kenji','Zara','Marcus','Ines'];
+const lnames=['Tan','Okonkwo','Singh','MacDonald','Nguyen','Bauman','Friesen','Abara','Lopez','Cho','Petrov','Hassan','Wiebe','Dyck','Mensah','Ali','Park','Iqbal','Romero','Klassen','Ferreira','Yoon','Haddad','Costa'];
+const streets=['Maple Ave','Oak Crescent','Riverside Dr','Elm Street','Birchwood Rd','Cedar Lane','Lakeshore Blvd'];
+const allergies=['Peanuts (EpiPen)','Tree nuts','Bee sting','Dairy','Shellfish'];
+const meds=['Inhaler (asthma)','EpiPen','ADHD medication (office)','Insulin (Type 1)'];
+
+/* ----------------------- generate students --------------------------- */
+let STUDENTS=[], idc=1000;
+const grades=[9,10,11,12];
+const CUR_YEAR=2026;
+for(let i=0;i<54;i++){
+  const fn=rnd(fnames), ln=rnd(lnames), g=rnd(grades);
+  const cohortYr = CUR_YEAR-(g-9); // year they entered grade 9
+  const id=++idc;
+  const guardian1=rnd(['Mother','Father','Guardian']);
+  const s={
+    id, oen:String(ri(100,999))+'-'+String(ri(100,999))+'-'+String(ri(100,999)),
+    first:fn, last:ln, grade:g, gender:rnd(['F','M','X']),
+    dob:(CUR_YEAR-g-6)+'-0'+ri(1,9)+'-'+String(ri(10,28)),
+    gradYear:CUR_YEAR+(12-g), enteredG9:cohortYr,
+    homeroom:g+'-'+rnd(['A','B']), color:rnd(C),
+    status:'Active', locker:String(ri(100,499)),
+    address:ri(10,290)+' '+rnd(streets)+', Toronto ON',
+    iep: chance(0.13), supportDocs: false,
+    hours: ri(0,55),
+    osslt: g>=11 ? rnd(['Passed','Passed','Passed','Not yet']) : (g===10?'Eligible Gr 10':'N/A'),
+    onlineCr: g>=10 ? ri(0,2) : 0,
+    allergy: chance(0.20) ? rnd(allergies) : null,
+    med: chance(0.14) ? rnd(meds) : null,
+    g1:{rel:guardian1, name:(chance(.5)?'Maria':'David')+' '+ln, email:fn.toLowerCase()+'.'+ln.toLowerCase()+'@example.com', phone:'416-555-0'+ri(100,999), emailOK:true, infoOK:true, custody:'Joint'},
+    g2:{rel:guardian1==='Mother'?'Father':'Mother', name:(chance(.5)?'John':'Sarah')+' '+ln, email:'guardian2.'+ln.toLowerCase()+'@example.com', phone:'416-555-0'+ri(100,999), emailOK:chance(.7), infoOK:true, custody:'Joint'},
+    mediaOK: chance(0.85), tuition: rnd(['Paid in full','Plan (monthly)','Balance owing']),
+    tests:[], incidents:[], awards:[]
+  };
+  s.supportDocs = s.iep;
+  // standardized tests
+  if(g<=10) s.tests.push({n:'Fountas & Pinnell (reading)', v:'Level '+rnd(['W','X','Y','Z']), when:'2025-10'});
+  s.tests.push({n:'PAT (numeracy stanine)', v:'Stanine '+ri(3,9), when:'2025-09'});
+  if(g>=11) s.tests.push({n:'OSSLT', v:s.osslt, when:'2026-03'});
+  STUDENTS.push(s);
+}
+STUDENTS.sort((a,b)=> a.last.localeCompare(b.last) || a.first.localeCompare(b.first));
+// incidents + awards on a subset
+const incTypes=[['Late to class repeatedly','Minor','b-amber'],['Uniform infraction','Minor','b-grey'],['Disruptive behaviour','Moderate','b-amber'],['Academic integrity concern','Serious','b-red']];
+STUDENTS.forEach(s=>{
+  if(chance(0.22)){ const t=rnd(incTypes); s.incidents.push({date:'2026-0'+ri(2,5)+'-'+ri(10,27), type:t[0], sev:t[1], cls:t[2], by:rnd(TEACHERS).name, status:rnd(['Resolved','Follow-up','Logged'])}); }
+});
+
+/* ----------------------- transcript history -------------------------- */
+// completed courses from prior grades, so transcript / credit counts are real
+function buildTranscript(s){
+  const tr=[];
+  for(let gr=9; gr<s.grade; gr++){
+    const opts=COURSES.filter(c=>c.grade===gr);
+    const taken = opts.slice(0, Math.min(opts.length, ri(6,8)));
+    taken.forEach(c=>{
+      let mark=ri(58,95); if(s.iep) mark=ri(52,86);
+      tr.push({code:c.code,name:c.name,area:c.area,grade:gr,year:(s.enteredG9+(gr-9))+'–'+String(s.enteredG9+(gr-9)+1).slice(2),mark,credit:c.credit,compulsory:c.compulsory});
+    });
+  }
+  return tr;
+}
+STUDENTS.forEach(s=> s.transcript=buildTranscript(s));
+function earnedCredits(s){ return s.transcript.reduce((a,t)=>a+(t.mark>=50?t.credit:0),0); }
+function compulsoryCredits(s){ return s.transcript.reduce((a,t)=>a+(t.compulsory&&t.mark>=50?t.credit:0),0); }
+
+/* ----------------------- sections / gradebook ------------------------ */
+let SECTIONS=[];
+const titles=['Diagnostic','Unit 1 Task','Quiz 1','Investigation','Unit 2 Task','Seminar','Quiz 2','Mid-term Performance','Unit 3 Project','Culminating'];
+COURSES.filter(c=>c.grade>=11).forEach((c,ci)=>{
+  const pool=STUDENTS.filter(s=>s.grade===c.grade);
+  const roster=pool.slice(0, Math.min(pool.length, ri(13,19)));
+  const assigns=[];
+  const nA=ri(7,9);
+  for(let a=0;a<nA;a++){
+    assigns.push({id:'A'+ci+'_'+a,title:titles[a%titles.length],cat:cats[a%cats.length].k,denom:rnd([10,20,25,50,100]),date:'2026-0'+ri(1,5)+'-'+String(ri(10,28)),posted:true});
+  }
+  const scores={};
+  roster.forEach(s=>{assigns.forEach(a=>{
+    let base=ri(58,96); if(s.iep)base=ri(52,88);
+    scores[s.id+'|'+a.id]= chance(0.06)? '' : Math.round(a.denom*base/100);
+  });});
+  const ls={};
+  roster.forEach(s=>{ ls[s.id]={}; Object.keys(lsKeys).forEach(k=>{ ls[s.id][k]=rnd(['E','E','G','G','G','S','S','N']); }); });
+  const teacher=TEACHERS[ci%TEACHERS.length];
+  // quizzes for this section
+  const quizzes=[
+    {id:'Q'+ci+'_1',title:c.name+' — Quiz 1',q:ri(8,14),type:'Auto-graded',state:'Closed',avg:ri(70,86),done:roster.length-ri(0,3),pending:ri(0,3),time:25},
+    {id:'Q'+ci+'_2',title:c.name+' — Unit Check',q:ri(10,20),type:'Mixed',state:rnd(['Open','Scheduled']),avg:null,done:ri(4,12),pending:ri(1,4),time:30},
+  ];
+  SECTIONS.push({id:'SEC'+ci,course:c,teacher,period:(ci%4)+1,room:String(ri(101,240)),roster,assigns,scores,ls,quizzes,override:{}});
+});
+
+/* ----------------------- clubs / groups ------------------------------ */
+const clubs=[
+  {name:'Student Council',sponsor:'Ms. A. Reyes',members:18,cat:'Leadership',hours:true},
+  {name:'Robotics Club',sponsor:'Mr. T. Brandt',members:12,cat:'STEM',hours:true},
+  {name:'Senior Choir',sponsor:'Mme L. Tremblay',members:24,cat:'Arts',hours:false},
+  {name:'Cross Country',sponsor:'Mr. S. Idris',members:15,cat:'Athletics',hours:true},
+  {name:'Yearbook',sponsor:'Ms. P. Kaur',members:9,cat:'Media',hours:true},
+  {name:'Debate Society',sponsor:'Mr. J. Whitefeather',members:11,cat:'Academic',hours:false},
+  {name:'Environmental Action',sponsor:'Ms. R. Cohen',members:14,cat:'Service',hours:true},
+  {name:'Homeroom 11-A',sponsor:'Ms. A. Reyes',members:22,cat:'Homeroom',hours:false},
+];
+
+/* ----------------------- announcements & messages -------------------- */
+const baseAnn=[
+  {who:'Office',title:'Semester 2 report cards publish Friday',body:'Mid-term Provincial Report Cards (Grades 9–12) will be released to the Parent Portal on Friday at 4:00 PM.',when:'Today, 9:14 AM',aud:'All families'},
+  {who:'Mr. T. Brandt',title:'Robotics regionals permission form',body:'Please submit the digital permission form by Thursday for students attending the regional competition.',when:'Yesterday',aud:'Robotics Club'},
+  {who:'Ms. A. Reyes',title:'Grade 11 ENG3U seminar moved',body:'The Unit 2 seminar is rescheduled to Monday. Submissions still due Sunday 11:59 PM.',when:'2 days ago',aud:'ENG3U'},
+  {who:'Office',title:'Parent–teacher conferences open for booking',body:'Spring PTC evening is March 6. Booking is now open in the Parent Portal.',when:'3 days ago',aud:'All families'},
+];
+if(!DB.ann) DB.ann=baseAnn.slice();
+const baseThreads=[
+  {id:'TH1',with:'Ms. Reyes (ENG3U)',student:null,msgs:[{from:'Ms. Reyes',t:"Thanks for connecting — your child's essay draft shows great progress.",when:'Tue 2:10 PM'},{from:'You',t:'Thank you, we appreciate the feedback!',when:'Tue 6:40 PM'}]},
+  {id:'TH2',with:'Office',student:null,msgs:[{from:'Office',t:'A reminder that the spring tuition installment is due May 1.',when:'Mon 11:00 AM'}]},
+];
+if(!DB.threads) DB.threads=baseThreads.slice();
+
+/* ----------------------- audit log ----------------------------------- */
+const AUDIT=[
+  {who:'R. Sommer (Admin)',act:'Viewed restricted health field',obj:'Student #'+STUDENTS[0].id,when:'Today 8:51 AM'},
+  {who:'Ms. A. Reyes (Teacher)',act:'Overrode calculated mark',obj:'ENG3U / 1 student',when:'Today 8:32 AM'},
+  {who:'System',act:'Released report cards (draft)',obj:'Grade 11 cohort',when:'Yesterday 4:00 PM'},
+  {who:'Mr. D. Okafor (Teacher)',act:'Submitted attendance',obj:'MCR3U P2',when:'Yesterday 9:05 AM'},
+];
+
+/* ----------------------- helpers ------------------------------------- */
+const $=(s,r=document)=>r.querySelector(s);
+function initials(s){return (s.first[0]+s.last[0]).toUpperCase()}
+function av(s,size=36){return `<div class="avatar" style="width:${size}px;height:${size}px;background:${s.color}">${initials(s)}</div>`}
+function tav(t,size=36){return `<div class="avatar" style="width:${size}px;height:${size}px;background:${t.color}">${teacherInitials(t.name)}</div>`}
+function pctToLevel(p){ if(p===''||p==null||isNaN(p))return {l:'—',c:'b-grey'}; p=+p;
+  if(p>=80)return{l:'L4',c:'b-blue'}; if(p>=70)return{l:'L3',c:'b-green'}; if(p>=60)return{l:'L2',c:'b-amber'}; if(p>=50)return{l:'L1',c:'b-amber'}; return{l:'R',c:'b-red'};}
+function scoreOf(sec,sid,aid){ const k=sid+'|'+aid; return (k in DB.scores)? DB.scores[k] : sec.scores[k]; }
+function sectionMark(sec,sid){
+  let tot=0,wsum=0;
+  cats.forEach(cat=>{
+    const as=sec.assigns.filter(a=>a.cat===cat.k);
+    let sum=0,n=0;
+    as.forEach(a=>{const v=scoreOf(sec,sid,a.id); if(v!==''&&v!=null&&!isNaN(v)){sum+=(+v/a.denom)*100;n++;}});
+    if(n>0){tot+=(sum/n)*cat.w; wsum+=cat.w;}
+  });
+  if(wsum===0)return '';
+  const ovk=sec.id+'|'+sid;
+  if(ovk in (DB.override||{})) return DB.override[ovk];
+  return Math.round(tot/wsum);
+}
+function isOverridden(sec,sid){ return (sec.id+'|'+sid) in (DB.override||{}); }
+function lsOf(sec,sid,k){ const ok='LS_'+sec.id+'|'+sid+'|'+k; return ok in DB.ls ? DB.ls[ok] : (sec.ls[sid]?sec.ls[sid][k]:'G'); }
+function hoursOf(s){ const k='H'+s.id; return k in DB.hours ? DB.hours[k] : s.hours; }
+function studentSections(id){ return SECTIONS.filter(sec=>sec.roster.some(r=>r.id===id)); }
+function esc(t){ return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+/* ----------------------- session / roles ----------------------------- */
+let SESSION=null;
+// demo identities
+const DEMO_TEACHER=TEACHERS[0]; // Ms. Reyes
+function demoStudent(){ return STUDENTS.filter(s=>s.grade===11)[0]; }
+function demoChild(){ return STUDENTS.filter(s=>s.grade===11)[1]; }
+
+const ROLES={
+  admin:{label:'Administrator', name:'R. Sommer', color:'#1f3864', ic:'🏛'},
+  teacher:{label:'Teacher', name:DEMO_TEACHER.name, color:'#2e6b3e', ic:'👩‍🏫'},
+  student:{label:'Student', name:'', color:'#7b4ca0', ic:'🎓'},
+  parent:{label:'Parent / Guardian', name:'', color:'#bb5c2a', ic:'👨‍👩‍👧'},
+};
+
+/* ----------------------- navigation per role ------------------------- */
+const NAV_ADMIN=[
+  {g:'School'},
+  {id:'dash',ic:'▣',t:'Dashboard'},
+  {id:'students',ic:'👥',t:'Students'},
+  {id:'attendance',ic:'✓',t:'Attendance'},
+  {id:'timetable',ic:'🗓',t:'Timetable'},
+  {g:'Academics'},
+  {id:'gradebook',ic:'▦',t:'Gradebook'},
+  {id:'assignments',ic:'⤴',t:'Assignments'},
+  {id:'quizzes',ic:'❓',t:'Quizzing'},
+  {id:'reportcard',ic:'▤',t:'Report Cards'},
+  {id:'transcript',ic:'📜',t:'Transcripts'},
+  {id:'grad',ic:'🎓',t:'Graduation (OSSD)'},
+  {g:'Students & Community'},
+  {id:'behaviour',ic:'⚑',t:'Behaviour'},
+  {id:'awards',ic:'🏅',t:'Awards & Honour Roll'},
+  {id:'parent',ic:'⌂',t:'Parent Portal'},
+  {id:'comms',ic:'✉',t:'Communication'},
+  {id:'ptc',ic:'🤝',t:'PTC Booking'},
+  {id:'clubs',ic:'★',t:'Groups & Clubs'},
+  {g:'Ministry & System'},
+  {id:'onsis',ic:'⛗',t:'OnSIS Export'},
+  {id:'admin',ic:'⚙',t:'Admin & Audit'},
+];
+const NAV_TEACHER=[
+  {g:'Teaching'},
+  {id:'dash',ic:'▣',t:'Dashboard'},
+  {id:'gradebook',ic:'▦',t:'My Gradebook'},
+  {id:'assignments',ic:'⤴',t:'Assignments'},
+  {id:'quizzes',ic:'❓',t:'Quizzing'},
+  {id:'attendance',ic:'✓',t:'Attendance'},
+  {id:'reportcard',ic:'▤',t:'Report Cards'},
+  {g:'People'},
+  {id:'students',ic:'👥',t:'My Students'},
+  {id:'comms',ic:'✉',t:'Communication'},
+  {id:'ptc',ic:'🤝',t:'PTC Booking'},
+  {id:'clubs',ic:'★',t:'Clubs'},
+  {id:'timetable',ic:'🗓',t:'My Timetable'},
+];
+const NAV_STUDENT=[
+  {g:'My School'},
+  {id:'dash',ic:'▣',t:'Dashboard'},
+  {id:'mymarks',ic:'▦',t:'My Courses & Marks'},
+  {id:'myassign',ic:'⤴',t:'Assignments'},
+  {id:'myquiz',ic:'❓',t:'Quizzes'},
+  {id:'timetable',ic:'🗓',t:'My Timetable'},
+  {id:'mygrad',ic:'🎓',t:'My Graduation Path'},
+  {id:'clubs',ic:'★',t:'Clubs'},
+  {id:'mymsg',ic:'✉',t:'Messages'},
+];
+const NAV_PARENT=[
+  {g:'My Family'},
+  {id:'pdash',ic:'⌂',t:'Overview'},
+  {id:'pmarks',ic:'▦',t:'Marks'},
+  {id:'pattend',ic:'✓',t:'Attendance'},
+  {id:'preport',ic:'▤',t:'Report Cards'},
+  {id:'phours',ic:'⏱',t:'Community Hours'},
+  {id:'pmsg',ic:'✉',t:'Messages'},
+  {id:'pptc',ic:'🤝',t:'Book Conference'},
+  {id:'pann',ic:'📣',t:'Announcements'},
+];
+function navFor(role){ return {admin:NAV_ADMIN,teacher:NAV_TEACHER,student:NAV_STUDENT,parent:NAV_PARENT}[role]; }
+
+const TITLES={
+  dash:['Dashboard','Overview of today'], students:['Students','Student information system'],
+  attendance:['Attendance','Daily & per-class attendance'], timetable:['Timetable','Periods, sections & rooms'],
+  gradebook:['Gradebook','Assignments, scores & calculated marks'], assignments:['Assignments & Submissions','Post → submit → grade'],
+  quizzes:['Online Quizzing','Question banks, auto-grading & item analysis'], reportcard:['Report Cards','Ontario Provincial Report Card, Grades 9–12'],
+  transcript:['Transcripts','Ontario OST & GPA transcript'], grad:['Graduation Tracking','OSSD requirement progress'],
+  behaviour:['Behaviour & Incidents','Report → review → action → follow-up'], awards:['Awards & Honour Roll','Recognition & eligibility'],
+  parent:['Parent Portal','What a guardian sees'], comms:['Communication','Announcements & messaging'],
+  ptc:['Parent–Teacher Conferences','Self-service booking'], clubs:['Groups & Clubs','Co-curricular management'],
+  onsis:['OnSIS Export','Ontario Ministry of Education reporting'], admin:['Admin & Audit','Roles, settings & access log'],
+  mymarks:['My Courses & Marks','Live achievement'], myassign:['My Assignments','Upcoming & submitted'],
+  myquiz:['My Quizzes','Assigned assessments'], mygrad:['My Graduation Path','Progress to my OSSD'], mymsg:['Messages','Teachers & office'],
+  pdash:['Family Overview','Your child at a glance'], pmarks:['Marks','As released by the school'], pattend:['Attendance','Your child'],
+  preport:['Report Cards','Released documents'], phours:['Community Hours','40-hour requirement'], pmsg:['Messages','Teachers & office'],
+  pptc:['Book a Conference','Parent–teacher scheduling'], pann:['Announcements','From the school'],
+};
+
+/* ============================ APP SHELL ============================== */
+const PAGES={};
+let CUR='dash';
+function bootApp(){
+  const r=ROLES[SESSION.role];
+  document.getElementById('root').innerHTML=`
+  <div class="app">
+    <aside class="side">
+      <div class="brand"><div class="logo">iS</div><div><b>InSite</b><small>School Management</small></div></div>
+      <nav class="nav" id="nav"></nav>
+      <div class="role-foot">Signed in as <b style="color:#fff">${r.name}</b><br>${r.label} • <a onclick="logout()">Switch role</a></div>
+    </aside>
+    <div class="main">
+      <div class="demo-banner">Working prototype • synthetic demo data • aligned to Ontario Growing Success &amp; OSSD requirements</div>
+      <div class="top">
+        <div><h1 id="pgTitle">Dashboard</h1><div class="crumb" id="pgCrumb">Overview of today</div></div>
+        <div class="spacer"></div>
+        <span class="pill">2025–26 • Semester 2</span>
+        <div class="who"><div class="av" style="background:${r.color}">${r.name.split(/[\s.]+/).filter(Boolean).map(x=>x[0]).slice(0,2).join('')}</div><div><div style="font-weight:600;font-size:13px">${r.name}</div><div class="muted" style="font-size:11px">${r.label}</div></div></div>
+      </div>
+      <div class="content" id="view"></div>
+    </div>
+  </div>`;
+  buildNav();
+  const first=navFor(SESSION.role).find(n=>n.id).id;
+  go(first);
+}
+function buildNav(){
+  const nav=$('#nav'); nav.innerHTML='';
+  navFor(SESSION.role).forEach(n=>{
+    if(n.g){const d=document.createElement('div');d.className='grp';d.textContent=n.g;nav.appendChild(d);return;}
+    const a=document.createElement('a');a.dataset.id=n.id;a.innerHTML=`<span class="ic">${n.ic}</span> ${n.t}`;
+    a.onclick=()=>go(n.id); nav.appendChild(a);
+  });
+}
+function go(id,arg){
+  CUR=id;
+  document.querySelectorAll('.nav a').forEach(a=>a.classList.toggle('active',a.dataset.id===id));
+  const t=TITLES[id]||[id,''];
+  $('#pgTitle').innerHTML=t[0]; $('#pgCrumb').innerHTML=t[1];
+  window.scrollTo(0,0);
+  (PAGES[id]||PAGES.dash)(arg);
+}
+window.go=go;
+
+/* ----------------------- modal ---------------------------------------- */
+function modal(title, html){
+  document.getElementById('modal').innerHTML=`<div class="modal-bg" onclick="if(event.target===this)closeModal()"><div class="modal"><div class="m-hd"><b>${title}</b><button class="x" onclick="closeModal()">×</button></div><div class="m-bd">${html}</div></div></div>`;
+}
+function closeModal(){ document.getElementById('modal').innerHTML=''; }
+window.closeModal=closeModal;
+
+/* ----------------------- login ---------------------------------------- */
+function loginScreen(){
+  document.getElementById('root').innerHTML=`
+  <div class="login-wrap"><div class="login-card">
+    <div class="login-left">
+      <div class="logo">iS</div>
+      <h1>InSite</h1>
+      <p>An integrated, web-based school management system for Ontario Grades 9–12 — student records, gradebook, assignments &amp; quizzing, report cards, OSSD tracking, parent communication, and OnSIS reporting in one place.</p>
+      <ul>
+        <li>Evidence-based marks (Growing Success 70/30 + levels)</li>
+        <li>Provincial Report Card &amp; OST transcript generation</li>
+        <li>Role-based access — staff, students, parents</li>
+        <li>OnSIS export keyed to the OEN</li>
+      </ul>
+      <p style="margin-top:18px;font-size:11px;color:#7e95bd">Demo build • choose a role to explore. No real student data.</p>
+    </div>
+    <div class="login-right">
+      <h2>Sign in</h2>
+      <div class="sub">Single sign-on (Google Workspace / Microsoft 365) in production. For this demo, pick a role:</div>
+      <button class="role-btn" onclick="login('admin')"><div class="ric" style="background:#1f3864">🏛</div><div><b>Administrator</b><span>Full school view — every module</span></div></button>
+      <button class="role-btn" onclick="login('teacher')"><div class="ric" style="background:#2e6b3e">👩‍🏫</div><div><b>Teacher</b><span>${DEMO_TEACHER.name} — gradebook, attendance, classes</span></div></button>
+      <button class="role-btn" onclick="login('student')"><div class="ric" style="background:#7b4ca0">🎓</div><div><b>Student</b><span>Marks, assignments, quizzes, grad path</span></div></button>
+      <button class="role-btn" onclick="login('parent')"><div class="ric" style="background:#bb5c2a">👨‍👩‍👧</div><div><b>Parent / Guardian</b><span>Your child's portal</span></div></button>
+      <div class="pf" style="margin-top:14px">🔒 Role-based access control — each role sees only what it should.</div>
+    </div>
+  </div></div>`;
+}
+function login(role){
+  SESSION={role};
+  if(role==='student'){ SESSION.student=demoStudent(); ROLES.student.name=SESSION.student.first+' '+SESSION.student.last; }
+  if(role==='parent'){ SESSION.child=demoChild(); ROLES.parent.name=SESSION.child.g1.name; }
+  bootApp();
+}
+function logout(){ SESSION=null; closeModal(); loginScreen(); }
+window.login=login; window.logout=logout;
+
+/* ========================================================================
+   PAGES
+   ===================================================================== */
+
+/* ---------- shared: average mark across all sections ----------------- */
+function avgGr11(){let a=[];SECTIONS.forEach(s=>s.roster.forEach(st=>{const m=sectionMark(s,st.id);if(m!=='')a.push(+m)}));return a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length):0;}
+
+/* ---------- DASHBOARD (role aware) ----------------------------------- */
+PAGES.dash=()=>{
+  if(SESSION.role==='teacher') return dashTeacher();
+  if(SESSION.role==='student') return dashStudent();
+  // admin
+  const total=STUDENTS.length;
+  const presentRate=96.4;
+  const avg=avgGr11();
+  const belowHours=STUDENTS.filter(s=>s.grade>=11&&hoursOf(s)<40).length;
+  const noOsslt=STUDENTS.filter(s=>s.osslt==='Not yet').length;
+  $('#view').innerHTML=`
+  <div class="grid g4" style="margin-bottom:18px">
+    <div class="stat"><div class="n">${total}</div><div class="l">Enrolled students</div><div class="t">▲ 3 this term</div></div>
+    <div class="stat"><div class="n">${presentRate}%</div><div class="l">Attendance today</div><div class="t">${Math.round(total*presentRate/100)} present</div></div>
+    <div class="stat"><div class="n">${avg}%</div><div class="l">Avg. senior mark</div><div class="t">Provincial standard: 70%+</div></div>
+    <div class="stat"><div class="n">${SECTIONS.length}</div><div class="l">Active class sections</div><div class="t">${TEACHERS.length} teachers</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h2>Recent announcements</h2><div class="sub">Pushed to staff, students &amp; families</div>
+      ${DB.ann.slice(0,3).map(annHtml).join('')}
+      <button class="btn ghost sm" onclick="go('comms')">Open Communication →</button>
+    </div>
+    <div class="card"><h2>Needs attention</h2><div class="sub">Auto-flagged from across modules</div>
+      <div class="feed-item"><b>${belowHours} seniors below 40 community hours</b><div class="muted" style="font-size:12.5px;margin-top:3px">OSSD requirement — at risk.</div><div class="meta"><a onclick="go('grad')">Review in Graduation tracker →</a></div></div>
+      <div class="feed-item"><b>${noOsslt} students have not passed the OSSLT</b><div class="muted" style="font-size:12.5px;margin-top:3px">Literacy requirement outstanding.</div><div class="meta"><a onclick="go('grad')">Review →</a></div></div>
+      <div class="feed-item"><b>Mid-term report cards due Friday</b><div class="muted" style="font-size:12.5px;margin-top:3px">Learning skills + comments required for all sections.</div><div class="meta"><a onclick="go('reportcard')">Open report cards →</a></div></div>
+      <div class="feed-item"><b>OnSIS March submission window open</b><div class="muted" style="font-size:12.5px;margin-top:3px">Class enrolment &amp; final marks.</div><div class="meta"><a onclick="go('onsis')">Open export →</a></div></div>
+    </div>
+  </div>
+  <div class="card"><h2>Module map</h2><div class="sub">Every blueprint module is reachable from the sidebar. Quick jump:</div>
+    <div class="row">
+      ${[['students','Students'],['gradebook','Gradebook'],['assignments','Assignments'],['quizzes','Quizzing'],['reportcard','Report Cards'],['transcript','Transcripts'],['grad','Graduation'],['behaviour','Behaviour'],['awards','Awards'],['parent','Parent Portal'],['comms','Communication'],['ptc','PTC'],['clubs','Clubs'],['onsis','OnSIS'],['admin','Admin']].map(m=>`<button class="btn ghost sm" onclick="go('${m[0]}')">${m[1]}</button>`).join('')}
+    </div></div>`;
+};
+function annHtml(a){return `<div class="feed-item"><b>${esc(a.title)}</b><div class="muted" style="font-size:12.5px;margin-top:3px">${esc(a.body)}</div><div class="meta">${a.who} • ${a.when} • <span class="badge b-blue">${a.aud}</span></div></div>`;}
+
+function dashTeacher(){
+  const mine=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id);
+  const sec=mine[0]||SECTIONS[0];
+  const toGrade=ri(4,9);
+  $('#view').innerHTML=`
+  <div class="grid g4" style="margin-bottom:18px">
+    <div class="stat"><div class="n">${mine.length||1}</div><div class="l">My sections</div></div>
+    <div class="stat"><div class="n">${mine.reduce((a,s)=>a+s.roster.length,0)||sec.roster.length}</div><div class="l">My students</div></div>
+    <div class="stat"><div class="n">${toGrade}</div><div class="l">Submissions to grade</div><div class="t">Across my classes</div></div>
+    <div class="stat"><div class="n">Fri</div><div class="l">Report cards due</div><div class="t">Learning skills + comments</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h2>My classes</h2><div class="sub">Jump into a gradebook</div>
+      <table><tbody>${(mine.length?mine:[sec]).map(s=>`<tr class="click" onclick="go('gradebook','${s.id}')"><td><b>${s.course.code}</b> <span class="muted">${s.course.name}</span></td><td>P${s.period} • Rm ${s.room}</td><td style="text-align:right">${s.roster.length} students →</td></tr>`).join('')}</tbody></table>
+    </div>
+    <div class="card"><h2>Today</h2><div class="sub">Reminders</div>
+      <div class="feed-item"><b>Take attendance — ${sec.course.code} P${sec.period}</b><div class="meta"><a onclick="go('attendance')">Open attendance →</a></div></div>
+      <div class="feed-item"><b>${toGrade} submissions awaiting grade</b><div class="meta"><a onclick="go('assignments')">Open submissions →</a></div></div>
+      <div class="feed-item"><b>Quiz "Unit Check" closes today</b><div class="meta"><a onclick="go('quizzes')">Open quizzing →</a></div></div>
+    </div>
+  </div>`;
+}
+function dashStudent(){
+  const s=SESSION.student; const enr=studentSections(s.id);
+  $('#view').innerHTML=`
+  <div class="card" style="background:linear-gradient(135deg,#efe6f6,#fff)"><div class="profile-hd">${av(s,54)}<div><h2 style="margin:0">Hi, ${s.first}</h2><div class="muted">Grade ${s.grade} • Homeroom ${s.homeroom} • Graduating ${s.gradYear}</div></div></div></div>
+  <div class="grid g3" style="margin-bottom:4px">
+    <div class="stat"><div class="n">${enr.length}</div><div class="l">My courses</div></div>
+    <div class="stat"><div class="n">${hoursOf(s)}/40</div><div class="l">Community hours</div></div>
+    <div class="stat"><div class="n">${s.osslt==='Passed'?'✓':'—'}</div><div class="l">OSSLT</div></div>
+  </div>
+  <div class="grid g2">
+    <div class="card"><h2>My marks</h2>
+      <table><tbody>${enr.map(sec=>{const m=sectionMark(sec,s.id);const L=pctToLevel(m);return `<tr class="click" onclick="go('mymarks')"><td><b>${sec.course.code}</b> <span class="muted">${sec.course.name}</span></td><td style="text-align:right"><b>${m===''?'—':m+'%'}</b> <span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')}</tbody></table>
+    </div>
+    <div class="card"><h2>Upcoming</h2>
+      <div class="feed-item"><b>ENG3U — Unit 2 Seminar</b><div class="meta">Due Sunday 11:59 PM • <a onclick="go('myassign')">Submit →</a></div></div>
+      <div class="feed-item"><b>SCH3U — Quiz 2: Stoichiometry</b><div class="meta">Opens Friday • <a onclick="go('myquiz')">Details →</a></div></div>
+      <div class="feed-item"><b>Robotics Club — regionals form</b><div class="meta">Thursday • <a onclick="go('clubs')">Clubs →</a></div></div>
+    </div>
+  </div>`;
+}
+
+/* ---------- STUDENTS (SIS) ------------------------------------------- */
+PAGES.students=()=>{
+  let list=STUDENTS;
+  if(SESSION.role==='teacher'){ const ids=new Set(); SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id).forEach(s=>s.roster.forEach(r=>ids.add(r.id))); if(ids.size) list=STUDENTS.filter(s=>ids.has(s.id)); }
+  const render=(q='',gf='')=>{
+    let l=list.filter(s=>(s.first+' '+s.last+' '+s.oen).toLowerCase().includes(q.toLowerCase()));
+    if(gf) l=l.filter(s=>String(s.grade)===gf);
+    $('#stbody').innerHTML=l.map(s=>`<tr class="click" onclick="openStudent(${s.id})">
+      <td><div class="row" style="gap:9px">${av(s,30)}<div><b>${s.last}, ${s.first}</b>${s.allergy?` <span class="badge b-red" title="Allergy">⚠ ${s.allergy.split(' ')[0]}</span>`:''}${s.iep?' <span class="badge b-amber">IEP</span>':''}</div></div></td>
+      <td>Grade ${s.grade}</td><td>${s.homeroom}</td><td><code class="k">${s.oen}</code></td><td>${s.gradYear}</td><td><span class="badge b-green">${s.status}</span></td>
+    </tr>`).join('')||`<tr><td colspan="6" class="muted">No matching students.</td></tr>`;
+  };
+  $('#view').innerHTML=`<div class="card"><div class="row" style="margin-bottom:12px">
+    <input class="search" id="stsearch" placeholder="Search by name or OEN…">
+    <select id="gf"><option value="">All grades</option><option>9</option><option>10</option><option>11</option><option>12</option></select>
+    ${SESSION.role==='admin'?'<button class="btn sm" onclick="modal(\'New student\',\'<p class=muted>In production this opens the registration form (demographics, guardians, OEN, consents). Inquiry → registered → active lifecycle is modelled on tblStudentInformation.</p>\')">+ New student</button>':''}</div>
+    <table><thead><tr><th>Student</th><th>Grade</th><th>Homeroom</th><th>OEN</th><th>Grad year</th><th>Status</th></tr></thead><tbody id="stbody"></tbody></table>
+    <div class="pf" style="margin-top:8px">${list.length} students${SESSION.role==='teacher'?' in your classes':''}. Sensitive health/discipline/counsellor notes are access-restricted (see profile).</div></div>`;
+  $('#stsearch').oninput=e=>render(e.target.value,$('#gf').value);
+  $('#gf').onchange=e=>render($('#stsearch').value,e.target.value);
+  render();
+};
+window.openStudent=(id)=>openStudentTab(id,'overview');
+let _stTab='overview';
+function openStudentTab(id,tab){
+  _stTab=tab; const s=STUDENTS.find(x=>x.id===id); const enr=studentSections(id);
+  const tabBtn=(k,l)=>`<button class="${tab===k?'active':''}" onclick="openStudentTab(${id},'${k}')">${l}</button>`;
+  let body='';
+  if(tab==='overview'){
+    body=`<div class="grid g2">
+      <div class="card"><h2>Record</h2><div class="kv">
+        <div class="k">OEN</div><div><code class="k">${s.oen}</code></div>
+        <div class="k">Date of birth</div><div>${s.dob}</div>
+        <div class="k">Gender</div><div>${s.gender}</div>
+        <div class="k">Homeroom</div><div>${s.homeroom}</div>
+        <div class="k">Locker</div><div>${s.locker}</div>
+        <div class="k">Address</div><div>${s.address}</div>
+        <div class="k">Entered Grade 9</div><div>${s.enteredG9}</div>
+        <div class="k">Tuition</div><div>${s.tuition}</div>
+        <div class="k">Status</div><div><span class="badge b-green">${s.status}</span></div>
+      </div></div>
+      <div class="card"><h2>Guardians</h2>
+        ${[s.g1,s.g2].map(g=>`<div class="feed-item"><b>${g.name}</b> <span class="muted">(${g.rel})</span>
+          <div class="kv" style="grid-template-columns:90px 1fr;margin-top:6px"><div class="k">Email</div><div>${g.email} ${g.emailOK?'<span class="badge b-green">notices ✓</span>':'<span class="badge b-grey">no email</span>'}</div><div class="k">Phone</div><div>${g.phone}</div><div class="k">Custody</div><div>${g.custody}</div><div class="k">Info release</div><div>${g.infoOK?'OK':'Restricted'}</div></div></div>`).join('')}
+        <div class="pf">Communication respects the contact/consent flags above (per tblParents).</div>
+      </div></div>`;
+  } else if(tab==='marks'){
+    body=`<div class="card"><h2>Current courses &amp; marks</h2>
+      <table><thead><tr><th>Course</th><th>Teacher</th><th>Mark</th><th>Level</th><th></th></tr></thead><tbody>
+      ${enr.map(sec=>{const m=sectionMark(sec,id);const L=pctToLevel(m);return `<tr class="click" onclick="go('gradebook','${sec.id}')"><td><b>${sec.course.code}</b><div class="muted" style="font-size:11px">${sec.course.name}, Gr ${sec.course.grade}</div></td><td>${sec.teacher.name}</td><td><b>${m===''?'—':m+'%'}</b>${isOverridden(sec,id)?' <span class="badge b-purple" title="teacher override">ovr</span>':''}</td><td><span class="badge ${L.c} lvl">${L.l}</span></td><td>→</td></tr>`}).join('')}
+      </tbody></table></div>`;
+  } else if(tab==='attendance'){
+    body=`<div class="card"><h2>Attendance summary</h2><div class="sub">This term</div>
+      <div class="grid g3"><div class="stat"><div class="n">97%</div><div class="l">Present</div></div><div class="stat"><div class="n">${ri(0,4)}</div><div class="l">Late</div></div><div class="stat"><div class="n">${ri(0,3)}</div><div class="l">Absences</div></div></div>
+      <div class="pf">Unexplained absences auto-notify guardians; totals roll up to the report card and OnSIS.</div></div>`;
+  } else if(tab==='hours'){
+    body=`<div class="card"><h2>Community involvement</h2><div class="sub">Ontario 40-hour requirement</div>
+      <div class="row"><div class="progress ${hoursOf(s)>=40?'green':'amber'}" style="flex:1"><i style="width:${Math.min(100,hoursOf(s)/40*100)}%"></i></div><b>${hoursOf(s)} / 40</b></div>
+      <div class="hr"></div><table><tbody>
+      <tr><td>Cross Country setup &amp; events</td><td class="muted">Sept–Oct 2025</td><td style="text-align:right">${ri(8,16)} h</td></tr>
+      <tr><td>Food bank volunteering</td><td class="muted">Dec 2025</td><td style="text-align:right">${ri(6,12)} h</td></tr>
+      <tr><td>Peer tutoring</td><td class="muted">Ongoing</td><td style="text-align:right">${ri(5,14)} h</td></tr></tbody></table>
+      ${SESSION.role!=='parent'?`<div class="row" style="margin-top:10px"><input id="hrAdd" type="number" placeholder="Add hours" style="width:110px"><input id="hrAct" placeholder="Activity" style="flex:1"><button class="btn sm" onclick="addHours(${id})">Log hours</button></div>`:''}</div>`;
+  } else if(tab==='tests'){
+    body=`<div class="card"><h2>Standardized assessments</h2><div class="sub">Reading, numeracy &amp; provincial</div>
+      <table><thead><tr><th>Assessment</th><th>Result</th><th>When</th></tr></thead><tbody>${s.tests.map(t=>`<tr><td>${t.n}</td><td><b>${t.v}</b></td><td class="muted">${t.when}</td></tr>`).join('')}</tbody></table></div>`;
+  } else if(tab==='incidents'){
+    body=`<div class="card"><h2>Behaviour &amp; incidents</h2><div class="sub">Restricted — admin/teacher only</div>
+      ${s.incidents.length?`<table><thead><tr><th>Date</th><th>Type</th><th>Severity</th><th>By</th><th>Status</th></tr></thead><tbody>${s.incidents.map(i=>`<tr><td>${i.date}</td><td>${i.type}</td><td><span class="badge ${i.cls}">${i.sev}</span></td><td>${i.by}</td><td><span class="badge b-grey">${i.status}</span></td></tr>`).join('')}</tbody></table>`:'<p class="muted">No incidents on file.</p>'}</div>`;
+  } else if(tab==='health'){
+    body=`<div class="card"><h2>Health &amp; restricted notes 🔒</h2><div class="notice">Access-restricted (PHIPA-equivalent). This view is logged to the audit trail.</div>
+      <div class="kv"><div class="k">Allergy</div><div>${s.allergy?`<span class="badge b-red">⚠ ${s.allergy}</span>`:'<span class="muted">None on file</span>'}</div>
+      <div class="k">Medication</div><div>${s.med||'<span class="muted">None on file</span>'}</div>
+      <div class="k">IEP</div><div>${s.iep?'<span class="badge b-amber">Yes — accommodations on file</span>':'No'}</div>
+      <div class="k">Media release</div><div>${s.mediaOK?'Consented':'<span class="badge b-red">Withheld</span>'}</div></div></div>`;
+  }
+  $('#view').innerHTML=`<button class="btn ghost sm" onclick="go('students')">← All students</button>
+  <div class="card" style="margin-top:12px"><div class="profile-hd">${av(s,64)}<div><h2 style="margin:0">${s.first} ${s.last}</h2><div class="muted">Grade ${s.grade} • Homeroom ${s.homeroom} • Graduating ${s.gradYear} • OEN ${s.oen}</div><div style="margin-top:8px">${s.iep?'<span class="badge b-amber">IEP</span> ':''}${s.allergy?`<span class="badge b-red">⚠ ${s.allergy}</span> `:''}${hoursOf(s)>=40?'<span class="badge b-green">40h met</span>':''}</div></div>
+  <div style="margin-left:auto" class="no-print">${SESSION.role!=='parent'?`<button class="btn ghost sm" onclick="go('transcript','${s.id}')">Transcript</button> <button class="btn ghost sm" onclick="go('reportcard','${s.id}')">Report card</button>`:''}</div></div></div>
+  <div class="tabs">${tabBtn('overview','Overview')}${tabBtn('marks','Marks')}${tabBtn('attendance','Attendance')}${tabBtn('hours','Community hours')}${tabBtn('tests','Standardized tests')}${tabBtn('incidents','Behaviour')}${tabBtn('health','Health 🔒')}</div>
+  ${body}`;
+}
+window.openStudentTab=openStudentTab;
+window.addHours=(id)=>{ const v=+($('#hrAdd').value||0); if(v>0){ const s=STUDENTS.find(x=>x.id===id); DB.hours['H'+id]=hoursOf(s)+v; saveDB(); openStudentTab(id,'hours'); } };
+
+/* ---------- ATTENDANCE ----------------------------------------------- */
+let _attSec='SEC0';
+PAGES.attendance=()=>{
+  let secs=SECTIONS;
+  if(SESSION.role==='teacher'){ const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id); if(m.length){secs=m; if(!m.find(x=>x.id===_attSec))_attSec=m[0].id;} }
+  const sec=secs.find(s=>s.id===_attSec)||secs[0]; _attSec=sec.id;
+  const date='2026-05-12';
+  const setAtt=(sid,v)=>{ DB.att[date+'|'+sec.id+'|'+sid]=v; saveDB(); renderRows(); };
+  window._setAtt=setAtt;
+  const get=(sid)=>DB.att[date+'|'+sec.id+'|'+sid]||'P';
+  const renderRows=()=>{
+    $('#attbody').innerHTML=sec.roster.map(s=>{
+      const st=get(s.id);
+      const opt=(v,lbl,cls)=>`<button class="btn sm ${st===v?'':'ghost'}" style="${st===v?`background:var(--${cls})`:''}" onclick="_setAtt(${s.id},'${v}')">${lbl}</button>`;
+      return `<tr><td><div class="row" style="gap:9px">${av(s,28)}<b>${s.last}, ${s.first}</b>${s.iep?' <span class="badge b-amber" style="font-size:9px">IEP</span>':''}</div></td>
+        <td><div class="row">${opt('P','Present','green')}${opt('L','Late','amber')}${opt('A','Absent','red')}</div></td></tr>`;
+    }).join('');
+    const vals=sec.roster.map(s=>get(s.id));
+    $('#attsum').innerHTML=`${vals.filter(x=>x==='P').length} present • ${vals.filter(x=>x==='L').length} late • ${vals.filter(x=>x==='A').length} absent`;
+  };
+  $('#view').innerHTML=`<div class="card"><div class="row">
+    <select id="attsec" style="min-width:280px">${secs.map(s=>`<option value="${s.id}" ${s.id===sec.id?'selected':''}>${s.course.code} — P${s.period} (${s.teacher.name})</option>`).join('')}</select>
+    <input type="date" value="${date}"><div class="spacer" style="flex:1"></div><span class="pill" id="attsum"></span>
+    <button class="btn sm" onclick="modal('Attendance submitted','<p>Attendance recorded. Unexplained absences will auto-notify guardians via the parent channel, and totals roll up to the report card and OnSIS.</p>')">Submit &amp; notify absences</button></div>
+  <div class="hr"></div><div class="sub">Per-period attendance from the class roster. Unexplained absences auto-notify guardians; totals feed the report card and OnSIS.</div>
+  <table><thead><tr><th>Student</th><th>Status</th></tr></thead><tbody id="attbody"></tbody></table></div>`;
+  $('#attsec').onchange=e=>{_attSec=e.target.value;PAGES.attendance();};
+  renderRows();
+};
+
+/* ---------- GRADEBOOK ------------------------------------------------- */
+PAGES.gradebook=(secId)=>{
+  let secs=SECTIONS;
+  if(SESSION.role==='teacher'){ const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id); if(m.length)secs=m; }
+  const sec = (secId && secs.find(s=>s.id===secId)) || secs[0];
+  const opts=secs.map(s=>`<option value="${s.id}" ${s===sec?'selected':''}>${s.course.code} — ${s.course.name} Gr${s.course.grade} (P${s.period})</option>`).join('');
+  const head=sec.assigns.map(a=>`<th title="${a.title}" style="text-align:center">${a.title.split(' ')[0]}<div style="font-weight:400;text-transform:none;color:var(--muted)">/${a.denom} · ${a.cat}</div></th>`).join('');
+  const rows=sec.roster.map(s=>{
+    const cells=sec.assigns.map(a=>{const key=s.id+'|'+a.id;const v=scoreOf(sec,s.id,a.id);
+      return `<td style="text-align:center"><input class="score-in" value="${v}" data-k="${key}" data-d="${a.denom}"></td>`;}).join('');
+    const m=sectionMark(sec,s.id);const L=pctToLevel(m);const ov=isOverridden(sec,s.id);
+    return `<tr><td style="position:sticky;left:0;background:#fff"><div class="row" style="gap:8px">${av(s,26)}<b>${s.last}, ${s.first}</b>${s.iep?'<span class="badge b-amber" style="font-size:9px">IEP</span>':''}</div></td>${cells}<td style="text-align:center;font-weight:800">${m===''?'—':m+'%'}${ov?' <span class="badge b-purple" style="font-size:9px">ovr</span>':''}</td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td><td style="text-align:center"><button class="btn ghost sm" onclick="overrideMark('${sec.id}',${s.id})" title="Override">✎</button></td></tr>`;
+  }).join('');
+  // category distribution
+  $('#view').innerHTML=`
+  <div class="card"><div class="row"><select id="gbsec" style="min-width:300px">${opts}</select><span class="pill">${sec.teacher.name} • Rm ${sec.room}</span><div style="flex:1"></div>
+    ${cats.map(c=>`<span class="tag">${c.k} · ${c.n.split(' ')[0]} <b>${c.w}%</b></span>`).join('')}</div>
+    <div class="sub" style="margin-top:8px">Marks weight by category (Growing Success achievement chart). Final reporting applies the <b>70% term / 30% final</b> split. Edit any score to recalculate live; ✎ records a teacher override.</div>
+    <div style="overflow:auto"><table style="min-width:820px"><thead><tr><th style="position:sticky;left:0;background:#fff">Student</th>${head}<th style="text-align:center">Term mark</th><th style="text-align:center">Level</th><th></th></tr></thead><tbody id="gbbody">${rows}</tbody></table></div>
+  </div>
+  <div class="card"><h2>Class distribution</h2><div class="sub">Live, from current scores</div><div id="dist"></div></div>`;
+  $('#gbsec').onchange=e=>go('gradebook',e.target.value);
+  $('#view').querySelectorAll('.score-in').forEach(inp=>{
+    inp.onchange=()=>{let v=inp.value.trim();const d=+inp.dataset.d;
+      if(v!==''&&(isNaN(v)||+v<0||+v>d)){inp.style.borderColor='var(--red)';return;}
+      inp.style.borderColor='var(--line)'; DB.scores[inp.dataset.k]=v===''?'':+v; saveDB();
+      go('gradebook',sec.id);
+    };
+  });
+  // distribution
+  const buckets={'L4 (80-100)':0,'L3 (70-79)':0,'L2 (60-69)':0,'L1 (50-59)':0,'R (<50)':0};
+  sec.roster.forEach(s=>{const m=sectionMark(sec,s.id);if(m==='')return;const L=pctToLevel(m).l;const key=Object.keys(buckets).find(k=>k.startsWith(L));if(key)buckets[key]++;});
+  const max=Math.max(1,...Object.values(buckets));
+  $('#dist').innerHTML=Object.entries(buckets).map(([k,v])=>`<div class="row" style="margin-bottom:6px"><div style="width:110px;font-size:12px">${k}</div><div class="progress" style="flex:1"><i style="width:${v/max*100}%"></i></div><div style="width:30px;text-align:right;font-weight:700">${v}</div></div>`).join('');
+};
+window.overrideMark=(secId,sid)=>{
+  const sec=SECTIONS.find(s=>s.id===secId); const cur=sectionMark(sec,sid);
+  modal('Override mark', `<p class="muted">Growing Success allows a teacher's professional judgement to override the calculated mark. Overrides are recorded and flagged.</p>
+   <div class="row"><div>Calculated: <b>${cur===''?'—':cur+'%'}</b></div><input id="ovv" type="number" value="${cur||''}" style="width:90px"><button class="btn sm" onclick="setOverride('${secId}',${sid})">Save override</button> ${isOverridden(sec,sid)?`<button class="btn ghost sm" onclick="clearOverride('${secId}',${sid})">Clear</button>`:''}</div>`);
+};
+window.setOverride=(secId,sid)=>{ DB.override=DB.override||{}; DB.override[secId+'|'+sid]=+$('#ovv').value; saveDB(); closeModal(); go('gradebook',secId); };
+window.clearOverride=(secId,sid)=>{ if(DB.override)delete DB.override[secId+'|'+sid]; saveDB(); closeModal(); go('gradebook',secId); };
+
+/* ---------- ASSIGNMENTS & SUBMISSIONS -------------------------------- */
+PAGES.assignments=()=>{
+  let secs=SECTIONS; if(SESSION.role==='teacher'){const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id);if(m.length)secs=m;}
+  const sec=secs[0];
+  const states=['Submitted','Submitted','Submitted','Late','Returned','Not started'];
+  $('#view').innerHTML=`<div class="grid g2">
+    <div class="card"><h2>Post an assignment</h2><div class="sub">Students receive it on their dashboard &amp; calendar</div>
+      <div class="row" style="margin-bottom:8px"><select style="flex:1">${secs.map(s=>`<option>${s.course.code} — ${s.course.name}</option>`).join('')}</select></div>
+      <input placeholder="Title (e.g., Unit 3 Persuasive Essay)" style="width:100%;margin-bottom:8px">
+      <textarea placeholder="Instructions…" style="width:100%;height:70px;margin-bottom:8px"></textarea>
+      <div class="row" style="margin-bottom:8px"><select><option>Category: Communication</option><option>Knowledge & Understanding</option><option>Thinking</option><option>Application</option></select><input type="number" placeholder="Out of" value="50" style="width:90px"><input type="date" value="2026-05-20"></div>
+      <div class="row"><label class="muted"><input type="checkbox" checked> Allow file upload</label><label class="muted"><input type="checkbox"> Allow resubmission</label><button class="btn" style="margin-left:auto" onclick="modal('Posted','<p>Assignment posted to the class. It now appears on each student\\'s dashboard and calendar; grading it will post the score to the gradebook automatically.</p>')">Post to class</button></div>
+    </div>
+    <div class="card"><h2>Submissions — Unit 2 Seminar (${sec.course.code})</h2><div class="sub">Due Sun 11:59 PM • ${sec.roster.length} students</div>
+      <table><thead><tr><th>Student</th><th>Status</th><th>Grade</th></tr></thead><tbody>
+      ${sec.roster.slice(0,9).map((s,i)=>{const st=states[i%states.length];
+        const b={'Submitted':'b-green','Late':'b-amber','Returned':'b-blue','Not started':'b-grey'}[st];
+        return `<tr><td><div class="row" style="gap:8px">${av(s,26)}${s.first} ${s.last[0]}.</div></td><td><span class="badge ${b}">${st}</span></td><td>${st==='Returned'?ri(70,95)+'%':st==='Not started'?'—':`<button class="btn ghost sm" onclick="modal('Grade submission','<p class=muted>Annotate, leave feedback and enter a score. On return, the score posts straight to the gradebook and updates the term mark.</p><div class=row><input placeholder=Score type=number style=width:90px><input placeholder=Feedback style=flex:1><button class=\\'btn sm\\' onclick=closeModal()>Return</button></div>')">Grade</button>`}</td></tr>`;}).join('')}
+      </tbody></table><div class="pf" style="margin-top:8px">Submission states: not started · draft · submitted · late · returned — timestamped for academic-integrity. Grading posts the score to the gradebook.</div>
+    </div></div>`;
+};
+
+/* ---------- QUIZZING -------------------------------------------------- */
+PAGES.quizzes=()=>{
+  let secs=SECTIONS; if(SESSION.role==='teacher'){const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id);if(m.length)secs=m;}
+  const all=secs.flatMap(s=>s.quizzes.map(q=>({...q,sec:s})));
+  $('#view').innerHTML=`<div class="card"><div class="row"><h2 style="margin:0">Quizzes &amp; tests</h2><div style="flex:1"></div><button class="btn sm" onclick="quizBuilder()">+ Build a quiz</button></div>
+    <div class="sub" style="margin-top:6px">Auto-graded objective items + a manual queue for written responses. Scores post to the gradebook. Per-student accommodations (extra time) honour the IEP flag.</div>
+    <table style="margin-top:8px"><thead><tr><th>Quiz</th><th>Class</th><th>Questions</th><th>Type</th><th>State</th><th>Progress</th><th>Avg</th></tr></thead><tbody>
+    ${all.map(q=>`<tr><td><b>${q.title.split('—')[1]||q.title}</b><div class="muted" style="font-size:11px">${q.time} min</div></td><td>${q.sec.course.code}</td><td>${q.q}</td><td>${q.type}</td><td><span class="badge ${q.state==='Open'?'b-green':q.state==='Closed'?'b-grey':'b-amber'}">${q.state}</span></td><td><span class="badge b-green">${q.done} done</span> ${q.pending?`<span class="badge b-grey">${q.pending} pending</span>`:''}</td><td>${q.avg?`<b>${q.avg}%</b>`:'—'}</td></tr>`).join('')}
+    </tbody></table></div>
+    <div class="grid g2">
+      <div class="card"><h2>Question bank</h2><div class="sub">Reusable by course/topic • 240 items</div>
+        <div class="row">${['Multiple choice','True/False','Matching','Numeric','Short answer','Long answer (manual)'].map(t=>`<span class="chip">${t}</span>`).join('')}</div>
+        <div class="hr"></div><div class="pf">Assembly options: shuffle questions, time limit, availability window, attempt limits, one-question-at-a-time, lockout after submit.</div>
+      </div>
+      <div class="card"><h2>Item analysis</h2><div class="sub">Which questions discriminated well (SCH3U Quiz 1)</div>
+        ${[['Q3 — Mole ratios',0.82,'b-green'],['Q7 — Limiting reagent',0.41,'b-amber'],['Q11 — Percent yield',0.18,'b-red'],['Q5 — Naming',0.74,'b-green']].map(q=>`<div class="row" style="margin-bottom:6px"><div style="width:170px;font-size:12px">${q[0]}</div><div class="progress" style="flex:1"><i style="width:${q[1]*100}%"></i></div><span class="badge ${q[2]}">${q[1].toFixed(2)}</span></div>`).join('')}
+        <div class="pf" style="margin-top:6px">Discrimination index — low values flag questions to review.</div>
+      </div>
+    </div>`;
+};
+window.quizBuilder=()=>modal('Build a quiz',`<p class="muted">Assemble from the question bank or write new items.</p>
+  <input placeholder="Quiz title" style="width:100%;margin-bottom:8px">
+  <div class="row" style="margin-bottom:8px"><select style="flex:1"><option>Add: Multiple choice</option><option>True/False</option><option>Matching</option><option>Numeric</option><option>Short answer</option><option>Long answer (manual)</option></select><button class="btn sm">+ Add question</button></div>
+  <div class="row"><label class="muted"><input type="checkbox" checked> Shuffle</label><label class="muted"><input type="checkbox"> One at a time</label><label class="muted"><input type="checkbox" checked> Honour IEP extra time</label></div>
+  <div class="row" style="margin-top:10px"><input type="number" placeholder="Time limit (min)" value="30" style="width:140px"><button class="btn" style="margin-left:auto" onclick="closeModal()">Save quiz</button></div>`);
+
+/* ---------- REPORT CARDS --------------------------------------------- */
+PAGES.reportcard=(sid)=>{
+  let pool=STUDENTS.filter(x=>x.grade>=11);
+  if(SESSION.role==='teacher'){ const ids=new Set(); SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id).forEach(s=>s.roster.forEach(r=>ids.add(r.id))); pool=STUDENTS.filter(s=>ids.has(s.id)); }
+  const s = (sid&&STUDENTS.find(x=>x.id==sid)) || pool[0];
+  const enr=studentSections(s.id);
+  const sec0=enr[0];
+  $('#view').innerHTML=`<div class="card no-print"><div class="row"><select id="rcStu">${pool.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${x.first} ${x.last} — Grade ${x.grade}</option>`).join('')}</select><select><option>Mid-term (Semester 2)</option><option>Final</option></select><div style="flex:1"></div><button class="btn ghost sm" onclick="window.print()">Generate PDF</button>${SESSION.role==='admin'?'<button class="btn sm" onclick="modal(\'Released\',\'<p>Report card released to the Parent Portal. Guardians are notified by email/portal.</p>\')">Release to parents</button>':''}</div></div>
+  <div class="rc">
+    <div class="rc-hd"><div class="row"><div><b>Provincial Report Card, Grades 9–12</b><div style="font-size:12px;opacity:.85">Ontario Ministry of Education • Mid-term • Semester 2 • 2025–26</div></div><div style="margin-left:auto;text-align:right;font-size:12px">${s.first} ${s.last}<br>OEN ${s.oen} • Grade ${s.grade}</div></div></div>
+    <div class="rc-body">
+      <table><thead><tr><th>Course</th><th>Teacher</th><th style="text-align:center">Percentage</th><th style="text-align:center">Level</th><th style="text-align:center">Credit</th></tr></thead><tbody>
+      ${enr.map(sec=>{const m=sectionMark(sec,s.id);const L=pctToLevel(m);return `<tr><td><b>${sec.course.code}</b> ${sec.course.name}</td><td>${sec.teacher.name}</td><td style="text-align:center"><b>${m===''?'I':m+'%'}</b></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td><td style="text-align:center">${sec.course.credit.toFixed(1)}</td></tr>`}).join('')}
+      </tbody></table>
+      <div class="hr"></div>
+      <b>Learning Skills &amp; Work Habits</b> <span class="muted" style="font-size:12px">— reported separately from achievement (E / G / S / N)</span>
+      <div class="ls-grid" style="margin-top:10px">${Object.keys(lsKeys).map(k=>{const v=sec0?lsOf(sec0,s.id,k):'G';return `<div>${lsKeys[k]}</div><div style="text-align:center"><span class="badge ${v==='E'?'b-green':v==='N'?'b-red':'b-blue'} lvl">${v}</span></div>`}).join('')}</div>
+      <div class="hr"></div>
+      <b>Comments</b>
+      <div class="feed-item" style="margin-top:8px"><b>${enr[0]?enr[0].course.code:'ENG3U'}</b> — ${s.first} demonstrates considerable strength in textual analysis and contributes thoughtfully to seminars. Next step: integrate secondary evidence more consistently to move toward Level 4 in Communication.</div>
+      <div class="pf">E = Excellent · G = Good · S = Satisfactory · N = Needs Improvement. Levels: 4 (80–100), 3 (70–79, provincial standard), 2 (60–69), 1 (50–59).</div>
+    </div>
+  </div>`;
+  const sel=$('#rcStu'); if(sel) sel.onchange=e=>go('reportcard',e.target.value);
+};
+
+/* ---------- TRANSCRIPT (OST + GPA) ----------------------------------- */
+PAGES.transcript=(sid)=>{
+  const pool=STUDENTS;
+  const s=(sid&&STUDENTS.find(x=>x.id==sid))||STUDENTS.filter(x=>x.grade===12)[0]||STUDENTS.filter(x=>x.grade>=11)[0];
+  const enr=studentSections(s.id);
+  // current courses as in-progress lines
+  const current=enr.map(sec=>({code:sec.course.code,name:sec.course.name,area:sec.course.area,grade:sec.course.grade,year:'2025–26',mark:sectionMark(sec,s.id),credit:sec.course.credit,inprog:true}));
+  const all=[...s.transcript.map(t=>({...t})), ...current].sort((a,b)=>a.grade-b.grade);
+  const totalCr=all.reduce((a,t)=>a+((t.mark!==''&&t.mark>=50)?t.credit:0),0);
+  // GPA (4.0) from completed only
+  const gp=(m)=> m>=90?4:m>=85?3.7:m>=80?3.3:m>=75?3:m>=70?2.7:m>=65?2.3:m>=60?2:m>=55?1.7:m>=50?1:0;
+  const comp=s.transcript;
+  const gpa=comp.length?(comp.reduce((a,t)=>a+gp(t.mark)*t.credit,0)/comp.reduce((a,t)=>a+t.credit,0)):0;
+  $('#view').innerHTML=`<div class="card no-print"><div class="row"><select id="trStu">${pool.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${x.first} ${x.last} — Gr ${x.grade}</option>`).join('')}</select><div style="flex:1"></div><button class="btn ghost sm" onclick="window.print()">Print / PDF</button></div></div>
+  <div class="grid g3"><div class="stat"><div class="n">${totalCr.toFixed(1)}</div><div class="l">Credits earned (of 30)</div></div><div class="stat"><div class="n">${gpa.toFixed(2)}</div><div class="l">Cumulative GPA (4.0)</div></div><div class="stat"><div class="n">${s.osslt==='Passed'?'✓':'—'}</div><div class="l">OSSLT</div></div></div>
+  <div class="card"><h2>Ontario Student Transcript (OST)</h2><div class="sub">In transcript order • ${s.first} ${s.last} • OEN ${s.oen}</div>
+    <table><thead><tr><th>Year</th><th>Gr</th><th>Code</th><th>Course</th><th style="text-align:center">Final %</th><th style="text-align:center">Credit</th></tr></thead><tbody>
+    ${all.map(t=>`<tr><td class="muted">${t.year}</td><td>${t.grade}</td><td><b>${t.code}</b></td><td>${t.name}${t.inprog?' <span class="badge b-amber" style="font-size:9px">in progress</span>':''}</td><td style="text-align:center"><b>${t.mark===''?'—':t.mark}</b></td><td style="text-align:center">${(t.mark!==''&&t.mark>=50)?t.credit.toFixed(1):'0.0'}</td></tr>`).join('')}
+    </tbody></table>
+    <div class="pf" style="margin-top:8px">The school issues both the Ontario-format OST and a GPA-style transcript (international students). OSSD is credit-based; the GPA column is computed from <code class="k">tblLetterGrades</code> scales.</div>
+  </div>`;
+  const sel=$('#trStu'); if(sel) sel.onchange=e=>go('transcript',e.target.value);
+};
+
+/* ---------- GRADUATION (OSSD) ---------------------------------------- */
+PAGES.grad=()=>{
+  const seniors=STUDENTS.filter(s=>s.grade>=11).sort((a,b)=>b.grade-a.grade || a.last.localeCompare(b.last));
+  $('#view').innerHTML=`<div class="notice">OSSD requires <b>30 credits</b> (compulsory split: 18+12, or <b>17+13</b> for students entering Grade 9 in Fall 2024 or later), the <b>OSSLT</b>, <b>40 community hours</b>, and a <b>minimum of 2 online learning credits</b> (Grade 9 cohort 2020–21+). Requirement logic is applied by entry cohort.</div>
+  <div class="card"><h2>Path to graduation</h2><div class="sub">Live progress per senior — feeds counselling and OnSIS</div>
+  <div style="overflow:auto"><table style="min-width:820px"><thead><tr><th>Student</th><th>Gr</th><th>Credits</th><th>Compulsory</th><th>OSSLT</th><th>Community hrs</th><th>Online cr.</th><th>Status</th></tr></thead><tbody>
+  ${seniors.map(s=>{
+    const cr=earnedCredits(s); const comp=compulsoryCredits(s);
+    const compNeed = s.enteredG9>=2024?17:18;
+    const hrs=hoursOf(s); const hoursOk=hrs>=40, litOk=s.osslt==='Passed', onlineOk=s.onlineCr>=2;
+    const onTrack=litOk&&hoursOk&&(s.grade<12||cr>=30);
+    return `<tr class="click" onclick="openStudentTab(${s.id},'marks')"><td><div class="row" style="gap:8px">${av(s,26)}<b>${s.last}, ${s.first}</b></div></td><td>${s.grade}</td>
+      <td><div style="font-size:12px">${cr.toFixed(1)} / 30</div><div class="progress" style="width:90px"><i style="width:${Math.min(100,cr/30*100)}%"></i></div></td>
+      <td>${comp.toFixed(1)} / ${compNeed} <span class="muted" style="font-size:10px">(${s.enteredG9>=2024?'17+13':'18+12'})</span></td>
+      <td>${s.osslt==='Passed'?'<span class="badge b-green">Passed</span>':s.osslt==='Not yet'?'<span class="badge b-red">Outstanding</span>':'<span class="badge b-grey">'+s.osslt+'</span>'}</td>
+      <td>${hrs} / 40 ${hoursOk?'<span class="badge b-green">✓</span>':'<span class="badge b-amber">'+(40-hrs)+' to go</span>'}</td>
+      <td>${s.onlineCr} / 2 ${onlineOk?'<span class="badge b-green">✓</span>':'<span class="badge b-amber">'+(2-s.onlineCr)+'</span>'}</td>
+      <td>${onTrack?'<span class="badge b-green">On track</span>':'<span class="badge b-amber">At risk</span>'}</td></tr>`;
+  }).join('')}
+  </tbody></table></div></div>`;
+};
+
+/* ---------- BEHAVIOUR ------------------------------------------------- */
+PAGES.behaviour=()=>{
+  const all=[];
+  STUDENTS.forEach(s=>s.incidents.forEach(i=>all.push({...i,s})));
+  all.sort((a,b)=>b.date.localeCompare(a.date));
+  $('#view').innerHTML=`<div class="notice blue">Workflow: <b>report → review → action → follow-up</b>. Visibility is restricted; serious incidents can trigger parent communication through the parent channel.</div>
+  <div class="card"><div class="row"><h2 style="margin:0">Incident log</h2><div style="flex:1"></div><button class="btn sm" onclick="modal('Log incident','<p class=muted>Record date, student, type, severity and notes. A serious flag opens the follow-up workflow and (optionally) notifies guardians.</p>')">+ Log incident</button></div>
+  <table style="margin-top:8px"><thead><tr><th>Date</th><th>Student</th><th>Type</th><th>Severity</th><th>Reported by</th><th>Status</th></tr></thead><tbody>
+  ${all.map(i=>`<tr class="click" onclick="openStudentTab(${i.s.id},'incidents')"><td>${i.date}</td><td><div class="row" style="gap:8px">${av(i.s,24)}${i.s.last}, ${i.s.first}</div></td><td>${i.type}</td><td><span class="badge ${i.cls}">${i.sev}</span></td><td>${i.by}</td><td><span class="badge b-grey">${i.status}</span></td></tr>`).join('')||'<tr><td colspan=6 class=muted>No incidents logged.</td></tr>'}
+  </tbody></table></div>`;
+};
+
+/* ---------- AWARDS & HONOUR ROLL ------------------------------------- */
+PAGES.awards=()=>{
+  // honour-roll eligibility: average >= 80 across current sections
+  const rows=STUDENTS.map(s=>{const enr=studentSections(s.id);const ms=enr.map(sec=>sectionMark(sec,s.id)).filter(m=>m!=='');const avg=ms.length?Math.round(ms.reduce((a,b)=>a+b,0)/ms.length):null;return {s,avg};}).filter(r=>r.avg!=null).sort((a,b)=>b.avg-a.avg);
+  const honour=rows.filter(r=>r.avg>=80);
+  $('#view').innerHTML=`<div class="grid g3"><div class="stat"><div class="n">${honour.length}</div><div class="l">Honour roll eligible (≥80%)</div></div><div class="stat"><div class="n">${rows.filter(r=>r.avg>=90).length}</div><div class="l">Principal's list (≥90%)</div></div><div class="stat"><div class="n">12</div><div class="l">Awards this year</div></div></div>
+  <div class="grid g2">
+    <div class="card"><h2>Honour roll — auto-suggested</h2><div class="sub">From calculated marks (current term)</div>
+      <table><thead><tr><th>Student</th><th>Grade</th><th>Average</th><th></th></tr></thead><tbody>
+      ${honour.slice(0,14).map(r=>`<tr class="click" onclick="openStudentTab(${r.s.id},'marks')"><td><div class="row" style="gap:8px">${av(r.s,24)}${r.s.last}, ${r.s.first}</div></td><td>${r.s.grade}</td><td><b>${r.avg}%</b> ${r.avg>=90?'<span class="badge b-purple">Principal&#39;s list</span>':'<span class="badge b-green">Honour</span>'}</td><td>→</td></tr>`).join('')}
+      </tbody></table></div>
+    <div class="card"><h2>Awards &amp; nominations</h2><div class="sub">Awards night</div>
+      ${[['Subject Excellence — Mathematics','MCR3U top student','b-blue'],['Community Service Award','100+ volunteer hours','b-green'],['Arts Recognition','Senior Choir & Visual Arts','b-purple'],['Athlete of the Year','Cross Country','b-amber']].map(a=>`<div class="feed-item"><b>${a[0]}</b> <span class="badge ${a[2]}">Nominated</span><div class="meta">${a[1]}</div></div>`).join('')}
+      <button class="btn ghost sm" onclick="modal('New nomination','<p class=muted>Nominate a student for an award; recognition surfaces on the profile and parent portal.</p>')">+ New nomination</button>
+    </div></div>`;
+};
+
+/* ---------- PARENT PORTAL (admin preview) ---------------------------- */
+PAGES.parent=()=>{
+  const child=demoChild();
+  $('#view').innerHTML=`<div class="notice blue">This is the <b>guardian view</b> (admin preview). Sign in as <a onclick="logout()">Parent</a> to experience it directly. Guardians see only their own children; contact &amp; consent preferences are honoured.</div>${parentOverviewHtml(child)}`;
+};
+function parentOverviewHtml(child){
+  const enr=studentSections(child.id);
+  return `<div class="card" style="background:linear-gradient(135deg,#eaf0f9,#fff)"><div class="row"><div class="av" style="width:40px;height:40px;background:var(--green)">${initials(child)}</div><div><b>${child.first} ${child.last}</b> <span class="muted">— Grade ${child.grade}, Homeroom ${child.homeroom}</span></div></div></div>
+  <div class="grid g2">
+    <div class="card"><h2>${child.first}'s marks</h2><div class="sub">As released by the school</div>
+      <table><tbody>${enr.map(sec=>{const m=sectionMark(sec,child.id);const L=pctToLevel(m);return `<tr><td><b>${sec.course.code}</b> <span class="muted">${sec.course.name}</span></td><td style="text-align:right"><b>${m===''?'—':m+'%'}</b> <span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')}</tbody></table>
+    </div>
+    <div class="card"><h2>At a glance</h2>
+      <div class="kv"><div class="k">Attendance</div><div>97% • <span class="muted">2 late this term</span></div>
+      <div class="k">Community hours</div><div>${hoursOf(child)} / 40</div>
+      <div class="k">Outstanding work</div><div>1 assignment due Sunday</div>
+      <div class="k">Next report card</div><div>Friday 4:00 PM</div></div>
+      <div class="hr"></div><b>Messages</b>
+      ${DB.threads.slice(0,1).map(th=>`<div class="feed-item" style="margin-top:8px"><b>${th.with}</b><div class="muted" style="font-size:12.5px">${esc(th.msgs[0].t)}</div><div class="meta">${th.msgs[0].when}</div></div>`).join('')}
+      <button class="btn ghost sm" onclick="go('ptc')">Book parent–teacher conference</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- COMMUNICATION -------------------------------------------- */
+PAGES.comms=()=>{
+  $('#view').innerHTML=`<div class="grid g2">
+    <div class="card"><h2>Compose announcement</h2><div class="sub">Goes to selected audience with read receipts</div>
+      <div class="row" style="margin-bottom:8px"><select style="flex:1" id="annAud"><option>All families</option><option>Grade 11 families</option><option>ENG3U class</option><option>Robotics Club</option><option>Staff only</option></select></div>
+      <input placeholder="Title" style="width:100%;margin-bottom:8px" id="annT">
+      <textarea placeholder="Message…" style="width:100%;height:80px;margin-bottom:8px" id="annB"></textarea>
+      <div class="row"><label class="muted"><input type="checkbox" checked> Email</label><label class="muted"><input type="checkbox"> SMS</label><label class="muted"><input type="checkbox" checked> Portal</label><button class="btn" style="margin-left:auto" onclick="postAnn()">Send</button></div>
+      <div class="hr"></div><div class="pf">Staff chat (department channels, alerts) integrates with Microsoft Teams or Slack — InSite posts automated operational alerts. Parent &amp; student messaging stays inside InSite for privacy and record-keeping.</div>
+    </div>
+    <div class="card"><h2>Announcement feed</h2><div class="sub">Most recent first</div><div id="annfeed"></div></div>
+  </div>
+  <div class="card"><h2>Two-way messaging</h2><div class="sub">Logged against the student • respects contact/consent flags</div>
+    ${DB.threads.map(th=>`<div class="feed-item"><b>${th.with}</b>${th.msgs.map(m=>`<div style="margin-top:6px;font-size:13px"><span class="${m.from==='You'?'':'muted'}" style="font-weight:600">${m.from}:</span> ${esc(m.t)} <span class="muted" style="font-size:11px">• ${m.when}</span></div>`).join('')}</div>`).join('')}
+  </div>`;
+  renderFeed();
+};
+function renderFeed(){ const f=$('#annfeed'); if(f) f.innerHTML=DB.ann.map(annHtml).join(''); }
+window.postAnn=()=>{const t=$('#annT').value||'Untitled',b=$('#annB').value||'',a=$('#annAud').value;DB.ann.unshift({who:ROLES[SESSION.role].name,title:t,body:b,when:'Just now',aud:a});saveDB();$('#annT').value='';$('#annB').value='';renderFeed();};
+
+/* ---------- PTC BOOKING ---------------------------------------------- */
+PAGES.ptc=()=>{
+  const slots=['4:00','4:15','4:30','4:45','5:00','5:15','5:30','5:45','6:00','6:15'];
+  const teachers=TEACHERS.slice(0,5);
+  if(!window._ptc) window._ptc={};
+  window._book=(t,sl)=>{ const k=t+'|'+sl; window._ptc[k]=window._ptc[k]?null:'You'; PAGES.ptc(); };
+  $('#view').innerHTML=`<div class="notice blue">Spring PTC evening — March 6. Self-service booking replaces manual slot management (tblPTC). ${SESSION.role==='parent'?'Pick an open slot with your child&#39;s teachers.':'Admin view of the booking grid.'}</div>
+  <div class="card"><div style="overflow:auto"><table style="min-width:760px"><thead><tr><th>Teacher</th>${slots.map(s=>`<th style="text-align:center">${s}</th>`).join('')}</tr></thead><tbody>
+  ${teachers.map(t=>{return `<tr><td><div class="row" style="gap:8px">${tav(t,24)}<div><b>${t.name}</b><div class="muted" style="font-size:11px">${t.dept}</div></div></div></td>${slots.map(sl=>{const k=t.name+'|'+sl;const booked=window._ptc[k];const taken=!booked&&chance(0.25);return `<td style="text-align:center">${booked?`<button class="btn sm" style="background:var(--green)" onclick="_book('${t.name}','${sl}')">✓</button>`:taken?'<span class="muted">—</span>':`<button class="btn ghost sm" onclick="_book('${t.name}','${sl}')">Book</button>`}</td>`;}).join('')}</tr>`;}).join('')}
+  </tbody></table></div><div class="pf" style="margin-top:8px">Green = your booking. Confirmations and reminders go out by email/portal.</div></div>`;
+};
+
+/* ---------- CLUBS ----------------------------------------------------- */
+PAGES.clubs=()=>{
+  $('#view').innerHTML=`<div class="card"><div class="row"><h2 style="margin:0">Groups &amp; Clubs</h2><div style="flex:1"></div>${SESSION.role!=='parent'?'<button class="btn sm" onclick="modal(\'New group\',\'<p class=muted>One flexible model covers clubs, teams, committees &amp; homerooms — each with a roster, sponsor, channel &amp; calendar.</p>\')">+ New group</button>':''}</div>
+  <div class="sub" style="margin-top:6px">One flexible model covers clubs, teams, committees &amp; homerooms — each with a roster, sponsor, channel &amp; calendar. Participation feeds community hours &amp; awards.</div>
+  <div class="grid g3" style="margin-top:6px">
+  ${clubs.map(c=>`<div class="feed-item"><div class="row" style="gap:9px"><div class="avatar" style="width:34px;height:34px;background:${rnd(C)}">${c.name.split(' ').map(w=>w[0]).join('').slice(0,2)}</div><div><b>${c.name}</b><div class="meta" style="margin:0">${c.cat}${c.hours?' • hours-eligible':''}</div></div></div>
+    <div class="kv" style="margin-top:10px;grid-template-columns:90px 1fr"><div class="k">Sponsor</div><div>${c.sponsor}</div><div class="k">Members</div><div>${c.members}</div></div>
+    <div class="row" style="margin-top:10px"><button class="btn ghost sm" onclick="modal('${c.name} — roster','<p class=muted>${c.members} members. Self-service sign-up with caps &amp; approval; participation tracked for community hours and awards.</p>')">Roster</button>${SESSION.role==='student'?'<button class="btn ghost sm">Join</button>':'<button class="btn ghost sm">Message</button>'}</div></div>`).join('')}
+  </div></div>`;
+};
+
+/* ---------- TIMETABLE ------------------------------------------------- */
+PAGES.timetable=()=>{
+  const days=['Mon','Tue','Wed','Thu','Fri'];
+  const periods=[1,2,3,4];
+  const bell=['8:45–10:00','10:15–11:30','12:15–1:30','1:45–3:00'];
+  let cellFor;
+  if(SESSION.role==='student'){
+    const enr=studentSections(SESSION.student.id);
+    cellFor=(p,d)=>{ const sec=enr.find(s=>s.period===p); return sec?`<div class="cell f"><b>${sec.course.code}</b>${sec.teacher.name.split(' ').slice(-1)} • Rm ${sec.room}</div>`:'<div class="cell"></div>'; };
+  } else if(SESSION.role==='teacher'){
+    const mine=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id);
+    cellFor=(p,d)=>{ const sec=mine.find(s=>s.period===p); return sec?`<div class="cell f"><b>${sec.course.code}</b>${sec.roster.length} students • Rm ${sec.room}</div>`:'<div class="cell"><span class="muted" style="font-size:11px">Prep</span></div>'; };
+  } else {
+    cellFor=(p,d)=>{ const sec=SECTIONS.find(s=>s.period===p); return sec?`<div class="cell f"><b>${sec.course.code}</b>${sec.teacher.name.split(' ').slice(-1)} • Rm ${sec.room}</div>`:'<div class="cell"></div>'; };
+  }
+  $('#view').innerHTML=`<div class="card"><div class="row"><h2 style="margin:0">${SESSION.role==='student'?'My timetable':SESSION.role==='teacher'?'My teaching schedule':'Master timetable (sample)'}</h2><div style="flex:1"></div><span class="pill">Semester 2 • Day 1</span></div>
+  <div class="sub" style="margin-top:6px">Section rosters drive the gradebook and attendance. Conflict detection flags student/teacher/room double-booking.</div>
+  <div class="tt" style="margin-top:12px">
+    <div class="hd"></div>${days.map(d=>`<div class="hd">${d}</div>`).join('')}
+    ${periods.map(p=>`<div class="per">P${p}<br><span style="font-size:10px">${bell[p-1]}</span></div>${days.map(d=>cellFor(p,d)).join('')}`).join('')}
+  </div>
+  ${SESSION.role==='admin'?'<div class="pf" style="margin-top:10px">Build period/day patterns; rosters auto-populate downstream modules. <span class="badge b-green">No conflicts detected</span></div>':''}</div>`;
+};
+
+/* ---------- ONSIS EXPORT --------------------------------------------- */
+PAGES.onsis=()=>{
+  const recs=STUDENTS.filter(s=>s.grade>=10).slice(0,14);
+  const desig=['Accumulated credits','Years of attendance','Principal designation'];
+  $('#view').innerHTML=`<div class="notice">Generates the <b>Class Enrolment</b> &amp; <b>final mark</b> segments for the Ministry's Ontario School Information System (OnSIS), keyed to each student's OEN, with validation before sign-off.</div>
+  <div class="card"><div class="row"><select><option>Secondary School — March submission</option><option>October submission</option><option>June submission</option></select><div style="flex:1"></div><button class="btn ghost sm" onclick="modal('Validation report','<p>✓ '+${recs.length}+' records valid · OEN coverage 100% · 2 warnings (final mark pending for in-progress courses). Ready for sign-off after warnings are reviewed.</p>')">Run validation</button><button class="btn sm" onclick="modal('Submission file','<p class=muted>A valid OnSIS submission file would be generated here from data InSite already holds. The export is a mapping + validation step.</p>')">Generate submission file</button></div>
+  <div class="hr"></div>
+  <div class="row" style="margin-bottom:10px"><span class="badge b-green">✓ ${recs.length} records valid</span><span class="badge b-amber">2 warnings: missing final mark (course in progress)</span><span class="badge b-grey">OEN coverage 100%</span></div>
+  <div style="overflow:auto"><table style="min-width:760px"><thead><tr><th>OEN</th><th>Student</th><th>Course</th><th>Credit hrs</th><th>Final mark</th><th>Grade designation</th></tr></thead><tbody>
+  ${recs.map(s=>{const c=rnd(COURSES.filter(x=>x.grade===s.grade));const m=ri(55,95);return `<tr><td><code class="k">${s.oen}</code></td><td>${s.last}, ${s.first[0]}.</td><td>${c.code}</td><td>110</td><td>${m}</td><td>${s.grade>=10?rnd(desig):'—'}</td></tr>`}).join('')}
+  </tbody></table></div>
+  <div class="pf" style="margin-top:10px">Because OEN, credit values, enrolment &amp; marks already live in InSite, the export is a mapping + validation step — provided the gradebook is feeding reliable final marks.</div>
+  </div>`;
+};
+
+/* ---------- ADMIN & AUDIT -------------------------------------------- */
+PAGES.admin=()=>{
+  $('#view').innerHTML=`<div class="grid g2">
+    <div class="card"><h2>Roles &amp; access</h2><div class="sub">Least-privilege, role-based access control</div>
+      <table><thead><tr><th>Role</th><th>Sees</th></tr></thead><tbody>
+      <tr><td><b>Administrator</b></td><td>All modules; restricted health/discipline (logged)</td></tr>
+      <tr><td><b>Teacher</b></td><td>Own sections: gradebook, attendance, students, comms</td></tr>
+      <tr><td><b>Student</b></td><td>Own marks, assignments, quizzes, timetable, grad path</td></tr>
+      <tr><td><b>Parent</b></td><td>Own children only; marks as released, attendance, hours, messages</td></tr>
+      </tbody></table>
+      <div class="hr"></div><div class="pf">SSO via Google Workspace / Microsoft 365 in production; roles mapped in InSite.</div>
+    </div>
+    <div class="card"><h2>System</h2><div class="sub">Demo controls &amp; settings</div>
+      <div class="kv"><div class="k">Academic year</div><div>2025–26 • Semester 2</div><div class="k">Data residency</div><div>Canadian region (planned)</div><div class="k">Privacy</div><div>FIPPA/MFIPPA · PHIPA-equivalent health</div><div class="k">Accessibility</div><div>WCAG / AODA target</div><div class="k">Backups</div><div>Nightly + tested restore (planned)</div></div>
+      <div class="hr"></div>
+      <div class="row"><button class="btn ghost sm" onclick="resetDB()">Reset demo data</button><span class="muted" style="font-size:12px">Clears local edits (scores, attendance, announcements).</span></div>
+    </div>
+  </div>
+  <div class="card"><h2>Audit log</h2><div class="sub">Comprehensive logging on sensitive views/changes</div>
+    <table><thead><tr><th>User</th><th>Action</th><th>Object</th><th>When</th></tr></thead><tbody>
+    ${AUDIT.map(a=>`<tr><td>${a.who}</td><td>${a.act}</td><td class="muted">${a.obj}</td><td class="muted">${a.when}</td></tr>`).join('')}
+    </tbody></table></div>`;
+};
+
+/* ========================================================================
+   STUDENT-role pages (scoped to self)
+   ===================================================================== */
+PAGES.mymarks=()=>{ const s=SESSION.student; openSelfMarks(s); };
+function openSelfMarks(s){
+  const enr=studentSections(s.id);
+  $('#view').innerHTML=`<div class="card"><h2>My courses &amp; marks</h2><div class="sub">Updated live as teachers enter scores</div>
+    <table><thead><tr><th>Course</th><th>Teacher</th><th>Mark</th><th>Level</th></tr></thead><tbody>
+    ${enr.map(sec=>{const m=sectionMark(sec,s.id);const L=pctToLevel(m);return `<tr><td><b>${sec.course.code}</b><div class="muted" style="font-size:11px">${sec.course.name}</div></td><td>${sec.teacher.name}</td><td><b>${m===''?'—':m+'%'}</b></td><td><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')}
+    </tbody></table>
+    <div class="pf" style="margin-top:8px">Levels: 4 (80–100), 3 (70–79, provincial standard), 2 (60–69), 1 (50–59).</div></div>`;
+}
+PAGES.myassign=()=>{
+  const s=SESSION.student; const sec=studentSections(s.id)[0];
+  $('#view').innerHTML=`<div class="card"><h2>My assignments</h2><div class="sub">Across my courses</div>
+    <table><thead><tr><th>Course</th><th>Assignment</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
+    <tr><td>${sec.course.code}</td><td><b>Unit 2 Seminar</b></td><td>Sun 11:59 PM</td><td><span class="badge b-amber">Not started</span></td><td><button class="btn sm" onclick="modal('Submit work','<p class=muted>Upload a file, paste text, or add a link. You can resubmit until the deadline if the teacher allows it.</p><div class=row><button class=\\'btn sm\\'>Upload file</button><button class=\\'btn ghost sm\\'>Add link</button></div>')">Submit</button></td></tr>
+    <tr><td>SCH3U</td><td><b>Investigation report</b></td><td>Returned</td><td><span class="badge b-blue">Returned ${ri(72,92)}%</span></td><td><button class="btn ghost sm">View feedback</button></td></tr>
+    <tr><td>MCR3U</td><td><b>Unit 3 Project</b></td><td>May 20</td><td><span class="badge b-green">Submitted</span></td><td>—</td></tr>
+    </tbody></table></div>`;
+};
+PAGES.myquiz=()=>{
+  $('#view').innerHTML=`<div class="card"><h2>My quizzes</h2><div class="sub">Assigned assessments</div>
+    <div class="grid g3">
+      <div class="feed-item"><b>SCH3U — Quiz 2: Stoichiometry</b><div class="meta">20 questions • 30 min • opens Fri</div><div style="margin-top:8px"><span class="badge b-amber">Not started</span></div></div>
+      <div class="feed-item"><b>MCR3U — Functions Check</b><div class="meta">12 questions • 1 attempt</div><div style="margin-top:8px"><span class="badge b-green">Completed — 84%</span></div></div>
+      <div class="feed-item"><b>ENG3U — Vocabulary</b><div class="meta">15 questions • auto-graded</div><div style="margin-top:8px"><span class="badge b-green">Completed — 91%</span></div></div>
+    </div>
+    <div class="pf" style="margin-top:8px">${SESSION.student.iep?'Your IEP accommodations (extra time) are applied automatically.':'Accommodations are applied automatically when on file.'}</div></div>`;
+};
+PAGES.mygrad=()=>{
+  const s=SESSION.student; const cr=earnedCredits(s); const hrs=hoursOf(s);
+  $('#view').innerHTML=`<div class="card"><h2>My path to graduation</h2><div class="sub">OSSD • graduating ${s.gradYear}</div>
+    <div class="kv" style="grid-template-columns:200px 1fr;gap:14px">
+      <div class="k">Credits</div><div><div class="row"><div class="progress" style="flex:1;max-width:300px"><i style="width:${Math.min(100,cr/30*100)}%"></i></div><b>${cr.toFixed(1)} / 30</b></div></div>
+      <div class="k">OSSLT (literacy)</div><div>${s.osslt==='Passed'?'<span class="badge b-green">Passed</span>':'<span class="badge b-amber">'+s.osslt+'</span>'}</div>
+      <div class="k">Community hours</div><div><div class="row"><div class="progress ${hrs>=40?'green':'amber'}" style="flex:1;max-width:300px"><i style="width:${Math.min(100,hrs/40*100)}%"></i></div><b>${hrs} / 40</b></div></div>
+      <div class="k">Online learning credits</div><div>${s.onlineCr} / 2 ${s.onlineCr>=2?'<span class="badge b-green">✓</span>':''}</div>
+    </div>
+    <div class="hr"></div><div class="pf">Compulsory split for your cohort (entered Gr 9 ${s.enteredG9}): ${s.enteredG9>=2024?'17 compulsory + 13 optional':'18 compulsory + 12 optional'}.</div></div>`;
+};
+PAGES.mymsg=()=>{
+  $('#view').innerHTML=`<div class="card"><h2>Messages</h2><div class="sub">Teachers &amp; office</div>
+    ${DB.threads.map(th=>`<div class="feed-item"><b>${th.with}</b>${th.msgs.map(m=>`<div style="margin-top:6px;font-size:13px"><span class="muted" style="font-weight:600">${m.from}:</span> ${esc(m.t)}</div>`).join('')}</div>`).join('')}
+    <div class="row" style="margin-top:10px"><input placeholder="Message a teacher…" style="flex:1"><button class="btn sm">Send</button></div></div>`;
+};
+
+/* ========================================================================
+   PARENT-role pages (scoped to child)
+   ===================================================================== */
+PAGES.pdash=()=>{ $('#view').innerHTML=parentOverviewHtml(SESSION.child); };
+PAGES.pmarks=()=>{ openSelfMarks(SESSION.child); };
+PAGES.pattend=()=>{
+  $('#view').innerHTML=`<div class="card"><h2>${SESSION.child.first}'s attendance</h2>
+    <div class="grid g3"><div class="stat"><div class="n">97%</div><div class="l">Present</div></div><div class="stat"><div class="n">2</div><div class="l">Late</div></div><div class="stat"><div class="n">1</div><div class="l">Absence</div></div></div>
+    <div class="pf">You're notified automatically about unexplained absences.</div></div>`;
+};
+PAGES.preport=()=>{ go('reportcard',SESSION.child.id); };
+PAGES.phours=()=>{ openParentHours(); };
+function openParentHours(){ const c=SESSION.child;
+  $('#view').innerHTML=`<div class="card"><h2>Community hours</h2><div class="sub">Ontario 40-hour requirement</div>
+    <div class="row"><div class="progress ${hoursOf(c)>=40?'green':'amber'}" style="flex:1"><i style="width:${Math.min(100,hoursOf(c)/40*100)}%"></i></div><b>${hoursOf(c)} / 40</b></div>
+    <div class="pf" style="margin-top:8px">Hours are logged by the school and verified for the OSSD.</div></div>`;
+}
+PAGES.pmsg=()=>{ PAGES.mymsg(); };
+PAGES.pptc=()=>{ PAGES.ptc(); };
+PAGES.pann=()=>{
+  $('#view').innerHTML=`<div class="card"><h2>Announcements</h2><div class="sub">From the school</div><div>${DB.ann.map(annHtml).join('')}</div></div>`;
+};
+
+/* ============================ BOOT =================================== */
+loginScreen();
+</script>
+</body>
+</html>
