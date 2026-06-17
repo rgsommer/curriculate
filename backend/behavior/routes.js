@@ -413,6 +413,49 @@ router.post("/edsby/ingest", async (req, res) => {
   }
 });
 
+// A teacher's OWN Edsby identity (any member — NOT admin-gated). So a notice
+// posts AS the teacher who sent it: they enter their Edsby user nid + paste
+// their session cookie; jver/cver/baseUrl come from the school config. Secrets
+// are stored encrypted and never returned. Unset → falls back to the school's
+// shared Edsby connection.
+router.get("/my-edsby", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc").lean();
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.baseUrl edsby.enabled").lean();
+    res.json({
+      ok: true,
+      userNid: me?.edsbyUserNid || "",
+      hasCookie: !!me?.edsbyCookieEnc,
+      baseUrl: cfg?.edsby?.baseUrl || "",
+      edsbyEnabled: !!cfg?.edsby?.enabled,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.put("/my-edsby", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const set = {};
+    if (b.clear === true) {
+      set.edsbyUserNid = "";
+      set.edsbyCookieEnc = "";
+      set.edsbyFormkeyEnc = "";
+    } else {
+      if ("userNid" in b) set.edsbyUserNid = String(b.userNid || "").replace(/[^\d]/g, "").slice(0, 32);
+      if (b.cookie && String(b.cookie).trim()) set.edsbyCookieEnc = encrypt(String(b.cookie).trim());
+    }
+    if (!Object.keys(set).length) return res.status(400).json({ ok: false, error: "Nothing to update." });
+    await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: set });
+    await audit(req.schoolId, "edsby.my_identity_updated", req, { meta: { fields: Object.keys(set) } });
+    const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc").lean();
+    res.json({ ok: true, userNid: me.edsbyUserNid || "", hasCookie: !!me.edsbyCookieEnc });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Send a test email (admin) to verify SMTP delivery. Returns the SMTP error in
 // the body (still 200) so the UI can show exactly why it failed.
 router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, res, next) => {

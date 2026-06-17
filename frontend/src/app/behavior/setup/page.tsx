@@ -46,6 +46,7 @@ export default function SetupPage() {
       </Card>
       <HousesSection config={me.config} />
       <EdsbySection edsby={me.config?.edsby} />
+      <MyEdsbyCard />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
       <AddStudentSection />
@@ -89,6 +90,7 @@ function ReadOnlySettings({ me }: { me: Me }) {
           View behaviours →
         </Link>
       </Card>
+      <MyEdsbyCard />
     </div>
   );
 }
@@ -1321,4 +1323,98 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Card({ children }: { children: React.ReactNode }) {
   return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
+}
+
+// Every member (teachers included) can set their OWN Edsby identity so notices
+// post AS them. They enter their Edsby user nid + paste their session cookie;
+// jver/cver/base URL come from the school connection an admin set up.
+function MyEdsbyCard() {
+  const [state, setState] = useState<{ userNid: string; hasCookie: boolean; baseUrl: string; edsbyEnabled: boolean } | null>(null);
+  const [userNid, setUserNid] = useState("");
+  const [cookie, setCookie] = useState("");
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api<{ userNid: string; hasCookie: boolean; baseUrl: string; edsbyEnabled: boolean }>("/my-edsby")
+      .then((d) => { setState(d); setUserNid(d.userNid || ""); })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      const body: any = { userNid };
+      if (cookie.trim()) body.cookie = cookie.trim();
+      const r = await api<{ userNid: string; hasCookie: boolean }>("/my-edsby", { method: "PUT", body });
+      setState((s) => s && { ...s, userNid: r.userNid, hasCookie: r.hasCookie });
+      setCookie("");
+      setMsg("Saved ✓");
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function disconnect() {
+    setBusy(true);
+    setMsg(null);
+    try {
+      await api("/my-edsby", { method: "PUT", body: { clear: true } });
+      setState((s) => s && { ...s, userNid: "", hasCookie: false });
+      setUserNid("");
+      setCookie("");
+      setMsg("Disconnected — your notices will use the school connection.");
+    } catch (e: any) {
+      setMsg(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!state) return null;
+
+  return (
+    <Card>
+      <h2 className="font-semibold">My Edsby (post as me)</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        So your notices home post from <em>your</em> Edsby account. Enter your Edsby user nid and paste your
+        session cookie. The base URL and version headers come from the school connection.
+        {!state.edsbyEnabled && " (Edsby sending isn't enabled for your school yet — an admin sets that up.)"}
+        {" "}Leave this blank to send through the school's shared Edsby account instead.
+      </p>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <Field label="Your Edsby user nid (the sender)">
+          <input value={userNid} onChange={(e) => setUserNid(e.target.value)} inputMode="numeric" placeholder="e.g. 25582870"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </Field>
+        <Field label={`Session cookie ${state.hasCookie ? "(saved — blank keeps it)" : ""}`}>
+          <input type="password" value={cookie} onChange={(e) => setCookie(e.target.value)}
+            placeholder={state.hasCookie ? "•••••••• (already saved)" : "paste your Edsby cookie"}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </Field>
+      </div>
+      <div className="mt-3 flex items-center gap-2">
+        <button onClick={save} disabled={busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+          {busy ? "Saving…" : "Save my Edsby"}
+        </button>
+        {(state.userNid || state.hasCookie) && (
+          <button onClick={disconnect} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">
+            Disconnect
+          </button>
+        )}
+        {msg && <span className="text-xs text-slate-500">{msg}</span>}
+      </div>
+      <details className="mt-2 text-xs text-slate-500">
+        <summary className="cursor-pointer font-medium text-slate-600">How to find your nid &amp; cookie</summary>
+        <p className="mt-1">
+          In Edsby, open DevTools (F12) → Network, click any <code className="rounded bg-slate-100 px-1">?xds=</code> request →
+          Request Headers. Your <code className="rounded bg-slate-100 px-1">Cookie:</code> line is the session cookie (copy everything after
+          <code className="rounded bg-slate-100 px-1">Cookie:</code>). Your user nid is the number in your own profile URL
+          (<code className="rounded bg-slate-100 px-1">/p/Panorama/&lt;nid&gt;</code> or the <code className="rounded bg-slate-100 px-1">create/&lt;nid&gt;</code> in a broadcast).
+        </p>
+      </details>
+    </Card>
+  );
 }

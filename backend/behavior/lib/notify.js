@@ -11,6 +11,7 @@ import BehaviorStudent from "../models/BehaviorStudent.js";
 import BehaviorIncident from "../models/BehaviorIncident.js";
 import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
+import BehaviorTeacher from "../models/BehaviorTeacher.js";
 import { EmailProvider } from "./providers/EmailProvider.js";
 import { emailShell, noteToHtml } from "./emailTemplate.js";
 import { EdsbyProvider } from "./providers/EdsbyProvider.js";
@@ -27,7 +28,7 @@ export function getDefaultProviders(edsby = {}) {
  *
  * @returns {Promise<Array>} delivery records { channel, ok, error, at, failover? }
  */
-export async function sendWithFailover({ recipient, channels, subject, body, html, providers }) {
+export async function sendWithFailover({ recipient, channels, subject, body, html, providers, allowEmailFailover = true }) {
   const results = [];
   for (const ch of channels) {
     const provider = providers[ch];
@@ -38,9 +39,11 @@ export async function sendWithFailover({ recipient, channels, subject, body, htm
     const r = await provider.send({ recipient, subject, body, html });
     results.push({ channel: ch, ok: !!r.ok, error: r.error || "", at: new Date() });
 
-    // Edsby failover: only when edsby failed, email wasn't already requested,
-    // and we have an email address to fall back to.
-    if (ch === "edsby" && !r.ok && !channels.includes("email") && recipient.email && providers.email) {
+    // Edsby failover: only when edsby failed, email wasn't already requested, we
+    // have an email address — and the division has opted into emailing families.
+    // Without that opt-in we must NOT silently email a parent (the whole point of
+    // an Edsby-only school), so the notice is just recorded as failed instead.
+    if (ch === "edsby" && !r.ok && allowEmailFailover && !channels.includes("email") && recipient.email && providers.email) {
       const fb = await providers.email.send({ recipient, subject, body, html });
       results.push({
         channel: "email",
@@ -87,28 +90,47 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
   if (!prov) {
     const config = await BehaviorConfig.findOne({ schoolId: notice.schoolId }).lean();
     const e = config?.edsby;
+
+    // Per-teacher Edsby identity: post AS the teacher who sent the notice when
+    // they've entered their own nid + session cookie; otherwise fall back to the
+    // school's shared connection. jver/cver/baseUrl/zoomId stay school-level.
+    let sender = null;
+    if (notice.sentByTeacherId) {
+      sender = await BehaviorTeacher.findById(notice.sentByTeacherId)
+        .select("edsbyUserNid edsbyCookieEnc edsbyFormkeyEnc")
+        .lean();
+    }
+    const useTeacher = !!(sender?.edsbyUserNid && sender?.edsbyCookieEnc);
+
     const edsby = e?.enabled
       ? {
           baseUrl: e.baseUrl,
-          cookie: decrypt(e.cookieEnc),
-          formkey: decrypt(e.formkeyEnc),
+          cookie: useTeacher ? decrypt(sender.edsbyCookieEnc) : decrypt(e.cookieEnc),
+          formkey: useTeacher
+            ? (sender.edsbyFormkeyEnc ? decrypt(sender.edsbyFormkeyEnc) : decrypt(e.formkeyEnc))
+            : decrypt(e.formkeyEnc),
           jver: e.jver,
           cver: e.cver,
-          userNid: e.userNid,
+          userNid: useTeacher ? sender.edsbyUserNid : e.userNid,
           studentNid: student?.edsbyStudentId || "",
         }
       : {};
     prov = getDefaultProviders(edsby);
 
-    // Refresh the (short-lived) formkey from the stored cookie right before
-    // sending, so Edsby doesn't reject the broadcast and fall over to email
-    // just because the formkey went stale since it was last saved.
+    // Refresh the (short-lived) formkey from the active session's cookie right
+    // before sending, so Edsby doesn't reject the broadcast and fall over to
+    // email just because the formkey went stale. Save it back to whichever
+    // record supplied the session (the teacher's, or the school's).
     if (e?.enabled && edsby.cookie && notice.channels?.includes("edsby")) {
       try {
         const r = await prov.edsby.testConnection(e.zoomId);
         if (r?.ok && r.formkey) {
           prov.edsby.formkey = r.formkey;
-          await BehaviorConfig.updateOne({ schoolId: notice.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+          if (useTeacher) {
+            await BehaviorTeacher.updateOne({ _id: notice.sentByTeacherId }, { $set: { edsbyFormkeyEnc: encrypt(r.formkey) } });
+          } else {
+            await BehaviorConfig.updateOne({ schoolId: notice.schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+          }
         }
       } catch {
         /* fall through with the stored formkey; failover still protects us */
@@ -120,8 +142,11 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
   const subject = positive ? `Good news about ${studentName} 🎉` : `Behaviour notice — ${studentName}`;
 
   // Branded HTML version of the note (Edsby still uses the plain text body).
-  const brand = await BehaviorConfig.findOne({ schoolId: notice.schoolId }).select("branding").lean();
+  const brand = await BehaviorConfig.findOne({ schoolId: notice.schoolId }).select("branding channels").lean();
   const schoolName = brand?.branding?.schoolName || "";
+  // Only fall over to a parent's email if the division has opted into emailing
+  // families; otherwise an Edsby failure must NOT become a surprise parent email.
+  const allowEmailFailover = !!brand?.channels?.emailToParents;
   const html = emailShell({
     title: positive ? "A note of good news" : "A note from school",
     schoolName,
@@ -139,6 +164,7 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
       body: notice.renderedText,
       html,
       providers: prov,
+      allowEmailFailover,
     });
     allDeliveries.push(...deliveries.map((d) => ({ ...d, recipient: recipient.email || recipient.edsbyParentId })));
   }

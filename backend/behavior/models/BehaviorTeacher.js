@@ -36,6 +36,16 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // per-teacher, not a hardcoded single teacher).
     signature: { type: String, default: "" },
 
+    // Per-teacher Edsby identity so a notice posts AS the teacher who sent it
+    // (Edsby's broadcast create is /core/create/<userNid> and must match the
+    // session). Each teacher enters their own Edsby user nid + session cookie;
+    // jver/cver/baseUrl are inherited from the school config. Cookie + formkey
+    // are stored ENCRYPTED, never returned to the client. When unset, sending
+    // falls back to the school's shared Edsby connection.
+    edsbyUserNid: { type: String, default: "" },
+    edsbyCookieEnc: { type: String, default: "" },
+    edsbyFormkeyEnc: { type: String, default: "" },
+
     // Per-teacher morning-reminder delivery preference (brief §8b). Division
     // sets the send time; the teacher picks the channel(s). Used in Phase 2.
     morningReminderPrefs: {
