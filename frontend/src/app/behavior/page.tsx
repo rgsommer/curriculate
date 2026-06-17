@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me, type StudentSummary } from "./_lib/api";
 import { Markdown } from "./_lib/Markdown";
+import SendNoticeModal from "./_components/SendNoticeModal";
 
 export default function BehaviorDashboard() {
   const [me, setMe] = useState<Me | null>(null);
@@ -435,6 +436,7 @@ function PendingDecisions() {
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string>("");
   const [msg, setMsg] = useState<string>("");
+  const [confirmRow, setConfirmRow] = useState<Pending | null>(null);
 
   function load() {
     api<{ notices: Pending[] }>("/notices/pending").then((d) => setRows(d.notices || [])).catch(() => setRows([]));
@@ -447,6 +449,7 @@ function PendingDecisions() {
     try {
       await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
       setRows((p) => (p || []).filter((n) => n._id !== id));
+      setConfirmRow(null);
       setMsg("Sent to the parent ✓");
     } catch (e: any) {
       setMsg(`✗ ${e.message}`);
@@ -499,7 +502,7 @@ function PendingDecisions() {
               Also request a meeting with the parents
             </label>
             <div className="mt-2 flex flex-wrap gap-2">
-              <button onClick={() => send(n._id)} disabled={!!busy} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+              <button onClick={() => setConfirmRow(n)} disabled={!!busy} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
                 {busy === n._id ? "…" : "Send to parent"}
               </button>
               <button onClick={() => notNow(n._id)} disabled={!!busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
@@ -510,6 +513,17 @@ function PendingDecisions() {
           </li>
         ))}
       </ul>
+      <SendNoticeModal
+        open={!!confirmRow}
+        studentName={confirmRow?.studentName}
+        channelLabel="Edsby"
+        noteText={confirmRow?.renderedText || ""}
+        requestMeeting={!!(confirmRow && meetingFor[confirmRow._id])}
+        onToggleMeeting={(v) => confirmRow && setMeetingFor((m) => ({ ...m, [confirmRow._id]: v }))}
+        busy={!!busy}
+        onConfirm={() => confirmRow && send(confirmRow._id)}
+        onClose={() => setConfirmRow(null)}
+      />
     </Card>
   );
 }

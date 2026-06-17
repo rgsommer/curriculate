@@ -52,8 +52,9 @@ function fmtDate(d) {
  */
 export function sanitizeNote(text, ctx = {}) {
   let s = String(text || "");
-  // "Dear [anything]," → a safe, generic salutation.
-  s = s.replace(/dear\s+\[[^\]\n]*\]\s*,?/gi, "Dear Parent/Guardian,");
+  // "Dear [anything]," → the real greeting if we have one, else a safe generic.
+  const safeGreeting = (ctx.greeting || "Dear Parent/Guardian,").trim();
+  s = s.replace(/dear\s+\[[^\]\n]*\]\s*,?/gi, safeGreeting);
   // Parent/guardian/recipient name placeholders → generic.
   s = s.replace(/\[(?:the\s+)?(?:parent(?:'s)?|guardian(?:'s)?|recipient(?:'s)?)(?:\/guardian)?(?:\s+name)?\]/gi, "Parent/Guardian");
   s = s.replace(/\[name\]/gi, "Parent/Guardian");
@@ -73,7 +74,7 @@ export function deterministicNote(ctx) {
   const isFirst = (ctx.sequenceNo || 1) <= 1;
   const lines = [];
 
-  lines.push(`Dear Parent/Guardian,`);
+  lines.push(ctx.greeting || `Dear Parent/Guardian,`);
   lines.push("");
   if (isFirst) {
     lines.push(
@@ -129,7 +130,7 @@ export function deterministicNote(ctx) {
 export function deterministicPositiveNote(ctx) {
   const name = ctx.studentName || "your child";
   const lines = [];
-  lines.push(`Dear Parent/Guardian,`);
+  lines.push(ctx.greeting || `Dear Parent/Guardian,`);
   lines.push("");
   lines.push(
     `I wanted to share some good news. ${name} has been recognised for several positive contributions at ${ctx.schoolName || "school"} recently, and we wanted you to hear about it.`
@@ -161,7 +162,7 @@ export function buildPositivePrompt(ctx) {
     ctx.pronoun
       ? `Refer to the student using ${ctx.pronoun} pronouns. Do NOT use singular "they"/"their" for this student — use the correct gendered pronoun or repeat the name.`
       : `If you refer to the student, repeat ${ctx.studentName}'s name rather than a pronoun. Do NOT use singular "they"/"their", and do not guess he/she.`,
-    `Begin the note with exactly "Dear Parent/Guardian," — do NOT address it to a specific person and do NOT invent the parent's name. CRITICAL: produce only final, ready-to-send text. NEVER output a bracketed placeholder such as [Parent's Name], [Name], [Date], [Teacher], or [School]; if you don't know a detail, omit it rather than leaving a placeholder.`,
+    `Begin the note with EXACTLY this greeting line, unchanged: "${ctx.greeting || "Dear Parent/Guardian,"}". Do NOT alter it or invent a different name. CRITICAL: produce only final, ready-to-send text. NEVER output a bracketed placeholder such as [Parent's Name], [Name], [Date], [Teacher], or [School]; if you don't know a detail, omit it rather than leaving a placeholder.`,
     `School: ${ctx.schoolName || ""}.`,
     `The positive contributions to celebrate:\n${incidentLines}`,
     `Do NOT mention any negative behaviour, discipline, consequences, points, or concerns of any kind. Keep it genuine, specific, and under 150 words.`,
@@ -229,7 +230,7 @@ export function buildPrompt(ctx) {
     ctx.pronoun
       ? `Refer to the student using ${ctx.pronoun} pronouns. Do NOT use singular "they"/"their" for this student — use the correct gendered pronoun or repeat the name.`
       : `If you refer to the student, repeat ${ctx.studentName}'s name rather than a pronoun. Do NOT use singular "they"/"their", and do not guess he/she.`,
-    `Begin the note with exactly "Dear Parent/Guardian," — do NOT address it to a specific person and do NOT invent the parent's name. CRITICAL: produce only final, ready-to-send text. NEVER output a bracketed placeholder such as [Parent's Name], [Name], [Date], [Teacher], or [School]; if you don't know a detail, omit it rather than leaving a placeholder.`,
+    `Begin the note with EXACTLY this greeting line, unchanged: "${ctx.greeting || "Dear Parent/Guardian,"}". Do NOT alter it or invent a different name. CRITICAL: produce only final, ready-to-send text. NEVER output a bracketed placeholder such as [Parent's Name], [Name], [Date], [Teacher], or [School]; if you don't know a detail, omit it rather than leaving a placeholder.`,
     `School: ${ctx.schoolName || ""}.`,
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,

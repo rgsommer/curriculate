@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Behavior, type StudentSummary } from "../_lib/api";
+import SendNoticeModal from "../_components/SendNoticeModal";
 
 type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: boolean; renderedText?: string; reason?: string; autoDispatch?: boolean } | null;
 
@@ -62,6 +63,8 @@ export default function LogIncidentPage() {
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<NoticeResult>(null);
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sending, setSending] = useState(false);
   const [positiveNotice, setPositiveNotice] = useState<{ _id: string; status: string } | null>(null);
   const [createdIds, setCreatedIds] = useState<string[]>([]);
   const [undone, setUndone] = useState(false);
@@ -215,11 +218,15 @@ export default function LogIncidentPage() {
 
   async function sendNow() {
     if (!notice) return;
+    setSending(true);
     try {
       await api(`/notices/${notice._id}/send`, { body: { requestMeeting } });
       setNotice({ ...notice, status: "sent" });
+      setShowSendModal(false);
     } catch (e: any) {
       setError(e.message);
+    } finally {
+      setSending(false);
     }
   }
 
@@ -327,7 +334,7 @@ export default function LogIncidentPage() {
             <div className="mt-3 flex flex-wrap gap-2">
               {notice.status === "queued" && (
                 <>
-                  <button onClick={sendNow} className="rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white">Send to parent</button>
+                  <button onClick={() => setShowSendModal(true)} className="rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white">Send to parent</button>
                   <button onClick={cancelNotice} className="rounded-lg border border-amber-400 bg-white px-4 py-2 text-amber-900">Not this time</button>
                   {student && (
                     <Link href={`/behavior/student/${student._id}`} className="rounded-lg border border-amber-400 bg-white px-4 py-2 text-amber-900">Review / edit first</Link>
@@ -341,6 +348,18 @@ export default function LogIncidentPage() {
           </div>
         )}
         <button onClick={reset} className="w-full rounded-xl bg-slate-900 px-4 py-3 text-white">Log another</button>
+
+        <SendNoticeModal
+          open={showSendModal}
+          studentName={student?.preferredName || student?.firstName}
+          channelLabel="Edsby"
+          noteText={notice?.renderedText || ""}
+          requestMeeting={requestMeeting}
+          onToggleMeeting={setRequestMeeting}
+          busy={sending}
+          onConfirm={sendNow}
+          onClose={() => setShowSendModal(false)}
+        />
       </div>
     );
   }

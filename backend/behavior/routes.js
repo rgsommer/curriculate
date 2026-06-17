@@ -1717,6 +1717,14 @@ async function composeAndCreateNotice({
       ? `Sincerely,\n${senderName}${schoolName ? `\nTeacher, ${schoolName}` : ", Teacher"}`
       : (config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim());
 
+  // Greeting addresses the parent(s) by name when we have them on file; a safe
+  // generic otherwise. Both AI + template notes start with exactly this line.
+  const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
+  const greeting =
+    parentNames.length === 1 ? `Dear ${parentNames[0]},`
+    : parentNames.length >= 2 ? `Dear ${parentNames[0]} and ${parentNames[1]},`
+    : "Dear Parent/Guardian,";
+
   // Replace the legacy "nnn" name placeholder with the student's name; the AI
   // otherwise handles naming/pronouns naturally from studentName + pronoun.
   const studentName = student.preferredName || student.firstName || "your child";
@@ -1761,6 +1769,7 @@ async function composeAndCreateNotice({
 
   const ctx = {
     studentName,
+    greeting,
     pronoun: derivePronoun(student),
     history,
     positives,
