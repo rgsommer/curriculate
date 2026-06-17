@@ -395,6 +395,24 @@ router.post("/edsby/ingest", async (req, res) => {
     if (!config) return res.status(401).json({ ok: false, error: "invalid token" });
 
     const b = req.body || {};
+
+    // One-shot mode: push the cookie into a short-lived run slot (used by an
+    // honour-roll run and auto-expired), NOT the persistent session. Keeps the
+    // admin session from sitting warm on the server.
+    if (b.oneShot === true) {
+      if (!b.cookie) return res.status(400).json({ ok: false, error: "no cookie" });
+      const ttlMin = Math.min(60, Math.max(1, parseInt(b.ttlMinutes, 10) || 10));
+      await BehaviorConfig.updateOne({ _id: config._id }, {
+        $set: {
+          "edsby.runCookieEnc": encrypt(String(b.cookie)),
+          "edsby.runCookieExpiresAt": new Date(Date.now() + ttlMin * 60 * 1000),
+          "edsby.updatedAt": new Date(),
+        },
+      });
+      await audit(config.schoolId, "edsby.run_session_pushed", req, { meta: { ttlMin, via: "ingest-token" } });
+      return res.json({ ok: true, oneShot: true, expiresInMinutes: ttlMin });
+    }
+
     const set = { "edsby.updatedAt": new Date() };
     const updated = [];
     for (const k of ["userNid", "jver", "cver", "zoomId"]) {
@@ -1471,6 +1489,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           sequenceNo,
           ccVp: sequenceNo >= 2,
         },
+        awaitDecision: true,
       });
     } else {
       // Don't stack a second notice while one is still awaiting send: its strikes
@@ -1489,7 +1508,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
             student,
           });
           if (decision.shouldNotify) {
-            notice = await fireNotice({ req, student, config, decision });
+            notice = await fireNotice({ req, student, config, decision, awaitDecision: true });
             break; // one notice per submission; strikes are consumed on send
           }
         }
@@ -1535,7 +1554,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
     res.json({
       ok: true,
       incidents: createdIncidents.map((i) => ({ _id: i._id, behaviorName: i.behaviorSnapshot.name })),
-      notice: notice ? { _id: notice._id, status: notice.status, cancelUntil: notice.cancelUntil, ccVp: notice.ccVp } : null,
+      notice: notice ? { _id: notice._id, status: notice.status, cancelUntil: notice.cancelUntil, ccVp: notice.ccVp, renderedText: notice.renderedText, reason: notice.reason, autoDispatch: notice.autoDispatch } : null,
       positiveNotice: positiveNotice ? { _id: positiveNotice._id, status: positiveNotice.status } : null,
       triggerIncidents,
       triggerCount: config?.triggerCount ?? 3,
@@ -1611,7 +1630,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           schoolId: req.schoolId, studentId: student._id,
           reason: { $ne: "positive" }, status: { $in: ["queued", "failed"] },
         });
-        if (!pending) notice = await fireNotice({ req, student, config, decision });
+        if (!pending) notice = await fireNotice({ req, student, config, decision, awaitDecision: true });
       }
 
       // Positive note home if this batch behaviour is a positive and the student
@@ -1672,6 +1691,7 @@ function doubleConsequence(text) {
 async function composeAndCreateNotice({
   schoolId, student, config, reason, sequenceNo, ccVp, sentByTeacherId,
   channels, consequenceTexts, fromTeachers, contextIncidents, triggeringIncidentIds, kind = "discipline",
+  awaitDecision = false,
 }) {
   const isPositive = kind === "positive";
   const recipients = (student.parents || [])
@@ -1764,12 +1784,16 @@ async function composeAndCreateNotice({
     : await composeNotice(ctx, { aiClient });
 
   const cancelWindow = config?.cancelWindowSeconds ?? 60;
+  // A teacher-triggered notice waits for an explicit Send decision — it NEVER
+  // auto-sends to a parent. Only no-teacher-present paths (e.g. the missed-
+  // consequence cron) auto-dispatch, and only when the school isn't in draft.
+  const autoDispatch = !awaitDecision && config?.aiSendMode !== "draft";
   const notice = await BehaviorNotice.create({
     schoolId, studentId: student._id, periodNo: 1, sequenceNo, reason,
     fromTeachers, triggeringIncidentIds, consequenceTexts, channels, recipients, ccVp,
     renderedText: text, aiUsed, status: "queued", sentByTeacherId,
     cancelUntil: new Date(Date.now() + cancelWindow * 1000),
-    autoDispatch: config?.aiSendMode !== "draft",
+    autoDispatch,
   });
   // Send the SENDING TEACHER a copy of the queued note to their OWN email, before
   // it reaches any parent — so they see exactly what will go out and can cancel
@@ -1779,8 +1803,8 @@ async function composeAndCreateNotice({
     if (sender?.email) {
       const recipNames = recipients.map((r) => r.name || r.role).filter(Boolean).join(", ") || "the parent(s)";
       const chanLabel = (channels || []).includes("edsby") ? "Edsby" : ((channels || []).length ? channels.join(", ") : "no channel configured yet");
-      const willSend = config?.aiSendMode === "draft"
-        ? "It will NOT be sent until you review it and press Send on the dashboard."
+      const willSend = (awaitDecision || config?.aiSendMode === "draft")
+        ? "Nothing is sent automatically — it will go to the parent ONLY if you choose Send. Otherwise it stays as a pending decision and the strikes remain."
         : `Unless you cancel or edit it on the dashboard, it will be delivered to ${recipNames} via ${chanLabel} after the short review window.`;
       const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
       await sendEmail({
@@ -1807,7 +1831,7 @@ async function composeAndCreateNotice({
     console.warn("[behavior] teacher copy email failed:", e?.message || e);
   }
 
-  if (config?.aiSendMode !== "draft") scheduleDispatch(notice._id, cancelWindow);
+  if (autoDispatch) scheduleDispatch(notice._id, cancelWindow);
   return notice;
 }
 
@@ -1837,7 +1861,7 @@ async function createFollowups({ schoolId, student, config, contributingIncident
  * contributing incidents spent, resets the shared threshold counter (threshold
  * notices only), and opens follow-up tasks for any consequence with a follow-up.
  */
-async function fireNotice({ req, student, config, decision }) {
+async function fireNotice({ req, student, config, decision, awaitDecision = false }) {
   const contributing = decision.contributingIncidents;
   const contribIds = contributing.map((i) => i._id);
 
@@ -1856,7 +1880,7 @@ async function fireNotice({ req, student, config, decision }) {
   const notice = await composeAndCreateNotice({
     schoolId: req.schoolId, student, config, reason: decision.reason, sequenceNo: decision.sequenceNo,
     ccVp: decision.ccVp, sentByTeacherId: req.membership._id, channels, consequenceTexts, fromTeachers,
-    contextIncidents: contributing, triggeringIncidentIds: contribIds,
+    contextIncidents: contributing, triggeringIncidentIds: contribIds, awaitDecision,
   });
 
   // NB: the student's strikes are NOT consumed here. They are consumed when the

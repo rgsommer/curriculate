@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Behavior, type StudentSummary } from "../_lib/api";
 
-type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: boolean } | null;
+type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: boolean; renderedText?: string; reason?: string; autoDispatch?: boolean } | null;
 
 // A behaviour's kind, with a legacy fallback to its points sign.
 function kindOf(b: any): "negative" | "positive" {
@@ -303,33 +303,39 @@ export default function LogIncidentPage() {
           </div>
         )}
         {notice && (
-          <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
+          <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-5">
             <h2 className="font-semibold text-amber-900">
-              {notice.status === "sent" ? "Notice home sent ✓" : notice.status === "cancelled" ? "Notice not sent" : "Notice home ready"}
+              {notice.status === "sent" ? "Notice home sent ✓"
+                : notice.status === "cancelled" ? "Not sent — strikes kept"
+                : `${student?.preferredName || student?.firstName} reached ${trigger.length} strike${trigger.length === 1 ? "" : "s"} — send a notice home?`}
             </h2>
             {notice.status === "queued" && (
-              <p className="mt-1 text-sm text-amber-800">
-                A parent notice was composed{notice.ccVp ? " (VP CC’d)" : ""}. Send it now, don’t send it, or review/edit it first
-                — if you do nothing it sends automatically after a short window.
-              </p>
-            )}
-            {notice.status === "queued" && (
-              <label className="mt-3 flex items-center gap-2 text-sm text-amber-900">
-                <input type="checkbox" checked={requestMeeting} onChange={(e) => setRequestMeeting(e.target.checked)} />
-                Also request a meeting with the parents
-              </label>
+              <>
+                <p className="mt-1 text-sm text-amber-800">
+                  Nothing has been sent. This goes to the parent{notice.ccVp ? " (VP CC’d)" : ""} <span className="font-semibold">only if you choose “Send to parent”</span>.
+                  Choose <span className="font-semibold">Not this time</span> and nothing is sent — the strikes stay, so it&apos;ll come up again on the next incident (unless one fades past the window).
+                </p>
+                {notice.renderedText && (
+                  <pre className="mt-3 max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-amber-200 bg-white p-3 font-sans text-sm text-slate-700">{notice.renderedText}</pre>
+                )}
+                <label className="mt-3 flex items-center gap-2 text-sm text-amber-900">
+                  <input type="checkbox" checked={requestMeeting} onChange={(e) => setRequestMeeting(e.target.checked)} />
+                  Also request a meeting with the parents
+                </label>
+              </>
             )}
             <div className="mt-3 flex flex-wrap gap-2">
               {notice.status === "queued" && (
                 <>
-                  <button onClick={sendNow} className="rounded-lg bg-amber-600 px-4 py-2 text-white">Send now</button>
-                  <button onClick={cancelNotice} className="rounded-lg border border-amber-400 px-4 py-2 text-amber-900">Don’t send</button>
+                  <button onClick={sendNow} className="rounded-lg bg-amber-600 px-4 py-2 font-semibold text-white">Send to parent</button>
+                  <button onClick={cancelNotice} className="rounded-lg border border-amber-400 bg-white px-4 py-2 text-amber-900">Not this time</button>
+                  {student && (
+                    <Link href={`/behavior/student/${student._id}`} className="rounded-lg border border-amber-400 bg-white px-4 py-2 text-amber-900">Review / edit first</Link>
+                  )}
                 </>
               )}
-              {student && (
-                <Link href={`/behavior/student/${student._id}`} className="rounded-lg border border-amber-400 px-4 py-2 text-amber-900">
-                  {notice.status === "queued" ? "Review / edit" : "View"}
-                </Link>
+              {notice.status !== "queued" && student && (
+                <Link href={`/behavior/student/${student._id}`} className="rounded-lg border border-amber-400 px-4 py-2 text-amber-900">View student</Link>
               )}
             </div>
           </div>
@@ -684,7 +690,7 @@ function BatchLog({
         {notified.length > 0 && (
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-5">
             <h2 className="font-semibold text-amber-900">{notified.length} reached the threshold</h2>
-            <p className="mt-1 text-sm text-amber-800">A parent notice is queued for each — review and send on their page.</p>
+            <p className="mt-1 text-sm text-amber-800">Nothing has been sent — a notice is ready for each. Open each student to send it, or leave it and their strikes stay.</p>
             <ul className="mt-2 space-y-1">
               {notified.map((r) => (
                 <li key={r.studentId} className="flex items-center justify-between text-sm">
