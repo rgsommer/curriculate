@@ -6,6 +6,7 @@ import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../../_lib/api";
 import { Markdown } from "../../_lib/Markdown";
 import { Timeline, buildByMonth } from "../../_components/Timeline";
+import SendNoticeModal from "../../_components/SendNoticeModal";
 
 type TeacherNote = { name?: string; text: string; at: string };
 type StudentDetail = {
@@ -72,6 +73,9 @@ export default function StudentPage() {
   const [noteText, setNoteText] = useState<Record<string, string>>({});
   // Per-notice "request a meeting" toggle
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
+  // Confirm-before-send preview pop-up
+  const [sendModal, setSendModal] = useState<{ id: string; text: string; edited: boolean } | null>(null);
+  const [sendingModal, setSendingModal] = useState(false);
 
   // Log a parent meeting / contact (an interaction — no strike, nothing sent home)
   const [meetingNote, setMeetingNote] = useState("");
@@ -176,6 +180,20 @@ export default function StudentPage() {
       load();
     } catch (e: any) {
       setError(e.message);
+    }
+  }
+
+  // Confirm-before-send: runs the right send (edited or as-is) then closes the
+  // preview pop-up.
+  async function confirmSend() {
+    if (!sendModal) return;
+    setSendingModal(true);
+    try {
+      if (sendModal.edited) await sendNoticeEdited(sendModal.id);
+      else await sendNotice(sendModal.id);
+      setSendModal(null);
+    } finally {
+      setSendingModal(false);
     }
   }
 
@@ -388,8 +406,8 @@ export default function StudentPage() {
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {(n.status === "queued" || n.status === "failed") && (
-                          <button onClick={() => sendNoticeEdited(n._id)} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
-                            {n.status === "failed" ? "Save &amp; retry send" : "Send now"}
+                          <button onClick={() => setSendModal({ id: n._id, text: editText, edited: true })} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
+                            {n.status === "failed" ? "Save & retry send" : "Send now"}
                           </button>
                         )}
                         <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Save (keep queued)</button>
@@ -407,7 +425,7 @@ export default function StudentPage() {
                             Also request a meeting with the parents
                           </label>
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <button onClick={() => sendNotice(n._id)} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
+                            <button onClick={() => setSendModal({ id: n._id, text: n.renderedText, edited: false })} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
                               {n.status === "failed" ? "Retry send" : "Send now"}
                             </button>
                             <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
@@ -489,6 +507,18 @@ export default function StudentPage() {
           {data.incidents.length === 0 && <li className="py-2 text-slate-400">No incidents.</li>}
         </ul>
       </section>
+
+      <SendNoticeModal
+        open={!!sendModal}
+        studentName={s.preferredName || s.firstName}
+        channelLabel="Edsby"
+        noteText={sendModal?.text || ""}
+        requestMeeting={!!(sendModal && meetingFor[sendModal.id])}
+        onToggleMeeting={(v) => sendModal && setMeetingFor((m) => ({ ...m, [sendModal.id]: v }))}
+        busy={sendingModal}
+        onConfirm={confirmSend}
+        onClose={() => setSendModal(null)}
+      />
     </div>
   );
 }
