@@ -32,6 +32,8 @@ const nextConfig = {
       // Map clean URLs to the underlying index.html files.
       { source: "/insite",          destination: "/insite/index.html" },
       { source: "/insite/features", destination: "/insite/features/index.html" },
+      { source: "/insite/privacy",  destination: "/insite/privacy/index.html" },
+      { source: "/insite/terms",    destination: "/insite/terms/index.html" },
     ];
   },
   async redirects() {
