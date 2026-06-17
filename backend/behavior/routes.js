@@ -1981,6 +1981,50 @@ router.post("/notices/:id/cancel", authAny, loadMembership, async (req, res, nex
   }
 });
 
+// Notices the current teacher queued that are awaiting their explicit send
+// decision (never auto-send). Drives the dashboard "awaiting your decision" card
+// so a triggered notice is never silently forgotten. Declared BEFORE
+// "/notices/:id" so "pending" isn't matched as an id.
+router.get("/notices/pending", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const notices = await BehaviorNotice.find({
+      schoolId: req.schoolId,
+      status: "queued",
+      autoDispatch: false,
+      reason: { $ne: "positive" },
+      sentByTeacherId: req.membership._id,
+    })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .lean();
+    const sIds = [...new Set(notices.map((n) => String(n.studentId)))];
+    const students = await BehaviorStudent.find({ _id: { $in: sIds } })
+      .select("firstName lastName preferredName classGroup")
+      .lean();
+    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    res.json({
+      ok: true,
+      notices: notices.map((n) => {
+        const s = sById[String(n.studentId)];
+        return {
+          _id: String(n._id),
+          studentId: String(n.studentId),
+          studentName: s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "student",
+          classGroup: s?.classGroup || "",
+          reason: n.reason,
+          ccVp: n.ccVp,
+          sequenceNo: n.sequenceNo,
+          count: (n.triggeringIncidentIds || []).length,
+          createdAt: n.createdAt,
+          renderedText: n.renderedText,
+        };
+      }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Single notice (communication-history detail view).
 router.get("/notices/:id", authAny, loadMembership, async (req, res, next) => {
   try {

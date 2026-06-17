@@ -92,6 +92,8 @@ export default function BehaviorDashboard() {
         🔍 Find a student &amp; view history
       </Link>
 
+      {canLog && <PendingDecisions />}
+
       {canLog && <ReminderToday />}
 
       {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
@@ -421,6 +423,93 @@ function ExecutiveSummaryCard() {
           </div>
         </>
       )}
+    </Card>
+  );
+}
+
+type Pending = { _id: string; studentId: string; studentName: string; classGroup?: string; reason?: string; ccVp?: boolean; count?: number; createdAt: string; renderedText?: string };
+
+function PendingDecisions() {
+  const [rows, setRows] = useState<Pending[] | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
+  const [busy, setBusy] = useState<string>("");
+  const [msg, setMsg] = useState<string>("");
+
+  function load() {
+    api<{ notices: Pending[] }>("/notices/pending").then((d) => setRows(d.notices || [])).catch(() => setRows([]));
+  }
+  useEffect(load, []);
+
+  async function send(id: string) {
+    setBusy(id);
+    setMsg("");
+    try {
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
+      setRows((p) => (p || []).filter((n) => n._id !== id));
+      setMsg("Sent to the parent ✓");
+    } catch (e: any) {
+      setMsg(`✗ ${e.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+  async function notNow(id: string) {
+    setBusy(id);
+    setMsg("");
+    try {
+      await api(`/notices/${id}/cancel`, { body: {} });
+      setRows((p) => (p || []).filter((n) => n._id !== id));
+      setMsg("Not sent — the strikes stay, so it'll come up again next time.");
+    } catch (e: any) {
+      setMsg(`✗ ${e.message}`);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  if (!rows || rows.length === 0) return null;
+
+  return (
+    <Card>
+      <h2 className="font-semibold text-amber-900">Notices awaiting your decision</h2>
+      <p className="mt-0.5 text-xs text-slate-500">
+        These reached the trigger and are ready — <span className="font-medium">nothing is sent</span> until you choose. “Not this time” keeps the strikes so it comes up again on the next incident.
+      </p>
+      {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
+      <ul className="mt-2 divide-y divide-slate-100">
+        {rows.map((n) => (
+          <li key={n._id} className="py-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <span className="font-medium">{n.studentName}</span>
+                <span className="ml-2 text-xs text-slate-400">
+                  {[n.classGroup, n.count ? `${n.count} strike${n.count === 1 ? "" : "s"}` : "", n.ccVp ? "VP CC" : ""].filter(Boolean).join(" · ")}
+                </span>
+              </div>
+              <button onClick={() => setOpenId(openId === n._id ? null : n._id)} className="shrink-0 text-xs text-slate-500 underline">
+                {openId === n._id ? "hide" : "preview"}
+              </button>
+            </div>
+            {openId === n._id && n.renderedText && (
+              <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 font-sans text-xs text-slate-700">{n.renderedText}</pre>
+            )}
+            <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+              <input type="checkbox" checked={!!meetingFor[n._id]} onChange={(e) => setMeetingFor((m) => ({ ...m, [n._id]: e.target.checked }))} />
+              Also request a meeting with the parents
+            </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button onClick={() => send(n._id)} disabled={!!busy} className="rounded-lg bg-amber-600 px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-40">
+                {busy === n._id ? "…" : "Send to parent"}
+              </button>
+              <button onClick={() => notNow(n._id)} disabled={!!busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                Not this time
+              </button>
+              <Link href={`/behavior/student/${n.studentId}`} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Review / edit</Link>
+            </div>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
