@@ -189,6 +189,53 @@ export default function EdsbyHonours() {
     URL.revokeObjectURL(url);
   }
 
+  // Map an Edsby class name to a subject column: strip the trailing section
+  // ("Geography - 08" → "Geography"), then normalize a few to common labels.
+  function subjectOf(className) {
+    let s = String(className || "").replace(/\s*[-–]\s*\d.*$/, "").trim();
+    const n = s.toLowerCase();
+    if (/^math/.test(n)) return "Math";
+    if (/christian ed|^ce$|religion/.test(n)) return "CE";
+    if (/language arts|^ela$|^language$/.test(n)) return "English";
+    if (/phys.*ed|^pe$|gym/.test(n)) return "PE";
+    return s || className;
+  }
+
+  // Per-student × per-subject grid of the current overall (Final) average — the
+  // grades grid for the report-card sheet. Skips non-academic classes (no grade).
+  function downloadGrid() {
+    if (!snapshot) return;
+    const SKIP = /homeroom|learning skill|advisory|study hall/i;
+    const subjects = new Set();
+    const rowsByStudent = snapshot.students.map((s) => {
+      const cell = {};
+      for (const c of s.courses || []) {
+        if (SKIP.test(c.name)) continue;
+        const subj = subjectOf(c.name);
+        subjects.add(subj);
+        if (c.pct !== null && c.pct !== undefined) cell[subj] = c.pct; // keep the numeric average
+      }
+      const [first, ...rest] = String(s.name || "").split(" ");
+      return { last: rest.join(" "), first, grade: s.grade || "", cell };
+    });
+    const subjCols = [...subjects].sort();
+    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const header = ["Last Name", "First Name", "Grade", ...subjCols];
+    const lines = [header.map(esc).join(",")];
+    rowsByStudent
+      .sort((a, b) => (a.grade + a.last).localeCompare(b.grade + b.last))
+      .forEach((r) => {
+        lines.push([r.last, r.first, r.grade, ...subjCols.map((s) => r.cell[s] ?? "")].map(esc).join(","));
+      });
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "edsby-subject-grid.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   // ── render ──────────────────────────────────────────────────────────────────
 
   if (signedIn === null) return null;
@@ -399,10 +446,17 @@ export default function EdsbyHonours() {
             <h3 className="font-semibold text-slate-700">
               Honour roll <span className="text-sm font-normal text-slate-400">— refreshed {fmtWhen(snapshot.takenAt)}</span>
             </h3>
-            <button type="button" onClick={downloadCsv}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-              Download CSV
-            </button>
+            <span className="flex gap-2">
+              <button type="button" onClick={downloadCsv}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                Download CSV
+              </button>
+              <button type="button" onClick={downloadGrid}
+                title="Per-student × per-subject grid of the current overall (Final) average — for your report-card sheet"
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                Subject grid (CSV)
+              </button>
+            </span>
           </div>
 
           {(diag.missingNid?.length > 0 || (diag.requested ?? 0) > (diag.succeeded ?? 0)) && (
