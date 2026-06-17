@@ -44,6 +44,30 @@ function fmtDate(d) {
  * Deterministic template note — the guaranteed fallback. Also a fine note in
  * its own right, so a delivery never silently fails because of the AI (§8).
  */
+/**
+ * Hard safety net: never let an unfilled placeholder reach a family. The AI is
+ * instructed not to use them, but if one slips through (e.g. "Dear [Parent's
+ * Name]," or "[Teacher]"), neutralise it here rather than send raw brackets to a
+ * parent. Applied to EVERY composed note, AI or template.
+ */
+export function sanitizeNote(text, ctx = {}) {
+  let s = String(text || "");
+  // "Dear [anything]," → a safe, generic salutation.
+  s = s.replace(/dear\s+\[[^\]\n]*\]\s*,?/gi, "Dear Parent/Guardian,");
+  // Parent/guardian/recipient name placeholders → generic.
+  s = s.replace(/\[(?:the\s+)?(?:parent(?:'s)?|guardian(?:'s)?|recipient(?:'s)?)(?:\/guardian)?(?:\s+name)?\]/gi, "Parent/Guardian");
+  s = s.replace(/\[name\]/gi, "Parent/Guardian");
+  // Known fillables we actually have.
+  if (ctx.studentName) s = s.replace(/\[(?:student(?:'s)?|child(?:'s)?|pupil(?:'s)?)(?:\s+name)?\]/gi, ctx.studentName);
+  if (ctx.schoolName) s = s.replace(/\[school(?:'s)?(?:\s+name)?\]/gi, ctx.schoolName);
+  // Anything still in brackets gets removed entirely — a slightly terse sentence
+  // is far safer than visible "[placeholder]" text going to a parent.
+  s = s.replace(/\s*\[[^\]\n]*\]\s*/g, " ");
+  // Tidy spacing left by removals.
+  s = s.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+([,.;:!?])/g, "$1");
+  return s.trim();
+}
+
 export function deterministicNote(ctx) {
   const name = ctx.studentName || "your child";
   const isFirst = (ctx.sequenceNo || 1) <= 1;
@@ -137,6 +161,7 @@ export function buildPositivePrompt(ctx) {
     ctx.pronoun
       ? `Refer to the student using ${ctx.pronoun} pronouns. Do NOT use singular "they"/"their" for this student — use the correct gendered pronoun or repeat the name.`
       : `If you refer to the student, repeat ${ctx.studentName}'s name rather than a pronoun. Do NOT use singular "they"/"their", and do not guess he/she.`,
+    `Begin the note with exactly "Dear Parent/Guardian," — do NOT address it to a specific person and do NOT invent the parent's name. CRITICAL: produce only final, ready-to-send text. NEVER output a bracketed placeholder such as [Parent's Name], [Name], [Date], [Teacher], or [School]; if you don't know a detail, omit it rather than leaving a placeholder.`,
     `School: ${ctx.schoolName || ""}.`,
     `The positive contributions to celebrate:\n${incidentLines}`,
     `Do NOT mention any negative behaviour, discipline, consequences, points, or concerns of any kind. Keep it genuine, specific, and under 150 words.`,
@@ -151,15 +176,15 @@ export function buildPositivePrompt(ctx) {
 export async function composePositiveNotice(ctx, opts = {}) {
   const aiClient = opts.aiClient;
   const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
-  if (!aiClient) return { text: deterministicPositiveNote(ctx), aiUsed: false };
+  if (!aiClient) return { text: sanitizeNote(deterministicPositiveNote(ctx), ctx), aiUsed: false };
   try {
     const text = await withTimeout(aiClient.complete(buildPositivePrompt(ctx)), timeoutMs);
-    const trimmed = String(text || "").trim();
+    const trimmed = sanitizeNote(text, ctx);
     if (!trimmed) throw new Error("empty AI response");
     return { text: trimmed, aiUsed: true };
   } catch (err) {
     console.warn("[behavior/aiNote] positive AI compose failed, using template:", err?.message || err);
-    return { text: deterministicPositiveNote(ctx), aiUsed: false };
+    return { text: sanitizeNote(deterministicPositiveNote(ctx), ctx), aiUsed: false };
   }
 }
 
@@ -204,6 +229,7 @@ export function buildPrompt(ctx) {
     ctx.pronoun
       ? `Refer to the student using ${ctx.pronoun} pronouns. Do NOT use singular "they"/"their" for this student — use the correct gendered pronoun or repeat the name.`
       : `If you refer to the student, repeat ${ctx.studentName}'s name rather than a pronoun. Do NOT use singular "they"/"their", and do not guess he/she.`,
+    `Begin the note with exactly "Dear Parent/Guardian," — do NOT address it to a specific person and do NOT invent the parent's name. CRITICAL: produce only final, ready-to-send text. NEVER output a bracketed placeholder such as [Parent's Name], [Name], [Date], [Teacher], or [School]; if you don't know a detail, omit it rather than leaving a placeholder.`,
     `School: ${ctx.schoolName || ""}.`,
     ctx.daysSinceFirst ? `Days since first incident this period: ${ctx.daysSinceFirst}.` : "",
     `The note should be ABOUT only these current incidents:\n${incidentLines}`,
@@ -232,19 +258,19 @@ export async function composeNotice(ctx, opts = {}) {
   const timeoutMs = opts.timeoutMs || DEFAULT_TIMEOUT_MS;
 
   if (!aiClient) {
-    return { text: deterministicNote(ctx), aiUsed: false };
+    return { text: sanitizeNote(deterministicNote(ctx), ctx), aiUsed: false };
   }
 
   try {
     const prompt = buildPrompt(ctx);
     const text = await withTimeout(aiClient.complete(prompt), timeoutMs);
-    const trimmed = String(text || "").trim();
+    const trimmed = sanitizeNote(text, ctx);
     if (!trimmed) throw new Error("empty AI response");
     return { text: trimmed, aiUsed: true };
   } catch (err) {
     // Fail safe — never let a notice die because of the AI.
     console.warn("[behavior/aiNote] AI compose failed, using template:", err?.message || err);
-    return { text: deterministicNote(ctx), aiUsed: false };
+    return { text: sanitizeNote(deterministicNote(ctx), ctx), aiUsed: false };
   }
 }
 

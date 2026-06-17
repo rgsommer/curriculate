@@ -19,6 +19,9 @@ const BehaviorConfigSchema = new mongoose.Schema(
       name: { type: String, default: "" },
       email: { type: String, default: "", lowercase: true, trim: true },
       phone: { type: String, default: "" },
+      // The VP's Edsby id, so the CC reaches them over Edsby (not email) under
+      // the Edsby-only delivery policy.
+      edsbyId: { type: String, default: "", trim: true },
     },
 
     // ── Branding / identity (§5c) ───────────────────────────────────────────
@@ -29,11 +32,15 @@ const BehaviorConfigSchema = new mongoose.Schema(
     },
 
     // ── Notification channels (§4) ──────────────────────────────────────────
-    // School default/preference; a teacher may override per notice. A notice is
-    // delivered on every enabled channel.
+    // How notices reach PARENTS/VP. Edsby is the safe default. Emailing families
+    // is gated behind `emailToParents`, which is OFF unless an admin deliberately
+    // turns it on — so AI-written notes are never emailed to a parent by accident
+    // (and a per-notice override can't enable it). `email` is the legacy flag and
+    // is no longer used for delivery; `emailToParents` supersedes it.
     channels: {
-      email: { type: Boolean, default: true },
-      edsby: { type: Boolean, default: false },
+      email: { type: Boolean, default: false }, // legacy — not used for delivery
+      edsby: { type: Boolean, default: true },
+      emailToParents: { type: Boolean, default: false }, // explicit admin opt-in to email families
     },
 
     // ── Edsby connection (§4, Phase 3) ──────────────────────────────────────
