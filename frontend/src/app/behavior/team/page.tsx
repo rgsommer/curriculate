@@ -6,6 +6,7 @@ import { api, getToken, loginHref } from "../_lib/api";
 
 type TeamRow = {
   _id: string;
+  userId: string;
   name: string;
   email: string;
   role: string;
@@ -18,6 +19,7 @@ type TeamRow = {
 };
 type Pending = { email: string; role: string; invitedBy: string; invitedAt: string };
 type Stats = { members: number; pending: number; activeLast30: number; totalIncidents: number; totalNotices: number };
+type TeamResp = { teachers: TeamRow[]; pending: Pending[]; stats: Stats; viewerRole: string; viewerUserId: string };
 
 function ago(d: string | null) {
   if (!d) return "never";
@@ -34,16 +36,32 @@ function shortDate(d: string | null) {
 }
 
 export default function TeamPage() {
-  const [data, setData] = useState<{ teachers: TeamRow[]; pending: Pending[]; stats: Stats } | null>(null);
+  const [data, setData] = useState<TeamResp | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [noteByEmail, setNoteByEmail] = useState<Record<string, string>>({});
+  const [savingSetup, setSavingSetup] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getToken()) return;
-    api<{ teachers: TeamRow[]; pending: Pending[]; stats: Stats }>("/team")
+    api<TeamResp>("/team")
       .then(setData)
       .catch((e) => setErr(e.message));
   }, []);
+
+  async function setSetupAccess(userId: string, canEditSetup: boolean) {
+    setSavingSetup(userId);
+    // optimistic
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, role: canEditSetup ? "admin" : "teacher" } : t)) });
+    try {
+      await api("/team/role", { method: "PUT", body: { userId, canEditSetup } });
+    } catch (e: any) {
+      setErr(e.message);
+      // revert on failure
+      setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, role: canEditSetup ? "teacher" : "admin" } : t)) });
+    } finally {
+      setSavingSetup(null);
+    }
+  }
 
   async function resendInvite(email: string) {
     setNoteByEmail((n) => ({ ...n, [email]: "Sending…" }));
@@ -70,6 +88,7 @@ export default function TeamPage() {
 
   const { teachers, pending, stats } = data;
   const accepted = teachers.filter((t) => t.status === "accepted");
+  const isOriginator = data.viewerRole === "originator";
 
   return (
     <div className="space-y-5">
@@ -98,7 +117,8 @@ export default function TeamPage() {
                 <th className="py-1.5 pr-3">Joined</th>
                 <th className="py-1.5 pr-3">Last active</th>
                 <th className="py-1.5 pr-3 text-right">Incidents</th>
-                <th className="py-1.5 text-right">Notices</th>
+                <th className="py-1.5 pr-3 text-right">Notices</th>
+                <th className="py-1.5 text-center" title="Can edit Setup (roster, behaviours, Edsby, etc.)">Edit setup</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -121,11 +141,27 @@ export default function TeamPage() {
                     {t.incidents}
                     {t.legacyOffences ? <span className="ml-1 text-xs font-normal text-slate-400" title={`${t.legacyOffences} earlier offence(s) imported from past records`}>(incl. {t.legacyOffences})</span> : null}
                   </td>
-                  <td className="py-2 text-right tabular-nums">{t.notices}</td>
+                  <td className="py-2 pr-3 text-right tabular-nums">{t.notices}</td>
+                  <td className="py-2 text-center">
+                    {t.role === "originator" ? (
+                      <span title="The originator always has Setup access" className="text-xs text-slate-400">always</span>
+                    ) : t.role === "principal" ? (
+                      <span title="Principal is a read-only role" className="text-xs text-slate-400">—</span>
+                    ) : (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                        checked={t.role === "admin"}
+                        disabled={!isOriginator || t.status === "pending" || savingSetup === t.userId}
+                        title={isOriginator ? "Allow this member to edit Setup" : "Only the originator can change this"}
+                        onChange={(e) => setSetupAccess(t.userId, e.target.checked)}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
               {teachers.length === 0 && (
-                <tr><td colSpan={6} className="py-3 text-slate-400">No members yet.</td></tr>
+                <tr><td colSpan={7} className="py-3 text-slate-400">No members yet.</td></tr>
               )}
             </tbody>
           </table>

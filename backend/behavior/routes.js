@@ -452,7 +452,12 @@ router.post("/test-notice", authAny, loadMembership, requireAdmin, async (req, r
     const kind = req.body?.kind === "positive" ? "positive" : "negative";
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("branding").lean();
     const schoolName = config?.branding?.schoolName || "";
-    const signature = (req.membership?.signature || config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim();
+    // Sign the sample as the teacher viewing it would be signed — their name —
+    // so the preview matches a real notice.
+    const myName = (req.membership?.name || "").trim();
+    const signature =
+      (req.membership?.signature || "").trim() ||
+      (myName ? `Sincerely,\n${myName}${schoolName ? `\nTeacher, ${schoolName}` : ", Teacher"}` : (config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim());
     const studentName = "Alex";
     const DAY = 24 * 60 * 60 * 1000;
     const now = Date.now();
@@ -835,6 +840,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
         const legOff = legOffByTeacher[String(t._id)] || 0;
         return {
           _id: String(t._id),
+          userId: String(t.userId || ""),
           name: t.name,
           email: t.email,
           role: t.role,
@@ -867,7 +873,38 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       teachers: rows,
       pending: pendingInvites.map((p) => ({ email: p.email, role: p.role, invitedBy: p.invitedByEmail, invitedAt: p.createdAt })),
       stats: { members: rows.length, pending: pendingInvites.length, activeLast30, totalIncidents, totalNotices },
+      // Who's viewing — the UI shows the setup-access toggle only to the originator.
+      viewerRole: req.membership.role,
+      viewerUserId: String(req.userId || ""),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Grant/revoke a member's ability to edit Setup (toggles role admin↔teacher).
+// Originator-only — mirrors the invite rule that only the originator mints admins.
+router.put("/team/role", authAny, loadMembership, async (req, res, next) => {
+  try {
+    if (req.membership.role !== "originator") {
+      return res.status(403).json({ ok: false, error: "Only the originator can change who edits Setup." });
+    }
+    const userId = String(req.body?.userId || "").trim();
+    const canEditSetup = req.body?.canEditSetup === true;
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    if (target.role === "originator") {
+      return res.status(400).json({ ok: false, error: "The originator always has Setup access." });
+    }
+    if (target.role === "principal") {
+      return res.status(400).json({ ok: false, error: "Principal is a read-only role — change it via a new invite instead." });
+    }
+    const role = canEditSetup ? "admin" : "teacher";
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { role } });
+    await audit(req.schoolId, "team.setup_access_changed", req, { meta: { target: target.email, role } });
+    res.json({ ok: true, userId, role });
   } catch (err) {
     next(err);
   }
@@ -1557,15 +1594,21 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
 });
 
 // Resolve the channels for a send: per-notice override, else the school default.
+// Which channels deliver a notice to PARENTS/VP. Edsby is the default. Emailing
+// a family is gated behind an explicit admin opt-in (channels.emailToParents),
+// which is OFF unless an admin deliberately turns it on — so a misconfigured or
+// legacy school never emails AI-written notes to parents by accident. A
+// per-notice override may only NARROW to already-enabled channels; it can never
+// add email when the division hasn't opted in (so a teacher can't enable it).
 function resolveChannels(config, override) {
+  const enabled = [];
+  if (config?.channels?.edsby) enabled.push("edsby");
+  if (config?.channels?.emailToParents) enabled.push("email");
   if (Array.isArray(override) && override.length) {
-    const c = override.filter((x) => ["email", "edsby"].includes(x));
-    if (c.length) return c;
+    const narrowed = override.filter((x) => enabled.includes(x));
+    if (narrowed.length) return narrowed;
   }
-  const c = [];
-  if (config?.channels?.edsby) c.push("edsby");
-  if (config?.channels?.email) c.push("email");
-  return c.length ? c : ["email"];
+  return enabled; // may be empty → notice won't deliver (safe); teacher still gets their copy
 }
 
 // Double the first integer in a consequence string ("10× lines" -> "20× lines").
@@ -1591,14 +1634,25 @@ async function composeAndCreateNotice({
   const recipients = (student.parents || [])
     .filter((p) => p.email || p.edsbyParentId)
     .map((p) => ({ role: "parent", name: p.name, email: p.email, edsbyParentId: p.edsbyParentId }));
-  if (ccVp && config?.vp?.email) {
-    recipients.push({ role: "vp", name: config.vp.name, email: config.vp.email });
+  if (ccVp && (config?.vp?.edsbyId || config?.vp?.email)) {
+    // VP is CC'd over the same channel policy as parents (Edsby unless the admin
+    // has explicitly opted into email) — never silently emailed.
+    recipients.push({ role: "vp", name: config.vp.name, email: config.vp.email, edsbyParentId: config.vp.edsbyId || "" });
   }
 
   const firstTs = contextIncidents.length ? new Date(contextIncidents[0].timestamp).getTime() : Date.now();
   const daysSinceFirst = Math.max(0, Math.round((Date.now() - firstTs) / DAY_MS));
   const sender = await BehaviorTeacher.findById(sentByTeacherId).lean();
-  const signature = (sender?.signature || config?.branding?.signatureBlock || "").trim();
+  // Sign with the SENDING TEACHER's name so a parent always knows who it's from.
+  // Only fall back to the division block when there's no teacher name at all —
+  // never sign a note "Teachers at …" when we know the individual teacher.
+  const senderName = (sender?.name || "").trim();
+  const schoolName = config?.branding?.schoolName || "";
+  const signature =
+    (sender?.signature || "").trim() ||
+    (senderName
+      ? `Sincerely,\n${senderName}${schoolName ? `\nTeacher, ${schoolName}` : ", Teacher"}`
+      : (config?.branding?.signatureBlock || `Sincerely,\n${schoolName}`).trim());
 
   // Replace the legacy "nnn" name placeholder with the student's name; the AI
   // otherwise handles naming/pronouns naturally from studentName + pronoun.
@@ -1674,6 +1728,42 @@ async function composeAndCreateNotice({
     cancelUntil: new Date(Date.now() + cancelWindow * 1000),
     autoDispatch: config?.aiSendMode !== "draft",
   });
+  // Send the SENDING TEACHER a copy of the queued note to their OWN email, before
+  // it reaches any parent — so they see exactly what will go out and can cancel
+  // or edit it on the dashboard first. Independent of the parent channel policy;
+  // a failure here never blocks the notice.
+  try {
+    if (sender?.email) {
+      const recipNames = recipients.map((r) => r.name || r.role).filter(Boolean).join(", ") || "the parent(s)";
+      const chanLabel = (channels || []).includes("edsby") ? "Edsby" : ((channels || []).length ? channels.join(", ") : "no channel configured yet");
+      const willSend = config?.aiSendMode === "draft"
+        ? "It will NOT be sent until you review it and press Send on the dashboard."
+        : `Unless you cancel or edit it on the dashboard, it will be delivered to ${recipNames} via ${chanLabel} after the short review window.`;
+      const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+      await sendEmail({
+        from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+        to: sender.email,
+        subject: `📋 Your copy — ${isPositive ? "good-news note" : "notice"} for ${studentName} (review before it sends)`,
+        text:
+          `This is YOUR copy of a ${isPositive ? "good-news note" : "behaviour notice"} just queued for ${studentName}. ${willSend}\n\n` +
+          `Recipients: ${recipNames}\nChannel: ${chanLabel}\n\n----- NOTE -----\n${text}`,
+        html: emailShell({
+          title: `Your copy — ${isPositive ? "good-news note" : "notice"} for ${escapeHtml(studentName)}`,
+          schoolName: schoolName || "Behaviours",
+          preheader: "Review it before it goes out.",
+          footnote: "This copy goes only to you (the logging teacher). Parents are contacted over the school's chosen channel.",
+          contentHtml:
+            `<p style="margin:0 0 10px;color:#334155">This is <strong>your copy</strong> of a ${isPositive ? "good-news note" : "notice"} just queued for <strong>${escapeHtml(studentName)}</strong>. ${escapeHtml(willSend)}</p>` +
+            `<p style="margin:0 0 12px;color:#64748b;font-size:13px"><strong>Recipients:</strong> ${escapeHtml(recipNames)} &middot; <strong>Channel:</strong> ${escapeHtml(chanLabel)}</p>` +
+            `<hr style="border:none;border-top:1px solid #e2e8f0;margin:12px 0">` +
+            noteToHtml(text),
+        }),
+      });
+    }
+  } catch (e) {
+    console.warn("[behavior] teacher copy email failed:", e?.message || e);
+  }
+
   if (config?.aiSendMode !== "draft") scheduleDispatch(notice._id, cancelWindow);
   return notice;
 }
