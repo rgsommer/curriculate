@@ -306,6 +306,48 @@ export default function DashboardPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groupIdsKey, user?.id]);
+  // Load this user's seen-reveals from the server so dismissals follow them across
+  // devices (not just the device they tapped on). One-time: migrate any older
+  // localStorage-only dismissals up to the server so they aren't lost.
+  useEffect(() => {
+    if (!user?.id) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("campfire_reveal_seen")
+        .select("engagement_id")
+        .eq("user_id", user.id);
+      if (cancelled || error) return; // table not migrated yet → stay on localStorage
+      const serverIds = new Set(
+        (data ?? []).map((r) => (r as { engagement_id: string }).engagement_id)
+      );
+      let localIds: string[] = [];
+      try {
+        const raw = localStorage.getItem("campfire_seen_reveals");
+        if (raw) localIds = JSON.parse(raw) as string[];
+      } catch {
+        /* ignore */
+      }
+      const toUpload = localIds.filter((id) => !serverIds.has(id));
+      if (toUpload.length) {
+        await supabase.from("campfire_reveal_seen").upsert(
+          toUpload.map((engagement_id) => ({ user_id: user.id, engagement_id })),
+          { onConflict: "user_id,engagement_id" }
+        );
+        toUpload.forEach((id) => serverIds.add(id));
+      }
+      if (!cancelled)
+        setSeenReveals((prev) => {
+          const next = new Set(prev);
+          serverIds.forEach((id) => next.add(id));
+          return next;
+        });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
   // A reveal stays in the box until you tap it — every reveal from the floor onward,
   // no time-based expiry. (Reveal time falls back to the deadline when revealed_at is
   // missing on older rows.)
@@ -333,6 +375,20 @@ export default function DashboardPage() {
       }
       return next;
     });
+    // Persist per-user so it stays dismissed on every device (table from migration
+    // 072; if it isn't there yet this no-ops and localStorage still covers this device).
+    if (user?.id) {
+      supabase
+        .from("campfire_reveal_seen")
+        .upsert(
+          { user_id: user.id, engagement_id: id },
+          { onConflict: "user_id,engagement_id" }
+        )
+        .then(
+          () => {},
+          () => {}
+        );
+    }
   };
 
   // Host name for groups you JOINED — keyed by GROUP id, preferring the host's

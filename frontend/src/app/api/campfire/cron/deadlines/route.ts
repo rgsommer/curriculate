@@ -19,8 +19,9 @@ import {
   getPendingInviteeEmails,
   escapeHtml,
 } from "@/lib/campfire/serverInvites";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, raffleOf, tournamentOf, selectPoolQuestions, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, nextMonthlyNthWeekday, raffleOf, tournamentOf, selectPoolQuestions, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
+import { awardHallOfFameGift } from "@/lib/campfire/hallOfFame";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -561,7 +562,7 @@ export async function GET(req: Request) {
   const { data: recs } = await admin
     .from("engagements")
     .select(
-      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at, deadline, lead_days, birth_year, excluded_user_ids, excluded_emails, cover_image_url, cover_image_urls"
+      "id, group_id, creator_id, type, title, description, config, reveal, is_blind, recurrence_rule, created_at, deadline, scheduled_open_at, lead_days, birth_year, excluded_user_ids, excluded_emails, cover_image_url, cover_image_urls"
     )
     .not("recurrence_rule", "is", null)
     .eq("paused", false) // paused → don't roll the next occurrence forward
@@ -642,6 +643,59 @@ export async function GET(req: Request) {
             pool.length > 1 ? pool.filter((u) => u !== e.cover_image_url) : pool;
           return choices[Math.floor(Math.random() * choices.length)];
         })(),
+      });
+      spawned++;
+      continue;
+    }
+
+    // Monthly Nth-weekday release (e.g. 2nd Sunday at 4pm): roll forward to next
+    // month's occurrence and spawn a DRAFT scheduled to auto-open + email then.
+    const mn = (
+      e.config as {
+        monthlyNth?: {
+          week: number;
+          weekday: number;
+          hour: number;
+          minute: number;
+          windowDays?: number;
+        };
+      } | null
+    )?.monthlyNth;
+    if (e.recurrence_rule === "monthly" && mn) {
+      // Anchor a day past this instance's open so we land on the next month.
+      const anchor = new Date(
+        (e.scheduled_open_at as string) ?? new Date(now).toISOString()
+      );
+      anchor.setTime(anchor.getTime() + DAY);
+      const nextOpen = nextMonthlyNthWeekday(
+        mn.week,
+        mn.weekday,
+        mn.hour ?? 16,
+        mn.minute ?? 0,
+        anchor
+      );
+      const close = new Date(nextOpen.getTime() + (mn.windowDays ?? 3) * DAY);
+      await admin.from("engagements").insert({
+        group_id: e.group_id,
+        creator_id: e.creator_id,
+        type: e.type,
+        title: e.title,
+        description: e.description,
+        config: spawnConfig,
+        reveal: e.reveal,
+        is_blind: e.is_blind,
+        recurrence_rule: "monthly",
+        parent_id: e.id,
+        status: "active",
+        launched_at: null, // draft — the auto-open step launches + emails at the time
+        notify: true,
+        hold_until_deadline: true,
+        deadline: close.toISOString(),
+        scheduled_open_at: nextOpen.toISOString(),
+        excluded_user_ids: e.excluded_user_ids,
+        excluded_emails: e.excluded_emails,
+        cover_image_urls: e.cover_image_urls,
+        cover_image_url: e.cover_image_url,
       });
       spawned++;
       continue;
@@ -817,6 +871,78 @@ export async function GET(req: Request) {
     }
   }
 
+  // ── Two Truths & a Lie: reveal the lies (and crown the Best Liar) once everyone
+  // has guessed, OR once the deadline passes — whichever comes first. ──
+  let liesRevealed = 0;
+  const { data: ttEngs } = await admin
+    .from("engagements")
+    .select("id, deadline")
+    .eq("type", "two_truths")
+    .is("lies_revealed_at", null)
+    .not("launched_at", "is", null);
+  for (const e of ttEngs ?? []) {
+    const deadlinePassed =
+      !!e.deadline && new Date(e.deadline as string).getTime() <= now;
+
+    let everyoneIn = false;
+    const { data: resp } = await admin
+      .from("responses")
+      .select("id, user_id")
+      .eq("engagement_id", e.id);
+    const R = (resp ?? []).length;
+    if (R > 1) {
+      const { data: guesses } = await admin
+        .from("campfire_lie_guesses")
+        .select("guesser_id, guess_index, response_id")
+        .eq("engagement_id", e.id);
+      // For each responder, how many distinct entries they've guessed the lie on.
+      const guessedByUser = new Map<string, Set<string>>();
+      for (const g of guesses ?? []) {
+        if (g.guess_index == null) continue;
+        const uid = g.guesser_id as string;
+        const set = guessedByUser.get(uid) ?? new Set<string>();
+        set.add(g.response_id as string);
+        guessedByUser.set(uid, set);
+      }
+      everyoneIn = (resp ?? []).every((r) => {
+        const set = guessedByUser.get(r.user_id as string);
+        return !!set && set.size >= R - 1; // guessed every entry but their own
+      });
+    }
+
+    if (deadlinePassed || everyoneIn) {
+      await admin
+        .from("engagements")
+        .update({ lies_revealed_at: new Date(now).toISOString() })
+        .eq("id", e.id);
+      liesRevealed++;
+    }
+  }
+
+  // ── Hall of Fame: award the gift-card pot to the prize award's winner once revealed ──
+  let hofAwarded = 0;
+  const { data: hofEngs } = await admin
+    .from("engagements")
+    .select("id, group_id, creator_id, title, config, gift_currency, gift_issued_at")
+    .eq("type", "hall_of_fame")
+    .eq("status", "revealed")
+    .eq("gift_enabled", true)
+    .is("gift_issued_at", null);
+  for (const e of hofEngs ?? []) {
+    const award = (e.config as { hofGiftAward?: number } | null)?.hofGiftAward;
+    if (award === undefined || award === null) continue; // no prize configured
+    const res = await awardHallOfFameGift(admin, {
+      id: e.id as string,
+      group_id: e.group_id as string,
+      creator_id: e.creator_id as string,
+      title: e.title as string,
+      config: e.config as Record<string, unknown> | null,
+      gift_currency: e.gift_currency as string | null,
+      gift_issued_at: e.gift_issued_at as string | null,
+    });
+    if (res.ok) hofAwarded++;
+  }
+
   return NextResponse.json({
     ok: true,
     revealed,
@@ -826,5 +952,7 @@ export async function GET(req: Request) {
     notifiedReveals,
     giftsIssued,
     awarded,
+    liesRevealed,
+    hofAwarded,
   });
 }

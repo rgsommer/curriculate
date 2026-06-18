@@ -10,6 +10,7 @@ import {
   ENGAGEMENT_TYPES,
   resolveTitle,
   nextNthWeekday,
+  nextMonthlyNthWeekday,
   describeNthWeekday,
   HOLIDAY_PRESETS,
   ORDINAL_WEEK,
@@ -19,6 +20,7 @@ import {
   formatMoney,
   localeGiftCurrency,
   selectPoolQuestions,
+  HALL_OF_FAME_SUGGESTIONS,
   type NthWeekday,
   type EngagementType,
   type RevealMode,
@@ -46,6 +48,10 @@ const TYPE_HELP: Partial<Record<EngagementType, { how: string; sees: string }>> 
   most_likely: {
     how: "List your awards. Everyone votes a group-mate for each. Sealed until reveal, then each award's winner is shown.",
     sees: "Each award + a name box (autocompletes group members).",
+  },
+  hall_of_fame: {
+    how: "Tap award bubbles (Best Dressed, Funniest…) to build your survey. Everyone votes a group-mate for each; sealed until reveal, then a graph crowns a winner per award. You can gift-card one award's winner.",
+    sees: "Each award with a group-mate picker.",
   },
   accountability: {
     how: "List check-in questions. Each person rates themselves 1–5 and can add a note to share. Sealed; turn on Blind to keep answers anonymous.",
@@ -113,10 +119,15 @@ export default function NewEngagementPage() {
   const [pendingForTarget, setPendingForTarget] = useState(0);
   const waitTouched = useRef(false); // don't override a manual toggle
   const [recurrence, setRecurrence] = useState<
-    "none" | "daily" | "weekly" | "monthly" | "yearly" | "yearly_nth"
+    "none" | "daily" | "weekly" | "monthly" | "monthly_nth" | "yearly" | "yearly_nth"
   >("none");
   const [birthYear, setBirthYear] = useState("");
   const [leadDays, setLeadDays] = useState(14);
+  // "Release in advance": open + email the group N days before the reveal date.
+  const [releaseEarly, setReleaseEarly] = useState(false);
+  // Monthly Nth-weekday release (e.g. 2nd Sunday at 4pm): time + how long it stays open.
+  const [recurTime, setRecurTime] = useState("16:00");
+  const [recurWindowDays, setRecurWindowDays] = useState(3);
   // Keep each person's response visible only to them + the host (default off).
   const [privateToHost, setPrivateToHost] = useState(false);
   // Group gift: chip in toward a gift card that's emailed to the recipient on reveal.
@@ -136,6 +147,10 @@ export default function NewEngagementPage() {
   // Tournament (leaderboard): scoring direction + optional scorecard photo.
   const [tournDirection, setTournDirection] = useState<"low" | "high">("low");
   const [tournScorecard, setTournScorecard] = useState(false);
+  // Hall of Fame: optionally gift-card the winner of ONE chosen award.
+  const [hofPrize, setHofPrize] = useState(false);
+  const [hofPrizeAward, setHofPrizeAward] = useState(0); // index into the awards list
+  const [hofCustom, setHofCustom] = useState(""); // custom award being typed
   // Pledge Drive (Read-A-Thon…): unit, goal, suggested per-unit rate ($).
   const [pledgeUnit, setPledgeUnit] = useState("page");
   const [pledgeGoal, setPledgeGoal] = useState("");
@@ -193,10 +208,12 @@ export default function NewEngagementPage() {
   const [darePrompt, setDarePrompt] = useState("");
   // "Most Likely To…" awards (one engagement, many questions)
   const [questions, setQuestions] = useState<string[]>(["", "", ""]);
-  // Care Check-in: each question has a prompt + a response kind (text or star).
-  const [careQuestions, setCareQuestions] = useState<
-    { prompt: string; kind: "text" | "star" }[]
-  >([{ prompt: "", kind: "text" }]);
+  // Care / Accountability: each CATEGORY holds several alternative questions, a
+  // response kind, and how many to ask each time. Campfire locks a random pick per
+  // occurrence (same for the whole group), so it varies month to month.
+  const [careCategories, setCareCategories] = useState<
+    { prompts: string[]; kind: "text" | "star"; ask: number }[]
+  >([{ prompts: [""], kind: "text", ask: 1 }]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
@@ -303,6 +320,14 @@ export default function NewEngagementPage() {
       ]);
       setReveal("sealed");
     }
+    if (type === "hall_of_fame") {
+      if (!title.trim()) setTitle("Hall of Fame Superlatives 🏅");
+      if (!description.trim())
+        setDescription("Vote a group-mate for each award — winners revealed together!");
+      // Seed a few popular awards; the bubble picker handles the rest.
+      setQuestions(["Best Dressed", "Funniest", "Kindest"]);
+      setReveal("sealed");
+    }
     if (type === "birthday") {
       if (!title.trim()) setTitle("Happy {age} Birthday! 🎂");
       if (!description.trim())
@@ -347,10 +372,23 @@ export default function NewEngagementPage() {
       if (!title.trim()) setTitle("Accountability check-in 🙏");
       if (!description.trim())
         setDescription("Answer honestly — set responses to blind if you'd like.");
-      setQuestions([
-        "Have you kept up with daily prayer/reading?",
-        "Have you guarded your heart and eyes this week?",
-        "Have you invested in your closest relationships?",
+      setCareCategories([
+        {
+          kind: "star",
+          ask: 1,
+          prompts: [
+            "Have you kept up with daily prayer/reading?",
+            "Have you guarded your heart and eyes this week?",
+          ],
+        },
+        {
+          kind: "star",
+          ask: 1,
+          prompts: [
+            "Have you invested in your closest relationships?",
+            "Have you been honest and above reproach?",
+          ],
+        },
       ]);
       setReveal("sealed");
     }
@@ -360,11 +398,33 @@ export default function NewEngagementPage() {
         setDescription(
           "Fill in any or all of the sections below — share as much or as little as you'd like."
         );
-      setCareQuestions([
-        { prompt: "How are you doing this week?", kind: "text" },
-        { prompt: "Anything you'd value prayer or support for?", kind: "text" },
-        { prompt: "A praise — where have you seen God at work?", kind: "text" },
-        { prompt: "A thought from this week's passage (optional)", kind: "text" },
+      setCareCategories([
+        {
+          kind: "star",
+          ask: 1,
+          prompts: ["How are you doing this week? (1–5)", "How's your energy this week? (1–5)"],
+        },
+        {
+          kind: "text",
+          ask: 1,
+          prompts: [
+            "Where have you seen God at work in your life?",
+            "What has God been teaching you lately?",
+          ],
+        },
+        {
+          kind: "text",
+          ask: 1,
+          prompts: [
+            "Anything you'd value prayer or support for?",
+            "Where do you most need encouragement right now?",
+          ],
+        },
+        {
+          kind: "text",
+          ask: 1,
+          prompts: ["A praise — where have you seen God at work?", "Share a verse that's stood out."],
+        },
       ]);
       // Responses surface as they come, so the host can follow up right away (and
       // a big group never stalls waiting on everyone).
@@ -394,12 +454,20 @@ export default function NewEngagementPage() {
       setPollOptions(opts.length >= 2 ? opts : [...opts, "", ""].slice(0, 3));
     }
     // Pre-fill check-in / most-likely / scavenger items and any reveal override.
-    if (t.type === "care") {
-      if (t.careQuestions && t.careQuestions.length) {
-        setCareQuestions(t.careQuestions.map((q) => ({ ...q })));
-      } else if (t.questions && t.questions.length) {
-        setCareQuestions(t.questions.map((q) => ({ prompt: q, kind: "text" as const })));
-      }
+    if (t.type === "care" || t.type === "accountability") {
+      // Each template question becomes a single-prompt category (ask 1).
+      const cats = (t.careQuestions ?? []).map((q) => ({
+        prompts: [q.prompt],
+        kind: q.kind,
+        ask: 1,
+      }));
+      const fromStrings = (t.questions ?? []).map((q) => ({
+        prompts: [q],
+        kind: (t.type === "accountability" ? "star" : "text") as "text" | "star",
+        ask: 1,
+      }));
+      const merged = [...cats, ...fromStrings];
+      if (merged.length) setCareCategories(merged);
     } else if (t.questions && t.questions.length) {
       setQuestions(t.questions);
     }
@@ -532,6 +600,7 @@ export default function NewEngagementPage() {
     const sealedReveal =
       selectedType === "two_truths" ||
       selectedType === "most_likely" ||
+      selectedType === "hall_of_fame" ||
       selectedType === "accountability" ||
       selectedType === "scavenger_hunt" ||
       selectedType === "tournament" ||
@@ -549,28 +618,51 @@ export default function NewEngagementPage() {
         : recurrence === "monthly"
         ? 30
         : 0;
-    const finalDeadline = effectiveDeadline
-      ? effectiveDeadline
-      : recurDays > 0 && !isBirthday
-      ? new Date(Date.now() + recurDays * 86400000)
-      : sealedReveal && !isBirthday && selectedType !== "baby_reveal"
-      ? new Date(Date.now() + 7 * 86400000)
-      : effectiveDeadline;
 
-    // Cards + yearly events auto-open a lead time before the date.
-    const schedulesOpen = isBirthday || recurrence === "yearly_nth";
+    const DAY = 86400000;
+    // Monthly Nth-weekday release (e.g. 2nd Sunday at 4pm): the engagement opens +
+    // emails the group at that moment, stays open for the chosen window, then closes.
+    const isMonthlyNth = recurrence === "monthly_nth";
+    const [recurHour, recurMin] = recurTime.split(":").map((n) => parseInt(n, 10));
+    const monthlyFirstOpen = isMonthlyNth
+      ? nextMonthlyNthWeekday(nthWeek, nthDow, recurHour || 16, recurMin || 0, new Date())
+      : null;
+
+    const finalDeadline =
+      isMonthlyNth && monthlyFirstOpen
+        ? new Date(monthlyFirstOpen.getTime() + (recurWindowDays || 3) * DAY)
+        : effectiveDeadline
+        ? effectiveDeadline
+        : recurDays > 0 && !isBirthday
+        ? new Date(Date.now() + recurDays * DAY)
+        : sealedReveal && !isBirthday && selectedType !== "baby_reveal"
+        ? // 2 Truths plays faster, so give it a tighter default window.
+          new Date(Date.now() + (selectedType === "two_truths" ? 3 : 7) * DAY)
+        : effectiveDeadline;
+
+    // Auto-open scheduling: cards + yearly events open a lead time before the date;
+    // a monthly Nth release opens at its scheduled time; and any sealed engagement
+    // with a reveal date can opt to "release in advance" by N days.
+    const schedulesOpen =
+      isBirthday ||
+      recurrence === "yearly_nth" ||
+      isMonthlyNth ||
+      (releaseEarly && !!effectiveDeadline);
     const scheduledOpenAt =
-      schedulesOpen && effectiveDeadline
-        ? new Date(effectiveDeadline.getTime() - (leadDays || 14) * 86400000).toISOString()
+      isMonthlyNth && monthlyFirstOpen
+        ? monthlyFirstOpen.toISOString()
+        : (isBirthday || recurrence === "yearly_nth" || releaseEarly) && effectiveDeadline
+        ? new Date(effectiveDeadline.getTime() - (leadDays || 14) * DAY).toISOString()
         : null;
 
-    if (selectedType === "care") {
-      // Each category may carry several wordings (one per line) — store the pool, and
-      // lock in a random pick per category for this occurrence.
-      const pool = careQuestions
-        .map((q) => ({
-          kind: q.kind,
-          prompts: q.prompt.split("\n").map((s) => s.trim()).filter(Boolean),
+    if (selectedType === "care" || selectedType === "accountability") {
+      // Categories of alternative questions + how many to ask each time. Store the
+      // whole pool, and lock in a random pick per category for this occurrence.
+      const pool = careCategories
+        .map((c) => ({
+          kind: c.kind,
+          prompts: c.prompts.map((p) => p.trim()).filter(Boolean),
+          ask: Math.max(1, Math.round(c.ask) || 1),
         }))
         .filter((c) => c.prompts.length > 0);
       if (pool.length < 1) {
@@ -579,42 +671,34 @@ export default function NewEngagementPage() {
         return;
       }
       config.questionPool = pool;
-      config.questions = selectPoolQuestions(pool, "care");
+      config.questions = selectPoolQuestions(pool, selectedType);
     } else if (
       selectedType === "most_likely" ||
-      selectedType === "accountability" ||
+      selectedType === "hall_of_fame" ||
       selectedType === "scavenger_hunt" ||
       selectedType === "tournament"
     ) {
       const qs = questions.map((q) => q.trim()).filter(Boolean);
       if (qs.length < 1) {
         setError(
-          selectedType === "accountability"
-            ? "Add at least one check-in question."
-            : selectedType === "scavenger_hunt"
+          selectedType === "scavenger_hunt"
             ? "Add at least one item to find."
             : selectedType === "tournament"
             ? "Add at least one round to score."
+            : selectedType === "hall_of_fame"
+            ? "Pick at least one award (tap the bubbles)."
             : "Add at least one award (a “Most likely to…” question)."
         );
         setCreating(false);
         return;
       }
-      if (selectedType === "accountability") {
-        // Each question may carry several wordings (one per line) — store the pool and
-        // lock in a random pick per category for this occurrence (varies each time).
-        const pool = questions
-          .map((q) => ({
-            prompts: q.split("\n").map((s) => s.trim()).filter(Boolean),
-          }))
-          .filter((c) => c.prompts.length > 0);
-        config.questionPool = pool;
-        config.questions = selectPoolQuestions(pool, "accountability");
-      } else {
-        config.questions = qs;
-      }
+      config.questions = qs;
       if (selectedType === "tournament") {
         config.tournament = { direction: tournDirection, scorecard: tournScorecard };
+      }
+      // Hall of Fame: the chosen award whose winner gets the gift-card pot.
+      if (selectedType === "hall_of_fame" && hofPrize) {
+        config.hofGiftAward = Math.min(Math.max(0, hofPrizeAward), qs.length - 1);
       }
     }
 
@@ -794,6 +878,17 @@ export default function NewEngagementPage() {
       config.cause = causeInput.trim().slice(0, 120);
     }
 
+    // Monthly Nth-weekday release pattern — the cron rolls this forward each month.
+    if (isMonthlyNth) {
+      config.monthlyNth = {
+        week: nthWeek,
+        weekday: nthDow,
+        hour: recurHour || 16,
+        minute: recurMin || 0,
+        windowDays: recurWindowDays || 3,
+      };
+    }
+
     const result = await create({
       groupId: destGroupId,
       type: selectedType,
@@ -806,6 +901,7 @@ export default function NewEngagementPage() {
         : selectedType === "two_truths" ||
           selectedType === "baby_reveal" ||
           selectedType === "most_likely" ||
+          selectedType === "hall_of_fame" ||
           selectedType === "accountability" ||
           selectedType === "scavenger_hunt" ||
           selectedType === "tournament" ||
@@ -825,6 +921,8 @@ export default function NewEngagementPage() {
           : "yearly"
         : recurrence === "yearly_nth"
         ? "yearly"
+        : recurrence === "monthly_nth"
+        ? "monthly" // stored as monthly; the Nth-weekday detail lives in config.monthlyNth
         : recurrence === "none"
         ? undefined
         : recurrence,
@@ -838,6 +936,7 @@ export default function NewEngagementPage() {
         selectedType === "tournament" ||
         selectedType === "pledge_drive" ||
         selectedType === "raffle_draw" ||
+        isMonthlyNth ||
         challengeRaffle
           ? true
           : reveal === "sealed" && !!deadline && holdUntilDeadline,
@@ -862,18 +961,21 @@ export default function NewEngagementPage() {
       gift_enabled:
         giftEnabled ||
         challengeRaffle ||
+        (selectedType === "hall_of_fame" && hofPrize) ||
         selectedType === "pledge_drive" ||
         selectedType === "raffle_draw",
-      gift_recipient_email: challengeRaffle
-        ? null
-        : giftEnabled || selectedType === "pledge_drive"
-        ? giftRecipientEmail.trim() || null
-        : null,
-      gift_recipient_name: challengeRaffle
-        ? null
-        : giftEnabled || selectedType === "pledge_drive"
-        ? giftRecipientName.trim() || null
-        : null,
+      gift_recipient_email:
+        challengeRaffle || selectedType === "hall_of_fame"
+          ? null // winner (and their email) is resolved at award time
+          : giftEnabled || selectedType === "pledge_drive"
+          ? giftRecipientEmail.trim() || null
+          : null,
+      gift_recipient_name:
+        challengeRaffle || selectedType === "hall_of_fame"
+          ? null
+          : giftEnabled || selectedType === "pledge_drive"
+          ? giftRecipientName.trim() || null
+          : null,
       gift_currency: giftCurrency,
       // Keep responses visible only to each author + the host.
       private_to_host: privateToHost,
@@ -954,6 +1056,80 @@ export default function NewEngagementPage() {
             })}
           </span>{" "}
           · repeats every year.
+        </p>
+      </div>
+    );
+  };
+
+  // "[2nd] [Sunday] at [4:00pm]" picker for a monthly release + how long it stays
+  // open, with a live next-occurrence preview.
+  const renderMonthlyNthPicker = () => {
+    const [h, m] = recurTime.split(":").map((n) => parseInt(n, 10));
+    const next = nextMonthlyNthWeekday(nthWeek, nthDow, h || 16, m || 0, new Date());
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-slate-500">The</span>
+          <select
+            value={nthWeek}
+            onChange={(e) => setNthWeek(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          >
+            {[1, 2, 3, 4, 5].map((w) => (
+              <option key={w} value={w}>
+                {ORDINAL_WEEK[w] || `${w}th`}
+              </option>
+            ))}
+          </select>
+          <select
+            value={nthDow}
+            onChange={(e) => setNthDow(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          >
+            {WEEKDAY_NAMES.map((d, i) => (
+              <option key={i} value={i}>
+                {d}
+              </option>
+            ))}
+          </select>
+          <span className="text-slate-500">of each month at</span>
+          <input
+            type="time"
+            value={recurTime}
+            onChange={(e) => setRecurTime(e.target.value)}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-slate-500">Stays open for</span>
+          <select
+            value={recurWindowDays}
+            onChange={(e) => setRecurWindowDays(parseInt(e.target.value, 10))}
+            className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-orange-500"
+          >
+            {[1, 2, 3, 4, 5, 7, 10, 14].map((d) => (
+              <option key={d} value={d}>
+                {d} {d === 1 ? "day" : "days"}
+              </option>
+            ))}
+          </select>
+          <span className="text-slate-500">before results reveal.</span>
+        </div>
+        <p className="text-xs text-slate-500">
+          Opens &amp; emails the group{" "}
+          <span className="font-medium text-slate-700">
+            {next.toLocaleDateString(undefined, {
+              weekday: "long",
+              month: "long",
+              day: "numeric",
+            })}{" "}
+            at{" "}
+            {next.toLocaleTimeString(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </span>{" "}
+          · repeats every month.
         </p>
       </div>
     );
@@ -1047,7 +1223,12 @@ export default function NewEngagementPage() {
 
           <p className="text-slate-500 mb-4">…or start from scratch — what kind of engagement?</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            {(Object.entries(ENGAGEMENT_TYPES) as [EngagementType, typeof ENGAGEMENT_TYPES[EngagementType]][]).map(
+            {(Object.entries(ENGAGEMENT_TYPES) as [EngagementType, typeof ENGAGEMENT_TYPES[EngagementType]][])
+              // "Most Likely To…" is now folded into Hall of Fame (a superset), so it's
+              // hidden from the picker. Existing ones keep working; remove this filter
+              // to bring the standalone type back.
+              .filter(([type]) => type !== "most_likely")
+              .map(
               ([type, meta]) => (
                 <button
                   key={type}
@@ -1508,92 +1689,310 @@ export default function NewEngagementPage() {
               </div>
             )}
 
-            {/* Care Check-in — questions with a prompt + response type each */}
-            {selectedType === "care" && (
+            {/* Care & Accountability — categories of interchangeable questions;
+                one random pick per category locks in for the whole group each time */}
+            {(selectedType === "care" || selectedType === "accountability") && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Questions — set each prompt and how people answer it
+                  Question categories
                 </label>
-                {careQuestions.map((q, i) => (
-                  <div key={i} className="mb-2 rounded-xl border border-slate-200 p-2.5">
-                    <div className="flex gap-2 items-start">
-                      <span className="text-slate-400 text-sm pt-2">{i + 1}.</span>
-                      <textarea
-                        value={q.prompt}
-                        onChange={(e) => {
-                          const next = [...careQuestions];
-                          next[i] = { ...next[i], prompt: e.target.value };
-                          setCareQuestions(next);
-                        }}
-                        rows={2}
-                        placeholder="Your prompt — add more wordings on new lines to vary it each time…"
-                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
-                      />
-                      {careQuestions.length > 1 && (
-                        <button
-                          onClick={() =>
-                            setCareQuestions(careQuestions.filter((_, j) => j !== i))
-                          }
-                          className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
-                        >
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                    <div className="mt-2 ml-5 flex gap-1.5">
-                      {(
-                        [
-                          { k: "text", label: "Aa Text box" },
-                          { k: "star", label: "⭐ Stars (1–5)" },
-                        ] as const
-                      ).map((opt) => (
-                        <button
-                          key={opt.k}
-                          type="button"
-                          onClick={() => {
-                            const next = [...careQuestions];
-                            next[i] = { ...next[i], kind: opt.k };
-                            setCareQuestions(next);
-                          }}
-                          className={`rounded-full border px-3 py-1 text-xs font-medium transition ${
-                            q.kind === opt.k
-                              ? "border-teal-500 bg-teal-50 text-teal-700"
-                              : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
+                <p className="mb-3 text-xs text-slate-500">
+                  Give each category a few wordings. Every time this goes out,
+                  Campfire randomly locks in <strong>“ask N of these”</strong> per
+                  category for the <strong>whole group</strong> — so it never feels
+                  the same month after month.
+                </p>
+                {careCategories.map((cat, ci) => {
+                  const filled = cat.prompts.filter((p) => p.trim()).length;
+                  const maxAsk = Math.max(1, filled || cat.prompts.length);
+                  const updateCats = (
+                    mut: (cats: typeof careCategories) => void
+                  ) => {
+                    const next = careCategories.map((c) => ({
+                      ...c,
+                      prompts: [...c.prompts],
+                    }));
+                    mut(next);
+                    setCareCategories(next);
+                  };
+                  return (
+                    <div
+                      key={ci}
+                      className="mb-3 rounded-xl border border-slate-200 p-3"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-slate-500">
+                          Category {ci + 1}
+                        </span>
+                        {careCategories.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setCareCategories(
+                                careCategories.filter((_, j) => j !== ci)
+                              )
+                            }
+                            className="text-xs text-slate-400 hover:text-red-500"
+                          >
+                            Remove category
+                          </button>
+                        )}
+                      </div>
+                      {cat.prompts.map((p, pi) => (
+                        <div key={pi} className="flex gap-2 mb-2 items-start">
+                          <span className="text-slate-300 text-xs pt-2">
+                            {pi + 1}.
+                          </span>
+                          <textarea
+                            value={p}
+                            onChange={(e) =>
+                              updateCats((next) => {
+                                next[ci].prompts[pi] = e.target.value;
+                              })
+                            }
+                            rows={2}
+                            placeholder={
+                              selectedType === "accountability"
+                                ? "Have you…? / How did you do with…?"
+                                : "A wording — e.g. What has God been teaching you lately?"
+                            }
+                            className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
+                          />
+                          {cat.prompts.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateCats((next) => {
+                                  next[ci].prompts = next[ci].prompts.filter(
+                                    (_, j) => j !== pi
+                                  );
+                                  const nf = next[ci].prompts.filter((x) =>
+                                    x.trim()
+                                  ).length;
+                                  next[ci].ask = Math.min(
+                                    next[ci].ask,
+                                    Math.max(1, nf || next[ci].prompts.length)
+                                  );
+                                })
+                              }
+                              className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
                       ))}
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-1">
+                        {cat.prompts.length < 8 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateCats((next) => {
+                                next[ci].prompts.push("");
+                              })
+                            }
+                            className="text-xs text-orange-600 font-medium"
+                          >
+                            + Add wording
+                          </button>
+                        )}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-slate-500">Ask</span>
+                          <select
+                            value={Math.min(cat.ask, maxAsk)}
+                            onChange={(e) =>
+                              updateCats((next) => {
+                                next[ci].ask = Number(e.target.value);
+                              })
+                            }
+                            className="rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-orange-500"
+                          >
+                            {Array.from({ length: maxAsk }, (_, n) => n + 1).map(
+                              (n) => (
+                                <option key={n} value={n}>
+                                  {n}
+                                </option>
+                              )
+                            )}
+                          </select>
+                          <span className="text-xs text-slate-500">
+                            of {maxAsk} each time
+                          </span>
+                        </div>
+                        {selectedType === "care" && (
+                          <div className="flex gap-1.5">
+                            {(
+                              [
+                                { k: "text", label: "Text box" },
+                                { k: "star", label: "⭐ 1–5" },
+                              ] as const
+                            ).map((opt) => (
+                              <button
+                                key={opt.k}
+                                type="button"
+                                onClick={() =>
+                                  updateCats((next) => {
+                                    next[ci].kind = opt.k;
+                                  })
+                                }
+                                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                                  cat.kind === opt.k
+                                    ? "border-teal-500 bg-teal-50 text-teal-700"
+                                    : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                                }`}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
-                {careQuestions.length < 20 && (
+                  );
+                })}
+                {careCategories.length < 12 && (
                   <button
+                    type="button"
                     onClick={() =>
-                      setCareQuestions([...careQuestions, { prompt: "", kind: "text" }])
+                      setCareCategories([
+                        ...careCategories,
+                        { prompts: [""], kind: "text", ask: 1 },
+                      ])
                     }
                     className="text-sm text-orange-600 font-medium"
                   >
-                    + Add question
+                    + Add category
                   </button>
                 )}
-                <p className="mt-1 text-xs text-slate-500">
-                  People fill in any or all. <strong>Text</strong> = a free-form box;{" "}
-                  <strong>Stars</strong> = a quick 1–5 rating.
-                </p>
               </div>
             )}
 
-            {/* Most Likely / Accountability / Scavenger Hunt / Tournament — list of items */}
+            {/* Hall of Fame — tap award bubbles to build the survey + optional prize */}
+            {selectedType === "hall_of_fame" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Pick your awards — tap to add or remove
+                </label>
+                <p className="mb-2 text-xs text-slate-500">
+                  Each award becomes a vote. Everyone picks a group-mate for each;
+                  winners (and a graph) reveal together.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from(
+                    new Set([...HALL_OF_FAME_SUGGESTIONS, ...questions.filter(Boolean)])
+                  ).map((award) => {
+                    const on = questions.includes(award);
+                    return (
+                      <button
+                        key={award}
+                        type="button"
+                        onClick={() =>
+                          setQuestions((prev) =>
+                            prev.includes(award)
+                              ? prev.filter((q) => q !== award)
+                              : [...prev.filter(Boolean), award]
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1.5 text-sm font-medium transition ${
+                          on
+                            ? "border-fuchsia-500 bg-fuchsia-500 text-white"
+                            : "border-slate-300 bg-white text-slate-700 hover:border-fuchsia-300"
+                        }`}
+                      >
+                        {on ? "✓ " : "+ "}
+                        {award}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Add a custom award */}
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="text"
+                    value={hofCustom}
+                    onChange={(e) => setHofCustom(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const v = hofCustom.trim();
+                        if (v && !questions.includes(v))
+                          setQuestions((prev) => [...prev.filter(Boolean), v]);
+                        setHofCustom("");
+                      }
+                    }}
+                    placeholder="Add your own award…"
+                    className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-fuchsia-500 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const v = hofCustom.trim();
+                      if (v && !questions.includes(v))
+                        setQuestions((prev) => [...prev.filter(Boolean), v]);
+                      setHofCustom("");
+                    }}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Add
+                  </button>
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  {questions.filter(Boolean).length} award
+                  {questions.filter(Boolean).length === 1 ? "" : "s"} selected.
+                </p>
+
+                {/* Optional: gift-card the winner of one award */}
+                <div className="mt-4 rounded-xl border border-fuchsia-200 bg-fuchsia-50/50 p-3">
+                  <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={hofPrize}
+                      onChange={(e) => setHofPrize(e.target.checked)}
+                      className="h-4 w-4 rounded border-slate-300 text-fuchsia-500 focus:ring-fuchsia-500"
+                    />
+                    🎁 Gift-card the winner of one award
+                  </label>
+                  {hofPrize ? (
+                    <div className="mt-2 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-slate-600">Prize goes to the winner of</span>
+                        <select
+                          value={Math.min(
+                            hofPrizeAward,
+                            Math.max(0, questions.filter(Boolean).length - 1)
+                          )}
+                          onChange={(e) => setHofPrizeAward(parseInt(e.target.value, 10))}
+                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-fuchsia-500"
+                        >
+                          {questions.filter(Boolean).map((q, i) => (
+                            <option key={i} value={i}>
+                              {q}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <p className="text-xs text-slate-500">
+                        The group chips in a pot; on reveal it&apos;s sent to that
+                        award&apos;s winner as a gift card. (Set the amount options after
+                        you create it, in the gift settings.)
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Optional — make one award a real prize the group pitches in for.
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Most Likely / Scavenger Hunt / Tournament — list of items */}
             {(selectedType === "most_likely" ||
-              selectedType === "accountability" ||
               selectedType === "scavenger_hunt" ||
               selectedType === "tournament") && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  {selectedType === "accountability"
-                    ? "The check-in questions (each rated 1–5)"
-                    : selectedType === "scavenger_hunt"
+                  {selectedType === "scavenger_hunt"
                     ? "The items to find (each answered with a photo or text)"
                     : selectedType === "tournament"
                     ? "The rounds / holes (each scored with a number)"
@@ -1602,44 +2001,28 @@ export default function NewEngagementPage() {
                 {questions.map((q, i) => (
                   <div key={i} className="flex gap-2 mb-2 items-center">
                     <span className="text-slate-400 text-sm">
-                      {selectedType === "accountability"
-                        ? "🙏"
-                        : selectedType === "scavenger_hunt" ||
-                          selectedType === "tournament"
+                      {selectedType === "scavenger_hunt" ||
+                      selectedType === "tournament"
                         ? `${i + 1}.`
                         : "🏆"}
                     </span>
-                    {selectedType === "accountability" ? (
-                      <textarea
-                        value={q}
-                        onChange={(e) => {
-                          const next = [...questions];
-                          next[i] = e.target.value;
-                          setQuestions(next);
-                        }}
-                        rows={2}
-                        placeholder="Have you…? — add more wordings on new lines to vary it each time"
-                        className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none resize-none"
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={q}
-                        onChange={(e) => {
-                          const next = [...questions];
-                          next[i] = e.target.value;
-                          setQuestions(next);
-                        }}
-                        placeholder={
-                          selectedType === "scavenger_hunt"
-                            ? "Find / answer…"
-                            : selectedType === "tournament"
-                            ? "Hole 1 / Round 1 / Event…"
-                            : "Most likely to…"
-                        }
-                        className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
-                      />
-                    )}
+                    <input
+                      type="text"
+                      value={q}
+                      onChange={(e) => {
+                        const next = [...questions];
+                        next[i] = e.target.value;
+                        setQuestions(next);
+                      }}
+                      placeholder={
+                        selectedType === "scavenger_hunt"
+                          ? "Find / answer…"
+                          : selectedType === "tournament"
+                          ? "Hole 1 / Round 1 / Event…"
+                          : "Most likely to…"
+                      }
+                      className="flex-1 rounded-xl border border-slate-300 px-4 py-2 text-sm focus:border-orange-500 focus:ring-1 focus:ring-orange-500 outline-none"
+                    />
                     {questions.length > 1 && (
                       <button
                         onClick={() => setQuestions(questions.filter((_, j) => j !== i))}
@@ -1655,9 +2038,7 @@ export default function NewEngagementPage() {
                     onClick={() => setQuestions([...questions, ""])}
                     className="text-sm text-orange-600 font-medium"
                   >
-                    {selectedType === "accountability"
-                      ? "+ Add question"
-                      : selectedType === "scavenger_hunt"
+                    {selectedType === "scavenger_hunt"
                       ? "+ Add item"
                       : selectedType === "tournament"
                       ? "+ Add round"
@@ -1691,9 +2072,7 @@ export default function NewEngagementPage() {
                   </div>
                 )}
                 <p className="mt-1 text-xs text-slate-500">
-                  {selectedType === "accountability"
-                    ? "Each person rates themselves 1–5 on every question. Turn on Blind below to keep answers anonymous."
-                    : selectedType === "scavenger_hunt"
+                  {selectedType === "scavenger_hunt"
                     ? "Players answer each with a photo or a typed answer, in any order. Sealed until you reveal (use 🎬 Reveal now or a deadline)."
                     : selectedType === "tournament"
                     ? "Players enter a number for each round; the best total wins. Add a prize below — players don't have to be in the same place. Set a closing date to lock scores."
@@ -1730,6 +2109,7 @@ export default function NewEngagementPage() {
             {selectedType !== "two_truths" &&
               selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
+              selectedType !== "hall_of_fame" &&
               selectedType !== "accountability" &&
               selectedType !== "scavenger_hunt" &&
               selectedType !== "birthday" && (
@@ -1770,6 +2150,7 @@ export default function NewEngagementPage() {
             {/* Blind mode — Two Truths adds a "guess who wrote it" layer when on */}
             {selectedType !== "baby_reveal" &&
               selectedType !== "most_likely" &&
+              selectedType !== "hall_of_fame" &&
               selectedType !== "scavenger_hunt" &&
               selectedType !== "birthday" && (
               <div>
@@ -1891,6 +2272,53 @@ export default function NewEngagementPage() {
                   the winners. Set the real answer on the engagement before then.
                 </p>
               )}
+
+              {/* Release in advance: open + email the group N days before the reveal */}
+              {selectedType !== "birthday" &&
+                selectedType !== "baby_reveal" &&
+                recurrence === "none" &&
+                !!deadline && (
+                  <div className="mt-2 rounded-xl border border-orange-200 bg-orange-50/50 p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={releaseEarly}
+                        onChange={(e) => setReleaseEarly(e.target.checked)}
+                        className="h-4 w-4 rounded border-slate-300 text-orange-500 focus:ring-orange-500"
+                      />
+                      📅 Open it ahead of the reveal
+                    </label>
+                    {releaseEarly ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                        <span className="text-slate-600">Open &amp; email everyone</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={120}
+                          value={leadDays}
+                          onChange={(e) =>
+                            setLeadDays(parseInt(e.target.value || "14", 10))
+                          }
+                          className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm outline-none focus:border-orange-500"
+                        />
+                        <span className="text-slate-600">
+                          days before the{" "}
+                          {new Date(deadline).toLocaleDateString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          reveal.
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Otherwise it stays a draft until you open it yourself. Tick this
+                        and Campfire opens it + emails the group automatically, ahead of
+                        the reveal date.
+                      </p>
+                    )}
+                  </div>
+                )}
 
               {/* Birthday extras: lead time + optional age */}
               {selectedType === "birthday" && (
@@ -2108,13 +2536,16 @@ export default function NewEngagementPage() {
                   { value: "daily" as const, label: "🔁 Daily" },
                   { value: "weekly" as const, label: "🔁 Weekly" },
                   { value: "monthly" as const, label: "🔁 Monthly" },
+                  { value: "monthly_nth" as const, label: "🗓️ Monthly (e.g. 2nd Sun at 4pm)" },
                   { value: "yearly_nth" as const, label: "🗓️ Yearly (a date like 2nd Sun May)" },
                 ].map((r) => (
                   <button
                     key={r.value}
                     onClick={() => setRecurrence(r.value)}
                     className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
-                      r.value === "yearly_nth" ? "col-span-2 sm:col-span-3" : ""
+                      r.value === "yearly_nth" || r.value === "monthly_nth"
+                        ? "col-span-2 sm:col-span-3"
+                        : ""
                     } ${
                       recurrence === r.value
                         ? "border-orange-500 bg-orange-50 text-slate-900"
@@ -2128,6 +2559,10 @@ export default function NewEngagementPage() {
               {recurrence === "yearly_nth" ? (
                 <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3">
                   {renderNthPicker()}
+                </div>
+              ) : recurrence === "monthly_nth" ? (
+                <div className="mt-2 rounded-xl border border-slate-200 bg-white p-3">
+                  {renderMonthlyNthPicker()}
                 </div>
               ) : (
                 recurrence !== "none" && (

@@ -24,6 +24,11 @@ export async function POST(req: Request) {
     if (!engagementId) {
       return NextResponse.json({ error: "Missing engagement." }, { status: 400 });
     }
+    // Optional one-line personal note from the member sending the nudge.
+    const note =
+      typeof body?.note === "string" && body.note.trim()
+        ? body.note.trim().slice(0, 140)
+        : undefined;
 
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -35,7 +40,7 @@ export async function POST(req: Request) {
     const { data: eng } = await svc
       .from("engagements")
       .select(
-        "group_id, title, total_expected, birth_year, deadline, hold_until_deadline, type, is_blind, reveal, share_code, excluded_emails, paused"
+        "group_id, title, total_expected, birth_year, deadline, hold_until_deadline, type, is_blind, reveal, share_code, excluded_emails, paused, deadline_nudged_at"
       )
       .eq("id", engagementId)
       .single();
@@ -53,6 +58,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
     const { admin } = auth;
+
+    // Digest throttle: at most one reminder per ~20h, shared across every member's
+    // nudges AND the automatic deadline nudge (same deadline_nudged_at stamp). So
+    // anyone can nudge, but people get a single batched reminder — never a pile-on.
+    const THROTTLE_MS = 20 * 60 * 60 * 1000;
+    const lastNudge = eng.deadline_nudged_at
+      ? new Date(eng.deadline_nudged_at as string).getTime()
+      : 0;
+    if (Date.now() - lastNudge < THROTTLE_MS) {
+      return NextResponse.json({
+        ok: true,
+        throttled: true,
+        nudged: 0,
+        nextAt: new Date(lastNudge + THROTTLE_MS).toISOString(),
+      });
+    }
 
     const base = campfireSiteUrl();
     const from = campfireFrom();
@@ -84,6 +105,7 @@ export async function POST(req: Request) {
         url: engUrl,
         responded: count ?? 0,
         total: eng.total_expected ?? 0,
+        note,
       });
       for (let i = 0; i < memberEmails.length; i += 100) {
         await resend.batch.send(
@@ -133,6 +155,7 @@ export async function POST(req: Request) {
           url: joinUrl,
           invited: true,
           recipientName: (p.name as string) || undefined,
+          note,
         });
         return { from, to: [p.email as string], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
       });
@@ -148,6 +171,12 @@ export async function POST(req: Request) {
       }
       nudged += invitees.length;
     }
+
+    // Stamp the digest time so repeat clicks (and the cron) hold off for ~20h.
+    await admin
+      .from("engagements")
+      .update({ deadline_nudged_at: new Date().toISOString() })
+      .eq("id", engagementId);
 
     return NextResponse.json({ ok: true, nudged });
   } catch (err) {

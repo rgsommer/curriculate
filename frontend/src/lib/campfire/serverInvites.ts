@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { firstName } from "./parseInvites";
+import { campfireTeaserText, campfireTeaserHtml } from "./types";
 
 export const EMAIL_RE = /^[^\s@<>,;"']+@[^\s@<>,;"']+\.[^\s@<>,;"']+$/;
 export const MAX_INVITES = 50;
@@ -328,8 +329,15 @@ export function newEngagementEmail(opts: {
   invited?: boolean; // recipient isn't a member yet — frame it as an invite
   cardGuest?: boolean; // invited to ONLY this engagement (a guest, not the group)
   recipientName?: string; // greet them by name if we have it
+  note?: string; // optional one-line personal note from the member nudging
 }) {
-  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName } = opts;
+  const { creator, groupName, title, typeLabel, typeIcon, isBlind, reveal, deadline, holdUntilDeadline, url, invited, cardGuest, recipientName, note } = opts;
+  const noteText = note ? `\n💬 "${note}"\n` : "";
+  const noteHtml = note
+    ? `<blockquote style="margin:0 0 16px; padding:10px 14px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(
+        note
+      )}"</blockquote>`
+    : "";
   const hi = firstName(recipientName);
   const subject = cardGuest
     ? `${creator} invited you to a ${typeLabel} on Campfire`
@@ -374,16 +382,19 @@ export function newEngagementEmail(opts: {
   const text = `${intro}
 
 "${title}"
-
+${noteText}
 ${bits.map((b) => "• " + b).join("\n")}
 
-${cta}: ${url}`;
+${cta}: ${url}
+
+${campfireTeaserText()}`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">${typeIcon}</div>
   <p style="color:#475569; margin:0 0 4px;">${escapeHtml(intro)}</p>
   <h1 style="font-size:22px; margin:4px 0 14px;">${escapeHtml(title)}</h1>
+  ${noteHtml}
   <ul style="color:#475569; margin:0 0 16px; padding-left:18px;">
     ${bits.map((b) => `<li style="margin-bottom:6px;">${escapeHtml(b)}</li>`).join("")}
   </ul>
@@ -391,6 +402,7 @@ ${cta}: ${url}`;
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${escapeHtml(cta)}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${campfireTeaserHtml()}
 </div>`.trim();
 
   return { subject, text, html };
@@ -440,8 +452,16 @@ export function reminderEmail(opts: {
   total: number;
   // Hours until the reveal; when ~24h or less this becomes a "final call".
   hoursLeft?: number;
+  // An optional one-line personal note from the member sending the nudge.
+  note?: string;
 }) {
-  const { groupName, title, url, responded, total, hoursLeft } = opts;
+  const { groupName, title, url, responded, total, hoursLeft, note } = opts;
+  const noteText = note ? `\n\n💬 "${note}"` : "";
+  const noteHtml = note
+    ? `<blockquote style="margin:16px 0; padding:10px 14px; border-left:3px solid #f97316; background:#fff7ed; color:#9a3412; font-style:italic; border-radius:6px;">💬 "${escapeHtml(
+        note
+      )}"</blockquote>`
+    : "";
   const finalCall = typeof hoursLeft === "number" && hoursLeft <= 24;
   const closes =
     typeof hoursLeft === "number"
@@ -458,7 +478,7 @@ export function reminderEmail(opts: {
       ? `⏰ Final call — "${title}" in "${groupName}" closes ${closes}.`
       : `The group "${groupName}" is waiting on you for "${title}".`
   }
-${responded} of ${total} have responded — be one of the ones that unlocks the reveal!
+${responded} of ${total} have responded — be one of the ones that unlocks the reveal!${noteText}
 
 Respond here: ${url}`;
   const html = `
@@ -470,6 +490,7 @@ Respond here: ${url}`;
       ? `<strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> closes <strong>${closes}</strong>.`
       : `The group <strong>${escapeHtml(groupName)}</strong> is waiting on you for <strong>"${escapeHtml(title)}"</strong>.`
   } ${responded} of ${total} have responded — nobody sees the results until everyone's in.</p>
+  ${noteHtml}
   <p style="text-align:center; margin:24px 0;">
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Respond now</a>
   </p>
@@ -763,7 +784,9 @@ How to jump in:
 2. Choose "Continue with Google" (about 5 seconds)
 3. You're in — answer the first question and wait for the reveal!
 
-Invite code: ${inviteCode}`;
+Invite code: ${inviteCode}
+
+${campfireTeaserText()}`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
@@ -777,6 +800,7 @@ Invite code: ${inviteCode}`;
   <p style="color:#64748b; font-size:14px; margin:0 0 4px;">Or paste this link into your browser:</p>
   <p style="margin:0 0 16px;"><a href="${joinUrl}" style="color:#ea580c; word-break:break-all;">${joinUrl}</a></p>
   <p style="color:#94a3b8; font-size:12px; margin:0;">Invite code: ${escapeHtml(inviteCode)}</p>
+  ${campfireTeaserHtml()}
 </div>`.trim();
 
   return { subject, text, html };

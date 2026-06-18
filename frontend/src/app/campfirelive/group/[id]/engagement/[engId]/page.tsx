@@ -8,8 +8,9 @@ import {
   useEngagement,
   useRealtimeEngagement,
   useCreateEngagement,
+  type MonthlyNth,
 } from "@/lib/campfire/hooks";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, type QuestionCategory } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, parseCareQuestions, formatMoney, GIFT_CURRENCIES, localeGiftCurrency, raffleOf, tournamentOf, pledgeOf, babyRevealOf, parseBabyAnswer, selectPoolQuestions, describeMonthlyNth, nextMonthlyNthWeekday, campfireTeaserText, ORDINAL_WEEK, WEEKDAY_NAMES, type QuestionCategory } from "@/lib/campfire/types";
 import { readExifTakenAt } from "@/lib/campfire/exif";
 import QRCode from "qrcode";
 import type { CampfireGift } from "@/lib/campfire/types";
@@ -99,6 +100,9 @@ export default function EngagementDetailPage() {
     setHoldUntilDeadline,
     setWaitForAllInvited,
     launchEngagement,
+    scheduleOpen,
+    stopRecurrence,
+    updateMonthlyNth,
     deleteEngagement,
     removeResponse,
     reportResponse,
@@ -463,6 +467,8 @@ export default function EngagementDetailPage() {
   // "Most Likely To…" — the group roster (candidates) and this user's votes
   const [roster, setRoster] = useState<{ user_id: string; name: string }[]>([]);
   const [mlVotes, setMlVotes] = useState<Record<number, string>>({});
+  // Hall of Fame — this user's pick (a member user_id) per award.
+  const [hofVotes, setHofVotes] = useState<Record<number, string>>({});
   // Accountability: 1–5 self-rating per question + an optional note to the group
   const [acRatings, setAcRatings] = useState<Record<number, number>>({});
   const [acNote, setAcNote] = useState("");
@@ -537,9 +543,11 @@ export default function EngagementDetailPage() {
   const [editDeadline, setEditDeadline] = useState(""); // YYYY-MM-DD (birthday date)
   const [editBirthYear, setEditBirthYear] = useState("");
   const [editDeadlineTime, setEditDeadlineTime] = useState(""); // datetime-local (reveal/deadline)
-  const [editCareQuestions, setEditCareQuestions] = useState<
-    { prompt: string; kind: "text" | "star" }[]
+  const [editCareCategories, setEditCareCategories] = useState<
+    { prompts: string[]; kind: "text" | "star"; ask: number }[]
   >([]);
+  // Hall of Fame / Most Likely — editable list of awards.
+  const [editHofAwards, setEditHofAwards] = useState<string[]>([]);
   // Truth or Dare prompts (host-defined).
   const [editTruthPrompt, setEditTruthPrompt] = useState("");
   const [editDarePrompt, setEditDarePrompt] = useState("");
@@ -569,6 +577,19 @@ export default function EngagementDetailPage() {
   const [launching, setLaunching] = useState(false);
   const [justLaunched, setJustLaunched] = useState(false);
   const [justLaunchedQuiet, setJustLaunchedQuiet] = useState(false);
+  // Scheduling a draft to auto-open later (date input shown when host opts in).
+  const [schedulingOpen, setSchedulingOpen] = useState(false);
+  const [scheduleOpenInput, setScheduleOpenInput] = useState("");
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const [stoppingRecur, setStoppingRecur] = useState(false);
+  // Editing a monthly Nth-weekday release schedule (week/weekday/time/window).
+  const [schedEditing, setSchedEditing] = useState(false);
+  const [savingSched, setSavingSched] = useState(false);
+  const [schedWeek, setSchedWeek] = useState(2);
+  const [schedDow, setSchedDow] = useState(0);
+  const [schedTime, setSchedTime] = useState("16:00");
+  const [schedWindow, setSchedWindow] = useState(3);
   // Invite context for the host: how many were invited but haven't joined yet.
   // (RLS lets only the group admin read invitations, so non-admins just get 0.)
   const [inviteStats, setInviteStats] = useState({ joined: 0, pending: 0 });
@@ -576,6 +597,7 @@ export default function EngagementDetailPage() {
   const [groupInfo, setGroupInfo] = useState<{ name: string; invite_code: string } | null>(null);
   const [sharedEng, setSharedEng] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
+  const [nudgeNote, setNudgeNote] = useState(""); // optional one-line personal note
   // Is the viewer a full member of this group, or just a guest of this one card?
   // null = still checking (treat as member to avoid flashing guest UI to members).
   const [isMember, setIsMember] = useState<boolean | null>(null);
@@ -663,6 +685,30 @@ export default function EngagementDetailPage() {
     }
     setPromotingGuest(null);
   };
+
+  // Host/admin removes (uninvites) a guest — drops their vote + guest record.
+  const [removingGuest, setRemovingGuest] = useState<string | null>(null);
+  const removeGuest = async (uid: string, name: string) => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        `Remove ${name} from this card? Their response/vote (if any) is also removed. This can't be undone.`
+      )
+    )
+      return;
+    setRemovingGuest(uid);
+    const { error } = await supabase.rpc("remove_engagement_guest", {
+      _eid: engagementId,
+      _uid: uid,
+    });
+    if (error) {
+      alert("Couldn't remove the guest: " + error.message);
+    } else {
+      await loadGuests();
+      refresh();
+    }
+    setRemovingGuest(null);
+  };
   // "Guess who" game for blind engagements: responseId -> guessed name
   const [guesses, setGuesses] = useState<Record<string, string>>({});
   const [reportedIds, setReportedIds] = useState<Set<string>>(new Set());
@@ -689,6 +735,28 @@ export default function EngagementDetailPage() {
     }
     prevStatusRef.current = engagement?.status ?? null;
   }, [engagement?.status, session, engagementId]);
+
+  // Keep the host's per-group name snapshotted on the engagement (config.hostName) so
+  // EVERY viewer — joined members and guests who can't read the group roster — sees the
+  // group-name override instead of the creator's global profile name. Self-heals each
+  // time the host opens it, and backfills engagements created before this existed.
+  useEffect(() => {
+    if (!engagement || engagement.creator_id !== user?.id) return;
+    const myGroupName = roster.find(
+      (m) => m.user_id === engagement.creator_id
+    )?.name;
+    if (myGroupName && myGroupName !== engagement.config?.hostName) {
+      supabase
+        .from("engagements")
+        .update({ config: { ...(engagement.config ?? {}), hostName: myGroupName } })
+        .eq("id", engagement.id)
+        .then(
+          () => {},
+          () => {}
+        );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engagement?.id, engagement?.creator_id, user?.id, roster]);
 
   if (loading) {
     return (
@@ -729,6 +797,9 @@ export default function EngagementDetailPage() {
   const allIn = responseCount >= displayExpected;
   const isCreator = engagement.creator_id === user?.id;
   const isDraft = !engagement.launched_at;
+  // A draft that's already scheduled to auto-open — the host is DONE; opening early
+  // is optional, so this state reads as "all set" rather than "action needed".
+  const isScheduledDraft = isDraft && !!engagement.scheduled_open_at;
   // ── Prize contests: pot goes to the voted winner (raffle/hunt) or the best score
   // (tournament). `tourn` flips the copy to "best total wins" instead of "votes". ──
   const raffle = raffleOf(engagement.config);
@@ -775,7 +846,9 @@ export default function EngagementDetailPage() {
   // Cards, care, shares, open-ended polls, etc. are fine.
   const lateResponseAllowed =
     isRevealed &&
-    !["two_truths", "most_likely", "baby_reveal"].includes(engagement.type) &&
+    !["two_truths", "most_likely", "hall_of_fame", "baby_reveal"].includes(
+      engagement.type
+    ) &&
     !(engagement.type === "poll" && !isOpenPoll);
   const pollOpenQuestions: string[] = (() => {
     if (engagement.type !== "poll") return [];
@@ -1126,11 +1199,25 @@ export default function EngagementDetailPage() {
         minute: "2-digit",
       })
     : null;
+  const deadlinePassed =
+    !!engagement.deadline && new Date(engagement.deadline).getTime() < Date.now();
+  // What unlocks it, written honestly for the current state — including the
+  // "deadline passed but still waiting for people" limbo, which otherwise looks stuck.
   const revealRule = engagement.hold_until_deadline && deadlineStr
-    ? `Sealed until the deadline (${deadlineStr}) — it won't open early even if everyone answers.`
+    ? deadlinePassed
+      ? `The ${deadlineStr} deadline passed — it unlocks any moment now.`
+      : `Sealed until the deadline (${deadlineStr}) — it won't open early even if everyone answers.`
+    : deadlinePassed
+    ? `The ${deadlineStr} deadline passed. Campfire unlocks this with whoever has responded within ~24h — unless everyone${
+        waitAll ? " invited joins and" : ""
+      } responds first.`
     : waitAll
-    ? "Reveals once everyone invited has joined and responded."
-    : "Reveals the moment everyone who's joined has responded.";
+    ? `Reveals once everyone invited has joined and responded${
+        deadlineStr ? `, or by ${deadlineStr} as a backstop` : ""
+      }.`
+    : `Reveals the moment everyone who's joined has responded${
+        deadlineStr ? `, or by ${deadlineStr} as a backstop` : ""
+      }.`;
 
   // ── Ratings / winner (non-poll, after reveal) ──
   const ratingFor = (responseId: string) => {
@@ -1175,15 +1262,48 @@ export default function EngagementDetailPage() {
     setEditExcludedIds(engagement.excluded_user_ids ?? []);
     setEditExcludedEmails(engagement.excluded_emails ?? []);
     {
-      // Preload the multi-wording pool (one wording per line) if present, else the
-      // single saved questions.
-      const pool = (engagement.config as { questionPool?: QuestionCategory[] } | null)
-        ?.questionPool;
-      setEditCareQuestions(
-        pool && pool.length
-          ? pool.map((c) => ({ prompt: c.prompts.join("\n"), kind: c.kind ?? "text" }))
-          : parseCareQuestions(engagement.config)
-      );
+      // Preload the category pool (each category = interchangeable wordings + how
+      // many to ask) if present, else fall back to the locked questions as
+      // single-wording categories.
+      const cfg = engagement.config as
+        | { questionPool?: QuestionCategory[]; questions?: unknown }
+        | null;
+      const pool = cfg?.questionPool;
+      if (pool && pool.length) {
+        setEditCareCategories(
+          pool.map((c) => ({
+            prompts: c.prompts.length ? c.prompts : [""],
+            kind: c.kind ?? "text",
+            ask: Math.max(1, Math.round(c.ask ?? 1) || 1),
+          }))
+        );
+      } else {
+        // Locked Care questions carry a kind; Accountability questions are plain strings.
+        const care = parseCareQuestions(engagement.config);
+        if (care.length) {
+          setEditCareCategories(
+            care.map((q) => ({ prompts: [q.prompt], kind: q.kind, ask: 1 }))
+          );
+        } else {
+          const qs = Array.isArray(cfg?.questions)
+            ? (cfg!.questions as unknown[]).filter(
+                (x): x is string => typeof x === "string"
+              )
+            : [];
+          setEditCareCategories(
+            (qs.length ? qs : [""]).map((s) => ({
+              prompts: [s],
+              kind: "text" as const,
+              ask: 1,
+            }))
+          );
+        }
+      }
+    }
+    {
+      // Hall of Fame / Most Likely awards.
+      const qs = (engagement.config?.questions as string[] | undefined) ?? [];
+      setEditHofAwards(qs.length ? qs : [""]);
     }
     setEditGiftEnabled(!!engagement.gift_enabled);
     setEditGiftShowTotal(engagement.config?.giftShowTotal !== false);
@@ -1262,13 +1382,14 @@ export default function EngagementDetailPage() {
         ? new Date(editDeadlineTime).toISOString()
         : null;
     }
-    // Care Check-in: persist the edited question list (prompt + response type).
+    // Care & Accountability: persist the edited category pool and re-lock a random pick.
     const careFields: Record<string, unknown> = {};
-    if (engagement.type === "care") {
-      const pool = editCareQuestions
-        .map((q) => ({
-          kind: q.kind,
-          prompts: q.prompt.split("\n").map((s) => s.trim()).filter(Boolean),
+    if (engagement.type === "care" || engagement.type === "accountability") {
+      const pool = editCareCategories
+        .map((c) => ({
+          kind: c.kind,
+          prompts: c.prompts.map((p) => p.trim()).filter(Boolean),
+          ask: Math.max(1, Math.round(c.ask) || 1),
         }))
         .filter((c) => c.prompts.length > 0);
       if (pool.length < 1) {
@@ -1279,8 +1400,27 @@ export default function EngagementDetailPage() {
       careFields.config = {
         ...(engagement.config ?? {}),
         questionPool: pool,
-        questions: selectPoolQuestions(pool, "care"),
+        questions: selectPoolQuestions(pool, engagement.type),
       };
+    }
+    // Hall of Fame / Most Likely: persist the edited award list. If the gift prize
+    // award index now points past the list, drop it so it can't dangle.
+    if (engagement.type === "hall_of_fame" || engagement.type === "most_likely") {
+      const qs = editHofAwards.map((q) => q.trim()).filter(Boolean);
+      if (qs.length < 1) {
+        alert("Keep at least one award.");
+        setSavingEdit(false);
+        return;
+      }
+      const base = { ...(engagement.config ?? {}) } as Record<string, unknown>;
+      base.questions = qs;
+      if (
+        typeof base.hofGiftAward === "number" &&
+        (base.hofGiftAward as number) >= qs.length
+      ) {
+        delete base.hofGiftAward;
+      }
+      careFields.config = base;
     }
     // Truth or Dare: persist the edited prompts.
     if (engagement.type === "truth_or_dare") {
@@ -1407,14 +1547,25 @@ export default function EngagementDetailPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ engagementId }),
+        body: JSON.stringify({ engagementId, note: nudgeNote.trim() || undefined }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) setNudgeMsg(data.error || "Couldn't send nudges.");
-      else
+      else if (data.throttled) {
+        const when = data.nextAt
+          ? new Date(data.nextAt).toLocaleString(undefined, {
+              weekday: "short",
+              hour: "numeric",
+              minute: "2-digit",
+            })
+          : "soon";
+        setNudgeMsg(
+          `✓ A reminder already went out recently — to avoid pestering people, the next one can go ${when}.`
+        );
+      } else
         setNudgeMsg(
           data.nudged > 0
-            ? `✓ Nudged ${data.nudged} ${data.nudged === 1 ? "person" : "people"} (members + anyone invited who hasn't joined)`
+            ? `✓ Reminder sent to ${data.nudged} ${data.nudged === 1 ? "person" : "people"} (members + anyone invited who hasn't joined)`
             : "No one left to nudge — everyone's responded or isn't invited yet."
         );
     } catch {
@@ -1522,28 +1673,35 @@ export default function EngagementDetailPage() {
         : meta?.label
         ? `a group ${meta.label.toLowerCase()}`
         : "a group activity";
-    // A clear date line so the recipient knows what they're opening and by when.
-    const dateLine = engagement.deadline
-      ? engagement.hold_until_deadline
-        ? `🎉 It opens ${new Date(engagement.deadline).toLocaleDateString(undefined, {
-            weekday: "long",
-            month: "long",
-            day: "numeric",
-          })} at ${new Date(engagement.deadline).toLocaleTimeString(undefined, {
-            hour: "numeric",
-            minute: "2-digit",
-          })}.`
-        : `⏰ Add yours by ${new Date(engagement.deadline).toLocaleString(undefined, {
-            weekday: "short",
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-            minute: "2-digit",
-          })}.`
-      : "";
+    // A clear date line: when it's open to respond vs when results reveal — so nobody
+    // thinks they have to wait until the reveal date to add theirs.
+    const fmtDT = (d: string) =>
+      `${new Date(d).toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+      })} at ${new Date(d).toLocaleTimeString(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      })}`;
+    const opensAt = engagement.scheduled_open_at;
+    const opensInFuture = !!opensAt && new Date(opensAt).getTime() > Date.now();
+    const openLine = opensInFuture
+      ? `🗓️ Opens ${fmtDT(opensAt as string)}`
+      : "✅ Open now — add yours anytime";
+    const dateLine =
+      engagement.hold_until_deadline && engagement.deadline
+        ? `${openLine}. 🎉 Results reveal ${fmtDT(engagement.deadline)}.`
+        : engagement.deadline
+        ? `${openLine}. ⏰ Add yours by ${fmtDT(engagement.deadline)}.`
+        : opensInFuture
+        ? `${openLine}.`
+        : "";
+    // A "did you know?" teaser hinting at other Campfire features (shared with emails).
+    const teaser = campfireTeaserText();
     const msg = `You're invited to "${title}" — ${what} on Campfire 🔥${
       blurb ? `\n\n${blurb}` : ""
-    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)`;
+    }${dateLine ? `\n\n${dateLine}` : ""}\n\n👉 Tap to add yours — no app or account needed, just your name:\n${url}\n\n(Already on Campfire? Use code ${groupInfo.invite_code}.)\n\n${teaser}`;
     try {
       await navigator.clipboard.writeText(msg);
       setSharedEng(true);
@@ -1563,6 +1721,18 @@ export default function EngagementDetailPage() {
       alert("Couldn't launch: " + error);
       setLaunching(false);
       return;
+    }
+    // Stamp the host's per-group name into config so GUESTS (who can't read the
+    // group roster) see "Richard's …" instead of falling back to the global profile.
+    const hostName = memberNameOf(
+      engagement.creator_id,
+      engagement.creator?.display_name
+    );
+    if (hostName && hostName !== engagement.config?.hostName) {
+      await supabase
+        .from("engagements")
+        .update({ config: { ...(engagement.config ?? {}), hostName } })
+        .eq("id", engagement.id);
     }
     setJustLaunched(true);
     setJustLaunchedQuiet(!notify);
@@ -1584,6 +1754,112 @@ export default function EngagementDetailPage() {
       }
     }
     setLaunching(false);
+  };
+
+  // Format a Date as a value for <input type="datetime-local"> (local time).
+  const toLocalInput = (d: Date) =>
+    new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+
+  // Default for the open-date picker: 2 weeks before the reveal/close date if
+  // there is one, else a week out.
+  const defaultOpenAt = () => {
+    const dl = engagement.deadline ? new Date(engagement.deadline) : null;
+    return toLocalInput(
+      dl
+        ? new Date(dl.getTime() - 14 * 86400000)
+        : new Date(Date.now() + 7 * 86400000)
+    );
+  };
+
+  // Schedule the draft to auto-open + email the group on the chosen date.
+  const submitSchedule = async () => {
+    if (!scheduleOpenInput) return;
+    setSavingSchedule(true);
+    const { error } = await scheduleOpen(new Date(scheduleOpenInput).toISOString());
+    setSavingSchedule(false);
+    if (error) {
+      alert("Couldn't schedule: " + error);
+      return;
+    }
+    setSchedulingOpen(false);
+  };
+
+  // Clear an existing schedule, returning the engagement to a manual draft.
+  const clearSchedule = async () => {
+    const { error } = await scheduleOpen(null);
+    if (error) alert("Couldn't clear the schedule: " + error);
+  };
+
+  // Push the reveal deadline out by N days (from now or the current deadline,
+  // whichever is later) — used when the deadline passed but people are still missing.
+  const extendDeadline = async (days: number) => {
+    setExtending(true);
+    const base = engagement.deadline
+      ? Math.max(new Date(engagement.deadline).getTime(), Date.now())
+      : Date.now();
+    const next = new Date(base + days * 86400000).toISOString();
+    const { error } = await supabase
+      .from("engagements")
+      .update({ deadline: next })
+      .eq("id", engagement.id);
+    setExtending(false);
+    if (error) {
+      alert("Couldn't extend the deadline: " + error.message);
+      return;
+    }
+    refresh();
+  };
+
+  // Stop the recurring series but keep every instance (past + any upcoming).
+  const stopRecurring = async () => {
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        "Stop this from repeating?\n\nThis one and all past check-ins stay exactly as they are — Campfire just won't create any new ones."
+      )
+    )
+      return;
+    setStoppingRecur(true);
+    const { error } = await stopRecurrence();
+    setStoppingRecur(false);
+    if (error) alert("Couldn't stop the recurrence: " + error);
+  };
+
+  // The monthly release pattern (if this is a "monthly Nth-weekday" series).
+  const monthlyNth =
+    (engagement.config as { monthlyNth?: MonthlyNth } | null)?.monthlyNth ?? null;
+
+  // Open the schedule editor seeded with the current pattern.
+  const openSchedEditor = () => {
+    if (monthlyNth) {
+      setSchedWeek(monthlyNth.week);
+      setSchedDow(monthlyNth.weekday);
+      setSchedTime(
+        `${String(monthlyNth.hour).padStart(2, "0")}:${String(
+          monthlyNth.minute
+        ).padStart(2, "0")}`
+      );
+      setSchedWindow(monthlyNth.windowDays || 3);
+    }
+    setSchedEditing(true);
+  };
+
+  const saveSchedule = async () => {
+    setSavingSched(true);
+    const [h, m] = schedTime.split(":").map((n) => parseInt(n, 10));
+    const { error } = await updateMonthlyNth({
+      week: schedWeek,
+      weekday: schedDow,
+      hour: h || 16,
+      minute: m || 0,
+      windowDays: schedWindow || 3,
+    });
+    setSavingSched(false);
+    if (error) {
+      alert("Couldn't save the schedule: " + error);
+      return;
+    }
+    setSchedEditing(false);
   };
 
   // Creator cancels (deletes) the engagement — it vanishes for everyone (live).
@@ -2057,6 +2333,8 @@ export default function EngagementDetailPage() {
     }
     if (engagement.type === "most_likely" && c.answers)
       setMlVotes(c.answers as Record<number, string>);
+    if (engagement.type === "hall_of_fame" && c.answers)
+      setHofVotes(c.answers as Record<number, string>);
     if (engagement.type === "accountability" && c.answers) {
       setAcRatings(c.answers as Record<number, number>);
       setAcNote(typeof c.note === "string" ? c.note : "");
@@ -2242,6 +2520,23 @@ export default function EngagementDetailPage() {
     const { error: mlErr } = await saveResponse({ answers });
     setSubmitting(false);
     if (mlErr) alert("Couldn't submit: " + mlErr);
+  };
+
+  const handleHallOfFameSubmit = async () => {
+    const anyVote = Object.values(hofVotes).some(Boolean);
+    if (!anyVote) {
+      alert("Vote a group-mate for at least one award.");
+      return;
+    }
+    // answers[awardIndex] = the chosen person's name (blank picks dropped).
+    const answers: Record<string, string> = {};
+    Object.entries(hofVotes).forEach(([k, v]) => {
+      if (v && v.trim()) answers[k] = v.trim();
+    });
+    setSubmitting(true);
+    const { error: hofErr } = await saveResponse({ answers });
+    setSubmitting(false);
+    if (hofErr) alert("Couldn't submit: " + hofErr);
   };
 
   const handleAccountabilitySubmit = async () => {
@@ -2816,6 +3111,61 @@ export default function EngagementDetailPage() {
               onClick={handleMostLikelySubmit}
               disabled={submitting}
               className="w-full rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
+            >
+              {submitting ? "Submitting..." : "🔒 Lock In My Votes"}
+            </button>
+          </div>
+        );
+      }
+
+      case "hall_of_fame": {
+        const qs = (engagement.config?.questions as string[]) ?? [];
+        const prizeAward = (engagement.config as { hofGiftAward?: number } | null)
+          ?.hofGiftAward;
+        // Suggest joined members AND anyone invited (even if they haven't joined yet) —
+        // and a free-typed name still works for anyone not on the list.
+        const candidateNames = Array.from(
+          new Set([
+            ...roster.map((m) => m.name),
+            ...pendingInvitees.map((p) => p.name || p.email),
+          ])
+        ).filter(Boolean);
+        return (
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Vote anyone for each award — pick from the list or type a name (they
+              don&apos;t have to have joined yet). Sealed until everyone&apos;s in, then a
+              graph crowns each winner.
+            </p>
+            {qs.map((q, i) => (
+              <div key={i}>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  🏅 {q}
+                  {prizeAward === i && (
+                    <span className="ml-1 text-xs font-semibold text-fuchsia-600">
+                      🎁 prize award
+                    </span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  list={`hof-roster-${i}`}
+                  value={hofVotes[i] ?? ""}
+                  onChange={(e) => setHofVotes({ ...hofVotes, [i]: e.target.value })}
+                  placeholder="Type or pick a name…"
+                  className="w-full rounded-xl border border-slate-300 px-3 py-2.5 text-sm bg-white focus:border-fuchsia-500 outline-none"
+                />
+                <datalist id={`hof-roster-${i}`}>
+                  {candidateNames.map((name) => (
+                    <option key={name} value={name} />
+                  ))}
+                </datalist>
+              </div>
+            ))}
+            <button
+              onClick={handleHallOfFameSubmit}
+              disabled={submitting}
+              className="w-full rounded-xl bg-gradient-to-r from-fuchsia-500 to-purple-500 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
             >
               {submitting ? "Submitting..." : "🔒 Lock In My Votes"}
             </button>
@@ -4669,6 +5019,141 @@ export default function EngagementDetailPage() {
     );
   };
 
+  const renderHallOfFameResults = () => {
+    if (!showResults || engagement.type !== "hall_of_fame") return null;
+    const qs = (engagement.config?.questions as string[]) ?? [];
+    const prizeAward = (engagement.config as { hofGiftAward?: number } | null)
+      ?.hofGiftAward;
+    const prizeWinnerName = engagement.gift_recipient_name; // set when the pot is awarded
+
+    return (
+      <div className="space-y-3">
+        {qs.map((q, i) => {
+          // Tally by normalized name so the same person merges (votes are names now,
+          // so members, invitees, and write-ins all count).
+          const counts: Record<string, { label: string; n: number }> = {};
+          responses.forEach((r) => {
+            const raw = (r.content as { answers?: Record<string, string> })?.answers?.[
+              String(i)
+            ];
+            const name = (raw ?? "").trim();
+            if (!name) return;
+            const key = name.toLowerCase();
+            if (!counts[key]) counts[key] = { label: name, n: 0 };
+            counts[key].n++;
+          });
+          const entries = Object.values(counts)
+            .map((e) => ({ uid: e.label, name: e.label, n: e.n }))
+            .sort((a, b) => b.n - a.n);
+          const top = entries.length ? entries[0].n : 0;
+          const winners = entries.filter((e) => e.n === top && top > 0);
+          const isPrize = prizeAward === i;
+          return (
+            <div
+              key={i}
+              className={`rounded-xl border p-4 ${
+                isPrize
+                  ? "border-fuchsia-300 bg-fuchsia-50/70"
+                  : "border-slate-200 bg-white"
+              }`}
+            >
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-semibold text-slate-700">🏅 {q}</div>
+                {isPrize && (
+                  <span className="text-[11px] font-bold text-fuchsia-700">
+                    🎁 Prize award
+                  </span>
+                )}
+              </div>
+              {entries.length ? (
+                <>
+                  <div className="text-base font-extrabold text-fuchsia-700 mb-2">
+                    🏆 {winners.map((w) => w.name).join(" & ")}{" "}
+                    <span className="text-xs font-normal text-slate-500">
+                      ({top} {top === 1 ? "vote" : "votes"})
+                    </span>
+                  </div>
+                  {(() => {
+                    // Pie of the top 10 candidates' vote share for this award.
+                    const PIE = [
+                      "#d946ef", "#a855f7", "#6366f1", "#3b82f6", "#06b6d4",
+                      "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#94a3b8",
+                    ];
+                    const top10 = entries.slice(0, 10);
+                    const total10 = top10.reduce((s, e) => s + e.n, 0) || 1;
+                    let acc = 0;
+                    const stops = top10
+                      .map((e, idx) => {
+                        const start = (acc / total10) * 100;
+                        acc += e.n;
+                        const end = (acc / total10) * 100;
+                        return `${PIE[idx % PIE.length]} ${start}% ${end}%`;
+                      })
+                      .join(", ");
+                    return (
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div
+                          className="h-32 w-32 shrink-0 rounded-full shadow-inner"
+                          style={{ background: `conic-gradient(${stops})` }}
+                          role="img"
+                          aria-label={`Vote share for ${q}`}
+                        />
+                        <div className="min-w-[160px] flex-1 space-y-1">
+                          {top10.map((e, idx) => {
+                            const isWin = e.n === top;
+                            const pct = Math.round((e.n / total10) * 100);
+                            return (
+                              <div
+                                key={e.uid}
+                                className="flex items-center gap-2 text-xs"
+                              >
+                                <span
+                                  className="h-3 w-3 shrink-0 rounded-sm"
+                                  style={{ background: PIE[idx % PIE.length] }}
+                                />
+                                <span
+                                  className={`flex-1 truncate ${
+                                    isWin
+                                      ? "font-bold text-slate-900"
+                                      : "text-slate-600"
+                                  }`}
+                                >
+                                  {isWin ? "🏆 " : ""}
+                                  {e.name}
+                                </span>
+                                <span className="shrink-0 font-semibold text-slate-600">
+                                  {e.n} · {pct}%
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {entries.length > 10 && (
+                            <div className="pt-0.5 text-[11px] text-slate-400">
+                              +{entries.length - 10} more not shown
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {isPrize && (
+                    <div className="mt-2 text-xs font-medium text-fuchsia-700">
+                      {prizeWinnerName
+                        ? `🎁 ${prizeWinnerName} receives the gift-card prize!`
+                        : "🎁 This winner receives the gift-card prize once the pot is awarded."}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-slate-400">No votes for this one.</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   const renderBabyRevealResults = () => {
     if (!showResults || engagement.type !== "baby_reveal") return null;
     const parsed = parseBabyAnswer(revealAnswer?.answer);
@@ -4827,6 +5312,21 @@ export default function EngagementDetailPage() {
     const completed = responses.filter(
       (r) => lieGuesses.filter((g) => g.guesser_id === r.user_id && g.guess_index != null).length >= R - 1
     ).length;
+    // Has the current user finished guessing every entry but their own?
+    const myGuessCount = lieGuesses.filter(
+      (g) => g.guesser_id === user?.id && g.guess_index != null
+    ).length;
+    const iAmIn = R > 1 && myGuessCount >= R - 1;
+    // Fallback share time if not everyone guesses: the close date.
+    const revealBy = engagement.deadline
+      ? new Date(engagement.deadline).toLocaleDateString(undefined, {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        })
+      : null;
 
     // My score (after reveal).
     let myCorrect = 0;
@@ -4870,13 +5370,37 @@ export default function EngagementDetailPage() {
     return (
       <div className="space-y-3">
         {!liesRevealed ? (
-          <div className="rounded-xl bg-purple-50 border border-purple-200 p-3 text-sm text-purple-800">
-            🕵️ Guessing phase — tap the statement you think is the lie on each entry.{" "}
-            <span className="font-semibold">
-              {completed} of {R}
-            </span>{" "}
-            {completed === 1 ? "player has" : "players have"} finished. The lies reveal
-            once everyone&apos;s guessed.
+          <div className="space-y-2">
+            <div className="rounded-xl bg-purple-50 border border-purple-200 p-3 text-sm text-purple-800">
+              🕵️ Guessing phase — tap the statement you think is the lie on each entry.{" "}
+              <span className="font-semibold">
+                {completed} of {R}
+              </span>{" "}
+              {completed === 1 ? "player has" : "players have"} finished. Results — and the{" "}
+              <span className="font-semibold">🤥 Best Liar</span> — share as soon as
+              everyone&apos;s guessed
+              {revealBy ? (
+                <>
+                  {" "}
+                  — or by <span className="font-semibold">{revealBy}</span>, whichever
+                  comes first
+                </>
+              ) : null}
+              .
+            </div>
+            {iAmIn && (
+              <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-800">
+                ✅ You&apos;re all in! Sit tight — the lies (and who fooled the most
+                people) reveal once everyone&apos;s guessed
+                {revealBy ? (
+                  <>
+                    {" "}
+                    or by <span className="font-semibold">{revealBy}</span>
+                  </>
+                ) : null}
+                .
+              </div>
+            )}
           </div>
         ) : (
           <div className="rounded-xl bg-green-50 border border-green-200 p-3 text-sm text-green-800">
@@ -5071,6 +5595,7 @@ export default function EngagementDetailPage() {
       engagement.type === "two_truths" ||
       engagement.type === "baby_reveal" ||
       engagement.type === "most_likely" ||
+      engagement.type === "hall_of_fame" ||
       engagement.type === "accountability" ||
       engagement.type === "scavenger_hunt" ||
       engagement.type === "tournament" ||
@@ -5404,6 +5929,8 @@ export default function EngagementDetailPage() {
           className={`mb-6 rounded-2xl border-2 p-5 ${
             justLaunched
               ? "border-green-300 bg-green-50"
+              : isScheduledDraft
+              ? "border-emerald-300 bg-emerald-50"
               : "border-dashed border-orange-300 bg-orange-50"
           }`}
         >
@@ -5425,6 +5952,35 @@ export default function EngagementDetailPage() {
                       : "We emailed everyone in the group and any pending invitees to respond."}
                   </p>
                 </>
+              ) : isScheduledDraft ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm font-bold text-emerald-900">
+                    <span className="rounded-full bg-emerald-200 px-2 py-0.5 text-[11px] uppercase tracking-wide">
+                      Scheduled
+                    </span>
+                    ✓ You&apos;re all set — nothing more to do
+                  </div>
+                  <p className="mt-1 text-xs text-emerald-800/90">
+                    📅 This opens on its own{" "}
+                    <strong>
+                      {new Date(engagement.scheduled_open_at as string).toLocaleDateString(
+                        "en-US",
+                        {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                          year: "numeric",
+                        }
+                      )}
+                    </strong>{" "}
+                    and emails the whole group then. Only you can see it until then.
+                    {engagement.type === "birthday"
+                      ? " It reveals on the birthday and repeats every year."
+                      : ""}{" "}
+                    Nothing else is needed — the options are only if you want to change
+                    it.
+                  </p>
+                </>
               ) : (
                 <>
                   <div className="flex items-center gap-2 text-sm font-bold text-orange-900">
@@ -5434,54 +5990,113 @@ export default function EngagementDetailPage() {
                     Only you can see this right now
                   </div>
                   <p className="mt-1 text-xs text-orange-800/80">
-                    {engagement.scheduled_open_at ? (
-                      <>
-                        🎂 This auto-opens on{" "}
-                        {new Date(engagement.scheduled_open_at).toLocaleDateString("en-US", {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}{" "}
-                        and reveals on the special day — runs every year. You can also hit
-                        Launch now to open it early.
-                      </>
-                    ) : (
-                      <>
-                        Review the prompt below. When you hit launch, it goes live for the
-                        group and everyone (members + pending invitees) gets an email to
-                        respond.
-                      </>
-                    )}
+                    Review the prompt below. <strong>Launch</strong> opens it now and
+                    emails everyone (members + pending invitees) to respond.{" "}
+                    <strong>Open now — no email</strong> opens it just as live but sends
+                    nothing — you share the link yourself. Or{" "}
+                    <strong>📅 Schedule it to open later</strong> to pick a date — it
+                    opens and emails the group automatically then.
                   </p>
                 </>
               )}
             </div>
             <div className="flex flex-col items-end gap-1">
-              <button
-                onClick={() => launch(true)}
-                disabled={launching || justLaunched}
-                className={`rounded-full px-6 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-100 ${
-                  justLaunched
-                    ? "bg-green-600"
-                    : "bg-gradient-to-r from-orange-500 to-rose-500 hover:opacity-90 disabled:opacity-50"
-                }`}
-              >
-                {justLaunched
-                  ? "✓ Launched"
-                  : launching
-                  ? "Launching…"
-                  : engagement.scheduled_open_at
-                  ? "🚀 Open early & notify now"
-                  : "🚀 Launch to the group"}
-              </button>
+              {justLaunched ? (
+                <button
+                  disabled
+                  className="rounded-full bg-green-600 px-6 py-2.5 text-sm font-bold text-white shadow-sm disabled:opacity-100"
+                >
+                  ✓ Launched
+                </button>
+              ) : isScheduledDraft ? (
+                // Scheduled = done. Opening early is optional, so it's a quiet pill.
+                <button
+                  onClick={() => launch(true)}
+                  disabled={launching}
+                  className="rounded-full border border-orange-300 bg-white px-4 py-2 text-sm font-semibold text-orange-700 hover:bg-orange-50 disabled:opacity-50"
+                >
+                  {launching ? "Opening…" : "🚀 Open early & notify now"}
+                </button>
+              ) : (
+                <button
+                  onClick={() => launch(true)}
+                  disabled={launching}
+                  className="rounded-full bg-gradient-to-r from-orange-500 to-rose-500 px-6 py-2.5 text-sm font-bold text-white shadow-sm hover:opacity-90 disabled:opacity-50"
+                >
+                  {launching ? "Launching…" : "🚀 Launch to the group"}
+                </button>
+              )}
               {!justLaunched && (
                 <button
                   onClick={() => launch(false)}
                   disabled={launching}
                   className="text-xs font-medium text-slate-500 underline hover:text-slate-700 disabled:opacity-50"
                 >
-                  Open quietly — no email
+                  Open now — no email
                 </button>
+              )}
+              {!justLaunched && !schedulingOpen && (
+                <button
+                  onClick={() => {
+                    setScheduleOpenInput(
+                      engagement.scheduled_open_at
+                        ? toLocalInput(new Date(engagement.scheduled_open_at))
+                        : defaultOpenAt()
+                    );
+                    setSchedulingOpen(true);
+                  }}
+                  className="text-xs font-medium text-orange-600 underline hover:text-orange-700"
+                >
+                  {engagement.scheduled_open_at
+                    ? "📅 Change open date"
+                    : "📅 Schedule it to open later"}
+                </button>
+              )}
+              {!justLaunched && engagement.scheduled_open_at && !schedulingOpen && (
+                <button
+                  onClick={clearSchedule}
+                  className="text-[11px] text-slate-400 underline hover:text-slate-600"
+                >
+                  Cancel schedule
+                </button>
+              )}
+              {!justLaunched && schedulingOpen && (
+                <div className="mt-1 flex flex-col items-end gap-1.5 rounded-xl border border-orange-200 bg-white/70 p-2.5">
+                  <label className="self-start text-[11px] font-medium text-slate-600">
+                    Open &amp; email the group on:
+                  </label>
+                  <input
+                    type="datetime-local"
+                    value={scheduleOpenInput}
+                    onChange={(e) => setScheduleOpenInput(e.target.value)}
+                    className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-orange-500"
+                  />
+                  {engagement.deadline && (
+                    <p className="max-w-[16rem] self-start text-left text-[11px] text-slate-400">
+                      Prefilled to 2 weeks before your{" "}
+                      {new Date(engagement.deadline).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })}{" "}
+                      close date.
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setSchedulingOpen(false)}
+                      className="text-xs text-slate-500 underline hover:text-slate-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={submitSchedule}
+                      disabled={savingSchedule || !scheduleOpenInput}
+                      className="rounded-full bg-orange-500 px-4 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+                    >
+                      {savingSchedule ? "Saving…" : "Set open date"}
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -5641,6 +6256,55 @@ export default function EngagementDetailPage() {
                 </div>
               )}
 
+              {(engagement.type === "hall_of_fame" ||
+                engagement.type === "most_likely") && (
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">
+                    Awards
+                  </label>
+                  {editHofAwards.map((award, i) => (
+                    <div key={i} className="mb-2 flex items-center gap-2">
+                      <span className="text-slate-400 text-sm">🏅</span>
+                      <input
+                        type="text"
+                        value={award}
+                        onChange={(e) => {
+                          const next = [...editHofAwards];
+                          next[i] = e.target.value;
+                          setEditHofAwards(next);
+                        }}
+                        placeholder="Award name (e.g. Funniest)"
+                        className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 focus:border-fuchsia-500 outline-none"
+                      />
+                      {editHofAwards.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditHofAwards(editHofAwards.filter((_, j) => j !== i))
+                          }
+                          className="px-1 text-slate-400 hover:text-red-500"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {editHofAwards.length < 30 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditHofAwards([...editHofAwards, ""])}
+                      className="text-sm font-medium text-fuchsia-600 hover:text-fuchsia-700"
+                    >
+                      + Add award
+                    </button>
+                  )}
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    Each award is one vote. Changing these before the reveal updates what
+                    everyone votes on.
+                  </p>
+                </div>
+              )}
+
               {engagement.type === "truth_or_dare" && (
                 <div className="space-y-3">
                   <div>
@@ -5673,75 +6337,177 @@ export default function EngagementDetailPage() {
                 </div>
               )}
 
-              {engagement.type === "care" && (
+              {(engagement.type === "care" ||
+                engagement.type === "accountability") && (
                 <div>
                   <label className="block text-xs font-medium text-slate-500 mb-1">
-                    Questions
+                    Question categories
                   </label>
-                  {editCareQuestions.map((q, i) => (
-                    <div key={i} className="mb-2 rounded-lg border border-slate-200 p-2.5">
-                      <div className="flex gap-2 items-start">
-                        <span className="text-slate-400 text-sm pt-2">{i + 1}.</span>
-                        <textarea
-                          value={q.prompt}
-                          onChange={(e) => {
-                            const next = [...editCareQuestions];
-                            next[i] = { ...next[i], prompt: e.target.value };
-                            setEditCareQuestions(next);
-                          }}
-                          rows={2}
-                          placeholder="Your prompt — add more wordings on new lines to vary it each time…"
-                          className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
-                        />
-                        {editCareQuestions.length > 1 && (
-                          <button
-                            onClick={() =>
-                              setEditCareQuestions(editCareQuestions.filter((_, j) => j !== i))
-                            }
-                            className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
-                          >
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                      <div className="mt-2 ml-5 flex gap-1.5">
-                        {(
-                          [
-                            { k: "text", label: "Aa Text box" },
-                            { k: "star", label: "⭐ Stars (1–5)" },
-                          ] as const
-                        ).map((opt) => (
-                          <button
-                            key={opt.k}
-                            type="button"
-                            onClick={() => {
-                              const next = [...editCareQuestions];
-                              next[i] = { ...next[i], kind: opt.k };
-                              setEditCareQuestions(next);
-                            }}
-                            className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                              q.kind === opt.k
-                                ? "border-teal-500 bg-teal-50 text-teal-700"
-                                : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
+                  <p className="mb-2 text-[11px] text-slate-400">
+                    A random pick per category locks in for the whole group each
+                    time — saving re-rolls the current pick.
+                  </p>
+                  {editCareCategories.map((cat, ci) => {
+                    const filled = cat.prompts.filter((p) => p.trim()).length;
+                    const maxAsk = Math.max(1, filled || cat.prompts.length);
+                    const updateCats = (
+                      mut: (cats: typeof editCareCategories) => void
+                    ) => {
+                      const next = editCareCategories.map((c) => ({
+                        ...c,
+                        prompts: [...c.prompts],
+                      }));
+                      mut(next);
+                      setEditCareCategories(next);
+                    };
+                    return (
+                      <div
+                        key={ci}
+                        className="mb-2 rounded-lg border border-slate-200 p-2.5"
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-semibold text-slate-500">
+                            Category {ci + 1}
+                          </span>
+                          {editCareCategories.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditCareCategories(
+                                  editCareCategories.filter((_, j) => j !== ci)
+                                )
+                              }
+                              className="text-[11px] text-slate-400 hover:text-red-500"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {cat.prompts.map((p, pi) => (
+                          <div key={pi} className="flex gap-2 mb-2 items-start">
+                            <span className="text-slate-300 text-xs pt-2">
+                              {pi + 1}.
+                            </span>
+                            <textarea
+                              value={p}
+                              onChange={(e) =>
+                                updateCats((next) => {
+                                  next[ci].prompts[pi] = e.target.value;
+                                })
+                              }
+                              rows={2}
+                              placeholder={
+                                engagement.type === "accountability"
+                                  ? "Have you…? / How did you do with…?"
+                                  : "A wording — e.g. What has God been teaching you lately?"
+                              }
+                              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-orange-500 outline-none resize-none"
+                            />
+                            {cat.prompts.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateCats((next) => {
+                                    next[ci].prompts = next[ci].prompts.filter(
+                                      (_, j) => j !== pi
+                                    );
+                                    const nf = next[ci].prompts.filter((x) =>
+                                      x.trim()
+                                    ).length;
+                                    next[ci].ask = Math.min(
+                                      next[ci].ask,
+                                      Math.max(1, nf || next[ci].prompts.length)
+                                    );
+                                  })
+                                }
+                                className="text-slate-400 hover:text-red-500 px-1 pt-1.5"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
                         ))}
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-1">
+                          {cat.prompts.length < 8 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                updateCats((next) => {
+                                  next[ci].prompts.push("");
+                                })
+                              }
+                              className="text-xs text-orange-600 font-medium"
+                            >
+                              + Add wording
+                            </button>
+                          )}
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs text-slate-500">Ask</span>
+                            <select
+                              value={Math.min(cat.ask, maxAsk)}
+                              onChange={(e) =>
+                                updateCats((next) => {
+                                  next[ci].ask = Number(e.target.value);
+                                })
+                              }
+                              className="rounded-lg border border-slate-300 px-2 py-1 text-xs outline-none focus:border-orange-500"
+                            >
+                              {Array.from(
+                                { length: maxAsk },
+                                (_, n) => n + 1
+                              ).map((n) => (
+                                <option key={n} value={n}>
+                                  {n}
+                                </option>
+                              ))}
+                            </select>
+                            <span className="text-xs text-slate-500">
+                              of {maxAsk} each time
+                            </span>
+                          </div>
+                          {engagement.type === "care" && (
+                            <div className="flex gap-1.5">
+                              {(
+                                [
+                                  { k: "text", label: "Text box" },
+                                  { k: "star", label: "⭐ 1–5" },
+                                ] as const
+                              ).map((opt) => (
+                                <button
+                                  key={opt.k}
+                                  type="button"
+                                  onClick={() =>
+                                    updateCats((next) => {
+                                      next[ci].kind = opt.k;
+                                    })
+                                  }
+                                  className={`rounded-full border px-2.5 py-1 text-xs font-medium ${
+                                    cat.kind === opt.k
+                                      ? "border-teal-500 bg-teal-50 text-teal-700"
+                                      : "border-slate-200 bg-white text-slate-500 hover:border-slate-300"
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                  {editCareQuestions.length < 20 && (
+                    );
+                  })}
+                  {editCareCategories.length < 12 && (
                     <button
+                      type="button"
                       onClick={() =>
-                        setEditCareQuestions([
-                          ...editCareQuestions,
-                          { prompt: "", kind: "text" },
+                        setEditCareCategories([
+                          ...editCareCategories,
+                          { prompts: [""], kind: "text", ask: 1 },
                         ])
                       }
                       className="text-sm text-orange-600 font-medium"
                     >
-                      + Add question
+                      + Add category
                     </button>
                   )}
                 </div>
@@ -6139,10 +6905,13 @@ export default function EngagementDetailPage() {
                   `${
                     isCreator
                       ? "Your"
-                      : `${memberNameOf(
-                          engagement.creator_id,
-                          engagement.creator?.display_name
-                        )}'s`
+                      : `${
+                          (engagement.config?.hostName as string | undefined) ||
+                          memberNameOf(
+                            engagement.creator_id,
+                            engagement.creator?.display_name
+                          )
+                        }'s`
                   } ${meta?.label ?? engagement.type}`}
               </p>
               <div className="flex-shrink-0">
@@ -6190,6 +6959,29 @@ export default function EngagementDetailPage() {
             {engagement.description?.trim() || meta?.hook}
           </p>
         )}
+
+        {/* Vote nudge — awards/votes live further down the page, so point voters to them */}
+        {(engagement.type === "hall_of_fame" || engagement.type === "most_likely") &&
+          engagement.status === "active" &&
+          !hasResponded && (
+            <button
+              onClick={() =>
+                document
+                  .getElementById("respond")
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+              className="mb-4 flex w-full items-center justify-between gap-2 rounded-2xl border border-fuchsia-300 bg-fuchsia-50 px-4 py-3 text-left hover:bg-fuchsia-100"
+            >
+              <span className="text-sm font-semibold text-fuchsia-900">
+                🏅 It&apos;s your turn — vote on{" "}
+                {(engagement.config?.questions as string[] | undefined)?.length ?? 0}{" "}
+                awards
+              </span>
+              <span className="shrink-0 rounded-full bg-fuchsia-600 px-3 py-1.5 text-xs font-bold text-white">
+                Vote 👇
+              </span>
+            </button>
+          )}
 
         {/* Progress */}
         <div className="mb-2">
@@ -6507,14 +7299,24 @@ export default function EngagementDetailPage() {
                 <span className="min-w-0 truncate font-medium text-slate-800">
                   {g.name}
                 </span>
-                <button
-                  onClick={() => promoteGuest(g.user_id)}
-                  disabled={promotingGuest === g.user_id}
-                  title={`Add ${g.name} to ${groupInfo?.name || "the group"} as a full member`}
-                  className="flex-shrink-0 rounded-full border border-orange-300 bg-orange-50 px-3 py-1 font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
-                >
-                  {promotingGuest === g.user_id ? "Adding…" : "+ Add to group"}
-                </button>
+                <div className="flex flex-shrink-0 items-center gap-1.5">
+                  <button
+                    onClick={() => promoteGuest(g.user_id)}
+                    disabled={promotingGuest === g.user_id || removingGuest === g.user_id}
+                    title={`Add ${g.name} to ${groupInfo?.name || "the group"} as a full member`}
+                    className="rounded-full border border-orange-300 bg-orange-50 px-3 py-1 font-semibold text-orange-700 hover:bg-orange-100 disabled:opacity-50"
+                  >
+                    {promotingGuest === g.user_id ? "Adding…" : "+ Add to group"}
+                  </button>
+                  <button
+                    onClick={() => removeGuest(g.user_id, g.name)}
+                    disabled={removingGuest === g.user_id || promotingGuest === g.user_id}
+                    title={`Remove ${g.name} from this card (uninvite)`}
+                    className="rounded-full border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-500 hover:border-red-300 hover:text-red-600 disabled:opacity-50"
+                  >
+                    {removingGuest === g.user_id ? "Removing…" : "✕ Remove"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -6576,6 +7378,32 @@ export default function EngagementDetailPage() {
       {/* ── CREATOR CONTROL: force the reveal / end the engagement anytime ── */}
       {isCreator && engagement.status === "active" && (
         <div className="mb-6 rounded-2xl border border-slate-200 bg-white p-4">
+          {/* Deadline passed but still sealed → explain + offer a quick extension */}
+          {deadlinePassed && !engagement.hold_until_deadline && (
+            <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 p-3">
+              <div className="text-sm font-semibold text-amber-900">
+                ⏰ The deadline passed
+              </div>
+              <p className="mt-0.5 text-xs text-amber-800">
+                {responseCount} of {displayExpected} have responded. Left alone,
+                Campfire auto-unlocks this with whoever&apos;s in within ~24h of the
+                deadline. Give it more time, or reveal now below.
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-medium text-amber-800">Extend:</span>
+                {[1, 3, 7].map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => extendDeadline(d)}
+                    disabled={extending}
+                    className="rounded-full border border-amber-300 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    +{d} {d === 1 ? "day" : "days"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="text-sm font-bold text-slate-900">
@@ -6668,6 +7496,157 @@ export default function EngagementDetailPage() {
                 </div>
               </div>
             </label>
+          )}
+        </div>
+      )}
+
+      {/* ── CREATOR CONTROL: manage the recurring series (edit schedule / stop) ── */}
+      {isCreator && !!engagement.recurrence_rule && (
+        <div className="mb-6 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-violet-900">
+                🔁 This repeats{" "}
+                {engagement.recurrence_rule === "daily"
+                  ? "every day"
+                  : engagement.recurrence_rule === "weekly"
+                  ? "every week"
+                  : engagement.recurrence_rule === "monthly"
+                  ? "every month"
+                  : engagement.recurrence_rule === "yearly"
+                  ? "every year"
+                  : "on a schedule"}
+              </div>
+              {monthlyNth ? (
+                <p className="text-xs text-violet-800/80">
+                  Opens the{" "}
+                  <strong>
+                    {describeMonthlyNth(
+                      monthlyNth.week,
+                      monthlyNth.weekday,
+                      monthlyNth.hour,
+                      monthlyNth.minute
+                    )}
+                  </strong>
+                  , stays open {monthlyNth.windowDays}{" "}
+                  {monthlyNth.windowDays === 1 ? "day" : "days"}, then reveals.
+                </p>
+              ) : engagement.recurrence_rule === "monthly" ? (
+                <p className="text-xs text-violet-800/80">
+                  A fresh one posts every month. Want a set release day &amp; an open
+                  window instead? Edit the schedule.
+                </p>
+              ) : (
+                <p className="text-xs text-violet-800/80">
+                  Stopping keeps this one and every past instance — Campfire just
+                  won&apos;t create new ones.
+                </p>
+              )}
+            </div>
+            <div className="flex flex-col items-end gap-1">
+              {engagement.recurrence_rule === "monthly" && !schedEditing && (
+                <button
+                  onClick={openSchedEditor}
+                  className="shrink-0 rounded-full border border-violet-300 bg-white px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-100"
+                >
+                  📅 {monthlyNth ? "Edit schedule" : "Set release day & window"}
+                </button>
+              )}
+              <button
+                onClick={stopRecurring}
+                disabled={stoppingRecur}
+                className="shrink-0 text-xs font-medium text-slate-500 underline hover:text-slate-700 disabled:opacity-50"
+              >
+                {stoppingRecur ? "Stopping…" : "Stop repeating"}
+              </button>
+            </div>
+          </div>
+
+          {/* Schedule editor — release day/time + open window, keeps the recurrence */}
+          {engagement.recurrence_rule === "monthly" && schedEditing && (
+            <div className="mt-3 space-y-2 rounded-xl border border-violet-200 bg-white p-3">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-slate-500">Opens the</span>
+                <select
+                  value={schedWeek}
+                  onChange={(e) => setSchedWeek(parseInt(e.target.value, 10))}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-violet-500"
+                >
+                  {[1, 2, 3, 4, 5].map((w) => (
+                    <option key={w} value={w}>
+                      {ORDINAL_WEEK[w] || `${w}th`}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={schedDow}
+                  onChange={(e) => setSchedDow(parseInt(e.target.value, 10))}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-violet-500"
+                >
+                  {WEEKDAY_NAMES.map((d, i) => (
+                    <option key={i} value={i}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-slate-500">of each month at</span>
+                <input
+                  type="time"
+                  value={schedTime}
+                  onChange={(e) => setSchedTime(e.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-violet-500"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="text-slate-500">Stays open for</span>
+                <select
+                  value={schedWindow}
+                  onChange={(e) => setSchedWindow(parseInt(e.target.value, 10))}
+                  className="rounded-lg border border-slate-300 px-2 py-1.5 outline-none focus:border-violet-500"
+                >
+                  {[1, 2, 3, 4, 5, 7, 10, 14].map((d) => (
+                    <option key={d} value={d}>
+                      {d} {d === 1 ? "day" : "days"}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-slate-500">before results reveal.</span>
+              </div>
+              <p className="text-xs text-slate-500">
+                Next:{" "}
+                <span className="font-medium text-slate-700">
+                  {nextMonthlyNthWeekday(
+                    schedWeek,
+                    schedDow,
+                    parseInt(schedTime.split(":")[0], 10) || 16,
+                    parseInt(schedTime.split(":")[1], 10) || 0,
+                    new Date()
+                  ).toLocaleDateString(undefined, {
+                    weekday: "long",
+                    month: "long",
+                    day: "numeric",
+                    hour: "numeric",
+                    minute: "2-digit",
+                  })}
+                </span>
+                . Applies to every future month; any not-yet-opened one re-anchors to it.
+              </p>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  onClick={() => setSchedEditing(false)}
+                  className="text-xs text-slate-500 underline hover:text-slate-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveSchedule}
+                  disabled={savingSched}
+                  className="rounded-full bg-violet-600 px-4 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {savingSched ? "Saving…" : "Save schedule"}
+                </button>
+              </div>
+            </div>
           )}
         </div>
       )}
@@ -6799,19 +7778,31 @@ export default function EngagementDetailPage() {
             )}
           </div>
 
-          {/* Nudge button — emails everyone who hasn't responded */}
+          {/* Nudge button — emails everyone who hasn't responded. Any member can use
+              it; it's throttled to one gentle reminder a day so nobody gets pestered. */}
+          <input
+            type="text"
+            value={nudgeNote}
+            onChange={(e) => setNudgeNote(e.target.value.slice(0, 140))}
+            placeholder="Add a personal line (optional) — e.g. “We really want you to join!”"
+            className="mb-2 w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:border-amber-400"
+          />
           <div className="flex items-center gap-3">
             <button
               onClick={nudgeStragglers}
               disabled={nudgeMsg === "Sending…"}
               className="rounded-full border border-amber-300 bg-white px-4 py-2 text-sm font-medium text-amber-800 hover:bg-amber-50 disabled:opacity-50"
             >
-              👋 Nudge Stragglers
+              👋 Remind who&apos;s missing
             </button>
             {nudgeMsg && nudgeMsg !== "Sending…" && (
               <span className="text-xs font-medium text-amber-700">{nudgeMsg}</span>
             )}
           </div>
+          <p className="mt-1 text-[11px] text-slate-500">
+            Reminds anyone who hasn&apos;t joined or responded yet. Batched to one gentle
+            reminder a day — Campfire also auto-reminds ~2 days before the reveal.
+          </p>
         </div>
       )}
 
@@ -7328,6 +8319,71 @@ export default function EngagementDetailPage() {
           </div>
         )}
 
+      {/* ── Hall of Fame prize pot — chip in toward the chosen award's winner ── */}
+      {engagement.type === "hall_of_fame" &&
+        engagement.gift_enabled &&
+        engagement.status === "active" &&
+        !engagement.gift_issued_at &&
+        (engagement.config as { hofGiftAward?: number } | null)?.hofGiftAward != null &&
+        (() => {
+          const cfg = engagement.config as {
+            hofGiftAward?: number;
+            questions?: string[];
+          };
+          const label = (cfg.questions ?? [])[cfg.hofGiftAward as number] ?? "the prize";
+          const cur = engagement.gift_currency ?? "usd";
+          const suggestedRaw = (engagement as { gift_suggested_cents?: number[] | null })
+            .gift_suggested_cents;
+          const suggested =
+            suggestedRaw && suggestedRaw.length ? suggestedRaw : [500, 1000, 2000];
+          return (
+            <div className="mb-6 rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5">
+              <div className="text-sm font-bold text-fuchsia-900">
+                🎁 Prize pot — winner of “{label}”
+              </div>
+              <p className="mt-0.5 text-xs text-fuchsia-800/80">
+                Chip in; on the reveal the whole pot is sent to that award&apos;s winner
+                as a gift card.
+              </p>
+              <div className="mt-2 text-2xl font-extrabold text-fuchsia-700">
+                {formatMoney(giftSummary?.total_cents ?? 0, cur)}
+                <span className="ml-2 text-xs font-normal text-slate-500">
+                  in the pot
+                  {(giftSummary?.contributors ?? 0) > 0
+                    ? ` · ${giftSummary?.contributors} chipped in`
+                    : ""}
+                </span>
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {suggested.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => chipIn(c)}
+                    disabled={chippingIn}
+                    className="rounded-full bg-fuchsia-600 px-4 py-1.5 text-sm font-bold text-white hover:opacity-90 disabled:opacity-50"
+                  >
+                    + {formatMoney(c, cur)}
+                  </button>
+                ))}
+                <button
+                  onClick={() => {
+                    const v =
+                      typeof window !== "undefined"
+                        ? window.prompt(`Chip in how much? (${cur.toUpperCase()})`)
+                        : null;
+                    const n = Math.round(parseFloat(v || "0") * 100);
+                    if (n >= 100) chipIn(n);
+                  }}
+                  disabled={chippingIn}
+                  className="rounded-full border border-fuchsia-300 px-4 py-1.5 text-sm font-semibold text-fuchsia-700 hover:bg-fuchsia-100 disabled:opacity-50"
+                >
+                  Other
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
       {/* ── RESPONSE FORM (not yet responded, or editing before the reveal) ── */}
       {engagement.type !== "signup" &&
         engagement.type !== "pledge_drive" &&
@@ -7555,6 +8611,9 @@ export default function EngagementDetailPage() {
 
           {/* Most Likely To… — winner per award */}
           {renderMostLikelyResults()}
+
+          {/* Hall of Fame — vote graph + winner per award */}
+          {renderHallOfFameResults()}
 
           {/* Accountability — per-question ratings */}
           {renderAccountabilityResults()}

@@ -6,7 +6,8 @@ import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
 import { useGroup, useRealtimeGroup, usePresence } from "@/lib/campfire/hooks";
 import { supabase } from "@/lib/campfire/supabase";
-import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf } from "@/lib/campfire/types";
+import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, formatMoney, raffleOf, nextMonthlyNthWeekday } from "@/lib/campfire/types";
+import type { MonthlyNth } from "@/lib/campfire/hooks";
 import { parseInviteList } from "@/lib/campfire/parseInvites";
 
 export default function GroupDetailPage() {
@@ -376,10 +377,38 @@ See you around the campfire! 🏕️`
     .filter((e) => e.status === "active" && !isOpenToSign(e))
     .sort(byNextReveal);
   // "Recurring" = the repeating series (yearly/weekly/…), shown as their own group
-  // whether they're open now or scheduled. Revealed past instances stay in Revealed.
+  // whether they're open now, scheduled, or already revealed. We show only the LATEST
+  // instance of each series (the chain tail — no child in the list) so the series is
+  // always findable + manageable here, without listing every past occurrence.
+  const seriesParentIds = new Set(
+    engagements.map((e) => e.parent_id).filter(Boolean) as string[]
+  );
   const recurringEngagements = engagements
-    .filter((e) => e.status === "active" && e.recurrence_rule)
+    .filter((e) => !!e.recurrence_rule && !seriesParentIds.has(e.id))
     .sort(byNextReveal);
+
+  // When a recurring series' latest instance is already revealed (the next one
+  // hasn't spawned yet), estimate when the next occurrence lands — so the Recurring
+  // tab can look forward instead of showing the finished one's response status.
+  const nextRecurrence = (eng: (typeof engagements)[number]): Date | null => {
+    const mn = (eng.config as { monthlyNth?: MonthlyNth } | null)?.monthlyNth;
+    if (mn)
+      return nextMonthlyNthWeekday(mn.week, mn.weekday, mn.hour, mn.minute, new Date());
+    const days =
+      eng.recurrence_rule === "daily"
+        ? 1
+        : eng.recurrence_rule === "weekly"
+        ? 7
+        : eng.recurrence_rule === "monthly"
+        ? 30
+        : eng.recurrence_rule === "yearly"
+        ? 365
+        : 0;
+    if (!days) return null;
+    let t = new Date(eng.created_at).getTime() + days * 86400000;
+    while (t < Date.now()) t += days * 86400000;
+    return new Date(t);
+  };
   const revealedEngagements = engagements
     .filter((e) => e.status === "revealed")
     .sort((a, b) => byNextReveal(b, a));
@@ -1296,6 +1325,10 @@ See you around the campfire! 🏕️`
             const isDraft = !eng.launched_at; // creator-only until launched (RLS hides from others)
             const isSealed = eng.status === "active" && eng.reveal === "sealed";
             const isRevealed = eng.status === "revealed";
+            // In the Recurring tab a revealed tail is the FINISHED last run — show the
+            // series looking forward (next date) instead of its stale response status.
+            const recurringFinished = tab === "recurring" && isRevealed;
+            const nextRun = recurringFinished ? nextRecurrence(eng) : null;
             const progress = eng.total_expected > 0
               ? Math.round((eng.response_count / eng.total_expected) * 100)
               : 0;
@@ -1352,7 +1385,19 @@ See you around the campfire! 🏕️`
                         🔒 Sealed
                       </span>
                     )}
-                    {isRevealed && (
+                    {/* Recurring tab: the last run is done — point to the next one */}
+                    {recurringFinished && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 border border-violet-300 px-2.5 py-1 text-xs font-semibold text-violet-800">
+                        🗓️ Next
+                        {nextRun
+                          ? ` · ${nextRun.toLocaleDateString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                            })}`
+                          : ""}
+                      </span>
+                    )}
+                    {isRevealed && !recurringFinished && (
                       <span className="inline-flex items-center gap-1 rounded-full bg-green-50 border border-green-200 px-2.5 py-1 text-xs font-semibold text-green-700">
                         ✓ Revealed
                       </span>
@@ -1366,8 +1411,10 @@ See you around the campfire! 🏕️`
                           ✓ Opened
                         </span>
                       )}
-                    {/* Have YOU responded? (skip drafts and the surprise recipient) */}
+                    {/* Have YOU responded? (skip drafts, the surprise recipient, and a
+                        finished recurring run — that badge describes the past instance) */}
                     {!isDraft &&
+                      !recurringFinished &&
                       !(user && (eng.excluded_user_ids ?? []).includes(user.id)) &&
                       (respondedIds.has(eng.id) ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-green-100 border border-green-300 px-2.5 py-1 text-xs font-semibold text-green-800">

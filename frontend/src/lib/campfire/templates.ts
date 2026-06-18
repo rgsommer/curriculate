@@ -129,6 +129,27 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         title: "Solve: what is 7 × 8?",
         description: "First in with the right answer wins!",
       },
+      {
+        id: "scavenger",
+        name: "Scavenger Hunt 🔎",
+        type: "scavenger_hunt",
+        title: "Classroom scavenger hunt 🔎",
+        description:
+          "Find each item and snap a photo or type your answer — sealed until we reveal together.",
+        questions: [
+          "Something red",
+          "A right angle in the room",
+          "A word with 4 syllables",
+          "Something older than you",
+        ],
+      },
+      {
+        id: "read-aloud",
+        name: "Read Aloud 🎤",
+        type: "voice_response",
+        title: "Record your answer 🎤",
+        description: "Leave a quick voice note instead of typing it out.",
+      },
     ],
   },
   {
@@ -195,6 +216,14 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         // Secret Santa by default; the host can switch to by-gender on the page.
         giftExchange: { assign: "person" },
       },
+      {
+        id: "baby-guesses",
+        name: "Baby Name Guesses 🍼",
+        type: "baby_reveal",
+        title: "Guess our baby's name + gender 🍼",
+        description:
+          "Suggest a boy name and a girl name, and guess the gender — sealed until the big reveal! Just for fun (set the reveal date next).",
+      },
     ],
   },
   {
@@ -221,6 +250,14 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
         name: "Gratitude",
         type: "share",
         title: "What are you thankful for this week?",
+      },
+      {
+        id: "ask-counsel",
+        name: "Ask the Group 💡",
+        type: "advice",
+        title: "I'd value your counsel on…",
+        description:
+          "Share something you're weighing — the group offers honest, caring input.",
       },
     ],
   },
@@ -332,6 +369,94 @@ export const TEMPLATE_PACKS: TemplatePack[] = [
           { label: "Meal — day 3", capacity: 1 },
           { label: "Meal — day 4", capacity: 1 },
         ],
+      },
+      {
+        id: "secret-greeting",
+        name: "Secret Greeting 🤫",
+        type: "surprise",
+        title: "Add a secret note 🤫",
+        description:
+          "Everyone adds a greeting hidden from the recipient — it all opens for them at the reveal. Use 'Hide from…' next to pick who it's a surprise for.",
+      },
+    ],
+  },
+  {
+    id: "games-awards",
+    name: "Games & Awards",
+    emoji: "🎲",
+    templates: [
+      {
+        id: "hall-of-fame",
+        name: "Hall of Fame Superlatives 🏅",
+        type: "hall_of_fame",
+        title: "Hall of Fame Superlatives 🏅",
+        description:
+          "Vote a group-mate for each award — sealed until the reveal, then a graph crowns every winner.",
+        questions: [
+          "Best Dressed",
+          "Funniest",
+          "Kindest",
+          "Best Hair",
+          "Best Smile",
+          "Class Clown",
+          "Most Creative",
+          "Most Likely to Be Famous",
+        ],
+      },
+      {
+        id: "most-likely",
+        name: "Most Likely To…",
+        type: "hall_of_fame",
+        title: "Most Likely To… 🏆",
+        description: "Vote a group-mate for each — sealed until the reveal!",
+        questions: [
+          "Most likely to change the world",
+          "Most likely to become famous",
+          "Most likely to start a business",
+          "Always makes everyone laugh",
+          "The friend you can always count on",
+          "Most likely to win a reality show",
+        ],
+      },
+      {
+        id: "guess-who",
+        name: "Mystery Photo 🔍",
+        type: "guess",
+        title: "Guess what this is 🔍",
+        description:
+          "Post a close-up or mystery shot — everyone takes their best guess before the reveal.",
+      },
+      {
+        id: "truth-or-dare",
+        name: "Truth or Dare 🎯",
+        type: "truth_or_dare",
+        title: "Truth or Dare?",
+        description:
+          "Pick truth or dare before you see the prompt — then everyone reveals together.",
+      },
+      {
+        id: "blind-vote",
+        name: "Blind Talent Vote ⚖️",
+        type: "anonymous_judge",
+        title: "Submit your entry — judged blind ⚖️",
+        description:
+          "Everyone submits anonymously; the group rates them with no names attached. Best entry wins.",
+      },
+      {
+        id: "leaderboard",
+        name: "Game-Night Leaderboard ⛳",
+        type: "tournament",
+        title: "Score leaderboard ⛳",
+        description:
+          "Enter your score each round — lowest (golf) or highest total wins. Add a prize if you like!",
+        questions: ["Round 1", "Round 2", "Round 3"],
+      },
+      {
+        id: "group-game",
+        name: "Group Game ♟️",
+        type: "game",
+        title: "Let's play ♟️",
+        description: "A turn-based game for the group — jump in and take your move.",
       },
     ],
   },

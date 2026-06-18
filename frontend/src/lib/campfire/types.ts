@@ -39,6 +39,7 @@ export type EngagementType =
   | "two_truths"
   | "baby_reveal"
   | "most_likely"
+  | "hall_of_fame"
   | "scavenger_hunt"
   | "tournament"
   | "raffle_draw"
@@ -106,21 +107,34 @@ export type CareQuestion = { prompt: string; kind: "text" | "star" };
 // wordings (config.questionPool). Each time a recurring check-in goes out, ONE wording
 // per category is picked at random and locked into config.questions for that whole
 // occurrence — so it varies month to month (everyone still gets the same set).
-export type QuestionCategory = { kind?: "text" | "star"; prompts: string[] };
+export type QuestionCategory = {
+  kind?: "text" | "star";
+  prompts: string[]; // the alternative questions in this category
+  ask?: number; // how many to ask each occurrence (default 1)
+};
 export function selectPoolQuestions(
   pool: QuestionCategory[] | null | undefined,
   type: string
 ): Array<CareQuestion | string> {
   if (!pool || pool.length === 0) return [];
-  return pool
-    .map((c) => ({ kind: c.kind, prompts: (c.prompts ?? []).filter((p) => p.trim()) }))
-    .filter((c) => c.prompts.length > 0)
-    .map((c) => {
-      const prompt = c.prompts[Math.floor(Math.random() * c.prompts.length)].trim();
-      return type === "care"
-        ? ({ prompt, kind: c.kind ?? "text" } as CareQuestion)
-        : prompt;
-    });
+  const out: Array<CareQuestion | string> = [];
+  for (const c of pool) {
+    const prompts = (c.prompts ?? []).map((p) => p.trim()).filter(Boolean);
+    if (prompts.length === 0) continue;
+    const n = Math.min(Math.max(1, Math.round(c.ask ?? 1)), prompts.length);
+    // Shuffle and take n (distinct) — locked for this whole occurrence.
+    const picked = prompts
+      .map((p) => ({ p, r: Math.random() }))
+      .sort((a, b) => a.r - b.r)
+      .slice(0, n)
+      .map((x) => x.p);
+    for (const prompt of picked) {
+      out.push(
+        type === "care" ? ({ prompt, kind: c.kind ?? "text" } as CareQuestion) : prompt
+      );
+    }
+  }
+  return out;
 }
 
 // config.questions for a Care Check-in may be the new {prompt,kind} objects or a
@@ -481,6 +495,7 @@ export const ENGAGEMENT_TYPES: Record<
   two_truths: { icon: "🕵️", label: "Two Truths & a Lie", description: "Everyone shares 3 statements — 2 true, 1 lie — then the group guesses the lie", hook: "Two truths and a lie — can the group spot your fib?", color: "bg-purple-50 text-purple-700" },
   baby_reveal: { icon: "🍼", label: "Baby Reveal", description: "Guests suggest a boy name + a girl name and guess the gender. The parent (host or a chosen member) privately sets the real name & gender — revealed on the big day. Just for fun", hook: "Suggest names + guess the gender — revealed on the big day!", color: "bg-sky-50 text-sky-700" },
   most_likely: { icon: "🏆", label: "Most Likely To…", description: "A set of awards — everyone votes a group-mate for each, sealed until the reveal, then crown the winners", hook: "Vote the awards — winners crowned at the reveal!", color: "bg-amber-50 text-amber-700" },
+  hall_of_fame: { icon: "🏅", label: "Hall of Fame Superlatives", description: "Superlatives! Pick awards from a bubble of ideas (Best Dressed, Funniest, …), everyone votes a group-mate for each, then a graph crowns a winner per award. Optionally gift-card one award's winner", hook: "Vote the superlatives — a graph crowns every winner!", color: "bg-fuchsia-50 text-fuchsia-700" },
   scavenger_hunt: { icon: "🔍", label: "Scavenger Hunt", description: "List items/clues; players answer each with a photo or text, in any order. Sealed until you reveal", hook: "On the hunt — snap a photo or type your answer for each!", color: "bg-lime-50 text-lime-700" },
   tournament: { icon: "⛳", label: "Tournament", description: "A score leaderboard — players enter a number per round/hole; lowest or highest total wins. Add a cash prize. Players don't have to be in the same place", hook: "Post your scores — best total wins!", color: "bg-green-50 text-green-700" },
   pledge_drive: { icon: "🎗️", label: "Pledge Drive", description: "A sponsored challenge (Read-A-Thon, Bike-A-Thon…). Set a goal, invite sponsors who pledge a lump sum or per page/km. On the date the host posts the result and each pledge settles automatically — pay only for what's achieved", hook: "Pledge your support — pay only for what's achieved!", color: "bg-rose-50 text-rose-700" },
@@ -513,8 +528,65 @@ export function resolveTitle(
   return title.replace(/\{age\}\s*/g, "").replace(/\s{2,}/g, " ").trim();
 }
 
+// ── "Did you know?" invite teaser — hints at other Campfire features. Shared by
+// the copy-invite text AND the invite emails so it appears on every invite. ──
+export const CAMPFIRE_TEASER_LINES = [
+  "Collect a group gift card together",
+  "Run a “Best Catch” competition (or any contest) with a prize for the winner",
+  "Send annual birthday cards everyone in your group signs",
+  "Hold a raffle or a read-a-thon fundraiser",
+];
+export const CAMPFIRE_TEASER_FOOTER =
+  "Campfire handles the pot and pays the winner automatically.";
+export function campfireTeaserText(): string {
+  return [
+    "💡 Did you know? With Campfire you can also…",
+    ...CAMPFIRE_TEASER_LINES.map((l) => "• " + l),
+    CAMPFIRE_TEASER_FOOTER,
+  ].join("\n");
+}
+// Static, trusted content (no user input) → safe to embed as HTML directly.
+export function campfireTeaserHtml(): string {
+  return `<div style="margin-top:20px;padding-top:14px;border-top:1px solid #e5e7eb;color:#475569;font-size:14px;line-height:1.5;">
+  <p style="margin:0 0 6px;"><strong>💡 Did you know?</strong> With Campfire you can also:</p>
+  <ul style="margin:0 0 8px;padding-left:18px;">${CAMPFIRE_TEASER_LINES.map(
+    (l) => `<li style="margin-bottom:4px;">${l}</li>`
+  ).join("")}</ul>
+  <p style="margin:0;">${CAMPFIRE_TEASER_FOOTER}</p>
+</div>`;
+}
+
 // ── "Nth weekday of a month" dates (Mother's Day = 2nd Sun May, etc.) ──
 // week: 1-4, or 5/-1 = "last". weekday: 0=Sun … 6=Sat. month: 1-12.
+// Hall of Fame — starter award ideas shown as clickable bubbles in the create flow.
+// The host taps the ones they want (and can add their own).
+export const HALL_OF_FAME_SUGGESTIONS: string[] = [
+  "Best Dressed",
+  "Funniest",
+  "Kindest",
+  "Smartest",
+  "Best Hair",
+  "Best Character",
+  "Most Chalant",
+  "Most Non-Chalant",
+  "Best Trio",
+  "Most Likely to Become a Meme",
+  "Best Teacher",
+  "Best Smile",
+  "Most Athletic",
+  "Class Clown",
+  "Most Creative",
+  "Best Laugh",
+  "Most Helpful",
+  "Best Dance Moves",
+  "Most Likely to Be Famous",
+  "Biggest Foodie",
+  "Most Adventurous",
+  "Best Duo",
+  "Most Spirited",
+  "Teacher's Favourite",
+];
+
 export type NthWeekday = { week: number; weekday: number; month: number };
 
 export function nthWeekdayOfMonth(
@@ -541,6 +613,40 @@ export function nextNthWeekday(p: NthWeekday, from: Date = new Date(), hour = 8)
   return thisYear.getTime() >= from.getTime()
     ? thisYear
     : nthWeekdayOfMonth(from.getFullYear() + 1, p.week, p.weekday, p.month, hour);
+}
+
+// The next "Nth <weekday> of EVERY month at HH:MM" on or after `from` — rolls
+// month by month (week 5 = last). Used for monthly recurring releases like
+// "monthly, 2nd Sunday at 4pm".
+export function nextMonthlyNthWeekday(
+  week: number,
+  weekday: number,
+  hour: number,
+  minute: number,
+  from: Date
+): Date {
+  for (let i = 0; i < 13; i++) {
+    const m = new Date(from.getFullYear(), from.getMonth() + i, 1);
+    const occ = nthWeekdayOfMonth(m.getFullYear(), week, weekday, m.getMonth() + 1, hour);
+    occ.setMinutes(minute, 0, 0);
+    if (occ.getTime() >= from.getTime()) return occ;
+  }
+  const fallback = new Date(from);
+  fallback.setMonth(fallback.getMonth() + 1);
+  return fallback;
+}
+
+// "2nd Sunday at 4:00 PM" — a label for a monthly release pattern.
+export function describeMonthlyNth(
+  week: number,
+  weekday: number,
+  hour: number,
+  minute: number
+): string {
+  const h12 = ((hour + 11) % 12) + 1;
+  const ampm = hour < 12 ? "AM" : "PM";
+  const mm = minute.toString().padStart(2, "0");
+  return `${ORDINAL_WEEK[week] || `${week}th`} ${WEEKDAY_NAMES[weekday]} at ${h12}:${mm} ${ampm}`;
 }
 
 export const ORDINAL_WEEK = ["", "1st", "2nd", "3rd", "4th", "last"];

@@ -21,7 +21,16 @@ import type {
   RevealAnswer,
   CareAnswer,
 } from "./types";
-import { isHouseSchool } from "./types";
+import { isHouseSchool, nextMonthlyNthWeekday } from "./types";
+
+// The monthly Nth-weekday release pattern stored on config.monthlyNth.
+export type MonthlyNth = {
+  week: number;
+  weekday: number;
+  hour: number;
+  minute: number;
+  windowDays: number;
+};
 
 // ── Groups ──
 
@@ -767,6 +776,121 @@ export function useEngagement(engagementId: string) {
     return { error: error?.message ?? null };
   };
 
+  // Schedule the draft to auto-open (and email the group) on a future date. The
+  // deadlines cron opens any unlaunched, non-paused draft whose scheduled_open_at
+  // has passed. Pass null to clear the schedule and go back to a manual draft.
+  const scheduleOpen = async (openAtIso: string | null) => {
+    if (!engagementId) return { error: "Missing engagement" };
+    const { error } = await supabase
+      .from("engagements")
+      .update({ scheduled_open_at: openAtIso, launched_at: null })
+      .eq("id", engagementId);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
+  // Stop a recurring series WITHOUT deleting anything. Recurrence is driven by
+  // recurrence_rule on the chain's tail (the cron spawns the next instance from it),
+  // so we clear recurrence_rule across the whole chain — past and upcoming instances
+  // all stay, they just won't generate any more. Keeps history intact.
+  const stopRecurrence = async () => {
+    if (!engagementId) return { error: "Missing engagement" };
+    // Climb to the root of the chain.
+    let rootId = engagementId;
+    for (let i = 0; i < 120; i++) {
+      const { data } = await supabase
+        .from("engagements")
+        .select("parent_id")
+        .eq("id", rootId)
+        .single();
+      const p = (data?.parent_id as string | null) ?? null;
+      if (!p) break;
+      rootId = p;
+    }
+    // Walk down, collecting every descendant.
+    const ids: string[] = [rootId];
+    let frontier: string[] = [rootId];
+    for (let depth = 0; depth < 120 && frontier.length; depth++) {
+      const { data } = await supabase
+        .from("engagements")
+        .select("id")
+        .in("parent_id", frontier);
+      const kids = (data ?? []).map((r) => r.id as string);
+      if (!kids.length) break;
+      for (const k of kids) ids.push(k);
+      frontier = kids;
+    }
+    const { error } = await supabase
+      .from("engagements")
+      .update({ recurrence_rule: null })
+      .in("id", ids);
+    if (!error) await fetchEngagement();
+    return { error: error?.message ?? null };
+  };
+
+  // Edit the monthly Nth-weekday release pattern + open window of a recurring series
+  // (keeps the recurrence). Applies the new pattern across the chain so all future
+  // months use it, and re-anchors any not-yet-opened instance to the new schedule.
+  const updateMonthlyNth = async (mn: MonthlyNth) => {
+    if (!engagementId) return { error: "Missing engagement" };
+    // Climb to root, then collect every instance in the chain.
+    let rootId = engagementId;
+    for (let i = 0; i < 120; i++) {
+      const { data } = await supabase
+        .from("engagements")
+        .select("parent_id")
+        .eq("id", rootId)
+        .single();
+      const p = (data?.parent_id as string | null) ?? null;
+      if (!p) break;
+      rootId = p;
+    }
+    const ids: string[] = [rootId];
+    let frontier: string[] = [rootId];
+    for (let depth = 0; depth < 120 && frontier.length; depth++) {
+      const { data } = await supabase
+        .from("engagements")
+        .select("id")
+        .in("parent_id", frontier);
+      const kids = (data ?? []).map((r) => r.id as string);
+      if (!kids.length) break;
+      for (const k of kids) ids.push(k);
+      frontier = kids;
+    }
+    const { data: rows } = await supabase
+      .from("engagements")
+      .select("id, config, launched_at")
+      .in("id", ids);
+    for (const row of rows ?? []) {
+      const cfg = {
+        ...((row.config as Record<string, unknown>) ?? {}),
+        monthlyNth: mn,
+      };
+      const patch: Record<string, unknown> = { config: cfg };
+      // Not-yet-opened instances get re-anchored to the new pattern + window.
+      if (!row.launched_at) {
+        const open = nextMonthlyNthWeekday(
+          mn.week,
+          mn.weekday,
+          mn.hour,
+          mn.minute,
+          new Date()
+        );
+        patch.scheduled_open_at = open.toISOString();
+        patch.deadline = new Date(
+          open.getTime() + (mn.windowDays || 3) * 86400000
+        ).toISOString();
+      }
+      const { error } = await supabase
+        .from("engagements")
+        .update(patch)
+        .eq("id", row.id as string);
+      if (error) return { error: error.message };
+    }
+    await fetchEngagement();
+    return { error: null };
+  };
+
   // Creator cancels (deletes) the engagement.
   const deleteEngagement = async () => {
     if (!engagementId) return { error: "Missing engagement" };
@@ -848,6 +972,9 @@ export function useEngagement(engagementId: string) {
     setHoldUntilDeadline,
     setWaitForAllInvited,
     launchEngagement,
+    scheduleOpen,
+    stopRecurrence,
+    updateMonthlyNth,
     deleteEngagement,
     removeResponse,
     reportResponse,
