@@ -2606,7 +2606,11 @@ export function normalizeTaskByType(taskType, rawTask) {
         task.candidates = task.config.candidates;
       }
 
-      // Normalize candidates
+      // Normalize candidates. We DROP any entry missing the load-bearing
+      // fields (name + systemPrompt) before counting — tester Richard
+      // 2026-06-08 saw an interview task with zero usable interviewees
+      // because the AI returned blank-name placeholders that the old
+      // length check let through.
       let cands = Array.isArray(task.candidates) ? task.candidates : [];
       cands = cands
         .filter((c) => c && typeof c === "object")
@@ -2616,9 +2620,10 @@ export function normalizeTaskByType(taskType, rawTask) {
           description: asNonEmptyString(c.description, asNonEmptyString(c.bio, "")),
           greeting: asNonEmptyString(c.greeting, asNonEmptyString(c.intro, "")),
           systemPrompt: asNonEmptyString(c.systemPrompt, asNonEmptyString(c.system, "")),
-        }));
+        }))
+        .filter((c) => c.name.trim() && c.systemPrompt.trim());
       if (cands.length < 2) {
-        errors.push(`interview task needs at least 2 candidates, found ${cands.length}`);
+        errors.push(`interview task needs at least 2 candidates with non-empty name + systemPrompt, found ${cands.length}`);
       }
       task.candidates = cands;
 

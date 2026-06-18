@@ -5660,6 +5660,12 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TEAM_SELFIE]:            { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 1.0, health: 1.0, business: 1.0, religion: 1.0, general: 1.0 },
   [TASK_TYPES.TRUTH_OR_DARE]:          { math: 0.7, science: 0.9, history: 0.95, language: 0.95, arts: 1.0, health: 0.8, business: 0.7, religion: 0.7, general: 0.9 },
   [TASK_TYPES.UPVOTE]:                 { math: 0.5, science: 0.7, history: 1.0,  language: 0.9,  arts: 0.8, health: 0.7, business: 0.9, religion: 1.0,  general: 0.8 },
+  // Interview needs a real historical / notable figure relevant to the
+  // topic. Math + abstract science (e.g. 2D geometry, algebra variables)
+  // rarely yield candidates the AI can fill out into rich personas —
+  // tester Richard 2026-06-08 hit "no one to interview" on a Ch7-9 math
+  // set. Push the affinity DOWN there so it's chosen far less often.
+  [TASK_TYPES.INTERVIEW]:              { math: 0.2, science: 0.5, history: 1.0,  language: 0.9,  arts: 0.7, health: 0.5, business: 0.8, religion: 1.0,  general: 0.7 },
 };
 
 // Subject-detection: map freeform subject strings to affinity bucket keys

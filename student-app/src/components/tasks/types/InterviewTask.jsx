@@ -150,7 +150,15 @@ export default function InterviewTask({ task, onSubmit, disabled }) {
   useEffect(() => { injectStyles(); }, []);
 
   const cfg = task?.config || {};
-  const candidates = task?.candidates || cfg?.candidates || [];
+  // Filter out unusable candidates (no name OR no systemPrompt). A bad
+  // generation used to leave blank-name placeholders, which rendered as
+  // empty "no one to interview" cards (tester Richard 2026-06-08, math set).
+  const rawCandidates = task?.candidates || cfg?.candidates || [];
+  const candidates = (Array.isArray(rawCandidates) ? rawCandidates : []).filter(
+    (c) => c && typeof c === "object" &&
+      String(c.name || c.characterName || "").trim() &&
+      String(c.systemPrompt || c.system || c.persona || "").trim()
+  );
   const minTurns = cfg.minTurns || 3;
   const maxTurns = cfg.maxTurns || 8;
 
@@ -296,6 +304,41 @@ export default function InterviewTask({ task, onSubmit, disabled }) {
 
   // ── SELECT PHASE ──
   if (phase === "select") {
+    // EMPTY-CANDIDATES FALLBACK — the AI didn't produce anyone to
+    // interview for this topic. Tester Richard 2026-06-08: "the interview
+    // task did not have any one to interview". Used to be a silent blank
+    // screen; now we surface the situation and offer a clean skip so the
+    // student isn't stuck staring at "Choose your interviewee" with no
+    // cards. The task is still submittable with `abstained: true`.
+    if (candidates.length === 0) {
+      return (
+        <TaskCardFrame>
+          <div style={{ textAlign: "center", padding: "20px 16px" }}>
+            <div style={{ fontSize: 42, marginBottom: 12 }}>🎙️</div>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#1e293b", marginBottom: 8 }}>
+              No interviewees available
+            </div>
+            <div style={{ fontSize: 14, color: "#64748b", lineHeight: 1.5, maxWidth: 360, margin: "0 auto 18px" }}>
+              The AI couldn't find a good historical figure to interview for this topic.
+              Skip this one — your teacher will see the report and can swap it out.
+            </div>
+            <PrimaryButton
+              onClick={() => {
+                setPhase("done");
+                if (typeof onSubmit === "function") {
+                  onSubmit({ messages: [], totalScore: 0, abstained: true, reason: "no-candidates" });
+                }
+              }}
+              disabled={disabled}
+              style={{ minWidth: 160 }}
+            >
+              Skip task
+            </PrimaryButton>
+          </div>
+        </TaskCardFrame>
+      );
+    }
+
     return (
       <TaskCardFrame>
         <div style={{ textAlign: "center", marginBottom: 16 }}>
