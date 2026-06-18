@@ -1022,6 +1022,7 @@ PAGES.grad=()=>{
 
 /* ---------- BEHAVIOUR ------------------------------------------------- */
 PAGES.behaviour=()=>{
+  if(SESSION.backend && SESSION.schoolId) return behaviourLive();
   const all=[];
   STUDENTS.forEach(s=>s.incidents.forEach(i=>all.push({...i,s})));
   all.sort((a,b)=>b.date.localeCompare(a.date));
@@ -1034,6 +1035,7 @@ PAGES.behaviour=()=>{
 
 /* ---------- AWARDS & HONOUR ROLL ------------------------------------- */
 PAGES.awards=()=>{
+  if(SESSION.backend && SESSION.schoolId) return awardsLive();
   // honour-roll eligibility: average >= 80 across current sections
   const rows=STUDENTS.map(s=>{const enr=studentSections(s.id);const ms=enr.map(sec=>sectionMark(sec,s.id)).filter(m=>m!=='');const avg=ms.length?Math.round(ms.reduce((a,b)=>a+b,0)/ms.length):null;return {s,avg};}).filter(r=>r.avg!=null).sort((a,b)=>b.avg-a.avg);
   const honour=rows.filter(r=>r.avg>=80);
@@ -1096,6 +1098,7 @@ window.postAnn=()=>{const t=$('#annT').value||'Untitled',b=$('#annB').value||'',
 
 /* ---------- PTC BOOKING ---------------------------------------------- */
 PAGES.ptc=()=>{
+  if(SESSION.backend && SESSION.schoolId && SESSION.role!=='parent') return ptcLive();
   const slots=['4:00','4:15','4:30','4:45','5:00','5:15','5:30','5:45','6:00','6:15'];
   const teachers=TEACHERS.slice(0,5);
   if(!window._ptc) window._ptc={};
@@ -1108,6 +1111,7 @@ PAGES.ptc=()=>{
 
 /* ---------- CLUBS ----------------------------------------------------- */
 PAGES.clubs=()=>{
+  if(SESSION.backend && SESSION.schoolId) return clubsLive();
   $('#view').innerHTML=`<div class="card"><div class="row"><h2 style="margin:0">Groups &amp; Clubs</h2><div style="flex:1"></div>${SESSION.role!=='parent'?'<button class="btn sm" onclick="modal(\'New group\',\'<p class=muted>One flexible model covers clubs, teams, committees &amp; homerooms — each with a roster, sponsor, channel &amp; calendar.</p>\')">+ New group</button>':''}</div>
   <div class="sub" style="margin-top:6px">One flexible model covers clubs, teams, committees &amp; homerooms — each with a roster, sponsor, channel &amp; calendar. Participation feeds community hours &amp; awards.</div>
   <div class="grid g3" style="margin-top:6px">
@@ -2046,6 +2050,80 @@ async function ppayLive(){
 PAGES.events=()=>{ if(SESSION.backend&&SESSION.schoolId) return eventsLive(); $('#view').innerHTML='<div class="card"><h2>Events &amp; Forms</h2><div class="muted">Sign in to the live backend to create events with permission forms &amp; fees.</div></div>'; };
 PAGES.finance=()=>{ if(SESSION.backend&&SESSION.schoolId) return financeLive(); $('#view').innerHTML='<div class="card"><h2>Finance</h2><div class="muted">Sign in to the live backend to issue invoices/charges and confirm payments.</div></div>'; };
 PAGES.ppay=()=>{ if(SESSION.backend&&SESSION.schoolId) return ppayLive(); $('#view').innerHTML='<div class="card"><h2>Forms &amp; Fees</h2><div class="muted">Sign in to the live backend to sign forms and pay fees.</div></div>'; };
+
+/* ---------- Behaviour (live) --------------------------------------- */
+async function behaviourLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const [incR,stuR]=await Promise.all([
+    sb.from('incidents').select('id,on_date,type,severity,status,notes, student:students(first_name,last_name,grade)').eq('school_id',SESSION.schoolId).order('on_date',{ascending:false}),
+    sb.from('students').select('id,first_name,last_name').eq('school_id',SESSION.schoolId).order('last_name')]);
+  const inc=incR.data||[], studs=stuR.data||[];
+  window._incAdd=async()=>{ const g=(x)=>document.getElementById(x); const st=g('in_stu').value, m=g('in_msg'); if(!st){m.textContent='Pick a student';return;} const {error}=await sb.from('incidents').insert({school_id:SESSION.schoolId,student_id:st,on_date:g('in_date').value||new Date().toISOString().slice(0,10),type:g('in_type').value||'Incident',severity:g('in_sev').value,notes:g('in_notes').value||null,reported_by:SESSION.user&&SESSION.user.id}); if(error){m.textContent=error.message;return;} behaviourLive(); };
+  window._incStatus=async(id,st)=>{ await sb.from('incidents').update({status:st}).eq('id',id); behaviourLive(); };
+  v.innerHTML=`<div class="notice blue">Workflow: report → review → action → follow-up. Restricted to staff.</div>
+   <div class="card"><h2>Log incident</h2>
+    <div class="row" style="margin-bottom:8px"><select id="in_stu" style="min-width:190px"><option value="">Student…</option>${studs.map(s=>`<option value="${s.id}">${esc(s.last_name)}, ${esc(s.first_name)}</option>`).join('')}</select><input id="in_date" type="date"><input id="in_type" placeholder="Type (e.g., Late, Uniform)" style="flex:1"><select id="in_sev"><option value="minor">Minor</option><option value="moderate">Moderate</option><option value="serious">Serious</option></select></div>
+    <div class="row"><input id="in_notes" placeholder="Notes (restricted)" style="flex:1"><button class="btn sm" onclick="_incAdd()">Log</button><span id="in_msg" class="pf"></span></div></div>
+   <div class="card"><h2>Incident log</h2><table><thead><tr><th>Date</th><th>Student</th><th>Type</th><th>Severity</th><th>Status</th></tr></thead><tbody>
+   ${inc.map(i=>`<tr><td>${i.on_date||''}</td><td>${esc(i.student?i.student.last_name+', '+i.student.first_name:'')}</td><td>${esc(i.type)}</td><td><span class="badge ${i.severity==='serious'?'b-red':i.severity==='moderate'?'b-amber':'b-grey'}">${i.severity}</span></td><td><select onchange="_incStatus('${i.id}',this.value)">${['logged','review','action','follow_up','resolved'].map(s=>`<option ${i.status===s?'selected':''}>${s}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan=5 class=muted>No incidents.</td></tr>'}
+   </tbody></table></div>`;
+}
+/* ---------- Awards & honour roll (live) ---------------------------- */
+async function awardsLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Computing honour roll…</div></div>';
+  const [enrR,asgR,catR,scrR,awR,stuR,yrR]=await Promise.all([
+    sb.from('enrolments').select('student_id,section_id').eq('school_id',SESSION.schoolId),
+    sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy,weighting').eq('school_id',SESSION.schoolId),
+    sb.from('assessment_categories').select('id,section_id,weight').eq('school_id',SESSION.schoolId),
+    sb.from('scores').select('assignment_id,student_id,score,flag').eq('school_id',SESSION.schoolId),
+    sb.from('awards').select('id,name,description, award_recipients(student_id,status)').eq('school_id',SESSION.schoolId),
+    sb.from('students').select('id,first_name,last_name,grade').eq('school_id',SESSION.schoolId),
+    sb.from('academic_years').select('id').eq('school_id',SESSION.schoolId).eq('is_current',true).limit(1)]);
+  const enr=enrR.data||[], asg=asgR.data||[], cats=catR.data||[], scrs=scrR.data||[], awards=awR.data||[], studs=stuR.data||[];
+  const yr=yrR.data&&yrR.data[0]?yrR.data[0].id:null;
+  const sm={}; scrs.forEach(x=>sm[x.student_id+'|'+x.assignment_id]={score:x.score,flag:x.flag});
+  const stuName={}; studs.forEach(s=>stuName[s.id]=s);
+  const byStudent={}; enr.forEach(e=>{ const m=gbMark(cats.filter(c=>c.section_id===e.section_id),asg.filter(a=>a.section_id===e.section_id),(aid)=>sm[e.student_id+'|'+aid]); if(m!==''){ (byStudent[e.student_id]=byStudent[e.student_id]||[]).push(+m);} });
+  const avgs=Object.keys(byStudent).map(sid=>({s:stuName[sid],avg:Math.round(byStudent[sid].reduce((a,b)=>a+b,0)/byStudent[sid].length)})).filter(x=>x.s).sort((a,b)=>b.avg-a.avg);
+  const honour=avgs.filter(x=>x.avg>=80);
+  window._awAdd=async()=>{ const n=document.getElementById('aw_name').value.trim(); if(!n)return; await sb.from('awards').insert({school_id:SESSION.schoolId,name:n,description:document.getElementById('aw_desc').value||null}); awardsLive(); };
+  window._awNom=async(awId)=>{ const sid=document.getElementById('nom_'+awId).value; if(!sid||!yr)return; await sb.from('award_recipients').insert({award_id:awId,student_id:sid,year_id:yr,status:'nominated'}); awardsLive(); };
+  v.innerHTML=`<div class="grid g3"><div class="stat"><div class="n">${honour.length}</div><div class="l">Honour roll (≥80%)</div></div><div class="stat"><div class="n">${avgs.filter(x=>x.avg>=90).length}</div><div class="l">Principal's list (≥90%)</div></div><div class="stat"><div class="n">${awards.length}</div><div class="l">Awards</div></div></div>
+   <div class="grid g2">
+    <div class="card"><h2>Honour roll</h2><div class="sub">Auto-computed from live marks</div><table><tbody>${honour.slice(0,20).map(x=>`<tr><td>${esc(x.s.last_name)}, ${esc(x.s.first_name)} <span class="muted">Gr ${x.s.grade}</span></td><td style="text-align:right"><b>${x.avg}%</b> ${x.avg>=90?'<span class="badge b-purple">Principal&#39;s</span>':'<span class="badge b-green">Honour</span>'}</td></tr>`).join('')||'<tr><td class=muted>No data yet.</td></tr>'}</tbody></table></div>
+    <div class="card"><h2>Awards</h2>
+      <div class="row" style="margin-bottom:8px"><input id="aw_name" placeholder="Award name" style="flex:1"><input id="aw_desc" placeholder="Description" style="flex:1"><button class="btn sm" onclick="_awAdd()">+ Award</button></div>
+      ${awards.map(a=>`<div class="feed-item"><b>${esc(a.name)}</b> <span class="muted">${esc(a.description||'')}</span><div class="muted" style="font-size:11px">${(a.award_recipients||[]).length} recipient(s)</div><div class="row" style="margin-top:6px"><select id="nom_${a.id}"><option value="">Nominate…</option>${studs.map(s=>`<option value="${s.id}">${esc(s.last_name)}, ${esc(s.first_name)}</option>`).join('')}</select><button class="btn ghost sm" onclick="_awNom('${a.id}')">Nominate</button></div></div>`).join('')||'<div class="muted">No awards yet.</div>'}
+    </div></div>`;
+}
+/* ---------- Clubs & rosters (live) --------------------------------- */
+async function clubsLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const [grR,stuR]=await Promise.all([
+    sb.from('groups').select('id,name,category,hours_eligible, group_members(student_id, student:students(first_name,last_name))').eq('school_id',SESSION.schoolId).order('name'),
+    sb.from('students').select('id,first_name,last_name').eq('school_id',SESSION.schoolId).order('last_name')]);
+  const groups=grR.data||[], studs=stuR.data||[];
+  window._gmAdd=async(gid)=>{ const sid=document.getElementById('gm_'+gid).value; if(!sid)return; const {error}=await sb.from('group_members').insert({group_id:gid,school_id:SESSION.schoolId,student_id:sid,member_type:'student'}); if(error){alert(error.message);return;} clubsLive(); };
+  window._gmDel=async(gid,sid)=>{ await sb.from('group_members').delete().eq('group_id',gid).eq('student_id',sid); clubsLive(); };
+  v.innerHTML=`<div class="card"><h2>Groups &amp; clubs</h2><div class="sub">Rosters — add/remove members. Manage member audiences in Admin.</div></div>
+   <div class="grid g2">${groups.map(g=>`<div class="card"><h2>${esc(g.name)}</h2><div class="sub">${esc(g.category||'')}${g.hours_eligible?' • hours-eligible':''} • ${(g.group_members||[]).length} members</div>
+     <table><tbody>${(g.group_members||[]).filter(m=>m.student).map(m=>`<tr><td>${esc(m.student.last_name)}, ${esc(m.student.first_name)}</td><td style="text-align:right"><button class="btn ghost sm" onclick="_gmDel('${g.id}','${m.student_id}')">Remove</button></td></tr>`).join('')||'<tr><td class=muted>No members.</td></tr>'}</tbody></table>
+     <div class="row" style="margin-top:8px"><select id="gm_${g.id}" style="flex:1"><option value="">Add student…</option>${studs.map(s=>`<option value="${s.id}">${esc(s.last_name)}, ${esc(s.first_name)}</option>`).join('')}</select><button class="btn sm" onclick="_gmAdd('${g.id}')">Add</button></div></div>`).join('')||'<div class="muted">No groups. Create them in Admin → Groups &amp; membership.</div>'}</div>`;
+}
+/* ---------- PTC booking (live, admin/teacher) ---------------------- */
+async function ptcLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const [slR,tR]=await Promise.all([
+    sb.from('ptc_slots').select('id,slot_at,teacher_id,booked_by,student_id').eq('school_id',SESSION.schoolId).order('slot_at'),
+    sb.from('memberships').select('user_id, profile:profiles(full_name)').eq('school_id',SESSION.schoolId).eq('role','teacher')]);
+  const slots=slR.data||[], teachers=tR.data||[];
+  window._ptcAdd=async()=>{ const t=document.getElementById('pt_t').value, when=document.getElementById('pt_when').value, m=document.getElementById('pt_msg'); if(!t||!when){m.textContent='Teacher + time required';return;} const {error}=await sb.from('ptc_slots').insert({school_id:SESSION.schoolId,teacher_id:t,slot_at:new Date(when).toISOString()}); if(error){m.textContent=error.message;return;} ptcLive(); };
+  v.innerHTML=`<div class="notice blue">Self-service parent–teacher conference slots. ${teachers.length?'':'No teacher accounts yet — invite teachers to create slots for them.'}</div>
+   <div class="card"><h2>Create a slot</h2><div class="row"><select id="pt_t"><option value="">Teacher…</option>${teachers.map(t=>`<option value="${t.user_id}">${esc(t.profile?t.profile.full_name:'')}</option>`).join('')}</select><input id="pt_when" type="datetime-local"><button class="btn sm" onclick="_ptcAdd()">Add slot</button><span id="pt_msg" class="pf"></span></div></div>
+   <div class="card"><h2>Slots</h2><table><thead><tr><th>When</th><th>Teacher</th><th>Status</th></tr></thead><tbody>
+   ${slots.map(s=>{const t=teachers.find(x=>x.user_id===s.teacher_id);return `<tr><td>${s.slot_at?new Date(s.slot_at).toLocaleString():''}</td><td>${esc(t&&t.profile?t.profile.full_name:'—')}</td><td>${s.booked_by?'<span class="badge b-green">Booked</span>':'<span class="badge b-grey">Open</span>'}</td></tr>`}).join('')||'<tr><td colspan=3 class=muted>No slots.</td></tr>'}
+   </tbody></table></div>`;
+}
 
 /* ============================ BOOT =================================== */
 if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
