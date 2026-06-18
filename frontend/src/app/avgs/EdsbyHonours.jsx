@@ -12,6 +12,7 @@
  */
 
 import { Fragment, useEffect, useState } from "react";
+import { buildSubjectGridCsv, downloadCsvString } from "./gridCsv";
 import { api, getToken, loginHref, ApiError } from "../behavior/_lib/api";
 
 const TIER_LABEL = { "high-honours": "High Honours", honours: "Honours" };
@@ -189,64 +190,10 @@ export default function EdsbyHonours() {
     URL.revokeObjectURL(url);
   }
 
-  // Map an Edsby class name to a subject column: strip the trailing section
-  // ("Geography - 08" → "Geography"), then normalize a few to common labels.
-  function subjectOf(className) {
-    let s = String(className || "").replace(/\s*[-–]\s*\d.*$/, "").trim();
-    const n = s.toLowerCase();
-    if (/^math/.test(n)) return "Math";
-    if (/christian ed|^ce$|religion/.test(n)) return "CE";
-    if (/language arts|^ela$|^language$/.test(n)) return "English";
-    if (/phys.*ed|^pe$|gym/.test(n)) return "PE";
-    return s || className;
-  }
-
-  // Per-student × per-subject grid of the current overall (Final) average — the
-  // grades grid for the report-card sheet. Skips non-academic classes (no grade).
+  // Per-student × per-subject grid of the current/Final average (shared builder).
   function downloadGrid() {
     if (!snapshot) return;
-    const SKIP = /homeroom|learning skill|advisory|study hall/i;
-    const subjects = new Set();
-    const rowsByStudent = snapshot.students.map((s) => {
-      const cell = {};
-      for (const c of s.courses || []) {
-        if (SKIP.test(c.name)) continue;
-        const subj = subjectOf(c.name);
-        subjects.add(subj);
-        if (c.pct !== null && c.pct !== undefined) cell[subj] = c.pct; // keep the numeric average
-      }
-      const [first, ...rest] = String(s.name || "").split(" ");
-      return {
-        last: rest.join(" "),
-        first,
-        grade: s.grade || "",
-        cell,
-        weighted: s.weightedAvg ?? "",
-        improvement: typeof s.improvement === "number" ? s.improvement : "",
-      };
-    });
-    const subjCols = [...subjects].sort();
-    const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    // One comprehensive CSV: every student, every subject, plus the weighted
-    // average and the change since the last refresh.
-    const header = ["Last Name", "First Name", "Grade", ...subjCols, "Weighted Avg", "Change vs last run"];
-    const lines = [header.map(esc).join(",")];
-    rowsByStudent
-      .sort((a, b) => (a.grade + a.last).localeCompare(b.grade + b.last))
-      .forEach((r) => {
-        lines.push(
-          [r.last, r.first, r.grade, ...subjCols.map((s) => r.cell[s] ?? ""), r.weighted, r.improvement]
-            .map(esc)
-            .join(",")
-        );
-      });
-    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "edsby-subject-grid.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsvString(buildSubjectGridCsv(snapshot.students), "edsby-subject-grid.csv");
   }
 
   // ── render ──────────────────────────────────────────────────────────────────

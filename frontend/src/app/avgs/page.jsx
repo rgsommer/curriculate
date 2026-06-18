@@ -15,6 +15,7 @@
 import { useRef, useState } from "react";
 import EdsbyHonours from "./EdsbyHonours";
 import EdsbyGradebookGrid from "./EdsbyGradebookGrid";
+import OneClickFinalGrades from "./OneClickFinalGrades";
 
 const API = process.env.NEXT_PUBLIC_BACKEND_URL || "https://api.curriculate.net";
 
@@ -334,14 +335,21 @@ export default function AvgsPage() {
         </span>
       </div>
       <p className="mt-2 text-slate-600">
-        Upload report cards for any number of students (PDF, CSV, text, or photos). AI pulls out each
-        student&apos;s <strong>final grade</strong> in every course, weights each course by how many days a
-        week it meets, and ranks students by weighted average within each grade level.
+        Build a grade grid three ways: drop a whole report-card <strong>PDF</strong> (AI extracts grades), pull
+        <strong> live from Edsby</strong>, or — for T1/Final per subject — drop your <strong>Edsby class gradebook
+        CSV exports</strong> in the “Build a T1 / Final grid” section below. The first two are collapsed; expand if you need them.
       </p>
 
-      {/* Upload */}
-      <section className="mt-8 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-800">1. Upload report cards</h2>
+      {/* Primary, one-click action: pull all Final grades → CSV */}
+      <OneClickFinalGrades />
+
+      {/* Upload report cards (PDF/photos → AI) — collapsed by default */}
+      <details className="mt-8 rounded-xl border border-slate-200 bg-white shadow-sm">
+        <summary className="cursor-pointer select-none p-6 text-lg font-semibold text-slate-800">
+          Upload report cards (PDF or photos → AI)
+          <span className="ml-2 text-sm font-normal text-slate-400">— optional; not for Edsby class CSVs</span>
+        </summary>
+        <div className="px-6 pb-6">
         <input
           ref={fileInputRef}
           type="file"
@@ -396,7 +404,8 @@ export default function AvgsPage() {
 
         {status && <p className="mt-3 animate-pulse text-sm text-slate-500">{status}</p>}
         {error && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      </section>
+        </div>
+      </details>
 
       {/* Results */}
       {groups && (
@@ -488,7 +497,14 @@ export default function AvgsPage() {
         </section>
       )}
 
-      <EdsbyHonours />
+      <details className="mt-10">
+        <summary className="cursor-pointer select-none text-lg font-semibold text-slate-800">
+          Honour roll — live from Edsby
+          <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-700">beta</span>
+          <span className="ml-2 text-sm font-normal text-slate-400">— current/Final only; click to expand</span>
+        </summary>
+        <EdsbyHonours />
+      </details>
       <EdsbyGradebookGrid />
     </main>
   );
