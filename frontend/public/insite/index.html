@@ -617,7 +617,8 @@ async function enterBackend(){
   if(schoolId){ try{ const s=await sb.from('schools').select('name').eq('id',schoolId).single(); schoolName=s.data?s.data.name:''; }catch(e){} }
   SESSION={ role, backend:true, user, profile:prof, schoolId, schoolName, platform, memberships };
   if(role==='student'){ try{ const st=await sb.from('students').select('id,first_name,last_name,grade').eq('profile_id',user.id).limit(1); if(st.data&&st.data.length){ SESSION.studentId=st.data[0].id; SESSION.studentRow=st.data[0]; } }catch(e){} SESSION.student=demoStudent(); }
-  if(role==='parent') SESSION.child=demoChild();
+  if(role==='parent'){ try{ const g=await sb.from('guardians').select('id,full_name,email,phone,address, links:student_guardians(student:students(id,first_name,last_name,grade))').eq('profile_id',user.id).limit(1);
+      if(g.data&&g.data.length){ SESSION.guardian=g.data[0]; SESSION.children=(g.data[0].links||[]).map(l=>l.student).filter(Boolean); SESSION.childId=SESSION.children[0]?SESSION.children[0].id:null; } }catch(e){} SESSION.child=demoChild(); }
   if(prof&&prof.full_name) ROLES[role].name=prof.full_name;
   showBackendConnected(user, prof, role, schoolName, platform, schoolId);
 }
@@ -1228,21 +1229,22 @@ PAGES.mymsg=()=>{
 /* ========================================================================
    PARENT-role pages (scoped to child)
    ===================================================================== */
-PAGES.pdash=()=>{ $('#view').innerHTML=parentOverviewHtml(SESSION.child); };
-PAGES.pmarks=()=>{ openSelfMarks(SESSION.child); };
+PAGES.pdash=()=>{ if(SESSION.backend && SESSION.schoolId) return pdashLive(); $('#view').innerHTML=parentOverviewHtml(SESSION.child); };
+PAGES.pmarks=()=>{ if(SESSION.backend && SESSION.schoolId) return pmarksLive(); openSelfMarks(SESSION.child); };
 PAGES.pattend=()=>{
+  if(SESSION.backend && SESSION.schoolId) return pattendLive();
   $('#view').innerHTML=`<div class="card"><h2>${SESSION.child.first}'s attendance</h2>
     <div class="grid g3"><div class="stat"><div class="n">97%</div><div class="l">Present</div></div><div class="stat"><div class="n">2</div><div class="l">Late</div></div><div class="stat"><div class="n">1</div><div class="l">Absence</div></div></div>
     <div class="pf">You're notified automatically about unexplained absences.</div></div>`;
 };
-PAGES.preport=()=>{ go('reportcard',SESSION.child.id); };
-PAGES.phours=()=>{ openParentHours(); };
+PAGES.preport=()=>{ if(SESSION.backend && SESSION.schoolId) return preportLive(); go('reportcard',SESSION.child.id); };
+PAGES.phours=()=>{ if(SESSION.backend && SESSION.schoolId) return phoursLive(); openParentHours(); };
 function openParentHours(){ const c=SESSION.child;
   $('#view').innerHTML=`<div class="card"><h2>Community hours</h2><div class="sub">Ontario 40-hour requirement</div>
     <div class="row"><div class="progress ${hoursOf(c)>=40?'green':'amber'}" style="flex:1"><i style="width:${Math.min(100,hoursOf(c)/40*100)}%"></i></div><b>${hoursOf(c)} / 40</b></div>
     <div class="pf" style="margin-top:8px">Hours are logged by the school and verified for the OSSD.</div></div>`;
 }
-PAGES.pmsg=()=>{ PAGES.mymsg(); };
+PAGES.pmsg=()=>{ if(SESSION.backend && SESSION.schoolId) return pmsgLive(); PAGES.mymsg(); };
 PAGES.pptc=()=>{ PAGES.ptc(); };
 PAGES.pann=async()=>{
   if(SESSION.backend && SESSION.schoolId){ const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>'; const posts=await loadPosts(); v.innerHTML=`<div class="card"><h2>Announcements</h2><div class="sub">From the school — reply where allowed</div>${postsBlock(posts, ()=>go('pann'))}</div>`; return; }
@@ -1934,6 +1936,51 @@ function postsBlock(posts, reRenderFn){
     ${(p.post_replies||[]).slice().sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')).map(r=>`<div style="margin-top:6px;font-size:13px;padding-left:10px;border-left:2px solid var(--line)"><b>${esc(r.author?r.author.full_name:'—')}:</b> ${esc(r.body)}</div>`).join('')}
     ${p.response_policy==='respond'?`<div class="row" style="margin-top:8px"><input id="pr_${p.id}" placeholder="Write a reply…" style="flex:1"><button class="btn ghost sm" onclick="_postReply('${p.id}')">Reply</button></div>`:''}
   </div>`).join('')||'<div class="muted">No posts.</div>';
+}
+
+/* ---------- Parent self-service portal (live) ---------------------- */
+function pChild(){ return (SESSION.children||[]).find(c=>c.id===SESSION.childId)||(SESSION.children||[])[0]||null; }
+function pChildPicker(back){ if(!SESSION.children||SESSION.children.length<2) return ''; return `<div class="row" style="margin-bottom:10px"><span class="muted">Child:</span><select onchange="SESSION.childId=this.value; go('${back}')">${SESSION.children.map(c=>`<option value="${c.id}" ${c.id===SESSION.childId?'selected':''}>${esc(c.first_name)} ${esc(c.last_name)}</option>`).join('')}</select></div>`; }
+async function pdashLive(){
+  const v=$('#view'); const child=pChild(); const g=SESSION.guardian||{};
+  window._gSave=async()=>{ const u={full_name:document.getElementById('g_name').value,phone:document.getElementById('g_phone').value,address:document.getElementById('g_addr').value}; const m=document.getElementById('g_msg'); const {error}=await sb.from('guardians').update(u).eq('id',g.id); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} m.style.color='var(--green)';m.textContent='Saved'; SESSION.guardian=Object.assign(g,u); };
+  v.innerHTML=`${pChildPicker('pdash')}<div class="grid g2">
+    <div class="card"><h2>My details</h2><div class="sub">Update your contact information</div>
+      <div class="kv" style="grid-template-columns:80px 1fr"><div class="k">Name</div><div><input id="g_name" value="${esc(g.full_name||'')}" style="width:100%"></div>
+      <div class="k">Email</div><div>${esc(g.email||'')} <span class="muted" style="font-size:11px">(sign-in)</span></div>
+      <div class="k">Phone</div><div><input id="g_phone" value="${esc(g.phone||'')}" style="width:100%"></div>
+      <div class="k">Address</div><div><input id="g_addr" value="${esc(g.address||'')}" style="width:100%"></div></div>
+      <div class="row" style="margin-top:8px"><button class="btn sm" onclick="_gSave()">Save</button><span id="g_msg" class="pf"></span></div></div>
+    <div class="card"><h2>${child?esc(child.first_name):'Child'} at a glance</h2>
+      ${child?`<div class="kv" style="grid-template-columns:90px 1fr"><div class="k">Grade</div><div>${child.grade}</div></div>
+      <div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="go('pmarks')">Marks</button><button class="btn ghost sm" onclick="go('pattend')">Attendance &amp; absences</button><button class="btn ghost sm" onclick="go('preport')">Report cards</button><button class="btn ghost sm" onclick="go('pmsg')">Message a teacher</button></div>`:'<div class="muted">No child is linked to your account yet — the school links you when you accept your invitation.</div>'}
+    </div></div>`;
+}
+async function pmarksLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>'; const courses=await liveStudentCourses(child.id); v.innerHTML=`${pChildPicker('pmarks')}<div class="card"><h2>${esc(child.first_name)}'s marks</h2><div class="sub">As released by the school</div><table><tbody>${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> <span class="muted">${esc(c.name||'')}</span></td><td style="text-align:right"><b>${c.mark===''?'—':c.mark+'%'}</b> <span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td class=muted>No released marks yet.</td></tr>'}</tbody></table></div>`; }
+async function pattendLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const {data:abs}=await sb.from('absence_requests').select('id,start_date,end_date,reason,status').eq('student_id',child.id).order('start_date',{ascending:false});
+  window._absReq=async()=>{ const s=document.getElementById('ab_s').value,e=document.getElementById('ab_e').value,r=document.getElementById('ab_r').value,m=document.getElementById('ab_m'); if(!s||!e){m.style.color='var(--red)';m.textContent='Pick dates';return;} const {error}=await sb.from('absence_requests').insert({school_id:SESSION.schoolId,student_id:child.id,requested_by:SESSION.user&&SESSION.user.id,start_date:s,end_date:e,reason:r||null}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} pattendLive(); };
+  v.innerHTML=`${pChildPicker('pattend')}<div class="card"><h2>Request a planned absence</h2><div class="sub">Goes to the divisional admin; if approved it appears in daily attendance as excused.</div>
+   <div class="row" style="margin-bottom:8px"><span class="muted">From</span><input id="ab_s" type="date"><span class="muted">to</span><input id="ab_e" type="date"><input id="ab_r" placeholder="Reason" style="flex:1"><button class="btn sm" onclick="_absReq()">Request</button><span id="ab_m" class="pf"></span></div>
+   <div class="hr"></div><b>Your requests</b><table><tbody>${(abs||[]).map(a=>`<tr><td>${a.start_date} → ${a.end_date}</td><td class="muted">${esc(a.reason||'')}</td><td style="text-align:right"><span class="badge ${a.status==='approved'?'b-green':a.status==='denied'?'b-red':'b-amber'}">${a.status}</span></td></tr>`).join('')||'<tr><td class=muted>No requests yet.</td></tr>'}</tbody></table></div>`;
+}
+async function phoursLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} const {data:hrs}=await sb.from('community_hours').select('hours').eq('student_id',child.id); const tot=(hrs||[]).reduce((a,b)=>a+(+b.hours||0),0); v.innerHTML=`${pChildPicker('phours')}<div class="card"><h2>Community hours</h2><div class="sub">Ontario 40-hour requirement</div><div class="row"><div class="progress ${tot>=40?'green':'amber'}" style="flex:1"><i style="width:${Math.min(100,tot/40*100)}%"></i></div><b>${tot} / 40</b></div></div>`; }
+async function pmsgLive(){ const v=$('#view'); const child=pChild(); let recips=[];
+  if(child){ const {data:enr}=await sb.from('enrolments').select('section:sections(teacher_id,teacher_name,course:courses(code))').eq('student_id',child.id); (enr||[]).forEach(e=>{const s=e.section; if(s&&s.teacher_id) recips.push({id:s.teacher_id,name:(s.teacher_name||'Teacher')+' ('+(s.course?s.course.code:'')+')'});}); }
+  const {data:admins}=await sb.from('memberships').select('user_id,profile:profiles(full_name)').eq('school_id',SESSION.schoolId).eq('role','admin'); (admins||[]).forEach(a=>recips.push({id:a.user_id,name:(a.profile?a.profile.full_name:'Office')+' — Office'}));
+  const seen={}; recips=recips.filter(r=>r.id&&!seen[r.id]&&(seen[r.id]=1));
+  const {data:threads}=await sb.from('threads').select('id,subject,created_at').order('created_at',{ascending:false});
+  window._pmsgSend=async()=>{ const to=document.getElementById('pm_to').value,body=document.getElementById('pm_body').value.trim(),m=document.getElementById('pm_msg'); if(!to){m.style.color='var(--red)';m.textContent='Choose a recipient';return;} if(!body)return; const {error}=await sb.rpc('start_message',{p_to:to,p_subject:document.getElementById('pm_subj').value||'Message',p_body:body,p_student:child?child.id:null}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} pmsgLive(); };
+  v.innerHTML=`<div class="card"><h2>Message a teacher</h2><div class="row" style="margin-bottom:8px"><select id="pm_to"><option value="">Choose recipient…</option>${recips.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select><input id="pm_subj" placeholder="Subject" style="flex:1"></div><div class="row"><input id="pm_body" placeholder="Message…" style="flex:1"><button class="btn" onclick="_pmsgSend()">Send</button><span id="pm_msg" class="pf"></span></div>${recips.length?'':'<div class="pf" style="margin-top:6px">No teacher accounts linked to your child&#39;s classes yet.</div>'}</div>
+   <div class="card"><h2>Conversations</h2>${(threads||[]).map(t=>`<div class="feed-item click" onclick="openThreadLive('${t.id}','pmsg')"><b>${esc(t.subject||'Conversation')}</b></div>`).join('')||'<div class="muted">No conversations.</div>'}</div>`;
+}
+async function preportLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const {data:rc}=await sb.from('report_cards').select('status,released_at').eq('student_id',child.id).eq('status','released').order('released_at',{ascending:false}).limit(1);
+  if(!rc||!rc.length){ v.innerHTML=`${pChildPicker('preport')}<div class="card"><h2>Report cards</h2><div class="muted">No report card has been released to you yet.</div></div>`; return; }
+  const courses=await liveStudentCourses(child.id);
+  v.innerHTML=`${pChildPicker('preport')}<div class="rc"><div class="rc-hd"><b>Provincial Report Card</b><div style="font-size:12px;opacity:.85">${esc(SESSION.schoolName||'')} • released ${rc[0].released_at?new Date(rc[0].released_at).toLocaleDateString():''}</div></div>
+   <div class="rc-body"><table><thead><tr><th>Course</th><th style="text-align:center">%</th><th style="text-align:center">Level</th></tr></thead><tbody>${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> ${esc(c.name||'')}</td><td style="text-align:center"><b>${c.mark===''?'—':c.mark+'%'}</b></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')}</tbody></table>
+   <div class="row" style="margin-top:10px"><button class="btn ghost sm" onclick="window.print()">Print / PDF</button></div></div></div>`;
 }
 
 /* ============================ BOOT =================================== */
