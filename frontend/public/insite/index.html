@@ -616,7 +616,7 @@ async function enterBackend(){
   let schoolName='';
   if(schoolId){ try{ const s=await sb.from('schools').select('name').eq('id',schoolId).single(); schoolName=s.data?s.data.name:''; }catch(e){} }
   SESSION={ role, backend:true, user, profile:prof, schoolId, schoolName, platform, memberships };
-  if(role==='student') SESSION.student=demoStudent();
+  if(role==='student'){ try{ const st=await sb.from('students').select('id,first_name,last_name,grade').eq('profile_id',user.id).limit(1); if(st.data&&st.data.length){ SESSION.studentId=st.data[0].id; SESSION.studentRow=st.data[0]; } }catch(e){} SESSION.student=demoStudent(); }
   if(role==='parent') SESSION.child=demoChild();
   if(prof&&prof.full_name) ROLES[role].name=prof.full_name;
   showBackendConnected(user, prof, role, schoolName, platform, schoolId);
@@ -1186,6 +1186,7 @@ function openSelfMarks(s){
     <div class="pf" style="margin-top:8px">Levels: 4 (80–100), 3 (70–79, provincial standard), 2 (60–69), 1 (50–59).</div></div>`;
 }
 PAGES.myassign=()=>{
+  if(SESSION.backend && SESSION.studentId) return myAssignLive();
   const s=SESSION.student; const sec=studentSections(s.id)[0];
   $('#view').innerHTML=`<div class="card"><h2>My assignments</h2><div class="sub">Across my courses</div>
     <table><thead><tr><th>Course</th><th>Assignment</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>
@@ -1267,30 +1268,51 @@ async function studentsLive(){
     <div class="pf" style="margin-top:8px">Read live from Postgres under Row-Level Security — you see only your school's records.</div></div>`;
   $('#stsearch').oninput=e=>render(e.target.value); render();
 }
+/* Shared mark engine — honours category weights, per-assignment kind
+   (normal/essential/bonus/ignored), blank_policy (ignored/zero) and per-score
+   flag (none/late/essential/bonus/ignored/zero). getScore(aid) -> {score,flag}. */
+function gbMark(cats, asg, getScore){
+  let tot=0, wsum=0, bonus=0;
+  (asg||[]).forEach(a=>{
+    if(a.kind==='bonus'){ const so=getScore(a.id); if(so&&so.score!=null&&so.flag!=='ignored'&&a.denominator){ bonus += Math.min(2,(so.score/a.denominator)*2); } }
+  });
+  (cats||[]).forEach(c=>{
+    const cas=(asg||[]).filter(a=>a.category_id===c.id && a.kind!=='ignored' && a.kind!=='bonus');
+    let sum=0,n=0;
+    cas.forEach(a=>{ const so=getScore(a.id)||{}; const flag=so.flag||'none'; if(flag==='ignored') return;
+      let val=so.score;
+      if(val==null){ if(a.blank_policy==='zero'||flag==='zero') val=0; else return; }
+      if(flag==='zero') val=0;
+      if(a.denominator){ sum+=(val/a.denominator)*100; n++; }
+    });
+    if(n){ tot+=(sum/n)*c.weight; wsum+=c.weight; }
+  });
+  if(wsum===0 && bonus===0) return '';
+  let m = (wsum? tot/wsum : 0) + bonus;
+  return Math.round(Math.min(100, m));
+}
 async function liveStudentCourses(studentId){
   const { data: enr } = await sb.from('enrolments')
     .select('section:sections(id,period,room,teacher_name,course:courses(code,name,grade,credit))')
     .eq('student_id', studentId);
   const secs=(enr||[]).map(e=>e.section).filter(Boolean);
   const sectionIds=secs.map(s=>s.id);
-  let scrs=[], cats=[];
+  let asg=[], cats=[], scrs=[];
   if(sectionIds.length){
-    const sc=await sb.from('scores').select('score,assignment:assignments(denominator,category_id,section_id)').eq('student_id',studentId);
-    scrs=sc.data||[];
-    const ct=await sb.from('assessment_categories').select('id,weight,section_id').in('section_id',sectionIds);
-    cats=ct.data||[];
+    const a=await sb.from('assignments').select('id,denominator,category_id,section_id,kind,blank_policy').in('section_id',sectionIds); asg=a.data||[];
+    const c=await sb.from('assessment_categories').select('id,weight,section_id').in('section_id',sectionIds); cats=c.data||[];
+    const aids=asg.map(x=>x.id);
+    if(aids.length){ const s=await sb.from('scores').select('assignment_id,score,flag').eq('student_id',studentId).in('assignment_id',aids); scrs=s.data||[]; }
   }
+  const scoreMap={}; scrs.forEach(s=>scoreMap[s.assignment_id]={score:s.score,flag:s.flag});
   return secs.map(sec=>{
-    const secCats=cats.filter(c=>c.section_id===sec.id);
-    let tot=0,wsum=0;
-    secCats.forEach(cat=>{
-      const cs=scrs.filter(s=>s.assignment && s.assignment.section_id===sec.id && s.assignment.category_id===cat.id && s.score!=null && s.assignment.denominator);
-      if(cs.length){ let sum=0; cs.forEach(s=>sum+=(s.score/s.assignment.denominator)*100); tot+=(sum/cs.length)*cat.weight; wsum+=cat.weight; }
-    });
-    const mark = wsum? Math.round(tot/wsum) : '';
+    const sCats=cats.filter(c=>c.section_id===sec.id);
+    const sAsg=asg.filter(a=>a.section_id===sec.id);
+    const mark=gbMark(sCats,sAsg,(aid)=>scoreMap[aid]);
     return { code:sec.course?.code, name:sec.course?.name, grade:sec.course?.grade, teacher:sec.teacher_name, mark };
   });
 }
+window.gbOpenFile=async(bucket,path)=>{ const {data,error}=await sb.storage.from(bucket).createSignedUrl(path,3600); if(error){alert(error.message);return;} if(data&&data.signedUrl) window.open(data.signedUrl,'_blank'); };
 window.openStudentLive=async(id)=>{
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading student…</div></div>';
   const { data: s, error } = await sb.from('students').select('*').eq('id',id).single();
@@ -1331,42 +1353,118 @@ async function liveSections(){
 }
 
 /* ---------- Gradebook (live, with score editing) -------------------- */
+let _gbSec=null;
 async function gradebookLive(secId){
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading gradebook…</div></div>';
   const secs=await liveSections();
   if(!secs.length){ v.innerHTML='<div class="card"><div class="notice">No sections in this school yet.</div></div>'; return; }
-  const sec=secs.find(s=>s.id===secId)||secs[0];
+  const sec=secs.find(s=>s.id===secId)||secs.find(s=>s.id===_gbSec)||secs[0]; _gbSec=sec.id;
   const { data: enr } = await sb.from('enrolments').select('student:students(id,first_name,last_name)').eq('section_id',sec.id);
   const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((a,b)=>a.last_name.localeCompare(b.last_name));
-  const { data: cats } = await sb.from('assessment_categories').select('id,code,weight').eq('section_id',sec.id);
-  const { data: asg } = await sb.from('assignments').select('id,title,denominator,category_id').eq('section_id',sec.id).order('due_at');
+  const { data: cats } = await sb.from('assessment_categories').select('id,code,weight').eq('section_id',sec.id).order('code');
+  const { data: asg } = await sb.from('assignments').select('id,title,denominator,category_id,kind,blank_policy').eq('section_id',sec.id).order('due_at');
   const aids=(asg||[]).map(a=>a.id);
-  const { data: scrs } = aids.length ? await sb.from('scores').select('assignment_id,student_id,score').in('assignment_id',aids) : {data:[]};
-  const scoreMap={}; (scrs||[]).forEach(s=>scoreMap[s.student_id+'|'+s.assignment_id]=s.score);
+  const { data: scrs } = aids.length ? await sb.from('scores').select('assignment_id,student_id,score,flag').in('assignment_id',aids) : {data:[]};
+  const scoreMap={}; (scrs||[]).forEach(s=>scoreMap[s.student_id+'|'+s.assignment_id]={score:s.score,flag:s.flag});
   const catById={}; (cats||[]).forEach(c=>catById[c.id]=c);
-  const calc=(sid)=>{ let tot=0,wsum=0; (cats||[]).forEach(c=>{ const cas=(asg||[]).filter(a=>a.category_id===c.id); let sum=0,n=0; cas.forEach(a=>{const val=scoreMap[sid+'|'+a.id]; if(val!=null&&a.denominator){sum+=(val/a.denominator)*100;n++;}}); if(n){tot+=(sum/n)*c.weight;wsum+=c.weight;} }); return wsum?Math.round(tot/wsum):''; };
+  const calc=(sid)=>gbMark(cats,asg,(aid)=>scoreMap[sid+'|'+aid]);
   window._gbLiveSave=async(aid,sid,inp)=>{ let val=inp.value.trim(); const a=(asg||[]).find(x=>x.id===aid);
     if(val!==''&&(isNaN(val)||+val<0||+val>a.denominator)){inp.style.borderColor='var(--red)';return;}
     inp.style.borderColor='var(--line)';
     const { error } = await sb.from('scores').upsert({school_id:SESSION.schoolId,assignment_id:aid,student_id:sid,score:val===''?null:+val},{onConflict:'assignment_id,student_id'});
     if(error){ inp.style.borderColor='var(--red)'; inp.title=error.message; return; }
-    scoreMap[sid+'|'+aid]= val===''?null:+val; const m=calc(sid); const L=pctToLevel(m);
+    const prev=scoreMap[sid+'|'+aid]||{}; scoreMap[sid+'|'+aid]={score:val===''?null:+val,flag:prev.flag}; const m=calc(sid); const L=pctToLevel(m);
     const mc=document.querySelector('[data-mark="'+sid+'"]'); if(mc) mc.textContent=(m===''?'—':m+'%');
     const lc=document.querySelector('[data-lvl="'+sid+'"]'); if(lc) lc.innerHTML=`<span class="badge ${L.c} lvl">${L.l}</span>`;
   };
-  const head=(asg||[]).map(a=>`<th style="text-align:center" title="${esc(a.title)}">${esc(a.title.split(' ')[0])}<div style="font-weight:400;text-transform:none;color:var(--muted)">/${a.denominator} · ${catById[a.category_id]?catById[a.category_id].code:''}</div></th>`).join('');
+  const kindMark={normal:'',essential:'★',bonus:'+',ignored:'∅'};
+  const head=(asg||[]).map(a=>`<th style="text-align:center;cursor:pointer" title="${esc(a.title)} — open to grade & comment" onclick="assignmentViewLive('${a.id}')">${esc(a.title.split(' ')[0])} ${kindMark[a.kind]||''}<div style="font-weight:400;text-transform:none;color:var(--muted)">/${a.denominator} · ${catById[a.category_id]?catById[a.category_id].code:''}</div></th>`).join('');
   const rows=roster.map(s=>{
-    const cells=(asg||[]).map(a=>{const val=scoreMap[s.id+'|'+a.id];return `<td style="text-align:center"><input class="score-in" value="${val==null?'':val}" onchange="_gbLiveSave('${a.id}','${s.id}',this)"></td>`;}).join('');
+    const cells=(asg||[]).map(a=>{const so=scoreMap[s.id+'|'+a.id]||{};const fl=so.flag&&so.flag!=='none'?'border-bottom:2px solid var(--amber)':'';return `<td style="text-align:center"><input class="score-in" style="${fl}" value="${so.score==null?'':so.score}" onchange="_gbLiveSave('${a.id}','${s.id}',this)"></td>`;}).join('');
     const m=calc(s.id);const L=pctToLevel(m);
     return `<tr><td style="position:sticky;left:0;background:#fff"><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></td>${cells}<td style="text-align:center;font-weight:800" data-mark="${s.id}">${m===''?'—':m+'%'}</td><td style="text-align:center" data-lvl="${s.id}"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`;
   }).join('');
   v.innerHTML=`<div class="card"><div class="row">
-    <select id="gbsec" style="min-width:300px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — ${esc(x.course.name)} Gr${x.course.grade} (P${x.period})</option>`).join('')}</select>
-    <span class="pill">🟢 ${esc(sec.teacher_name||'—')} • Rm ${esc(sec.room||'')}</span></div>
-    <div class="sub" style="margin-top:8px">Live gradebook — edits save to Postgres and recompute marks (Growing Success weights), all under RLS.</div>
+    <select id="gbsec" style="min-width:280px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — ${esc(x.course.name)} Gr${x.course.grade} (P${x.period})</option>`).join('')}</select>
+    <span class="pill">🟢 ${esc(sec.teacher_name||'—')}</span><div style="flex:1"></div>
+    <button class="btn ghost sm" onclick="gbWeights('${sec.id}')">⚖ Weights</button>
+    <button class="btn sm" onclick="gbNewAssignment('${sec.id}')">+ Assignment</button></div>
+    <div class="row" style="margin-top:8px">${(cats||[]).map(c=>`<span class="tag">${c.code} <b>${c.weight}%</b></span>`).join('')}</div>
+    <div class="sub" style="margin-top:6px">Click an assignment header to grade, comment &amp; flag per student. Edits save live under RLS. ★ essential · + bonus · ∅ ignored.</div>
     <div style="overflow:auto"><table style="min-width:760px"><thead><tr><th style="position:sticky;left:0;background:#fff">Student</th>${head}<th style="text-align:center">Term mark</th><th style="text-align:center">Level</th></tr></thead><tbody>${rows||'<tr><td class="muted">No students enrolled.</td></tr>'}</tbody></table></div></div>`;
   $('#gbsec').onchange=e=>gradebookLive(e.target.value);
 }
+/* category weights editor */
+async function gbWeights(secId){
+  const {data:cats}=await sb.from('assessment_categories').select('id,code,name,weight').eq('section_id',secId).order('code');
+  modal('Category weights', `<p class="muted">Used in the Growing Success weighted average. They're normalized, but conventionally sum to 100.</p>
+   ${(cats||[]).map(c=>`<div class="row" style="margin-bottom:8px"><div style="flex:1">${esc(c.name)} <span class="muted">(${c.code})</span></div><input type="number" id="w_${c.id}" value="${c.weight}" style="width:80px"> %</div>`).join('')}
+   <div class="row" style="margin-top:10px"><button class="btn" onclick="gbSaveWeights('${secId}',[${(cats||[]).map(c=>`'${c.id}'`).join(',')}])">Save weights</button></div>`);
+}
+window.gbSaveWeights=async(secId,ids)=>{ for(const id of ids){ const w=+document.getElementById('w_'+id).value||0; await sb.from('assessment_categories').update({weight:w}).eq('id',id); } closeModal(); gradebookLive(secId); };
+/* new assignment with settings + file attachments */
+async function gbNewAssignment(secId){
+  const {data:cats}=await sb.from('assessment_categories').select('id,code,name').eq('section_id',secId).order('code');
+  modal('New assignment', `
+   <input id="na_title" placeholder="Title (e.g., Unit 3 Essay)" style="width:100%;margin-bottom:8px">
+   <textarea id="na_instr" placeholder="Instructions for students…" style="width:100%;height:60px;margin-bottom:8px"></textarea>
+   <div class="row" style="margin-bottom:8px"><select id="na_cat" style="flex:1">${(cats||[]).map(c=>`<option value="${c.id}">${esc(c.name)} (${c.code})</option>`).join('')}</select><input id="na_denom" type="number" placeholder="Out of" value="100" style="width:80px"><input id="na_due" type="date"></div>
+   <div class="row" style="margin-bottom:8px"><select id="na_kind"><option value="normal">Normal</option><option value="essential">Essential</option><option value="bonus">Bonus</option><option value="ignored">Ignored</option></select><select id="na_blank"><option value="ignored">Blanks: Ignored</option><option value="zero">Blanks: count as 0</option></select></div>
+   <div class="row" style="margin-bottom:8px"><label class="muted"><input type="checkbox" id="na_post" checked> Post to students</label><label class="muted"><input type="checkbox" id="na_upload" checked> Allow file upload</label><label class="muted"><input type="checkbox" id="na_resub"> Allow resubmission</label></div>
+   <div style="margin-bottom:8px"><div class="muted" style="font-size:12px;margin-bottom:4px">Attach instruction / resource files:</div><input type="file" id="na_files" multiple></div>
+   <div class="row"><button class="btn" onclick="gbCreateAssignment('${secId}')">Create</button><span id="na_msg" class="pf"></span></div>`);
+}
+window.gbCreateAssignment=async(secId)=>{
+  const m=document.getElementById('na_msg'); m.style.color='var(--muted)'; m.textContent='Saving…';
+  const payload={school_id:SESSION.schoolId,section_id:secId,category_id:document.getElementById('na_cat').value,
+    title:document.getElementById('na_title').value||'Untitled',instructions:document.getElementById('na_instr').value||null,
+    denominator:+document.getElementById('na_denom').value||100,
+    due_at:document.getElementById('na_due').value? new Date(document.getElementById('na_due').value).toISOString():null,
+    kind:document.getElementById('na_kind').value,blank_policy:document.getElementById('na_blank').value,
+    posted:document.getElementById('na_post').checked,allow_upload:document.getElementById('na_upload').checked,allow_resubmit:document.getElementById('na_resub').checked};
+  const { data, error } = await sb.from('assignments').insert(payload).select('id').single();
+  if(error){ m.style.color='var(--red)'; m.textContent=error.message; return; }
+  const files=document.getElementById('na_files').files;
+  for(const f of files){ const path=SESSION.schoolId+'/assignments/'+data.id+'/'+f.name;
+    const up=await sb.storage.from('assignment-files').upload(path,f,{upsert:true});
+    if(!up.error){ await sb.from('assignment_files').insert({school_id:SESSION.schoolId,assignment_id:data.id,name:f.name,url:path,kind:'resource',uploaded_by:SESSION.user&&SESSION.user.id}); }
+  }
+  closeModal(); gradebookLive(secId);
+};
+/* per-assignment grading view: score + flag + comment + submissions */
+window.assignmentViewLive=async(aid)=>{
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading assignment…</div></div>';
+  const { data: a } = await sb.from('assignments').select('id,title,denominator,kind,blank_policy,section_id,due_at,allow_upload').eq('id',aid).single();
+  if(!a){ v.innerHTML='<div class="card"><div class="notice">Assignment not found.</div></div>'; return; }
+  const { data: enr } = await sb.from('enrolments').select('student:students(id,first_name,last_name)').eq('section_id',a.section_id);
+  const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((x,y)=>x.last_name.localeCompare(y.last_name));
+  const { data: scrs } = await sb.from('scores').select('student_id,score,flag,comment').eq('assignment_id',aid);
+  const sMap={}; (scrs||[]).forEach(s=>sMap[s.student_id]=s);
+  const { data: subs } = await sb.from('submissions').select('student_id,status,file_url,submitted_at').eq('assignment_id',aid);
+  const subMap={}; (subs||[]).forEach(s=>subMap[s.student_id]=s);
+  const flags=['none','late','essential','bonus','ignored','zero'];
+  window._avSave=async(sid)=>{
+    const sc=document.getElementById('av_s_'+sid).value.trim();
+    if(sc!==''&&(isNaN(sc)||+sc<0||+sc>a.denominator)){document.getElementById('av_s_'+sid).style.borderColor='var(--red)';return;}
+    const payload={school_id:SESSION.schoolId,assignment_id:aid,student_id:sid,
+      score:sc===''?null:+sc, flag:document.getElementById('av_f_'+sid).value, comment:document.getElementById('av_c_'+sid).value||null};
+    const { error }=await sb.from('scores').upsert(payload,{onConflict:'assignment_id,student_id'});
+    const dot=document.getElementById('av_ok_'+sid); if(dot){ dot.textContent= error?'✗':'✓'; dot.style.color= error?'var(--red)':'var(--green)'; }
+  };
+  const rows=roster.map(s=>{const sc=sMap[s.id]||{};const sub=subMap[s.id];
+    return `<tr><td><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></td>
+      <td>${sub?`<span class="badge ${sub.status==='returned'?'b-blue':sub.status==='late'?'b-amber':'b-green'}">${esc(sub.status)}</span>${sub.file_url?` <a onclick="gbOpenFile('submissions','${sub.file_url}')">📎</a>`:''}`:'<span class="muted">—</span>'}</td>
+      <td><input id="av_s_${s.id}" class="score-in" value="${sc.score==null?'':sc.score}"> /${a.denominator}</td>
+      <td><select id="av_f_${s.id}">${flags.map(f=>`<option value="${f}" ${(sc.flag||'none')===f?'selected':''}>${f}</option>`).join('')}</select></td>
+      <td><input id="av_c_${s.id}" value="${esc(sc.comment||'')}" placeholder="comment…" style="width:100%"></td>
+      <td><button class="btn ghost sm" onclick="_avSave('${s.id}')">Save</button> <span id="av_ok_${s.id}"></span></td></tr>`;
+  }).join('');
+  v.innerHTML=`<button class="btn ghost sm" onclick="gradebookLive('${a.section_id}')">← Gradebook</button>
+  <div class="card" style="margin-top:12px"><h2>${esc(a.title)}</h2>
+    <div class="muted">Out of ${a.denominator} • ${a.kind} • blanks: ${a.blank_policy} • due ${a.due_at? new Date(a.due_at).toLocaleDateString():'—'}</div>
+    <div class="sub" style="margin-top:8px">Grade, flag (late / essential / bonus / ignored / zero) and comment each student. Saves live.</div>
+    <div style="overflow:auto"><table style="min-width:820px"><thead><tr><th>Student</th><th>Submission</th><th>Score</th><th>Flag</th><th>Comment</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=6 class=muted>No students.</td></tr>'}</tbody></table></div></div>`;
+};
 
 /* ---------- Attendance (live, with toggle) -------------------------- */
 let _attLiveSec=null, _attLiveDate='2026-05-12';
@@ -1454,6 +1552,53 @@ async function dashLive(){
       <div class="pf" style="margin-top:8px">Other modules still render demo data while we convert them.</div></div>
   </div>`;
 }
+
+/* ---------- Student: live assignments (overdue) + submit ----------- */
+async function myAssignLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading assignments…</div></div>';
+  const stu=SESSION.studentId;
+  const { data: enr } = await sb.from('enrolments').select('section_id, section:sections(course:courses(code))').eq('student_id',stu);
+  const secIds=(enr||[]).map(e=>e.section_id); const secCode={}; (enr||[]).forEach(e=>secCode[e.section_id]=e.section&&e.section.course?e.section.course.code:'');
+  let asg=[]; if(secIds.length){ const a=await sb.from('assignments').select('id,title,due_at,section_id,allow_upload').eq('posted',true).in('section_id',secIds).order('due_at'); asg=a.data||[]; }
+  const aids=asg.map(a=>a.id); let subs=[];
+  if(aids.length){ const s=await sb.from('submissions').select('assignment_id,status').eq('student_id',stu).in('assignment_id',aids); subs=s.data||[]; }
+  const subMap={}; subs.forEach(s=>subMap[s.assignment_id]=s); const now=Date.now();
+  const isDone=(a)=>{const sub=subMap[a.id];return sub&&['submitted','late','returned'].includes(sub.status);};
+  const isOverdue=(a)=>a.due_at&&new Date(a.due_at).getTime()<now&&!isDone(a);
+  const rows=asg.map(a=>{const sub=subMap[a.id];const status=isDone(a)?`<span class="badge ${sub.status==='returned'?'b-blue':'b-green'}">${sub.status}</span>`:isOverdue(a)?'<span class="badge b-red">Overdue</span>':'<span class="badge b-amber">To do</span>';
+    return `<tr class="click" onclick="assignmentDetailLive('${a.id}')"><td><b>${esc(a.title)}</b> <span class="muted">${esc(secCode[a.section_id]||'')}</span></td><td>${a.due_at? new Date(a.due_at).toLocaleDateString():'—'}</td><td>${status}</td><td>→</td></tr>`;}).join('');
+  const od=asg.filter(isOverdue).length;
+  v.innerHTML=`${od?`<div class="notice">⏰ You have <b>${od}</b> overdue assignment${od>1?'s':''} — click one to open and submit it.</div>`:''}
+  <div class="card"><h2>My assignments</h2><div class="sub">🟢 live</div>
+  <table><thead><tr><th>Assignment</th><th>Due</th><th>Status</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=4 class=muted>No assignments posted yet.</td></tr>'}</tbody></table></div>`;
+}
+window.assignmentDetailLive=async(aid)=>{
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const { data: a } = await sb.from('assignments').select('id,title,instructions,due_at,denominator,allow_upload,allow_resubmit').eq('id',aid).single();
+  if(!a){ v.innerHTML='<div class="card"><div class="notice">Assignment not found.</div></div>'; return; }
+  const { data: files } = await sb.from('assignment_files').select('name,url,kind').eq('assignment_id',aid);
+  let sub=null; try{ const s=await sb.from('submissions').select('*').eq('assignment_id',aid).eq('student_id',SESSION.studentId).single(); sub=s.data; }catch(e){}
+  const now=Date.now(); const overdue=a.due_at&&new Date(a.due_at).getTime()<now;
+  const submitted=sub&&['submitted','late','returned'].includes(sub.status);
+  const canSubmit=a.allow_upload && (!submitted || a.allow_resubmit);
+  window._subFile=async()=>{
+    const f=document.getElementById('sub_file').files[0]; const body=document.getElementById('sub_body').value; const m=document.getElementById('sub_msg'); m.style.color='var(--muted)'; m.textContent='Submitting…';
+    const payload={school_id:SESSION.schoolId,assignment_id:aid,student_id:SESSION.studentId,status:overdue?'late':'submitted',submitted_at:new Date().toISOString(),body:body||null};
+    if(f){ const path=SESSION.schoolId+'/submissions/'+aid+'/'+SESSION.studentId+'/'+f.name; const up=await sb.storage.from('submissions').upload(path,f,{upsert:true}); if(up.error){m.style.color='var(--red)';m.textContent=up.error.message;return;} payload.file_url=path; payload.files=[{name:f.name,url:path}]; }
+    const { error }=await sb.from('submissions').upsert(payload,{onConflict:'assignment_id,student_id'});
+    if(error){m.style.color='var(--red)';m.textContent=error.message;return;}
+    assignmentDetailLive(aid);
+  };
+  v.innerHTML=`<button class="btn ghost sm" onclick="go('myassign')">← My assignments</button>
+  <div class="card" style="margin-top:12px"><h2>${esc(a.title)}</h2>
+    <div class="muted">Due ${a.due_at? new Date(a.due_at).toLocaleString():'—'} • out of ${a.denominator} ${overdue&&!submitted?'<span class="badge b-red">Overdue</span>':''}</div>
+    <div class="hr"></div><b>Instructions</b><p>${esc(a.instructions||'—')}</p>
+    ${(files&&files.length)?`<b>Files from your teacher</b>${files.map(f=>`<div class="feed-item"><a onclick="gbOpenFile('assignment-files','${f.url}')">📎 ${esc(f.name)}</a> <span class="muted">(${esc(f.kind)})</span></div>`).join('')}<div class="hr"></div>`:''}
+    <b>Your submission</b>
+    ${submitted?`<div class="feed-item"><span class="badge b-green">${esc(sub.status)}</span> ${sub.submitted_at? new Date(sub.submitted_at).toLocaleString():''} ${sub.file_url?`• <a onclick="gbOpenFile('submissions','${sub.file_url}')">📎 your file</a>`:''}${sub.score!=null?` • <b>${sub.score}/${a.denominator}</b>`:''}${sub.feedback?`<div class="muted" style="margin-top:4px">Feedback: ${esc(sub.feedback)}</div>`:''}</div>`:'<div class="muted">Not submitted yet.</div>'}
+    ${canSubmit?`<div style="margin-top:10px"><textarea id="sub_body" placeholder="Notes (optional)…" style="width:100%;height:50px;margin-bottom:8px"></textarea><div class="row"><input type="file" id="sub_file"><button class="btn" onclick="_subFile()">${submitted?'Resubmit':'Submit'}</button><span id="sub_msg" class="pf"></span></div></div>`:(a.allow_upload?'<div class="pf" style="margin-top:8px">Resubmission is closed for this assignment.</div>':'<div class="pf" style="margin-top:8px">This assignment does not accept file submissions.</div>')}
+  </div>`;
+};
 
 /* ============================ BOOT =================================== */
 if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
