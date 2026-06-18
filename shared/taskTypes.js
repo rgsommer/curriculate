@@ -1404,6 +1404,26 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Each candidate should offer a DIFFERENT perspective on the topic.
     - The systemPrompt must give the AI enough context to stay in character.
     - Greetings should be engaging and mention specific things the student could ask about.
+
+    EVERY SUBJECT HAS GREAT INTERVIEWEES — DO NOT SAY "NO ONE IS RELEVANT":
+    - Math: Pythagoras (geometry, triangle theorem), Euclid (Elements, geometry foundations),
+      al-Khwarizmi (algebra, the word "algorithm"), René Descartes (variables, coordinate plane),
+      Isaac Newton (calculus), Leonhard Euler (graph theory, identity), Hypatia (Alexandria),
+      Sophie Germain (number theory), Srinivasa Ramanujan, Carl Gauss, Emmy Noether, Ada Lovelace.
+    - Science: Marie Curie, Charles Darwin, Albert Einstein, Galileo, Isaac Newton, Nikola Tesla,
+      Rosalind Franklin, Gregor Mendel, Rachel Carson, Katherine Johnson, Jane Goodall, Carl Sagan.
+    - Health / Medicine: Hippocrates, Florence Nightingale, Edward Jenner, Louis Pasteur,
+      Elizabeth Blackwell, Jonas Salk, Mary Seacole.
+    - Business / Economics: Adam Smith, Henry Ford, Madam C.J. Walker, Andrew Carnegie,
+      Mansa Musa, John D. Rockefeller, Maggie Lena Walker.
+    - For a math topic like "2D Geometry", pick Pythagoras + Euclid + a modern voice like
+      Mary Cartwright. For "Variables" or "Algebra", pick Descartes + al-Khwarizmi + Noether.
+    - If the lesson topic is genuinely abstract (e.g. "order of operations"), interview the
+      MATHEMATICIAN OR EDUCATOR who shaped the convention, not a generic character.
+
+    NEVER ship empty candidates. NEVER use a placeholder like "Math Teacher" or "Scientist" —
+    use the real person's full name. If a candidate slot would have an empty name OR
+    systemPrompt, the task will be rejected.
     `,
   },
 
@@ -5661,11 +5681,14 @@ export const SUBJECT_AFFINITY = {
   [TASK_TYPES.TRUTH_OR_DARE]:          { math: 0.7, science: 0.9, history: 0.95, language: 0.95, arts: 1.0, health: 0.8, business: 0.7, religion: 0.7, general: 0.9 },
   [TASK_TYPES.UPVOTE]:                 { math: 0.5, science: 0.7, history: 1.0,  language: 0.9,  arts: 0.8, health: 0.7, business: 0.9, religion: 1.0,  general: 0.8 },
   // Interview needs a real historical / notable figure relevant to the
-  // topic. Math + abstract science (e.g. 2D geometry, algebra variables)
-  // rarely yield candidates the AI can fill out into rich personas —
-  // tester Richard 2026-06-08 hit "no one to interview" on a Ch7-9 math
-  // set. Push the affinity DOWN there so it's chosen far less often.
-  [TASK_TYPES.INTERVIEW]:              { math: 0.2, science: 0.5, history: 1.0,  language: 0.9,  arts: 0.7, health: 0.5, business: 0.8, religion: 1.0,  general: 0.7 },
+  // topic. EVERY discipline has them — Pythagoras / Euclid / Descartes /
+  // Newton / Euler for math; Curie / Darwin / Einstein for science;
+  // Florence Nightingale / Hippocrates for health; etc. The bug in the
+  // Ch7-9 math set (Richard 2026-06-08: "no one to interview") was the
+  // AI prompt, not the subject — the prompt now lists mathematicians +
+  // scientists explicitly as fair game. Affinities stay high so kids
+  // actually meet the people behind the ideas.
+  [TASK_TYPES.INTERVIEW]:              { math: 0.85, science: 0.9, history: 1.0, language: 0.9, arts: 0.85, health: 0.85, business: 0.85, religion: 1.0, general: 0.8 },
 };
 
 // Subject-detection: map freeform subject strings to affinity bucket keys
