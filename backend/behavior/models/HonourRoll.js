@@ -58,6 +58,8 @@ const SnapshotStudentSchema = new mongoose.Schema(
     tier: { type: String, default: "" }, // "" | honours | high-honours
     courses: { type: [SnapshotCourseSchema], default: [] },
     edsbyAverage: { type: Number, default: null }, // Edsby's own unweighted avg, for reference
+    prevWeightedAvg: { type: Number, default: null }, // weighted avg at the previous refresh
+    improvement: { type: Number, default: null }, // weightedAvg − prevWeightedAvg (points)
     error: { type: String, default: "" }, // per-student fetch/extract failure
   },
   { _id: false }

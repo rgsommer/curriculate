@@ -428,6 +428,13 @@ export function buildAvgsRouter({ requireAdmin }) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
       }
 
+      // Weighted average at the previous refresh, keyed by Edsby nid — so we can
+      // flag improvement run-over-run (and term-over-term if you refresh at term
+      // boundaries). We don't have per-term Edsby data, so this is the honest
+      // basis for "most improved."
+      const prevSnap = await HonourRollSnapshot.findOne({ schoolId: req.schoolId }).sort({ takenAt: -1 }).lean();
+      const prevByNid = new Map((prevSnap?.students || []).map((s) => [s.edsbyNid, s.weightedAvg]));
+
       const thresholds = { honours: cfg.honours, highHonours: cfg.highHonours };
       const students = people.map((p) => {
         // Build this student's per-class marks from the gradebooks.
@@ -436,6 +443,9 @@ export function buildAvgsRouter({ requireAdmin }) {
           pct: classMarks.get(c.id)?.get(p.nid) ?? null,
         }));
         const computed = computeStudent(courses, cfg.classes, thresholds);
+        const prev = prevByNid.has(p.nid) ? prevByNid.get(p.nid) : null;
+        const improvement =
+          computed.weightedAvg !== null && typeof prev === "number" ? +(computed.weightedAvg - prev).toFixed(1) : null;
         return {
           studentId: null,
           edsbyNid: p.nid,
@@ -446,9 +456,19 @@ export function buildAvgsRouter({ requireAdmin }) {
           tier: computed.tier,
           courses: computed.courses,
           edsbyAverage: p.average, // Edsby's own unweighted average, for reference
+          prevWeightedAvg: typeof prev === "number" ? prev : null,
+          improvement,
           error: computed.weightedAvg === null ? "no class marks found" : "",
         };
       });
+
+      // Nominate the 3 most-improved students (largest positive gain since the
+      // previous refresh). Empty on the first run (no prior snapshot to compare).
+      const mostImproved = students
+        .filter((s) => typeof s.improvement === "number" && s.improvement > 0)
+        .sort((a, b) => b.improvement - a.improvement)
+        .slice(0, 3)
+        .map((s) => ({ edsbyNid: s.edsbyNid, name: s.name, grade: s.grade, from: s.prevWeightedAvg, to: s.weightedAvg, delta: s.improvement }));
 
       const snapshot = await HonourRollSnapshot.create({
         schoolId: req.schoolId,
@@ -459,6 +479,8 @@ export function buildAvgsRouter({ requireAdmin }) {
           succeeded: students.filter((s) => !s.error).length,
           classesFetched: classIds.length,
           classesWithNoMarks: classDiag,
+          comparedToSnapshotAt: prevSnap?.takenAt || null,
+          mostImproved,
         },
       });
 

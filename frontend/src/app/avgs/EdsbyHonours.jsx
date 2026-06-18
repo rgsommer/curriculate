@@ -216,16 +216,29 @@ export default function EdsbyHonours() {
         if (c.pct !== null && c.pct !== undefined) cell[subj] = c.pct; // keep the numeric average
       }
       const [first, ...rest] = String(s.name || "").split(" ");
-      return { last: rest.join(" "), first, grade: s.grade || "", cell };
+      return {
+        last: rest.join(" "),
+        first,
+        grade: s.grade || "",
+        cell,
+        weighted: s.weightedAvg ?? "",
+        improvement: typeof s.improvement === "number" ? s.improvement : "",
+      };
     });
     const subjCols = [...subjects].sort();
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const header = ["Last Name", "First Name", "Grade", ...subjCols];
+    // One comprehensive CSV: every student, every subject, plus the weighted
+    // average and the change since the last refresh.
+    const header = ["Last Name", "First Name", "Grade", ...subjCols, "Weighted Avg", "Change vs last run"];
     const lines = [header.map(esc).join(",")];
     rowsByStudent
       .sort((a, b) => (a.grade + a.last).localeCompare(b.grade + b.last))
       .forEach((r) => {
-        lines.push([r.last, r.first, r.grade, ...subjCols.map((s) => r.cell[s] ?? "")].map(esc).join(","));
+        lines.push(
+          [r.last, r.first, r.grade, ...subjCols.map((s) => r.cell[s] ?? ""), r.weighted, r.improvement]
+            .map(esc)
+            .join(",")
+        );
       });
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -458,6 +471,20 @@ export default function EdsbyHonours() {
               </button>
             </span>
           </div>
+
+          {diag.mostImproved?.length > 0 && (
+            <p className="mt-2 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">
+              🌟 <strong>Most improved</strong> since the last refresh
+              {diag.comparedToSnapshotAt ? ` (${fmtWhen(diag.comparedToSnapshotAt)})` : ""}:{" "}
+              {diag.mostImproved.map((m) => `${m.name} +${m.delta.toFixed(1)} (${m.from?.toFixed(1)}→${m.to?.toFixed(1)})`).join(", ")}
+            </p>
+          )}
+          {diag.mostImproved && diag.mostImproved.length === 0 && diag.comparedToSnapshotAt && (
+            <p className="mt-2 text-xs text-slate-400">No students improved since the last refresh.</p>
+          )}
+          {!diag.comparedToSnapshotAt && (
+            <p className="mt-2 text-xs text-slate-400">First refresh — “most improved” appears from the next run onward (it compares against this snapshot).</p>
+          )}
 
           {(diag.missingNid?.length > 0 || (diag.requested ?? 0) > (diag.succeeded ?? 0)) && (
             <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs text-amber-700">
