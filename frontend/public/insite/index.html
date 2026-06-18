@@ -1692,7 +1692,7 @@ let _admTerms=[], _admStaff=[], _admCourses=[];
 async function adminLive(){
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading school setup…</div></div>';
   const sid=SESSION.schoolId;
-  const [inv, mems, divs, staffR, lsd, secs, arR, termsR, twR, bellR, coursesR, grpR] = await Promise.all([
+  const [inv, mems, divs, staffR, lsd, secs, arR, termsR, twR, bellR, coursesR, grpR, stuR] = await Promise.all([
     sb.from('invitations').select('id,email,role,status').eq('school_id',sid).order('created_at',{ascending:false}),
     sb.from('memberships').select('role,profile:profiles(full_name,email)').eq('school_id',sid),
     sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id,final_weight').eq('school_id',sid).order('sort_order'),
@@ -1704,15 +1704,19 @@ async function adminLive(){
     sb.from('term_weights').select('division_id,term_id,weight').eq('school_id',sid),
     sb.from('bell_periods').select('id,name,start_time,end_time,sort_order').eq('school_id',sid).order('sort_order'),
     sb.from('courses').select('id,code,name,grade').eq('school_id',sid).order('transcript_order'),
-    sb.from('groups').select('id,name,category,member_types,open_join').eq('school_id',sid).order('name')
+    sb.from('groups').select('id,name,category,member_types,open_join').eq('school_id',sid).order('name'),
+    sb.from('students').select('id,first_name,last_name,grade,profile_id').eq('school_id',sid).order('last_name')
   ]);
-  const staff=staffR.data||[], dvs=divs.data||[], terms=termsR.data||[], tw=twR.data||[], bells=bellR.data||[], courses=coursesR.data||[], grps=grpR.data||[];
+  const staff=staffR.data||[], dvs=divs.data||[], terms=termsR.data||[], tw=twR.data||[], bells=bellR.data||[], courses=coursesR.data||[], grps=grpR.data||[], studentsL=stuR.data||[];
   _admTerms=terms; _admStaff=staff; _admCourses=courses;
   const twOf=(d,t)=>{const r=tw.find(x=>x.division_id===d&&x.term_id===t);return r?r.weight:0;};
   const divName=(id)=>{const d=dvs.find(x=>x.id===id);return d?d.name:'Whole school';};
   v.innerHTML=`
   <div class="card"><h2>People &amp; invitations</h2><div class="sub">Invite staff, students &amp; parents into ${esc(SESSION.schoolName||'')} — they get the role on sign-in.</div>
-    <div class="row" style="margin-bottom:10px"><input id="inv_email" class="search" placeholder="email@school.org"><select id="inv_role"><option value="teacher">Teacher</option><option value="admin">Admin</option><option value="student">Student</option><option value="parent">Parent</option></select><button class="btn sm" onclick="invSend()">Send invite</button><span id="inv_msg" class="pf"></span></div>
+    <div class="row" style="margin-bottom:6px"><input id="inv_email" class="search" placeholder="email@school.org"><select id="inv_role"><option value="teacher">Teacher</option><option value="admin">Admin</option><option value="student">Student</option><option value="parent">Parent</option></select><button class="btn sm" onclick="invSend()">Send invite</button><span id="inv_msg" class="pf"></span></div>
+    <div class="row" style="margin-bottom:10px"><span class="muted" style="font-size:12px">Link to record:</span>
+      <select id="inv_student"><option value="">— student (for Student/Parent) —</option>${studentsL.map(s=>`<option value="${s.id}">${esc(s.last_name)}, ${esc(s.first_name)} (Gr ${s.grade})${s.profile_id?' ✓linked':''}</option>`).join('')}</select>
+      <select id="inv_staff"><option value="">— staff (for Teacher) —</option>${staff.map(s=>`<option value="${s.id}">${esc(s.full_name)}${s.profile_id?' ✓linked':''}</option>`).join('')}</select></div>
     <details style="margin-bottom:10px"><summary class="muted" style="cursor:pointer;font-size:13px">Bulk invite (new implementations) — paste many at once</summary>
       <div style="margin-top:8px"><textarea id="inv_bulk" placeholder="One per line:  email@x.com,parent&#10;teacher@x.com,teacher&#10;(role optional — defaults to the selector)" style="width:100%;height:90px;margin-bottom:6px"></textarea>
       <div class="row"><span class="muted" style="font-size:12px">Default role:</span><select id="inv_bulk_role"><option value="parent">Parent</option><option value="student">Student</option><option value="teacher">Teacher</option><option value="admin">Admin</option></select><button class="btn sm" onclick="invBulk()">Import invites</button></div></div>
@@ -1721,6 +1725,9 @@ async function adminLive(){
     <table><tbody>${(inv.data||[]).filter(i=>i.status==='pending').map(i=>`<tr><td>${esc(i.email)}</td><td><span class="badge b-blue">${i.role}</span></td><td style="text-align:right"><button class="btn ghost sm" onclick="invRevoke('${i.id}')">Revoke</button></td></tr>`).join('')||'<tr><td class="muted">None pending.</td></tr>'}</tbody></table>
     <div class="hr"></div><b style="font-size:13px">Members (${(mems.data||[]).length})</b>
     <table><tbody>${(mems.data||[]).map(m=>`<tr><td>${esc(m.profile?m.profile.full_name:'—')} <span class="muted">${esc(m.profile?m.profile.email:'')}</span></td><td style="text-align:right"><span class="badge b-grey">${m.role}</span></td></tr>`).join('')||'<tr><td class="muted">No members yet.</td></tr>'}</tbody></table>
+    <div class="hr"></div><b style="font-size:13px">Quick-add records (new families)</b>
+    <div class="row" style="margin-top:6px"><input id="qs_first" placeholder="First" style="width:90px"><input id="qs_last" placeholder="Last" style="width:90px"><input id="qs_grade" type="number" placeholder="Gr" style="width:54px"><button class="btn ghost sm" onclick="stuAdd()">+ Student</button>
+      <input id="qf_name" placeholder="Staff name" style="width:140px"><button class="btn ghost sm" onclick="staffAddRec()">+ Staff</button><span id="rec_msg" class="pf"></span></div>
   </div>
 
   <div class="card"><h2>Planned absence requests</h2><div class="sub">Parent-requested absences awaiting divisional approval — approved ones show in daily attendance as excused.</div>
@@ -1780,7 +1787,13 @@ async function adminLive(){
     <div class="row" style="margin-top:10px"><input id="grp_name" placeholder="Group name" style="width:180px"><input id="grp_cat" placeholder="Category (Club / Team…)" style="width:170px"><button class="btn sm" onclick="grpAdd()">+ Add group</button></div>
   </div>`;
 }
-window.invSend=async()=>{ const email=$('#inv_email').value.trim(),role=$('#inv_role').value,m=$('#inv_msg'); if(!email){m.style.color='var(--red)';m.textContent='Enter an email';return;} const {error}=await sb.from('invitations').insert({school_id:SESSION.schoolId,email,role,invited_by:SESSION.user&&SESSION.user.id}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
+window.invSend=async()=>{ const email=$('#inv_email').value.trim(),role=$('#inv_role').value,m=$('#inv_msg'); if(!email){m.style.color='var(--red)';m.textContent='Enter an email';return;}
+  const payload={school_id:SESSION.schoolId,email,role,invited_by:SESSION.user&&SESSION.user.id};
+  if(role==='student'||role==='parent'){ const st=document.getElementById('inv_student').value; if(st) payload.student_id=st; }
+  if(role==='teacher'||role==='admin'){ const sf=document.getElementById('inv_staff').value; if(sf) payload.staff_id=sf; }
+  const {error}=await sb.from('invitations').insert(payload); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
+window.stuAdd=async()=>{ const f=document.getElementById('qs_first').value.trim(),l=document.getElementById('qs_last').value.trim(),g=+document.getElementById('qs_grade').value||9,m=document.getElementById('rec_msg'); if(!f||!l){m.style.color='var(--red)';m.textContent='First & last required';return;} const {error}=await sb.from('students').insert({school_id:SESSION.schoolId,first_name:f,last_name:l,grade:g,panel:(g<=8?'elementary':'secondary'),status:'active'}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
+window.staffAddRec=async()=>{ const n=document.getElementById('qf_name').value.trim(),m=document.getElementById('rec_msg'); if(!n){m.style.color='var(--red)';m.textContent='Name required';return;} const {error}=await sb.from('staff').insert({school_id:SESSION.schoolId,full_name:n}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
 window.invRevoke=async(id)=>{ await sb.from('invitations').update({status:'revoked'}).eq('id',id); adminLive(); };
 window.divVP=async(id,vp)=>{ await sb.from('divisions').update({vp_staff_id:vp||null}).eq('id',id); };
 window.divAdd=async()=>{ const n=$('#div_name').value.trim(); if(!n)return; await sb.from('divisions').insert({school_id:SESSION.schoolId,name:n,grade_low:+$('#div_lo').value||null,grade_high:+$('#div_hi').value||null}); adminLive(); };
