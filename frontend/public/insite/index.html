@@ -1151,6 +1151,7 @@ PAGES.onsis=()=>{
 
 /* ---------- ADMIN & AUDIT -------------------------------------------- */
 PAGES.admin=()=>{
+  if(SESSION.backend && SESSION.schoolId) return adminLive();
   $('#view').innerHTML=`<div class="grid g2">
     <div class="card"><h2>Roles &amp; access</h2><div class="sub">Least-privilege, role-based access control</div>
       <table><thead><tr><th>Role</th><th>Sees</th></tr></thead><tbody>
@@ -1320,6 +1321,7 @@ window.openStudentLive=async(id)=>{
   let health=null; try{ const h=await sb.from('student_health').select('*').eq('student_id',id).single(); health=h.data; }catch(e){}
   let hours=0; try{ const hr=await sb.from('community_hours').select('hours').eq('student_id',id); hours=(hr.data||[]).reduce((a,b)=>a+(+b.hours||0),0); }catch(e){}
   const courses=await liveStudentCourses(id);
+  let ieps=[]; try{ const ie=await sb.from('iep_documents').select('id,name,url,status,updated_at').eq('student_id',id).order('updated_at',{ascending:false}); ieps=ie.data||[]; }catch(e){}
   const col=C[(s.last_name.charCodeAt(0))%C.length];
   v.innerHTML=`<button class="btn ghost sm" onclick="go('students')">← All students</button>
   <div class="card" style="margin-top:12px"><div class="profile-hd"><div class="avatar" style="width:64px;height:64px;background:${col}">${(s.first_name[0]+s.last_name[0]).toUpperCase()}</div>
@@ -1342,6 +1344,11 @@ window.openStudentLive=async(id)=>{
       </tbody></table>
       <div class="pf" style="margin-top:8px">Marks computed live from this student's scores under Growing Success category weights.</div>
     </div>
+  </div>
+  <div class="card"><h2>IEP documents 🔒</h2><div class="sub">Individual Education Plans — visible to this student's teachers; managed by resource teachers &amp; admins</div>
+    ${ieps.length? ieps.map(d=>`<div class="feed-item"><b>${esc(d.name)}</b> <span class="badge ${d.status==='active'?'b-green':'b-grey'}">${esc(d.status)}</span> ${d.url?`<a onclick="gbOpenFile('ieps','${d.url}')">📎 open</a>`:'<span class="muted">no file uploaded</span>'}<div class="meta">updated ${d.updated_at? new Date(d.updated_at).toLocaleDateString():'—'} • <a onclick="document.getElementById('iep_file_${id}').click()">replace file…</a></div></div>`).join('') : '<div class="muted">No IEP on file.</div>'}
+    <div class="row" style="margin-top:10px"><input id="iep_file_${id}" type="file"><input id="iep_name_${id}" placeholder="Document name (e.g., IEP 2025–26)" style="flex:1"><button class="btn sm" onclick="iepUpload('${id}')">Upload IEP</button><span id="iep_msg" class="pf"></span></div>
+    <div class="pf" style="margin-top:6px">Uploads require admin or resource-teacher rights (enforced by the database).</div>
   </div>`;
 };
 
@@ -1520,13 +1527,14 @@ async function reportcardLive(sid){
   const courses=await liveStudentCourses(s.id);
   let ls={}; const { data: enr }=await sb.from('enrolments').select('id').eq('student_id',s.id).limit(1);
   if(enr&&enr.length){ const { data: lsd }=await sb.from('learning_skills').select('skill,rating').eq('enrolment_id',enr[0].id); (lsd||[]).forEach(r=>ls[r.skill]=r.rating); }
-  const lsNames={responsibility:'Responsibility',organization:'Organization',independent_work:'Independent Work',collaboration:'Collaboration',initiative:'Initiative',self_regulation:'Self-Regulation'};
+  const { data: defs } = await sb.from('learning_skill_defs').select('name,kind').eq('school_id',SESSION.schoolId).order('sort_order');
+  const lsDefs=(defs&&defs.length)?defs:[{name:'Responsibility',kind:'egsn'},{name:'Organization',kind:'egsn'},{name:'Independent Work',kind:'egsn'},{name:'Collaboration',kind:'egsn'},{name:'Initiative',kind:'egsn'},{name:'Self-Regulation',kind:'egsn'}];
   v.innerHTML=`<div class="card no-print"><div class="row"><select id="rcStu">${studs.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.first_name)} ${esc(x.last_name)} — Gr ${x.grade}</option>`).join('')}</select><div style="flex:1"></div><span class="pill">🟢 live</span><button class="btn ghost sm" onclick="window.print()">PDF</button></div></div>
   <div class="rc"><div class="rc-hd"><div class="row"><div><b>Provincial Report Card, Grades 9–12</b><div style="font-size:12px;opacity:.85">${esc(SESSION.schoolName||'')} • Mid-term • 2025–26</div></div><div style="margin-left:auto;text-align:right;font-size:12px">${esc(s.first_name)} ${esc(s.last_name)}<br>OEN ${esc(s.oen||'—')} • Grade ${s.grade}</div></div></div>
   <div class="rc-body"><table><thead><tr><th>Course</th><th>Teacher</th><th style="text-align:center">Percentage</th><th style="text-align:center">Level</th></tr></thead><tbody>
   ${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> ${esc(c.name||'')}</td><td>${esc(c.teacher||'—')}</td><td style="text-align:center"><b>${c.mark===''?'I':c.mark+'%'}</b></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td colspan="4" class="muted">No courses.</td></tr>'}
   </tbody></table><div class="hr"></div><b>Learning Skills &amp; Work Habits</b> <span class="muted" style="font-size:12px">(E / G / S / N)</span>
-  <div class="ls-grid" style="margin-top:10px">${Object.keys(lsNames).map(k=>{const val=ls[k]||'G';return `<div>${lsNames[k]}</div><div style="text-align:center"><span class="badge ${val==='E'?'b-green':val==='N'?'b-red':'b-blue'} lvl">${val}</span></div>`}).join('')}</div>
+  <div class="ls-grid" style="margin-top:10px">${lsDefs.map(d=>{const val=ls[d.name]||(d.kind==='yesno'?'No':'G');const ok=val==='E'||val==='Yes';const bad=val==='N';return `<div>${esc(d.name)}</div><div style="text-align:center"><span class="badge ${ok?'b-green':bad?'b-red':'b-blue'} lvl">${esc(val)}</span></div>`}).join('')}</div>
   <div class="pf" style="margin-top:10px">Levels: 4 (80–100), 3 (70–79), 2 (60–69), 1 (50–59). Generated live from this student's data.</div></div></div>`;
   const sel=$('#rcStu'); if(sel) sel.onchange=e=>reportcardLive(e.target.value);
 }
@@ -1616,6 +1624,71 @@ window.assignmentDetailLive=async(aid)=>{
     ${submitted?`<div class="feed-item"><span class="badge b-green">${esc(sub.status)}</span> ${sub.submitted_at? new Date(sub.submitted_at).toLocaleString():''} ${sub.file_url?`• <a onclick="gbOpenFile('submissions','${sub.file_url}')">📎 your file</a>`:''}${sub.score!=null?` • <b>${sub.score}/${a.denominator}</b>`:''}${sub.feedback?`<div class="muted" style="margin-top:4px">Feedback: ${esc(sub.feedback)}</div>`:''}</div>`:'<div class="muted">Not submitted yet.</div>'}
     ${canSubmit?`<div style="margin-top:10px"><textarea id="sub_body" placeholder="Notes (optional)…" style="width:100%;height:50px;margin-bottom:8px"></textarea><div class="row"><input type="file" id="sub_file"><button class="btn" onclick="_subFile()">${submitted?'Resubmit':'Submit'}</button><span id="sub_msg" class="pf"></span></div></div>`:(a.allow_upload?'<div class="pf" style="margin-top:8px">Resubmission is closed for this assignment.</div>':'<div class="pf" style="margin-top:8px">This assignment does not accept file submissions.</div>')}
   </div>`;
+};
+
+/* ---------- Admin: School Setup + People/Invitations (live) --------- */
+async function adminLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading school setup…</div></div>';
+  const sid=SESSION.schoolId;
+  const [inv, mems, divs, staffR, lsd, secs] = await Promise.all([
+    sb.from('invitations').select('id,email,role,status').eq('school_id',sid).order('created_at',{ascending:false}),
+    sb.from('memberships').select('role,profile:profiles(full_name,email)').eq('school_id',sid),
+    sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id').eq('school_id',sid).order('sort_order'),
+    sb.from('staff').select('id,full_name,department,is_resource_teacher,is_vp').eq('school_id',sid).order('full_name'),
+    sb.from('learning_skill_defs').select('id,name,kind,division_id').eq('school_id',sid).order('sort_order'),
+    sb.from('sections').select('id,period,requires_learning_skills,course:courses(code,name)').eq('school_id',sid)
+  ]);
+  const staff=staffR.data||[], dvs=divs.data||[];
+  const divName=(id)=>{const d=dvs.find(x=>x.id===id);return d?d.name:'Whole school';};
+  v.innerHTML=`
+  <div class="card"><h2>People &amp; invitations</h2><div class="sub">Invite staff, students &amp; parents into ${esc(SESSION.schoolName||'')} — they get the role on sign-in.</div>
+    <div class="row" style="margin-bottom:10px"><input id="inv_email" class="search" placeholder="email@school.org"><select id="inv_role"><option value="teacher">Teacher</option><option value="admin">Admin</option><option value="student">Student</option><option value="parent">Parent</option></select><button class="btn sm" onclick="invSend()">Send invite</button><span id="inv_msg" class="pf"></span></div>
+    <b style="font-size:13px">Pending invitations</b>
+    <table><tbody>${(inv.data||[]).filter(i=>i.status==='pending').map(i=>`<tr><td>${esc(i.email)}</td><td><span class="badge b-blue">${i.role}</span></td><td style="text-align:right"><button class="btn ghost sm" onclick="invRevoke('${i.id}')">Revoke</button></td></tr>`).join('')||'<tr><td class="muted">None pending.</td></tr>'}</tbody></table>
+    <div class="hr"></div><b style="font-size:13px">Members (${(mems.data||[]).length})</b>
+    <table><tbody>${(mems.data||[]).map(m=>`<tr><td>${esc(m.profile?m.profile.full_name:'—')} <span class="muted">${esc(m.profile?m.profile.email:'')}</span></td><td style="text-align:right"><span class="badge b-grey">${m.role}</span></td></tr>`).join('')||'<tr><td class="muted">No members yet.</td></tr>'}</tbody></table>
+  </div>
+
+  <div class="card"><h2>Divisions &amp; Vice-Principals</h2><div class="sub">Grade bands, each with a VP chosen from staff.</div>
+    <table><thead><tr><th>Division</th><th>Grades</th><th>VP</th></tr></thead><tbody>
+    ${dvs.map(d=>`<tr><td><b>${esc(d.name)}</b></td><td>${d.grade_low??''}–${d.grade_high??''}</td><td><select onchange="divVP('${d.id}',this.value)"><option value="">— VP —</option>${staff.map(s=>`<option value="${s.id}" ${s.id===d.vp_staff_id?'selected':''}>${esc(s.full_name)}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan=3 class=muted>No divisions.</td></tr>'}
+    </tbody></table>
+    <div class="row" style="margin-top:10px"><input id="div_name" placeholder="Division name" style="width:170px"><input id="div_lo" type="number" placeholder="Gr low" style="width:90px"><input id="div_hi" type="number" placeholder="Gr high" style="width:90px"><button class="btn sm" onclick="divAdd()">+ Add division</button></div>
+  </div>
+
+  <div class="card"><h2>Learning skills</h2><div class="sub">The skills teachers indicate. Type ‘Yes/No’ suits flags like “Interview Requested”. Scope to whole school or a division.</div>
+    <table><thead><tr><th>Skill</th><th>Type</th><th>Scope</th><th></th></tr></thead><tbody>
+    ${(lsd.data||[]).map(d=>`<tr><td><b>${esc(d.name)}</b></td><td>${d.kind==='yesno'?'Yes/No':'E/G/S/N'}</td><td>${esc(divName(d.division_id))}</td><td style="text-align:right"><button class="btn ghost sm" onclick="lsDel('${d.id}')">Remove</button></td></tr>`).join('')||'<tr><td colspan=4 class=muted>No learning skills defined.</td></tr>'}
+    </tbody></table>
+    <div class="row" style="margin-top:10px"><input id="ls_name" placeholder="Skill name" style="width:180px"><select id="ls_kind"><option value="egsn">E/G/S/N</option><option value="yesno">Yes/No</option></select><select id="ls_div"><option value="">Whole school</option>${dvs.map(d=>`<option value="${d.id}">${esc(d.name)}</option>`).join('')}</select><button class="btn sm" onclick="lsAdd()">+ Add</button></div>
+  </div>
+
+  <div class="card"><h2>Which classes require learning skills?</h2><div class="sub">Check the classes where teachers must indicate learning skills (e.g., homerooms only, or all).</div>
+    <table><tbody>${(secs.data||[]).map(s=>`<tr><td><label class="muted" style="cursor:pointer"><input type="checkbox" ${s.requires_learning_skills?'checked':''} onchange="secReq('${s.id}',this.checked)"> <b>${esc(s.course?s.course.code:'')}</b> ${esc(s.course?s.course.name:'')} (P${s.period})</label></td></tr>`).join('')||'<tr><td class=muted>No sections.</td></tr>'}</tbody></table>
+  </div>
+
+  <div class="card"><h2>Staff designations</h2><div class="sub">Resource teachers can upload/update IEPs.</div>
+    <table><thead><tr><th>Staff</th><th>Department</th><th style="text-align:center">Resource teacher</th><th style="text-align:center">VP</th></tr></thead><tbody>
+    ${staff.map(s=>`<tr><td><b>${esc(s.full_name)}</b></td><td>${esc(s.department||'')}</td><td style="text-align:center"><input type="checkbox" ${s.is_resource_teacher?'checked':''} onchange="staffFlag('${s.id}','is_resource_teacher',this.checked)"></td><td style="text-align:center"><input type="checkbox" ${s.is_vp?'checked':''} onchange="staffFlag('${s.id}','is_vp',this.checked)"></td></tr>`).join('')||'<tr><td colspan=4 class=muted>No staff.</td></tr>'}
+    </tbody></table>
+  </div>`;
+}
+window.invSend=async()=>{ const email=$('#inv_email').value.trim(),role=$('#inv_role').value,m=$('#inv_msg'); if(!email){m.style.color='var(--red)';m.textContent='Enter an email';return;} const {error}=await sb.from('invitations').insert({school_id:SESSION.schoolId,email,role,invited_by:SESSION.user&&SESSION.user.id}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
+window.invRevoke=async(id)=>{ await sb.from('invitations').update({status:'revoked'}).eq('id',id); adminLive(); };
+window.divVP=async(id,vp)=>{ await sb.from('divisions').update({vp_staff_id:vp||null}).eq('id',id); };
+window.divAdd=async()=>{ const n=$('#div_name').value.trim(); if(!n)return; await sb.from('divisions').insert({school_id:SESSION.schoolId,name:n,grade_low:+$('#div_lo').value||null,grade_high:+$('#div_hi').value||null}); adminLive(); };
+window.lsAdd=async()=>{ const n=$('#ls_name').value.trim(); if(!n)return; await sb.from('learning_skill_defs').insert({school_id:SESSION.schoolId,name:n,kind:$('#ls_kind').value,division_id:$('#ls_div').value||null,sort_order:99}); adminLive(); };
+window.lsDel=async(id)=>{ await sb.from('learning_skill_defs').delete().eq('id',id); adminLive(); };
+window.secReq=async(id,val)=>{ await sb.from('sections').update({requires_learning_skills:val}).eq('id',id); };
+window.staffFlag=async(id,col,val)=>{ const u={}; u[col]=val; await sb.from('staff').update(u).eq('id',id); };
+window.iepUpload=async(studentId, existingId)=>{
+  const f=document.getElementById('iep_file_'+studentId).files[0]; const m=document.getElementById('iep_msg');
+  if(!f){ if(m){m.style.color='var(--red)';m.textContent='Choose a file first.';} return; }
+  const path=SESSION.schoolId+'/ieps/'+studentId+'/'+f.name;
+  const up=await sb.storage.from('ieps').upload(path,f,{upsert:true}); if(up.error){ if(m){m.style.color='var(--red)';m.textContent=up.error.message;} return; }
+  if(existingId){ await sb.from('iep_documents').update({url:path,updated_at:new Date().toISOString()}).eq('id',existingId); }
+  else { const name=(document.getElementById('iep_name_'+studentId).value)||f.name; await sb.from('iep_documents').insert({school_id:SESSION.schoolId,student_id:studentId,name,url:path,uploaded_by:SESSION.user&&SESSION.user.id}); }
+  openStudentLive(studentId);
 };
 
 /* ============================ BOOT =================================== */
