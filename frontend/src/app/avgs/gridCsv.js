@@ -39,12 +39,14 @@ export function buildSubjectGridCsv(students) {
   });
   const subjCols = [...subjects].sort();
   const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const header = ["Last Name", "First Name", "Grade", ...subjCols, "Weighted Avg", "Change vs last run"];
+  // Column 3 is the full name as "First Last" (handy for lookups).
+  const header = ["Last Name", "First Name", "Name", "Grade", ...subjCols, "Weighted Avg", "Change vs last run"];
   const lines = [header.map(esc).join(",")];
   rows
     .sort((a, b) => (a.grade + a.last).localeCompare(b.grade + b.last))
     .forEach((r) => {
-      lines.push([r.last, r.first, r.grade, ...subjCols.map((s) => r.cell[s] ?? ""), r.weighted, r.improvement].map(esc).join(","));
+      const fullName = `${r.first} ${r.last}`.trim();
+      lines.push([r.last, r.first, fullName, r.grade, ...subjCols.map((s) => r.cell[s] ?? ""), r.weighted, r.improvement].map(esc).join(","));
     });
   return lines.join("\n");
 }

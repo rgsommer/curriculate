@@ -118,10 +118,10 @@ export default function EdsbyGradebookGrid() {
   function download() {
     if (!rows) return;
     const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const header = ["Last Name", "First Name", "Grade", ...cols.map((c) => `${c.subject} ${c.period === "Nov-Feb" ? "T1 (Nov-Feb)" : c.period}`)];
+    const header = ["Last Name", "First Name", "Name", "Grade", ...cols.map((c) => `${c.subject} ${c.period === "Nov-Feb" ? "T1 (Nov-Feb)" : c.period}`)];
     const lines = [header.map(esc).join(",")];
     for (const r of rows) {
-      lines.push([r.last, r.first, r.grade, ...cols.map((c) => r.data[`${c.subject}|${c.period}`] ?? "")].map(esc).join(","));
+      lines.push([r.last, r.first, `${r.first} ${r.last}`.trim(), r.grade, ...cols.map((c) => r.data[`${c.subject}|${c.period}`] ?? "")].map(esc).join(","));
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
