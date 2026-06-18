@@ -1323,6 +1323,7 @@ window.openStudentLive=async(id)=>{
   let hours=0; try{ const hr=await sb.from('community_hours').select('hours').eq('student_id',id); hours=(hr.data||[]).reduce((a,b)=>a+(+b.hours||0),0); }catch(e){}
   const courses=await liveStudentCourses(id);
   let ieps=[]; try{ const ie=await sb.from('iep_documents').select('id,name,url,status,updated_at').eq('student_id',id).order('updated_at',{ascending:false}); ieps=ie.data||[]; }catch(e){}
+  let gds=[]; try{ const g=await sb.from('student_guardians').select('guardian_id,relationship,contact_order,access_to_records,pickup_rights,lives_with,has_custody,emergency_contact,separate_communication,guardian:guardians(full_name,email,phone,address)').eq('student_id',id); gds=g.data||[]; }catch(e){}
   const col=C[(s.last_name.charCodeAt(0))%C.length];
   v.innerHTML=`<button class="btn ghost sm" onclick="go('students')">← All students</button>
   <div class="card" style="margin-top:12px"><div class="profile-hd"><div class="avatar" style="width:64px;height:64px;background:${col}">${(s.first_name[0]+s.last_name[0]).toUpperCase()}</div>
@@ -1345,6 +1346,12 @@ window.openStudentLive=async(id)=>{
       </tbody></table>
       <div class="pf" style="margin-top:8px">Marks computed live from this student's scores under Growing Success category weights.</div>
     </div>
+  </div>
+  <div class="card"><h2>Guardians</h2><div class="sub">Contacts, custody &amp; communication preferences</div>
+    ${gds.length? gds.map(g=>`<div class="feed-item"><b>${esc(g.guardian?g.guardian.full_name:'')}</b> <span class="muted">(${esc(g.relationship||'')})</span>${g.contact_order?` <span class="badge b-grey">contact #${g.contact_order}</span>`:''}
+      <div class="muted" style="font-size:12px;margin-top:2px">${esc(g.guardian?g.guardian.email:'')} • ${esc(g.guardian?g.guardian.phone:'')}${g.guardian&&g.guardian.address?' • '+esc(g.guardian.address):''}</div>
+      <div class="row" style="margin-top:6px">${[['access_to_records','Access to records'],['pickup_rights','Pickup'],['lives_with','Lives with'],['has_custody','Custody'],['emergency_contact','Emergency'],['separate_communication','Separate communication']].map(t=>`<label class="muted" style="font-size:12px"><input type="checkbox" ${g[t[0]]?'checked':''} onchange="sgFlag('${id}','${g.guardian_id}','${t[0]}',this.checked)"> ${t[1]}</label>`).join('')}</div></div>`).join('') : '<div class="muted">No guardians linked.</div>'}
+    <div class="pf">“Separate communication” → each such guardian receives their own copy of report cards &amp; all messages.</div>
   </div>
   <div class="card"><h2>IEP documents 🔒</h2><div class="sub">Individual Education Plans — visible to this student's teachers; managed by resource teachers &amp; admins</div>
     ${ieps.length? ieps.map(d=>`<div class="feed-item"><b>${esc(d.name)}</b> <span class="badge ${d.status==='active'?'b-green':'b-grey'}">${esc(d.status)}</span> ${d.url?`<a onclick="gbOpenFile('ieps','${d.url}')">📎 open</a>`:'<span class="muted">no file uploaded</span>'}<div class="meta">updated ${d.updated_at? new Date(d.updated_at).toLocaleDateString():'—'} • <a onclick="document.getElementById('iep_file_${id}').click()">replace file…</a></div></div>`).join('') : '<div class="muted">No IEP on file.</div>'}
@@ -1546,6 +1553,9 @@ async function reportcardLive(sid){
   const lsDefs=(defs&&defs.length)?defs:[{name:'Responsibility',kind:'egsn'},{name:'Organization',kind:'egsn'},{name:'Collaboration',kind:'egsn'},{name:'Self-Regulation',kind:'egsn'}];
   let rc=null; if(termId){ const {data:rcd}=await sb.from('report_cards').select('*').eq('student_id',s.id).eq('term_id',termId).eq('rtype','secondary_provincial').limit(1); rc=rcd&&rcd[0]; }
   const status=rc?rc.status:'draft';
+  const {data:sg}=await sb.from('student_guardians').select('separate_communication').eq('student_id',s.id);
+  const seps=(sg||[]).filter(g=>g.separate_communication).length, shared=((sg||[]).length-seps)>0?1:0;
+  const recipNote=(sg&&sg.length)?`${seps} separate cop${seps===1?'y':'ies'}${shared?' + 1 shared family copy':''}`:'no guardians linked';
   const isAdmin = !!(SESSION.platform || SESSION.role==='admin');
   const canEdit = isAdmin || status==='draft';
   window._rcSaveCourse=async(enrId)=>{ const ov=document.getElementById('rc_ov_'+enrId).value.trim(); const cm=document.getElementById('rc_cm_'+enrId).value;
@@ -1567,7 +1577,7 @@ async function reportcardLive(sid){
     return `<tr><td><b>${esc(it.sec.course.code)}</b> ${esc(it.sec.course.name)}</td><td>${esc(it.sec.teacher_name||'—')}</td><td style="text-align:center"><b>${eff===''?'I':eff+'%'}</b>${m.override_mark!=null?' <span class="badge b-purple" style="font-size:9px">ovr</span>':''}</td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td><td colspan="2">${esc(m.comments||'')}</td></tr>`;
   }).join('');
   v.innerHTML=`<div class="card no-print"><div class="row"><select id="rcStu">${studs.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.first_name)} ${esc(x.last_name)} — Gr ${x.grade}</option>`).join('')}</select><span class="badge ${stColors[status]||'b-grey'}">${status}</span><div style="flex:1"></div>${actions}</div>
-    <div class="pf" style="margin-top:6px">Workflow: teachers edit comments &amp; confirm/override grades while <b>draft</b> → <b>submit</b> → admin <b>approve</b> → <b>release</b>/print/email. ${canEdit?'You can edit this report.':'Locked (read-only) at this stage.'}</div></div>
+    <div class="pf" style="margin-top:6px">Workflow: teachers edit comments &amp; confirm/override grades while <b>draft</b> → <b>submit</b> → admin <b>approve</b> → <b>release</b>/print/email. ${canEdit?'You can edit this report.':'Locked (read-only) at this stage.'} • On release: <b>${recipNote}</b>.</div></div>
   <div class="rc"><div class="rc-hd"><div class="row"><div><b>Provincial Report Card, Grades 9–12</b><div style="font-size:12px;opacity:.85">${esc(SESSION.schoolName||'')} • ${esc(termName)} • 2025–26</div></div><div style="margin-left:auto;text-align:right;font-size:12px">${esc(s.first_name)} ${esc(s.last_name)}<br>OEN ${esc(s.oen||'—')} • Grade ${s.grade}</div></div></div>
   <div class="rc-body"><table><thead><tr><th>Course</th><th>Teacher</th><th style="text-align:center">%</th><th style="text-align:center">Level</th><th>Comment</th>${canEdit?'<th></th>':''}</tr></thead><tbody>${courseRows||'<tr><td colspan="5" class="muted">No courses.</td></tr>'}</tbody></table>
   <div class="hr"></div><b>Learning Skills &amp; Work Habits</b>
@@ -1664,19 +1674,26 @@ window.assignmentDetailLive=async(aid)=>{
 };
 
 /* ---------- Admin: School Setup + People/Invitations (live) --------- */
+let _admTerms=[], _admStaff=[], _admCourses=[];
 async function adminLive(){
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading school setup…</div></div>';
   const sid=SESSION.schoolId;
-  const [inv, mems, divs, staffR, lsd, secs, arR] = await Promise.all([
+  const [inv, mems, divs, staffR, lsd, secs, arR, termsR, twR, bellR, coursesR] = await Promise.all([
     sb.from('invitations').select('id,email,role,status').eq('school_id',sid).order('created_at',{ascending:false}),
     sb.from('memberships').select('role,profile:profiles(full_name,email)').eq('school_id',sid),
-    sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id').eq('school_id',sid).order('sort_order'),
-    sb.from('staff').select('id,full_name,department,is_resource_teacher,is_vp').eq('school_id',sid).order('full_name'),
+    sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id,final_weight').eq('school_id',sid).order('sort_order'),
+    sb.from('staff').select('id,full_name,department,is_resource_teacher,is_vp,profile_id').eq('school_id',sid).order('full_name'),
     sb.from('learning_skill_defs').select('id,name,kind,division_id').eq('school_id',sid).order('sort_order'),
-    sb.from('sections').select('id,period,requires_learning_skills,course:courses(code,name)').eq('school_id',sid),
-    sb.from('absence_requests').select('id,start_date,end_date,reason,status,student:students(first_name,last_name,grade)').eq('school_id',sid).eq('status','pending').order('start_date')
+    sb.from('sections').select('id,period,room,meet_days,teacher_name,requires_learning_skills,course:courses(code,name,grade)').eq('school_id',sid).order('period'),
+    sb.from('absence_requests').select('id,start_date,end_date,reason,status,student:students(first_name,last_name,grade)').eq('school_id',sid).eq('status','pending').order('start_date'),
+    sb.from('terms').select('id,name').eq('school_id',sid),
+    sb.from('term_weights').select('division_id,term_id,weight').eq('school_id',sid),
+    sb.from('bell_periods').select('id,name,start_time,end_time,sort_order').eq('school_id',sid).order('sort_order'),
+    sb.from('courses').select('id,code,name,grade').eq('school_id',sid).order('transcript_order')
   ]);
-  const staff=staffR.data||[], dvs=divs.data||[];
+  const staff=staffR.data||[], dvs=divs.data||[], terms=termsR.data||[], tw=twR.data||[], bells=bellR.data||[], courses=coursesR.data||[];
+  _admTerms=terms; _admStaff=staff; _admCourses=courses;
+  const twOf=(d,t)=>{const r=tw.find(x=>x.division_id===d&&x.term_id===t);return r?r.weight:0;};
   const divName=(id)=>{const d=dvs.find(x=>x.id===id);return d?d.name:'Whole school';};
   v.innerHTML=`
   <div class="card"><h2>People &amp; invitations</h2><div class="sub">Invite staff, students &amp; parents into ${esc(SESSION.schoolName||'')} — they get the role on sign-in.</div>
@@ -1717,6 +1734,26 @@ async function adminLive(){
     <table><thead><tr><th>Staff</th><th>Department</th><th style="text-align:center">Resource teacher</th><th style="text-align:center">VP</th></tr></thead><tbody>
     ${staff.map(s=>`<tr><td><b>${esc(s.full_name)}</b></td><td>${esc(s.department||'')}</td><td style="text-align:center"><input type="checkbox" ${s.is_resource_teacher?'checked':''} onchange="staffFlag('${s.id}','is_resource_teacher',this.checked)"></td><td style="text-align:center"><input type="checkbox" ${s.is_vp?'checked':''} onchange="staffFlag('${s.id}','is_vp',this.checked)"></td></tr>`).join('')||'<tr><td colspan=4 class=muted>No staff.</td></tr>'}
     </tbody></table>
+  </div>
+
+  <div class="card"><h2>Term weighting by division</h2><div class="sub">How terms &amp; the final evaluation combine into the report-card mark — set per division.</div>
+    ${dvs.map(d=>`<div class="feed-item"><b>${esc(d.name)}</b><div class="row" style="margin-top:6px">${terms.map(t=>`<label class="muted" style="font-size:12px">${esc(t.name)} <input type="number" id="tw_${d.id}_${t.id}" value="${twOf(d.id,t.id)}" style="width:62px">%</label>`).join('')}<label class="muted" style="font-size:12px">Final eval <input type="number" id="fw_${d.id}" value="${d.final_weight||0}" style="width:62px">%</label><button class="btn ghost sm" onclick="twSave('${d.id}')">Save</button></div></div>`).join('')||'<div class="muted">Add divisions first.</div>'}
+  </div>
+
+  <div class="card"><h2>Classes &amp; scheduling</h2><div class="sub">Define classes, assign a teacher, set period, room &amp; meeting days. (Admin / VP)</div>
+    <div style="overflow:auto"><table style="min-width:700px"><thead><tr><th>Class</th><th>Teacher</th><th>Period</th><th>Room</th><th>Days</th></tr></thead><tbody>
+    ${(secs.data||[]).map(s=>`<tr><td><b>${esc(s.course?s.course.code:'')}</b> ${esc(s.course?s.course.name:'')}</td>
+      <td><select onchange="schedSet('${s.id}','teacher',this.value)"><option value="">— teacher —</option>${staff.map(t=>`<option value="${t.id}" ${s.teacher_name===t.full_name?'selected':''}>${esc(t.full_name)}</option>`).join('')}</select></td>
+      <td><input type="number" value="${s.period||''}" style="width:54px" onchange="schedSet('${s.id}','period',this.value)"></td>
+      <td><input value="${esc(s.room||'')}" style="width:64px" onchange="schedSet('${s.id}','room',this.value)"></td>
+      <td><input value="${esc(s.meet_days||'')}" style="width:140px" onchange="schedSet('${s.id}','meet_days',this.value)"></td></tr>`).join('')||'<tr><td colspan=5 class=muted>No classes.</td></tr>'}
+    </tbody></table></div>
+    <div class="row" style="margin-top:10px"><select id="sc_course"><option value="">Course…</option>${courses.map(c=>`<option value="${c.id}">${esc(c.code)} — ${esc(c.name)} Gr${c.grade}</option>`).join('')}</select><input id="sc_period" type="number" placeholder="Period" style="width:80px"><input id="sc_room" placeholder="Room" style="width:80px"><button class="btn sm" onclick="schedAdd()">+ Add class</button><span id="sc_msg" class="pf"></span></div>
+  </div>
+
+  <div class="card"><h2>School schedule (bell times)</h2><div class="sub">Periods &amp; times for the day.</div>
+    <table><tbody>${bells.map(b=>`<tr><td><b>${esc(b.name)}</b></td><td><input value="${esc(b.start_time||'')}" style="width:80px" onchange="bellSet('${b.id}','start_time',this.value)"></td><td><input value="${esc(b.end_time||'')}" style="width:80px" onchange="bellSet('${b.id}','end_time',this.value)"></td><td style="text-align:right"><button class="btn ghost sm" onclick="bellDel('${b.id}')">Remove</button></td></tr>`).join('')||'<tr><td class=muted>No periods.</td></tr>'}</tbody></table>
+    <div class="row" style="margin-top:10px"><input id="bp_name" placeholder="Name (Period 1)" style="width:150px"><input id="bp_start" placeholder="Start 08:45" style="width:100px"><input id="bp_end" placeholder="End 10:00" style="width:100px"><button class="btn sm" onclick="bellAdd()">+ Add period</button></div>
   </div>`;
 }
 window.invSend=async()=>{ const email=$('#inv_email').value.trim(),role=$('#inv_role').value,m=$('#inv_msg'); if(!email){m.style.color='var(--red)';m.textContent='Enter an email';return;} const {error}=await sb.from('invitations').insert({school_id:SESSION.schoolId,email,role,invited_by:SESSION.user&&SESSION.user.id}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
@@ -1727,6 +1764,13 @@ window.lsAdd=async()=>{ const n=$('#ls_name').value.trim(); if(!n)return; await 
 window.lsDel=async(id)=>{ await sb.from('learning_skill_defs').delete().eq('id',id); adminLive(); };
 window.secReq=async(id,val)=>{ await sb.from('sections').update({requires_learning_skills:val}).eq('id',id); };
 window.staffFlag=async(id,col,val)=>{ const u={}; u[col]=val; await sb.from('staff').update(u).eq('id',id); };
+window.twSave=async(divId)=>{ for(const t of _admTerms){ const w=+document.getElementById('tw_'+divId+'_'+t.id).value||0; await sb.from('term_weights').upsert({school_id:SESSION.schoolId,division_id:divId,term_id:t.id,weight:w},{onConflict:'division_id,term_id'}); } const fw=+document.getElementById('fw_'+divId).value||0; await sb.from('divisions').update({final_weight:fw}).eq('id',divId); adminLive(); };
+window.schedSet=async(secId,col,val)=>{ if(col==='teacher'){ const st=_admStaff.find(x=>x.id===val); await sb.from('sections').update({teacher_name: st?st.full_name:null, teacher_id: st&&st.profile_id?st.profile_id:null}).eq('id',secId); } else { const u={}; u[col]= col==='period'? (+val||null) : (val||null); await sb.from('sections').update(u).eq('id',secId); } };
+window.schedAdd=async()=>{ const c=document.getElementById('sc_course').value; const m=document.getElementById('sc_msg'); if(!c){m.style.color='var(--red)';m.textContent='Pick a course';return;} const term=_admTerms[0]; const {error}=await sb.from('sections').insert({school_id:SESSION.schoolId,course_id:c,term_id:term?term.id:null,period:+document.getElementById('sc_period').value||null,room:document.getElementById('sc_room').value||null,meet_days:'Mon,Tue,Wed,Thu,Fri'}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
+window.bellSet=async(id,col,val)=>{ const u={}; u[col]=val||null; await sb.from('bell_periods').update(u).eq('id',id); };
+window.bellAdd=async()=>{ const n=document.getElementById('bp_name').value.trim(); if(!n)return; await sb.from('bell_periods').insert({school_id:SESSION.schoolId,name:n,start_time:document.getElementById('bp_start').value||null,end_time:document.getElementById('bp_end').value||null,sort_order:99}); adminLive(); };
+window.bellDel=async(id)=>{ await sb.from('bell_periods').delete().eq('id',id); adminLive(); };
+window.sgFlag=async(studentId,guardianId,col,val)=>{ const u={}; u[col]=val; await sb.from('student_guardians').update(u).eq('student_id',studentId).eq('guardian_id',guardianId); };
 window.iepUpload=async(studentId, existingId)=>{
   const f=document.getElementById('iep_file_'+studentId).files[0]; const m=document.getElementById('iep_msg');
   if(!f){ if(m){m.style.color='var(--red)';m.textContent='Choose a file first.';} return; }
