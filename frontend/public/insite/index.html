@@ -1280,14 +1280,14 @@ function gbMark(cats, asg, getScore){
   });
   (cats||[]).forEach(c=>{
     const cas=(asg||[]).filter(a=>a.category_id===c.id && a.kind!=='ignored' && a.kind!=='bonus');
-    let sum=0,n=0;
+    let sum=0,wt=0;
     cas.forEach(a=>{ const so=getScore(a.id)||{}; const flag=so.flag||'none'; if(flag==='ignored') return;
       let val=so.score;
       if(val==null){ if(a.blank_policy==='zero'||flag==='zero') val=0; else return; }
       if(flag==='zero') val=0;
-      if(a.denominator){ sum+=(val/a.denominator)*100; n++; }
+      if(a.denominator){ const w=(a.weighting!=null&&a.weighting>0)?a.weighting:1; sum+=(val/a.denominator)*100*w; wt+=w; }
     });
-    if(n){ tot+=(sum/n)*c.weight; wsum+=c.weight; }
+    if(wt>0){ tot+=(sum/wt)*c.weight; wsum+=c.weight; }
   });
   if(wsum===0 && bonus===0) return '';
   let m = (wsum? tot/wsum : 0) + bonus;
@@ -1301,7 +1301,7 @@ async function liveStudentCourses(studentId){
   const sectionIds=secs.map(s=>s.id);
   let asg=[], cats=[], scrs=[];
   if(sectionIds.length){
-    const a=await sb.from('assignments').select('id,denominator,category_id,section_id,kind,blank_policy').in('section_id',sectionIds); asg=a.data||[];
+    const a=await sb.from('assignments').select('id,denominator,category_id,section_id,kind,blank_policy,weighting').in('section_id',sectionIds); asg=a.data||[];
     const c=await sb.from('assessment_categories').select('id,weight,section_id').in('section_id',sectionIds); cats=c.data||[];
     const aids=asg.map(x=>x.id);
     if(aids.length){ const s=await sb.from('scores').select('assignment_id,score,flag').eq('student_id',studentId).in('assignment_id',aids); scrs=s.data||[]; }
@@ -1377,7 +1377,7 @@ async function gradebookLive(secId){
   const { data: enr } = await sb.from('enrolments').select('student:students(id,first_name,last_name)').eq('section_id',sec.id);
   const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((a,b)=>a.last_name.localeCompare(b.last_name));
   const { data: cats } = await sb.from('assessment_categories').select('id,code,weight').eq('section_id',sec.id).order('code');
-  const { data: asg } = await sb.from('assignments').select('id,title,denominator,category_id,kind,blank_policy').eq('section_id',sec.id).order('due_at');
+  const { data: asg } = await sb.from('assignments').select('id,title,denominator,category_id,kind,blank_policy,weighting,scores_visible').eq('section_id',sec.id).order('due_at');
   const aids=(asg||[]).map(a=>a.id);
   const { data: scrs } = aids.length ? await sb.from('scores').select('assignment_id,student_id,score,flag').in('assignment_id',aids) : {data:[]};
   const scoreMap={}; (scrs||[]).forEach(s=>scoreMap[s.student_id+'|'+s.assignment_id]={score:s.score,flag:s.flag});
@@ -1393,7 +1393,7 @@ async function gradebookLive(secId){
     const lc=document.querySelector('[data-lvl="'+sid+'"]'); if(lc) lc.innerHTML=`<span class="badge ${L.c} lvl">${L.l}</span>`;
   };
   const kindMark={normal:'',essential:'★',bonus:'+',ignored:'∅'};
-  const head=(asg||[]).map(a=>`<th style="text-align:center;cursor:pointer" title="${esc(a.title)} — open to grade & comment" onclick="assignmentViewLive('${a.id}')">${esc(a.title.split(' ')[0])} ${kindMark[a.kind]||''}<div style="font-weight:400;text-transform:none;color:var(--muted)">/${a.denominator} · ${catById[a.category_id]?catById[a.category_id].code:''}</div></th>`).join('');
+  const head=(asg||[]).map(a=>`<th style="text-align:center;cursor:pointer" title="${esc(a.title)} — ${a.scores_visible?'grades visible to students':'grades hidden'} — open to grade, comment & release" onclick="assignmentViewLive('${a.id}')">${esc(a.title.split(' ')[0])} ${kindMark[a.kind]||''} ${a.scores_visible?'👁':'🔒'}<div style="font-weight:400;text-transform:none;color:var(--muted)">/${a.denominator} · ${catById[a.category_id]?catById[a.category_id].code:''}</div></th>`).join('');
   const rows=roster.map(s=>{
     const cells=(asg||[]).map(a=>{const so=scoreMap[s.id+'|'+a.id]||{};const fl=so.flag&&so.flag!=='none'?'border-bottom:2px solid var(--amber)':'';return `<td style="text-align:center"><input class="score-in" style="${fl}" value="${so.score==null?'':so.score}" onchange="_gbLiveSave('${a.id}','${s.id}',this)"></td>`;}).join('');
     const m=calc(s.id);const L=pctToLevel(m);
@@ -1438,37 +1438,43 @@ window.gbRemoveCollab=async(secId,tid)=>{ const {error}=await sb.from('section_t
 /* new assignment with settings + file attachments */
 async function gbNewAssignment(secId){
   const {data:cats}=await sb.from('assessment_categories').select('id,code,name').eq('section_id',secId).order('code');
-  modal('New assignment', `
-   <input id="na_title" placeholder="Title (e.g., Unit 3 Essay)" style="width:100%;margin-bottom:8px">
-   <textarea id="na_instr" placeholder="Instructions for students…" style="width:100%;height:60px;margin-bottom:8px"></textarea>
-   <div class="row" style="margin-bottom:8px"><select id="na_cat" style="flex:1">${(cats||[]).map(c=>`<option value="${c.id}">${esc(c.name)} (${c.code})</option>`).join('')}</select><input id="na_denom" type="number" placeholder="Out of" value="100" style="width:80px"><input id="na_due" type="date"></div>
-   <div class="row" style="margin-bottom:8px"><select id="na_kind"><option value="normal">Normal</option><option value="essential">Essential</option><option value="bonus">Bonus</option><option value="ignored">Ignored</option></select><select id="na_blank"><option value="ignored">Blanks: Ignored</option><option value="zero">Blanks: count as 0</option></select></div>
-   <div class="row" style="margin-bottom:8px"><label class="muted"><input type="checkbox" id="na_post" checked> Post to students</label><label class="muted"><input type="checkbox" id="na_upload" checked> Allow file upload</label><label class="muted"><input type="checkbox" id="na_resub"> Allow resubmission</label></div>
-   <div style="margin-bottom:8px"><div class="muted" style="font-size:12px;margin-bottom:4px">Attach instruction / resource files:</div><input type="file" id="na_files" multiple></div>
-   <div class="row"><button class="btn" onclick="gbCreateAssignment('${secId}')">Create</button><span id="na_msg" class="pf"></span></div>`);
+  modal('New assessment', `
+   <div class="pf" style="margin-bottom:8px">Placed automatically in the gradebook, course plan &amp; calendar for this class.</div>
+   <div class="row" style="margin-bottom:8px"><input id="na_title" placeholder="Name (e.g., Unit 3 Essay)" style="flex:1"><select id="na_unit" style="width:150px"><option value="">Unit: General</option><option>Unit 1</option><option>Unit 2</option><option>Unit 3</option><option>Culminating</option></select></div>
+   <div class="row" style="margin-bottom:8px"><select id="na_type"><option>Assignment</option><option>Test</option><option>Quiz</option><option>Project</option><option>Performance</option></select><select id="na_cat" style="flex:1">${(cats||[]).map(c=>`<option value="${c.id}">${esc(c.name)} (${c.code})</option>`).join('')}</select></div>
+   <div style="font-size:12px;font-weight:700;color:var(--muted);margin:6px 0">ONLINE SUBMISSION</div>
+   <div class="row" style="margin-bottom:8px"><select id="na_submit"><option value="none">None</option><option value="file">A document or file</option><option value="quiz">Online quiz</option><option value="external">External tool</option></select><label class="muted"><input type="checkbox" id="na_resub"> Allow resubmission</label></div>
+   <div style="font-size:12px;font-weight:700;color:var(--muted);margin:6px 0">SCHEDULE</div>
+   <div class="row" style="margin-bottom:8px"><input id="na_due" type="date"><label class="muted"><input type="checkbox" id="na_post" checked> Visible to students</label></div>
+   <div style="font-size:12px;font-weight:700;color:var(--muted);margin:6px 0">GRADING</div>
+   <div class="row" style="margin-bottom:8px"><select id="na_summative"><option value="of">Assessment OF learning (summative)</option><option value="for">Assessment FOR learning</option><option value="as">Assessment AS learning</option></select></div>
+   <div class="row" style="margin-bottom:8px"><span class="muted" style="font-size:12px">Out of</span><input id="na_denom" type="number" value="100" style="width:80px"><span class="muted" style="font-size:12px">Weighting</span><input id="na_weight" type="number" value="1" style="width:70px"><select id="na_kind"><option value="normal">Normal</option><option value="essential">Essential</option><option value="bonus">Bonus</option><option value="ignored">Ignored</option></select><select id="na_blank"><option value="ignored">Blanks: Ignored</option><option value="zero">Blanks: 0</option></select></div>
+   <textarea id="na_instr" placeholder="Instructions for students…" style="width:100%;height:54px;margin-bottom:8px"></textarea>
+   <div class="row" style="margin-bottom:8px"><div style="flex:1"><div class="muted" style="font-size:12px">Files for students</div><input type="file" id="na_files_s" multiple></div><div style="flex:1"><div class="muted" style="font-size:12px">Files for teachers</div><input type="file" id="na_files_t" multiple></div></div>
+   <div class="row"><button class="btn" onclick="gbCreateAssignment('${secId}')">Create</button><span class="pf">Grades stay hidden until you click “Release” in the gradebook.</span><span id="na_msg" class="pf"></span></div>`);
 }
 window.gbCreateAssignment=async(secId)=>{
-  const m=document.getElementById('na_msg'); m.style.color='var(--muted)'; m.textContent='Saving…';
-  const payload={school_id:SESSION.schoolId,section_id:secId,category_id:document.getElementById('na_cat').value,
-    title:document.getElementById('na_title').value||'Untitled',instructions:document.getElementById('na_instr').value||null,
-    denominator:+document.getElementById('na_denom').value||100,
-    due_at:document.getElementById('na_due').value? new Date(document.getElementById('na_due').value).toISOString():null,
-    kind:document.getElementById('na_kind').value,blank_policy:document.getElementById('na_blank').value,
-    posted:document.getElementById('na_post').checked,allow_upload:document.getElementById('na_upload').checked,allow_resubmit:document.getElementById('na_resub').checked};
+  const g=(x)=>document.getElementById(x); const m=g('na_msg'); m.style.color='var(--muted)'; m.textContent='Saving…';
+  const sub=g('na_submit').value;
+  const payload={school_id:SESSION.schoolId,section_id:secId,category_id:g('na_cat').value,
+    title:g('na_title').value||'Untitled',instructions:g('na_instr').value||null,
+    denominator:+g('na_denom').value||100, weighting:+g('na_weight').value||1, unit:g('na_unit').value||null,
+    type:g('na_type').value, summative:g('na_summative').value, submission_type:sub,
+    due_at:g('na_due').value? new Date(g('na_due').value).toISOString():null,
+    kind:g('na_kind').value, blank_policy:g('na_blank').value,
+    posted:g('na_post').checked, allow_upload:(sub==='file'), allow_resubmit:g('na_resub').checked, scores_visible:false};
   const { data, error } = await sb.from('assignments').insert(payload).select('id').single();
   if(error){ m.style.color='var(--red)'; m.textContent=error.message; return; }
-  const files=document.getElementById('na_files').files;
-  for(const f of files){ const path=SESSION.schoolId+'/assignments/'+data.id+'/'+f.name;
-    const up=await sb.storage.from('assignment-files').upload(path,f,{upsert:true});
-    if(!up.error){ await sb.from('assignment_files').insert({school_id:SESSION.schoolId,assignment_id:data.id,name:f.name,url:path,kind:'resource',uploaded_by:SESSION.user&&SESSION.user.id}); }
-  }
+  const up=async(input,kind)=>{ for(const f of (input.files||[])){ const path=SESSION.schoolId+'/assignments/'+data.id+'/'+kind+'/'+f.name; const r=await sb.storage.from('assignment-files').upload(path,f,{upsert:true}); if(!r.error) await sb.from('assignment_files').insert({school_id:SESSION.schoolId,assignment_id:data.id,name:f.name,url:path,kind,uploaded_by:SESSION.user&&SESSION.user.id}); } };
+  await up(g('na_files_s'),'student'); await up(g('na_files_t'),'teacher');
   closeModal(); gradebookLive(secId);
 };
 /* per-assignment grading view: score + flag + comment + submissions */
 window.assignmentViewLive=async(aid)=>{
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading assignment…</div></div>';
-  const { data: a } = await sb.from('assignments').select('id,title,denominator,kind,blank_policy,section_id,due_at,allow_upload').eq('id',aid).single();
+  const { data: a } = await sb.from('assignments').select('id,title,denominator,kind,blank_policy,section_id,due_at,allow_upload,scores_visible,type,summative').eq('id',aid).single();
   if(!a){ v.innerHTML='<div class="card"><div class="notice">Assignment not found.</div></div>'; return; }
+  window._avVisible=async()=>{ await sb.from('assignments').update({scores_visible:!a.scores_visible}).eq('id',aid); assignmentViewLive(aid); };
   const { data: enr } = await sb.from('enrolments').select('student:students(id,first_name,last_name)').eq('section_id',a.section_id);
   const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((x,y)=>x.last_name.localeCompare(y.last_name));
   const { data: scrs } = await sb.from('scores').select('student_id,score,flag,comment').eq('assignment_id',aid);
@@ -1493,9 +1499,11 @@ window.assignmentViewLive=async(aid)=>{
       <td><button class="btn ghost sm" onclick="_avSave('${s.id}')">Save</button> <span id="av_ok_${s.id}"></span></td></tr>`;
   }).join('');
   v.innerHTML=`<button class="btn ghost sm" onclick="gradebookLive('${a.section_id}')">← Gradebook</button>
-  <div class="card" style="margin-top:12px"><h2>${esc(a.title)}</h2>
-    <div class="muted">Out of ${a.denominator} • ${a.kind} • blanks: ${a.blank_policy} • due ${a.due_at? new Date(a.due_at).toLocaleDateString():'—'}</div>
-    <div class="sub" style="margin-top:8px">Grade, flag (late / essential / bonus / ignored / zero) and comment each student. Saves live.</div>
+  <div class="card" style="margin-top:12px"><div class="row"><h2 style="margin:0">${esc(a.title)}</h2><div style="flex:1"></div>
+    <span class="badge ${a.scores_visible?'b-green':'b-grey'}">${a.scores_visible?'👁 grades visible to students':'🔒 grades hidden'}</span>
+    <button class="btn ${a.scores_visible?'ghost':''} sm" onclick="_avVisible()">${a.scores_visible?'Hide grades':'Release grades to students'}</button></div>
+    <div class="muted" style="margin-top:6px">${esc(a.type||'Assignment')} • Out of ${a.denominator} • ${a.kind} • blanks: ${a.blank_policy} • due ${a.due_at? new Date(a.due_at).toLocaleDateString():'—'}</div>
+    <div class="sub" style="margin-top:8px">Enter grades, flag (late / essential / bonus / ignored / zero) and comment each student. When ready, <b>Release grades</b> so students/parents can see them.</div>
     <div style="overflow:auto"><table style="min-width:820px"><thead><tr><th>Student</th><th>Submission</th><th>Score</th><th>Flag</th><th>Comment</th><th></th></tr></thead><tbody>${rows||'<tr><td colspan=6 class=muted>No students.</td></tr>'}</tbody></table></div></div>`;
 };
 
@@ -1543,7 +1551,7 @@ async function reportcardLive(sid){
   const secIds=items.map(x=>x.sec.id);
   let mMap={}; if(items.length){ const {data:mk}=await sb.from('marks').select('enrolment_id,override_mark,comments').in('enrolment_id',items.map(x=>x.enrId)); (mk||[]).forEach(m=>mMap[m.enrolment_id]=m); }
   let asg=[],cats=[],scrs=[];
-  if(secIds.length){ asg=(await sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy').in('section_id',secIds)).data||[];
+  if(secIds.length){ asg=(await sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy,weighting').in('section_id',secIds)).data||[];
     cats=(await sb.from('assessment_categories').select('id,section_id,weight').in('section_id',secIds)).data||[];
     const aids=asg.map(a=>a.id); scrs=aids.length?((await sb.from('scores').select('assignment_id,score,flag').eq('student_id',s.id).in('assignment_id',aids)).data||[]):[]; }
   const scoreMap={}; scrs.forEach(x=>scoreMap[x.assignment_id]={score:x.score,flag:x.flag});
@@ -1788,7 +1796,7 @@ async function onsisLive(){
   const sid=SESSION.schoolId;
   const [enrR,asgR,catR,scrR]=await Promise.all([
     sb.from('enrolments').select('student:students(id,oen,first_name,last_name,grade), section:sections(id,course:courses(code,name,credit,grade))').eq('school_id',sid),
-    sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy').eq('school_id',sid),
+    sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy,weighting').eq('school_id',sid),
     sb.from('assessment_categories').select('id,section_id,weight').eq('school_id',sid),
     sb.from('scores').select('assignment_id,student_id,score,flag').eq('school_id',sid)
   ]);
