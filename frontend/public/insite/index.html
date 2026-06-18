@@ -922,6 +922,7 @@ PAGES.assignments=()=>{
 
 /* ---------- QUIZZING -------------------------------------------------- */
 PAGES.quizzes=()=>{
+  if(SESSION.backend && SESSION.schoolId) return quizzesLive();
   let secs=SECTIONS; if(SESSION.role==='teacher'){const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id);if(m.length)secs=m;}
   const all=secs.flatMap(s=>s.quizzes.map(q=>({...q,sec:s})));
   $('#view').innerHTML=`<div class="card"><div class="row"><h2 style="margin:0">Quizzes &amp; tests</h2><div style="flex:1"></div><button class="btn sm" onclick="quizBuilder()">+ Build a quiz</button></div>
@@ -1209,6 +1210,7 @@ PAGES.myassign=()=>{
     </tbody></table></div>`;
 };
 PAGES.myquiz=()=>{
+  if(SESSION.backend && SESSION.studentId) return myQuizLive();
   $('#view').innerHTML=`<div class="card"><h2>My quizzes</h2><div class="sub">Assigned assessments</div>
     <div class="grid g3">
       <div class="feed-item"><b>SCH3U — Quiz 2: Stoichiometry</b><div class="meta">20 questions • 30 min • opens Fri</div><div style="margin-top:8px"><span class="badge b-amber">Not started</span></div></div>
@@ -2165,6 +2167,86 @@ async function mymarksLive(){
     </tbody></table></div>
    <div class="card"><h2>My documents</h2><div class="sub">Report cards, transcripts, MAP reports</div>${(docs||[]).map(d=>`<div class="feed-item"><b>${esc(d.name)}</b> <span class="badge b-grey">${esc(d.category)}</span> ${d.url?`<a onclick="gbOpenFile('student-docs','${d.url}')">📎 open</a>`:''}</div>`).join('')||'<div class="muted">No documents shared yet.</div>'}</div>`;
 }
+
+/* ---------- Quizzing (teacher builder + student taker) ------------- */
+let _qzSec=null;
+async function quizzesLive(secId){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const secs=await liveSections();
+  if(!secs.length){ v.innerHTML='<div class="card"><div class="notice">No sections.</div></div>'; return; }
+  const sec=secs.find(s=>s.id===secId)||secs.find(s=>s.id===_qzSec)||secs[0]; _qzSec=sec.id;
+  const {data:quizzes}=await sb.from('quizzes').select('id,title,state,time_limit_min, quiz_questions(id), quiz_attempts(id)').eq('section_id',sec.id).order('created_at',{ascending:false});
+  window._qzNew=async()=>{ const t=document.getElementById('qz_t').value.trim(); if(!t)return; const {data,error}=await sb.from('quizzes').insert({school_id:SESSION.schoolId,section_id:sec.id,title:t,time_limit_min:+document.getElementById('qz_time').value||null,state:'draft'}).select('id').single(); if(error){alert(error.message);return;} quizEditLive(data.id); };
+  v.innerHTML=`<div class="card"><div class="row"><select id="qzsec" style="min-width:280px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — P${x.period}</option>`).join('')}</select><div style="flex:1"></div><input id="qz_t" placeholder="New quiz title" style="width:190px"><input id="qz_time" type="number" placeholder="min" style="width:64px"><button class="btn sm" onclick="_qzNew()">+ Quiz</button></div>
+    <div class="sub" style="margin-top:6px">Build a quiz, add questions, set it Open — objective questions auto-grade; written answers go to a manual queue.</div>
+    <table style="margin-top:8px"><thead><tr><th>Quiz</th><th>Questions</th><th>Attempts</th><th>State</th></tr></thead><tbody>
+    ${(quizzes||[]).map(q=>`<tr class="click" onclick="quizEditLive('${q.id}')"><td><b>${esc(q.title)}</b> <span class="muted">${q.time_limit_min?q.time_limit_min+' min':''}</span></td><td>${(q.quiz_questions||[]).length}</td><td>${(q.quiz_attempts||[]).length}</td><td><span class="badge ${q.state==='open'?'b-green':q.state==='closed'?'b-grey':'b-amber'}">${q.state}</span></td></tr>`).join('')||'<tr><td colspan=4 class=muted>No quizzes.</td></tr>'}
+    </tbody></table></div>`;
+  $('#qzsec').onchange=e=>quizzesLive(e.target.value);
+}
+window.quizEditLive=async(qid)=>{
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const {data:q}=await sb.from('quizzes').select('*').eq('id',qid).single(); if(!q){v.innerHTML='<div class="card"><div class="notice">Not found.</div></div>';return;}
+  const {data:qs}=await sb.from('quiz_questions').select('*').eq('quiz_id',qid).order('sort_order');
+  const {data:attempts}=await sb.from('quiz_attempts').select('id,student_id,total_score,auto_score,manual_score, student:students(first_name,last_name)').eq('quiz_id',qid);
+  window._qState=async(st)=>{ await sb.from('quizzes').update({state:st}).eq('id',qid); quizEditLive(qid); };
+  window._qAdd=async()=>{ const g=(x)=>document.getElementById(x); const type=g('qq_type').value, prompt=g('qq_prompt').value.trim(), pts=+g('qq_pts').value||1, cfg=g('qq_cfg').value;
+    if(!prompt)return; let options=null,answer=null;
+    if(type==='multiple_choice'){ const parts=cfg.split('|').map(x=>x.trim()).filter(Boolean); const ci=parts.findIndex(p=>p.endsWith('*')); options=parts.map(p=>p.replace(/\*$/,'').trim()); answer={i:String(ci>=0?ci:0)}; }
+    else if(type==='true_false') answer={b:/^\s*t/i.test(cfg)};
+    else if(type==='numeric') answer={n:parseFloat(cfg)};
+    else if(type==='short_answer') answer=cfg?{t:cfg}:null;
+    const {error}=await sb.from('quiz_questions').insert({school_id:SESSION.schoolId,quiz_id:qid,qtype:type,prompt,options,answer,points:pts,sort_order:(qs||[]).length+1}); if(error){alert(error.message);return;} quizEditLive(qid); };
+  window._qDel=async(id)=>{ await sb.from('quiz_questions').delete().eq('id',id); quizEditLive(qid); };
+  window._qGrade=async(aid)=>{ const at=(attempts||[]).find(a=>a.id===aid); const m=+document.getElementById('mg_'+aid).value||0; await sb.from('quiz_attempts').update({manual_score:m,total_score:(at&&at.auto_score||0)+m}).eq('id',aid); quizEditLive(qid); };
+  v.innerHTML=`<button class="btn ghost sm" onclick="quizzesLive('${q.section_id}')">← Quizzes</button>
+   <div class="card" style="margin-top:12px"><div class="row"><h2 style="margin:0">${esc(q.title)}</h2><span class="badge ${q.state==='open'?'b-green':q.state==='closed'?'b-grey':'b-amber'}">${q.state}</span><div style="flex:1"></div>${['draft','open','closed'].map(s=>`<button class="btn ${q.state===s?'':'ghost'} sm" onclick="_qState('${s}')">${s}</button>`).join('')}</div>
+   <table style="margin-top:8px"><tbody>${(qs||[]).map((x,i)=>`<tr><td>${i+1}. <b>${esc(x.prompt)}</b> <span class="muted">(${x.qtype.replace('_',' ')}, ${x.points} pt${x.points>1?'s':''})</span>${x.options?'<div class="muted" style="font-size:11px">'+x.options.map((o,j)=>(String(j)===((x.answer&&x.answer.i))?'✓ ':'')+esc(o)).join('  ·  ')+'</div>':''}</td><td style="text-align:right"><button class="btn ghost sm" onclick="_qDel('${x.id}')">×</button></td></tr>`).join('')||'<tr><td class=muted>No questions yet.</td></tr>'}</tbody></table>
+   <div class="hr"></div><b style="font-size:13px">Add question</b>
+   <div class="row" style="margin:6px 0"><select id="qq_type"><option value="multiple_choice">Multiple choice</option><option value="true_false">True/False</option><option value="numeric">Numeric</option><option value="short_answer">Short answer</option><option value="long_answer">Long answer (manual)</option></select><input id="qq_pts" type="number" value="1" style="width:60px"></div>
+   <input id="qq_prompt" placeholder="Question prompt" style="width:100%;margin-bottom:6px">
+   <div class="row"><input id="qq_cfg" placeholder="MC: Paris*|London|Rome   ·   T/F: true   ·   numeric: 42   ·   short: expected text" style="flex:1"><button class="btn sm" onclick="_qAdd()">Add</button></div>
+   </div>
+   <div class="card"><h2>Attempts</h2><table><thead><tr><th>Student</th><th>Auto</th><th>Manual</th><th>Total</th></tr></thead><tbody>
+   ${(attempts||[]).map(a=>`<tr><td>${esc(a.student?a.student.last_name+', '+a.student.first_name:'—')}</td><td>${a.auto_score??'—'}</td><td><input id="mg_${a.id}" type="number" value="${a.manual_score??''}" style="width:56px"> <button class="btn ghost sm" onclick="_qGrade('${a.id}')">save</button></td><td><b>${a.total_score??'pending'}</b></td></tr>`).join('')||'<tr><td colspan=4 class=muted>No attempts yet.</td></tr>'}
+   </tbody></table></div>`;
+};
+async function myQuizLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const {data:enr}=await sb.from('enrolments').select('section_id, section:sections(course:courses(code))').eq('student_id',SESSION.studentId);
+  const secIds=(enr||[]).map(e=>e.section_id); const code={}; (enr||[]).forEach(e=>code[e.section_id]=e.section&&e.section.course?e.section.course.code:'');
+  let quizzes=[]; if(secIds.length){ const z=await sb.from('quizzes').select('id,title,section_id,time_limit_min').eq('state','open').in('section_id',secIds); quizzes=z.data||[]; }
+  const {data:att}=await sb.from('quiz_attempts').select('quiz_id,total_score,auto_score').eq('student_id',SESSION.studentId);
+  const am={}; (att||[]).forEach(a=>am[a.quiz_id]=a);
+  v.innerHTML=`<div class="card"><h2>My quizzes</h2><div class="sub">🟢 live</div><table><thead><tr><th>Quiz</th><th>Class</th><th>Status</th><th></th></tr></thead><tbody>
+   ${quizzes.map(q=>{const a=am[q.id];return `<tr><td><b>${esc(q.title)}</b> <span class="muted">${q.time_limit_min?q.time_limit_min+' min':''}</span></td><td>${esc(code[q.section_id]||'')}</td><td>${a?`<span class="badge b-green">Done${a.total_score!=null?' — '+a.total_score:' (pending)'}</span>`:'<span class="badge b-amber">To do</span>'}</td><td>${a?'':`<button class="btn sm" onclick="takeQuizLive('${q.id}')">Start</button>`}</td></tr>`}).join('')||'<tr><td colspan=4 class=muted>No open quizzes.</td></tr>'}
+   </tbody></table></div>`;
+}
+window.takeQuizLive=async(qid)=>{
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading quiz…</div></div>';
+  const { data: quiz, error } = await sb.rpc('get_quiz',{p_quiz:qid});
+  if(error){ v.innerHTML=`<div class="card"><div class="notice">${esc(error.message)}</div></div>`; return; }
+  let qs=(quiz.questions||[]); if(quiz.shuffle){ qs=qs.slice().sort(()=>Math.random()-0.5); }
+  window._quizSubmit=async()=>{
+    const responses={};
+    qs.forEach(x=>{ if(x.qtype==='multiple_choice'||x.qtype==='true_false'){ const sel=document.querySelector('input[name="q_'+x.id+'"]:checked'); responses[x.id]=sel?sel.value:null; }
+      else { const el=document.getElementById('q_'+x.id); responses[x.id]=el?el.value:''; } });
+    const { data, error:e2 } = await sb.rpc('submit_quiz',{p_quiz:qid,p_responses:responses});
+    if(e2){ alert(e2.message); return; }
+    const v2=$('#view'); v2.innerHTML=`<div class="card"><h2>Submitted ✓</h2><div class="sub">${esc(quiz.title)}</div><p>Auto-graded score: <b>${data.auto_score} / ${data.possible}</b>${data.needs_manual?' — written answers awaiting your teacher.':''}</p><button class="btn" onclick="go('myquiz')">Back to quizzes</button></div>`;
+  };
+  v.innerHTML=`<button class="btn ghost sm" onclick="go('myquiz')">← My quizzes</button>
+   <div class="card" style="margin-top:12px"><h2>${esc(quiz.title)}</h2>${quiz.time_limit_min?`<div class="sub">${quiz.time_limit_min} min</div>`:''}
+   ${qs.map((x,i)=>`<div class="feed-item"><b>${i+1}. ${esc(x.prompt)}</b> <span class="muted">(${x.points} pt${x.points>1?'s':''})</span>
+     <div style="margin-top:6px">${
+       x.qtype==='multiple_choice'? (x.options||[]).map((o,j)=>`<label class="muted" style="display:block"><input type="radio" name="q_${x.id}" value="${j}"> ${esc(o)}</label>`).join('')
+       : x.qtype==='true_false'? `<label class="muted" style="margin-right:14px"><input type="radio" name="q_${x.id}" value="true"> True</label><label class="muted"><input type="radio" name="q_${x.id}" value="false"> False</label>`
+       : x.qtype==='numeric'? `<input id="q_${x.id}" type="number" placeholder="Answer">`
+       : x.qtype==='short_answer'? `<input id="q_${x.id}" placeholder="Answer" style="width:100%">`
+       : `<textarea id="q_${x.id}" placeholder="Your answer…" style="width:100%;height:70px"></textarea>`
+     }</div></div>`).join('')}
+   <button class="btn" onclick="_quizSubmit()">Submit quiz</button></div>`;
+};
 
 /* ============================ BOOT =================================== */
 if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
