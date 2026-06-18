@@ -1387,6 +1387,7 @@ async function gradebookLive(secId){
   v.innerHTML=`<div class="card"><div class="row">
     <select id="gbsec" style="min-width:280px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — ${esc(x.course.name)} Gr${x.course.grade} (P${x.period})</option>`).join('')}</select>
     <span class="pill">🟢 ${esc(sec.teacher_name||'—')}</span><div style="flex:1"></div>
+    <button class="btn ghost sm" onclick="gbCollaborators('${sec.id}')">👥 Collaborators</button>
     <button class="btn ghost sm" onclick="gbWeights('${sec.id}')">⚖ Weights</button>
     <button class="btn sm" onclick="gbNewAssignment('${sec.id}')">+ Assignment</button></div>
     <div class="row" style="margin-top:8px">${(cats||[]).map(c=>`<span class="tag">${c.code} <b>${c.weight}%</b></span>`).join('')}</div>
@@ -1402,6 +1403,23 @@ async function gbWeights(secId){
    <div class="row" style="margin-top:10px"><button class="btn" onclick="gbSaveWeights('${secId}',[${(cats||[]).map(c=>`'${c.id}'`).join(',')}])">Save weights</button></div>`);
 }
 window.gbSaveWeights=async(secId,ids)=>{ for(const id of ids){ const w=+document.getElementById('w_'+id).value||0; await sb.from('assessment_categories').update({weight:w}).eq('id',id); } closeModal(); gradebookLive(secId); };
+/* per-class teacher collaboration */
+async function gbCollaborators(secId){
+  const {data:cur}=await sb.from('section_teachers').select('teacher_id,is_primary,profile:profiles(full_name,email)').eq('section_id',secId);
+  const {data:teachers}=await sb.from('memberships').select('user_id,profile:profiles(full_name,email)').eq('school_id',SESSION.schoolId).eq('role','teacher');
+  const curIds=new Set((cur||[]).map(c=>c.teacher_id));
+  const opts=(teachers||[]).filter(t=>!curIds.has(t.user_id)).map(t=>`<option value="${t.user_id}">${esc(t.profile?t.profile.full_name:t.user_id)}</option>`).join('');
+  modal('Class collaborators', `<p class="muted">Collaborators get the same rights in this class as the primary teacher — gradebook, assignments, attendance, comments &amp; flags — but cannot remove the primary teacher. (Admins already see every class.)</p>
+   <b>Assigned teachers</b>
+   ${(cur||[]).length? (cur||[]).map(c=>`<div class="row" style="margin:6px 0"><div style="flex:1">${esc(c.profile?c.profile.full_name:c.teacher_id)} ${c.is_primary?'<span class="badge b-blue">primary</span>':'<span class="badge b-grey">collaborator</span>'}</div>${c.is_primary?'<span class="pf">protected</span>':`<button class="btn ghost sm" onclick="gbRemoveCollab('${secId}','${c.teacher_id}')">Remove</button>`}</div>`).join('') : '<div class="muted" style="margin:6px 0">No teacher logins assigned yet. Teachers appear here once invited and linked (invitation flow).</div>'}
+   <div class="hr"></div><b>Add a collaborator</b>
+   <div class="row" style="margin-top:6px"><select id="collab_pick" style="flex:1">${opts||'<option value="">No other teachers in this school yet</option>'}</select><button class="btn sm" onclick="gbAddCollab('${secId}')">Add</button></div>
+   <div id="collab_msg" class="pf" style="margin-top:8px"></div>`);
+}
+window.gbAddCollab=async(secId)=>{ const tid=document.getElementById('collab_pick').value; const m=document.getElementById('collab_msg'); if(!tid){ m.textContent='No teacher selected.'; return; }
+  const {error}=await sb.from('section_teachers').insert({section_id:secId,teacher_id:tid,school_id:SESSION.schoolId,is_primary:false,added_by:SESSION.user&&SESSION.user.id});
+  if(error){ m.style.color='var(--red)'; m.textContent=error.message; return; } gbCollaborators(secId); };
+window.gbRemoveCollab=async(secId,tid)=>{ const {error}=await sb.from('section_teachers').delete().eq('section_id',secId).eq('teacher_id',tid); if(error){ alert(error.message); return; } gbCollaborators(secId); };
 /* new assignment with settings + file attachments */
 async function gbNewAssignment(secId){
   const {data:cats}=await sb.from('assessment_categories').select('id,code,name').eq('section_id',secId).order('code');
