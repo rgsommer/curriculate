@@ -653,6 +653,7 @@ function avgGr11(){let a=[];SECTIONS.forEach(s=>s.roster.forEach(st=>{const m=se
 
 /* ---------- DASHBOARD (role aware) ----------------------------------- */
 PAGES.dash=()=>{
+  if(SESSION.backend && SESSION.schoolId && SESSION.role==='admin') return dashLive();
   if(SESSION.role==='teacher') return dashTeacher();
   if(SESSION.role==='student') return dashStudent();
   // admin
@@ -819,6 +820,7 @@ window.addHours=(id)=>{ const v=+($('#hrAdd').value||0); if(v>0){ const s=STUDEN
 /* ---------- ATTENDANCE ----------------------------------------------- */
 let _attSec='SEC0';
 PAGES.attendance=()=>{
+  if(SESSION.backend && SESSION.schoolId) return attendanceLive();
   let secs=SECTIONS;
   if(SESSION.role==='teacher'){ const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id); if(m.length){secs=m; if(!m.find(x=>x.id===_attSec))_attSec=m[0].id;} }
   const sec=secs.find(s=>s.id===_attSec)||secs[0]; _attSec=sec.id;
@@ -848,6 +850,7 @@ PAGES.attendance=()=>{
 
 /* ---------- GRADEBOOK ------------------------------------------------- */
 PAGES.gradebook=(secId)=>{
+  if(SESSION.backend && SESSION.schoolId) return gradebookLive(secId);
   let secs=SECTIONS;
   if(SESSION.role==='teacher'){ const m=SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id); if(m.length)secs=m; }
   const sec = (secId && secs.find(s=>s.id===secId)) || secs[0];
@@ -939,6 +942,7 @@ window.quizBuilder=()=>modal('Build a quiz',`<p class="muted">Assemble from the 
 
 /* ---------- REPORT CARDS --------------------------------------------- */
 PAGES.reportcard=(sid)=>{
+  if(SESSION.backend && SESSION.schoolId) return reportcardLive(sid);
   let pool=STUDENTS.filter(x=>x.grade>=11);
   if(SESSION.role==='teacher'){ const ids=new Set(); SECTIONS.filter(s=>s.teacher.id===DEMO_TEACHER.id).forEach(s=>s.roster.forEach(r=>ids.add(r.id))); pool=STUDENTS.filter(s=>ids.has(s.id)); }
   const s = (sid&&STUDENTS.find(x=>x.id==sid)) || pool[0];
@@ -989,6 +993,7 @@ PAGES.transcript=(sid)=>{
 
 /* ---------- GRADUATION (OSSD) ---------------------------------------- */
 PAGES.grad=()=>{
+  if(SESSION.backend && SESSION.schoolId) return gradLive();
   const seniors=STUDENTS.filter(s=>s.grade>=11).sort((a,b)=>b.grade-a.grade || a.last.localeCompare(b.last));
   $('#view').innerHTML=`<div class="notice">OSSD requires <b>30 credits</b> (compulsory split: 18+12, or <b>17+13</b> for students entering Grade 9 in Fall 2024 or later), the <b>OSSLT</b>, <b>40 community hours</b>, and a <b>minimum of 2 online learning credits</b> (Grade 9 cohort 2020–21+). Requirement logic is applied by entry cohort.</div>
   <div class="card"><h2>Path to graduation</h2><div class="sub">Live progress per senior — feeds counselling and OnSIS</div>
@@ -1317,6 +1322,138 @@ window.openStudentLive=async(id)=>{
     </div>
   </div>`;
 };
+
+async function liveSections(){
+  const { data } = await sb.from('sections')
+    .select('id,period,room,teacher_name,course:courses(code,name,grade)')
+    .eq('school_id', SESSION.schoolId).order('period');
+  return (data||[]).filter(s=>s.course);
+}
+
+/* ---------- Gradebook (live, with score editing) -------------------- */
+async function gradebookLive(secId){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading gradebook…</div></div>';
+  const secs=await liveSections();
+  if(!secs.length){ v.innerHTML='<div class="card"><div class="notice">No sections in this school yet.</div></div>'; return; }
+  const sec=secs.find(s=>s.id===secId)||secs[0];
+  const { data: enr } = await sb.from('enrolments').select('student:students(id,first_name,last_name)').eq('section_id',sec.id);
+  const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((a,b)=>a.last_name.localeCompare(b.last_name));
+  const { data: cats } = await sb.from('assessment_categories').select('id,code,weight').eq('section_id',sec.id);
+  const { data: asg } = await sb.from('assignments').select('id,title,denominator,category_id').eq('section_id',sec.id).order('due_at');
+  const aids=(asg||[]).map(a=>a.id);
+  const { data: scrs } = aids.length ? await sb.from('scores').select('assignment_id,student_id,score').in('assignment_id',aids) : {data:[]};
+  const scoreMap={}; (scrs||[]).forEach(s=>scoreMap[s.student_id+'|'+s.assignment_id]=s.score);
+  const catById={}; (cats||[]).forEach(c=>catById[c.id]=c);
+  const calc=(sid)=>{ let tot=0,wsum=0; (cats||[]).forEach(c=>{ const cas=(asg||[]).filter(a=>a.category_id===c.id); let sum=0,n=0; cas.forEach(a=>{const val=scoreMap[sid+'|'+a.id]; if(val!=null&&a.denominator){sum+=(val/a.denominator)*100;n++;}}); if(n){tot+=(sum/n)*c.weight;wsum+=c.weight;} }); return wsum?Math.round(tot/wsum):''; };
+  window._gbLiveSave=async(aid,sid,inp)=>{ let val=inp.value.trim(); const a=(asg||[]).find(x=>x.id===aid);
+    if(val!==''&&(isNaN(val)||+val<0||+val>a.denominator)){inp.style.borderColor='var(--red)';return;}
+    inp.style.borderColor='var(--line)';
+    const { error } = await sb.from('scores').upsert({school_id:SESSION.schoolId,assignment_id:aid,student_id:sid,score:val===''?null:+val},{onConflict:'assignment_id,student_id'});
+    if(error){ inp.style.borderColor='var(--red)'; inp.title=error.message; return; }
+    scoreMap[sid+'|'+aid]= val===''?null:+val; const m=calc(sid); const L=pctToLevel(m);
+    const mc=document.querySelector('[data-mark="'+sid+'"]'); if(mc) mc.textContent=(m===''?'—':m+'%');
+    const lc=document.querySelector('[data-lvl="'+sid+'"]'); if(lc) lc.innerHTML=`<span class="badge ${L.c} lvl">${L.l}</span>`;
+  };
+  const head=(asg||[]).map(a=>`<th style="text-align:center" title="${esc(a.title)}">${esc(a.title.split(' ')[0])}<div style="font-weight:400;text-transform:none;color:var(--muted)">/${a.denominator} · ${catById[a.category_id]?catById[a.category_id].code:''}</div></th>`).join('');
+  const rows=roster.map(s=>{
+    const cells=(asg||[]).map(a=>{const val=scoreMap[s.id+'|'+a.id];return `<td style="text-align:center"><input class="score-in" value="${val==null?'':val}" onchange="_gbLiveSave('${a.id}','${s.id}',this)"></td>`;}).join('');
+    const m=calc(s.id);const L=pctToLevel(m);
+    return `<tr><td style="position:sticky;left:0;background:#fff"><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></td>${cells}<td style="text-align:center;font-weight:800" data-mark="${s.id}">${m===''?'—':m+'%'}</td><td style="text-align:center" data-lvl="${s.id}"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`;
+  }).join('');
+  v.innerHTML=`<div class="card"><div class="row">
+    <select id="gbsec" style="min-width:300px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — ${esc(x.course.name)} Gr${x.course.grade} (P${x.period})</option>`).join('')}</select>
+    <span class="pill">🟢 ${esc(sec.teacher_name||'—')} • Rm ${esc(sec.room||'')}</span></div>
+    <div class="sub" style="margin-top:8px">Live gradebook — edits save to Postgres and recompute marks (Growing Success weights), all under RLS.</div>
+    <div style="overflow:auto"><table style="min-width:760px"><thead><tr><th style="position:sticky;left:0;background:#fff">Student</th>${head}<th style="text-align:center">Term mark</th><th style="text-align:center">Level</th></tr></thead><tbody>${rows||'<tr><td class="muted">No students enrolled.</td></tr>'}</tbody></table></div></div>`;
+  $('#gbsec').onchange=e=>gradebookLive(e.target.value);
+}
+
+/* ---------- Attendance (live, with toggle) -------------------------- */
+let _attLiveSec=null, _attLiveDate='2026-05-12';
+async function attendanceLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading attendance…</div></div>';
+  const secs=await liveSections();
+  if(!secs.length){ v.innerHTML='<div class="card"><div class="notice">No sections.</div></div>'; return; }
+  const sec=secs.find(s=>s.id===_attLiveSec)||secs[0]; _attLiveSec=sec.id; const per=sec.period||1;
+  const { data: enr } = await sb.from('enrolments').select('student:students(id,first_name,last_name)').eq('section_id',sec.id);
+  const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((a,b)=>a.last_name.localeCompare(b.last_name));
+  const { data: att } = await sb.from('attendance').select('student_id,status').eq('section_id',sec.id).eq('on_date',_attLiveDate).eq('period',per);
+  const statusMap={}; (att||[]).forEach(a=>statusMap[a.student_id]=a.status);
+  window._attLiveSet=async(sid,st)=>{
+    const { error }=await sb.from('attendance').upsert({school_id:SESSION.schoolId,student_id:sid,section_id:sec.id,on_date:_attLiveDate,period:per,status:st},{onConflict:'student_id,section_id,on_date,period'});
+    if(!error){ statusMap[sid]=st; attendanceLive(); }
+  };
+  const rows=roster.map(s=>{const st=statusMap[s.id]||'present';
+    const opt=(vv,lbl,cls)=>`<button class="btn sm ${st===vv?'':'ghost'}" style="${st===vv?'background:var(--'+cls+')':''}" onclick="_attLiveSet('${s.id}','${vv}')">${lbl}</button>`;
+    return `<tr><td><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></td><td><div class="row">${opt('present','Present','green')}${opt('late','Late','amber')}${opt('absent','Absent','red')}</div></td></tr>`;
+  }).join('');
+  const vals=roster.map(s=>statusMap[s.id]||'present');
+  v.innerHTML=`<div class="card"><div class="row"><select id="atsec" style="min-width:300px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — P${x.period}</option>`).join('')}</select><input type="date" id="atdate" value="${_attLiveDate}"><div style="flex:1"></div><span class="pill">🟢 ${vals.filter(x=>x==='present').length} present • ${vals.filter(x=>x==='late').length} late • ${vals.filter(x=>x==='absent').length} absent</span></div>
+  <div class="sub" style="margin-top:8px">Live attendance — saves to Postgres under RLS.</div>
+  <table><thead><tr><th>Student</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td class="muted">No students.</td></tr>'}</tbody></table></div>`;
+  $('#atsec').onchange=e=>{_attLiveSec=e.target.value;attendanceLive();};
+  $('#atdate').onchange=e=>{_attLiveDate=e.target.value;attendanceLive();};
+}
+
+/* ---------- Report card (live) -------------------------------------- */
+async function reportcardLive(sid){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const { data: studs } = await sb.from('students').select('id,first_name,last_name,grade,oen').eq('school_id',SESSION.schoolId).gte('grade',11).order('last_name');
+  if(!studs||!studs.length){ v.innerHTML='<div class="card"><div class="notice">No senior students.</div></div>'; return; }
+  const s=studs.find(x=>x.id===sid)||studs[0];
+  const courses=await liveStudentCourses(s.id);
+  let ls={}; const { data: enr }=await sb.from('enrolments').select('id').eq('student_id',s.id).limit(1);
+  if(enr&&enr.length){ const { data: lsd }=await sb.from('learning_skills').select('skill,rating').eq('enrolment_id',enr[0].id); (lsd||[]).forEach(r=>ls[r.skill]=r.rating); }
+  const lsNames={responsibility:'Responsibility',organization:'Organization',independent_work:'Independent Work',collaboration:'Collaboration',initiative:'Initiative',self_regulation:'Self-Regulation'};
+  v.innerHTML=`<div class="card no-print"><div class="row"><select id="rcStu">${studs.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.first_name)} ${esc(x.last_name)} — Gr ${x.grade}</option>`).join('')}</select><div style="flex:1"></div><span class="pill">🟢 live</span><button class="btn ghost sm" onclick="window.print()">PDF</button></div></div>
+  <div class="rc"><div class="rc-hd"><div class="row"><div><b>Provincial Report Card, Grades 9–12</b><div style="font-size:12px;opacity:.85">${esc(SESSION.schoolName||'')} • Mid-term • 2025–26</div></div><div style="margin-left:auto;text-align:right;font-size:12px">${esc(s.first_name)} ${esc(s.last_name)}<br>OEN ${esc(s.oen||'—')} • Grade ${s.grade}</div></div></div>
+  <div class="rc-body"><table><thead><tr><th>Course</th><th>Teacher</th><th style="text-align:center">Percentage</th><th style="text-align:center">Level</th></tr></thead><tbody>
+  ${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> ${esc(c.name||'')}</td><td>${esc(c.teacher||'—')}</td><td style="text-align:center"><b>${c.mark===''?'I':c.mark+'%'}</b></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td colspan="4" class="muted">No courses.</td></tr>'}
+  </tbody></table><div class="hr"></div><b>Learning Skills &amp; Work Habits</b> <span class="muted" style="font-size:12px">(E / G / S / N)</span>
+  <div class="ls-grid" style="margin-top:10px">${Object.keys(lsNames).map(k=>{const val=ls[k]||'G';return `<div>${lsNames[k]}</div><div style="text-align:center"><span class="badge ${val==='E'?'b-green':val==='N'?'b-red':'b-blue'} lvl">${val}</span></div>`}).join('')}</div>
+  <div class="pf" style="margin-top:10px">Levels: 4 (80–100), 3 (70–79), 2 (60–69), 1 (50–59). Generated live from this student's data.</div></div></div>`;
+  const sel=$('#rcStu'); if(sel) sel.onchange=e=>reportcardLive(e.target.value);
+}
+
+/* ---------- Graduation (live) -------------------------------------- */
+async function gradLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const { data: studs } = await sb.from('students').select('id,first_name,last_name,grade,entered_g9_year,osslt_status,online_credits,credits_earned').eq('school_id',SESSION.schoolId).gte('grade',11).order('grade',{ascending:false});
+  const ids=(studs||[]).map(s=>s.id); let hoursMap={};
+  if(ids.length){ const { data: hrs }=await sb.from('community_hours').select('student_id,hours').in('student_id',ids); (hrs||[]).forEach(h=>hoursMap[h.student_id]=(hoursMap[h.student_id]||0)+(+h.hours||0)); }
+  const rows=(studs||[]).map(s=>{ const cr=+s.credits_earned||0, hrs=hoursMap[s.id]||0;
+    const litOk=s.osslt_status==='Passed', hoursOk=hrs>=40, onlineOk=(s.online_credits||0)>=2, onTrack=litOk&&hoursOk&&(s.grade<12||cr>=30);
+    return `<tr><td><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></td><td>${s.grade}</td>
+      <td><div style="font-size:12px">${cr.toFixed(1)} / 30</div><div class="progress" style="width:90px"><i style="width:${Math.min(100,cr/30*100)}%"></i></div></td>
+      <td>${litOk?'<span class="badge b-green">Passed</span>':s.osslt_status==='Not yet'?'<span class="badge b-red">Outstanding</span>':'<span class="badge b-grey">'+esc(s.osslt_status||'—')+'</span>'}</td>
+      <td>${hrs} / 40 ${hoursOk?'<span class="badge b-green">✓</span>':'<span class="badge b-amber">'+(40-hrs)+' to go</span>'}</td>
+      <td>${s.online_credits||0} / 2 ${onlineOk?'<span class="badge b-green">✓</span>':''}</td>
+      <td>${onTrack?'<span class="badge b-green">On track</span>':'<span class="badge b-amber">At risk</span>'}</td></tr>`;
+  }).join('');
+  v.innerHTML=`<div class="notice">OSSD: <b>30 credits</b> (17+13 or 18+12), <b>OSSLT</b>, <b>40 community hours</b>, <b>2 online credits</b>. <span class="pill">🟢 live • ${esc(SESSION.schoolName||'')}</span></div>
+  <div class="card"><h2>Path to graduation</h2><div class="sub">Live per senior</div>
+  <div style="overflow:auto"><table style="min-width:780px"><thead><tr><th>Student</th><th>Gr</th><th>Credits</th><th>OSSLT</th><th>Community hrs</th><th>Online cr.</th><th>Status</th></tr></thead><tbody>${rows||'<tr><td colspan="7" class="muted">No seniors.</td></tr>'}</tbody></table></div></div>`;
+}
+
+/* ---------- Dashboard (live admin stats) --------------------------- */
+async function dashLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading dashboard…</div></div>';
+  const sc=await sb.from('students').select('id',{count:'exact',head:true}).eq('school_id',SESSION.schoolId);
+  const secc=await sb.from('sections').select('id',{count:'exact',head:true}).eq('school_id',SESSION.schoolId);
+  const { data: ann } = await sb.from('announcements').select('title,body,audience').eq('school_id',SESSION.schoolId).order('created_at',{ascending:false}).limit(3);
+  v.innerHTML=`<div class="grid g4" style="margin-bottom:18px">
+    <div class="stat"><div class="n">${sc.count||0}</div><div class="l">Enrolled students</div><div class="t">🟢 live</div></div>
+    <div class="stat"><div class="n">${secc.count||0}</div><div class="l">Class sections</div></div>
+    <div class="stat"><div class="n" style="font-size:18px">${esc(SESSION.schoolName||'')}</div><div class="l">School (tenant)</div></div>
+    <div class="stat"><div class="n">RLS</div><div class="l">Tenant-isolated</div></div></div>
+  <div class="grid g2">
+    <div class="card"><h2>Announcements</h2><div class="sub">From the database</div>
+      ${(ann||[]).map(a=>`<div class="feed-item"><b>${esc(a.title)}</b><div class="muted" style="font-size:12.5px;margin-top:3px">${esc(a.body||'')}</div><div class="meta"><span class="badge b-blue">${esc(a.audience)}</span></div></div>`).join('')||'<div class="muted">No announcements.</div>'}</div>
+    <div class="card"><h2>Live modules</h2><div class="sub">Reading from Postgres under RLS</div>
+      <div class="row">${[['students','Students'],['gradebook','Gradebook'],['attendance','Attendance'],['reportcard','Report Cards'],['grad','Graduation']].map(m=>`<button class="btn ghost sm" onclick="go('${m[0]}')">${m[1]}</button>`).join('')}</div>
+      <div class="pf" style="margin-top:8px">Other modules still render demo data while we convert them.</div></div>
+  </div>`;
+}
 
 /* ============================ BOOT =================================== */
 if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
