@@ -155,6 +155,67 @@ class TaskErrorBoundary extends React.Component {
 }
 
 // ---------------------------------------------------------------------
+// SessionEndCountdown — tiny chip rendered in the StudentApp header when
+// the teacher has declared an auto-end time for the session. Re-renders
+// once per second so the m:ss counter ticks live. Once `endsAt` passes,
+// the backend ticker fires session:complete and the student transitions
+// to the post-session feedback screen — at which point this header is
+// no longer rendered, so we just stop counting at 00:00.
+// ---------------------------------------------------------------------
+function SessionEndCountdown({ endsAt }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!endsAt) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [endsAt]);
+  if (!endsAt) return null;
+  const msLeft = Math.max(0, endsAt - now);
+  const totalSec = Math.round(msLeft / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  const urgent = totalSec <= 120; // pulse + amber in the last 2 minutes
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        marginBottom: 4,
+      }}
+      aria-live="polite"
+    >
+      <span
+        style={{
+          padding: "3px 10px",
+          borderRadius: 999,
+          background: urgent
+            ? "linear-gradient(135deg, #f59e0b, #d97706)"
+            : "rgba(15,23,42,0.45)",
+          color: "#fff",
+          fontWeight: 800,
+          fontSize: "0.72rem",
+          letterSpacing: 0.3,
+          fontVariantNumeric: "tabular-nums",
+          boxShadow: urgent
+            ? "0 2px 10px rgba(245,158,11,0.45)"
+            : "0 1px 4px rgba(0,0,0,0.20)",
+          animation: urgent ? "endCountdownPulse 1.4s ease-in-out infinite" : "none",
+        }}
+        title={`Session ends at ${new Date(endsAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`}
+      >
+        ⏰ {m > 0 ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`} left
+      </span>
+      <style>{`
+        @keyframes endCountdownPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%      { opacity: 0.85; transform: scale(1.03); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------
 
@@ -4465,6 +4526,13 @@ function StudentApp() {
             >
               📚 {roomState.tasksetName}
             </div>
+          )}
+
+          {/* Session auto-end countdown — visible only when the teacher
+              has declared an end time. Shows how long until the session
+              auto-ends; gives students a sense of pacing. */}
+          {roomState.endsAt && (
+            <SessionEndCountdown endsAt={roomState.endsAt} />
           )}
 
           <div

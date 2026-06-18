@@ -8979,6 +8979,53 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
     io.to(code).emit("session:started");
   });
 
+  // ────────────────────────────────────────────────────────────────
+  // teacher:setEndTime — store an auto-end timestamp on the room.
+  //
+  // Payload: { roomCode, endsAt }
+  //   endsAt: epoch ms (number) for when the session should auto-end,
+  //           or null / 0 to clear an existing end time.
+  //
+  // The keepAliveInterval in roomEngine.js sweeps every 20s and emits
+  // `session:complete` once endsAt passes — same handler the natural
+  // and explicit-end paths use. We broadcast `session:endTime` so the
+  // host AND the students can render a consistent countdown chip.
+  // ────────────────────────────────────────────────────────────────
+  socket.on("teacher:setEndTime", (payload = {}, ack) => {
+    try {
+      const code = (payload.roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") ack({ ok: false, error: "Room not found" });
+        return;
+      }
+
+      const raw = payload.endsAt;
+      let endsAt = null;
+      if (raw && Number.isFinite(Number(raw))) {
+        const n = Math.round(Number(raw));
+        // Clamp to a reasonable horizon: must be in the future and within
+        // 6 hours. Anything outside means the teacher mistyped (or fed us
+        // seconds instead of ms) — reject rather than silently auto-end.
+        const now = Date.now();
+        if (n > now && n < now + 1000 * 60 * 60 * 6) {
+          endsAt = n;
+        } else if (n > now + 1000 * 60 * 60 * 6) {
+          if (typeof ack === "function") ack({ ok: false, error: "End time too far in the future" });
+          return;
+        }
+      }
+
+      room.endsAt = endsAt;
+      room.autoEndFiredAt = null; // re-arm the ticker for the new endsAt
+      io.to(code).emit("session:endTime", { roomCode: code, endsAt });
+      if (typeof ack === "function") ack({ ok: true, endsAt });
+    } catch (err) {
+      console.error("teacher:setEndTime failed:", err);
+      if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+    }
+  });
+
   // OLD global next-task handler (kept as optional override button)
   function handleTeacherNextTask({ roomCode }) {
     const code = (roomCode || "").toUpperCase();

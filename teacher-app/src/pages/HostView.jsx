@@ -5,6 +5,8 @@ import { socket } from "../socket";
 import { motion, AnimatePresence } from "framer-motion";
 import Confetti from "react-confetti";
 import { Trophy, Camera, Users, Sparkles, Volume2, VolumeX, Zap } from "lucide-react";
+import EndTimeControl from "../components/EndTimeControl";
+import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 // ── Constants ────────────────────────────────────────────────
 const trophyEmojis = ["🥇", "🥈", "🥉"];
@@ -208,6 +210,8 @@ export default function HostView({ roomCode: roomCodeProp }) {
     locationCode: "Classroom",
     isActive: false,
     moodCheckins: {},
+    endsAt: null,
+    taskset: null,
   });
 
   const [activeTab, setActiveTab] = useState("leaderboard");
@@ -324,7 +328,20 @@ export default function HostView({ roomCode: roomCodeProp }) {
         locationCode: safe.locationCode || prev.locationCode || "Classroom",
         isActive: safe.isActive ?? prev.isActive,
         moodCheckins: safe.moodCheckins && typeof safe.moodCheckins === "object" ? safe.moodCheckins : prev.moodCheckins || {},
+        // Carry the auto-end timestamp + taskset tasks so EndTimeControl
+        // can render the live countdown + smart suggestion. Holds null
+        // until the teacher sets one.
+        endsAt: safe.endsAt ?? prev.endsAt ?? null,
+        taskset: safe.taskset || prev.taskset || null,
       }));
+    };
+
+    // Stand-alone endsAt push (teacher edits it after room:state already
+    // broadcast). The room-state path covers initial join; this covers
+    // updates while the host is open.
+    const handleEndTime = (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      setRoomState((prev) => ({ ...prev, endsAt: payload.endsAt ?? null }));
     };
 
     const handleTeamJoined = (data) => {
@@ -377,6 +394,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
     socket.on("taskSubmission", handleTaskSubmission);
     socket.on("session-ended", handleEnded);
     socket.on("mood-checkin:update", handleMoodUpdate);
+    socket.on("session:endTime", handleEndTime);
 
     // Task force-advanced or auto-advanced → celebrate winner with confetti
     const handleTaskAdvance = (payload) => {
@@ -411,6 +429,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
       socket.off("session-ended", handleEnded);
       socket.off("mood-checkin:update", handleMoodUpdate);
       socket.off("task:advance", handleTaskAdvance);
+      socket.off("session:endTime", handleEndTime);
       socket.off("connect", handleReconnect);
       clearInterval(heartbeat);
     };
@@ -570,6 +589,21 @@ export default function HostView({ roomCode: roomCodeProp }) {
           {roomState.tasksetName && (
             <div className="mt-2 text-base md:text-lg font-semibold opacity-80 tracking-wide">
               📚 {roomState.tasksetName}
+            </div>
+          )}
+
+          {/* Auto-end picker — visible mid-session so the host can declare
+              or change the auto-end time at any point. */}
+          {codeUpper && (
+            <div className="mt-3 mx-auto" style={{ maxWidth: 460 }}>
+              <EndTimeControl
+                roomCode={codeUpper}
+                endsAt={roomState.endsAt || null}
+                estimatedDurationMinutes={getTasksetEstimatedMinutes(
+                  roomState.taskset || roomState.tasks || []
+                )}
+                compact
+              />
             </div>
           )}
 

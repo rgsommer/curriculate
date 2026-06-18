@@ -56,6 +56,28 @@ export function createRoomEngine(io) {
   // ================================
   const keepAliveInterval = setInterval(() => {
     const now = Date.now();
+
+    // ── Auto-end sweep: any active room whose teacher-declared endsAt has
+    //    passed gets a session:complete emit (same handler the natural-
+    //    completion + explicit "End now" paths already use on the student
+    //    side). autoEndFiredAt guards against double-firing if the teacher
+    //    edited endsAt and it's already past. Runs BEFORE the availability
+    //    emit so a room that just ended is reported as inactive.
+    for (const r of Object.values(rooms)) {
+      if (!r || !r.isActive) continue;
+      const endsAt = Number(r.endsAt);
+      if (!endsAt || endsAt > now) continue;
+      if (r.autoEndFiredAt && r.autoEndFiredAt >= endsAt) continue;
+      r.autoEndFiredAt = now;
+      r.isActive = false;
+      try {
+        io.to(r.code).emit("session:autoEndingNow", { roomCode: r.code, reason: "endTimeReached" });
+        io.to(r.code).emit("session:complete");
+      } catch (e) {
+        console.warn(`[roomEngine] auto-end emit failed for ${r.code}:`, e?.message);
+      }
+    }
+
     const available = Object.values(rooms)
       .filter((r) => {
         if (!r) return false;
@@ -111,6 +133,12 @@ export function createRoomEngine(io) {
       // Heartbeat/availability
       lastTeacherSeenAt: Date.now(),
       expiresAt: Date.now() + 1000 * 60 * 60, // 1 hour rolling expiry
+      // Teacher-declared auto-end. When set, the keep-alive ticker auto-emits
+      // session:complete once `endsAt` passes — so the teacher can leave the
+      // device alone and the session ends cleanly at the bell. `autoEndFiredAt`
+      // prevents the ticker from firing twice for the same end time.
+      endsAt: null,
+      autoEndFiredAt: null,
       teams: {},
       stations,
       taskset: null,
@@ -726,6 +754,10 @@ export function createRoomEngine(io) {
       tasksetName: (room.taskset?.name || room.taskset?.title || "").replace(/^taskset:\s*/i, "").trim(),
       startedAt: room.startedAt || null,
       isActive: !!room.isActive,
+      // Teacher-declared auto-end (epoch ms) — null if unset. Included in
+      // room state so late joiners + reconnects pick up the countdown
+      // without needing a follow-up emit.
+      endsAt: room.endsAt || null,
       // Quest Mode flag — mirrors TaskSet.questModeEnabled so the student
       // app can decide whether to mount the QuestHud.
       questModeEnabled: !!room.taskset?.questModeEnabled,

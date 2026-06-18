@@ -12,6 +12,8 @@ import { API_BASE_URL } from "../config";
 import { useAuth } from "../auth/useAuth";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
 import { Modal, Button, Field, TextInput, TextArea, Select, ToggleGroup } from "../components/ui";
+import EndTimeControl from "../components/EndTimeControl";
+import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 const API_BASE = API_BASE_URL || "";
 
@@ -323,6 +325,9 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
     brainstorm: null,
     // NEW: mood check-ins (no scoring)
     moodCheckins: {},
+    // Teacher-declared auto-end (epoch ms or null). Driven by the
+    // backend session:endTime event + room:state push.
+    endsAt: null,
   });
 
   const [submissions, setSubmissions] = useState({});
@@ -773,6 +778,9 @@ useEffect(() => {
         brainstorm: state.brainstorm || null,
         // NEW: mood check-ins (no scoring)
         moodCheckins: state.moodCheckins || prev.moodCheckins || {},
+        // Auto-end timestamp (epoch ms) — backend pushes this on initial
+        // room state + any setEndTime broadcast.
+        endsAt: state.endsAt ?? prev.endsAt ?? null,
       }));
 
       if (!selectedLocation && state.locationCode) {
@@ -1010,6 +1018,10 @@ useEffect(() => {
 
     socket.on("roomState", handleRoom);
     socket.on("room:state", handleRoom);
+    socket.on("session:endTime", (payload) => {
+      if (!payload || typeof payload !== "object") return;
+      setRoomState((prev) => ({ ...prev, endsAt: payload.endsAt ?? null }));
+    });
     socket.on("tasksetLoaded", handleTasksetLoaded);
     socket.on("autoStart:triggered", (payload) => {
       console.log("[LiveSession] Auto-start triggered:", payload);
@@ -4166,6 +4178,23 @@ if (
                   >
                     Cancel
                   </button>
+                </div>
+              )}
+
+              {/* Auto-end picker — visible both pre-launch and during the
+                  running session, so the teacher can declare or change the
+                  end time at any point. The control pre-suggests
+                  `now + estimated duration` snapped to a 5-min mark. */}
+              {activeTasksetMeta && roomCode && (
+                <div style={{ marginTop: 8, marginBottom: 6 }}>
+                  <EndTimeControl
+                    roomCode={roomCode}
+                    endsAt={roomState.endsAt || null}
+                    estimatedDurationMinutes={getTasksetEstimatedMinutes(
+                      activeTasksetMeta?.tasks || []
+                    )}
+                    compact
+                  />
                 </div>
               )}
 
