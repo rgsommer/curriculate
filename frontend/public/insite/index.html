@@ -1136,6 +1136,7 @@ PAGES.timetable=()=>{
 
 /* ---------- ONSIS EXPORT --------------------------------------------- */
 PAGES.onsis=()=>{
+  if(SESSION.backend && SESSION.schoolId) return onsisLive();
   const recs=STUDENTS.filter(s=>s.grade>=10).slice(0,14);
   const desig=['Accumulated credits','Years of attendance','Principal designation'];
   $('#view').innerHTML=`<div class="notice">Generates the <b>Class Enrolment</b> &amp; <b>final mark</b> segments for the Ministry's Ontario School Information System (OnSIS), keyed to each student's OEN, with validation before sign-off.</div>
@@ -1502,13 +1503,15 @@ async function attendanceLive(){
   const roster=(enr||[]).map(e=>e.student).filter(Boolean).sort((a,b)=>a.last_name.localeCompare(b.last_name));
   const { data: att } = await sb.from('attendance').select('student_id,status').eq('section_id',sec.id).eq('on_date',_attLiveDate).eq('period',per);
   const statusMap={}; (att||[]).forEach(a=>statusMap[a.student_id]=a.status);
+  const { data: abs } = await sb.from('absence_requests').select('student_id').eq('school_id',SESSION.schoolId).eq('status','approved').lte('start_date',_attLiveDate).gte('end_date',_attLiveDate);
+  const planned=new Set((abs||[]).map(a=>a.student_id));
   window._attLiveSet=async(sid,st)=>{
     const { error }=await sb.from('attendance').upsert({school_id:SESSION.schoolId,student_id:sid,section_id:sec.id,on_date:_attLiveDate,period:per,status:st},{onConflict:'student_id,section_id,on_date,period'});
     if(!error){ statusMap[sid]=st; attendanceLive(); }
   };
-  const rows=roster.map(s=>{const st=statusMap[s.id]||'present';
+  const rows=roster.map(s=>{const isPlanned=planned.has(s.id)&&!statusMap[s.id]; const st=statusMap[s.id]||(isPlanned?'excused':'present');
     const opt=(vv,lbl,cls)=>`<button class="btn sm ${st===vv?'':'ghost'}" style="${st===vv?'background:var(--'+cls+')':''}" onclick="_attLiveSet('${s.id}','${vv}')">${lbl}</button>`;
-    return `<tr><td><b>${esc(s.last_name)}, ${esc(s.first_name)}</b></td><td><div class="row">${opt('present','Present','green')}${opt('late','Late','amber')}${opt('absent','Absent','red')}</div></td></tr>`;
+    return `<tr><td><b>${esc(s.last_name)}, ${esc(s.first_name)}</b>${isPlanned?' <span class="badge b-blue" title="approved planned absence">📅 planned</span>':''}</td><td><div class="row">${opt('present','Present','green')}${opt('late','Late','amber')}${opt('absent','Absent','red')}${isPlanned?'<span class="badge b-blue">Excused</span>':''}</div></td></tr>`;
   }).join('');
   const vals=roster.map(s=>statusMap[s.id]||'present');
   v.innerHTML=`<div class="card"><div class="row"><select id="atsec" style="min-width:300px">${secs.map(x=>`<option value="${x.id}" ${x.id===sec.id?'selected':''}>${esc(x.course.code)} — P${x.period}</option>`).join('')}</select><input type="date" id="atdate" value="${_attLiveDate}"><div style="flex:1"></div><span class="pill">🟢 ${vals.filter(x=>x==='present').length} present • ${vals.filter(x=>x==='late').length} late • ${vals.filter(x=>x==='absent').length} absent</span></div>
@@ -1519,23 +1522,57 @@ async function attendanceLive(){
 }
 
 /* ---------- Report card (live) -------------------------------------- */
+let _rcStu=null;
 async function reportcardLive(sid){
-  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
-  const { data: studs } = await sb.from('students').select('id,first_name,last_name,grade,oen').eq('school_id',SESSION.schoolId).gte('grade',11).order('last_name');
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading report card…</div></div>';
+  const school=SESSION.schoolId;
+  const { data: studs } = await sb.from('students').select('id,first_name,last_name,grade,oen').eq('school_id',school).gte('grade',11).order('last_name');
   if(!studs||!studs.length){ v.innerHTML='<div class="card"><div class="notice">No senior students.</div></div>'; return; }
-  const s=studs.find(x=>x.id===sid)||studs[0];
-  const courses=await liveStudentCourses(s.id);
-  let ls={}; const { data: enr }=await sb.from('enrolments').select('id').eq('student_id',s.id).limit(1);
-  if(enr&&enr.length){ const { data: lsd }=await sb.from('learning_skills').select('skill,rating').eq('enrolment_id',enr[0].id); (lsd||[]).forEach(r=>ls[r.skill]=r.rating); }
-  const { data: defs } = await sb.from('learning_skill_defs').select('name,kind').eq('school_id',SESSION.schoolId).order('sort_order');
-  const lsDefs=(defs&&defs.length)?defs:[{name:'Responsibility',kind:'egsn'},{name:'Organization',kind:'egsn'},{name:'Independent Work',kind:'egsn'},{name:'Collaboration',kind:'egsn'},{name:'Initiative',kind:'egsn'},{name:'Self-Regulation',kind:'egsn'}];
-  v.innerHTML=`<div class="card no-print"><div class="row"><select id="rcStu">${studs.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.first_name)} ${esc(x.last_name)} — Gr ${x.grade}</option>`).join('')}</select><div style="flex:1"></div><span class="pill">🟢 live</span><button class="btn ghost sm" onclick="window.print()">PDF</button></div></div>
-  <div class="rc"><div class="rc-hd"><div class="row"><div><b>Provincial Report Card, Grades 9–12</b><div style="font-size:12px;opacity:.85">${esc(SESSION.schoolName||'')} • Mid-term • 2025–26</div></div><div style="margin-left:auto;text-align:right;font-size:12px">${esc(s.first_name)} ${esc(s.last_name)}<br>OEN ${esc(s.oen||'—')} • Grade ${s.grade}</div></div></div>
-  <div class="rc-body"><table><thead><tr><th>Course</th><th>Teacher</th><th style="text-align:center">Percentage</th><th style="text-align:center">Level</th></tr></thead><tbody>
-  ${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> ${esc(c.name||'')}</td><td>${esc(c.teacher||'—')}</td><td style="text-align:center"><b>${c.mark===''?'I':c.mark+'%'}</b></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td colspan="4" class="muted">No courses.</td></tr>'}
-  </tbody></table><div class="hr"></div><b>Learning Skills &amp; Work Habits</b> <span class="muted" style="font-size:12px">(E / G / S / N)</span>
-  <div class="ls-grid" style="margin-top:10px">${lsDefs.map(d=>{const val=ls[d.name]||(d.kind==='yesno'?'No':'G');const ok=val==='E'||val==='Yes';const bad=val==='N';return `<div>${esc(d.name)}</div><div style="text-align:center"><span class="badge ${ok?'b-green':bad?'b-red':'b-blue'} lvl">${esc(val)}</span></div>`}).join('')}</div>
-  <div class="pf" style="margin-top:10px">Levels: 4 (80–100), 3 (70–79), 2 (60–69), 1 (50–59). Generated live from this student's data.</div></div></div>`;
+  const s=studs.find(x=>x.id===sid)||studs.find(x=>x.id===_rcStu)||studs[0]; _rcStu=s.id;
+  const { data: term } = await sb.from('terms').select('id,name').eq('school_id',school).eq('is_current',true).limit(1);
+  const termId=term&&term[0]?term[0].id:null, termName=term&&term[0]?term[0].name:'Term';
+  const { data: enr } = await sb.from('enrolments').select('id, section:sections(id,teacher_name,course:courses(code,name))').eq('student_id',s.id);
+  const items=(enr||[]).map(e=>({enrId:e.id,sec:e.section})).filter(x=>x.sec&&x.sec.course);
+  const secIds=items.map(x=>x.sec.id);
+  let mMap={}; if(items.length){ const {data:mk}=await sb.from('marks').select('enrolment_id,override_mark,comments').in('enrolment_id',items.map(x=>x.enrId)); (mk||[]).forEach(m=>mMap[m.enrolment_id]=m); }
+  let asg=[],cats=[],scrs=[];
+  if(secIds.length){ asg=(await sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy').in('section_id',secIds)).data||[];
+    cats=(await sb.from('assessment_categories').select('id,section_id,weight').in('section_id',secIds)).data||[];
+    const aids=asg.map(a=>a.id); scrs=aids.length?((await sb.from('scores').select('assignment_id,score,flag').eq('student_id',s.id).in('assignment_id',aids)).data||[]):[]; }
+  const scoreMap={}; scrs.forEach(x=>scoreMap[x.assignment_id]={score:x.score,flag:x.flag});
+  const computedOf=(secId)=>gbMark(cats.filter(c=>c.section_id===secId),asg.filter(a=>a.section_id===secId),(aid)=>scoreMap[aid]);
+  let lsv={}; if(items.length){ const {data:lsd}=await sb.from('learning_skills').select('skill,rating').eq('enrolment_id',items[0].enrId); (lsd||[]).forEach(r=>lsv[r.skill]=r.rating); }
+  const { data: defs } = await sb.from('learning_skill_defs').select('name,kind').eq('school_id',school).order('sort_order');
+  const lsDefs=(defs&&defs.length)?defs:[{name:'Responsibility',kind:'egsn'},{name:'Organization',kind:'egsn'},{name:'Collaboration',kind:'egsn'},{name:'Self-Regulation',kind:'egsn'}];
+  let rc=null; if(termId){ const {data:rcd}=await sb.from('report_cards').select('*').eq('student_id',s.id).eq('term_id',termId).eq('rtype','secondary_provincial').limit(1); rc=rcd&&rcd[0]; }
+  const status=rc?rc.status:'draft';
+  const isAdmin = !!(SESSION.platform || SESSION.role==='admin');
+  const canEdit = isAdmin || status==='draft';
+  window._rcSaveCourse=async(enrId)=>{ const ov=document.getElementById('rc_ov_'+enrId).value.trim(); const cm=document.getElementById('rc_cm_'+enrId).value;
+    await sb.from('marks').upsert({enrolment_id:enrId,school_id:school,override_mark:ov===''?null:+ov,comments:cm||null,override_by:ov===''?null:(SESSION.user&&SESSION.user.id),override_at:ov===''?null:new Date().toISOString()},{onConflict:'enrolment_id'}); reportcardLive(s.id); };
+  window._rcStatus=async(st)=>{ const patch={student_id:s.id,term_id:termId,rtype:'secondary_provincial',school_id:school,status:st};
+    if(st==='submitted'){patch.submitted_at=new Date().toISOString();patch.submitted_by=SESSION.user&&SESSION.user.id;}
+    if(st==='approved'){patch.approved_at=new Date().toISOString();patch.approved_by=SESSION.user&&SESSION.user.id;}
+    if(st==='released'){patch.released_at=new Date().toISOString();patch.released_by=SESSION.user&&SESSION.user.id;}
+    const {error}=await sb.from('report_cards').upsert(patch,{onConflict:'student_id,term_id,rtype'}); if(error){alert(error.message);return;} reportcardLive(s.id); };
+  window.rcEmail=()=>modal('Email report card','<p class="muted">Email/SMS delivery runs through the notifications service (on the build list). For now: <b>Print → Save as PDF</b> to send, or <b>Release to parents</b> so guardians view/download it in the Parent Portal.</p>');
+  const stColors={draft:'b-grey',submitted:'b-amber',approved:'b-green',released:'b-blue'};
+  let actions='';
+  if(status==='draft') actions=`<button class="btn sm" onclick="_rcStatus('submitted')">Submit for approval</button>`;
+  else if(status==='submitted') actions= isAdmin? `<button class="btn sm" onclick="_rcStatus('approved')">Approve</button> <button class="btn ghost sm" onclick="_rcStatus('draft')">Send back</button>` : '<span class="pf">Awaiting admin approval</span>';
+  else if(status==='approved') actions= `<button class="btn ghost sm" onclick="window.print()">Print</button> ${isAdmin?`<button class="btn sm" onclick="_rcStatus('released')">Release to parents</button> <button class="btn ghost sm" onclick="rcEmail()">Email PDF</button> <button class="btn ghost sm" onclick="_rcStatus('draft')">Reopen</button>`:''}`;
+  else actions=`<span class="badge b-blue">Released</span> <button class="btn ghost sm" onclick="window.print()">Print</button> ${isAdmin?`<button class="btn ghost sm" onclick="rcEmail()">Email PDF</button>`:''}`;
+  const courseRows=items.map(it=>{const comp=computedOf(it.sec.id); const m=mMap[it.enrId]||{}; const eff=(m.override_mark!=null)?m.override_mark:comp; const L=pctToLevel(eff);
+    if(canEdit) return `<tr><td><b>${esc(it.sec.course.code)}</b> ${esc(it.sec.course.name)}<div class="muted" style="font-size:11px">computed ${comp===''?'—':comp+'%'}</div></td><td>${esc(it.sec.teacher_name||'—')}</td><td style="text-align:center"><input id="rc_ov_${it.enrId}" class="score-in" value="${m.override_mark!=null?m.override_mark:''}" placeholder="${comp===''?'':comp}"></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td><td><input id="rc_cm_${it.enrId}" value="${esc(m.comments||'')}" placeholder="comment…" style="width:100%"></td><td><button class="btn ghost sm" onclick="_rcSaveCourse('${it.enrId}')">Save</button></td></tr>`;
+    return `<tr><td><b>${esc(it.sec.course.code)}</b> ${esc(it.sec.course.name)}</td><td>${esc(it.sec.teacher_name||'—')}</td><td style="text-align:center"><b>${eff===''?'I':eff+'%'}</b>${m.override_mark!=null?' <span class="badge b-purple" style="font-size:9px">ovr</span>':''}</td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td><td colspan="2">${esc(m.comments||'')}</td></tr>`;
+  }).join('');
+  v.innerHTML=`<div class="card no-print"><div class="row"><select id="rcStu">${studs.map(x=>`<option value="${x.id}" ${x.id===s.id?'selected':''}>${esc(x.first_name)} ${esc(x.last_name)} — Gr ${x.grade}</option>`).join('')}</select><span class="badge ${stColors[status]||'b-grey'}">${status}</span><div style="flex:1"></div>${actions}</div>
+    <div class="pf" style="margin-top:6px">Workflow: teachers edit comments &amp; confirm/override grades while <b>draft</b> → <b>submit</b> → admin <b>approve</b> → <b>release</b>/print/email. ${canEdit?'You can edit this report.':'Locked (read-only) at this stage.'}</div></div>
+  <div class="rc"><div class="rc-hd"><div class="row"><div><b>Provincial Report Card, Grades 9–12</b><div style="font-size:12px;opacity:.85">${esc(SESSION.schoolName||'')} • ${esc(termName)} • 2025–26</div></div><div style="margin-left:auto;text-align:right;font-size:12px">${esc(s.first_name)} ${esc(s.last_name)}<br>OEN ${esc(s.oen||'—')} • Grade ${s.grade}</div></div></div>
+  <div class="rc-body"><table><thead><tr><th>Course</th><th>Teacher</th><th style="text-align:center">%</th><th style="text-align:center">Level</th><th>Comment</th>${canEdit?'<th></th>':''}</tr></thead><tbody>${courseRows||'<tr><td colspan="5" class="muted">No courses.</td></tr>'}</tbody></table>
+  <div class="hr"></div><b>Learning Skills &amp; Work Habits</b>
+  <div class="ls-grid" style="margin-top:10px">${lsDefs.map(d=>{const val=lsv[d.name]||(d.kind==='yesno'?'No':'G');const ok=val==='E'||val==='Yes';const bad=val==='N';return `<div>${esc(d.name)}</div><div style="text-align:center"><span class="badge ${ok?'b-green':bad?'b-red':'b-blue'} lvl">${esc(val)}</span></div>`}).join('')}</div>
+  <div class="pf" style="margin-top:10px">Levels: 4 (80–100), 3 (70–79), 2 (60–69), 1 (50–59).</div></div></div>`;
   const sel=$('#rcStu'); if(sel) sel.onchange=e=>reportcardLive(e.target.value);
 }
 
@@ -1630,23 +1667,32 @@ window.assignmentDetailLive=async(aid)=>{
 async function adminLive(){
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading school setup…</div></div>';
   const sid=SESSION.schoolId;
-  const [inv, mems, divs, staffR, lsd, secs] = await Promise.all([
+  const [inv, mems, divs, staffR, lsd, secs, arR] = await Promise.all([
     sb.from('invitations').select('id,email,role,status').eq('school_id',sid).order('created_at',{ascending:false}),
     sb.from('memberships').select('role,profile:profiles(full_name,email)').eq('school_id',sid),
     sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id').eq('school_id',sid).order('sort_order'),
     sb.from('staff').select('id,full_name,department,is_resource_teacher,is_vp').eq('school_id',sid).order('full_name'),
     sb.from('learning_skill_defs').select('id,name,kind,division_id').eq('school_id',sid).order('sort_order'),
-    sb.from('sections').select('id,period,requires_learning_skills,course:courses(code,name)').eq('school_id',sid)
+    sb.from('sections').select('id,period,requires_learning_skills,course:courses(code,name)').eq('school_id',sid),
+    sb.from('absence_requests').select('id,start_date,end_date,reason,status,student:students(first_name,last_name,grade)').eq('school_id',sid).eq('status','pending').order('start_date')
   ]);
   const staff=staffR.data||[], dvs=divs.data||[];
   const divName=(id)=>{const d=dvs.find(x=>x.id===id);return d?d.name:'Whole school';};
   v.innerHTML=`
   <div class="card"><h2>People &amp; invitations</h2><div class="sub">Invite staff, students &amp; parents into ${esc(SESSION.schoolName||'')} — they get the role on sign-in.</div>
     <div class="row" style="margin-bottom:10px"><input id="inv_email" class="search" placeholder="email@school.org"><select id="inv_role"><option value="teacher">Teacher</option><option value="admin">Admin</option><option value="student">Student</option><option value="parent">Parent</option></select><button class="btn sm" onclick="invSend()">Send invite</button><span id="inv_msg" class="pf"></span></div>
+    <details style="margin-bottom:10px"><summary class="muted" style="cursor:pointer;font-size:13px">Bulk invite (new implementations) — paste many at once</summary>
+      <div style="margin-top:8px"><textarea id="inv_bulk" placeholder="One per line:  email@x.com,parent&#10;teacher@x.com,teacher&#10;(role optional — defaults to the selector)" style="width:100%;height:90px;margin-bottom:6px"></textarea>
+      <div class="row"><span class="muted" style="font-size:12px">Default role:</span><select id="inv_bulk_role"><option value="parent">Parent</option><option value="student">Student</option><option value="teacher">Teacher</option><option value="admin">Admin</option></select><button class="btn sm" onclick="invBulk()">Import invites</button></div></div>
+    </details>
     <b style="font-size:13px">Pending invitations</b>
     <table><tbody>${(inv.data||[]).filter(i=>i.status==='pending').map(i=>`<tr><td>${esc(i.email)}</td><td><span class="badge b-blue">${i.role}</span></td><td style="text-align:right"><button class="btn ghost sm" onclick="invRevoke('${i.id}')">Revoke</button></td></tr>`).join('')||'<tr><td class="muted">None pending.</td></tr>'}</tbody></table>
     <div class="hr"></div><b style="font-size:13px">Members (${(mems.data||[]).length})</b>
     <table><tbody>${(mems.data||[]).map(m=>`<tr><td>${esc(m.profile?m.profile.full_name:'—')} <span class="muted">${esc(m.profile?m.profile.email:'')}</span></td><td style="text-align:right"><span class="badge b-grey">${m.role}</span></td></tr>`).join('')||'<tr><td class="muted">No members yet.</td></tr>'}</tbody></table>
+  </div>
+
+  <div class="card"><h2>Planned absence requests</h2><div class="sub">Parent-requested absences awaiting divisional approval — approved ones show in daily attendance as excused.</div>
+    <table><tbody>${(arR.data||[]).map(a=>`<tr><td><b>${esc(a.student?a.student.last_name+', '+a.student.first_name:'')}</b> <span class="muted">Gr ${a.student?a.student.grade:''}</span></td><td>${a.start_date} → ${a.end_date}</td><td class="muted">${esc(a.reason||'')}</td><td style="text-align:right"><button class="btn sm" onclick="arDecide('${a.id}','approved')">Approve</button> <button class="btn ghost sm" onclick="arDecide('${a.id}','denied')">Deny</button></td></tr>`).join('')||'<tr><td class="muted">No pending requests.</td></tr>'}</tbody></table>
   </div>
 
   <div class="card"><h2>Divisions &amp; Vice-Principals</h2><div class="sub">Grade bands, each with a VP chosen from staff.</div>
@@ -1689,6 +1735,56 @@ window.iepUpload=async(studentId, existingId)=>{
   if(existingId){ await sb.from('iep_documents').update({url:path,updated_at:new Date().toISOString()}).eq('id',existingId); }
   else { const name=(document.getElementById('iep_name_'+studentId).value)||f.name; await sb.from('iep_documents').insert({school_id:SESSION.schoolId,student_id:studentId,name,url:path,uploaded_by:SESSION.user&&SESSION.user.id}); }
   openStudentLive(studentId);
+};
+
+/* ---------- OnSIS export (live + standard CSV) ---------------------- */
+let _onsisRows=[];
+async function onsisLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Building OnSIS export…</div></div>';
+  const sid=SESSION.schoolId;
+  const [enrR,asgR,catR,scrR]=await Promise.all([
+    sb.from('enrolments').select('student:students(id,oen,first_name,last_name,grade), section:sections(id,course:courses(code,name,credit,grade))').eq('school_id',sid),
+    sb.from('assignments').select('id,section_id,category_id,denominator,kind,blank_policy').eq('school_id',sid),
+    sb.from('assessment_categories').select('id,section_id,weight').eq('school_id',sid),
+    sb.from('scores').select('assignment_id,student_id,score,flag').eq('school_id',sid)
+  ]);
+  const asg=asgR.data||[],cats=catR.data||[],scrs=scrR.data||[];
+  const scoreMap={}; scrs.forEach(x=>scoreMap[x.student_id+'|'+x.assignment_id]={score:x.score,flag:x.flag});
+  const des=['Accumulated credits','Years of attendance'];
+  _onsisRows=(enrR.data||[]).filter(e=>e.student&&e.section&&e.section.course&&e.student.grade>=10).map(e=>{
+    const sc=e.section, st=e.student;
+    const m=gbMark(cats.filter(c=>c.section_id===sc.id),asg.filter(a=>a.section_id===sc.id),(aid)=>scoreMap[st.id+'|'+aid]);
+    return {oen:st.oen||'',last:st.last_name,first:st.first_name,grade:st.grade,code:sc.course.code,name:sc.course.name,credit:(sc.course.credit||0),mark:(m===''?'':m),desig:des(st.grade)};
+  });
+  const rows=_onsisRows;
+  const valid=rows.filter(r=>r.mark!=='').length, pending=rows.length-valid;
+  v.innerHTML=`<div class="notice">Generates the <b>Class Enrolment</b> &amp; <b>final-mark</b> records for the Ontario School Information System (<b>OnSIS</b>), keyed to each student's OEN. Real OnSIS is an XML submission via the Ministry portal — this exports the same data in a clean <b>standard CSV</b> for mapping/validation. <span class="pill">🟢 live • ${esc(SESSION.schoolName||'')}</span></div>
+  <div class="card"><div class="row"><select><option>Secondary School — March submission</option><option>October submission</option><option>June submission</option></select><div style="flex:1"></div>
+    <span class="badge b-green">✓ ${valid} with final mark</span><span class="badge b-amber">${pending} in progress</span>
+    <button class="btn sm" onclick="onsisDownload()">⬇ Download standard CSV</button></div>
+  <div class="hr"></div>
+  <div style="overflow:auto"><table style="min-width:760px"><thead><tr><th>OEN</th><th>Student</th><th>Gr</th><th>Course</th><th>Credit</th><th>Final mark</th><th>Grade designation</th></tr></thead><tbody>
+  ${rows.slice(0,200).map(r=>`<tr><td><code class="k">${esc(r.oen||'—')}</code></td><td>${esc(r.last)}, ${esc(r.first[0])}.</td><td>${r.grade}</td><td>${esc(r.code)}</td><td>${(+r.credit).toFixed(1)}</td><td>${r.mark===''?'<span class="muted">I</span>':r.mark}</td><td>${esc(r.desig||'—')}</td></tr>`).join('')||'<tr><td colspan=7 class=muted>No records.</td></tr>'}
+  </tbody></table></div>
+  <div class="pf" style="margin-top:8px">${rows.length} enrolment records. OEN coverage: ${rows.length?Math.round(rows.filter(r=>r.oen).length/rows.length*100):0}%. Validate before sign-off; missing final marks are for in-progress courses.</div></div>`;
+}
+function des(g){return g>=12?'Accumulated credits':g>=10?'Years of attendance':'';}
+window.onsisDownload=()=>{
+  const header=['OEN','LastName','FirstName','Grade','CourseCode','CourseName','CreditValue','FinalMark','GradeDesignation'];
+  const esc2=(x)=>{x=(x==null?'':String(x)); return /[",\n]/.test(x)?'"'+x.replace(/"/g,'""')+'"':x;};
+  const lines=[header.join(',')].concat(_onsisRows.map(r=>[r.oen,r.last,r.first,r.grade,r.code,r.name,(+r.credit).toFixed(1),r.mark,r.desig].map(esc2).join(',')));
+  const blob=new Blob([lines.join('\n')],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='onsis_export_'+(SESSION.schoolName||'school').replace(/\W+/g,'_')+'.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+};
+
+/* ---------- absence approval + bulk invite handlers ---------------- */
+window.arDecide=async(id,st)=>{ await sb.from('absence_requests').update({status:st,reviewed_by:SESSION.user&&SESSION.user.id,reviewed_at:new Date().toISOString()}).eq('id',id); adminLive(); };
+window.invBulk=async()=>{ const raw=$('#inv_bulk').value.trim(); const m=$('#inv_msg'); if(!raw){m.textContent='Paste emails first.';return;}
+  const defRole=$('#inv_bulk_role').value;
+  const rows=raw.split(/\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const p=l.split(',').map(x=>x&&x.trim()); return {school_id:SESSION.schoolId,email:p[0],role:(p[1]||defRole),invited_by:SESSION.user&&SESSION.user.id};}).filter(x=>x.email&&x.email.includes('@'));
+  if(!rows.length){m.style.color='var(--red)';m.textContent='No valid emails found.';return;}
+  const {error}=await sb.from('invitations').insert(rows); if(error){m.style.color='var(--red)';m.textContent=error.message;return;}
+  adminLive();
 };
 
 /* ============================ BOOT =================================== */
