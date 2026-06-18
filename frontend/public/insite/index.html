@@ -1244,7 +1244,8 @@ function openParentHours(){ const c=SESSION.child;
 }
 PAGES.pmsg=()=>{ PAGES.mymsg(); };
 PAGES.pptc=()=>{ PAGES.ptc(); };
-PAGES.pann=()=>{
+PAGES.pann=async()=>{
+  if(SESSION.backend && SESSION.schoolId){ const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>'; const posts=await loadPosts(); v.innerHTML=`<div class="card"><h2>Announcements</h2><div class="sub">From the school — reply where allowed</div>${postsBlock(posts, ()=>go('pann'))}</div>`; return; }
   $('#view').innerHTML=`<div class="card"><h2>Announcements</h2><div class="sub">From the school</div><div>${DB.ann.map(annHtml).join('')}</div></div>`;
 };
 
@@ -1691,7 +1692,7 @@ let _admTerms=[], _admStaff=[], _admCourses=[];
 async function adminLive(){
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading school setup…</div></div>';
   const sid=SESSION.schoolId;
-  const [inv, mems, divs, staffR, lsd, secs, arR, termsR, twR, bellR, coursesR] = await Promise.all([
+  const [inv, mems, divs, staffR, lsd, secs, arR, termsR, twR, bellR, coursesR, grpR] = await Promise.all([
     sb.from('invitations').select('id,email,role,status').eq('school_id',sid).order('created_at',{ascending:false}),
     sb.from('memberships').select('role,profile:profiles(full_name,email)').eq('school_id',sid),
     sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id,final_weight').eq('school_id',sid).order('sort_order'),
@@ -1702,9 +1703,10 @@ async function adminLive(){
     sb.from('terms').select('id,name').eq('school_id',sid),
     sb.from('term_weights').select('division_id,term_id,weight').eq('school_id',sid),
     sb.from('bell_periods').select('id,name,start_time,end_time,sort_order').eq('school_id',sid).order('sort_order'),
-    sb.from('courses').select('id,code,name,grade').eq('school_id',sid).order('transcript_order')
+    sb.from('courses').select('id,code,name,grade').eq('school_id',sid).order('transcript_order'),
+    sb.from('groups').select('id,name,category,member_types,open_join').eq('school_id',sid).order('name')
   ]);
-  const staff=staffR.data||[], dvs=divs.data||[], terms=termsR.data||[], tw=twR.data||[], bells=bellR.data||[], courses=coursesR.data||[];
+  const staff=staffR.data||[], dvs=divs.data||[], terms=termsR.data||[], tw=twR.data||[], bells=bellR.data||[], courses=coursesR.data||[], grps=grpR.data||[];
   _admTerms=terms; _admStaff=staff; _admCourses=courses;
   const twOf=(d,t)=>{const r=tw.find(x=>x.division_id===d&&x.term_id===t);return r?r.weight:0;};
   const divName=(id)=>{const d=dvs.find(x=>x.id===id);return d?d.name:'Whole school';};
@@ -1767,6 +1769,15 @@ async function adminLive(){
   <div class="card"><h2>School schedule (bell times)</h2><div class="sub">Periods &amp; times for the day.</div>
     <table><tbody>${bells.map(b=>`<tr><td><b>${esc(b.name)}</b></td><td><input value="${esc(b.start_time||'')}" style="width:80px" onchange="bellSet('${b.id}','start_time',this.value)"></td><td><input value="${esc(b.end_time||'')}" style="width:80px" onchange="bellSet('${b.id}','end_time',this.value)"></td><td style="text-align:right"><button class="btn ghost sm" onclick="bellDel('${b.id}')">Remove</button></td></tr>`).join('')||'<tr><td class=muted>No periods.</td></tr>'}</tbody></table>
     <div class="row" style="margin-top:10px"><input id="bp_name" placeholder="Name (Period 1)" style="width:150px"><input id="bp_start" placeholder="Start 08:45" style="width:100px"><input id="bp_end" placeholder="End 10:00" style="width:100px"><button class="btn sm" onclick="bellAdd()">+ Add period</button></div>
+  </div>
+
+  <div class="card"><h2>Groups &amp; membership</h2><div class="sub">Who can be a member of each group (students / parents / teachers / invited).</div>
+    <table><thead><tr><th>Group</th><th>Members can be</th><th style="text-align:center">Open join</th></tr></thead><tbody>
+    ${grps.map(g=>`<tr><td><b>${esc(g.name)}</b> <span class="muted">${esc(g.category||'')}</span></td>
+      <td>${['student','parent','teacher','invited'].map(t=>`<label class="muted" style="font-size:12px;margin-right:8px"><input type="checkbox" ${(g.member_types||[]).includes(t)?'checked':''} onchange="grpType('${g.id}','${t}',this.checked)"> ${t}</label>`).join('')}</td>
+      <td style="text-align:center"><input type="checkbox" ${g.open_join?'checked':''} onchange="grpOpen('${g.id}',this.checked)"></td></tr>`).join('')||'<tr><td colspan=3 class=muted>No groups yet.</td></tr>'}
+    </tbody></table>
+    <div class="row" style="margin-top:10px"><input id="grp_name" placeholder="Group name" style="width:180px"><input id="grp_cat" placeholder="Category (Club / Team…)" style="width:170px"><button class="btn sm" onclick="grpAdd()">+ Add group</button></div>
   </div>`;
 }
 window.invSend=async()=>{ const email=$('#inv_email').value.trim(),role=$('#inv_role').value,m=$('#inv_msg'); if(!email){m.style.color='var(--red)';m.textContent='Enter an email';return;} const {error}=await sb.from('invitations').insert({school_id:SESSION.schoolId,email,role,invited_by:SESSION.user&&SESSION.user.id}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} adminLive(); };
@@ -1784,6 +1795,9 @@ window.bellSet=async(id,col,val)=>{ const u={}; u[col]=val||null; await sb.from(
 window.bellAdd=async()=>{ const n=document.getElementById('bp_name').value.trim(); if(!n)return; await sb.from('bell_periods').insert({school_id:SESSION.schoolId,name:n,start_time:document.getElementById('bp_start').value||null,end_time:document.getElementById('bp_end').value||null,sort_order:99}); adminLive(); };
 window.bellDel=async(id)=>{ await sb.from('bell_periods').delete().eq('id',id); adminLive(); };
 window.sgFlag=async(studentId,guardianId,col,val)=>{ const u={}; u[col]=val; await sb.from('student_guardians').update(u).eq('student_id',studentId).eq('guardian_id',guardianId); };
+window.grpType=async(gid,type,on)=>{ const {data}=await sb.from('groups').select('member_types').eq('id',gid).single(); let arr=(data&&data.member_types)||[]; arr= on? Array.from(new Set([...arr,type])) : arr.filter(x=>x!==type); await sb.from('groups').update({member_types:arr}).eq('id',gid); };
+window.grpOpen=async(gid,on)=>{ await sb.from('groups').update({open_join:on}).eq('id',gid); };
+window.grpAdd=async()=>{ const n=document.getElementById('grp_name').value.trim(); if(!n)return; await sb.from('groups').insert({school_id:SESSION.schoolId,name:n,category:document.getElementById('grp_cat').value||'Club',member_types:['student']}); adminLive(); };
 window.iepUpload=async(studentId, existingId)=>{
   const f=document.getElementById('iep_file_'+studentId).files[0]; const m=document.getElementById('iep_msg');
   if(!f){ if(m){m.style.color='var(--red)';m.textContent='Choose a file first.';} return; }
@@ -1864,27 +1878,49 @@ async function mymsgLive(){
   (admins||[]).forEach(a=>recips.push({id:a.user_id,name:(a.profile?a.profile.full_name:'Office')+' — Office'}));
   const seen={}; recips=recips.filter(r=>r.id&&!seen[r.id]&&(seen[r.id]=1));
   const {data:threads}=await sb.from('threads').select('id,subject,created_at').order('created_at',{ascending:false});
+  const posts=await loadPosts();
   window._msgSend=async()=>{ const to=document.getElementById('mm_to').value, body=document.getElementById('mm_body').value.trim(), m=document.getElementById('mm_msg'); if(!to){m.style.color='var(--red)';m.textContent='Choose a recipient';return;} if(!body)return; const {error}=await sb.rpc('start_message',{p_to:to,p_subject:document.getElementById('mm_subj').value||'Message',p_body:body,p_student:stu}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} mymsgLive(); };
   v.innerHTML=`<div class="card"><h2>Message a teacher</h2><div class="sub">Choose a teacher or the office</div>
     <div class="row" style="margin-bottom:8px"><select id="mm_to" style="min-width:240px"><option value="">Choose recipient…</option>${recips.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select><input id="mm_subj" placeholder="Subject" style="flex:1"></div>
     <div class="row"><input id="mm_body" placeholder="Message…" style="flex:1"><button class="btn" onclick="_msgSend()">Send</button><span id="mm_msg" class="pf"></span></div>
     ${recips.length?'':'<div class="pf" style="margin-top:6px">No teacher accounts are linked to your classes yet — recipients appear once teachers are invited &amp; assigned.</div>'}</div>
-  <div class="card"><h2>Conversations</h2>${(threads||[]).map(t=>`<div class="feed-item click" onclick="openThreadLive('${t.id}','mymsg')"><b>${esc(t.subject||'Conversation')}</b> <span class="muted" style="font-size:11px">${t.created_at?new Date(t.created_at).toLocaleDateString():''}</span></div>`).join('')||'<div class="muted">No conversations yet.</div>'}</div>`;
+  <div class="card"><h2>Conversations</h2>${(threads||[]).map(t=>`<div class="feed-item click" onclick="openThreadLive('${t.id}','mymsg')"><b>${esc(t.subject||'Conversation')}</b> <span class="muted" style="font-size:11px">${t.created_at?new Date(t.created_at).toLocaleDateString():''}</span></div>`).join('')||'<div class="muted">No conversations yet.</div>'}</div>
+  <div class="card"><h2>Posts</h2><div class="sub">School &amp; class posts — reply where allowed</div>${postsBlock(posts, mymsgLive)}</div>`;
 }
 async function commsLive(){
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
   const {data:threads}=await sb.from('threads').select('id,subject,created_at').order('created_at',{ascending:false});
-  const {data:ann}=await sb.from('announcements').select('id,title,body,audience,created_at').eq('school_id',SESSION.schoolId).order('created_at',{ascending:false}).limit(8);
-  window._annPost=async()=>{ const t=document.getElementById('an_t').value||'Untitled', b=document.getElementById('an_b').value||'', a=document.getElementById('an_a').value; const {error}=await sb.from('announcements').insert({school_id:SESSION.schoolId,author_id:SESSION.user&&SESSION.user.id,title:t,body:b,audience:a}); if(error){alert(error.message);return;} commsLive(); };
+  const {data:groups}=await sb.from('groups').select('id,name').eq('school_id',SESSION.schoolId).order('name');
+  const posts=await loadPosts();
+  window._annPost=async()=>{ const g=(x)=>document.getElementById(x); const mo=g('an_grp').value;
+    const {error}=await sb.from('announcements').insert({school_id:SESSION.schoolId,author_id:SESSION.user&&SESSION.user.id,title:g('an_t').value||'Untitled',body:g('an_b').value||'',audience:g('an_a').value,response_policy:g('an_resp').value,members_only:!!mo,group_id:mo||null}); if(error){alert(error.message);return;} commsLive(); };
   v.innerHTML=`<div class="grid g2">
-    <div class="card"><h2>Compose announcement</h2><div class="sub">Goes to the selected audience</div>
-      <div class="row" style="margin-bottom:8px"><select id="an_a" style="flex:1"><option value="all_families">All families</option><option value="staff">Staff only</option><option value="students">All students</option></select></div>
-      <input id="an_t" placeholder="Title" style="width:100%;margin-bottom:8px"><textarea id="an_b" placeholder="Message…" style="width:100%;height:70px;margin-bottom:8px"></textarea>
-      <div class="row"><button class="btn" onclick="_annPost()">Send</button></div></div>
+    <div class="card"><h2>Compose post</h2><div class="sub">Set who sees it and whether they can reply</div>
+      <input id="an_t" placeholder="Title" style="width:100%;margin-bottom:8px"><textarea id="an_b" placeholder="Message…" style="width:100%;height:64px;margin-bottom:8px"></textarea>
+      <div class="row" style="margin-bottom:8px"><select id="an_a"><option value="all_families">All families</option><option value="students">All students</option><option value="staff">Staff only</option></select>
+        <select id="an_resp"><option value="view_only">View only</option><option value="respond">View &amp; respond</option></select>
+        <select id="an_grp"><option value="">Anyone in audience</option>${(groups||[]).map(gr=>`<option value="${gr.id}">Members only: ${esc(gr.name)}</option>`).join('')}</select></div>
+      <div class="row"><button class="btn" onclick="_annPost()">Post</button></div></div>
     <div class="card"><h2>Conversations</h2><div class="sub">Messages with students &amp; families</div>
       ${(threads||[]).map(t=>`<div class="feed-item click" onclick="openThreadLive('${t.id}','comms')"><b>${esc(t.subject||'Conversation')}</b></div>`).join('')||'<div class="muted">No conversations.</div>'}</div>
   </div>
-  <div class="card"><h2>Announcement feed</h2>${(ann||[]).map(a=>`<div class="feed-item"><b>${esc(a.title)}</b><div class="muted" style="font-size:12.5px;margin-top:3px">${esc(a.body||'')}</div><div class="meta"><span class="badge b-blue">${esc(a.audience)}</span></div></div>`).join('')||'<div class="muted">No announcements.</div>'}</div>`;
+  <div class="card"><h2>Posts</h2><div class="sub">View-only or open-to-replies, members-only as set</div>${postsBlock(posts, commsLive)}</div>`;
+}
+
+/* ---------- Posts (announcements) with replies --------------------- */
+async function loadPosts(){
+  const { data } = await sb.from('announcements')
+    .select('id,title,body,audience,response_policy,members_only,created_at, post_replies(id,body,created_at,author:profiles(full_name))')
+    .eq('school_id',SESSION.schoolId).order('created_at',{ascending:false}).limit(20);
+  return data||[];
+}
+function postsBlock(posts, reRenderFn){
+  window._postReply=async(annId)=>{ const el=document.getElementById('pr_'+annId); const b=el.value.trim(); if(!b)return; const {error}=await sb.from('post_replies').insert({school_id:SESSION.schoolId,announcement_id:annId,author_id:SESSION.user&&SESSION.user.id,body:b}); if(error){alert(error.message);return;} reRenderFn(); };
+  return (posts||[]).map(p=>`<div class="feed-item"><b>${esc(p.title)}</b> <span class="badge ${p.response_policy==='respond'?'b-green':'b-grey'}" style="font-size:9px">${p.response_policy==='respond'?'open to replies':'view only'}</span>${p.members_only?' <span class="badge b-amber" style="font-size:9px">members only</span>':''} <span class="badge b-blue" style="font-size:9px">${esc(p.audience)}</span>
+    <div class="muted" style="font-size:12.5px;margin-top:3px">${esc(p.body||'')}</div>
+    ${(p.post_replies||[]).slice().sort((a,b)=>(a.created_at||'').localeCompare(b.created_at||'')).map(r=>`<div style="margin-top:6px;font-size:13px;padding-left:10px;border-left:2px solid var(--line)"><b>${esc(r.author?r.author.full_name:'—')}:</b> ${esc(r.body)}</div>`).join('')}
+    ${p.response_policy==='respond'?`<div class="row" style="margin-top:8px"><input id="pr_${p.id}" placeholder="Write a reply…" style="flex:1"><button class="btn ghost sm" onclick="_postReply('${p.id}')">Reply</button></div>`:''}
+  </div>`).join('')||'<div class="muted">No posts.</div>';
 }
 
 /* ============================ BOOT =================================== */
