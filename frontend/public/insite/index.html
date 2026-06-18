@@ -424,6 +424,9 @@ const NAV_ADMIN=[
   {id:'comms',ic:'✉',t:'Communication'},
   {id:'ptc',ic:'🤝',t:'PTC Booking'},
   {id:'clubs',ic:'★',t:'Groups & Clubs'},
+  {id:'events',ic:'📅',t:'Events & Forms'},
+  {g:'Finance'},
+  {id:'finance',ic:'💳',t:'Finance'},
   {g:'Ministry & System'},
   {id:'onsis',ic:'⛗',t:'OnSIS Export'},
   {id:'admin',ic:'⚙',t:'Admin & Audit'},
@@ -463,6 +466,7 @@ const NAV_PARENT=[
   {id:'phours',ic:'⏱',t:'Community Hours'},
   {id:'pmsg',ic:'✉',t:'Messages'},
   {id:'pptc',ic:'🤝',t:'Book Conference'},
+  {id:'ppay',ic:'💳',t:'Forms & Fees'},
   {id:'pann',ic:'📣',t:'Announcements'},
 ];
 function navFor(role){ return {admin:NAV_ADMIN,teacher:NAV_TEACHER,student:NAV_STUDENT,parent:NAV_PARENT}[role]; }
@@ -482,6 +486,7 @@ const TITLES={
   pdash:['Family Overview','Your child at a glance'], pmarks:['Marks','As released by the school'], pattend:['Attendance','Your child'],
   preport:['Report Cards','Released documents'], phours:['Community Hours','40-hour requirement'], pmsg:['Messages','Teachers & office'],
   pptc:['Book a Conference','Parent–teacher scheduling'], pann:['Announcements','From the school'],
+  events:['Events & Forms','Events, permission forms & fees'], finance:['Finance','Invoices, payments & balances'], ppay:['Forms & Fees','Sign forms & pay fees'],
 };
 
 /* ============================ APP SHELL ============================== */
@@ -1698,7 +1703,7 @@ async function adminLive(){
     sb.from('invitations').select('id,email,role,status').eq('school_id',sid).order('created_at',{ascending:false}),
     sb.from('memberships').select('role,profile:profiles(full_name,email)').eq('school_id',sid),
     sb.from('divisions').select('id,name,grade_low,grade_high,vp_staff_id,final_weight').eq('school_id',sid).order('sort_order'),
-    sb.from('staff').select('id,full_name,department,is_resource_teacher,is_vp,profile_id').eq('school_id',sid).order('full_name'),
+    sb.from('staff').select('id,full_name,department,is_resource_teacher,is_vp,is_finance,profile_id').eq('school_id',sid).order('full_name'),
     sb.from('learning_skill_defs').select('id,name,kind,division_id').eq('school_id',sid).order('sort_order'),
     sb.from('sections').select('id,period,room,meet_days,teacher_name,requires_learning_skills,course:courses(code,name,grade)').eq('school_id',sid).order('period'),
     sb.from('absence_requests').select('id,start_date,end_date,reason,status,student:students(first_name,last_name,grade)').eq('school_id',sid).eq('status','pending').order('start_date'),
@@ -1755,8 +1760,8 @@ async function adminLive(){
   </div>
 
   <div class="card"><h2>Staff designations</h2><div class="sub">Resource teachers can upload/update IEPs.</div>
-    <table><thead><tr><th>Staff</th><th>Department</th><th style="text-align:center">Resource teacher</th><th style="text-align:center">VP</th></tr></thead><tbody>
-    ${staff.map(s=>`<tr><td><b>${esc(s.full_name)}</b></td><td>${esc(s.department||'')}</td><td style="text-align:center"><input type="checkbox" ${s.is_resource_teacher?'checked':''} onchange="staffFlag('${s.id}','is_resource_teacher',this.checked)"></td><td style="text-align:center"><input type="checkbox" ${s.is_vp?'checked':''} onchange="staffFlag('${s.id}','is_vp',this.checked)"></td></tr>`).join('')||'<tr><td colspan=4 class=muted>No staff.</td></tr>'}
+    <table><thead><tr><th>Staff</th><th>Department</th><th style="text-align:center">Resource</th><th style="text-align:center">VP</th><th style="text-align:center">Finance</th></tr></thead><tbody>
+    ${staff.map(s=>`<tr><td><b>${esc(s.full_name)}</b></td><td>${esc(s.department||'')}</td><td style="text-align:center"><input type="checkbox" ${s.is_resource_teacher?'checked':''} onchange="staffFlag('${s.id}','is_resource_teacher',this.checked)"></td><td style="text-align:center"><input type="checkbox" ${s.is_vp?'checked':''} onchange="staffFlag('${s.id}','is_vp',this.checked)"></td><td style="text-align:center"><input type="checkbox" ${s.is_finance?'checked':''} onchange="staffFlag('${s.id}','is_finance',this.checked)"></td></tr>`).join('')||'<tr><td colspan=5 class=muted>No staff.</td></tr>'}
     </tbody></table>
   </div>
 
@@ -1982,6 +1987,65 @@ async function preportLive(){ const v=$('#view'); const child=pChild(); if(!chil
    <div class="rc-body"><table><thead><tr><th>Course</th><th style="text-align:center">%</th><th style="text-align:center">Level</th></tr></thead><tbody>${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> ${esc(c.name||'')}</td><td style="text-align:center"><b>${c.mark===''?'—':c.mark+'%'}</b></td><td style="text-align:center"><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')}</tbody></table>
    <div class="row" style="margin-top:10px"><button class="btn ghost sm" onclick="window.print()">Print / PDF</button></div></div></div>`;
 }
+
+/* ---------- Events & Finance (live) -------------------------------- */
+async function eventsLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const {data:events}=await sb.from('events').select('id,title,description,event_date,location,requires_permission,fee, event_responses(signed)').eq('school_id',SESSION.schoolId).order('event_date');
+  window._evAdd=async()=>{ const g=(x)=>document.getElementById(x); const {error}=await sb.from('events').insert({school_id:SESSION.schoolId,title:g('ev_t').value||'Event',description:g('ev_d').value||null,event_date:g('ev_date').value||null,location:g('ev_loc').value||null,requires_permission:g('ev_perm').checked,fee:+g('ev_fee').value||0,created_by:SESSION.user&&SESSION.user.id}); if(error){alert(error.message);return;} eventsLive(); };
+  v.innerHTML=`<div class="card"><h2>Create event</h2><div class="sub">Optionally attach a permission form &amp; fee</div>
+   <div class="row" style="margin-bottom:8px"><input id="ev_t" placeholder="Title" style="flex:1"><input id="ev_date" type="date"><input id="ev_loc" placeholder="Location" style="width:150px"></div>
+   <textarea id="ev_d" placeholder="Description…" style="width:100%;height:50px;margin-bottom:8px"></textarea>
+   <div class="row"><label class="muted"><input type="checkbox" id="ev_perm" checked> Requires permission form</label><span class="muted">Fee $</span><input id="ev_fee" type="number" value="0" style="width:80px"><button class="btn sm" onclick="_evAdd()">Create event</button></div></div>
+   <div class="card"><h2>Events</h2><table><thead><tr><th>Event</th><th>Date</th><th>Permission</th><th>Fee</th><th>Signed</th></tr></thead><tbody>
+   ${(events||[]).map(e=>`<tr><td><b>${esc(e.title)}</b> <span class="muted">${esc(e.location||'')}</span></td><td>${e.event_date||'—'}</td><td>${e.requires_permission?'<span class="badge b-amber">required</span>':'<span class="badge b-grey">—</span>'}</td><td>${e.fee>0?'$'+(+e.fee).toFixed(2):'—'}</td><td>${(e.event_responses||[]).filter(r=>r.signed).length} signed</td></tr>`).join('')||'<tr><td colspan=5 class=muted>No events.</td></tr>'}
+   </tbody></table></div>`;
+}
+async function financeLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const [chR,pyR,stuR]=await Promise.all([
+    sb.from('charges').select('id,student_id,kind,description,amount,status,due_date, student:students(first_name,last_name)').eq('school_id',SESSION.schoolId).order('created_at',{ascending:false}),
+    sb.from('payments').select('id,charge_id,student_id,amount,status,method').eq('school_id',SESSION.schoolId),
+    sb.from('students').select('id,first_name,last_name').eq('school_id',SESSION.schoolId).order('last_name')]);
+  const charges=chR.data||[], pays=pyR.data||[], studs=stuR.data||[];
+  const paid={}; pays.filter(p=>p.status==='confirmed').forEach(p=>paid[p.charge_id]=(paid[p.charge_id]||0)+(+p.amount));
+  const owing={}; charges.forEach(c=>{ if(c.status!=='void'){ const bal=(+c.amount)-(paid[c.id]||0); owing[c.student_id]=(owing[c.student_id]||0)+Math.max(0,bal);} });
+  window._chgAdd=async()=>{ const g=(x)=>document.getElementById(x); const st=g('ch_stu').value; const m=g('ch_msg'); if(!st){m.textContent='Pick a student';return;} const {error}=await sb.from('charges').insert({school_id:SESSION.schoolId,student_id:st,kind:g('ch_kind').value,description:g('ch_desc').value||'Charge',amount:+g('ch_amt').value||0,due_date:g('ch_due').value||null,created_by:SESSION.user&&SESSION.user.id}); if(error){m.textContent=error.message;return;} financeLive(); };
+  window._payConfirm=async(id)=>{ await sb.from('payments').update({status:'confirmed',received_at:new Date().toISOString(),recorded_by:SESSION.user&&SESSION.user.id}).eq('id',id); financeLive(); };
+  window._chgRecord=async(chId,sid,amt)=>{ await sb.from('payments').insert({school_id:SESSION.schoolId,charge_id:chId,student_id:sid,amount:amt,method:'manual',status:'confirmed',received_at:new Date().toISOString(),recorded_by:SESSION.user&&SESSION.user.id}); await sb.from('charges').update({status:'paid'}).eq('id',chId); financeLive(); };
+  const pend=pays.filter(p=>p.status==='pending');
+  v.innerHTML=`<div class="card"><h2>Issue a charge / invoice</h2><div class="sub">Tuition, trip, fee or item</div>
+    <div class="row" style="margin-bottom:8px"><select id="ch_stu" style="min-width:190px"><option value="">Student…</option>${studs.map(s=>`<option value="${s.id}">${esc(s.last_name)}, ${esc(s.first_name)}</option>`).join('')}</select><select id="ch_kind"><option value="tuition">Tuition</option><option value="trip">Trip</option><option value="fee">Fee</option><option value="item">Item</option></select><input id="ch_desc" placeholder="Description" style="flex:1"><span class="muted">$</span><input id="ch_amt" type="number" style="width:90px"><input id="ch_due" type="date"><button class="btn sm" onclick="_chgAdd()">Issue</button><span id="ch_msg" class="pf"></span></div></div>
+    ${pend.length?`<div class="card"><h2>Payments to confirm</h2><table><tbody>${pend.map(p=>`<tr><td>$${(+p.amount).toFixed(2)} <span class="muted">${esc(p.method||'')}</span></td><td style="text-align:right"><button class="btn sm" onclick="_payConfirm('${p.id}')">Confirm received</button></td></tr>`).join('')}</tbody></table></div>`:''}
+    <div class="card"><h2>Charges &amp; balances</h2>
+      <div style="overflow:auto"><table style="min-width:680px"><thead><tr><th>Student</th><th>Kind</th><th>Description</th><th>Amount</th><th>Status</th><th></th></tr></thead><tbody>
+      ${charges.map(c=>{const bal=(+c.amount)-(paid[c.id]||0); const st=(c.status==='void')?'void':(bal<=0?'paid':'outstanding'); return `<tr><td>${esc(c.student?c.student.last_name+', '+c.student.first_name:'')}</td><td>${esc(c.kind)}</td><td>${esc(c.description)}</td><td>$${(+c.amount).toFixed(2)}</td><td><span class="badge ${st==='paid'?'b-green':st==='void'?'b-grey':'b-amber'}">${st}</span></td><td style="text-align:right">${st==='outstanding'?`<button class="btn ghost sm" onclick="_chgRecord('${c.id}','${c.student_id}',${c.amount})">Mark paid</button>`:''}</td></tr>`}).join('')||'<tr><td colspan=6 class=muted>No charges.</td></tr>'}
+      </tbody></table></div>
+      <div class="hr"></div><b>Balances owing</b>
+      <table><tbody>${studs.filter(s=>owing[s.id]>0).map(s=>`<tr><td>${esc(s.last_name)}, ${esc(s.first_name)}</td><td style="text-align:right"><b>$${owing[s.id].toFixed(2)}</b></td></tr>`).join('')||'<tr><td class=muted>No outstanding balances.</td></tr>'}</tbody></table></div>`;
+}
+async function ppayLive(){
+  const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const [evR,erR,chR,pyR]=await Promise.all([
+    sb.from('events').select('id,title,event_date,location,requires_permission,fee').eq('school_id',SESSION.schoolId).eq('requires_permission',true).order('event_date'),
+    sb.from('event_responses').select('event_id,signed').eq('student_id',child.id),
+    sb.from('charges').select('id,kind,description,amount,status').eq('student_id',child.id),
+    sb.from('payments').select('charge_id,amount,status').eq('student_id',child.id)]);
+  const events=evR.data||[], resp=erR.data||[], charges=chR.data||[], pays=pyR.data||[];
+  const signed={}; resp.forEach(r=>signed[r.event_id]=r.signed);
+  const paid={}; pays.filter(p=>p.status==='confirmed').forEach(p=>paid[p.charge_id]=(paid[p.charge_id]||0)+(+p.amount));
+  const balance=charges.reduce((a,c)=>a+(c.status==='void'?0:Math.max(0,(+c.amount)-(paid[c.id]||0))),0);
+  window._sign=async(evId)=>{ await sb.from('event_responses').upsert({event_id:evId,student_id:child.id,school_id:SESSION.schoolId,signed:true,signed_by:SESSION.user&&SESSION.user.id,signed_at:new Date().toISOString()},{onConflict:'event_id,student_id'}); ppayLive(); };
+  window._pay=async(chId,amt)=>{ const {error}=await sb.from('payments').insert({school_id:SESSION.schoolId,charge_id:chId,student_id:child.id,amount:amt,method:'online',status:'pending',recorded_by:SESSION.user&&SESSION.user.id}); if(error){alert(error.message);return;} ppayLive(); };
+  v.innerHTML=`${pChildPicker('ppay')}
+   <div class="card"><h2>Balance owing</h2><div style="font-size:26px;font-weight:800;color:${balance>0?'var(--amber)':'var(--green)'}">$${balance.toFixed(2)}</div></div>
+   <div class="card"><h2>Permission forms</h2>${events.map(e=>`<div class="feed-item"><b>${esc(e.title)}</b> <span class="muted">${e.event_date||''} • ${esc(e.location||'')}</span>${e.fee>0?' • $'+(+e.fee).toFixed(2):''}<div style="margin-top:6px">${signed[e.id]?'<span class="badge b-green">✓ Signed</span>':`<button class="btn sm" onclick="_sign('${e.id}')">Sign permission</button>`}</div></div>`).join('')||'<div class="muted">No forms to sign.</div>'}</div>
+   <div class="card"><h2>Fees &amp; payments</h2><table><tbody>${charges.map(c=>{const bal=(+c.amount)-(paid[c.id]||0); const done=c.status!=='void'&&bal<=0; const pending=pays.some(p=>p.charge_id===c.id&&p.status==='pending'); return `<tr><td><b>${esc(c.description)}</b> <span class="muted">${esc(c.kind)}</span></td><td>$${(+c.amount).toFixed(2)}</td><td style="text-align:right">${done?'<span class="badge b-green">Paid</span>':pending?'<span class="badge b-amber">Payment pending</span>':`<button class="btn sm" onclick="_pay('${c.id}',${c.amount})">Pay</button>`}</td></tr>`}).join('')||'<tr><td class=muted>No charges.</td></tr>'}</tbody></table>
+   <div class="pf" style="margin-top:6px">Online payments are recorded then confirmed by the office. (Card gateway integration pending.)</div></div>`;
+}
+PAGES.events=()=>{ if(SESSION.backend&&SESSION.schoolId) return eventsLive(); $('#view').innerHTML='<div class="card"><h2>Events &amp; Forms</h2><div class="muted">Sign in to the live backend to create events with permission forms &amp; fees.</div></div>'; };
+PAGES.finance=()=>{ if(SESSION.backend&&SESSION.schoolId) return financeLive(); $('#view').innerHTML='<div class="card"><h2>Finance</h2><div class="muted">Sign in to the live backend to issue invoices/charges and confirm payments.</div></div>'; };
+PAGES.ppay=()=>{ if(SESSION.backend&&SESSION.schoolId) return ppayLive(); $('#view').innerHTML='<div class="card"><h2>Forms &amp; Fees</h2><div class="muted">Sign in to the live backend to sign forms and pay fees.</div></div>'; };
 
 /* ============================ BOOT =================================== */
 if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
