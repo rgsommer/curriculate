@@ -53,6 +53,72 @@ function parseHHMM(hhmm) {
   return d;
 }
 
+/**
+ * Hover / focus tooltip used next to "End at". Pure CSS — popover lives
+ * inside the same wrapper so it appears on `:hover` and on keyboard focus
+ * (tab to the trigger icon). Keeps it accessible without a popper lib.
+ */
+function InfoTip({ children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span
+      style={{ position: "relative", display: "inline-flex", marginLeft: 2 }}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <button
+        type="button"
+        aria-label="What does End at do?"
+        aria-expanded={open}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: 18,
+          height: 18,
+          borderRadius: "50%",
+          border: "1px solid #94a3b8",
+          background: "#fff",
+          color: "#475569",
+          fontWeight: 900,
+          fontSize: 11,
+          lineHeight: 1,
+          cursor: "help",
+          padding: 0,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        ⓘ
+      </button>
+      {open && (
+        <span
+          role="tooltip"
+          style={{
+            position: "absolute",
+            top: "calc(100% + 8px)",
+            left: 0,
+            zIndex: 50,
+            width: 280,
+            padding: "10px 12px",
+            borderRadius: 10,
+            background: "#ffffff",
+            border: "1px solid #cbd5e1",
+            boxShadow: "0 10px 28px rgba(15,23,42,0.18)",
+            fontSize: "0.78rem",
+            fontWeight: 600,
+            color: "#0f172a",
+            whiteSpace: "normal",
+          }}
+        >
+          {children}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Pretty m:ss style countdown — e.g. "12:04 remaining" or "in 1:23 hr". */
 function formatCountdown(msLeft) {
   if (!Number.isFinite(msLeft) || msLeft <= 0) return "ends now";
@@ -183,6 +249,18 @@ export default function EndTimeControl({
         }}
       >
         ⏰ <span>End at</span>
+        <InfoTip>
+          <div style={{ fontWeight: 800, marginBottom: 6, color: "#0f172a" }}>
+            Hard auto-end at the bell
+          </div>
+          <div style={{ color: "#334155", lineHeight: 1.45 }}>
+            When this time hits, the session closes immediately —{" "}
+            <b>even if students are still working</b>. Nothing is lost:
+            results <b>are captured and reported</b> on whatever each
+            student completed up to that moment. Use it so the activity
+            ends cleanly on the bell without you needing to be at the device.
+          </div>
+        </InfoTip>
       </span>
 
       <input
