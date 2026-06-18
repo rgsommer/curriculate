@@ -1189,7 +1189,7 @@ PAGES.admin=()=>{
 /* ========================================================================
    STUDENT-role pages (scoped to self)
    ===================================================================== */
-PAGES.mymarks=()=>{ const s=SESSION.student; openSelfMarks(s); };
+PAGES.mymarks=()=>{ if(SESSION.backend && SESSION.studentId) return mymarksLive(); const s=SESSION.student; openSelfMarks(s); };
 function openSelfMarks(s){
   const enr=studentSections(s.id);
   $('#view').innerHTML=`<div class="card"><h2>My courses &amp; marks</h2><div class="sub">Updated live as teachers enter scores</div>
@@ -1338,6 +1338,7 @@ window.openStudentLive=async(id)=>{
   const courses=await liveStudentCourses(id);
   let ieps=[]; try{ const ie=await sb.from('iep_documents').select('id,name,url,status,updated_at').eq('student_id',id).order('updated_at',{ascending:false}); ieps=ie.data||[]; }catch(e){}
   let gds=[]; try{ const g=await sb.from('student_guardians').select('guardian_id,relationship,contact_order,access_to_records,pickup_rights,lives_with,has_custody,emergency_contact,separate_communication,guardian:guardians(full_name,email,phone,address)').eq('student_id',id); gds=g.data||[]; }catch(e){}
+  let docs=[]; try{ const d=await sb.from('student_documents').select('id,category,name,url,visible_to_parents,visible_to_student,created_at').eq('student_id',id).order('created_at',{ascending:false}); docs=d.data||[]; }catch(e){}
   const col=C[(s.last_name.charCodeAt(0))%C.length];
   v.innerHTML=`<button class="btn ghost sm" onclick="go('students')">← All students</button>
   <div class="card" style="margin-top:12px"><div class="profile-hd"><div class="avatar" style="width:64px;height:64px;background:${col}">${(s.first_name[0]+s.last_name[0]).toUpperCase()}</div>
@@ -1371,6 +1372,11 @@ window.openStudentLive=async(id)=>{
     ${ieps.length? ieps.map(d=>`<div class="feed-item"><b>${esc(d.name)}</b> <span class="badge ${d.status==='active'?'b-green':'b-grey'}">${esc(d.status)}</span> ${d.url?`<a onclick="gbOpenFile('ieps','${d.url}')">📎 open</a>`:'<span class="muted">no file uploaded</span>'}<div class="meta">updated ${d.updated_at? new Date(d.updated_at).toLocaleDateString():'—'} • <a onclick="document.getElementById('iep_file_${id}').click()">replace file…</a></div></div>`).join('') : '<div class="muted">No IEP on file.</div>'}
     <div class="row" style="margin-top:10px"><input id="iep_file_${id}" type="file"><input id="iep_name_${id}" placeholder="Document name (e.g., IEP 2025–26)" style="flex:1"><button class="btn sm" onclick="iepUpload('${id}')">Upload IEP</button><span id="iep_msg" class="pf"></span></div>
     <div class="pf" style="margin-top:6px">Uploads require admin or resource-teacher rights (enforced by the database).</div>
+  </div>
+  <div class="card"><h2>Documents</h2><div class="sub">Report cards, transcripts, MAP &amp; other uploaded files</div>
+    ${docs.map(d=>`<div class="feed-item"><b>${esc(d.name)}</b> <span class="badge b-grey">${esc(d.category)}</span> ${d.url?`<a onclick="gbOpenFile('student-docs','${d.url}')">📎 open</a>`:''}
+      <div class="row" style="margin-top:4px"><label class="muted" style="font-size:12px"><input type="checkbox" ${d.visible_to_parents?'checked':''} onchange="sdVis('${d.id}','visible_to_parents',this.checked)"> visible to parents</label><label class="muted" style="font-size:12px"><input type="checkbox" ${d.visible_to_student?'checked':''} onchange="sdVis('${d.id}','visible_to_student',this.checked)"> visible to student</label></div></div>`).join('')||'<div class="muted">No documents.</div>'}
+    <div class="row" style="margin-top:8px"><input type="file" id="sd_file_${id}"><select id="sd_cat_${id}"><option value="report_card">Report card</option><option value="transcript">Transcript</option><option value="map">MAP</option><option value="other">Other</option></select><button class="btn sm" onclick="sdUpload('${id}')">Upload</button><span id="sd_msg" class="pf"></span></div>
   </div>`;
 };
 
@@ -1796,6 +1802,11 @@ async function adminLive(){
       <td style="text-align:center"><input type="checkbox" ${g.open_join?'checked':''} onchange="grpOpen('${g.id}',this.checked)"></td></tr>`).join('')||'<tr><td colspan=3 class=muted>No groups yet.</td></tr>'}
     </tbody></table>
     <div class="row" style="margin-top:10px"><input id="grp_name" placeholder="Group name" style="width:180px"><input id="grp_cat" placeholder="Category (Club / Team…)" style="width:170px"><button class="btn sm" onclick="grpAdd()">+ Add group</button></div>
+  </div>
+
+  <div class="card"><h2>Documents — bulk upload</h2><div class="sub">Upload report cards, transcripts, MAP reports — auto-matched to students by the id/name in the filename, then shown to staff / students / parents.</div>
+    <div class="row"><input type="file" id="doc_files" multiple accept="application/pdf,image/*"><button class="btn sm" onclick="_docUpload()">Upload &amp; match</button><span id="doc_msg" class="pf"></span></div>
+    <div class="pf" style="margin-top:6px">Matches by student number, then OEN, then “Lastname … Firstname” in the filename. Category guessed (report card / transcript / MAP). Unmatched files are listed so you can rename or attach per-student on the profile.</div>
   </div>`;
 }
 window.invSend=async()=>{ const email=$('#inv_email').value.trim(),role=$('#inv_role').value,m=$('#inv_msg'); if(!email){m.style.color='var(--red)';m.textContent='Enter an email';return;}
@@ -1822,6 +1833,24 @@ window.sgFlag=async(studentId,guardianId,col,val)=>{ const u={}; u[col]=val; awa
 window.grpType=async(gid,type,on)=>{ const {data}=await sb.from('groups').select('member_types').eq('id',gid).single(); let arr=(data&&data.member_types)||[]; arr= on? Array.from(new Set([...arr,type])) : arr.filter(x=>x!==type); await sb.from('groups').update({member_types:arr}).eq('id',gid); };
 window.grpOpen=async(gid,on)=>{ await sb.from('groups').update({open_join:on}).eq('id',gid); };
 window.grpAdd=async()=>{ const n=document.getElementById('grp_name').value.trim(); if(!n)return; await sb.from('groups').insert({school_id:SESSION.schoolId,name:n,category:document.getElementById('grp_cat').value||'Club',member_types:['student']}); adminLive(); };
+window._docUpload=async()=>{
+  const files=document.getElementById('doc_files').files; const m=document.getElementById('doc_msg'); if(!files.length){m.style.color='var(--red)';m.textContent='Choose files';return;}
+  m.style.color='var(--muted)'; m.textContent='Matching & uploading…';
+  const {data:studs}=await sb.from('students').select('id,first_name,last_name,oen,student_number').eq('school_id',SESSION.schoolId);
+  const sl=studs||[]; const norm=s=>(s||'').toLowerCase(); let done=0; const unmatched=[];
+  for(const f of files){ const fn=f.name, low=norm(fn), digits=fn.replace(/\D/g,'');
+    let st = sl.find(s=>s.student_number && fn.includes(s.student_number))
+          || sl.find(s=>s.oen && digits.includes(s.oen.replace(/\D/g,'')))
+          || sl.find(s=>s.last_name && s.first_name && low.includes(norm(s.last_name)) && low.includes(norm(s.first_name)));
+    const cat = /transcript/i.test(fn)?'transcript' : /\bmap\b/i.test(fn)?'map' : /report|card/i.test(fn)?'report_card':'other';
+    if(st){ const path=SESSION.schoolId+'/'+st.id+'/'+fn; const up=await sb.storage.from('student-docs').upload(path,f,{upsert:true}); if(!up.error){ await sb.from('student_documents').insert({school_id:SESSION.schoolId,student_id:st.id,category:cat,name:fn,url:path,uploaded_by:SESSION.user&&SESSION.user.id}); done++; } else unmatched.push(fn+' (upload error)'); }
+    else unmatched.push(fn);
+  }
+  m.style.color= unmatched.length?'var(--amber)':'var(--green)';
+  m.textContent= done+' matched & uploaded'+(unmatched.length?(' • '+unmatched.length+' unmatched: '+unmatched.join(', ')):'');
+};
+window.sdVis=async(id,col,val)=>{ const u={}; u[col]=val; await sb.from('student_documents').update(u).eq('id',id); };
+window.sdUpload=async(sid)=>{ const f=document.getElementById('sd_file_'+sid).files[0]; const m=document.getElementById('sd_msg'); if(!f){m.textContent='Choose a file';return;} const path=SESSION.schoolId+'/'+sid+'/'+f.name; const up=await sb.storage.from('student-docs').upload(path,f,{upsert:true}); if(up.error){m.style.color='var(--red)';m.textContent=up.error.message;return;} await sb.from('student_documents').insert({school_id:SESSION.schoolId,student_id:sid,category:document.getElementById('sd_cat_'+sid).value,name:f.name,url:path,uploaded_by:SESSION.user&&SESSION.user.id}); openStudentLive(sid); };
 window.iepUpload=async(studentId, existingId)=>{
   const f=document.getElementById('iep_file_'+studentId).files[0]; const m=document.getElementById('iep_msg');
   if(!f){ if(m){m.style.color='var(--red)';m.textContent='Choose a file first.';} return; }
@@ -2123,6 +2152,18 @@ async function ptcLive(){
    <div class="card"><h2>Slots</h2><table><thead><tr><th>When</th><th>Teacher</th><th>Status</th></tr></thead><tbody>
    ${slots.map(s=>{const t=teachers.find(x=>x.user_id===s.teacher_id);return `<tr><td>${s.slot_at?new Date(s.slot_at).toLocaleString():''}</td><td>${esc(t&&t.profile?t.profile.full_name:'—')}</td><td>${s.booked_by?'<span class="badge b-green">Booked</span>':'<span class="badge b-grey">Open</span>'}</td></tr>`}).join('')||'<tr><td colspan=3 class=muted>No slots.</td></tr>'}
    </tbody></table></div>`;
+}
+
+/* ---------- Student: live marks + documents ------------------------ */
+async function mymarksLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const courses=await liveStudentCourses(SESSION.studentId);
+  const {data:docs}=await sb.from('student_documents').select('id,category,name,url,created_at').eq('student_id',SESSION.studentId).order('created_at',{ascending:false});
+  v.innerHTML=`<div class="card"><h2>My courses &amp; marks</h2><div class="sub">🟢 live — shows grades your teachers have released</div>
+    <table><thead><tr><th>Course</th><th>Teacher</th><th>Mark</th><th>Level</th></tr></thead><tbody>
+    ${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b><div class="muted" style="font-size:11px">${esc(c.name||'')}</div></td><td>${esc(c.teacher||'—')}</td><td><b>${c.mark===''?'—':c.mark+'%'}</b></td><td><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td colspan=4 class=muted>No courses.</td></tr>'}
+    </tbody></table></div>
+   <div class="card"><h2>My documents</h2><div class="sub">Report cards, transcripts, MAP reports</div>${(docs||[]).map(d=>`<div class="feed-item"><b>${esc(d.name)}</b> <span class="badge b-grey">${esc(d.category)}</span> ${d.url?`<a onclick="gbOpenFile('student-docs','${d.url}')">📎 open</a>`:''}</div>`).join('')||'<div class="muted">No documents shared yet.</div>'}</div>`;
 }
 
 /* ============================ BOOT =================================== */
