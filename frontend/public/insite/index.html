@@ -1069,6 +1069,7 @@ function parentOverviewHtml(child){
 
 /* ---------- COMMUNICATION -------------------------------------------- */
 PAGES.comms=()=>{
+  if(SESSION.backend && SESSION.schoolId) return commsLive();
   $('#view').innerHTML=`<div class="grid g2">
     <div class="card"><h2>Compose announcement</h2><div class="sub">Goes to selected audience with read receipts</div>
       <div class="row" style="margin-bottom:8px"><select style="flex:1" id="annAud"><option>All families</option><option>Grade 11 families</option><option>ENG3U class</option><option>Robotics Club</option><option>Staff only</option></select></div>
@@ -1218,6 +1219,7 @@ PAGES.mygrad=()=>{
     <div class="hr"></div><div class="pf">Compulsory split for your cohort (entered Gr 9 ${s.enteredG9}): ${s.enteredG9>=2024?'17 compulsory + 13 optional':'18 compulsory + 12 optional'}.</div></div>`;
 };
 PAGES.mymsg=()=>{
+  if(SESSION.backend && SESSION.studentId) return mymsgLive();
   $('#view').innerHTML=`<div class="card"><h2>Messages</h2><div class="sub">Teachers &amp; office</div>
     ${DB.threads.map(th=>`<div class="feed-item"><b>${th.with}</b>${th.msgs.map(m=>`<div style="margin-top:6px;font-size:13px"><span class="muted" style="font-weight:600">${m.from}:</span> ${esc(m.t)}</div>`).join('')}</div>`).join('')}
     <div class="row" style="margin-top:10px"><input placeholder="Message a teacher…" style="flex:1"><button class="btn sm">Send</button></div></div>`;
@@ -1447,7 +1449,8 @@ async function gbNewAssignment(secId){
    <div style="font-size:12px;font-weight:700;color:var(--muted);margin:6px 0">SCHEDULE</div>
    <div class="row" style="margin-bottom:8px"><input id="na_due" type="date"><label class="muted"><input type="checkbox" id="na_post" checked> Visible to students</label></div>
    <div style="font-size:12px;font-weight:700;color:var(--muted);margin:6px 0">GRADING</div>
-   <div class="row" style="margin-bottom:8px"><select id="na_summative"><option value="of">Assessment OF learning (summative)</option><option value="for">Assessment FOR learning</option><option value="as">Assessment AS learning</option></select></div>
+   <div class="row" style="margin-bottom:8px"><select id="na_summative"><option value="of">Assessment of Learning</option><option value="for">Assessment for Learning</option><option value="as">Assessment as Learning</option></select>
+     <select id="na_scheme">${['Out of','Percentage','Four Level','Four Level +/-','KTCA Four Level','KTCA Out Of','Letter Grade','Rubric','Traffic Lights','Yes/No','EGSN','Expectations','Learning Skills','None'].map(x=>`<option ${x==='Out of'?'selected':''}>${x}</option>`).join('')}</select></div>
    <div class="row" style="margin-bottom:8px"><span class="muted" style="font-size:12px">Out of</span><input id="na_denom" type="number" value="100" style="width:80px"><span class="muted" style="font-size:12px">Weighting</span><input id="na_weight" type="number" value="1" style="width:70px"><select id="na_kind"><option value="normal">Normal</option><option value="essential">Essential</option><option value="bonus">Bonus</option><option value="ignored">Ignored</option></select><select id="na_blank"><option value="ignored">Blanks: Ignored</option><option value="zero">Blanks: 0</option></select></div>
    <textarea id="na_instr" placeholder="Instructions for students…" style="width:100%;height:54px;margin-bottom:8px"></textarea>
    <div class="row" style="margin-bottom:8px"><div style="flex:1"><div class="muted" style="font-size:12px">Files for students</div><input type="file" id="na_files_s" multiple></div><div style="flex:1"><div class="muted" style="font-size:12px">Files for teachers</div><input type="file" id="na_files_t" multiple></div></div>
@@ -1459,7 +1462,7 @@ window.gbCreateAssignment=async(secId)=>{
   const payload={school_id:SESSION.schoolId,section_id:secId,category_id:g('na_cat').value,
     title:g('na_title').value||'Untitled',instructions:g('na_instr').value||null,
     denominator:+g('na_denom').value||100, weighting:+g('na_weight').value||1, unit:g('na_unit').value||null,
-    type:g('na_type').value, summative:g('na_summative').value, submission_type:sub,
+    type:g('na_type').value, summative:g('na_summative').value, scheme:g('na_scheme').value, submission_type:sub,
     due_at:g('na_due').value? new Date(g('na_due').value).toISOString():null,
     kind:g('na_kind').value, blank_policy:g('na_blank').value,
     posted:g('na_post').checked, allow_upload:(sub==='file'), allow_resubmit:g('na_resub').checked, scores_visible:false};
@@ -1655,8 +1658,10 @@ async function myAssignLive(){
 }
 window.assignmentDetailLive=async(aid)=>{
   const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
-  const { data: a } = await sb.from('assignments').select('id,title,instructions,due_at,denominator,allow_upload,allow_resubmit').eq('id',aid).single();
+  const { data: a } = await sb.from('assignments').select('id,title,instructions,due_at,denominator,allow_upload,allow_resubmit, section:sections(teacher_id,teacher_name,course:courses(code))').eq('id',aid).single();
   if(!a){ v.innerHTML='<div class="card"><div class="notice">Assignment not found.</div></div>'; return; }
+  const tid=a.section&&a.section.teacher_id;
+  window._msgAboutAsg=async()=>{ if(!tid){ alert('No teacher account is linked to this class yet.'); return; } const {data,error}=await sb.rpc('start_message',{p_to:tid,p_subject:'Re: '+a.title,p_body:'(about '+a.title+') ',p_student:SESSION.studentId,p_assignment:aid}); if(error){alert(error.message);return;} openThreadLive(data,'myassign'); };
   const { data: files } = await sb.from('assignment_files').select('name,url,kind').eq('assignment_id',aid);
   let sub=null; try{ const s=await sb.from('submissions').select('*').eq('assignment_id',aid).eq('student_id',SESSION.studentId).single(); sub=s.data; }catch(e){}
   const now=Date.now(); const overdue=a.due_at&&new Date(a.due_at).getTime()<now;
@@ -1671,8 +1676,8 @@ window.assignmentDetailLive=async(aid)=>{
     assignmentDetailLive(aid);
   };
   v.innerHTML=`<button class="btn ghost sm" onclick="go('myassign')">← My assignments</button>
-  <div class="card" style="margin-top:12px"><h2>${esc(a.title)}</h2>
-    <div class="muted">Due ${a.due_at? new Date(a.due_at).toLocaleString():'—'} • out of ${a.denominator} ${overdue&&!submitted?'<span class="badge b-red">Overdue</span>':''}</div>
+  <div class="card" style="margin-top:12px"><div class="row"><h2 style="margin:0">${esc(a.title)}</h2><div style="flex:1"></div><button class="btn ghost sm" onclick="_msgAboutAsg()">✉ Message teacher about this</button></div>
+    <div class="muted" style="margin-top:6px">Due ${a.due_at? new Date(a.due_at).toLocaleString():'—'} • out of ${a.denominator} ${overdue&&!submitted?'<span class="badge b-red">Overdue</span>':''}</div>
     <div class="hr"></div><b>Instructions</b><p>${esc(a.instructions||'—')}</p>
     ${(files&&files.length)?`<b>Files from your teacher</b>${files.map(f=>`<div class="feed-item"><a onclick="gbOpenFile('assignment-files','${f.url}')">📎 ${esc(f.name)}</a> <span class="muted">(${esc(f.kind)})</span></div>`).join('')}<div class="hr"></div>`:''}
     <b>Your submission</b>
@@ -1838,6 +1843,49 @@ window.invBulk=async()=>{ const raw=$('#inv_bulk').value.trim(); const m=$('#inv
   const {error}=await sb.from('invitations').insert(rows); if(error){m.style.color='var(--red)';m.textContent=error.message;return;}
   adminLive();
 };
+
+/* ---------- Messaging (live) --------------------------------------- */
+window.openThreadLive=async(id,back)=>{
+  const v=$('#view');
+  const { data: th } = await sb.from('threads').select('id,subject,assignment_id').eq('id',id).single();
+  const { data: msgs } = await sb.from('messages').select('body,created_at,sender_id, sender:profiles(full_name)').eq('thread_id',id).order('created_at');
+  window._sendReply=async()=>{ const b=document.getElementById('rep_body').value.trim(); if(!b)return; const {error}=await sb.from('messages').insert({school_id:SESSION.schoolId,thread_id:id,sender_id:SESSION.user&&SESSION.user.id,body:b}); if(error){alert(error.message);return;} openThreadLive(id,back); };
+  v.innerHTML=`<button class="btn ghost sm" onclick="go('${back}')">← Messages</button>
+   <div class="card" style="margin-top:12px"><h2>${esc(th?th.subject:'Conversation')}</h2>
+   ${(msgs||[]).map(m=>`<div class="feed-item"><b>${esc(m.sender?m.sender.full_name:'—')}</b> <span class="muted" style="font-size:11px">${m.created_at?new Date(m.created_at).toLocaleString():''}</span><div style="margin-top:3px">${esc(m.body)}</div></div>`).join('')||'<div class="muted">No messages.</div>'}
+   <div class="row" style="margin-top:10px"><input id="rep_body" placeholder="Reply…" style="flex:1"><button class="btn" onclick="_sendReply()">Send</button></div></div>`;
+};
+async function mymsgLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const stu=SESSION.studentId; let recips=[];
+  if(stu){ const {data:enr}=await sb.from('enrolments').select('section:sections(teacher_id,teacher_name,course:courses(code))').eq('student_id',stu);
+    (enr||[]).forEach(e=>{const s=e.section; if(s&&s.teacher_id) recips.push({id:s.teacher_id,name:(s.teacher_name||'Teacher')+' ('+(s.course?s.course.code:'')+')'});}); }
+  const {data:admins}=await sb.from('memberships').select('user_id, profile:profiles(full_name)').eq('school_id',SESSION.schoolId).eq('role','admin');
+  (admins||[]).forEach(a=>recips.push({id:a.user_id,name:(a.profile?a.profile.full_name:'Office')+' — Office'}));
+  const seen={}; recips=recips.filter(r=>r.id&&!seen[r.id]&&(seen[r.id]=1));
+  const {data:threads}=await sb.from('threads').select('id,subject,created_at').order('created_at',{ascending:false});
+  window._msgSend=async()=>{ const to=document.getElementById('mm_to').value, body=document.getElementById('mm_body').value.trim(), m=document.getElementById('mm_msg'); if(!to){m.style.color='var(--red)';m.textContent='Choose a recipient';return;} if(!body)return; const {error}=await sb.rpc('start_message',{p_to:to,p_subject:document.getElementById('mm_subj').value||'Message',p_body:body,p_student:stu}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} mymsgLive(); };
+  v.innerHTML=`<div class="card"><h2>Message a teacher</h2><div class="sub">Choose a teacher or the office</div>
+    <div class="row" style="margin-bottom:8px"><select id="mm_to" style="min-width:240px"><option value="">Choose recipient…</option>${recips.map(r=>`<option value="${r.id}">${esc(r.name)}</option>`).join('')}</select><input id="mm_subj" placeholder="Subject" style="flex:1"></div>
+    <div class="row"><input id="mm_body" placeholder="Message…" style="flex:1"><button class="btn" onclick="_msgSend()">Send</button><span id="mm_msg" class="pf"></span></div>
+    ${recips.length?'':'<div class="pf" style="margin-top:6px">No teacher accounts are linked to your classes yet — recipients appear once teachers are invited &amp; assigned.</div>'}</div>
+  <div class="card"><h2>Conversations</h2>${(threads||[]).map(t=>`<div class="feed-item click" onclick="openThreadLive('${t.id}','mymsg')"><b>${esc(t.subject||'Conversation')}</b> <span class="muted" style="font-size:11px">${t.created_at?new Date(t.created_at).toLocaleDateString():''}</span></div>`).join('')||'<div class="muted">No conversations yet.</div>'}</div>`;
+}
+async function commsLive(){
+  const v=$('#view'); v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
+  const {data:threads}=await sb.from('threads').select('id,subject,created_at').order('created_at',{ascending:false});
+  const {data:ann}=await sb.from('announcements').select('id,title,body,audience,created_at').eq('school_id',SESSION.schoolId).order('created_at',{ascending:false}).limit(8);
+  window._annPost=async()=>{ const t=document.getElementById('an_t').value||'Untitled', b=document.getElementById('an_b').value||'', a=document.getElementById('an_a').value; const {error}=await sb.from('announcements').insert({school_id:SESSION.schoolId,author_id:SESSION.user&&SESSION.user.id,title:t,body:b,audience:a}); if(error){alert(error.message);return;} commsLive(); };
+  v.innerHTML=`<div class="grid g2">
+    <div class="card"><h2>Compose announcement</h2><div class="sub">Goes to the selected audience</div>
+      <div class="row" style="margin-bottom:8px"><select id="an_a" style="flex:1"><option value="all_families">All families</option><option value="staff">Staff only</option><option value="students">All students</option></select></div>
+      <input id="an_t" placeholder="Title" style="width:100%;margin-bottom:8px"><textarea id="an_b" placeholder="Message…" style="width:100%;height:70px;margin-bottom:8px"></textarea>
+      <div class="row"><button class="btn" onclick="_annPost()">Send</button></div></div>
+    <div class="card"><h2>Conversations</h2><div class="sub">Messages with students &amp; families</div>
+      ${(threads||[]).map(t=>`<div class="feed-item click" onclick="openThreadLive('${t.id}','comms')"><b>${esc(t.subject||'Conversation')}</b></div>`).join('')||'<div class="muted">No conversations.</div>'}</div>
+  </div>
+  <div class="card"><h2>Announcement feed</h2>${(ann||[]).map(a=>`<div class="feed-item"><b>${esc(a.title)}</b><div class="muted" style="font-size:12.5px;margin-top:3px">${esc(a.body||'')}</div><div class="meta"><span class="badge b-blue">${esc(a.audience)}</span></div></div>`).join('')||'<div class="muted">No announcements.</div>'}</div>`;
+}
 
 /* ============================ BOOT =================================== */
 if(sb){ sb.auth.getSession().then(({data})=>{ (data&&data.session)?enterBackend():loginScreen(); }).catch(()=>loginScreen()); }
