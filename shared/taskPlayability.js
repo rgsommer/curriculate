@@ -774,6 +774,14 @@ export function assessTaskPlayability(rawTask) {
       break;
     }
 
+    case TASK_TYPES.SPEED_DRAW: {
+      const cfg = t.config || {};
+      if (!isNonEmptyString(cfg.word)) {
+        issues.push("speed-draw requires config.word (single drawable concept)");
+      }
+      break;
+    }
+
     case TASK_TYPES.UPVOTE: {
       const cfg = t.config || {};
       // The proposition is the WHOLE task — without it there's nothing to vote on.

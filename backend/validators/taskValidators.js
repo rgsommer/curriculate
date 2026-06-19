@@ -3772,6 +3772,28 @@ export function validateTaskByType(taskType, task) {
       break;
     }
 
+    case TASK_TYPES.SPEED_DRAW: {
+      const cfg = isObject(task.config) ? task.config : {};
+      const word = typeof cfg.word === "string" ? cfg.word.trim() : "";
+      if (!word) {
+        errors.push("speed-draw requires config.word (one drawable concept, 1-3 words)");
+      } else if (word.length > 60) {
+        errors.push(`speed-draw config.word too long (${word.length} chars, max 60)`);
+      } else if (word.split(/\s+/).length > 5) {
+        errors.push(`speed-draw config.word too many words (${word.split(/\s+/).length}, max 5) — ONE drawable concept`);
+      }
+      if (cfg.timeLimitSeconds != null) {
+        const t = Number(cfg.timeLimitSeconds);
+        if (!(t >= 30 && t <= 120)) {
+          errors.push(`speed-draw config.timeLimitSeconds must be 30-120 (got ${cfg.timeLimitSeconds})`);
+        }
+      }
+      if (cfg.difficulty && !["EASY", "MEDIUM", "HARD"].includes(cfg.difficulty)) {
+        errors.push(`speed-draw config.difficulty must be EASY/MEDIUM/HARD (got ${cfg.difficulty})`);
+      }
+      break;
+    }
+
     case TASK_TYPES.UPVOTE: {
       const cfg = isObject(task.config) ? task.config : {};
       // Proposition: required, 20-250 chars after trim. Length floor is on

@@ -965,6 +965,58 @@ export function sanitizeTaskShapeByType(type, task) {
     t.config = cfg;
   }
 
+  // ── SPEED_DRAW: collapse to a single config.word ──
+  // The renderer reads `task.word || task.config.word || task.config.prompt`.
+  // The AI used to emit items[] / prompts[] arrays because the old aiPrompt
+  // said "Create 6-10 prompts"; this sanitizer un-wraps that shape so older
+  // generations don't ship a blank canvas.
+  if (type === TASK_TYPES.SPEED_DRAW) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+
+    // Promote a root-level "word" to config.word.
+    if (!cfg.word && typeof t.word === "string" && t.word.trim()) {
+      cfg.word = t.word.trim();
+    }
+    delete t.word;
+
+    // If the AI shipped items[] / prompts[], pluck the first usable string
+    // and use it as config.word. The rest are dropped — Speed Draw is ONE word.
+    if (!cfg.word) {
+      const candidates = [];
+      if (Array.isArray(t.items)) candidates.push(...t.items);
+      if (Array.isArray(cfg.items)) candidates.push(...cfg.items);
+      if (Array.isArray(t.prompts)) candidates.push(...t.prompts);
+      if (Array.isArray(cfg.prompts)) candidates.push(...cfg.prompts);
+      for (const c of candidates) {
+        const w = typeof c === "string" ? c : (c?.word || c?.text || c?.prompt || "");
+        if (typeof w === "string" && w.trim()) { cfg.word = w.trim(); break; }
+      }
+    }
+    delete t.items;
+    delete cfg.items;
+    delete t.prompts;
+    delete cfg.prompts;
+
+    // Defaults / clamps.
+    if (cfg.timeLimitSeconds == null) cfg.timeLimitSeconds = 60;
+    else {
+      const n = Number(cfg.timeLimitSeconds);
+      cfg.timeLimitSeconds = Number.isFinite(n) ? Math.max(30, Math.min(120, Math.round(n))) : 60;
+    }
+    if (typeof cfg.difficulty === "string") {
+      const d = cfg.difficulty.trim().toUpperCase();
+      cfg.difficulty = ["EASY", "MEDIUM", "HARD"].includes(d) ? d : "MEDIUM";
+    } else {
+      cfg.difficulty = "MEDIUM";
+    }
+    // Trim long word fields (renderer puts them on a small badge).
+    if (typeof cfg.word === "string" && cfg.word.length > 60) {
+      cfg.word = cfg.word.slice(0, 60).trim();
+    }
+    t.config = cfg;
+  }
+
   // ── CAREERS: promote top-level mode/career/candidates/etc into config ──
   if (type === TASK_TYPES.CAREERS) {
     const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);

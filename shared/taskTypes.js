@@ -3130,21 +3130,36 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
         
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "speed-draw".
-    
+
     Hard requirements:
     - Output ONLY a single JSON object (no markdown, no commentary).
     - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
-    
-    Task-specific guidance:
-    - Create 6–10 quick "draw it" prompts tied to content. Each prompt must be drawable in 30–60 seconds and include one required label.
-    
-    Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+
+    SHAPE (single drawable concept, Pictionary-style):
+    - config.word: ONE drawable concept tied to the topic (1-3 words, max 5).
+      The student draws this ONE thing — their teammates guess. The renderer
+      shows the player only this word.
+    - config.difficulty: "EASY" | "MEDIUM" | "HARD" (default "MEDIUM").
+    - config.timeLimitSeconds: integer 30-120 (default 60).
+    - prompt: short student-facing instruction, e.g. "Draw the concept on
+      your screen — your team has 60 seconds to guess it!"
+
+    ABSOLUTE BANS — these break the renderer:
+    - DO NOT emit items[], prompts[], questions[], or any array of drawables.
+      One task = ONE word.
+    - DO NOT put labels, multi-part hints, or "draw A and B" in config.word.
+
+    GOOD examples:
+    - For "Photosynthesis": config.word = "Chloroplast"
+    - For "War of 1812": config.word = "Fort McHenry"
+    - For "Fractions": config.word = "Pie chart of 3/4"
+
+    BAD examples (DO NOT EMIT):
+    - items: [{ prompt: "Draw an electron" }, { prompt: "Draw a proton" }] (multi-item)
+    - config.word: "Draw a fraction and label its parts"        (multi-part)
+    - config.word: "fractions, decimals, percents"              (list)
     `,
 },
 
