@@ -54,6 +54,79 @@ function scoreDebate(responses) {
   };
 }
 
+/**
+ * Avatar + name chip for a debater. When pairing engages, this is what
+ * sells "you're really facing someone" — either the opponent team's
+ * selfie (themed if they took one) or Curru the Fox if it's the bot.
+ * Falls back to initials inside a coloured disc if no avatar URL.
+ */
+function DebaterChip({ name, avatarUrl, isBot, size = 44 }) {
+  const initial = String(name || "?")
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .charAt(0)
+    .toUpperCase() || "?";
+  return (
+    <span
+      className="inline-flex items-center gap-2 rounded-full bg-white/15 pl-1 pr-3 py-1 backdrop-blur-sm"
+      title={isBot ? `${name} — your practice opponent` : name}
+    >
+      {avatarUrl ? (
+        <img
+          src={avatarUrl}
+          alt={name}
+          width={size}
+          height={size}
+          style={{
+            width: size,
+            height: size,
+            borderRadius: "50%",
+            objectFit: "cover",
+            background: "#fff",
+            border: isBot ? "2px solid #fb923c" : "2px solid #ffffff",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.20)",
+          }}
+        />
+      ) : (
+        <span
+          style={{
+            width: size,
+            height: size,
+            borderRadius: "50%",
+            background: "linear-gradient(135deg, #6366f1, #4338ca)",
+            color: "#fff",
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontWeight: 900,
+            fontSize: Math.round(size * 0.42),
+            border: "2px solid #ffffff",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.20)",
+          }}
+        >
+          {initial}
+        </span>
+      )}
+      <span className="font-extrabold text-white">
+        {name}
+        {isBot && (
+          <span
+            className="ml-2 text-[10px] uppercase tracking-wider"
+            style={{
+              background: "#fb923c",
+              color: "#7c2d12",
+              padding: "2px 6px",
+              borderRadius: 999,
+              fontWeight: 900,
+            }}
+          >
+            Practice bot
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
 export default function LiveDebateTask({
   task,
   onSubmit,
@@ -98,7 +171,10 @@ export default function LiveDebateTask({
 
   const mySide = serverDebate?.mySide ?? task.mySide ?? null;
   const opponentName = serverDebate?.opponentName ?? task.opponentName ?? "the other team";
+  const opponentAvatarUrl = serverDebate?.opponentAvatarUrl ?? task.opponentAvatarUrl ?? null;
+  const opponentIsBot = serverDebate?.opponentIsBot ?? task.opponentIsBot ?? task.vsBot ?? false;
   const myTeamNameVal = serverDebate?.myTeamName ?? task.myTeamName;
+  const myAvatarUrl = serverDebate?.myAvatarUrl ?? task.myAvatarUrl ?? null;
   const debateKeyVal = serverDebate?.debateKey ?? task.debateKey;
 
   // Three runtime modes:
@@ -418,13 +494,20 @@ export default function LiveDebateTask({
             </span>
           </div>
         ) : (
-          <p className="font-bold text-xl mt-2">
-            You are arguing{" "}
-            <span className={mySide === "for" ? "text-green-300" : "text-red-300"}>
-              {mySide === "for" ? "FOR" : "AGAINST"}
-            </span>
-            {" "}vs {opponentName}
-          </p>
+          <div className="mt-2 flex items-center gap-3 flex-wrap">
+            <p className="font-bold text-xl">
+              You are arguing{" "}
+              <span className={mySide === "for" ? "text-green-300" : "text-red-300"}>
+                {mySide === "for" ? "FOR" : "AGAINST"}
+              </span>
+              {" "}vs
+            </p>
+            <DebaterChip
+              name={opponentName}
+              avatarUrl={opponentAvatarUrl}
+              isBot={opponentIsBot}
+            />
+          </div>
         )}
       </div>
 

@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" preserveAspectRatio="xMidYMid meet" aria-label="Curru the Fox">
+  <defs>
+    <radialGradient id="cFur" cx="0.5" cy="0.4" r="0.65">
+      <stop offset="0%" stop-color="#fb923c"/>
+      <stop offset="60%" stop-color="#ea580c"/>
+      <stop offset="100%" stop-color="#9a3412"/>
+    </radialGradient>
+    <radialGradient id="cMuzzle" cx="0.5" cy="0.5" r="0.6">
+      <stop offset="0%" stop-color="#fff7ed"/>
+      <stop offset="80%" stop-color="#fde7c7"/>
+      <stop offset="100%" stop-color="#fcd9a8"/>
+    </radialGradient>
+    <radialGradient id="cEye" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0%" stop-color="#fef3c7"/>
+      <stop offset="60%" stop-color="#facc15"/>
+      <stop offset="100%" stop-color="#92400e"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Soft circular background so the avatar reads well on any UI color -->
+  <circle cx="100" cy="100" r="98" fill="#fff7ed" stroke="#fed7aa" stroke-width="2"/>
+
+  <!-- Ear bases (orange) -->
+  <polygon points="46,72 30,18 78,52" fill="url(#cFur)" stroke="#7c2d12" stroke-width="2" stroke-linejoin="round"/>
+  <polygon points="154,72 170,18 122,52" fill="url(#cFur)" stroke="#7c2d12" stroke-width="2" stroke-linejoin="round"/>
+  <!-- Ear inner (lighter) -->
+  <polygon points="50,68 40,32 70,52" fill="#fdba74"/>
+  <polygon points="150,68 160,32 130,52" fill="#fdba74"/>
+  <!-- Ear tips (dark) -->
+  <polygon points="30,18 40,32 36,28" fill="#7c2d12"/>
+  <polygon points="170,18 160,32 164,28" fill="#7c2d12"/>
+
+  <!-- Cheek tufts -->
+  <ellipse cx="30" cy="120" rx="18" ry="22" fill="#fb923c" stroke="#9a3412" stroke-width="2"/>
+  <ellipse cx="170" cy="120" rx="18" ry="22" fill="#fb923c" stroke="#9a3412" stroke-width="2"/>
+
+  <!-- Head -->
+  <ellipse cx="100" cy="110" rx="64" ry="56" fill="url(#cFur)" stroke="#7c2d12" stroke-width="2.5"/>
+
+  <!-- White muzzle / face mask -->
+  <path d="M100,80 Q60,118 70,165 Q100,180 130,165 Q140,118 100,80 Z" fill="url(#cMuzzle)" stroke="#fcd9a8" stroke-width="1.5"/>
+
+  <!-- Brow accents for cleverness -->
+  <path d="M60,90 Q70,82 86,86" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+  <path d="M140,90 Q130,82 114,86" fill="none" stroke="#7c2d12" stroke-width="3" stroke-linecap="round"/>
+
+  <!-- Eyes (amber-gold) -->
+  <ellipse cx="74" cy="105" rx="9" ry="11" fill="url(#cEye)" stroke="#7c2d12" stroke-width="1.5"/>
+  <ellipse cx="126" cy="105" rx="9" ry="11" fill="url(#cEye)" stroke="#7c2d12" stroke-width="1.5"/>
+  <!-- Pupils (vertical, fox-like) -->
+  <ellipse cx="74" cy="107" rx="2.5" ry="7" fill="#1c0a04"/>
+  <ellipse cx="126" cy="107" rx="2.5" ry="7" fill="#1c0a04"/>
+  <!-- Eye shines -->
+  <circle cx="71" cy="103" r="2" fill="#ffffff"/>
+  <circle cx="123" cy="103" r="2" fill="#ffffff"/>
+
+  <!-- Nose -->
+  <ellipse cx="100" cy="132" rx="8" ry="6" fill="#1c0a04"/>
+  <path d="M100,138 L100,148" stroke="#7c2d12" stroke-width="2" stroke-linecap="round"/>
+
+  <!-- Friendly smile -->
+  <path d="M82,156 Q100,168 118,156" fill="none" stroke="#7c2d12" stroke-width="2.5" stroke-linecap="round"/>
+  <!-- Tiny tooth peek to lock in the cheeky-clever vibe -->
+  <path d="M93,162 L93,167 L97,167 L97,162" fill="#ffffff" stroke="#7c2d12" stroke-width="1"/>
+
+  <!-- Whiskers -->
+  <g stroke="#7c2d12" stroke-width="1.2" stroke-linecap="round" opacity="0.65">
+    <line x1="56" y1="138" x2="32" y2="134"/>
+    <line x1="56" y1="144" x2="32" y2="146"/>
+    <line x1="56" y1="150" x2="34" y2="156"/>
+    <line x1="144" y1="138" x2="168" y2="134"/>
+    <line x1="144" y1="144" x2="168" y2="146"/>
+    <line x1="144" y1="150" x2="166" y2="156"/>
+  </g>
+</svg>

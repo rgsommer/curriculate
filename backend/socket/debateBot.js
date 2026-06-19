@@ -13,6 +13,10 @@
 import OpenAI from "openai";
 
 export const BOT_TEAM_ID_PREFIX = "bot:";
+// Curru's avatar — served from student-app/public/images/curru-fox.svg.
+// Surfaced in debate-start payloads so the UI can show "you vs 🦊 Curru"
+// with a face, mirroring the team-selfie behaviour for real opponents.
+export const CURRU_AVATAR_URL = "/images/curru-fox.svg";
 
 let _client = null;
 function getClient() {

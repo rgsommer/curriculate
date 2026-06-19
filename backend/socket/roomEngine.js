@@ -1269,6 +1269,14 @@ export function createRoomEngine(io, deps = {}) {
       const label = (tid) => room.teams[tid]?.teamName || `Team ${String(tid).slice(-4)}`;
       const lobbyKey = String(index);
 
+      // Avatar resolver — real opponents get their themed/team selfie (if
+      // they took one), the bot gets Curru's SVG.  Same field name regardless
+      // of who's on the other side so the renderer doesn't branch.
+      const teamAvatar = (tid) =>
+        room.teams[tid]?.themedSelfieUrl ||
+        room.teams[tid]?.selfieUrl ||
+        null;
+
       // Already paired at this index (reconnect / catch-up re-send)? Re-attach.
       const existing = Object.values(room.debate).find(
         (d) => d && d.taskId === String(index) &&
@@ -1276,12 +1284,17 @@ export function createRoomEngine(io, deps = {}) {
       );
       if (existing) {
         const side = existing.teams.for.teamId === teamId ? "for" : "against";
+        const oppSide = side === "for" ? "against" : "for";
+        const opp = existing.teams[oppSide];
         debateInject = {
           debateKey: existing.debateKey,
           postulate: existing.postulate,
           mySide: side,
           myTeamName: side === "for" ? existing.teams.for.name : existing.teams.against.name,
-          opponentName: side === "for" ? existing.teams.against.name : existing.teams.for.name,
+          myAvatarUrl: teamAvatar(existing.teams[side].teamId),
+          opponentName: opp.name,
+          opponentAvatarUrl: opp.isBot ? opp.avatarUrl : teamAvatar(opp.teamId),
+          opponentIsBot: !!opp.isBot,
           currentTurn: existing.currentTurn,
           turnsPerTeam: existing.turnsPerTeam,
           awaitingOpponent: false,
@@ -1307,12 +1320,20 @@ export function createRoomEngine(io, deps = {}) {
           // Upgrade the WAITING team to paired (it already has the task on screen).
           io.to(forId).emit("debate-start", {
             debateKey, postulate, mySide: "for", myTeamName: label(forId),
-            opponentName: label(againstId), currentTurn: "for", turnsPerTeam,
+            myAvatarUrl: teamAvatar(forId),
+            opponentName: label(againstId),
+            opponentAvatarUrl: teamAvatar(againstId),
+            opponentIsBot: false,
+            currentTurn: "for", turnsPerTeam,
           });
           // Embed pairing into THIS team's task:launch so it starts paired.
           debateInject = {
             debateKey, postulate, mySide: "against", myTeamName: label(againstId),
-            opponentName: label(forId), currentTurn: "for", turnsPerTeam, awaitingOpponent: false,
+            myAvatarUrl: teamAvatar(againstId),
+            opponentName: label(forId),
+            opponentAvatarUrl: teamAvatar(forId),
+            opponentIsBot: false,
+            currentTurn: "for", turnsPerTeam, awaitingOpponent: false,
           };
         } else {
           // No opponent yet → this team waits (client shows a waiting screen).
@@ -1327,7 +1348,7 @@ export function createRoomEngine(io, deps = {}) {
                 // Re-check: still the same waiting team, still no opponent.
                 if (room.debateLobbies?.[lobbyKey] !== armedFor) return;
                 if (!room.teams?.[armedFor]) return;
-                const { makeBotTeam, autoplayBotIfNeeded } = await import("./debateBot.js");
+                const { makeBotTeam, autoplayBotIfNeeded, CURRU_AVATAR_URL } = await import("./debateBot.js");
                 const { scoreDebateResponses } = await import("./gameHandlers.js");
                 const bot = makeBotTeam(`${room.code}-${index}`);
                 const debateKey = `${room.code}:${index}:${armedFor}-${bot.teamId}`;
@@ -1338,7 +1359,7 @@ export function createRoomEngine(io, deps = {}) {
                   turnsPerTeam,
                   teams: {
                     for:     { teamId: armedFor, name: label(armedFor) },
-                    against: { teamId: bot.teamId, name: bot.name, isBot: true },
+                    against: { teamId: bot.teamId, name: bot.name, isBot: true, avatarUrl: CURRU_AVATAR_URL },
                   },
                   responses: [],
                   currentTurn: "for",
@@ -1351,7 +1372,10 @@ export function createRoomEngine(io, deps = {}) {
                   postulate,
                   mySide: "for",
                   myTeamName: label(armedFor),
+                  myAvatarUrl: teamAvatar(armedFor),
                   opponentName: bot.name,
+                  opponentAvatarUrl: CURRU_AVATAR_URL,
+                  opponentIsBot: true,
                   currentTurn: "for",
                   turnsPerTeam,
                   vsBot: true,
