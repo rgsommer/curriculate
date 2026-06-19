@@ -17,6 +17,54 @@ const DIAG_LOG_PATH = path.resolve(__dirname, "../../diagnostic-logs.jsonl");
 
 const router = express.Router();
 
+/* ─── Transient-error retry helper for AI calls ────────────────────────────
+ * OpenAI's chat/completions endpoint occasionally drops the streaming
+ * response mid-body under load. Node surfaces this as
+ *   TypeError: Invalid response body while trying to fetch ... Premature close
+ * The repair path used to treat that single failure as terminal, surfacing
+ * a meaningless "AI repair failed" pill to teachers. Retry up to 3 times
+ * with exponential backoff on transient network/upstream errors.
+ *
+ * What counts as transient: premature close / invalid response body, ECONNRESET,
+ * ETIMEDOUT, generic fetch failed, socket hang up, 429 rate limits, and
+ * 502/503/504 upstream errors. Everything else (schema errors, validation
+ * errors, OpenAI 400 with a real message) is treated as permanent and rethrown
+ * on the first attempt.
+ */
+const _TRANSIENT_AI_PATTERNS = [
+  /premature close/i,
+  /invalid response body/i,
+  /econnreset/i,
+  /etimedout/i,
+  /fetch failed/i,
+  /socket hang up/i,
+  /connection error/i,
+  /rate.?limit/i,
+  /\b(429|502|503|504)\b/,
+];
+function _isTransientAiError(err) {
+  const msg = String(err?.message || err || "");
+  return _TRANSIENT_AI_PATTERNS.some((rx) => rx.test(msg));
+}
+async function _withAiRetry(fn, { maxAttempts = 3, baseMs = 800, label = "ai-call" } = {}) {
+  let lastErr;
+  let transientRetries = 0;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const out = await fn();
+      return { result: out, transientRetries };
+    } catch (e) {
+      lastErr = e;
+      if (!_isTransientAiError(e) || attempt === maxAttempts) throw e;
+      transientRetries += 1;
+      const wait = baseMs * Math.pow(2, attempt - 1) + Math.floor(Math.random() * 200);
+      console.warn(`[${label}] attempt ${attempt} hit transient error, retrying in ${wait}ms: ${e?.message}`);
+      await new Promise((r) => setTimeout(r, wait));
+    }
+  }
+  throw lastErr;
+}
+
 /**
  * Self-contained auth middleware.
  * If you prefer your shared authRequired middleware, swap it in here.
@@ -401,20 +449,30 @@ router.post("/:id/sanitize", auth, async (req, res) => {
         }
 
         // Generic AI repair (or peer-editing fallback if the key build fell short).
+        // Wrapped in _withAiRetry so transient OpenAI streaming errors
+        // ("Premature close", ECONNRESET, 502/503/504, etc.) get retried up
+        // to 3× with exponential backoff before being surfaced to the teacher.
+        let _retriesUsed = 0;
         if (!repaired) {
-          repaired = await regenerateSingleTask({
-            allowedType: type,
-            subject: tsMeta.subject,
-            gradeLevel: tsMeta.gradeLevel,
-            difficulty: tsMeta.difficulty,
-            learningGoal: tsMeta.learningGoal,
-            topicLabel: tsMeta.topicLabel,
-            vocabularyLines: "",
-            specialConsiderations: teacherNote || "",
-            previousTask: task,
-            previousError: postErrors.join("; "),
-            temperature: 0.5,
-          });
+          const { result, transientRetries } = await _withAiRetry(
+            () => regenerateSingleTask({
+              allowedType: type,
+              subject: tsMeta.subject,
+              gradeLevel: tsMeta.gradeLevel,
+              difficulty: tsMeta.difficulty,
+              learningGoal: tsMeta.learningGoal,
+              topicLabel: tsMeta.topicLabel,
+              vocabularyLines: "",
+              specialConsiderations: teacherNote || "",
+              previousTask: task,
+              previousError: postErrors.join("; "),
+              temperature: 0.5,
+            }),
+            { maxAttempts: 3, baseMs: 800, label: `sanitize/repair task ${idx} (${type})` },
+          );
+          repaired = result;
+          _retriesUsed = transientRetries;
+          if (diagEntry && _retriesUsed > 0) diagEntry.transientRetries = _retriesUsed;
         }
 
         if (repaired && typeof repaired === "object") {
@@ -446,7 +504,16 @@ router.post("/:id/sanitize", auth, async (req, res) => {
       } catch (aiErr) {
         console.error(`[sanitize] AI repair failed for task ${idx}:`, aiErr?.message);
         if (diagEntry) {
-          diagEntry.aiRepairError = aiErr?.message || "AI repair failed";
+          // Rewrite the teacher-facing copy when the failure was a transient
+          // OpenAI network error that retried out — the raw error message
+          // ("Invalid response body … Premature close") means nothing to a
+          // teacher. Internal/admin logs still keep the original.
+          const transient = _isTransientAiError(aiErr);
+          diagEntry.aiRepairError = transient
+            ? "OpenAI didn't respond after 3 attempts — try Diagnose & Fix again in a minute, or use Regenerate to rebuild this task from scratch."
+            : (aiErr?.message || "AI repair failed");
+          diagEntry.aiRepairErrorRaw = aiErr?.message || String(aiErr);
+          diagEntry.aiRepairErrorTransient = transient;
         }
       }
     }
