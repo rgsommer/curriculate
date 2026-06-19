@@ -562,7 +562,60 @@ export function sanitizeTaskShapeByType(type, task) {
   // ── BODY_BREAK / MOTION_MISSION: force movement flag ──
   if (type === TASK_TYPES.BODY_BREAK || type === TASK_TYPES.MOTION_MISSION) {
     t.movement = true;
-    if (t.config && typeof t.config === "object") t.config.movement = true;
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+    cfg.movement = true;
+
+    // Promote root-level steps[] / timeLimitSeconds into config so the
+    // renderer's preferred path (cfg.steps + cfg.totalSeconds) hits.
+    if (!Array.isArray(cfg.steps) && Array.isArray(t.steps)) {
+      cfg.steps = t.steps;
+      delete t.steps;
+    }
+    // Normalize step entries to { icon, text, seconds }.
+    if (Array.isArray(cfg.steps)) {
+      cfg.steps = cfg.steps
+        .map((s) => {
+          if (typeof s === "string") return { text: s.trim() };
+          if (s && typeof s === "object") {
+            const text = String(s.text || s.instruction || s.step || "").trim();
+            if (!text) return null;
+            return {
+              icon: s.icon || s.emoji || null,
+              text,
+              seconds: Number.isFinite(s.seconds) ? s.seconds : (Number.isFinite(s.holdSeconds) ? s.holdSeconds : null),
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+    }
+
+    // Total seconds: prefer config.totalSeconds, fall back to a few aliases,
+    // then derive from steps if present, then default 60.
+    if (cfg.totalSeconds == null) {
+      const raw =
+        t.timeLimitSeconds ??
+        cfg.timeLimitSeconds ??
+        cfg.durationSeconds ??
+        null;
+      const n = Number(raw);
+      if (Number.isFinite(n) && n > 0) {
+        cfg.totalSeconds = Math.max(15, Math.min(300, Math.round(n)));
+      } else if (Array.isArray(cfg.steps) && cfg.steps.length > 0) {
+        const stepSum = cfg.steps.reduce((s, st) => s + (Number(st?.seconds) || 0), 0);
+        cfg.totalSeconds = stepSum > 0 ? stepSum : Math.max(30, cfg.steps.length * 10);
+      } else {
+        cfg.totalSeconds = 60;
+      }
+    }
+
+    // Label for the visible heading — fall back to task title.
+    if (!cfg.label && typeof t.title === "string" && t.title.trim()) {
+      cfg.label = t.title.trim().slice(0, 60);
+    }
+
+    t.config = cfg;
   }
 
   // ── SPEECH_RECOGNITION / PRONUNCIATION: promote config.referenceText to root ──

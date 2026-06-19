@@ -5811,6 +5811,9 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
   [TASK_TYPES.TIMELINE]:           2, // (#8) BCE branch in extractDateValue
   [TASK_TYPES.PEER_EDITING]:       2, // (#7) drop unfindable errors after auto-repair
+  [TASK_TYPES.GUESS_WHO]:          2, // (#14) shell stripped to secretAnswers only
+  [TASK_TYPES.BODY_BREAK]:         2, // (#15) sanitizer fills steps/totalSeconds/label
+  [TASK_TYPES.MOTION_MISSION]:     2, // matched body-break sanitizer changes
   [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
   [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
   [TASK_TYPES.MYSTERY_CLUES]:      2, // pool rotation
@@ -6716,39 +6719,33 @@ export const TASK_SHELLS = {
   },
 
   /* ── GUESS WHO ── */
-  [TASK_TYPES.GUESS_WHO]: function buildGuessWhoShell({ itemCount = 8 } = {}) {
-    const count = Math.max(8, itemCount);
-    const items = [];
-    // secretAnswers = the 2-3 candidates that could be "the answer" in each round
+  [TASK_TYPES.GUESS_WHO]: function buildGuessWhoShell({ itemCount = 4 } = {}) {
+    // GuessWhoTask.jsx renders ONLY config.secretAnswers[]. The previous
+    // shell emitted config.items[].facts which the renderer ignored
+    // entirely — every fact was a wasted token. Audit punch-list #14.
+    const count = Math.max(3, Math.min(6, itemCount));
     const secretAnswers = [];
     const placeholders = [
       "TITLE: Short Guess Who game title (3-7 words)",
-      "PROMPT: 1-2 sentence student instructions",
+      "PROMPT: 1-2 sentence student instructions (mention 'yes/no questions' and the guess budget)",
+      "CATEGORY: Short topic label (e.g. 'Key Figures of the Renaissance')",
     ];
-    const names = ["TITLE", "PROMPT"];
+    const names = ["TITLE", "PROMPT", "CATEGORY"];
 
     for (let i = 0; i < count; i++) {
       const n = i + 1;
-      items.push({
-        name: `{{CANDIDATE_${n}}}`,
-        facts: [`{{CANDIDATE_${n}_FACT1}}`, `{{CANDIDATE_${n}_FACT2}}`, `{{CANDIDATE_${n}_FACT3}}`],
-      });
-      // First 3 candidates are secret answers (the ones students try to guess)
-      if (i < 3) secretAnswers.push(`{{CANDIDATE_${n}}}`);
+      secretAnswers.push(`{{CANDIDATE_${n}}}`);
       placeholders.push(
-        `CANDIDATE_${n}: A real, named PERSON relevant to the topic (historical figure, scientist, author, leader, inventor, artist, etc.) -- NEVER a concept or vocabulary word`,
-        `CANDIDATE_${n}_FACT1: First fact or clue about this candidate`,
-        `CANDIDATE_${n}_FACT2: Second fact or clue about this candidate`,
-        `CANDIDATE_${n}_FACT3: Third fact or clue about this candidate`,
+        `CANDIDATE_${n}: A real, named PERSON relevant to the topic (historical figure, scientist, author, leader, inventor, artist) — NEVER a concept or vocabulary word`,
       );
-      names.push(`CANDIDATE_${n}`, `CANDIDATE_${n}_FACT1`, `CANDIDATE_${n}_FACT2`, `CANDIDATE_${n}_FACT3`);
+      names.push(`CANDIDATE_${n}`);
     }
 
     const shell = {
       taskType: "guess-who",
       title: "{{TITLE}}",
       prompt: "{{PROMPT}}",
-      config: { items, secretAnswers, maxGuesses: 10 },
+      config: { secretAnswers, category: "{{CATEGORY}}", maxGuesses: 10 },
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },
