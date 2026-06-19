@@ -1027,17 +1027,34 @@ explanation?: short note shown after submit
     - Avoid copyrighted passages; write original content.
 
     Task-specific guidance:
-    1. Pick 10–16 terms from the vocabulary list. Create 2–3 categories.
+    1. Pick 10–16 terms from the vocabulary list. Create EXACTLY 2 categories.
+       DO NOT create a third "Both" / "Overlap" / "Intersection" category — the
+       overlap region is represented by items whose "categories" array contains
+       BOTH category names, not a separately-named category.
     2. config.items: array of objects with { "id": "item-0-Dog", "text": "Dog", "categories": ["Mammals"] }.
+       For an overlap item, "categories" has length 2: ["Mammals","Flying animals"].
     3. Include a top-level "correctAnswer" mapping every item id to its category array.
     4. Every item must have at least one category. Choose categories where placements are unambiguous.
-    5. BALANCE: Every category MUST have at least 2 items. If a category is underpopulated, add extra relevant terms (even beyond the vocabulary list) until balanced.
+    5. BALANCE — three counts, all must be ≥ 2:
+       (a) Items in Category A only (categories array == [A]).
+       (b) Items in Category B only (categories array == [B]).
+       (c) Items in BOTH categories (categories array == [A,B] or [B,A]).
+       A count of 0 in any region = TASK REJECTED. The OVERLAP is a real region
+       even though it isn\'t a named category.
+       Example for Fractions vs Decimals: "0.5" → ["Fractions","Decimals"]; "1/2" → ["Fractions","Decimals"].
+    6. Pick categories that GENUINELY HAVE a non-trivial overlap. If the two
+       categories are completely disjoint (e.g., "Mammals" vs "Reptiles"),
+       CHOOSE A DIFFERENT PAIR ("Mammals" vs "Flying animals" — bat is in both).
+       Without genuine overlap, the Venn structure is meaningless.
+    7. If a category is underpopulated, add extra relevant terms (even beyond the vocabulary list).
 
     Common failure prevention:
     - Do not omit the correctAnswer field.
     - Do not omit required arrays/fields; satisfy minimum item counts (≥5 items, ≥2 categories).
     - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
+    - Before finalizing, COUNT: items in category A only, items in category B only, items in BOTH.
+      All three counts MUST be ≥ 2. If any count is < 2, fix it before returning.
     `,
 },
 
@@ -5989,40 +6006,54 @@ export const TASK_SHELLS = {
   },
 
   /* ── VENNSORT ── */
-  [TASK_TYPES.VENNSORT]: function buildVennSortShell({ itemCount = 8, branchCount = 2 } = {}) {
-    const catCount = Math.max(2, Math.min(3, branchCount));
+  [TASK_TYPES.VENNSORT]: function buildVennSortShell({
+    aOnlyCount = 3,
+    bOnlyCount = 3,
+    bothCount = 3,
+  } = {}) {
+    // 2-circle Venn with EXPLICIT regions baked into the shell so the AI
+    // physically cannot ship an empty overlap. catA/catB are the only two
+    // category placeholders; each item carries a fixed categories array
+    // that depends on which region it's filling.
     const placeholders = [
       "TITLE: Short sorting activity title (3-7 words)",
-      "PROMPT: 1-2 sentence student instructions",
+      "PROMPT: 1-2 sentence student instructions, e.g. 'Drag each term into the right region.'",
+      "CAT_A: First category name. Must overlap meaningfully with CAT_B (e.g. 'Mammals' vs 'Flying animals' — bat is in both).",
+      "CAT_B: Second category name. NEVER use 'Both' or 'Overlap' as a third category — overlap is represented by items in the BOTH region below.",
     ];
-    const names = ["TITLE", "PROMPT"];
+    const names = ["TITLE", "PROMPT", "CAT_A", "CAT_B"];
 
-    for (let c = 0; c < catCount; c++) {
-      placeholders.push(`CAT_${c + 1}: Category name -- a real grouping label, NEVER "Category ${c + 1}"`);
-      names.push(`CAT_${c + 1}`);
-    }
-
-    const categories = Array.from({ length: catCount }, (_, i) => `{{CAT_${i + 1}}}`);
     const items = [];
     const correctAnswer = {};
 
-    for (let i = 0; i < itemCount; i++) {
-      const n = i + 1;
+    let n = 1;
+    for (let i = 0; i < aOnlyCount; i += 1, n += 1) {
       const id = `vs-${n}`;
-      items.push({ id, text: `{{ITEM_${n}}}` });
-      correctAnswer[id] = [`<<ITEM_${n}_CAT>>`];
-      placeholders.push(
-        `ITEM_${n}: A real vocabulary term -- NEVER "Item ${n}"`,
-        `ITEM_${n}_CAT: Which category this item belongs to (must be one of the CAT values). Use the EXACT category name.`,
-      );
-      names.push(`ITEM_${n}`, `ITEM_${n}_CAT`);
+      items.push({ id, text: `{{ITEM_${n}}}`, categories: ["{{CAT_A}}"] });
+      correctAnswer[id] = ["{{CAT_A}}"];
+      placeholders.push(`ITEM_${n}: A real vocabulary term that belongs ONLY in CAT_A (not also in CAT_B).`);
+      names.push(`ITEM_${n}`);
+    }
+    for (let i = 0; i < bOnlyCount; i += 1, n += 1) {
+      const id = `vs-${n}`;
+      items.push({ id, text: `{{ITEM_${n}}}`, categories: ["{{CAT_B}}"] });
+      correctAnswer[id] = ["{{CAT_B}}"];
+      placeholders.push(`ITEM_${n}: A real vocabulary term that belongs ONLY in CAT_B (not also in CAT_A).`);
+      names.push(`ITEM_${n}`);
+    }
+    for (let i = 0; i < bothCount; i += 1, n += 1) {
+      const id = `vs-${n}`;
+      items.push({ id, text: `{{ITEM_${n}}}`, categories: ["{{CAT_A}}", "{{CAT_B}}"] });
+      correctAnswer[id] = ["{{CAT_A}}", "{{CAT_B}}"];
+      placeholders.push(`ITEM_${n}: A real vocabulary term that belongs in BOTH CAT_A AND CAT_B (overlap region — defensible membership in each).`);
+      names.push(`ITEM_${n}`);
     }
 
     const shell = {
       taskType: "vennsort",
       title: "{{TITLE}}",
       prompt: "{{PROMPT}}",
-      config: { categories, items },
+      config: { categories: ["{{CAT_A}}", "{{CAT_B}}"], items },
       correctAnswer,
     };
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
