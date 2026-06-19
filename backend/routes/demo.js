@@ -8,6 +8,7 @@ import { fileURLToPath } from "url";
 import rateLimit from "express-rate-limit";
 import ConferenceLead from "../models/ConferenceLead.js";
 import Recommendation from "../models/Recommendation.js";
+import { getTaskTypeFixVersion } from "../../shared/taskTypes.js";
 import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 
 const __demoDir = path.dirname(fileURLToPath(import.meta.url));
@@ -334,6 +335,10 @@ router.post("/results", resultsLimiter, async (req, res) => {
           skipped: !!r.skipped,
           source: fb.source || (r.skipped ? "skip-dialog" : "rating"),
           createdAt: now,
+          // Stamp the type's current fix-version so the exhausted-types
+          // endpoint can decide "this thumb-up is for the OLD version of
+          // the task, doesn't count toward exhaustion of the new one".
+          taskTypeVersion: getTaskTypeFixVersion(r.taskType || ""),
         };
       })
       .filter(Boolean);
@@ -457,6 +462,7 @@ router.post("/orphan-feedback", async (req, res) => {
           skipped: false,
           source: "orphan-recovery",
           createdAt: new Date(),
+          taskTypeVersion: getTaskTypeFixVersion(taskType),
         };
       })
       .filter(Boolean)
@@ -534,6 +540,7 @@ router.post("/preview-feedback", async (req, res) => {
           skipped: e?.skipped !== false, // preview notes are skip-driven by default
           source: "preview",
           createdAt: new Date(),
+          taskTypeVersion: getTaskTypeFixVersion(taskType),
         };
       })
       .filter(Boolean)
@@ -1319,7 +1326,18 @@ router.get("/exhausted-types", async (req, res) => {
 
     const exhausted = [];
     for (const [taskType, arr] of byType) {
-      const sorted = arr.slice().sort((a, b) => {
+      // REVISION-AWARE EXHAUSTION. Only entries stamped with the CURRENT
+      // taskTypeVersion count toward "exhausted" — when we bump a type's
+      // FIX_VERSION in shared/taskTypes.js after revising it, every
+      // tester's older thumbs-ups stop counting, and that type
+      // re-appears in their queue. Default to version 1 for legacy
+      // entries written before the field existed.
+      const currentVersion = getTaskTypeFixVersion(taskType);
+      const atCurrentVersion = arr.filter((e) => {
+        const stamped = Number(e?.taskTypeVersion);
+        return Number.isFinite(stamped) ? stamped === currentVersion : currentVersion === 1;
+      });
+      const sorted = atCurrentVersion.slice().sort((a, b) => {
         const at = a?.createdAt ? new Date(a.createdAt).getTime() : 0;
         const bt = b?.createdAt ? new Date(b.createdAt).getTime() : 0;
         return bt - at; // newest first

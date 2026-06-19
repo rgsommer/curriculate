@@ -84,6 +84,11 @@ const conferenceLeadSchema = new mongoose.Schema(
         skipped: { type: Boolean, default: false },
         source: { type: String, default: "" }, // "rating" | "skip-dialog"
         createdAt: { type: Date, default: Date.now },
+        // Snapshot of the type's FIX_VERSION at the moment this feedback was
+        // recorded. The exhausted-types endpoint only counts entries whose
+        // version === current version, so a fix to a type re-surfaces it for
+        // every tester who previously thumbs-upped the older version.
+        taskTypeVersion: { type: Number, default: 1 },
       },
     ],
 

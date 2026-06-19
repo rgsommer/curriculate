@@ -5718,6 +5718,49 @@ export function categoryLabelFor(typeValue) {
 
 const _DEFAULT_AFFINITY = { math: 0.7, science: 0.7, history: 0.7, language: 0.7, arts: 0.7, health: 0.7, business: 0.7, religion: 0.7, general: 0.7 };
 
+/* ============================================================
+   TASK_TYPE_FIX_VERSION
+   ============================================================
+   Integer per task type, BUMPED any time we ship a meaningful fix
+   (aiPrompt rewrite, sanitizer/validator change, renderer behaviour
+   change that affects how a tester would judge it).
+
+   The practice-mode exhausted-types endpoint compares each
+   tester's recorded feedback-version against the CURRENT version
+   for that type. Only entries at the current version count toward
+   "exhausted". When we bump a number here, every tester who had
+   already given two thumbs-ups on the previous version sees that
+   type re-enter their queue — they get to validate the fix.
+
+   How to use:
+   - When you change a type's aiPrompt / sanitizer / validator,
+     bump its number here.
+   - If the type isn't listed, the helper getTaskTypeFixVersion()
+     returns 1 as default — that's intentional, no need to seed
+     every entry up-front.
+*/
+export const TASK_TYPE_FIX_VERSION = {
+  // ── 2026-06 audit-driven fixes — testers re-validate after each ──
+  [TASK_TYPES.VENNSORT]:           2, // shell + aiPrompt rewrite for A/B/Both regions
+  [TASK_TYPES.PHOTO]:              2, // single-instruction prompt enforcement
+  [TASK_TYPES.MAKE_AND_SNAP]:      2, // matched single-instruction rules
+  [TASK_TYPES.CAREERS]:            2, // title-eating sanitizer bug fix + per-mode aiPrompt
+  [TASK_TYPES.SPEED_DRAW]:         2, // align to single config.word + new sanitizer/validator
+  [TASK_TYPES.OPEN_TEXT]:          2, // reject placeholder prompts + un-nest
+  [TASK_TYPES.HOLE_IN_ONE]:        2, // full schema in aiPrompt + ≥ 3 questions required
+  [TASK_TYPES.INTERVIEW]:          3, // (#38) subject affinity + strict validator + render fallback
+  [TASK_TYPES.MAPIT]:              2, // (#15) graceful Submit + step-hint UX
+  [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring
+  [TASK_TYPES.ART_VIEW]:           2, // (#17) rotation pool
+  [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
+  [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
+  [TASK_TYPES.MYSTERY_CLUES]:      2, // pool rotation
+};
+
+export function getTaskTypeFixVersion(taskType) {
+  return TASK_TYPE_FIX_VERSION[taskType] || 1;
+}
+
 export const SUBJECT_AFFINITY = {
   // ── Universal / every-subject types ───────────────────────────────
   [TASK_TYPES.MULTIPLE_CHOICE]:        { math: 1.0, science: 1.0, history: 1.0, language: 1.0, arts: 0.8, health: 0.9, business: 1.0, religion: 1.0, general: 1.0 },

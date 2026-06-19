@@ -1728,6 +1728,44 @@ function DemoPlayer({
       {/* Streak banner */}
       <StreakBanner streak={streak} />
 
+      {/* Catalog-coverage chip — "Validated X/N task types".  Shows
+          testers their personal coverage so they're pulled toward
+          experiencing every type at least once. Built from the
+          exhaustedTypes set (= types this tester has signed off on at
+          the current revision); the denominator is the size of the
+          uniques set in DEMO_TASKS. */}
+      {(() => {
+        const validatedCount = (exhaustedTypes && exhaustedTypes.size) || 0;
+        const totalTypes = new Set(DEMO_TASKS.map((t) => t.taskType)).size;
+        if (totalTypes === 0) return null;
+        const pct = Math.round((validatedCount / totalTypes) * 100);
+        return (
+          <div
+            style={{
+              position: "fixed",
+              top: 60,
+              right: 12,
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: "rgba(15,23,42,0.78)",
+              color: "#fff",
+              fontSize: "0.72rem",
+              fontWeight: 800,
+              boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              zIndex: 998,
+              cursor: "default",
+            }}
+            title={`You've validated ${validatedCount} of ${totalTypes} task types (${pct}%). Each session prioritizes types you haven't tried yet, and any type we revise re-enters your queue.`}
+          >
+            <span aria-hidden="true">✅</span>
+            <span>{validatedCount}/{totalTypes}</span>
+          </div>
+        );
+      })()}
+
       {/* Treat toast — conference mode, after 3 completions */}
       {showTreat && <TreatToast onDismiss={() => setShowTreat(false)} />}
 
