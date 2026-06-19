@@ -965,6 +965,72 @@ export function sanitizeTaskShapeByType(type, task) {
     t.config = cfg;
   }
 
+  // ── OPEN_TEXT: un-nest prompt:{text,settings}, hoist root-level
+  //    settings into config, reject placeholder prompts so the AI is
+  //    forced to ship topic-specific content. ──
+  if (type === TASK_TYPES.OPEN_TEXT) {
+    const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const cfg = _isObj(t.config) ? { ...t.config } : {};
+
+    // Un-nest task.prompt = { text, settings } → root prompt(string) + config.
+    if (_isObj(t.prompt)) {
+      const nested = t.prompt;
+      if (typeof nested.text === "string" && nested.text.trim()) {
+        t.prompt = nested.text.trim();
+      }
+      if (_isObj(nested.settings)) {
+        for (const k of ["gradeLevel", "difficulty", "minWords", "kind", "words"]) {
+          if (cfg[k] === undefined && nested.settings[k] !== undefined) {
+            cfg[k] = nested.settings[k];
+          }
+        }
+      }
+    }
+    // Hoist root-level gradeLevel/difficulty/minWords into config.
+    for (const k of ["gradeLevel", "difficulty", "minWords", "kind", "words"]) {
+      if (cfg[k] === undefined && t[k] !== undefined) {
+        cfg[k] = t[k];
+        delete t[k];
+      }
+    }
+    // Normalize difficulty to upper-case canonical form.
+    if (typeof cfg.difficulty === "string") {
+      const d = cfg.difficulty.trim().toUpperCase();
+      cfg.difficulty = ["EASY", "MEDIUM", "HARD"].includes(d) ? d : "MEDIUM";
+    }
+    // gradeLevel must be numeric.
+    if (cfg.gradeLevel != null) {
+      const n = Number(cfg.gradeLevel);
+      cfg.gradeLevel = Number.isFinite(n) ? Math.max(1, Math.min(12, Math.round(n))) : undefined;
+    }
+    // minWords clamp.
+    if (cfg.minWords != null) {
+      const n = Number(cfg.minWords);
+      cfg.minWords = Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
+    }
+
+    // Reject placeholder prompts — the AI used to ship "Complete the
+    // task." here. The validator's _validationError throws regenerate the
+    // task with a clear reason.
+    const PROMPT_BLOCKLIST = [
+      /^\s*complete the task[.!]?\s*$/i,
+      /^\s*write your response[.!]?\s*$/i,
+      /^\s*answer the question( below)?[.!]?\s*$/i,
+      /^\s*respond to the prompt[.!]?\s*$/i,
+      /^\s*share your thoughts[.!]?\s*$/i,
+    ];
+    const p = typeof t.prompt === "string" ? t.prompt.trim() : "";
+    if (!p) {
+      t._validationError = "open-text: prompt is required (the prompt IS the task — must be a real topic-specific writing instruction)";
+    } else if (PROMPT_BLOCKLIST.some((re) => re.test(p))) {
+      t._validationError = `open-text: prompt "${p}" is a placeholder. The prompt MUST name the unit topic and pose a real writing question.`;
+    } else if (p.split(/\s+/).length < 12) {
+      t._validationError = `open-text: prompt too short (${p.split(/\s+/).length} words, need ≥ 12) — write the actual topic-specific writing question.`;
+    }
+
+    t.config = cfg;
+  }
+
   // ── SPEED_DRAW: collapse to a single config.word ──
   // The renderer reads `task.word || task.config.word || task.config.prompt`.
   // The AI used to emit items[] / prompts[] arrays because the old aiPrompt

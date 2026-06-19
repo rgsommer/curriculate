@@ -1106,33 +1106,40 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     Generate ONE Curriculate task object with taskType "open-text".
 
     Hard requirements:
-    - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
-    - Keep language age-appropriate and classroom-safe.
-    - Avoid copyrighted passages; write original content.
+    - Output ONLY a single JSON object (no markdown).
+    - Required root fields: taskType, title (3-7 words tied to the unit), prompt (string).
+    - Keep language age-appropriate and classroom-safe; original content only.
 
-    Task-specific guidance (choose ONE mode):
-    A) Standard open-text (default):
-       - Create an open-ended writing prompt with 2–4 guiding questions.
-       - Encourage evidence/clarity; optionally include a simple rubric (bullet criteria) if schema supports.
+    THE PROMPT IS THE TASK. It MUST:
+    1. Be a STRING — NOT an object, NOT {text, settings} nested. Settings live in config.
+    2. Be at least 30 words long.
+    3. Name the specific topic or concept in the prompt itself — never just "Complete the task" or "Write your response".
+    4. Pose ONE concrete writing question the student answers (e.g. "Write 3 similes describing a thunderstorm. For each, explain what two things are being compared and why the comparison works").
+    5. Include 2-4 guiding sub-questions inline that scaffold the student's response.
 
-    B) Vocabulary Paragraph mode (use when the objective is vocabulary usage):
-       - Set config.kind = "vocabulary-paragraph".
-       - Include config.words as an array of 5–10 target vocabulary words/phrases (strings).
-       - Student task: write ONE coherent paragraph that uses EVERY word at least once.
-         * Inflections are allowed (pluralization / verb tense / correct forms).
-         * The paragraph must sound natural and show understanding of meaning.
-       - Scoring is AI-based. If the schema supports it, include a rubric/criteria emphasizing:
-         1) all required words included,
-         2) contextual correctness / natural usage,
-         3) grammatical coherence,
-         4) overall quality & creativity (optional bonus).
+    FORBIDDEN PROMPTS (the validator rejects these — REGENERATE if you would ship one):
+    - "Complete the task."
+    - "Write your response."
+    - "Answer the question below."
+    - Anything that doesn't name the unit topic in the prompt body itself.
 
-    Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure prompts are student-facing instructions (what to do).
-    - Do NOT invent extra keys that are not in the schema.
+    REQUIRED config fields:
+    - config.gradeLevel: integer 1-12 matching the grade the request specified.
+    - config.difficulty: "EASY" | "MEDIUM" | "HARD" (controls minWords: 0 / 2×grade / 3×grade).
+    - config.minWords (optional integer): explicit override of the difficulty-derived floor.
+
+    Optional MODE B — Vocabulary Paragraph (use when the objective is vocabulary usage):
+    - Set config.kind = "vocabulary-paragraph".
+    - Include config.words as an array of 5-10 target vocabulary words/phrases (strings).
+    - Student writes ONE coherent paragraph using EVERY word at least once (inflections OK).
+
+    Worked example for Grade 5 figurative language:
+    {
+      "taskType": "open-text",
+      "title": "Storm Similes & Metaphors",
+      "prompt": "Write 3 similes AND 3 metaphors that describe a thunderstorm. After each one, explain in one sentence what two things are being compared, and why the comparison works. Use vivid sensory language — what does the storm look, sound, or feel like? Try to make each comparison surprising.",
+      "config": { "gradeLevel": 5, "difficulty": "MEDIUM" }
+    }
     `,
 },
 

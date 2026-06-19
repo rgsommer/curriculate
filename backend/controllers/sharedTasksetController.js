@@ -1047,7 +1047,7 @@ export const retryMustHave = {
   [TASK_TYPES.SHORT_ANSWER]:
     'SHORT_ANSWER must include either (A) a single prompt + correctAnswer (string) OR (B) items[] with 4–8 prompts, each with correctAnswer (string) and optionally acceptableAnswers (array of strings).',
   [TASK_TYPES.OPEN_TEXT]:
-    'OPEN_TEXT must include a clear prompt plus settings: { gradeLevel:number, difficulty:"EASY"|"MEDIUM"|"HARD" }. Do NOT include correctAnswer.',
+    'OPEN_TEXT: THE PROMPT IS THE TASK — must be a STRING (not an object), ≥ 12 words, name the unit topic in the prompt body, pose ONE concrete writing question with 2-4 inline guiding sub-questions. config.gradeLevel (1-12) and config.difficulty ("EASY"|"MEDIUM"|"HARD") REQUIRED. FORBIDDEN placeholder prompts (REJECTED): "Complete the task.", "Write your response.", "Answer the question below.", "Respond to the prompt.", "Share your thoughts." Do NOT nest prompt as {text,settings} — settings live in config. Do NOT include correctAnswer.',
   [TASK_TYPES.BRAIN_SPARK_NOTES]:
     `BRAIN_SPARK_NOTES MUST include a top-level "notes" object (NOT config-only) with EXACT shape:
   {
