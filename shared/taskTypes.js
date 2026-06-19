@@ -4671,13 +4671,44 @@ config: {
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "careers".
 
-    Hard requirements:
+    HARD REQUIREMENTS — every careers task:
     - Output ONLY a single JSON object (no markdown).
-    - Pick config.mode from: best-fit | pathway-builder | aptitude-match | salary-vs-lifestyle | who-should-be-hired | career-myths
-    - Use non-deterministic framing — never imply a career is destiny.
+    - REQUIRED root fields: taskType, title (3-7 words), prompt (1-2 sentences, student-facing).
+    - REQUIRED config.mode from: best-fit | pathway-builder | aptitude-match | salary-vs-lifestyle | who-should-be-hired | career-myths.
+    - Use non-deterministic framing — never imply a career is destiny ("You might enjoy…", never "You will be…").
     - Salary information must always be a RANGE, never a single dollar number.
     - Rotate career categories to avoid prestige bias (mix trades / service / creative / technical / etc.).
     - Avoid candidates / careers that pattern-match a single stereotype.
+
+    PER-MODE SHAPE — pick ONE mode and include the matching fields:
+
+    1. mode: "best-fit"
+       config.career: { name: string, description: string (1-2 sentences) }
+       Example: { mode: "best-fit", career: { name: "Welder", description: "Joins metal pieces for structures, ships, and pipelines." } }
+
+    2. mode: "pathway-builder"
+       config.pathways: array of ≥ 2 pathway objects, each { label: string, description: string }
+       Compare e.g. apprenticeship vs college vs entrepreneurship.
+
+    3. mode: "aptitude-match"
+       config.prompts: array of ≥ 1 interest-check prompt strings.
+
+    4. mode: "salary-vs-lifestyle"
+       config.optionA: { title: string, description: string }  (e.g. "High-paying but long hours")
+       config.optionB: { title: string, description: string }  (e.g. "Lower pay but flexible schedule")
+       BOTH optionA AND optionB are MANDATORY — omitting either = task REJECTED.
+
+    5. mode: "who-should-be-hired"
+       config.candidates: array of ≥ 2 candidate objects, each { name, background, strengths[] }
+
+    6. mode: "career-myths"
+       config.questions: array of ≥ 1 myth-vs-fact items, each { myth: string, fact: string }
+
+    COMMON FAILURES TO PREVENT:
+    - Missing title (task root) — REJECTED.
+    - salary-vs-lifestyle missing optionA or optionB — REJECTED.
+    - Single salary number instead of a range.
+    - Mode field missing or misspelled.
     `,
   },
 

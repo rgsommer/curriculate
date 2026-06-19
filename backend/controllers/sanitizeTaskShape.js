@@ -969,11 +969,21 @@ export function sanitizeTaskShapeByType(type, task) {
   if (type === TASK_TYPES.CAREERS) {
     const _isObj = (v) => v && typeof v === "object" && !Array.isArray(v);
     const cfg = _isObj(t.config) ? { ...t.config } : {};
-    for (const k of ["mode", "career", "teammates", "pathways", "candidates", "optionA", "optionB", "questions", "prompts", "role", "targetCareer", "title"]) {
+    // NOTE: "title" is intentionally NOT in this list. The validator
+    // requires task.title at the root; promoting it into config and
+    // deleting it from the root used to make the AI-emitted title
+    // disappear, which then failed validation as "title required".
+    for (const k of ["mode", "career", "teammates", "pathways", "candidates", "optionA", "optionB", "questions", "prompts", "role", "targetCareer"]) {
       if (cfg[k] === undefined && t[k] !== undefined) {
         cfg[k] = t[k];
         delete t[k];
       }
+    }
+    // If the AI nested title under config (legitimate but wrong shape),
+    // hoist it BACK to the root rather than dropping it.
+    if (!t.title && typeof cfg.title === "string" && cfg.title.trim()) {
+      t.title = cfg.title;
+      delete cfg.title;
     }
     // Normalize mode enum (case-insensitive, dashes/underscores allowed)
     if (typeof cfg.mode === "string") {
