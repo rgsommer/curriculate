@@ -70,6 +70,17 @@ export function createRoomEngine(io) {
       if (r.autoEndFiredAt && r.autoEndFiredAt >= endsAt) continue;
       r.autoEndFiredAt = now;
       r.isActive = false;
+      // Mark how far through the taskset we actually got. The reporting
+      // pipeline reads this to scale the engagement-score denominator —
+      // a class that ran out of time on task 6 of 10 shows 6/6 (100%)
+      // for engagement, not 6/10 (60%). Without this every auto-ended
+      // session looked like a class-wide failure on the report.
+      const totalTasks = (r.taskset?.tasks?.length) || 0;
+      const reached = Number.isInteger(r.taskIndex) ? r.taskIndex : -1;
+      if (totalTasks > 0 && reached + 1 < totalTasks) {
+        r.endedEarly = true;
+        r.endedEarlyAtTaskIndex = reached;
+      }
       try {
         io.to(r.code).emit("session:autoEndingNow", { roomCode: r.code, reason: "endTimeReached" });
         io.to(r.code).emit("session:complete");

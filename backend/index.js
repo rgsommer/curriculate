@@ -9563,6 +9563,20 @@ socket.on(
       }
     }
 
+    // Mark the room as ended-early when the explicit "End now" button is
+    // hit before every task has been pushed — same engagement-denominator
+    // protection as the auto-end ticker path in roomEngine.js. Without
+    // this, a teacher who hits "End now" at task 6 of 10 would brand the
+    // whole class with 60% engagement on the report.
+    {
+      const totalTasksHere = (room.taskset?.tasks?.length) || 0;
+      const reachedHere = Number.isInteger(room.taskIndex) ? room.taskIndex : -1;
+      if (totalTasksHere > 0 && reachedHere + 1 < totalTasksHere && !room.endedEarly) {
+        room.endedEarly = true;
+        room.endedEarlyAtTaskIndex = reachedHere;
+      }
+    }
+
     // Immediately signal ALL students that the session is complete.
     // This triggers the feedback form on student devices before reports are generated.
     io.to(code).emit("session:complete");
@@ -9870,6 +9884,20 @@ socket.on(
       const submissions = Array.isArray(room.submissions) ? room.submissions : [];
       const totalTasks = transcript?.tasks?.length || 0;
 
+      // Session-ended-early denominator. When the auto-end timer fires
+      // (or the teacher hits "End now") before every task has been
+      // pushed, the engagement-score denominator must shrink to "tasks
+      // students actually had a chance at" — otherwise a class that
+      // finished task 6 of 10 sees 60% engagement even though they did
+      // 100% of what they were given. room.endedEarlyAtTaskIndex is the
+      // highest task index the host reached; +1 turns it into a count.
+      // The "+1" path is clamped to [1, totalTasks] so a bug-set value
+      // can't blow the denominator past the catalog.
+      const endedEarly = !!room.endedEarly && Number.isInteger(room.endedEarlyAtTaskIndex);
+      const engagementDenominator = endedEarly
+        ? Math.max(1, Math.min(totalTasks, room.endedEarlyAtTaskIndex + 1))
+        : totalTasks;
+
       return Object.entries(teamsMap).map(([teamId, team]) => {
         const teamName = String(team?.teamName || team?.name || `Team-${String(teamId).slice(-4)}`);
         const members = Array.isArray(team?.members) ? team.members.map(String).filter(Boolean) : [];
@@ -9885,7 +9913,13 @@ socket.on(
             }, 0)
           : 0;
         const scorePercent = pointsPossible > 0 ? Math.max(0, Math.min(100, Math.round((teamPoints / pointsPossible) * 100))) : 0;
-        const engagementScore = totalTasks > 0 ? Math.max(0, Math.min(100, Math.round((tasksCompleted / totalTasks) * 100))) : 0;
+        // Cap completed-by-this-team at the reached-by-host denominator so
+        // a team that submitted a stale answer beyond the early-stop point
+        // can't show >100%.
+        const tasksCompletedForEngagement = Math.min(tasksCompleted, engagementDenominator);
+        const engagementScore = engagementDenominator > 0
+          ? Math.max(0, Math.min(100, Math.round((tasksCompletedForEngagement / engagementDenominator) * 100)))
+          : 0;
 
         const mood = moods[String(teamId)] || null;
         const fb = feedbacks[String(teamId)] || null;
@@ -9902,10 +9936,13 @@ socket.on(
               }
             : { moods: [], excitement: "", submittedAt: null },
           tasksCompleted,
+          tasksOutOf: engagementDenominator, // ← may be < totalTasks if the session ended early
           engagementScore,
           scorePercent,
           teamPoints,
           pointsPossible,
+          sessionEndedEarly: endedEarly,
+          sessionTotalTasks: totalTasks,
           exitFeedback: fb
             ? {
                 rating: Number.isFinite(fb?.rating) ? Number(fb.rating) : null,

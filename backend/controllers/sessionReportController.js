@@ -392,6 +392,14 @@ export async function buildSessionReportSnapshot({
   const submissions = safeArr(room.submissions || transcript?.submissions);
 
   const totalTasks = tasks.length;
+  // Engagement denominator shrinks when the session ended early — see the
+  // matching block in backend/index.js teacher:endSessionAndEmail. Without
+  // this, students who completed everything they were given still show
+  // engagement < 100 if the host ran out of time before pushing every task.
+  const endedEarlyHere = !!room.endedEarly && Number.isInteger(room.endedEarlyAtTaskIndex);
+  const engagementDenominator = endedEarlyHere
+    ? Math.max(1, Math.min(totalTasks, room.endedEarlyAtTaskIndex + 1))
+    : totalTasks;
 
   const moods = moodCheckins && typeof moodCheckins === "object" ? moodCheckins : {};
   const feedbacks = exitFeedback && typeof exitFeedback === "object" ? exitFeedback : {};
@@ -416,7 +424,10 @@ export async function buildSessionReportSnapshot({
     const pointsPossible = computePointsPossible(tasks, attemptedIdxs);
 
     const scorePercent = pointsPossible > 0 ? clamp(Math.round((teamPoints / pointsPossible) * 100), 0, 100) : 0;
-    const engagementScore = computeEngagement(tasksCompleted, totalTasks);
+    const engagementScore = computeEngagement(
+      Math.min(tasksCompleted, engagementDenominator),
+      engagementDenominator
+    );
 
     const mood = moods[String(teamId)] || null;
     const fb = feedbacks[String(teamId)] || null;
