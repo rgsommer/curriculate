@@ -562,6 +562,21 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, addBonusSubm
         io.to(code).emit("debate-new-response", payload);
       }
 
+      // If the new current turn belongs to a 🤖 Practice Bot, kick it off.
+      // The bot helper inserts a ~3s "thinking" pause before its response.
+      const nextMeta = debate.teams?.[debate.currentTurn];
+      if (nextMeta?.isBot) {
+        try {
+          const { autoplayBotIfNeeded } = await import("./debateBot.js");
+          autoplayBotIfNeeded(io, room, debateKey, {
+            scoreDebateResponses,
+            addBonusSubmission,
+          });
+        } catch (botErr) {
+          console.warn("[debate-response] bot autoplay start failed:", botErr?.message);
+        }
+      }
+
       // Check if debate is over (both teams used all turns)
       if (debate.forCount >= turnsPerTeam && debate.againstCount >= turnsPerTeam) {
         // Server-side scoring (authoritative). Award points to BOTH teams and
@@ -616,5 +631,5 @@ function registerGameHandlers(socket, { io, rooms, updateTeamScore, addBonusSubm
   });
 }
 
-export { registerGameHandlers };
+export { registerGameHandlers, scoreDebateResponses };
 export default registerGameHandlers;

@@ -1627,7 +1627,7 @@ mongoose
 // ====================================================================
 //  ROOM ENGINE (imported from socket/roomEngine.js)
 // ====================================================================
-const engine = createRoomEngine(io);
+const engine = createRoomEngine(io, { addBonusSubmission });
 const {
   rooms,
   normalizeTeacherInstanceId,

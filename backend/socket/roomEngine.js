@@ -19,7 +19,13 @@ const POST_SUBMIT_SECONDS = Number(process.env.POST_SUBMIT_SECONDS || 10);
 // ================================
 // MAIN FACTORY FUNCTION
 // ================================
-export function createRoomEngine(io) {
+export function createRoomEngine(io, deps = {}) {
+  // Optional deps injected by backend/index.js so the live-debate bot fallback
+  // can record the real team's bonus when it beats the bot. We accept null
+  // here — the bot timer guards on typeof addBonusSubmission === "function".
+  const _addBonusSubmission = typeof deps.addBonusSubmission === "function"
+    ? deps.addBonusSubmission
+    : null;
   const rooms = {}; // rooms["AB"] = { teacherSocketId, teams, stations, taskset, ... }
 
   // ================================
@@ -1246,10 +1252,15 @@ export function createRoomEngine(io) {
     // (FOR vs AGAINST). Pairing is broadcast via `debate-start` to BOTH teams so
     // the waiting team upgrades from its "waiting for an opponent" screen.
     // Debate state lives on room.debate (shared) so debate-response can enforce
-    // turns + score. A lone team falls back to intra/bot mode client-side.
+    // turns + score.
+    //
+    // BOT FALLBACK: If no real opponent arrives within 2 minutes, the waiting
+    // team is paired with a 🤖 Practice Bot that AI-plays its turns. That way
+    // a lone team or a slow second team never gets stuck on a waiting screen.
     let debateInject = null;
     if (task.taskType === "live-debate" && teamId) {
       if (!room.debateLobbies) room.debateLobbies = {};
+      if (!room.debateLobbyTimers) room.debateLobbyTimers = {};
       if (!room.debate) room.debate = {};
       const postulate =
         task.postulate || task.config?.postulate || task.config?.resolution ||
@@ -1274,6 +1285,7 @@ export function createRoomEngine(io) {
           currentTurn: existing.currentTurn,
           turnsPerTeam: existing.turnsPerTeam,
           awaitingOpponent: false,
+          vsBot: !!(existing.teams.for.isBot || existing.teams.against.isBot),
         };
       } else {
         const waitingTeamId = room.debateLobbies[lobbyKey];
@@ -1285,6 +1297,12 @@ export function createRoomEngine(io) {
             teams: { for: { teamId: forId, name: label(forId) }, against: { teamId: againstId, name: label(againstId) } },
             responses: [], currentTurn: "for", forCount: 0, againstCount: 0,
           };
+          // Real opponent showed up — cancel the bot-fallback timer if it
+          // was armed for the waiting team.
+          if (room.debateLobbyTimers[lobbyKey]) {
+            clearTimeout(room.debateLobbyTimers[lobbyKey]);
+            delete room.debateLobbyTimers[lobbyKey];
+          }
           room.debateLobbies[lobbyKey] = null;
           // Upgrade the WAITING team to paired (it already has the task on screen).
           io.to(forId).emit("debate-start", {
@@ -1298,7 +1316,55 @@ export function createRoomEngine(io) {
           };
         } else {
           // No opponent yet → this team waits (client shows a waiting screen).
+          // Arm the 2-minute bot-fallback timer.  If a real opponent shows up
+          // first, the pairing branch above clears the timer.
           room.debateLobbies[lobbyKey] = teamId;
+          if (!room.debateLobbyTimers[lobbyKey]) {
+            const armedFor = teamId;
+            room.debateLobbyTimers[lobbyKey] = setTimeout(async () => {
+              try {
+                delete room.debateLobbyTimers[lobbyKey];
+                // Re-check: still the same waiting team, still no opponent.
+                if (room.debateLobbies?.[lobbyKey] !== armedFor) return;
+                if (!room.teams?.[armedFor]) return;
+                const { makeBotTeam, autoplayBotIfNeeded } = await import("./debateBot.js");
+                const { scoreDebateResponses } = await import("./gameHandlers.js");
+                const bot = makeBotTeam(`${room.code}-${index}`);
+                const debateKey = `${room.code}:${index}:${armedFor}-${bot.teamId}`;
+                room.debate[debateKey] = {
+                  debateKey,
+                  taskId: String(index),
+                  postulate,
+                  turnsPerTeam,
+                  teams: {
+                    for:     { teamId: armedFor, name: label(armedFor) },
+                    against: { teamId: bot.teamId, name: bot.name, isBot: true },
+                  },
+                  responses: [],
+                  currentTurn: "for",
+                  forCount: 0,
+                  againstCount: 0,
+                };
+                room.debateLobbies[lobbyKey] = null;
+                io.to(armedFor).emit("debate-start", {
+                  debateKey,
+                  postulate,
+                  mySide: "for",
+                  myTeamName: label(armedFor),
+                  opponentName: bot.name,
+                  currentTurn: "for",
+                  turnsPerTeam,
+                  vsBot: true,
+                });
+                // Real team speaks first ("for"); the bot autoplay will fire
+                // after they submit their first argument. No-op call here for
+                // future-proofing in case turn order changes.
+                autoplayBotIfNeeded(io, room, debateKey, { scoreDebateResponses, addBonusSubmission: _addBonusSubmission });
+              } catch (err) {
+                console.warn(`[debate-lobby] bot fallback failed for ${room.code}:${index}:`, err?.message);
+              }
+            }, 120_000); // 2 minutes
+          }
           debateInject = { awaitingOpponent: true, postulate, turnsPerTeam };
         }
       }
