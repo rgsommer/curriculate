@@ -161,7 +161,7 @@ export async function awardHallOfFameGift(
     const pot =
       totalCents > 0 ? `${currency.toUpperCase()} $${(totalCents / 100).toFixed(2)}` : "";
     const prizeNote = winnerUnpaid
-      ? ` The host will arrange the ${pot} prize.`
+      ? ` The ${pot} gift card will be emailed to the winner shortly. 🎁`
       : issued
       ? ` A ${pot} gift card is on its way! 🎁`
       : "";

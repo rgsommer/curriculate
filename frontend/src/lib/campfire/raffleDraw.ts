@@ -196,7 +196,7 @@ export async function runRaffleDraw(
     const pot = `${currency.toUpperCase()} $${(winnerCents / 100).toFixed(2)}`;
     const who = winnerName || "The winner";
     const unpaidNote = winnerUnpaid
-      ? ` The host will arrange the ${pot} prize${winner.userId ? "" : " — reach out to the winner"}.`
+      ? ` The ${pot} gift card will be emailed to the winner shortly.`
       : "";
     const subject = `🎟️ We have a raffle winner — "${eng.title}"`;
     const text = `${who} won the ${pot} raffle pot for "${eng.title}"!${unpaidNote} ${url}`;

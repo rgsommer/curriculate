@@ -5139,8 +5139,8 @@ export default function EngagementDetailPage() {
                   {isPrize && (
                     <div className="mt-2 text-xs font-medium text-fuchsia-700">
                       {prizeWinnerName
-                        ? `🎁 ${prizeWinnerName} receives the gift-card prize!`
-                        : "🎁 This winner receives the gift-card prize once the pot is awarded."}
+                        ? `🎁 ${prizeWinnerName} wins the gift-card prize — it'll be emailed to them shortly.`
+                        : "🎁 This winner gets the gift-card prize — it'll be emailed to them shortly."}
                     </div>
                   )}
                 </>
@@ -8126,11 +8126,7 @@ export default function EngagementDetailPage() {
                   ? ` — they won the ${formatMoney(
                       giftSummary?.total_cents ?? 0,
                       engagement.gift_currency
-                    )} pot. ${
-                      isCreator
-                        ? "No email on file, so arrange the prize with them directly."
-                        : "The host will arrange the prize."
-                    }`
+                    )} pot. The gift card will be emailed to the winner shortly. 🎁`
                   : (raffle.hostSplitPct ?? 0) > 0
                   ? ` (you kept ${raffle.hostSplitPct}%). 🎉`
                   : ". 🎉"}
