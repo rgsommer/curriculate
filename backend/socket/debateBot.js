@@ -28,24 +28,25 @@ export function makeBotTeam(seed = "") {
   const id = `${BOT_TEAM_ID_PREFIX}${seed || Math.random().toString(36).slice(2, 8)}`;
   return {
     teamId: id,
-    name: "🤖 Practice Bot",
+    name: "🦊 Curru the Fox",
     isBot: true,
   };
 }
 
-/** Fallback canned response if the OpenAI call fails — never let the
- *  debate hang. Three rotating one-liners so a repeat bot doesn't say
- *  the same thing each round. */
+/** Last-resort line if BOTH attempts at a real AI response fail.
+ *  Phrased in Curru's voice so even the emergency path stays in
+ *  character. Three rotating one-liners per side so a repeat bot
+ *  doesn't say the exact same thing twice in a row. */
 function _fallback(side) {
   const FOR = [
-    "I think this is the right call — the strongest evidence backs it up.",
-    "Even if it has costs, the upside for most people is much bigger.",
-    "We have to pick a side, and the principles point this way.",
+    "Okay, my turn — I think this side has the stronger argument, and I want to hear how you'd push back.",
+    "I'm going with FOR on this one. The evidence I keep coming back to lines up too cleanly to ignore.",
+    "Curru's pick: FOR. The principle at the centre of this just outweighs the costs.",
   ];
   const AGAINST = [
-    "I'd push back — the assumption behind this doesn't hold up everywhere.",
-    "The cost of being wrong here is too high to ignore.",
-    "There's a less risky path that gets to a better outcome.",
+    "Pushing back here — the assumption behind that doesn't hold up once you change the situation.",
+    "I'm going AGAINST. Being wrong on this one costs too much.",
+    "Curru's not buying it — there's a less risky path that lands in a better place.",
   ];
   const pool = side === "for" ? FOR : AGAINST;
   return pool[Math.floor(Math.random() * pool.length)];
@@ -96,30 +97,53 @@ async function _generateBotArgument(debate, side) {
     .join("\n");
 
   if (!process.env.OPENAI_API_KEY) {
+    console.warn("[Curru] OPENAI_API_KEY missing — falling back to canned line. Real AI calls are the design intent.");
     return _fallback(side);
   }
 
+  // Curru's character — clever-but-kind fox, grade-8 voice. The character
+  // brief lives at the top so future task-type integrations (any other
+  // duel/AI-opponent context) can reuse it verbatim.
   const system =
-    `You are a thoughtful Grade 8 student arguing the ${sideLabel} side of a classroom debate. ` +
-    `Write 1-3 short sentences in a plain student voice. No preamble, no "I'd argue that" — just say it. ` +
-    `Stay on the proposition. If the other side has spoken, push back on their strongest claim.`;
+    `You are CURRU THE FOX (pronounced "Krew"), a clever-but-kind Grade 8 student who's the practice opponent in this classroom. ` +
+    `Voice: friendly, curious, a little playful. You like asking "but what if…" and you give credit where it's earned. ` +
+    `You're arguing the ${sideLabel} side of this debate. ` +
+    `Write 1-3 short sentences in a plain student voice — no preamble, no "I'd argue that", no labels. Just say what you think. ` +
+    `Stay on the proposition. If the other side has already spoken, address their strongest specific claim — don't just repeat your earlier point.`;
 
   const user =
     `Proposition: "${postulate}"\n\n` +
-    `Debate so far:\n${priorTranscript || "(you speak first)"}\n\n` +
-    `Write your next argument as the ${sideLabel} side. 1-3 sentences.`;
+    `Debate so far:\n${priorTranscript || "(you speak first — open the case for the " + sideLabel + " side)"}\n\n` +
+    `Your next argument as the ${sideLabel} side. 1-3 sentences in Curru's voice.`;
 
   const openai = getClient();
-  const completion = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    temperature: 0.85,
-    max_tokens: 180,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-  });
-  return (completion?.choices?.[0]?.message?.content || "").trim() || _fallback(side);
+  // One retry on transient errors so a flaky API doesn't immediately drop
+  // Curru into the canned fallback. Two real-AI attempts before degrading.
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    try {
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.85,
+        max_tokens: 180,
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+      });
+      const text = (completion?.choices?.[0]?.message?.content || "").trim();
+      if (text) return text;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < 2) {
+        await new Promise((r) => setTimeout(r, 800));
+      }
+    }
+  }
+  if (lastErr) {
+    console.warn("[Curru] both AI attempts failed:", lastErr?.message);
+  }
+  return _fallback(side);
 }
 
 /** Mirror of the human path inside gameHandlers.js — push the response,
@@ -133,7 +157,7 @@ function _applyBotArgument(io, room, debate, debateKey, side, text, deps) {
   const entry = {
     side,
     teamName: debate.teams[side].name,
-    speaker: "🤖 Practice Bot",
+    speaker: "🦊 Curru the Fox",
     text,
     turnNumber,
     isBot: true,
