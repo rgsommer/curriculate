@@ -818,6 +818,7 @@ export function awardSettlementEmail(opts: {
   recipientEmail?: string;
   amount: string; // pre-formatted, e.g. "CAD $20.00"
   url: string;
+  hostedBy?: string; // who set up the engagement (for the operator's context)
 }) {
   const who = opts.recipientName || "The winner";
   const forWhat = opts.award ? `“${opts.award}”` : "the prize";
@@ -833,6 +834,7 @@ Please send them a gift card for ${opts.amount}:
   • Award:     ${opts.award || "(prize)"}
   • Group:     ${opts.groupName}
   • Activity:  ${opts.engagementTitle}
+  • Hosted by: ${opts.hostedBy || "(unknown)"}
 
 Campfire does not issue the card automatically — buy/send it from your preferred gift-card store or service.
 
@@ -859,6 +861,9 @@ ${opts.url}`;
     <tr><td style="padding:4px 14px 4px 0; color:#64748b;">Award</td><td style="padding:4px 0;">${escapeHtml(
       opts.award || "(prize)"
     )}</td></tr>
+    <tr><td style="padding:4px 14px 4px 0; color:#64748b;">Hosted by</td><td style="padding:4px 0;">${escapeHtml(
+      opts.hostedBy || "(unknown)"
+    )}</td></tr>
   </table>
   <p style="color:#475569; margin:0 0 12px;">Campfire doesn’t issue the card automatically — send it from your preferred gift-card store or service.</p>
   <p style="margin:0;"><a href="${opts.url}" style="color:#ea580c;">View the activity →</a></p>
@@ -866,7 +871,10 @@ ${opts.url}`;
   return { subject, text, html };
 }
 
-// Resolve the host (engagement creator) email and send them the settlement details.
+// Email the OPERATOR (one central address that disburses gift cards for ALL hosts,
+// since the pooled funds sit in the platform's payment account) the award details —
+// including which host set it up — so they can send the gift card.
+// Override the address with CAMPFIRE_GIFT_OPERATOR_EMAIL (default admin@curriculate.net).
 export async function notifyHostOfAward(
   admin: SupabaseClient,
   opts: {
@@ -882,18 +890,25 @@ export async function notifyHostOfAward(
   }
 ): Promise<void> {
   try {
+    const operatorEmail =
+      process.env.CAMPFIRE_GIFT_OPERATOR_EMAIL || "admin@curriculate.net";
+
+    // Resolve the host (engagement creator) for context — their group name + email.
     const { data: hUser } = await admin.auth.admin.getUserById(opts.creatorId);
-    let hostEmail = hUser?.user?.email || null;
-    if (!hostEmail) {
-      const { data: hGm } = await admin
-        .from("group_members")
-        .select("notify_email")
-        .eq("group_id", opts.groupId)
-        .eq("user_id", opts.creatorId)
-        .maybeSingle();
-      hostEmail = (hGm?.notify_email as string | null) || null;
-    }
-    if (!hostEmail) return;
+    const { data: hGm } = await admin
+      .from("group_members")
+      .select("display_name, notify_email")
+      .eq("group_id", opts.groupId)
+      .eq("user_id", opts.creatorId)
+      .maybeSingle();
+    const hostName =
+      (hGm?.display_name as string | null) ||
+      (hUser?.user?.user_metadata?.name as string | undefined) ||
+      "a host";
+    const hostEmail =
+      hUser?.user?.email || (hGm?.notify_email as string | null) || null;
+    const hostedBy = hostEmail ? `${hostName} <${hostEmail}>` : hostName;
+
     const { data: grp } = await admin
       .from("groups")
       .select("name")
@@ -904,24 +919,25 @@ export async function notifyHostOfAward(
     ).toFixed(2)}`;
     const url = `${campfireSiteUrl()}/campfirelive/group/${opts.groupId}/engagement/${opts.engagementId}`;
     const m = awardSettlementEmail({
-      groupName: grp?.name || "your group",
+      groupName: grp?.name || "a group",
       engagementTitle: opts.engagementTitle,
       award: opts.award,
       recipientName: opts.recipientName,
       recipientEmail: opts.recipientEmail || undefined,
       amount,
       url,
+      hostedBy,
     });
     const resend = new Resend(process.env.RESEND_API_KEY);
     await resend.emails.send({
       from: campfireFrom(),
-      to: [hostEmail],
+      to: [operatorEmail],
       subject: m.subject,
       text: m.text,
       html: m.html,
       ...mailDefaults(),
     });
   } catch (e) {
-    console.error("notifyHostOfAward failed:", e);
+    console.error("notifyHostOfAward (operator) failed:", e);
   }
 }
