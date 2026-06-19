@@ -265,13 +265,26 @@ const fillGenerators = {
   },
 
   [TASK_TYPES.ROLE_PLAY_DECK]: (si) => {
+    // Shell was realigned to renderer contract (commit ebc4c9ae) —
+    // {name, role, characteristics[3], gender} per role instead of
+    // {name, goal, constraint}. Test fixture matched here so the
+    // shell-fill check keeps passing.
     const m = meta(si);
     return { fill: {
       TITLE: `${m.topic} Role Play`, PROMPT: "Take on your assigned role.",
       SCENARIO: `A classroom debate about the most important concept in ${m.topic}. Students must argue their position using evidence from the lesson.`,
-      ROLE_1_NAME: "The Expert", ROLE_1_GOAL: `Defend the importance of key ${m.topic} concepts`, ROLE_1_CONSTRAINT: "Must use at least 3 vocabulary terms",
-      ROLE_2_NAME: "The Skeptic", ROLE_2_GOAL: "Challenge claims and ask for evidence", ROLE_2_CONSTRAINT: "Cannot agree with anything without proof",
-      ROLE_3_NAME: "The Mediator", ROLE_3_GOAL: "Find common ground between positions", ROLE_3_CONSTRAINT: "Must summarize both sides before offering opinion",
+      ROLE_1_NAME: `Dr. Carter the ${m.topic} Expert`,
+      ROLE_1_ROLE: `Subject-matter expert defending the importance of key ${m.topic} concepts`,
+      ROLE_1_TRAIT_1: "knowledgeable", ROLE_1_TRAIT_2: "patient", ROLE_1_TRAIT_3: "articulate",
+      ROLE_1_GENDER: "female",
+      ROLE_2_NAME: `Casey the ${m.topic} Skeptic`,
+      ROLE_2_ROLE: "Friendly challenger who keeps asking for evidence",
+      ROLE_2_TRAIT_1: "curious", ROLE_2_TRAIT_2: "skeptical", ROLE_2_TRAIT_3: "fair",
+      ROLE_2_GENDER: "nonbinary",
+      ROLE_3_NAME: `Mateo the Mediator`,
+      ROLE_3_ROLE: "Quiet peacemaker who summarises both sides before adding an opinion",
+      ROLE_3_TRAIT_1: "calm", ROLE_3_TRAIT_2: "empathetic", ROLE_3_TRAIT_3: "thoughtful",
+      ROLE_3_GENDER: "male",
     }, opts: { itemCount: 3 } };
   },
 
