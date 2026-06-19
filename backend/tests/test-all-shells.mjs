@@ -159,16 +159,20 @@ const fillGenerators = {
   },
 
   [TASK_TYPES.VENNSORT]: (si) => {
-    const t = pickTerms(si, 8); const m = meta(si);
+    // Shell rewrite (commit 7cca3633) — explicit A-only / B-only / Both
+    // regions instead of single-category-per-item. Defaults: 3 + 3 + 3 = 9
+    // items. CAT_A / CAT_B replaced the old CAT_1 / CAT_2.
+    const t = pickTerms(si, 9); const m = meta(si);
     const fill = {
-      TITLE: `Sort ${m.topic} Terms`, PROMPT: "Drag each term into the correct category.",
-      CAT_1: `${m.topic} Group A`, CAT_2: `${m.topic} Group B`,
+      TITLE: `Sort ${m.topic} Terms`,
+      PROMPT: "Drag each term into the correct region — Group A, Group B, or both.",
+      CAT_A: `${m.topic} Group A`,
+      CAT_B: `${m.topic} Group B`,
     };
-    t.forEach((term, i) => {
-      fill[`ITEM_${i + 1}`] = term;
-      fill[`ITEM_${i + 1}_CAT`] = i < 4 ? `${m.topic} Group A` : `${m.topic} Group B`;
-    });
-    return { fill, opts: { itemCount: 8, branchCount: 2 } };
+    for (let i = 1; i <= 9; i += 1) {
+      fill[`ITEM_${i}`] = t[i - 1];
+    }
+    return { fill, opts: { aOnlyCount: 3, bOnlyCount: 3, bothCount: 3 } };
   },
 
   [TASK_TYPES.JEOPARDY]: (si) => {
@@ -346,16 +350,23 @@ const fillGenerators = {
   },
 
   [TASK_TYPES.GUESS_WHO]: (si) => {
-    const t = pickTerms(si, 8); const m = meta(si);
-    const fill = { TITLE: `Guess the ${m.topic} Concept`, PROMPT: "Read the facts and figure out which concept!" };
-    t.forEach((term, i) => {
-      const n = i + 1;
-      fill[`CANDIDATE_${n}`] = term;
-      fill[`CANDIDATE_${n}_FACT1`] = `This is a ${m.subject} term`;
-      fill[`CANDIDATE_${n}_FACT2`] = `It relates to ${m.topic}`;
-      fill[`CANDIDATE_${n}_FACT3`] = `Students learn it in grade ${m.grade}`;
-    });
-    return { fill, opts: {} };
+    // Shell was stripped to secretAnswers only (commit d4a62238) —
+    // GuessWhoTask.jsx ignored config.items[].facts entirely. New
+    // placeholders: CANDIDATE_1..4 + CATEGORY. Default itemCount 4.
+    const PEOPLE = [
+      "Abraham Lincoln", "Marie Curie", "Mahatma Gandhi", "Florence Nightingale",
+      "Pythagoras", "Ada Lovelace", "Sir Isaac Brock", "Charles Darwin",
+    ];
+    const m = meta(si);
+    const fill = {
+      TITLE: `Guess the ${m.topic} Figure`,
+      PROMPT: "Ask yes/no questions to figure out which person it is. You have 10 guesses.",
+      CATEGORY: `Key Figures of ${m.topic}`,
+    };
+    for (let i = 1; i <= 4; i += 1) {
+      fill[`CANDIDATE_${i}`] = PEOPLE[(si + i - 1) % PEOPLE.length];
+    }
+    return { fill, opts: { itemCount: 4 } };
   },
 
   [TASK_TYPES.LETTER]: (si) => {
