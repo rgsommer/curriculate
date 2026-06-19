@@ -1575,12 +1575,22 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - Avoid copyrighted passages; write original content.
     
     Task-specific guidance:
-    - Prompt students to take a photo that evidences learning (e.g., whiteboard work, model, artifact). Include clear requirements for what must be visible in the photo and 2–3 quick checklist criteria.
-    
+    - ASK FOR ONE THING. The student takes ONE photo of ONE artifact. The prompt is a single short instruction (≤ 350 chars).
+    - FORBIDDEN: numbered lists (1., 2., 3.), bullet-style checklists, "AND" chains of multiple things to capture, multi-part briefs (e.g. "Take a photo of X AND Y AND Z"). The validator rejects ≥ 3 numbered parts.
+    - GOOD examples:
+        • "Take a photo of a real-world example of a right triangle you can find in the classroom or hallway."
+        • "Find an object whose temperature is changing right now, and photograph it next to a thermometer reading."
+        • "Photograph one piece of evidence — written or drawn — that explains how plants make food."
+    - BAD examples (DO NOT EMIT):
+        • "Take photos showing: 1) a fraction model 2) a decimal example 3) an equivalent pair."  ← multi-part numbered list
+        • "Capture using fraction strips, counters, number lines, grids, and pattern blocks."  ← too-many-objects checklist
+        • "Show all three branches of government with separate photos for each."  ← three-photo demand
+    - Optional: config.exampleIdeas (≤ 3 SHORT phrases) gives the student inspiration without adding parts to the prompt.
+
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
     - Ensure prompts are student-facing instructions (what to do).
+    - Prompt must be ONE clear instruction in plain language. If you can split your prompt into "step 1 / step 2" it is TOO COMPLEX — narrow it to step 1.
     `,
 },
 
