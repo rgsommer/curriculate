@@ -392,14 +392,33 @@ export async function buildSessionReportSnapshot({
   const submissions = safeArr(room.submissions || transcript?.submissions);
 
   const totalTasks = tasks.length;
-  // Engagement denominator shrinks when the session ended early — see the
-  // matching block in backend/index.js teacher:endSessionAndEmail. Without
-  // this, students who completed everything they were given still show
-  // engagement < 100 if the host ran out of time before pushing every task.
   const endedEarlyHere = !!room.endedEarly && Number.isInteger(room.endedEarlyAtTaskIndex);
-  const engagementDenominator = endedEarlyHere
-    ? Math.max(1, Math.min(totalTasks, room.endedEarlyAtTaskIndex + 1))
-    : totalTasks;
+
+  // PEAK-TEAM ENGAGEMENT DENOMINATOR. Mirrors backend/index.js — engagement
+  // is a celebration metric, not an absolute. We scale to the strongest
+  // team so at least one team always reads 100% and the activity ends as
+  // a win. The endedEarly flag still rides along for context, but it's no
+  // longer the denominator driver.
+  const peakTeamCompletion = (() => {
+    let peak = 0;
+    for (const teamId of Object.keys(teamsMap)) {
+      const idxs = new Set(
+        submissions
+          .filter((s) => String(s?.teamId) === String(teamId))
+          .map((s) => s?.taskIndex)
+          .filter((n) => Number.isFinite(n) && n >= 0)
+      );
+      if (idxs.size > peak) peak = idxs.size;
+    }
+    return peak;
+  })();
+  const engagementDenominator = Math.max(
+    1,
+    Math.min(
+      totalTasks || 1,
+      peakTeamCompletion || (endedEarlyHere ? Math.min(totalTasks, room.endedEarlyAtTaskIndex + 1) : totalTasks)
+    )
+  );
 
   const moods = moodCheckins && typeof moodCheckins === "object" ? moodCheckins : {};
   const feedbacks = exitFeedback && typeof exitFeedback === "object" ? exitFeedback : {};

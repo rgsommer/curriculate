@@ -9883,20 +9883,30 @@ socket.on(
       const feedbacks = room.feedback && typeof room.feedback === "object" ? room.feedback : {};
       const submissions = Array.isArray(room.submissions) ? room.submissions : [];
       const totalTasks = transcript?.tasks?.length || 0;
-
-      // Session-ended-early denominator. When the auto-end timer fires
-      // (or the teacher hits "End now") before every task has been
-      // pushed, the engagement-score denominator must shrink to "tasks
-      // students actually had a chance at" — otherwise a class that
-      // finished task 6 of 10 sees 60% engagement even though they did
-      // 100% of what they were given. room.endedEarlyAtTaskIndex is the
-      // highest task index the host reached; +1 turns it into a count.
-      // The "+1" path is clamped to [1, totalTasks] so a bug-set value
-      // can't blow the denominator past the catalog.
       const endedEarly = !!room.endedEarly && Number.isInteger(room.endedEarlyAtTaskIndex);
-      const engagementDenominator = endedEarly
-        ? Math.max(1, Math.min(totalTasks, room.endedEarlyAtTaskIndex + 1))
-        : totalTasks;
+
+      // PEAK-TEAM ENGAGEMENT DENOMINATOR.
+      // This is a CELEBRATION metric, not an absolute measure — at least
+      // one team should always finish at 100% so the activity reads as
+      // a success, not a class-wide failure. We compute the denominator
+      // as the *highest* per-team distinct-task-attempt count across the
+      // session. Everyone else is scaled relative to the peak team.
+      //
+      // Side benefit: this automatically absorbs the "session ended
+      // early" case — if every team got to task 6 of 10, the peak is
+      // still 6 and 6/6 = 100%. The endedEarly flag is preserved on the
+      // payload for context but no longer drives the denominator.
+      const teamAttemptedCounts = Object.entries(teamsMap).map(([teamId]) => {
+        const teamSubs = submissions.filter((s) => String(s?.teamId) === String(teamId));
+        const idxs = new Set(teamSubs.map((s) => s?.taskIndex).filter((n) => Number.isFinite(n) && n >= 0));
+        return idxs.size;
+      });
+      const peakTeamCompletion = teamAttemptedCounts.length > 0
+        ? Math.max(0, ...teamAttemptedCounts)
+        : 0;
+      // Denominator floor of 1 to avoid divide-by-zero when nobody
+      // submitted anything; cap at the taskset length as a sanity guard.
+      const engagementDenominator = Math.max(1, Math.min(totalTasks || 1, peakTeamCompletion || (endedEarly ? Math.min(totalTasks, room.endedEarlyAtTaskIndex + 1) : totalTasks)));
 
       return Object.entries(teamsMap).map(([teamId, team]) => {
         const teamName = String(team?.teamName || team?.name || `Team-${String(teamId).slice(-4)}`);
