@@ -1139,7 +1139,7 @@ export const retryMustHave = {
   [TASK_TYPES.PRONUNCIATION]:
     "PRONUNCIATION must include referenceText (non-empty string) AND (optional) targetWords array. Do not omit referenceText.",
   [TASK_TYPES.ROLE_PLAY_DECK]:
-    "ROLE_PLAY_DECK must include config.scenario (non-empty string) and config.roles (array of at least 3 role objects). Each role MUST have: name (string), goal (a specific objective the character pursues — NOT empty), and constraint (a limitation or conflict — NOT empty). Empty goal or constraint strings will be REJECTED. Do not omit any field.",
+    'ROLE_PLAY_DECK: config.scenario (non-empty string, 2-4 sentences). config.roles (array ≥ 3). Each role MUST have: name (SPECIFIC character name like "Sir Isaac Brock" — NEVER "Role A"/"Character 1"); role (one-line description distinct from name); characteristics (array of 3-5 short adjective traits); gender ("male"|"female"|"nonbinary" — renderer uses for avatar). DO NOT emit goal/constraint fields — the renderer ignores them.',
   [TASK_TYPES.SCRIPT_PLAY]:
     "SCRIPT_PLAY must include lines/dialogue as an array of at least 8 lines. Each line should be a string or { speaker, text }. Do not omit.",
   [TASK_TYPES.TRUE_FALSE_TICTACTOE]:

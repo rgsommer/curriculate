@@ -3969,34 +3969,42 @@ IMPORTANT:
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "role-play-deck".
 
-    SCHEMA:
+    SCHEMA — must match exactly:
     {
-      taskType: "role-play-deck",
-      title: string,
-      prompt: string (student-facing instruction),
-      config: {
-        scenario: string (the situation students will role-play, linked to the subject),
-        roles: [
-          { name: "specific character name", role: "their role description", characteristics: ["trait1", "trait2"] },
-          ...at least 2 roles
+      "taskType": "role-play-deck",
+      "title": "string (3-7 words)",
+      "prompt": "1-2 sentence student instruction",
+      "config": {
+        "scenario": "2-4 sentences describing the situation students will role-play",
+        "roles": [
+          {
+            "name": "Specific character name (Sir Isaac Brock / Pythagoras / Ada the Algebra Apprentice)",
+            "role": "One-line description of who they are and why they are in the scenario",
+            "characteristics": ["short trait", "short trait", "short trait"],
+            "gender": "male" | "female" | "nonbinary"
+          },
+          ...at least 3 roles
         ]
       }
     }
 
-    CRITICAL -- NO PLACEHOLDERS:
-    Every role MUST have a specific, meaningful name related to the scenario.
-    NEVER use generic labels like "Role A", "Role B", "Role 1", "Role 2".
+    HARD REQUIREMENTS — every role MUST have:
+    1. name — a specific CHARACTER NAME. NEVER "Role A", "Role 1", "Character 1".
+    2. role — distinct from name; describes their function (one short line).
+    3. characteristics — array of 3-5 short adjective traits.
+    4. gender — one of "male" | "female" | "nonbinary". The renderer uses
+       this for the avatar; without it the role card shows a generic icon.
+
+    Scenario should invite perspective-taking and classroom discussion,
+    tied to the subject/topic.
+
     BAD: { name: "Role A", role: "Explain your perspective" }
-    GOOD: { name: "Town Mayor", role: "Defend the new park proposal using environmental data" }
-
-    Task-specific guidance:
-    - Create a scenario connected to the subject/vocabulary provided.
-    - Provide 3–5 roles with descriptive names, clear goals, and 3–5 characteristics each.
-    - Scenario should invite perspective-taking and classroom discussion.
-
-    Common failure prevention:
-    - config.roles must have at least 2 entries with real character names.
-    - config.scenario must be a non-empty description of the situation.
+    GOOD: {
+      name: "Sir Isaac Brock",
+      role: "British general defending Upper Canada from American invasion",
+      characteristics: ["decisive", "loyal", "tactical"],
+      gender: "male"
+    }
     `,
 },
 
@@ -5777,6 +5785,7 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.OPEN_TEXT]:          2, // reject placeholder prompts + un-nest
   [TASK_TYPES.HOLE_IN_ONE]:        2, // full schema in aiPrompt + ≥ 3 questions required
   [TASK_TYPES.NARRATION_SYNTHESIZE]: 2, // aiPrompt rewritten for oral teach-back, prompt-shape sanitizer
+  [TASK_TYPES.ROLE_PLAY_DECK]:       2, // shell + aiPrompt + validator realigned to renderer's {name,role,characteristics,gender}
   [TASK_TYPES.INTERVIEW]:          3, // (#38) subject affinity + strict validator + render fallback
   [TASK_TYPES.MAPIT]:              2, // (#15) graceful Submit + step-hint UX
   [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring
@@ -6497,6 +6506,10 @@ export const TASK_SHELLS = {
 
   /* ── ROLE PLAY DECK ── */
   [TASK_TYPES.ROLE_PLAY_DECK]: function buildRolePlayDeckShell({ itemCount = 4 } = {}) {
+    // Shape MUST match RolePlayDeckTask.jsx renderer:
+    //   role = { name, role, characteristics: string[], gender }
+    // The previous shell emitted {goal, constraint} fields that the
+    // renderer ignored entirely — audit punch-list #5.
     const roleCount = Math.max(3, itemCount);
     const roles = [];
     const placeholders = [
@@ -6510,15 +6523,30 @@ export const TASK_SHELLS = {
       const n = i + 1;
       roles.push({
         name: `{{ROLE_${n}_NAME}}`,
-        goal: `{{ROLE_${n}_GOAL}}`,
-        constraint: `{{ROLE_${n}_CONSTRAINT}}`,
+        role: `{{ROLE_${n}_ROLE}}`,
+        characteristics: [
+          `{{ROLE_${n}_TRAIT_1}}`,
+          `{{ROLE_${n}_TRAIT_2}}`,
+          `{{ROLE_${n}_TRAIT_3}}`,
+        ],
+        gender: `{{ROLE_${n}_GENDER}}`,
       });
       placeholders.push(
-        `ROLE_${n}_NAME: Character name or role title`,
-        `ROLE_${n}_GOAL: A specific objective this character pursues -- NOT empty`,
-        `ROLE_${n}_CONSTRAINT: A limitation or conflict for this character -- NOT empty`,
+        `ROLE_${n}_NAME: A specific CHARACTER NAME (e.g. "Sir Isaac Brock", "Pythagoras", "Ada the Algebra Apprentice") — NEVER "Role A" or "Role ${n}"`,
+        `ROLE_${n}_ROLE: One-line description of who they are and why they're in the scenario (e.g. "British general defending Upper Canada")`,
+        `ROLE_${n}_TRAIT_1: One short adjective trait (e.g. "decisive")`,
+        `ROLE_${n}_TRAIT_2: One short adjective trait (e.g. "loyal")`,
+        `ROLE_${n}_TRAIT_3: One short adjective trait (e.g. "tactical")`,
+        `ROLE_${n}_GENDER: One of "male" | "female" | "nonbinary" — used by the renderer's avatar picker.`,
       );
-      names.push(`ROLE_${n}_NAME`, `ROLE_${n}_GOAL`, `ROLE_${n}_CONSTRAINT`);
+      names.push(
+        `ROLE_${n}_NAME`,
+        `ROLE_${n}_ROLE`,
+        `ROLE_${n}_TRAIT_1`,
+        `ROLE_${n}_TRAIT_2`,
+        `ROLE_${n}_TRAIT_3`,
+        `ROLE_${n}_GENDER`,
+      );
     }
 
     const shell = {

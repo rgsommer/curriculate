@@ -3608,10 +3608,17 @@ export function validateTaskByType(taskType, task) {
       if (!Array.isArray(rpCfg.roles) || rpCfg.roles.length < 2) {
         errors.push("role-play-deck requires config.roles[] with at least 2 named roles");
       } else {
-        const emptyGoals = rpCfg.roles.filter((r) => !String(r?.goal || "").trim());
-        const emptyConstraints = rpCfg.roles.filter((r) => !String(r?.constraint || "").trim());
-        if (emptyGoals.length > 0) errors.push(`${emptyGoals.length} role(s) have empty goal — each role needs a specific goal`);
-        if (emptyConstraints.length > 0) errors.push(`${emptyConstraints.length} role(s) have empty constraint — each role needs a constraint`);
+        // Renderer reads { name, role, characteristics[], gender } — those
+        // are the load-bearing fields. The old goal/constraint validation
+        // was checking dead-code fields the renderer ignores. See the
+        // matching realignment in TASK_SHELLS + aiPrompt.
+        rpCfg.roles.forEach((r, i) => {
+          if (!String(r?.name || "").trim()) errors.push(`role[${i}] missing name`);
+          if (!String(r?.role || "").trim()) errors.push(`role[${i}] missing role description`);
+          if (!Array.isArray(r?.characteristics) || r.characteristics.length < 1) {
+            errors.push(`role[${i}] requires characteristics[] (3-5 short traits)`);
+          }
+        });
       }
       if (!isNonEmptyString(rpCfg.scenario)) {
         errors.push("role-play-deck requires config.scenario (non-empty)");

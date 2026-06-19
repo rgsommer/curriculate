@@ -580,34 +580,50 @@ export function sanitizeTaskShapeByType(type, task) {
 
   // ── ROLE_PLAY_DECK: auto-fill empty goal/constraint from role description ──
   if (type === TASK_TYPES.ROLE_PLAY_DECK) {
-    const roles = Array.isArray(t.config?.roles) ? t.config.roles : [];
+    // Renderer reads { name, role, characteristics[], gender }. Normalize
+    // around those fields. Backfill role from goal/constraint if a legacy
+    // generation still ships them; backfill characteristics from
+    // adjective-ish goal text; default gender to "nonbinary" when missing.
+    const cfg = t.config && typeof t.config === "object" ? t.config : {};
+    const roles = Array.isArray(cfg.roles) ? cfg.roles : [];
     if (roles.length > 0) {
-      t.config.roles = roles.map((r) => {
+      cfg.roles = roles.map((r) => {
         if (!r || typeof r !== "object") return r;
         const role = { ...r };
-        const desc = String(role.role || role.description || "").trim();
-        const chars = Array.isArray(role.characteristics) ? role.characteristics : [];
-
-        if (!String(role.goal || "").trim()) {
-          // Synthesize goal from description or first characteristic
-          if (desc) {
-            role.goal = desc;
-          } else if (chars.length > 0) {
-            role.goal = String(chars[0] || "").trim();
-          }
+        // role field — fall back to legacy goal/description.
+        if (!String(role.role || "").trim()) {
+          role.role = String(role.goal || role.description || role.job || "").trim();
         }
-        if (!String(role.constraint || "").trim()) {
-          // Synthesize constraint from last characteristic or a generic one
-          if (chars.length >= 2) {
-            role.constraint = String(chars[chars.length - 1] || "").trim();
-          } else if (desc) {
-            role.constraint = "Must stay in character and support the group discussion";
-          }
+        // characteristics: ensure an array of short adjective strings.
+        let chars = Array.isArray(role.characteristics)
+          ? role.characteristics
+          : (typeof role.characteristics === "string"
+              ? role.characteristics.split(",")
+              : []);
+        chars = chars
+          .map((c) => String(c || "").trim())
+          .filter(Boolean)
+          .map((c) => c.slice(0, 40));
+        // Backfill from goal/constraint if we still have nothing.
+        if (chars.length === 0) {
+          const legacy = [role.goal, role.constraint].map((s) => String(s || "").trim()).filter(Boolean);
+          if (legacy.length > 0) chars = legacy.slice(0, 3);
         }
+        // Clamp to 3-5 traits where possible.
+        role.characteristics = chars.slice(0, 5);
+        // gender — renderer uses for avatar; pick "nonbinary" as a safe
+        // default so the avatar picker never crashes.
+        if (!String(role.gender || role.sex || "").trim()) {
+          role.gender = "nonbinary";
+        }
+        // Drop legacy fields the renderer ignores so they don't trip
+        // the placeholder-text scanner.
+        delete role.goal;
+        delete role.constraint;
         return role;
       });
-      console.log(`[sanitize] Auto-filled ROLE_PLAY_DECK goal/constraint from role data`);
     }
+    t.config = cfg;
   }
 
   // ── ART_VIEW: ensure config defaults ──
