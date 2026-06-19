@@ -1309,6 +1309,20 @@ function gbMark(cats, asg, getScore){
   let m = (wsum? tot/wsum : 0) + bonus;
   return Math.round(Math.min(100, m));
 }
+function courseAverages(courses){
+  const marked=(courses||[]).filter(c=>c.mark!==''&&c.mark!=null);
+  if(!marked.length) return {straight:null,weighted:null,n:0};
+  const straight=Math.round(marked.reduce((a,c)=>a+(+c.mark),0)/marked.length);
+  let ws=0,cw=0; marked.forEach(c=>{ const w=(c.credit!=null&&+c.credit>0)?+c.credit:1; ws+=(+c.mark)*w; cw+=w; });
+  return {straight, weighted: cw>0?Math.round(ws/cw):straight, n:marked.length};
+}
+function avgBadges(courses){
+  const a=courseAverages(courses);
+  if(a.n===0) return '<div class="pf">No marks yet.</div>';
+  return `<div class="row" style="gap:18px;margin:4px 0 8px">
+    <div><div class="muted" style="font-size:11px">WEIGHTED AVERAGE</div><div style="font-size:22px;font-weight:800;color:var(--navy)">${a.weighted}%</div><div class="pf">by course credit</div></div>
+    <div><div class="muted" style="font-size:11px">STRAIGHT AVERAGE</div><div style="font-size:22px;font-weight:800;color:var(--navy)">${a.straight}%</div><div class="pf">simple mean of ${a.n} course${a.n>1?'s':''}</div></div></div>`;
+}
 async function liveStudentCourses(studentId){
   const { data: enr } = await sb.from('enrolments')
     .select('section:sections(id,period,room,teacher_name,course:courses(code,name,grade,credit))')
@@ -1327,7 +1341,7 @@ async function liveStudentCourses(studentId){
     const sCats=cats.filter(c=>c.section_id===sec.id);
     const sAsg=asg.filter(a=>a.section_id===sec.id);
     const mark=gbMark(sCats,sAsg,(aid)=>scoreMap[aid]);
-    return { code:sec.course?.code, name:sec.course?.name, grade:sec.course?.grade, teacher:sec.teacher_name, mark };
+    return { code:sec.course?.code, name:sec.course?.name, grade:sec.course?.grade, credit:sec.course?.credit, teacher:sec.teacher_name, mark };
   });
 }
 window.gbOpenFile=async(bucket,path)=>{ const {data,error}=await sb.storage.from(bucket).createSignedUrl(path,3600); if(error){alert(error.message);return;} if(data&&data.signedUrl) window.open(data.signedUrl,'_blank'); };
@@ -1358,6 +1372,7 @@ window.openStudentLive=async(id)=>{
       <div class="k">Status</div><div><span class="badge b-green">${esc(s.status)}</span></div>
     </div></div>
     <div class="card"><h2>Current courses &amp; marks</h2>
+      ${avgBadges(courses)}
       <table><thead><tr><th>Course</th><th>Teacher</th><th>Mark</th><th>Level</th></tr></thead><tbody>
       ${courses.length? courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b><div class="muted" style="font-size:11px">${esc(c.name||'')}</div></td><td>${esc(c.teacher||'—')}</td><td><b>${c.mark===''?'—':c.mark+'%'}</b></td><td><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('') : '<tr><td colspan="4" class="muted">No current enrolments.</td></tr>'}
       </tbody></table>
@@ -1996,7 +2011,7 @@ async function pdashLive(){
       <div class="row" style="margin-top:12px"><button class="btn ghost sm" onclick="go('pmarks')">Marks</button><button class="btn ghost sm" onclick="go('pattend')">Attendance &amp; absences</button><button class="btn ghost sm" onclick="go('preport')">Report cards</button><button class="btn ghost sm" onclick="go('pmsg')">Message a teacher</button></div>`:'<div class="muted">No child is linked to your account yet — the school links you when you accept your invitation.</div>'}
     </div></div>`;
 }
-async function pmarksLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>'; const courses=await liveStudentCourses(child.id); v.innerHTML=`${pChildPicker('pmarks')}<div class="card"><h2>${esc(child.first_name)}'s marks</h2><div class="sub">As released by the school</div><table><tbody>${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> <span class="muted">${esc(c.name||'')}</span></td><td style="text-align:right"><b>${c.mark===''?'—':c.mark+'%'}</b> <span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td class=muted>No released marks yet.</td></tr>'}</tbody></table></div>`; }
+async function pmarksLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>'; const courses=await liveStudentCourses(child.id); v.innerHTML=`${pChildPicker('pmarks')}<div class="card"><h2>${esc(child.first_name)}'s marks</h2><div class="sub">As released by the school</div>${avgBadges(courses)}<table><tbody>${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b> <span class="muted">${esc(c.name||'')}</span></td><td style="text-align:right"><b>${c.mark===''?'—':c.mark+'%'}</b> <span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td class=muted>No released marks yet.</td></tr>'}</tbody></table></div>`; }
 async function pattendLive(){ const v=$('#view'); const child=pChild(); if(!child){v.innerHTML='<div class="card"><div class="muted">No child linked.</div></div>';return;} v.innerHTML='<div class="card"><div class="muted">Loading…</div></div>';
   const {data:abs}=await sb.from('absence_requests').select('id,start_date,end_date,reason,status').eq('student_id',child.id).order('start_date',{ascending:false});
   window._absReq=async()=>{ const s=document.getElementById('ab_s').value,e=document.getElementById('ab_e').value,r=document.getElementById('ab_r').value,m=document.getElementById('ab_m'); if(!s||!e){m.style.color='var(--red)';m.textContent='Pick dates';return;} const {error}=await sb.from('absence_requests').insert({school_id:SESSION.schoolId,student_id:child.id,requested_by:SESSION.user&&SESSION.user.id,start_date:s,end_date:e,reason:r||null}); if(error){m.style.color='var(--red)';m.textContent=error.message;return;} pattendLive(); };
@@ -2162,6 +2177,7 @@ async function mymarksLive(){
   const courses=await liveStudentCourses(SESSION.studentId);
   const {data:docs}=await sb.from('student_documents').select('id,category,name,url,created_at').eq('student_id',SESSION.studentId).order('created_at',{ascending:false});
   v.innerHTML=`<div class="card"><h2>My courses &amp; marks</h2><div class="sub">🟢 live — shows grades your teachers have released</div>
+    ${avgBadges(courses)}
     <table><thead><tr><th>Course</th><th>Teacher</th><th>Mark</th><th>Level</th></tr></thead><tbody>
     ${courses.map(c=>{const L=pctToLevel(c.mark);return `<tr><td><b>${esc(c.code||'')}</b><div class="muted" style="font-size:11px">${esc(c.name||'')}</div></td><td>${esc(c.teacher||'—')}</td><td><b>${c.mark===''?'—':c.mark+'%'}</b></td><td><span class="badge ${L.c} lvl">${L.l}</span></td></tr>`}).join('')||'<tr><td colspan=4 class=muted>No courses.</td></tr>'}
     </tbody></table></div>
