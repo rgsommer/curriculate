@@ -8,6 +8,7 @@ import {
   campfireSiteUrl,
   mailDefaults,
   escapeHtml,
+  notifyHostOfAward,
 } from "./serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -158,7 +159,8 @@ export async function runRaffleDraw(
     .from("engagements")
     .update({
       status: "revealed",
-      ...(issued ? { gift_issued_at: nowIso } : {}),
+      // Settled whether auto-issued OR handed to the host → no re-processing/re-email.
+      ...(issued || winnerUnpaid ? { gift_issued_at: nowIso } : {}),
       gift_recipient_email: winnerEmail,
       gift_recipient_name: winnerName ?? null,
       config: {
@@ -172,6 +174,21 @@ export async function runRaffleDraw(
       },
     })
     .eq("id", eng.id);
+
+  // No auto-pay → email the host the winner's details so they send the gift card.
+  if (winnerUnpaid) {
+    await notifyHostOfAward(admin, {
+      creatorId: eng.creator_id,
+      groupId: eng.group_id,
+      engagementId: eng.id,
+      engagementTitle: eng.title,
+      award: "Raffle",
+      recipientName: winnerName,
+      recipientEmail: winnerEmail,
+      amountCents: winnerCents,
+      currency,
+    });
+  }
 
   try {
     const emails = await getGroupMemberEmails(admin, eng.group_id);

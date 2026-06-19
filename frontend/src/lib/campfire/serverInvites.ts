@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { Resend } from "resend";
 import { firstName } from "./parseInvites";
 import { campfireTeaserText, campfireTeaserHtml } from "./types";
 
@@ -804,4 +805,123 @@ ${campfireTeaserText()}`;
 </div>`.trim();
 
   return { subject, text, html };
+}
+
+// ─── Manual gift settlement: email the HOST the winner's details so they can send
+// the gift card themselves (we don't auto-issue cards — gift-card networks don't
+// allow consumer crowd-gifting). Used on every award when nothing was auto-paid. ───
+export function awardSettlementEmail(opts: {
+  groupName: string;
+  engagementTitle: string;
+  award?: string;
+  recipientName?: string;
+  recipientEmail?: string;
+  amount: string; // pre-formatted, e.g. "CAD $20.00"
+  url: string;
+}) {
+  const who = opts.recipientName || "The winner";
+  const forWhat = opts.award ? `“${opts.award}”` : "the prize";
+  const subject = `🎁 Send a gift card — ${who} won ${
+    opts.award ? `“${opts.award}”` : "a prize"
+  } (${opts.groupName})`;
+  const text = `${who} won ${forWhat} in "${opts.engagementTitle}" (${opts.groupName}).
+
+Please send them a gift card for ${opts.amount}:
+  • Recipient: ${who}
+  • Email:     ${opts.recipientEmail || "(no email on file)"}
+  • Amount:    ${opts.amount}
+  • Award:     ${opts.award || "(prize)"}
+  • Group:     ${opts.groupName}
+  • Activity:  ${opts.engagementTitle}
+
+Campfire does not issue the card automatically — buy/send it from your preferred gift-card store or service.
+
+${opts.url}`;
+  const html = `
+<div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
+  <div style="font-size:40px;">🎁</div>
+  <h1 style="font-size:20px; margin:8px 0;">Time to send a gift card</h1>
+  <p style="color:#475569; margin:0 0 12px;"><strong>${escapeHtml(
+    who
+  )}</strong> won ${escapeHtml(forWhat)} in "<strong>${escapeHtml(
+    opts.engagementTitle
+  )}</strong>" (${escapeHtml(opts.groupName)}).</p>
+  <table style="border-collapse:collapse; margin:0 0 14px; font-size:14px; color:#0f172a;">
+    <tr><td style="padding:4px 14px 4px 0; color:#64748b;">Recipient</td><td style="padding:4px 0;"><strong>${escapeHtml(
+      who
+    )}</strong></td></tr>
+    <tr><td style="padding:4px 14px 4px 0; color:#64748b;">Email</td><td style="padding:4px 0;">${escapeHtml(
+      opts.recipientEmail || "(none on file)"
+    )}</td></tr>
+    <tr><td style="padding:4px 14px 4px 0; color:#64748b;">Amount</td><td style="padding:4px 0;"><strong>${escapeHtml(
+      opts.amount
+    )}</strong></td></tr>
+    <tr><td style="padding:4px 14px 4px 0; color:#64748b;">Award</td><td style="padding:4px 0;">${escapeHtml(
+      opts.award || "(prize)"
+    )}</td></tr>
+  </table>
+  <p style="color:#475569; margin:0 0 12px;">Campfire doesn’t issue the card automatically — send it from your preferred gift-card store or service.</p>
+  <p style="margin:0;"><a href="${opts.url}" style="color:#ea580c;">View the activity →</a></p>
+</div>`.trim();
+  return { subject, text, html };
+}
+
+// Resolve the host (engagement creator) email and send them the settlement details.
+export async function notifyHostOfAward(
+  admin: SupabaseClient,
+  opts: {
+    creatorId: string;
+    groupId: string;
+    engagementId: string;
+    engagementTitle: string;
+    award?: string;
+    recipientName?: string;
+    recipientEmail?: string | null;
+    amountCents: number;
+    currency: string;
+  }
+): Promise<void> {
+  try {
+    const { data: hUser } = await admin.auth.admin.getUserById(opts.creatorId);
+    let hostEmail = hUser?.user?.email || null;
+    if (!hostEmail) {
+      const { data: hGm } = await admin
+        .from("group_members")
+        .select("notify_email")
+        .eq("group_id", opts.groupId)
+        .eq("user_id", opts.creatorId)
+        .maybeSingle();
+      hostEmail = (hGm?.notify_email as string | null) || null;
+    }
+    if (!hostEmail) return;
+    const { data: grp } = await admin
+      .from("groups")
+      .select("name")
+      .eq("id", opts.groupId)
+      .single();
+    const amount = `${(opts.currency || "usd").toUpperCase()} $${(
+      opts.amountCents / 100
+    ).toFixed(2)}`;
+    const url = `${campfireSiteUrl()}/campfirelive/group/${opts.groupId}/engagement/${opts.engagementId}`;
+    const m = awardSettlementEmail({
+      groupName: grp?.name || "your group",
+      engagementTitle: opts.engagementTitle,
+      award: opts.award,
+      recipientName: opts.recipientName,
+      recipientEmail: opts.recipientEmail || undefined,
+      amount,
+      url,
+    });
+    const resend = new Resend(process.env.RESEND_API_KEY);
+    await resend.emails.send({
+      from: campfireFrom(),
+      to: [hostEmail],
+      subject: m.subject,
+      text: m.text,
+      html: m.html,
+      ...mailDefaults(),
+    });
+  } catch (e) {
+    console.error("notifyHostOfAward failed:", e);
+  }
 }

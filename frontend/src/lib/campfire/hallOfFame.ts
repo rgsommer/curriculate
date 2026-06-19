@@ -7,6 +7,7 @@ import {
   campfireSiteUrl,
   mailDefaults,
   escapeHtml,
+  notifyHostOfAward,
 } from "./serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -120,7 +121,9 @@ export async function awardHallOfFameGift(
   await admin
     .from("engagements")
     .update({
-      ...(issued ? { gift_issued_at: nowIso } : {}),
+      // Mark settled whether auto-issued OR handed to the host — stops the cron from
+      // re-processing (and re-emailing) the same award every run.
+      ...(issued || winnerUnpaid ? { gift_issued_at: nowIso } : {}),
       gift_recipient_email: winnerEmail,
       gift_recipient_name: winnerName ?? null,
       config: {
@@ -134,6 +137,21 @@ export async function awardHallOfFameGift(
       },
     })
     .eq("id", eng.id);
+
+  // No auto-pay → email the host the winner's details so they send the gift card.
+  if (winnerUnpaid) {
+    await notifyHostOfAward(admin, {
+      creatorId: eng.creator_id,
+      groupId: eng.group_id,
+      engagementId: eng.id,
+      engagementTitle: eng.title,
+      award: awardLabel,
+      recipientName: winnerName,
+      recipientEmail: winnerEmail,
+      amountCents: totalCents,
+      currency,
+    });
+  }
 
   // Tell the group who won the prize.
   try {

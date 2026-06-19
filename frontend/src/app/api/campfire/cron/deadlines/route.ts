@@ -18,6 +18,7 @@ import {
   campfireSiteUrl,
   getPendingInviteeEmails,
   escapeHtml,
+  notifyHostOfAward,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, nextMonthlyNthWeekday, raffleOf, tournamentOf, selectPoolQuestions, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
@@ -365,18 +366,35 @@ export async function GET(req: Request) {
       0
     );
 
-    // Can't pay (no funds, no email, or Tremendous unconfigured) → just record the
-    // winner so the UI can show it; leave it unissued and retry next run.
+    // Can't auto-pay (no funds, no email, or provider unconfigured) → record the
+    // winner, mark it settled (so we don't re-process), and email the host the
+    // winner's details so they send the gift card themselves.
     if (totalCents <= 0 || !winnerEmail || !giftProviderConfigured()) {
       await admin
         .from("engagements")
         .update({
+          gift_issued_at: new Date(now).toISOString(),
+          gift_recipient_email: winnerEmail,
+          gift_recipient_name: winnerName,
           config: {
             ...((e.config as Record<string, unknown>) ?? {}),
-            raffle: { ...raffle, winnerUserId: winnerUid },
+            raffle: { ...raffle, winnerUserId: winnerUid, winnerUnpaid: totalCents > 0 },
           },
         })
         .eq("id", e.id);
+      if (totalCents > 0) {
+        await notifyHostOfAward(admin, {
+          creatorId: e.creator_id as string,
+          groupId: e.group_id as string,
+          engagementId: e.id as string,
+          engagementTitle: e.title as string,
+          award: "Raffle",
+          recipientName: winnerName ?? undefined,
+          recipientEmail: winnerEmail,
+          amountCents: totalCents,
+          currency: (e.gift_currency as string | null) ?? "usd",
+        });
+      }
       continue;
     }
 
