@@ -812,6 +812,28 @@ export function sanitizeTaskShapeByType(type, task) {
         seen.add(e.wordIndex);
         return true;
       });
+
+      // Final-state guard: drop errors whose wordIndex now points at the
+      // CORRECT word (which would make them un-findable for the student).
+      // These are leftovers from auto-repair failures — better to drop and
+      // let the validator reject for "too few errors" than ship a task
+      // where students can't actually find the marked errors.
+      const passageWords = t.passage.split(/\s+/);
+      const _strip = (w) => String(w || "").replace(/[.,;:!?"'()[\]{}]/g, "").toLowerCase();
+      t.errors = t.errors.filter((e) => {
+        if (e.wordIndex < 0 || e.wordIndex >= passageWords.length) return false;
+        const atIdx = _strip(passageWords[e.wordIndex]);
+        const correct = _strip(e.correct);
+        // If the word at the index is already the correct one, this error
+        // points at nothing the student can find — drop it.
+        if (atIdx && correct && atIdx === correct) return false;
+        return true;
+      });
+
+      // If too many errors got dropped, signal regeneration.
+      if (t.errors.length < 3) {
+        t._validationError = `peer-editing wordIndex auto-repair couldn't recover ≥ 3 valid errors — AI must emit the EXACT erroneous word in the "word" field for every error so the index can be verified`;
+      }
     }
 
     // Default mode

@@ -5810,6 +5810,7 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.ART_VIEW]:           3, // (#13) DATE-FIT rule
   [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
   [TASK_TYPES.TIMELINE]:           2, // (#8) BCE branch in extractDateValue
+  [TASK_TYPES.PEER_EDITING]:       2, // (#7) drop unfindable errors after auto-repair
   [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
   [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
   [TASK_TYPES.MYSTERY_CLUES]:      2, // pool rotation
