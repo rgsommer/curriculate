@@ -178,15 +178,23 @@ section("5. Current Events — shell-only, missing topic rejected, evergreen lib
 /* ──────────────── 6. HOLE IN ONE ──────────────── */
 section("6. Hole in One — board defaults, solvability heuristic");
 {
+  // questionBank is now REQUIRED by the validator (≥ 3 questions) — the
+  // renderer's Earn phase needs them to function. See the matching change
+  // in shared/taskTypes.js HOLE_IN_ONE.aiPrompt + retryMustHave.
   const ok = sanitizeTaskShapeByType("hole-in-one", {
     taskType: "hole-in-one",
     title: "Roll", prompt: "Tilt",
     config: {
       board: { width: 10, height: 14, startPosition: { x: 1, y: 1 }, holePosition: { x: 8, y: 12 } },
+      questionBank: [
+        { id: "q1", prompt: "What is 2+2?", correctAnswer: "4", reward: 1 },
+        { id: "q2", prompt: "What is 3+3?", correctAnswer: "6", reward: 1 },
+        { id: "q3", prompt: "What is 4+4?", correctAnswer: "8", reward: 2 },
+      ],
     },
   });
   const okV = validateTaskByType("hole-in-one", normalizeTaskByType("hole-in-one", ok));
-  assert(okV.ok, "valid board validates");
+  assert(okV.ok, "valid board + questionBank validates");
 
   // start == hole → reject
   const same = sanitizeTaskShapeByType("hole-in-one", {
