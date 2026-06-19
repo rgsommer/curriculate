@@ -729,9 +729,19 @@ export function normalizeTaskByType(taskType, rawTask) {
           ? parenMatch[1].toLowerCase().trim()
           : text.toLowerCase().trim();
 
+        // Detect BCE/BC — those years run BACKWARD chronologically (753 BC
+        // is BEFORE 27 BC). Return as a negative number so the sort still
+        // works ascending. Audit punch-list #8: a "submission of the Treaty
+        // of Kadesh (1259 BCE)" used to sort after "Hammurabi (1750 BCE)"
+        // because both extracted as positive integers.
+        const isBce = /\b(bc|bce|b\.c\.|b\.c\.e\.)\b/i.test(hint);
+
         // Try exact year: (1713)
-        const exactYear = hint.match(/\b(\d{4})\b/);
-        if (exactYear) return parseInt(exactYear[1], 10);
+        const exactYear = hint.match(/\b(\d{1,4})\b/);
+        if (exactYear) {
+          const y = parseInt(exactYear[1], 10);
+          return isBce ? -y : y;
+        }
 
         // Try decade: (1790s)
         const decade = hint.match(/\b(\d{3})0s\b/);

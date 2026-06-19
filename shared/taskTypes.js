@@ -2047,6 +2047,16 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - The image MUST be a HISTORICAL artwork, photograph, map, or primary source that is DIRECTLY RELEVANT to the lesson topic.
       Examples: studying the Renaissance → use a Raphael or da Vinci painting; studying WWI → use a period photograph or propaganda poster;
       studying geography/aid → use a historical map or documentary photograph of aid work.
+    - DATE-FIT RULE — the chosen artwork's CREATION YEAR or DEPICTED PERIOD
+      MUST fall WITHIN the topic's date range. Verify before naming it.
+      The audit caught a 1830 painting picked for a "1789-1799 French
+      Revolution" unit: Delacroix's "Liberty Leading the People" (1830)
+      depicts the July Revolution, NOT the 1789-1799 one. Use David's
+      "Tennis Court Oath", "Death of Marat", or "Napoleon Crossing the
+      Alps" instead — they fall inside or directly bracket the unit's
+      window. If you can't find an artwork that genuinely fits the topic's
+      date range, PICK A DIFFERENT TOPIC-RELATED PRIMARY SOURCE (map,
+      pamphlet, document) rather than a date-mismatched painting.
     - config.imageUrl: provide a Wikimedia Commons DIRECT file URL (must end in .jpg or .png).
       Format: https://upload.wikimedia.org/wikipedia/commons/thumb/HASH/FILENAME/800px-FILENAME
       Do NOT use gallery pages or non-image URLs.
@@ -4932,6 +4942,13 @@ config: {
 
     CRITICAL RULES:
     - NO fact may name the legend directly (would make sorting trivial).
+    - DECOY TRUTH RULE — every decoy fact MUST be FALSE about THIS figure.
+      Re-verify each decoy against the figure's biography. If a decoy
+      happens to also be true about the legend (e.g. "Won a Nobel
+      Prize" as a decoy for Marie Curie), the sorting is broken: the
+      student keys WHAT facts to "won Nobel" and the decoy gets put
+      there too. Prefer decoys that would be TRUE of an adjacent figure
+      in the same era / field but FALSE of this one.
     - Decoy facts should be GENUINELY plausible — not obvious red herrings.
     - Choose figures from a diverse range (avoid only male / only European / only secular figures).
     - For Bible class: figures like David, Esther, Ruth, Moses are appropriate.
@@ -5790,7 +5807,9 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.INTERVIEW]:          3, // (#38) subject affinity + strict validator + render fallback
   [TASK_TYPES.MAPIT]:              2, // (#15) graceful Submit + step-hint UX
   [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring
-  [TASK_TYPES.ART_VIEW]:           2, // (#17) rotation pool
+  [TASK_TYPES.ART_VIEW]:           3, // (#13) DATE-FIT rule
+  [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
+  [TASK_TYPES.TIMELINE]:           2, // (#8) BCE branch in extractDateValue
   [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
   [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
   [TASK_TYPES.MYSTERY_CLUES]:      2, // pool rotation
