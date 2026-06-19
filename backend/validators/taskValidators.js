@@ -1287,9 +1287,24 @@ export function normalizeTaskByType(taskType, rawTask) {
         (Array.isArray(task.items) && task.items) ||
         [];
 
-      prompts = prompts.map((p) => String(p || "").trim()).filter(Boolean);
-      if (prompts.length < 2) prompts = ["Continue the chain with one sentence.", "Add a detail that changes the meaning."];
-
+      // PRESERVE object shape. The renderer requires {id, concept, prompt}
+      // per entry. Previously this block did String(p) — which turned every
+      // object into the literal string "[object Object]", which then got
+      // flagged by the placeholder-text guard. Strings are kept as-is and
+      // sanitizeTaskShapeByType converts them to proper objects downstream.
+      prompts = prompts
+        .map((p) => {
+          if (typeof p === "string") return p.trim() || null;
+          if (p && typeof p === "object") return p;
+          return null;
+        })
+        .filter(Boolean);
+      if (prompts.length < 2) {
+        prompts = [
+          "Continue the chain with one sentence.",
+          "Add a detail that changes the meaning.",
+        ];
+      }
       nsCfg.prompts = prompts;
 
       task.title = asNonEmptyString(task.title, "Narration Synthesize");

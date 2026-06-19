@@ -1135,7 +1135,7 @@ export const retryMustHave = {
   [TASK_TYPES.MAKE_AND_SNAP]:
     "MAKE_AND_SNAP must include config: { requiresPhoto: true, materials: string[] } and a clear prompt.",
   [TASK_TYPES.NARRATION_SYNTHESIZE]:
-    "NARRATION_SYNTHESIZE must include config.playerCount (number, 2..8) and config.prompts (array). CRITICAL: there must be ONE prompt per player — config.prompts.length MUST be >= config.playerCount, or a player will sit idle. Example: { config: { playerCount: 4, prompts: ['...', '...', '...', '...'] } } (4 players → 4 prompts). Do not omit.",
+    'NARRATION_SYNTHESIZE: TURN-BASED ORAL TEACH-BACK — each player speaks ~30s on one concept. NOT a written synthesis. config.playerCount (2-6, default 4). config.prompts MUST be an ARRAY OF OBJECTS, length === playerCount, each { id: "p1", concept: "Short concept name", prompt: "Speak for ~30s. Explain ..." }. The renderer reads {id, concept, prompt}; strings or arrays without these keys show as "Concept 1/2/3" placeholders. DO NOT emit sourceBullets, sourcePassage, passages — renderer ignores them and the activity is oral, not text-comprehension.',
   [TASK_TYPES.PRONUNCIATION]:
     "PRONUNCIATION must include referenceText (non-empty string) AND (optional) targetWords array. Do not omit referenceText.",
   [TASK_TYPES.ROLE_PLAY_DECK]:

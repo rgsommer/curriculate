@@ -3873,23 +3873,51 @@ IMPORTANT:
     
     aiPrompt: `
     Generate ONE Curriculate task object with taskType "narration-synthesize".
-    
-    Hard requirements:
-    - Output ONLY a single JSON object (no markdown, no commentary).
-    - Include non-empty root fields: taskType, title, prompt.
-    - Follow the schema for this taskType EXACTLY as provided in the schema catalog in the system instructions.
-    - Keep language age-appropriate and classroom-safe.
-    - Avoid copyrighted passages; write original content.
-    
-    Task-specific guidance:
-    - Create a synthesize-and-summarize task: provide 2–3 short source bullets and ask for a 3–5 sentence synthesis with a claim + evidence.
-    - CRITICAL: provide ONE prompt per player. config.prompts.length MUST be >= config.playerCount, or a player sits idle with nothing to do. If playerCount is 4, supply at least 4 prompts.
 
-    Common failure prevention:
-    - Do not omit required arrays/fields; satisfy minimum item counts.
-    - config.prompts.length MUST be >= config.playerCount (one prompt per player).
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    WHAT THIS TASK ACTUALLY IS (read this carefully):
+    Turn-based ORAL teach-back. Each player on the team gets ONE concept
+    from today's lesson; they speak for ~30 seconds explaining their
+    concept in their own words while teammates rate them. This is NOT
+    a written synthesis task. There are NO "source bullets". The student
+    NEVER reads a passage and summarises it — they just TEACH their
+    concept aloud.
+
+    Hard requirements:
+    - Output ONLY a single JSON object (no markdown).
+    - Required root fields: taskType, title (3-7 words), prompt.
+
+    REQUIRED config fields:
+    - config.playerCount: integer 2-6 (default 4). Match this to the
+      typical small-group size.
+    - config.prompts: ARRAY of OBJECTS, length EXACTLY === playerCount.
+      Each element MUST be { id: "p1", concept: "Short concept name", prompt: "Speak for ~30s. Explain X. Include …" }.
+      The renderer reads {id, concept, prompt} per object — strings or
+      arrays without these keys show as "Concept 1/2/3" placeholders.
+    - Optional config.perTurnSeconds: integer (default 30, 0 disables).
+    - Optional config.ratingScale: { min: 1, max: 5 }.
+
+    DO NOT EMIT:
+    - sourceBullets, sourcePassage, passages, sources — the renderer
+      ignores these and the activity is oral, not text-comprehension.
+    - prompts as a string or as a single-item array.
+
+    Worked example for Grade 7 Photosynthesis, playerCount 4:
+    {
+      "taskType": "narration-synthesize",
+      "title": "Teach Photosynthesis",
+      "prompt": "Each teammate teaches one part of photosynthesis aloud. Listeners rate clarity.",
+      "config": {
+        "playerCount": 4,
+        "perTurnSeconds": 30,
+        "ratingScale": { "min": 1, "max": 5 },
+        "prompts": [
+          { "id": "p1", "concept": "Chloroplast",        "prompt": "Speak for ~30s. Where does photosynthesis happen and what makes that organelle special? Use 'chlorophyll' in your answer." },
+          { "id": "p2", "concept": "Light reactions",    "prompt": "Speak for ~30s. What do plants DO with sunlight in the first stage? Mention oxygen and ATP." },
+          { "id": "p3", "concept": "Calvin cycle",       "prompt": "Speak for ~30s. How do plants make glucose from CO₂? Don't worry about every step — just the big idea." },
+          { "id": "p4", "concept": "Whole-system view",  "prompt": "Speak for ~30s. Why does photosynthesis matter for the rest of the food chain?" }
+        ]
+      }
+    }
     `,
 },
 
@@ -5748,6 +5776,7 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.SPEED_DRAW]:         2, // align to single config.word + new sanitizer/validator
   [TASK_TYPES.OPEN_TEXT]:          2, // reject placeholder prompts + un-nest
   [TASK_TYPES.HOLE_IN_ONE]:        2, // full schema in aiPrompt + ≥ 3 questions required
+  [TASK_TYPES.NARRATION_SYNTHESIZE]: 2, // aiPrompt rewritten for oral teach-back, prompt-shape sanitizer
   [TASK_TYPES.INTERVIEW]:          3, // (#38) subject affinity + strict validator + render fallback
   [TASK_TYPES.MAPIT]:              2, // (#15) graceful Submit + step-hint UX
   [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring

@@ -422,25 +422,67 @@ export function sanitizeTaskShapeByType(type, task) {
 
   // ── NARRATION_SYNTHESIZE: clamp playerCount DOWN to prompts.length (never idle players) ──
   if (type === TASK_TYPES.NARRATION_SYNTHESIZE) {
-    const cfg = t.config && typeof t.config === "object" ? t.config : null;
-    if (cfg) {
-      const prompts =
-        (Array.isArray(cfg.prompts) && cfg.prompts) ||
-        (Array.isArray(t.prompts) && t.prompts) ||
-        (Array.isArray(cfg.items) && cfg.items) ||
-        (Array.isArray(t.items) && t.items) ||
-        [];
-      const promptCount = prompts.filter((p) => {
-        if (typeof p === "string") return p.trim();
-        return p && typeof p === "object";
-      }).length;
-      const pc = Number(cfg.playerCount);
-      if (promptCount >= 1 && Number.isFinite(pc) && pc > promptCount) {
-        cfg.playerCount = Math.max(1, promptCount);
-        console.log(`[sanitize] NARRATION_SYNTHESIZE clamped playerCount ${pc} → ${cfg.playerCount} to match prompts.length`);
+    const cfg = t.config && typeof t.config === "object" ? t.config : {};
+    const promptsRaw =
+      (Array.isArray(cfg.prompts) && cfg.prompts) ||
+      (Array.isArray(t.prompts) && t.prompts) ||
+      (Array.isArray(cfg.items) && cfg.items) ||
+      (Array.isArray(t.items) && t.items) ||
+      [];
+
+    // Normalize each prompt to {id, concept, prompt} object — the renderer
+    // requires these keys. When the AI shipped a bare string, derive a
+    // short concept noun from the prompt text rather than emitting
+    // "Concept N" (which trips the placeholder-text guardrail).
+    const _deriveConcept = (text, idx) => {
+      const s = String(text || "").trim();
+      // Try "Explain X.…" → X. Falls back to the first noun-ish chunk.
+      const explainMatch = s.match(/(?:explain|describe|teach|talk about|tell us about)\s+([^.,;\n]{3,40})/i);
+      if (explainMatch) {
+        return explainMatch[1].trim().replace(/^(the|a|an)\s+/i, "").slice(0, 60);
       }
-      t.config = cfg;
+      const firstSentence = s.split(/[.,;\n]/)[0] || "";
+      const words = firstSentence.split(/\s+/).slice(0, 4).join(" ");
+      return words ? words.slice(0, 60) : `Topic ${idx + 1}`;
+    };
+    const normalized = promptsRaw
+      .map((p, i) => {
+        if (typeof p === "string") {
+          const txt = p.trim();
+          if (!txt) return null;
+          return { id: `p${i + 1}`, concept: _deriveConcept(txt, i), prompt: txt };
+        }
+        if (p && typeof p === "object") {
+          const promptTxt = String(p.prompt || p.text || "").trim().slice(0, 420);
+          if (!promptTxt) return null;
+          // If concept is missing or a generic placeholder, derive one.
+          let concept = String(p.concept || p.title || "").trim().slice(0, 80);
+          if (!concept || /^concept\s*\d+$/i.test(concept) || /^topic\s*\d+$/i.test(concept) || /^item\s*\d+$/i.test(concept)) {
+            concept = _deriveConcept(promptTxt, i);
+          }
+          return { id: String(p.id || `p${i + 1}`), concept, prompt: promptTxt };
+        }
+        return null;
+      })
+      .filter(Boolean);
+
+    if (normalized.length > 0) cfg.prompts = normalized;
+
+    // Clamp playerCount to match prompts.length.
+    const pc = Number(cfg.playerCount);
+    if (normalized.length >= 1 && Number.isFinite(pc) && pc > normalized.length) {
+      cfg.playerCount = Math.max(1, normalized.length);
+      console.log(`[sanitize] NARRATION_SYNTHESIZE clamped playerCount ${pc} → ${cfg.playerCount} to match prompts.length`);
+    } else if (normalized.length >= 1 && !Number.isFinite(pc)) {
+      cfg.playerCount = Math.max(2, Math.min(6, normalized.length));
     }
+
+    // Drop fields the renderer ignores — they only confuse AI fix attempts.
+    for (const k of ["sourceBullets", "sourcePassage", "passages", "sources"]) {
+      if (cfg[k] !== undefined) delete cfg[k];
+      if (t[k] !== undefined) delete t[k];
+    }
+    t.config = cfg;
   }
 
   // ── PHOTO / MAKE_AND_SNAP: bump time for complex drawing/build prompts ──
