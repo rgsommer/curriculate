@@ -1694,10 +1694,19 @@ export function normalizeTaskByType(taskType, rawTask) {
       task.items = Array.isArray(task.items)
         ? task.items
             .map((it, i) => {
+              // Plain-string items (the most common AI shape — "AI Tools",
+              // "Movement", etc.) used to collapse to empty here because
+              // the spread of a string gives {} with no text. Handle them
+              // first so the renderer actually receives the data.
+              if (typeof it === "string") {
+                const txt = it.trim();
+                return txt ? { id: `mm-${i + 1}`, text: txt } : null;
+              }
               const obj = isObject(it) ? { ...it } : {};
-              return { id: ensureId(obj, i), text: asNonEmptyString(obj.text, asNonEmptyString(obj.prompt, "")) };
+              const text = asNonEmptyString(obj.text, asNonEmptyString(obj.prompt, asNonEmptyString(obj.label, "")));
+              return text ? { id: ensureId(obj, i), text } : null;
             })
-            .filter((x) => x.text)
+            .filter(Boolean)
         : [];
 
       // NOTE: Do NOT pad with placeholder text like "Concept N" — that triggers

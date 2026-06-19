@@ -5786,6 +5786,7 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.HOLE_IN_ONE]:        2, // full schema in aiPrompt + ≥ 3 questions required
   [TASK_TYPES.NARRATION_SYNTHESIZE]: 2, // aiPrompt rewritten for oral teach-back, prompt-shape sanitizer
   [TASK_TYPES.ROLE_PLAY_DECK]:       2, // shell + aiPrompt + validator realigned to renderer's {name,role,characteristics,gender}
+  [TASK_TYPES.MIND_MAPPER]:          2, // normalize accepts plain-string items so they survive into the renderer
   [TASK_TYPES.INTERVIEW]:          3, // (#38) subject affinity + strict validator + render fallback
   [TASK_TYPES.MAPIT]:              2, // (#15) graceful Submit + step-hint UX
   [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring
