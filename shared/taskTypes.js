@@ -4759,10 +4759,56 @@ config: {
     Generate ONE Curriculate task object with taskType "hole-in-one".
 
     Hard requirements:
-    - Output ONLY a single JSON object.
-    - config.board MUST be solvable with the rails the questionBank awards.
-    - config.questionBank MUST have 8-15 curriculum questions matched to the lesson topic.
-    - Theme the board to match the lesson (e.g. cannonball-into-fort for history, electron-through-circuit for physics).
+    - Output ONLY a single JSON object (no markdown).
+    - Required root fields: taskType, title (3-7 words tied to the topic), prompt.
+
+    REQUIRED config.board:
+    - width: integer 8-16 (default 10).
+    - height: integer 10-20 (default 14).
+    - gridSize: integer 20-40 (default 26 px/cell — affects ball physics).
+    - startPosition: { x: int 0..width-1, y: int 0..height-1 } — top-left zone, e.g. {x:1, y:1}.
+    - holePosition: { x: int 0..width-1, y: int 0..height-1 } — bottom-right zone, e.g. {x: width-2, y: height-2}.
+      MUST differ from startPosition by at least 4 cells in BOTH x and y.
+    - obstacles: array of 0-4 pre-placed rails as { type, x, y, orientation? }.
+      type ∈ {"wall","ramp"}, orientation ∈ {"h","v"} when relevant.
+      The board MUST be solvable WITHOUT any extra rails purchased (so a team
+      that earns zero coins can still tilt the ball home).
+
+    REQUIRED config.questionBank: array of 4-8 curriculum questions.
+    Each question: { id: "q1", prompt: "string", correctAnswer: "string", reward: 1-3 }.
+    The prompt MUST name the unit topic — no generic "Solve the problem".
+    Mix question types (recall + apply + analyze). Vary reward values.
+
+    Optional config.economy: { straightRailCost:3, curvedRailCost:5, bumperCost:4 }.
+    Optional config.scoring: { successPoints:10, playPoints:1 }.
+
+    THEME the board to the lesson:
+    - History: cannonball-into-fort, ship-to-harbor, soldier-to-objective.
+    - Science: electron-through-circuit, water-droplet-through-cloud,
+      seed-into-soil, photon-to-leaf.
+    - Math: solving a maze of operations where the hole is the answer cell.
+    - English: word-quest-to-destination, character-finds-resolution.
+
+    Worked example for Grade 7 War of 1812:
+    {
+      "taskType": "hole-in-one",
+      "title": "Cannonball to Fort McHenry",
+      "prompt": "Answer questions about the War of 1812 to earn rails, then tilt your cannonball into Fort McHenry!",
+      "config": {
+        "board": {
+          "width": 10, "height": 14, "gridSize": 26,
+          "startPosition": { "x": 1, "y": 1 },
+          "holePosition":  { "x": 8, "y": 12 },
+          "obstacles": []
+        },
+        "questionBank": [
+          { "id":"q1", "prompt":"Which country was the British Empire's main rival on the high seas in 1812?", "correctAnswer":"France", "reward":1 },
+          { "id":"q2", "prompt":"What was the name of the song inspired by the bombardment of Fort McHenry?", "correctAnswer":"The Star-Spangled Banner", "reward":2 },
+          { "id":"q3", "prompt":"Who was the British general killed at Queenston Heights?", "correctAnswer":"Sir Isaac Brock", "reward":2 },
+          { "id":"q4", "prompt":"In what year did the Treaty of Ghent end the War of 1812?", "correctAnswer":"1814", "reward":1 }
+        ]
+      }
+    }
     `,
   },
 

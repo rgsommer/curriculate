@@ -3869,9 +3869,15 @@ export function validateTaskByType(taskType, task) {
         const hx = Number(cfg.board.holePosition.x), hy = Number(cfg.board.holePosition.y);
         if (sx === hx && sy === hy) errors.push("hole-in-one start and hole cannot be the same cell");
       }
-      if (Array.isArray(cfg.questionBank) && cfg.questionBank.length > 0) {
+      // questionBank drives the "earn" phase — without it the renderer
+      // skips Earn entirely and the student can never buy rails. Require ≥ 3
+      // questions; each must have a prompt + correctAnswer.
+      if (!Array.isArray(cfg.questionBank) || cfg.questionBank.length < 3) {
+        errors.push(`hole-in-one config.questionBank must have ≥ 3 questions (got ${Array.isArray(cfg.questionBank) ? cfg.questionBank.length : 0}) — without this the Earn phase is empty`);
+      } else {
         cfg.questionBank.forEach((q, i) => {
           if (!q?.prompt) errors.push(`hole-in-one questionBank[${i}] missing prompt`);
+          if (!q?.correctAnswer) errors.push(`hole-in-one questionBank[${i}] missing correctAnswer`);
         });
       }
       break;
