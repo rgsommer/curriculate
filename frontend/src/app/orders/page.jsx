@@ -16,6 +16,14 @@ import { getStoredSession, storeSession, clearSession, trySso, refreshAdmin } fr
 
 const money = (n) => "$" + (Math.round((n || 0) * 100) / 100).toFixed(2);
 
+// Format a YYYY-MM-DD due date in local time (avoids the UTC off-by-one).
+const fmtDue = (d) => {
+  if (!d) return "";
+  const [y, m, day] = String(d).split("-").map(Number);
+  if (!y || !m || !day) return d;
+  return new Date(y, m - 1, day).toLocaleDateString("en-CA", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+};
+
 // Build supplier -> [{category, items[]}] from an item list, preserving order.
 function buildGroups(items) {
   const bySup = new Map();
@@ -54,6 +62,7 @@ export default function OrdersPage() {
   const [result, setResult] = useState(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [amending, setAmending] = useState(null); // current submitted order being edited, or null
+  const [dueDate, setDueDate] = useState(""); // "orders due by" date set by finance, or ""
 
   const groups = useMemo(() => buildGroups(catalog), [catalog]);
 
@@ -66,8 +75,12 @@ export default function OrdersPage() {
         setSession(stored.session); setEmail(stored.email); setIsAdmin(stored.isAdmin);
         if (stored.name) setTeacherName(stored.name);
         setStage("order");
-        // Refresh admin status live so Setup/Summary links reflect current config.
-        refreshAdmin(stored.session).then((f) => { if (!cancelled && f) setIsAdmin(f.isAdmin); });
+        // Refresh live: update Setup/Summary links, and if the session expired send to sign-in.
+        refreshAdmin(stored.session).then((f) => {
+          if (cancelled || !f) return;
+          if (f.valid === false) { clearSession(); setSession(""); setIsAdmin(false); setStage("email"); return; }
+          setIsAdmin(f.isAdmin);
+        });
         return;
       }
       const sso = await trySso();
@@ -87,7 +100,7 @@ export default function OrdersPage() {
   useEffect(() => {
     fetch("/api/orders/catalog")
       .then((r) => r.json())
-      .then((j) => { if (Array.isArray(j.items) && j.items.length) setCatalog(j.items); })
+      .then((j) => { if (Array.isArray(j.items) && j.items.length) setCatalog(j.items); if (j && "dueDate" in j) setDueDate(j.dueDate || ""); })
       .catch(() => {});
   }, []);
 
@@ -338,6 +351,12 @@ export default function OrdersPage() {
         {/* ---- ORDER ---- */}
         {stage === "order" && (
           <div>
+            {dueDate && (
+              <div className="mb-4 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 px-4 py-2 text-sm font-medium flex items-center gap-2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                Orders due by {fmtDue(dueDate)}
+              </div>
+            )}
             {amending && (
               <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 text-sm">
                 You have an order already submitted{amending.updatedAt ? ` on ${new Date(amending.updatedAt).toLocaleDateString("en-CA", { dateStyle: "medium" })}` : ""}{amending.revision > 1 ? ` (revision ${amending.revision})` : ""}. It's loaded below — change quantities, add or remove items, then <strong>Update order</strong> to replace it.

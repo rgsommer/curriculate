@@ -25,12 +25,18 @@ export default function AdminGate({ title, children }) {
     (async () => {
       const stored = getStoredSession();
       if (stored) {
-        setSession(stored.session); setEmail(stored.email);
-        // Re-check admin live so a just-added 2nd finance person isn't denied by a stale cache.
+        // Re-check admin live: catches an expired session (→ re-login) and a
+        // just-added 2nd finance person (→ granted) instead of trusting the cache.
         const fresh = await refreshAdmin(stored.session);
         if (cancelled) return;
-        const admin = fresh ? fresh.isAdmin : stored.isAdmin;
-        setStage(admin ? "ok" : "denied"); return;
+        if (fresh && fresh.valid === false) {
+          // Session expired/invalid — fall through to SSO/login below.
+          clearSession();
+        } else {
+          setSession(stored.session); setEmail(stored.email);
+          const admin = fresh && fresh.valid ? fresh.isAdmin : stored.isAdmin;
+          setStage(admin ? "ok" : "denied"); return;
+        }
       }
       const sso = await trySso();
       if (cancelled) return;

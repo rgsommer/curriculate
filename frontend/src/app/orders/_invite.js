@@ -1,8 +1,20 @@
 // Builds the "invite teachers" email finance copies to their clipboard. Returns
 // a subject + an HTML body (rich paste into Outlook/Gmail) + a plain-text fallback.
 
-export function buildInviteEmail({ schoolName = "our school", financeName = "Finance", url = "https://www.curriculate.net/orders" } = {}) {
-  const subject = `Order your classroom & office supplies online`;
+function fmtDue(d) {
+  if (!d) return "";
+  const [y, m, day] = String(d).split("-").map(Number);
+  if (!y || !m || !day) return d;
+  return new Date(y, m - 1, day).toLocaleDateString("en-CA", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+export function buildInviteEmail({ schoolName = "our school", financeName = "Finance", url = "https://www.curriculate.net/orders", dueDate = "" } = {}) {
+  const due = fmtDue(dueDate);
+  const subject = due
+    ? `Order your classroom & office supplies online — due ${due}`
+    : `Order your classroom & office supplies online`;
+  const dueHtml = due ? `<p style="margin:14px 0 0;padding:8px 12px;background:#eef2ff;border-radius:6px;color:#3730a3"><strong>Please submit your order by ${due}.</strong></p>` : "";
+  const dueText = due ? `\nPlease submit your order by ${due}.\n` : "";
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1f2937;font-size:15px;line-height:1.55;max-width:620px">
   <p>Hi team,</p>
@@ -18,6 +30,7 @@ export function buildInviteEmail({ schoolName = "our school", financeName = "Fin
     <li>Put your name in, then click <strong>Send order</strong>.</li>
   </ol>
   <p style="margin:14px 0 6px"><strong>What happens next:</strong> you'll get an email confirmation of exactly what you ordered, and ${financeName} receives your order automatically and places it with the suppliers. Order anytime — you can submit more than once.</p>
+  ${dueHtml}
   <p style="margin:18px 0 4px">Thanks,<br>${financeName}<br><span style="color:#6b7280">${schoolName}</span></p>
 </div>`;
 
@@ -36,7 +49,7 @@ export function buildInviteEmail({ schoolName = "our school", financeName = "Fin
     `  3. Put your name in, then click "Send order".`,
     ``,
     `What happens next: you'll get an email confirmation of exactly what you ordered, and ${financeName} receives your order automatically and places it with the suppliers. Order anytime — you can submit more than once.`,
-    ``,
+    dueText,
     `Thanks,`,
     `${financeName}`,
     `${schoolName}`,

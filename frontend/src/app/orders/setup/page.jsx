@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from "react";
 import AdminGate from "../_AdminGate";
 import { buildInviteEmail } from "../_invite";
+import { clearSession } from "../_session";
 
 const ORDER_URL = "https://www.curriculate.net/orders";
 
@@ -25,6 +26,7 @@ function SetupForm({ session }) {
   const [financeNotify, setFinanceNotify] = useState(true);
   const [financeNotify2, setFinanceNotify2] = useState(true);
   const [schoolName, setSchoolName] = useState("");
+  const [dueDate, setDueDate] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -52,7 +54,7 @@ function SetupForm({ session }) {
       setFinanceEmail(j.financeEmail || ""); setFinanceName(j.financeName || "");
       setFinanceEmail2(j.financeEmail2 || ""); setFinanceName2(j.financeName2 || "");
       setFinanceNotify(j.financeNotify !== false); setFinanceNotify2(j.financeNotify2 !== false);
-      setSchoolName(j.schoolName || ""); setLoaded(true);
+      setSchoolName(j.schoolName || ""); setDueDate(j.dueDate || ""); setLoaded(true);
     }).catch(() => setLoaded(true));
     loadCatalogInfo();
   }, []);
@@ -68,8 +70,15 @@ function SetupForm({ session }) {
     try {
       const r = await fetch("/api/orders/config", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session, financeEmail: financeEmail.trim(), financeName: financeName.trim(), financeEmail2: financeEmail2.trim(), financeName2: financeName2.trim(), financeNotify, financeNotify2, schoolName: schoolName.trim() }),
+        body: JSON.stringify({ session, financeEmail: financeEmail.trim(), financeName: financeName.trim(), financeEmail2: financeEmail2.trim(), financeName2: financeName2.trim(), financeNotify, financeNotify2, schoolName: schoolName.trim(), dueDate }),
       });
+      if (r.status === 401) {
+        // Session expired — drop the stale session and reload to sign in again.
+        clearSession();
+        setErr("Your sign-in expired. Reloading so you can sign in again…");
+        setTimeout(() => window.location.reload(), 1200);
+        return;
+      }
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Could not save.");
       setMsg("Saved."); if (j.financeEmail) setFinanceEmail(j.financeEmail);
@@ -106,7 +115,7 @@ function SetupForm({ session }) {
   }
 
   async function copyInvite() {
-    const { html, text } = buildInviteEmail({ schoolName, financeName, url: ORDER_URL });
+    const { html, text } = buildInviteEmail({ schoolName, financeName, url: ORDER_URL, dueDate });
     try {
       if (navigator.clipboard && window.ClipboardItem) {
         await navigator.clipboard.write([
@@ -142,7 +151,7 @@ function SetupForm({ session }) {
 
   if (!loaded) return <p className="text-sm text-slate-400">Loading settings…</p>;
 
-  const invitePreview = buildInviteEmail({ schoolName, financeName, url: ORDER_URL });
+  const invitePreview = buildInviteEmail({ schoolName, financeName, url: ORDER_URL, dueDate });
 
   return (
     <div>
@@ -188,6 +197,13 @@ function SetupForm({ session }) {
           <label className="block text-sm font-medium text-slate-700 mb-1">School name (shown in emails)</label>
           <input value={schoolName} onChange={(e) => setSchoolName(e.target.value)}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 mb-4 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+
+          <label className="block text-sm font-medium text-slate-700 mb-1">Orders due by <span className="font-normal text-slate-400">(optional — shown to teachers)</span></label>
+          <div className="flex items-center gap-2 mb-4">
+            <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+            {dueDate && <button type="button" onClick={() => setDueDate("")} className="text-sm text-slate-500 hover:text-red-600">Clear</button>}
+          </div>
 
           <button disabled={busy} className="rounded-lg bg-indigo-600 text-white px-4 py-2 text-sm font-medium hover:bg-indigo-700 disabled:opacity-50">
             {busy ? "Saving…" : "Save settings"}

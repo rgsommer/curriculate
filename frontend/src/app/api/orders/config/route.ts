@@ -52,6 +52,12 @@ export async function POST(req: Request) {
   // Per-person "receive order emails" toggles.
   if (body.financeNotify !== undefined) patch.financeNotify = !!body.financeNotify;
   if (body.financeNotify2 !== undefined) patch.financeNotify2 = !!body.financeNotify2;
+  // Orders due-by date — accept YYYY-MM-DD or empty (clears it).
+  if (body.dueDate !== undefined) {
+    const d = String(body.dueDate).trim();
+    if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) return NextResponse.json({ error: "Enter a valid due date." }, { status: 400 });
+    patch.dueDate = d;
+  }
   if (body.schoolName !== undefined) {
     const sn = String(body.schoolName).trim().slice(0, 120);
     if (sn) patch.schoolName = sn;

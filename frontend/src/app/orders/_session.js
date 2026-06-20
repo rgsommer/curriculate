@@ -42,17 +42,20 @@ export function getCurriculateToken() {
 
 // Re-check admin status live (config may have changed since login, e.g. this
 // person was just added as a 2nd finance account). Updates the cached flag.
+// Returns { valid:true, isAdmin, email } | { valid:false } (session expired/invalid)
+// | null (transient/network error — keep the cached flag).
 export async function refreshAdmin(session) {
-  if (!session) return null;
+  if (!session) return { valid: false };
   try {
     const r = await fetch("/api/orders/whoami?session=" + encodeURIComponent(session));
-    if (!r.ok) return null;
+    if (r.status === 401) return { valid: false }; // session expired/invalid
+    if (!r.ok) return null; // server hiccup — don't sign the user out
     const j = await r.json();
-    if (!j.ok) return null;
+    if (!j.ok) return { valid: false };
     try { localStorage.setItem("orders_isAdmin", j.isAdmin ? "1" : "0"); } catch {}
-    return { email: j.email, isAdmin: !!j.isAdmin };
+    return { valid: true, email: j.email, isAdmin: !!j.isAdmin };
   } catch {
-    return null;
+    return null; // network error — keep cached
   }
 }
 

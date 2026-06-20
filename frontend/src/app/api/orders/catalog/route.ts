@@ -11,7 +11,8 @@ export const runtime = "nodejs";
 
 export async function GET() {
   const c = await getActiveCatalog();
-  return NextResponse.json({ items: c.items, source: c.source, updatedAt: c.updatedAt });
+  const cfg = await getConfig();
+  return NextResponse.json({ items: c.items, source: c.source, updatedAt: c.updatedAt, dueDate: cfg.dueDate || "" });
 }
 
 // Map a row's loosely-named headers to our fields.

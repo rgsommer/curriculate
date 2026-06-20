@@ -46,6 +46,8 @@ export type OrdersConfig = {
   financeNotify: boolean;
   financeNotify2: boolean;
   schoolName: string;
+  // Optional "orders due by" date (YYYY-MM-DD), shown to teachers; "" = none.
+  dueDate: string;
 };
 
 export async function getConfig(): Promise<OrdersConfig> {
@@ -58,6 +60,7 @@ export async function getConfig(): Promise<OrdersConfig> {
     financeNotify: true,
     financeNotify2: true,
     schoolName: process.env.ORDERS_SCHOOL_NAME || DEFAULT_SCHOOL_NAME,
+    dueDate: "",
   };
   if (!db) return fallback;
   const doc = await db.collection("bcs_config").findOne({ _id: "main" as any });
@@ -69,6 +72,7 @@ export async function getConfig(): Promise<OrdersConfig> {
     financeNotify: (doc?.financeNotify ?? fallback.financeNotify) as boolean,
     financeNotify2: (doc?.financeNotify2 ?? fallback.financeNotify2) as boolean,
     schoolName: (doc?.schoolName as string) || fallback.schoolName,
+    dueDate: (doc?.dueDate as string) ?? fallback.dueDate,
   };
 }
 
