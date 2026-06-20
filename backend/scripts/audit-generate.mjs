@@ -133,6 +133,7 @@ console.log(JSON.stringify({
   type, subject, grade, topic,
   validation: { ok: v.ok, errors: v.errors || [] },
   playability: { playable: p.playable, issues: p.issues || [] },
+  contentWarnings: n?._contentWarnings || [],
   task: n,
   elapsedMs: Date.now() - t0,
   generationElapsedMs: tGen,

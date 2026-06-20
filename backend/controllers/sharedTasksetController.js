@@ -1686,6 +1686,21 @@ export async function regenerateSingleTask({
         }
       }
 
+      // Content-quality verification (template path). Soft — attaches
+      // warnings to task._contentWarnings; never throws. Only runs on
+      // the CONTENT_VERIFY_TYPES whitelist; everything else is a no-op.
+      try {
+        const { verifyTaskContent } = await import("../services/contentVerifier.js");
+        const v = await verifyTaskContent(normalized);
+        if (v?.warnings?.length > 0) {
+          normalized._contentWarnings = v.warnings;
+          const counts = v.warnings.reduce((acc, w) => { acc[w.severity] = (acc[w.severity] || 0) + 1; return acc; }, {});
+          console.log(`[content-verify] ${allowedType}: ${v.warnings.length} warnings — ${JSON.stringify(counts)}`);
+        }
+      } catch (vErr) {
+        console.warn(`[content-verify] ${allowedType} verifier crashed (failing open):`, vErr?.message);
+      }
+
       return normalized;
     } catch (templateErr) {
       console.warn(`[Template] ${allowedType} template generation failed, falling back to freeform: ${templateErr.message}`);
@@ -1810,6 +1825,20 @@ export async function regenerateSingleTask({
       if (!isDebatable) {
         throw new Error(`[Upvote Debatability] Proposition is not genuinely debatable — a thoughtful student would not be able to defend BOTH sides: "${prop}"`);
       }
+    }
+
+    // 5) Content-quality verification (freeform path). Same soft-warning
+    // behaviour as the template path above.
+    try {
+      const { verifyTaskContent } = await import("../services/contentVerifier.js");
+      const v = await verifyTaskContent(normalized);
+      if (v?.warnings?.length > 0) {
+        normalized._contentWarnings = v.warnings;
+        const counts = v.warnings.reduce((acc, w) => { acc[w.severity] = (acc[w.severity] || 0) + 1; return acc; }, {});
+        console.log(`[content-verify] ${allowedType}: ${v.warnings.length} warnings — ${JSON.stringify(counts)}`);
+      }
+    } catch (vErr) {
+      console.warn(`[content-verify] ${allowedType} verifier crashed (failing open):`, vErr?.message);
     }
 
   return normalized;
