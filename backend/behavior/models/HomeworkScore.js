@@ -18,6 +18,9 @@ const HomeworkScoreSchema = new mongoose.Schema(
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorStudent", required: true, index: true },
 
     score: { type: Number, default: null }, // null = outstanding / not yet shown
+    // Excused (teacher tapped "E", e.g. absent): dropped from totals + averages
+    // entirely — neither counted as 0 nor toward the denominator.
+    excused: { type: Boolean, default: false },
     manual: { type: Boolean, default: false }, // set by a double-tap edit
     scoredByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher" },
     scoredAt: { type: Date, default: null },

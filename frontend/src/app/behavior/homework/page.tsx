@@ -18,7 +18,7 @@ const todayLocal = () => {
 };
 
 type Assignment = { _id: string; classGroup: string; subject: string; type: string; description: string; denom: number; date: string };
-type GScore = { assignmentId: string; studentId: string; score: number | null; manual?: boolean; messagedAt?: string | null; discussion?: { plus: number; minus: number; absent: boolean } };
+type GScore = { assignmentId: string; studentId: string; score: number | null; manual?: boolean; excused?: boolean; messagedAt?: string | null; discussion?: { plus: number; minus: number; absent: boolean } };
 type GStudent = { _id: string; name: string; lastName?: string; firstName?: string };
 
 export default function HomeworkPage() {
@@ -42,6 +42,7 @@ export default function HomeworkPage() {
   if (err) return <p className="text-red-600">{err}</p>;
 
   const subjects: string[] = me?.config?.homework?.subjects || ["Math", "History", "Geography", "CE"];
+  const currentTerm: number = me?.config?.homework?.currentTerm ?? 0;
 
   return (
     <div className="space-y-4">
@@ -51,16 +52,16 @@ export default function HomeworkPage() {
       </div>
       {classes.length === 0 && <p className="text-sm text-slate-400">No classes yet — import a roster in Setup.</p>}
       {classes.map((c) => (
-        <ClassSection key={c} classGroup={c} subjects={subjects} onSubjectsChange={(s) => setMe((m) => (m ? { ...m, config: { ...m.config, homework: { ...m.config?.homework, subjects: s } } } : m))} />
+        <ClassSection key={c} classGroup={c} subjects={subjects} currentTerm={currentTerm} onSubjectsChange={(s) => setMe((m) => (m ? { ...m, config: { ...m.config, homework: { ...m.config?.homework, subjects: s } } } : m))} />
       ))}
     </div>
   );
 }
 
-function ClassSection({ classGroup, subjects, onSubjectsChange }: { classGroup: string; subjects: string[]; onSubjectsChange: (s: string[]) => void }) {
+function ClassSection({ classGroup, subjects, currentTerm, onSubjectsChange }: { classGroup: string; subjects: string[]; currentTerm: number; onSubjectsChange: (s: string[]) => void }) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<{ assignments: Assignment[]; students: GStudent[]; scores: GScore[] } | null>(null);
-  const [panel, setPanel] = useState<"" | "new" | "averages" | "outstanding">("");
+  const [panel, setPanel] = useState<"" | "new" | "report" | "outstanding">("");
   const [openAssignment, setOpenAssignment] = useState<string | null>(null);
   const [discussion, setDiscussion] = useState<Assignment | null>(null);
 
@@ -93,7 +94,7 @@ function ClassSection({ classGroup, subjects, onSubjectsChange }: { classGroup: 
         {open && (
           <div className="flex flex-wrap gap-1.5 text-xs">
             <button onClick={() => setPanel(panel === "new" ? "" : "new")} className="rounded-lg bg-slate-900 px-2.5 py-1 text-white">+ Assignment</button>
-            <button onClick={() => setPanel(panel === "averages" ? "" : "averages")} className="rounded-lg border border-slate-300 px-2.5 py-1">Averages</button>
+            <button onClick={() => setPanel(panel === "report" ? "" : "report")} className="rounded-lg border border-slate-300 px-2.5 py-1">Averages / report</button>
             <button onClick={() => setPanel(panel === "outstanding" ? "" : "outstanding")} className="rounded-lg border border-slate-300 px-2.5 py-1">Outstanding</button>
           </div>
         )}
@@ -105,9 +106,8 @@ function ClassSection({ classGroup, subjects, onSubjectsChange }: { classGroup: 
             <NewAssignment classGroup={classGroup} subjects={subjects} onSubjectsChange={onSubjectsChange}
               onCreated={() => { setPanel(""); load(); }} />
           )}
-          {panel === "averages" && <AveragesPanel classGroup={classGroup} />}
+          {panel === "report" && <ReportPanel classGroup={classGroup} subjects={subjects} currentTerm={currentTerm} />}
           {panel === "outstanding" && <OutstandingPanel classGroup={classGroup} onPosted={load} />}
-          {panel === "" && <ExportBar classGroup={classGroup} subjects={subjects} />}
 
           {!data ? (
             <p className="mt-3 text-sm text-slate-400">Loading…</p>
@@ -161,6 +161,11 @@ function Grid({ assignment, students, scoreFor, onChanged }: { assignment: Assig
       onChanged();
     } finally { setBusy(""); }
   }
+  async function toggleExcused(studentId: string, on: boolean) {
+    setBusy(studentId);
+    try { await api("/homework/score", { body: { assignmentId: assignment._id, studentId, excused: on } }); onChanged(); }
+    finally { setBusy(""); }
+  }
   function onTap(studentId: string, current: number | null) {
     const t = tapTimers.current;
     if (t[studentId]) { clearTimeout(t[studentId]); delete t[studentId]; editScore(studentId, current); }
@@ -169,25 +174,34 @@ function Grid({ assignment, students, scoreFor, onChanged }: { assignment: Assig
 
   return (
     <div className="mt-2 rounded-lg bg-slate-50 p-2">
-      <p className="mb-1 px-1 text-[11px] text-slate-400">Tap a student to mark complete (auto-scores by lateness). Double-tap to edit. Amber = messaged about.</p>
+      <p className="mb-1 px-1 text-[11px] text-slate-400">Tap to mark complete (auto-scores by lateness). Double-tap to edit. <b>E</b> = excused (dropped from totals). Blank counts as 0 at term end. Amber = messaged about.</p>
       <ul className="divide-y divide-slate-100">
         {students.map((s) => {
           const sc = scoreFor(assignment._id, s._id);
           const score = sc?.score ?? null;
-          const messaged = !!sc?.messagedAt && score == null;
+          const excused = !!sc?.excused;
+          const messaged = !!sc?.messagedAt && score == null && !excused;
           return (
             <li key={s._id} className="flex items-center justify-between gap-2 py-1.5">
               <span className="text-sm">{s.lastName}, {s.firstName}</span>
-              <button
-                onClick={() => onTap(s._id, score)}
-                disabled={busy === s._id}
-                className={`min-w-[3.5rem] rounded-lg px-3 py-1.5 text-sm font-semibold ${
-                  score != null ? "bg-green-100 text-green-800"
-                  : messaged ? "bg-amber-100 text-amber-800"
-                  : "border border-dashed border-slate-300 text-slate-400"}`}
-              >
-                {busy === s._id ? "…" : score != null ? `${score}/${assignment.denom}` : messaged ? "sent" : "tap"}
-              </button>
+              <span className="flex items-center gap-1.5">
+                <button
+                  onClick={() => onTap(s._id, score)}
+                  disabled={busy === s._id || excused}
+                  className={`min-w-[3.5rem] rounded-lg px-3 py-1.5 text-sm font-semibold disabled:opacity-50 ${
+                    score != null ? "bg-green-100 text-green-800"
+                    : messaged ? "bg-amber-100 text-amber-800"
+                    : "border border-dashed border-slate-300 text-slate-400"}`}
+                >
+                  {busy === s._id ? "…" : excused ? "—" : score != null ? `${score}/${assignment.denom}` : messaged ? "sent" : "tap"}
+                </button>
+                <button
+                  onClick={() => toggleExcused(s._id, !excused)}
+                  disabled={busy === s._id}
+                  className={`h-8 w-8 rounded-lg text-xs font-bold ${excused ? "bg-slate-700 text-white" : "border border-slate-300 text-slate-400"}`}
+                  title="Excused (e.g. absent) — dropped from the total"
+                >E</button>
+              </span>
             </li>
           );
         })}
@@ -252,28 +266,75 @@ function NewAssignment({ classGroup, subjects, onSubjectsChange, onCreated }: { 
   );
 }
 
-function AveragesPanel({ classGroup }: { classGroup: string }) {
-  const [rows, setRows] = useState<{ subject: string; type: string; average: number; count: number }[] | null>(null);
-  useEffect(() => {
-    api<{ averages: any[] }>(`/homework/averages/${encodeURIComponent(classGroup)}`).then((d) => setRows(d.averages || [])).catch(() => setRows([]));
-  }, [classGroup]);
-  if (!rows) return <p className="text-sm text-slate-400">Loading averages…</p>;
-  if (!rows.length) return <p className="text-sm text-slate-400">No scored work yet.</p>;
+function ReportPanel({ classGroup, subjects, currentTerm }: { classGroup: string; subjects: string[]; currentTerm: number }) {
+  const [term, setTerm] = useState(String(currentTerm));
+  const [subject, setSubject] = useState(subjects[0] || "");
+  const [type, setType] = useState<"homework" | "work" | "discussion">("homework");
+  const [data, setData] = useState<{ rows: any[]; classAverage: number | null; below: number; assignmentCount: number } | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  function load() {
+    if (!subject) return;
+    setLoading(true);
+    const qs = new URLSearchParams({ classGroup, term, subject, type });
+    api<{ rows: any[]; classAverage: number | null; below: number; assignmentCount: number }>(`/homework/report?${qs}`)
+      .then(setData).catch(() => setData(null)).finally(() => setLoading(false));
+  }
+  useEffect(load, [classGroup, term, subject, type]); // eslint-disable-line
+
+  async function download() {
+    const qs = new URLSearchParams({ classGroup, term, subject, type });
+    const res = await fetch(`${API_BASE}/api/behavior/homework/export?${qs}`, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `${classGroup}_${subject}_${type}_T${Number(term) + 1}.csv`; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  const totalOutstanding = (data?.rows || []).reduce((n, r) => n + (r.outstanding || 0), 0);
+
   return (
     <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-      <p className="mb-1 text-sm font-medium text-slate-700">Class averages (out of 10)</p>
-      <table className="w-full text-sm">
-        <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Subject</th><th>Type</th><th className="text-right">Avg</th><th className="text-right">#</th></tr></thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={i} className="border-t border-slate-100">
-              <td className="py-1">{r.subject}</td><td>{typeLabel(r.type)}</td>
-              <td className="text-right font-semibold tabular-nums">{r.average}</td>
-              <td className="text-right text-slate-400">{r.count}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={term} onChange={(e) => setTerm(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+          <option value="0">Term 1</option><option value="1">Term 2</option><option value="2">Term 3</option>
+        </select>
+        <select value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+          {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={type} onChange={(e) => setType(e.target.value as any)} className="rounded border border-slate-300 px-2 py-1 text-sm">
+          {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </select>
+        <button onClick={download} className="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1 text-sm">Export CSV (Edsby)</button>
+      </div>
+
+      {loading || !data ? (
+        <p className="mt-3 text-sm text-slate-400">Loading…</p>
+      ) : data.assignmentCount === 0 ? (
+        <p className="mt-3 text-sm text-slate-400">No {typeLabel(type)} for {subject} in this term yet.</p>
+      ) : (
+        <>
+          <p className="mt-2 text-sm text-slate-600">
+            {data.assignmentCount} assignment{data.assignmentCount === 1 ? "" : "s"} · class average <span className="font-semibold">{data.classAverage ?? "—"}/10</span> · {totalOutstanding} result{totalOutstanding === 1 ? "" : "s"} outstanding (blank or &lt;{data.below})
+          </p>
+          <table className="mt-2 w-full text-sm">
+            <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Student</th><th className="text-right">Mark</th><th className="text-right">Avg/10</th><th className="text-right">Outstanding</th></tr></thead>
+            <tbody>
+              {data.rows.map((r) => (
+                <tr key={r.studentId} className="border-t border-slate-100">
+                  <td className="py-1">{r.lastName}, {r.firstName}</td>
+                  <td className="text-right tabular-nums">{r.outOf ? `${r.total}/${r.outOf}` : "—"}{r.excused ? <span className="ml-1 text-[10px] text-slate-400">({r.excused}E)</span> : null}</td>
+                  <td className={`text-right font-semibold tabular-nums ${r.average != null && r.average < data.below ? "text-red-600" : ""}`}>{r.average ?? "—"}</td>
+                  <td className={`text-right tabular-nums ${r.outstanding ? "text-amber-700" : "text-slate-400"}`}>{r.outstanding}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="mt-1 text-[11px] text-slate-400">End-of-term CSV sums this type (e.g. 8 checks → /80); blanks count as 0, “E” excused are dropped.</p>
+        </>
+      )}
     </div>
   );
 }
@@ -321,34 +382,6 @@ function OutstandingPanel({ classGroup, onPosted }: { classGroup: string; onPost
         <button onClick={() => post(true)} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">Send to whole class</button>
       </div>
       <p className="mt-1 text-[11px] text-slate-400">Whole-class skips anyone messaged recently. Message says they’ve fallen behind and to show work in person; partial credit if shown within 7 days.</p>
-    </div>
-  );
-}
-
-function ExportBar({ classGroup, subjects }: { classGroup: string; subjects: string[] }) {
-  const [subject, setSubject] = useState("");
-  const [type, setType] = useState("");
-  const [term, setTerm] = useState("");
-  async function download() {
-    const qs = new URLSearchParams({ classGroup });
-    if (subject) qs.set("subject", subject);
-    if (type) qs.set("type", type);
-    if (term) qs.set("term", term);
-    const res = await fetch(`${API_BASE}/api/behavior/homework/export?${qs}`, { headers: { Authorization: `Bearer ${getToken()}` } });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `homework-${classGroup}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  }
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-      <span>Export CSV:</span>
-      <select value={subject} onChange={(e) => setSubject(e.target.value)} className="rounded border border-slate-300 px-1.5 py-1"><option value="">All subjects</option>{subjects.map((s) => <option key={s} value={s}>{s}</option>)}</select>
-      <select value={type} onChange={(e) => setType(e.target.value)} className="rounded border border-slate-300 px-1.5 py-1"><option value="">All types</option>{TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}</select>
-      <select value={term} onChange={(e) => setTerm(e.target.value)} className="rounded border border-slate-300 px-1.5 py-1"><option value="">All terms</option><option value="0">Term 1</option><option value="1">Term 2</option><option value="2">Term 3</option></select>
-      <button onClick={download} className="rounded-lg border border-slate-300 px-2.5 py-1">Download</button>
     </div>
   );
 }

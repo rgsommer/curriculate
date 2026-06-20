@@ -132,6 +132,9 @@ const BehaviorConfigSchema = new mongoose.Schema(
       lateWeeks: { type: Number, default: 3 },
       // Don't re-send a whole-class "fallen behind" message within this many days.
       messageCooldownDays: { type: Number, default: 7 },
+      // In the term report, a result counts as "needs attention / outstanding"
+      // when it's blank OR scored below this (out of 10).
+      outstandingBelow: { type: Number, default: 6 },
     },
   },
   { timestamps: true }

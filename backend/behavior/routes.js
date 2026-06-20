@@ -3721,7 +3721,7 @@ router.get("/homework/class/:classGroup", authAny, loadMembership, async (req, r
       students: students.map((s) => ({ _id: String(s._id), name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(), lastName: s.lastName, firstName: s.firstName, externalId: s.externalId })),
       scores: scores.map((sc) => ({
         assignmentId: String(sc.assignmentId), studentId: String(sc.studentId),
-        score: sc.score, manual: sc.manual, messagedAt: sc.messagedAt, discussion: sc.discussion,
+        score: sc.score, manual: sc.manual, excused: sc.excused, messagedAt: sc.messagedAt, discussion: sc.discussion,
       })),
     });
   } catch (err) {
@@ -3740,9 +3740,20 @@ router.post("/homework/score", authAny, loadMembership, canLog, async (req, res,
     if (req.body?.clear) {
       await HomeworkScore.updateOne(
         { assignmentId: a._id, studentId },
-        { $set: { score: null, manual: false, scoredAt: null } }
+        { $set: { score: null, manual: false, scoredAt: null, excused: false } }
       );
       return res.json({ ok: true, score: null });
+    }
+
+    // Excused toggle ("E"): no grade, dropped from totals/averages.
+    if ("excused" in (req.body || {})) {
+      const excused = !!req.body.excused;
+      await HomeworkScore.updateOne(
+        { assignmentId: a._id, studentId, schoolId: req.schoolId },
+        { $set: excused ? { excused: true, score: null, manual: false, scoredAt: null } : { excused: false } },
+        { upsert: true }
+      );
+      return res.json({ ok: true, excused });
     }
 
     let score;
@@ -3755,7 +3766,7 @@ router.post("/homework/score", authAny, loadMembership, canLog, async (req, res,
     }
     await HomeworkScore.updateOne(
       { assignmentId: a._id, studentId, schoolId: req.schoolId },
-      { $set: { score, manual, scoredByTeacherId: req.membership._id, scoredAt: new Date() } },
+      { $set: { score, manual, excused: false, scoredByTeacherId: req.membership._id, scoredAt: new Date() } },
       { upsert: true }
     );
     res.json({ ok: true, score, manual });
@@ -3950,51 +3961,96 @@ router.post("/homework/outstanding/post", authAny, loadMembership, canLog, async
   }
 });
 
-// CSV export for Edsby import — one file per (term, subject, type). Columns:
-// student id + name, one per assignment (header = description + date), average.
+const HW_TYPE_LABEL = { homework: "Homework", work: "Work", discussion: "Formal Discussion" };
+
+// End-of-term summary for one (term, subject, type): each student's grade summed
+// across that type's assignments. Blanks count as 0; "E" excused work is dropped
+// from both the grade and the denominator. "outstanding" = blank OR below the
+// setup threshold (out of 10). Shared by the report view + the CSV export.
+async function buildTermReport(schoolId, { classGroup, term, subject, type }, config) {
+  const ts = (config?.homework?.termStarts || []).map((d) => new Date(d)).sort((a, b) => a - b);
+  const q = { schoolId, classGroup };
+  if (subject) q.subject = subject;
+  if (type) q.type = type;
+  if (term != null && ts[term]) q.date = { $gte: ts[term], ...(ts[term + 1] ? { $lt: ts[term + 1] } : {}) };
+  const assignments = await HomeworkAssignment.find(q).sort({ date: 1 }).lean();
+  const students = await BehaviorStudent.find({ schoolId, classGroup, active: true })
+    .select("firstName lastName preferredName externalId").sort({ lastName: 1, firstName: 1 }).lean();
+  const scores = assignments.length
+    ? await HomeworkScore.find({ assignmentId: { $in: assignments.map((a) => a._id) } }).lean()
+    : [];
+  const scMap = {};
+  for (const sc of scores) scMap[`${sc.assignmentId}|${sc.studentId}`] = sc;
+  const below = config?.homework?.outstandingBelow ?? 6;
+
+  const rows = students.map((s) => {
+    let total = 0, outOf = 0, outstanding = 0, excused = 0;
+    for (const a of assignments) {
+      const sc = scMap[`${a._id}|${s._id}`];
+      const denom = a.denom || 10;
+      if (sc?.excused) { excused += 1; continue; }
+      outOf += denom;
+      const raw = sc?.score; // null/undefined = blank → counts as 0
+      total += raw == null ? 0 : raw;
+      const score10 = raw == null ? null : (raw / denom) * 10;
+      if (raw == null || score10 < below) outstanding += 1;
+    }
+    return {
+      studentId: String(s._id), name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(),
+      firstName: s.firstName, lastName: s.lastName, externalId: s.externalId,
+      total: round1(total), outOf, average: outOf > 0 ? round1((total / outOf) * 10) : null,
+      outstanding, excused,
+    };
+  });
+  const graded = rows.filter((r) => r.average != null);
+  const classAverage = graded.length ? round1(graded.reduce((p, r) => p + r.average, 0) / graded.length) : null;
+  return { assignmentCount: assignments.length, rows, classAverage, below };
+}
+
+// Per-student term report (list of averages + outstanding counts). Term defaults
+// to the current term from config.
+router.get("/homework/report", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const term = req.query.term !== undefined && req.query.term !== "" ? Number(req.query.term) : (config?.homework?.currentTerm ?? 0);
+    const r = await buildTermReport(req.schoolId, {
+      classGroup: String(req.query.classGroup || "").trim(),
+      term,
+      subject: String(req.query.subject || "").trim(),
+      type: String(req.query.type || "").trim(),
+    }, config);
+    res.json({ ok: true, term, ...r });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// End-of-term CSV in Edsby's import shape — one file per (term, subject, type),
+// one summed row per student (grade out of the type's combined denominator).
 router.get("/homework/export", authAny, loadMembership, async (req, res, next) => {
   try {
     const classGroup = String(req.query.classGroup || "").trim();
     const subject = String(req.query.subject || "").trim();
     const type = String(req.query.type || "").trim();
-    const term = req.query.term !== undefined && req.query.term !== "" ? Number(req.query.term) : null;
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    const ts = (config?.homework?.termStarts || []).map((d) => new Date(d)).sort((a, b) => a - b);
-
-    const q = { schoolId: req.schoolId, classGroup };
-    if (subject) q.subject = subject;
-    if (type) q.type = type;
-    if (term != null && ts[term]) {
-      q.date = { $gte: ts[term], ...(ts[term + 1] ? { $lt: ts[term + 1] } : {}) };
-    }
-    const assignments = await HomeworkAssignment.find(q).sort({ date: 1 }).lean();
-    const students = await BehaviorStudent.find({ schoolId: req.schoolId, classGroup, active: true })
-      .select("firstName lastName externalId").sort({ lastName: 1, firstName: 1 }).lean();
-    const scores = assignments.length
-      ? await HomeworkScore.find({ assignmentId: { $in: assignments.map((a) => a._id) } }).lean()
-      : [];
-    const scoreMap = {};
-    for (const sc of scores) scoreMap[`${sc.assignmentId}|${sc.studentId}`] = sc.score;
+    const term = req.query.term !== undefined && req.query.term !== "" ? Number(req.query.term) : (config?.homework?.currentTerm ?? 0);
+    const r = await buildTermReport(req.schoolId, { classGroup, term, subject, type }, config);
 
     const esc = (v) => {
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const header = ["StudentID", "Last", "First", ...assignments.map((a) => `${a.description || a.type} (${new Date(a.date).toLocaleDateString("en-CA")}) /${a.denom || 10}`), "Average/10"];
-    const rows = [header.map(esc).join(",")];
-    for (const s of students) {
-      const cells = assignments.map((a) => {
-        const v = scoreMap[`${a._id}|${s._id}`];
-        return v == null ? "" : v;
-      });
-      const pcts = assignments.map((a, i) => (cells[i] === "" ? null : (Number(cells[i]) / (a.denom || 10)) * 10)).filter((x) => x != null);
-      const avg = pcts.length ? round1(pcts.reduce((p, c) => p + c, 0) / pcts.length) : "";
-      rows.push([s.externalId || "", s.lastName || "", s.firstName || "", ...cells, avg].map(esc).join(","));
+    const assessmentName = `${classGroup} ${subject} ${HW_TYPE_LABEL[type] || type}`.replace(/\s+/g, " ").trim();
+    const today = new Date().toISOString().slice(0, 10);
+    const out = [["Student ID", "First Name", "Last Name", "Assessment Name", "Date", "Grade", "Out Of", "Comment"].join(",")];
+    for (const row of r.rows) {
+      if (row.outOf <= 0) continue; // no applicable (non-excused) work → nothing to import
+      out.push([row.externalId || "", row.firstName || "", row.lastName || "", assessmentName, today, row.total, row.outOf, ""].map(esc).join(","));
     }
-    const fname = `homework-${classGroup}${subject ? "-" + subject : ""}${type ? "-" + type : ""}${term != null ? "-T" + (term + 1) : ""}.csv`.replace(/\s+/g, "_");
+    const fname = `${assessmentName} T${term + 1}.csv`.replace(/[^\w.-]+/g, "_");
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
-    res.send(rows.join("\n"));
+    res.send(out.join("\n"));
   } catch (err) {
     next(err);
   }

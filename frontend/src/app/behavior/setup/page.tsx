@@ -439,6 +439,7 @@ function HomeworkSettings({ config }: { config: any }) {
   const [currentTerm, setCurrentTerm] = useState<number>(hw.currentTerm ?? 0);
   const [lateWeeks, setLateWeeks] = useState<number>(hw.lateWeeks ?? 3);
   const [cooldown, setCooldown] = useState<number>(hw.messageCooldownDays ?? 7);
+  const [below, setBelow] = useState<number>(hw.outstandingBelow ?? 6);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -448,7 +449,7 @@ function HomeworkSettings({ config }: { config: any }) {
       const termStarts = terms.filter((t) => t).map((t) => new Date(t).toISOString());
       await api("/config", {
         method: "PUT",
-        body: { homework: { ...hw, termStarts, currentTerm: Number(currentTerm), lateWeeks: Number(lateWeeks), messageCooldownDays: Number(cooldown) } },
+        body: { homework: { ...hw, termStarts, currentTerm: Number(currentTerm), lateWeeks: Number(lateWeeks), messageCooldownDays: Number(cooldown), outstandingBelow: Number(below) } },
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
@@ -478,6 +479,9 @@ function HomeworkSettings({ config }: { config: any }) {
         </Field>
         <Field label="Resend cooldown (days)">
           <input type="number" min={1} value={cooldown} onChange={(e) => setCooldown(Number(e.target.value))} className={inputCls} />
+        </Field>
+        <Field label="“Outstanding” if below (/10)">
+          <input type="number" min={1} max={10} value={below} onChange={(e) => setBelow(Number(e.target.value))} className={inputCls} />
         </Field>
       </div>
       <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{saved ? "Saved ✓" : "Save homework settings"}</button>
