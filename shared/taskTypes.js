@@ -1408,17 +1408,33 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     - prompt: student-facing instructions (e.g., "Read this paragraph and find the errors...")
     - title: short title (3-7 words)
 
-    IMPORTANT — Index counting procedure:
-    1. Write the passage first.
-    2. Split it by whitespace into an array.
-    3. For each error, find the EXACT word (including any trailing punctuation) and record its 0-based position.
-    4. Include the "word" field with the exact erroneous word so we can verify the index.
+    IMPORTANT — Index counting procedure (FOLLOW EXACTLY):
 
-    Example errors array:
+    1. Write the passage as one continuous string FIRST.
+    2. Mentally split it by whitespace — DO NOT skip punctuation tokens.
+       The split is passage.split(/\\s+/), so "process," counts as ONE
+       word at one index (the comma stays attached).
+    3. NUMBER each token starting from 0. Hyphenated compounds like
+       "well-known" count as ONE word.
+    4. For EACH error, write out the exact erroneous word from the
+       passage (with trailing punctuation if any), then count its
+       0-based index.
+    5. Before returning, VERIFY: for every error e, your passage's
+       e.wordIndex-th whitespace-split token must equal e.word exactly
+       (case-insensitive, including trailing punctuation).
+
+    The sanitizer drops any error whose wordIndex points at the
+    correct word OR at an unrelated word. If too many drop, the task
+    is rejected and regenerated — costs you tokens. Be precise.
+
+    Example errors array (matching passage "Photosynthesis is the proccess by which plants converts sunlight"):
     [
-      { "wordIndex": 3, "word": "proccess", "type": "typo", "correct": "process" },
+      { "wordIndex": 3, "word": "proccess", "type": "typo",    "correct": "process" },
       { "wordIndex": 7, "word": "converts", "type": "grammar", "correct": "convert" }
     ]
+
+    Note in the example: index 0 = "Photosynthesis", 1 = "is",
+    2 = "the", 3 = "proccess" (the typo). Count carefully.
 
     Common failure prevention:
     - The "word" field MUST match passage.split(/\\s+/)[wordIndex] exactly.
@@ -5913,7 +5929,8 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.ART_VIEW]:           3, // (#13) DATE-FIT rule
   [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
   [TASK_TYPES.TIMELINE]:           4, // (audit3 #1) require parenthesized dates + topic-fit gate
-  [TASK_TYPES.PEER_EDITING]:       4, // (audit3 #1) reverted edit-distance check — too aggressive
+  [TASK_TYPES.PEER_EDITING]:       5, // (audit4 #2) tightened index-counting procedure in aiPrompt
+  [TASK_TYPES.QUEST]:              2, // (audit4 #3) sanitizer ensures ranks[i].label
   [TASK_TYPES.GUESS_WHO]:          2, // (#14) shell stripped to secretAnswers only
   [TASK_TYPES.BODY_BREAK]:         2, // (#15) sanitizer fills steps/totalSeconds/label
   [TASK_TYPES.MOTION_MISSION]:     2, // matched body-break sanitizer changes

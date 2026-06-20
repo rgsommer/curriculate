@@ -1594,6 +1594,28 @@ export function sanitizeTaskShapeByType(type, task) {
         .filter(Boolean);
     }
 
+    // Coerce ranks shape — QuestTask.jsx:681 does ranks.map(r => r.label).
+    // Audit-4 caught the AI shipping ranks as { name, title, requirement }
+    // or other shapes; without a label field the UI prints "undefined →
+    // undefined → undefined". Backfill label from name/title/rank/threshold.
+    if (Array.isArray(cfg.ranks)) {
+      cfg.ranks = cfg.ranks
+        .map((r, i) => {
+          if (typeof r === "string") {
+            const txt = r.trim();
+            return txt ? { label: txt } : null;
+          }
+          if (!r || typeof r !== "object") return null;
+          const label = String(
+            r.label || r.name || r.title || r.rank || r.tier || `Rank ${i + 1}`
+          ).trim();
+          if (!label) return null;
+          // Preserve any other rank fields the renderer might use later.
+          return { ...r, label };
+        })
+        .filter(Boolean);
+    }
+
     t.config = cfg;
   }
 
