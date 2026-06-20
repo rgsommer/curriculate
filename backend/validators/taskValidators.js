@@ -703,6 +703,16 @@ export function normalizeTaskByType(taskType, rawTask) {
         .map((s) => String(s).trim())
         .filter(Boolean);
 
+      // --- TIMELINE-ONLY: handle the _reject sentinel ---
+      // The aiPrompt asks the AI to emit { _reject: "topic is not
+      // chronological" } when the topic is a skill-acquisition target
+      // (similes/metaphors, fractions, parts-of-speech) rather than a
+      // chronological one. Audit-3 #1 caught a "history of similes"
+      // timeline shipped for a Grade-5 figurative-language unit.
+      if (taskType === TASK_TYPES.TIMELINE && typeof task._reject === "string" && task._reject.trim()) {
+        task._validationError = `timeline rejected by topic-fit gate: ${task._reject.trim()}`;
+      }
+
       // --- GUARDRAIL: Reject sequences/timelines with too few items ---
       // Hard reject at <4 (unplayable). Warn at 4-5 (playable but shallow).
       if (items.length < 4) {
@@ -710,6 +720,22 @@ export function normalizeTaskByType(taskType, rawTask) {
         if (items.length === 0) items = ["Placeholder — regenerate this task"];
       } else if (items.length < 6) {
         task._validationWarning = `Sequence/timeline has only ${items.length} items — 6+ preferred`;
+      }
+
+      // --- TIMELINE-ONLY: every item must have a parenthesized date hint ---
+      // Audit-3 #1: items like "Ancient times" or "the Middle Ages" can't be
+      // chronologically sorted by extractDateValue, so a wrong correctOrder
+      // ships and students get marked wrong. Require ≥ 80% of items to have
+      // an extractable parenthesized date (matches BCE / years / decades /
+      // centuries — the same patterns extractDateValue catches below).
+      if (taskType === TASK_TYPES.TIMELINE && items.length >= 4 && !task._validationError) {
+        const DATE_HINT_RE = /\(([^)]*\b\d{1,4}(?:s|(?:st|nd|rd|th)\s*century)?(?:\s*bce?)?[^)]*)\)/i;
+        const datedItems = items.filter((s) => DATE_HINT_RE.test(s));
+        const ratio = datedItems.length / items.length;
+        if (ratio < 0.8) {
+          task._validationError =
+            `timeline items missing parenthesized dates: ${items.length - datedItems.length}/${items.length} have no extractable date hint — every item MUST include "(year)" or "(Xth century [BCE])" so the chronological sort can work`;
+        }
       }
       // Flag vague pattern items (e.g. "Impact of...", "Settlement of...", "Growth of...")
       const vaguePattern = /^(Impact|Effect|Growth|Rise|Spread|Settlement|Development|Influence|Role)\s+of\b/i;

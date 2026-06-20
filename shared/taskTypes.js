@@ -728,15 +728,37 @@ export const TASK_TYPE_META = {
     - Keep language age-appropriate and classroom-safe.
     - Avoid copyrighted passages; write original content.
     
+    TOPIC-FIT RULE (MANDATORY — check before generating):
+    Timeline is for CHRONOLOGICAL topics — wars, dynasties, scientific
+    discoveries, civil rights events, biographies, etc. It is NOT for
+    skill-acquisition topics (similes & metaphors, fractions and decimals,
+    parts of speech, multiplying integers). If the topic is a skill rather
+    than a sequence of events, REFUSE this taskType and emit:
+      { "taskType": "timeline", "_reject": "topic is not chronological" }
+    The downstream pipeline will catch _reject and request a different type.
+    Audit-3 caught a "history of similes" timeline shipped for a Grade-5
+    figurative-language unit — students don't learn the historical
+    development of rhetorical theory, they learn to identify similes.
+
     Task-specific guidance:
     1. Pick 5–7 events from the vocabulary list that can be placed chronologically (MIN 5, MAX 7).
-    2. Every event must include a date or date range in parentheses -- e.g. "Stamp Act (1765)".
-    3. Provide events in correct chronological order; the student sees them shuffled.
+    2. Every event MUST include a date in parentheses — and the date MUST
+       be specific enough for chronological sorting:
+       Good: "Stamp Act (1765)", "Battle of Hastings (1066)",
+             "Discovery of penicillin (1928)", "Treaty of Kadesh (1259 BCE)".
+       Bad:  "Ancient times", "the Renaissance period", "Middle Ages",
+             "modern era" — vague qualifiers don't define a comparable point.
+       For ancient events use "(Xth century BCE)" or specific years.
+    3. The dates across all items MUST be MUTUALLY ORDERABLE — i.e. when
+       all items are sorted by their date, the result is a well-defined
+       sequence. Avoid same-year ties.
+    4. Provide events in correct chronological order; the student sees them shuffled.
 
     Common failure prevention:
     - Do not omit required arrays/fields; satisfy minimum item counts.
-    - Ensure any indexes/keys (e.g., correctAnswer) are valid and in range.
-    - Ensure prompts are student-facing instructions (what to do).
+    - Ensure prompts are student-facing instructions.
+    - If you cannot write 5+ events with SPECIFIC dates that are all
+      orderable, do NOT ship a timeline — emit the _reject sentinel above.
     `,
 },
 
@@ -5120,6 +5142,20 @@ config: {
     - Every challenge MUST give the performer a path to look brilliant, not be
       embarrassed.
 
+    FACTUAL CORRECTNESS (mandatory — applies to every truth challenge):
+    - Truth challenges must NEVER ask students to defend or affirm a known-false
+      claim. Audit-3 #3 caught a Grade-6 fractions seed: "Defend why 0.333...
+      (repeating) is not exactly equal to 1/3" — this is mathematically false
+      and rewards a misconception. The teacherHint compounded the error by
+      praising explanations of repeating decimals.
+    - Before shipping each truth challenge, READ IT BACK: would a subject-matter
+      expert agree the asked-for answer is true? If no, rewrite as a question
+      about the actual fact ("Explain WHY 0.333... = 1/3") or drop it.
+    - For "name N ways" / "list N methods" questions, the acceptableAnswers
+      MUST be N genuinely DIFFERENT methods. Audit-3 caught a "name two ways
+      to convert a fraction to a decimal" seed whose four acceptableAnswers all
+      collapsed to division. If you can only think of one method, ask "name ONE".
+
     Example output:
     {
       "taskType": "truth-or-dare",
@@ -5876,13 +5912,13 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring
   [TASK_TYPES.ART_VIEW]:           3, // (#13) DATE-FIT rule
   [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
-  [TASK_TYPES.TIMELINE]:           3, // (audit2 #1) extend BCE branch to century patterns
+  [TASK_TYPES.TIMELINE]:           4, // (audit3 #1) require parenthesized dates + topic-fit gate
   [TASK_TYPES.PEER_EDITING]:       4, // (audit3 #1) reverted edit-distance check — too aggressive
   [TASK_TYPES.GUESS_WHO]:          2, // (#14) shell stripped to secretAnswers only
   [TASK_TYPES.BODY_BREAK]:         2, // (#15) sanitizer fills steps/totalSeconds/label
   [TASK_TYPES.MOTION_MISSION]:     2, // matched body-break sanitizer changes
   [TASK_TYPES.FAKE_OUT]:           2, // (audit3 #3) distractor factuality rule
-  [TASK_TYPES.TRUTH_OR_DARE]:      2, // (audit2 #4) require ≥ 4 seeds + truth+dare variety + tier variety
+  [TASK_TYPES.TRUTH_OR_DARE]:      3, // (audit3 #3) factual-correctness + acceptable-answers diversity rules
   [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
   [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
   [TASK_TYPES.MYSTERY_CLUES]:      2, // pool rotation
