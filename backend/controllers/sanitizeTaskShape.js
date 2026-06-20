@@ -866,35 +866,21 @@ export function sanitizeTaskShapeByType(type, task) {
         return true;
       });
 
-      // Final-state guard: each error's wordIndex must point at a word
-      // that PLAUSIBLY needs the marked correction. Two compounding
-      // failure modes from audit-2 #2:
-      //   (a) wordIndex points at the CORRECT word already → un-findable
-      //   (b) wordIndex points at a DIFFERENT word that doesn't resemble
-      //       the `correct` value → student can't reason about it
-      //       (e.g. error at idx 17 = "one", correct = "written").
-      // Filter both. Survivor count < 3 → regenerate.
+      // Final-state guard: drop errors whose wordIndex points at the
+      // CORRECT word already (would be a no-op for the student). The
+      // audit-2 round added a stricter edit-distance check on top of
+      // this, but it bricked ~25% of generations (audit-3 #2) — when
+      // the AI ships a correct=word pair with no resemblance, the
+      // student WILL still be confused, but the cost of regenerating
+      // is higher than the cost of a one-bad-error in the survivors.
+      // Falling back to the lenient version that shipped in round 1.
       const passageWords = t.passage.split(/\s+/);
       const _strip = (w) => String(w || "").replace(/[.,;:!?"'()[\]{}]/g, "").toLowerCase();
       t.errors = t.errors.filter((e) => {
         if (e.wordIndex < 0 || e.wordIndex >= passageWords.length) return false;
         const atIdx = _strip(passageWords[e.wordIndex]);
         const correct = _strip(e.correct);
-        if (!atIdx || !correct) return false;
-        // (a) already the correct word — no error to find.
-        if (atIdx === correct) return false;
-        // (b) resemblance check: for typo / grammar fixes the word at the
-        // index should be a plausible misspelling of `correct`. We allow
-        // up to half the correct word's length in edits PLUS a common-
-        // prefix floor of 2. "process" vs "proccess" (1 edit) passes;
-        // "one" vs "written" (5+ edits, no shared prefix) fails.
-        if (e.type === "typo" || e.type === "grammar") {
-          const d = _editDistance(atIdx, correct);
-          const maxAllowed = Math.max(3, Math.floor(correct.length / 2));
-          const sharedPrefix = _commonPrefixLen(atIdx, correct);
-          if (d > maxAllowed && sharedPrefix < 2) return false;
-        }
-        // delete/insert/logic don't have a string-similarity constraint.
+        if (atIdx && correct && atIdx === correct) return false;
         return true;
       });
 

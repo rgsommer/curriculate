@@ -3648,6 +3648,28 @@ config: {
       Good: for "Capital of Australia?" -> "Bondi Beach" (Australian, but not a city / not a capital).
       Tester reported "the obviously fake answer provided by ai did not fit"; this rule fixes that.
 
+      DISTRACTOR FACTUALITY RULE (MANDATORY):
+
+      The 2 non-correct options in options[] (the "fake-but-plausible"
+      distractors — NOT the jokeOption) must be REAL THINGS that are simply
+      wrong for THIS prompt. Do NOT invent fake facts about a real thing.
+      Bad: prompt "What battle inspired the Star-Spangled Banner?" with
+           distractor "Battle of New Orleans inspired Francis Scott Key
+           to write the Star-Spangled Banner" (the BATTLE is real but the
+           CLAIM is a factual error — students who happen to know New
+           Orleans was Jan 1815 will be confused).
+      Good: same prompt with distractors "Battle of New Orleans" and
+            "Battle of the Thames" (real battles from the same era; the
+            student must know it was Fort McHenry specifically).
+
+      Rule: every distractor option must be a noun phrase or single fact
+      that could be SOMEONE ELSE'S right answer in a different question.
+      Do not attach false claims to real things.
+
+      Before returning, READ EACH DISTRACTOR and check: would a sharp
+      grade-level student looking up this distractor independently
+      learn anything FALSE? If yes, replace it.
+
       ANTI-PATTERN CHECK (MANDATORY):
 
       If correctIndex is the same value for all rounds, regenerate the entire task.
@@ -5855,10 +5877,11 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.ART_VIEW]:           3, // (#13) DATE-FIT rule
   [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
   [TASK_TYPES.TIMELINE]:           3, // (audit2 #1) extend BCE branch to century patterns
-  [TASK_TYPES.PEER_EDITING]:       3, // (audit2 #2) edit-distance check on wordIndex word
+  [TASK_TYPES.PEER_EDITING]:       4, // (audit3 #1) reverted edit-distance check — too aggressive
   [TASK_TYPES.GUESS_WHO]:          2, // (#14) shell stripped to secretAnswers only
   [TASK_TYPES.BODY_BREAK]:         2, // (#15) sanitizer fills steps/totalSeconds/label
   [TASK_TYPES.MOTION_MISSION]:     2, // matched body-break sanitizer changes
+  [TASK_TYPES.FAKE_OUT]:           2, // (audit3 #3) distractor factuality rule
   [TASK_TYPES.TRUTH_OR_DARE]:      2, // (audit2 #4) require ≥ 4 seeds + truth+dare variety + tier variety
   [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
   [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
