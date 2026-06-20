@@ -118,6 +118,21 @@ const BehaviorConfigSchema = new mongoose.Schema(
       enabled: { type: Boolean, default: false },
       recipientEmail: { type: String, default: "", lowercase: true, trim: true },
     },
+
+    // ── Homework tab ────────────────────────────────────────────────────────
+    homework: {
+      // Subject list shown in the assignment form; teachers may append to it.
+      subjects: { type: [String], default: ["Math", "History", "Geography", "CE"] },
+      // Term start dates (up to 3). Used to bucket assignments into terms and to
+      // decide which outstanding work to surface (current + previous term only).
+      termStarts: { type: [Date], default: [] },
+      // Which term we're in: 0 = Term 1, 1 = Term 2, 2 = Term 3.
+      currentTerm: { type: Number, default: 0 },
+      // Work older than this many weeks gets the 6.2 partial tap (do-half rule).
+      lateWeeks: { type: Number, default: 3 },
+      // Don't re-send a whole-class "fallen behind" message within this many days.
+      messageCooldownDays: { type: Number, default: 7 },
+    },
   },
   { timestamps: true }
 );

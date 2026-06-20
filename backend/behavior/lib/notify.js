@@ -64,6 +64,67 @@ export async function sendWithFailover({ recipient, channels, subject, body, htm
 }
 
 /**
+ * Send a one-off message to a student's parents over the school's parent
+ * channel(s) — used by the Homework tab's "fallen behind" posting. Mirrors the
+ * notice delivery path (per-teacher Edsby identity, formkey refresh, email-only-
+ * if-opted-in) but is NOT a behaviour notice and never touches strikes.
+ */
+export async function sendHomeworkMessage({ schoolId, student, sentByTeacherId, subject, body }) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  const channels = [];
+  if (config?.channels?.edsby) channels.push("edsby");
+  if (config?.channels?.emailToParents) channels.push("email");
+  if (!channels.length) return { ok: false, error: "No parent channel is configured." };
+
+  const e = config?.edsby;
+  let sender = null;
+  if (sentByTeacherId) {
+    sender = await BehaviorTeacher.findById(sentByTeacherId).select("edsbyUserNid edsbyCookieEnc edsbyFormkeyEnc").lean();
+  }
+  const useTeacher = !!(sender?.edsbyUserNid && sender?.edsbyCookieEnc);
+  const edsby = e?.enabled
+    ? {
+        baseUrl: e.baseUrl,
+        cookie: useTeacher ? decrypt(sender.edsbyCookieEnc) : decrypt(e.cookieEnc),
+        formkey: useTeacher ? (sender.edsbyFormkeyEnc ? decrypt(sender.edsbyFormkeyEnc) : decrypt(e.formkeyEnc)) : decrypt(e.formkeyEnc),
+        jver: e.jver,
+        cver: e.cver,
+        userNid: useTeacher ? sender.edsbyUserNid : e.userNid,
+        studentNid: student?.edsbyStudentId || "",
+      }
+    : {};
+  const prov = getDefaultProviders(edsby);
+  if (e?.enabled && edsby.cookie && channels.includes("edsby")) {
+    try {
+      const r = await prov.edsby.testConnection(e.zoomId);
+      if (r?.ok && r.formkey) {
+        prov.edsby.formkey = r.formkey;
+        if (useTeacher) await BehaviorTeacher.updateOne({ _id: sentByTeacherId }, { $set: { edsbyFormkeyEnc: encrypt(r.formkey) } });
+        else await BehaviorConfig.updateOne({ schoolId }, { $set: { "edsby.formkeyEnc": encrypt(r.formkey) } });
+      }
+    } catch { /* keep stored formkey */ }
+  }
+  const recipients = (student.parents || [])
+    .filter((p) => p.email || p.edsbyParentId)
+    .map((p) => ({ role: "parent", name: p.name, email: p.email, edsbyParentId: p.edsbyParentId }));
+  if (!recipients.length) return { ok: false, error: "Student has no parent contact on file." };
+
+  const html = emailShell({
+    title: "A note from school",
+    schoolName: config?.branding?.schoolName || "",
+    preheader: subject,
+    contentHtml: noteToHtml(body),
+  });
+  const allowEmailFailover = !!config?.channels?.emailToParents;
+  const deliveries = [];
+  for (const recipient of recipients) {
+    const d = await sendWithFailover({ recipient, channels, subject, body, html, providers: prov, allowEmailFailover });
+    deliveries.push(...d);
+  }
+  return { ok: deliveries.some((d) => d.ok), deliveries };
+}
+
+/**
  * Dispatch a queued notice: send to all recipients, persist outcomes, audit.
  * Skips if the notice was cancelled in its cancellable window.
  */

@@ -28,6 +28,8 @@ import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
+import HomeworkAssignment from "./models/HomeworkAssignment.js";
+import HomeworkScore from "./models/HomeworkScore.js";
 import BehaviorCompetition from "./models/BehaviorCompetition.js";
 
 import { evaluateIncident, activeThresholdIncidents, evaluatePositive } from "./lib/triggerLogic.js";
@@ -40,7 +42,7 @@ import { STANDARD_BEHAVIORS } from "./lib/standardBehaviors.js";
 import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministicNote, deterministicPositiveNote } from "./lib/aiNote.js";
 import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
-import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
+import { scheduleDispatch, dispatchNotice, sendHomeworkMessage } from "./lib/notify.js";
 import { uploadEvidence, signEvidenceKey, deleteEvidenceKey, isAllowedType, evidenceStorageAvailable } from "./lib/evidenceStore.js";
 
 const router = express.Router();
@@ -3608,5 +3610,393 @@ router.get("/public/houses", async (req, res, next) => {
 
 // ── Honour roll (weighted averages from Edsby) — backs the /avgs panel ───────
 router.use("/avgs", authAny, loadMembership, buildAvgsRouter({ requireAdmin }));
+
+// ── Homework tab ─────────────────────────────────────────────────────────────
+// Assignments per class with tap-to-score completion, Formal Discussion live
+// scoring, category averages, "fallen behind" posting, and CSV export.
+
+const round1 = (n) => Math.round(n * 10) / 10;
+
+// Single-tap auto score for homework/work, by how late it's shown:
+//   ≤3 days → full · >3 days → 72% · older than lateWeeks → 62% (do-half rule).
+function autoHomeworkScore(assignment, config) {
+  const denom = assignment.denom || 10;
+  const ageDays = Math.floor((Date.now() - new Date(assignment.date).getTime()) / DAY_MS);
+  const lateWeeks = config?.homework?.lateWeeks ?? 3;
+  if (ageDays <= 3) return round1(denom);
+  if (ageDays <= lateWeeks * 7) return round1(denom * 0.72);
+  return round1(denom * 0.62);
+}
+
+// Score out of 10 for a Formal Discussion from +/- tallies (baseline 5 on the
+// first +). Absent → null (excused). No participation → null.
+function discussionScore({ plus = 0, minus = 0, absent = false }) {
+  if (absent) return null;
+  if (plus <= 0) return null;
+  return Math.max(0, Math.min(10, round1(4 + plus - minus)));
+}
+
+// Earliest date whose outstanding work we still surface: the start of the
+// PREVIOUS term (so Term 3 reaches back to Term 2). Epoch if terms aren't set.
+function outstandingCutoff(config) {
+  const ts = (config?.homework?.termStarts || []).map((d) => new Date(d)).sort((a, b) => a - b);
+  if (!ts.length) return new Date(0);
+  const cur = config?.homework?.currentTerm ?? 0;
+  return ts[Math.max(0, cur - 1)] || new Date(0);
+}
+
+// Append a subject to the shared list (any teacher may add one).
+router.post("/homework/subjects", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const subject = String(req.body?.subject || "").trim();
+    if (!subject) return res.status(400).json({ ok: false, error: "Subject required." });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId });
+    if (!config) return res.status(404).json({ ok: false, error: "No config" });
+    const list = config.homework?.subjects || [];
+    if (!list.some((s) => s.toLowerCase() === subject.toLowerCase())) {
+      config.homework = config.homework || {};
+      config.homework.subjects = [...list, subject];
+      await config.save();
+    }
+    res.json({ ok: true, subjects: config.homework.subjects });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Create an assignment for a class.
+router.post("/homework/assignments", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const classGroup = String(b.classGroup || "").trim();
+    if (!classGroup) return res.status(400).json({ ok: false, error: "Pick a class." });
+    const type = ["homework", "work", "discussion"].includes(b.type) ? b.type : "homework";
+    const date = b.date ? new Date(b.date) : new Date();
+    const a = await HomeworkAssignment.create({
+      schoolId: req.schoolId,
+      teacherId: req.membership._id,
+      classGroup,
+      subject: String(b.subject || "").trim(),
+      type,
+      description: String(b.description || "").trim(),
+      denom: Number(b.denom) > 0 ? Number(b.denom) : 10,
+      date: isNaN(date.getTime()) ? new Date() : date,
+    });
+    res.json({ ok: true, assignment: a.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/homework/assignments/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const a = await HomeworkAssignment.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!a) return res.status(404).json({ ok: false, error: "Not found" });
+    if (req.membership.role !== "originator" && req.membership.role !== "admin" && String(a.teacherId) !== String(req.membership._id)) {
+      return res.status(403).json({ ok: false, error: "Only the teacher who created it (or an admin) can delete it." });
+    }
+    await HomeworkScore.deleteMany({ assignmentId: a._id });
+    await HomeworkAssignment.deleteOne({ _id: a._id });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// All assignments + scores + roster for one class (the grading grid).
+router.get("/homework/class/:classGroup", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const classGroup = String(req.params.classGroup || "").trim();
+    const assignments = await HomeworkAssignment.find({ schoolId: req.schoolId, classGroup }).sort({ date: -1 }).lean();
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, classGroup, active: true })
+      .select("firstName lastName preferredName externalId")
+      .sort({ lastName: 1, firstName: 1 })
+      .lean();
+    const aIds = assignments.map((a) => a._id);
+    const scores = aIds.length ? await HomeworkScore.find({ assignmentId: { $in: aIds } }).lean() : [];
+    res.json({
+      ok: true,
+      assignments,
+      students: students.map((s) => ({ _id: String(s._id), name: `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim(), lastName: s.lastName, firstName: s.firstName, externalId: s.externalId })),
+      scores: scores.map((sc) => ({
+        assignmentId: String(sc.assignmentId), studentId: String(sc.studentId),
+        score: sc.score, manual: sc.manual, messagedAt: sc.messagedAt, discussion: sc.discussion,
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Tap to score (auto) or double-tap edit (explicit score), or clear.
+router.post("/homework/score", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const { assignmentId, studentId } = req.body || {};
+    const a = await HomeworkAssignment.findOne({ _id: assignmentId, schoolId: req.schoolId });
+    if (!a) return res.status(404).json({ ok: false, error: "Assignment not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+
+    if (req.body?.clear) {
+      await HomeworkScore.updateOne(
+        { assignmentId: a._id, studentId },
+        { $set: { score: null, manual: false, scoredAt: null } }
+      );
+      return res.json({ ok: true, score: null });
+    }
+
+    let score;
+    let manual = false;
+    if (req.body?.score !== undefined && req.body?.score !== null && req.body?.score !== "") {
+      score = round1(Number(req.body.score));
+      manual = true;
+    } else {
+      score = autoHomeworkScore(a, config); // single-tap auto
+    }
+    await HomeworkScore.updateOne(
+      { assignmentId: a._id, studentId, schoolId: req.schoolId },
+      { $set: { score, manual, scoredByTeacherId: req.membership._id, scoredAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ ok: true, score, manual });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Save a Formal Discussion's results in one go.
+router.post("/homework/discussion/:assignmentId", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const a = await HomeworkAssignment.findOne({ _id: req.params.assignmentId, schoolId: req.schoolId });
+    if (!a) return res.status(404).json({ ok: false, error: "Assignment not found" });
+    const results = Array.isArray(req.body?.results) ? req.body.results : [];
+    for (const r of results) {
+      const plus = Number(r.plus) || 0;
+      const minus = Number(r.minus) || 0;
+      const absent = !!r.absent;
+      const score = discussionScore({ plus, minus, absent });
+      await HomeworkScore.updateOne(
+        { assignmentId: a._id, studentId: r.studentId, schoolId: req.schoolId },
+        { $set: { score, manual: false, scoredByTeacherId: req.membership._id, scoredAt: new Date(), discussion: { plus, minus, absent } } },
+        { upsert: true }
+      );
+    }
+    res.json({ ok: true, saved: results.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Category averages for a class: per subject × type, average of score/denom×10.
+router.get("/homework/averages/:classGroup", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const classGroup = String(req.params.classGroup || "").trim();
+    const assignments = await HomeworkAssignment.find({ schoolId: req.schoolId, classGroup }).lean();
+    const aById = Object.fromEntries(assignments.map((a) => [String(a._id), a]));
+    const scores = assignments.length
+      ? await HomeworkScore.find({ assignmentId: { $in: assignments.map((a) => a._id) }, score: { $ne: null } }).lean()
+      : [];
+    const buckets = {}; // "subject||type" → { sum, n }
+    for (const sc of scores) {
+      const a = aById[String(sc.assignmentId)];
+      if (!a) continue;
+      const key = `${a.subject || "—"}||${a.type}`;
+      const pct10 = (sc.score / (a.denom || 10)) * 10;
+      (buckets[key] ||= { subject: a.subject || "—", type: a.type, sum: 0, n: 0 });
+      buckets[key].sum += pct10;
+      buckets[key].n += 1;
+    }
+    const averages = Object.values(buckets)
+      .map((b) => ({ subject: b.subject, type: b.type, average: round1(b.sum / b.n), count: b.n }))
+      .sort((x, y) => x.subject.localeCompare(y.subject) || x.type.localeCompare(y.type));
+    res.json({ ok: true, averages });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Build each student's outstanding (unshown) work for current + previous term.
+async function buildOutstanding(schoolId, classGroup, config) {
+  const cutoff = outstandingCutoff(config);
+  const assignments = await HomeworkAssignment.find({
+    schoolId, classGroup, type: { $in: ["homework", "work"] }, date: { $gte: cutoff },
+  }).sort({ date: 1 }).lean();
+  const aById = Object.fromEntries(assignments.map((a) => [String(a._id), a]));
+  const students = await BehaviorStudent.find({ schoolId, classGroup, active: true })
+    .select("firstName lastName preferredName parents edsbyStudentId").lean();
+  const aIds = assignments.map((a) => a._id);
+  const scores = aIds.length ? await HomeworkScore.find({ assignmentId: { $in: aIds } }).lean() : [];
+  // Map (assignment+student) → score row.
+  const scoreMap = {};
+  for (const sc of scores) scoreMap[`${sc.assignmentId}|${sc.studentId}`] = sc;
+
+  // Category grade per student per subject||type (over ALL scored work, any term).
+  const allScores = aIds.length ? scores.filter((s) => s.score != null) : [];
+  const catByStudent = {}; // studentId → { "subject||type": {sum,n} }
+  for (const sc of allScores) {
+    const a = aById[String(sc.assignmentId)];
+    if (!a) continue;
+    const k = `${a.subject || "—"}||${a.type}`;
+    (catByStudent[String(sc.studentId)] ||= {});
+    (catByStudent[String(sc.studentId)][k] ||= { sum: 0, n: 0 });
+    catByStudent[String(sc.studentId)][k].sum += (sc.score / (a.denom || 10)) * 10;
+    catByStudent[String(sc.studentId)][k].n += 1;
+  }
+
+  const out = [];
+  for (const s of students) {
+    const missing = assignments.filter((a) => {
+      const sc = scoreMap[`${a._id}|${s._id}`];
+      return !sc || sc.score == null; // no score yet = outstanding
+    });
+    if (!missing.length) continue;
+    out.push({
+      student: s,
+      items: missing.map((a) => {
+        const cat = catByStudent[String(s._id)]?.[`${a.subject || "—"}||${a.type}`];
+        return {
+          assignmentId: String(a._id),
+          subject: a.subject, type: a.type, date: a.date, description: a.description,
+          categoryGrade: cat ? round1(cat.sum / cat.n) : null,
+          messagedAt: scoreMap[`${a._id}|${s._id}`]?.messagedAt || null,
+        };
+      }),
+    });
+  }
+  return out;
+}
+
+router.get("/homework/outstanding/:classGroup", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const list = await buildOutstanding(req.schoolId, String(req.params.classGroup || "").trim(), config);
+    res.json({
+      ok: true,
+      students: list.map((o) => ({
+        studentId: String(o.student._id),
+        name: `${o.student.preferredName || o.student.firstName} ${o.student.lastName || ""}`.trim(),
+        items: o.items,
+        lastMessagedAt: o.items.reduce((m, it) => (it.messagedAt && (!m || it.messagedAt > m) ? it.messagedAt : m), null),
+      })),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Compose + send a "fallen behind" message to selected students (or the whole
+// class, respecting the resend cooldown), then mark those items as messaged.
+router.post("/homework/outstanding/post", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const classGroup = String(req.body?.classGroup || "").trim();
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const cooldownDays = config?.homework?.messageCooldownDays ?? 7;
+    const whole = !!req.body?.whole;
+    const picked = new Set((Array.isArray(req.body?.studentIds) ? req.body.studentIds : []).map(String));
+    const all = await buildOutstanding(req.schoolId, classGroup, config);
+    const teacherName = (req.membership?.name || "").trim();
+
+    const sent = [];
+    const skipped = [];
+    for (const o of all) {
+      const sid = String(o.student._id);
+      if (!whole && !picked.has(sid)) continue;
+      // Whole-class send respects the per-student cooldown.
+      if (whole) {
+        const last = o.items.reduce((m, it) => (it.messagedAt && (!m || new Date(it.messagedAt) > new Date(m)) ? it.messagedAt : m), null);
+        if (last && Date.now() - new Date(last).getTime() < cooldownDays * DAY_MS) { skipped.push({ name: o.student.preferredName || o.student.firstName, reason: "messaged recently" }); continue; }
+      }
+      const name = o.student.preferredName || o.student.firstName || "your child";
+      // Group outstanding by subject + type, with the category grade.
+      const groups = {};
+      for (const it of o.items) {
+        const k = `${it.subject || "—"} ${it.type === "work" ? "(class work)" : ""}`.trim();
+        (groups[k] ||= { grade: it.categoryGrade, lines: [] });
+        groups[k].lines.push(`  • ${new Date(it.date).toLocaleDateString("en-CA")} — ${it.description || "(no description)"}`);
+      }
+      const blocks = Object.entries(groups).map(([k, g]) =>
+        `${k}${g.grade != null ? ` — current grade ${g.grade}/10` : ""}:\n${g.lines.join("\n")}`
+      );
+      const body =
+        `Dear Parent/Guardian,\n\n` +
+        `This is a note to let you know that ${name} has fallen behind on some work and has the following outstanding:\n\n` +
+        `${blocks.join("\n\n")}\n\n` +
+        `Students are to show their work in person on completion; partial credit can be given if shown within 7 days. ` +
+        `Please encourage ${name} to catch up.\n\n` +
+        `Sincerely,\n${teacherName || config?.branding?.schoolName || "School"}`;
+
+      const r = await sendHomeworkMessage({
+        schoolId: req.schoolId, student: o.student, sentByTeacherId: req.membership._id,
+        subject: `${name}: outstanding work`, body,
+      });
+      if (r.ok) {
+        // Mark each outstanding item as messaged (creates a score row, score null).
+        for (const it of o.items) {
+          await HomeworkScore.updateOne(
+            { assignmentId: it.assignmentId, studentId: sid, schoolId: req.schoolId },
+            { $set: { messagedAt: new Date() } },
+            { upsert: true }
+          );
+        }
+        sent.push({ name });
+      } else {
+        skipped.push({ name, reason: r.error || "send failed" });
+      }
+    }
+    await audit(req.schoolId, "homework.outstanding_posted", req, { meta: { classGroup, sent: sent.length, skipped: skipped.length } });
+    res.json({ ok: true, sent, skipped });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// CSV export for Edsby import — one file per (term, subject, type). Columns:
+// student id + name, one per assignment (header = description + date), average.
+router.get("/homework/export", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const classGroup = String(req.query.classGroup || "").trim();
+    const subject = String(req.query.subject || "").trim();
+    const type = String(req.query.type || "").trim();
+    const term = req.query.term !== undefined && req.query.term !== "" ? Number(req.query.term) : null;
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const ts = (config?.homework?.termStarts || []).map((d) => new Date(d)).sort((a, b) => a - b);
+
+    const q = { schoolId: req.schoolId, classGroup };
+    if (subject) q.subject = subject;
+    if (type) q.type = type;
+    if (term != null && ts[term]) {
+      q.date = { $gte: ts[term], ...(ts[term + 1] ? { $lt: ts[term + 1] } : {}) };
+    }
+    const assignments = await HomeworkAssignment.find(q).sort({ date: 1 }).lean();
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, classGroup, active: true })
+      .select("firstName lastName externalId").sort({ lastName: 1, firstName: 1 }).lean();
+    const scores = assignments.length
+      ? await HomeworkScore.find({ assignmentId: { $in: assignments.map((a) => a._id) } }).lean()
+      : [];
+    const scoreMap = {};
+    for (const sc of scores) scoreMap[`${sc.assignmentId}|${sc.studentId}`] = sc.score;
+
+    const esc = (v) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["StudentID", "Last", "First", ...assignments.map((a) => `${a.description || a.type} (${new Date(a.date).toLocaleDateString("en-CA")}) /${a.denom || 10}`), "Average/10"];
+    const rows = [header.map(esc).join(",")];
+    for (const s of students) {
+      const cells = assignments.map((a) => {
+        const v = scoreMap[`${a._id}|${s._id}`];
+        return v == null ? "" : v;
+      });
+      const pcts = assignments.map((a, i) => (cells[i] === "" ? null : (Number(cells[i]) / (a.denom || 10)) * 10)).filter((x) => x != null);
+      const avg = pcts.length ? round1(pcts.reduce((p, c) => p + c, 0) / pcts.length) : "";
+      rows.push([s.externalId || "", s.lastName || "", s.firstName || "", ...cells, avg].map(esc).join(","));
+    }
+    const fname = `homework-${classGroup}${subject ? "-" + subject : ""}${type ? "-" + type : ""}${term != null ? "-T" + (term + 1) : ""}.csv`.replace(/\s+/g, "_");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${fname}"`);
+    res.send(rows.join("\n"));
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;
