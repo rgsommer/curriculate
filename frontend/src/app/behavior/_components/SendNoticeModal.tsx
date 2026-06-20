@@ -11,13 +11,17 @@ type Props = {
   noteText: string;
   requestMeeting: boolean;
   onToggleMeeting: (v: boolean) => void;
+  evidenceCount?: number; // photo/video files available on the incident(s)
+  includeEvidence?: boolean;
+  onToggleEvidence?: (v: boolean) => void;
   busy?: boolean;
   onConfirm: () => void;
   onClose: () => void;
 };
 
 export default function SendNoticeModal({
-  open, studentName, channelLabel, noteText, requestMeeting, onToggleMeeting, busy, onConfirm, onClose,
+  open, studentName, channelLabel, noteText, requestMeeting, onToggleMeeting,
+  evidenceCount = 0, includeEvidence = false, onToggleEvidence, busy, onConfirm, onClose,
 }: Props) {
   if (!open) return null;
   return (
@@ -40,6 +44,15 @@ export default function SendNoticeModal({
             <input type="checkbox" checked={requestMeeting} onChange={(e) => onToggleMeeting(e.target.checked)} />
             Also request a meeting with the parents
           </label>
+          {evidenceCount > 0 && onToggleEvidence && (
+            <label className="mt-2 flex items-start gap-2 text-sm text-slate-700">
+              <input type="checkbox" checked={includeEvidence} onChange={(e) => onToggleEvidence(e.target.checked)} className="mt-0.5" />
+              <span>
+                Send the {evidenceCount} photo/video {evidenceCount === 1 ? "file" : "files"} with this note
+                <span className="block text-xs text-slate-400">Off = evidence stays in the student record only. On = emailed as attachments / shared as a link on Edsby.</span>
+              </span>
+            </label>
+          )}
           <div className="mt-3 flex flex-wrap justify-end gap-2">
             <button onClick={onClose} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
               Cancel

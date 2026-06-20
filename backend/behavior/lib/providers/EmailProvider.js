@@ -12,7 +12,7 @@ export class EmailProvider extends NotificationProvider {
     return "email";
   }
 
-  async send({ recipient, subject, body, html }) {
+  async send({ recipient, subject, body, html, attachments }) {
     const to = (recipient?.email || "").trim();
     if (!to) {
       return { ok: false, error: "recipient has no email address", channel: this.key };
@@ -27,6 +27,7 @@ export class EmailProvider extends NotificationProvider {
         // Prefer the caller's branded HTML; otherwise a minimal line-break-
         // preserving body (never trusting the text as markup).
         html: html || `<div style="font-family:system-ui,Segoe UI,Arial,sans-serif;white-space:pre-wrap;line-height:1.5">${escapeHtml(body)}</div>`,
+        attachments,
       });
       return { ok: true, channel: this.key };
     } catch (err) {

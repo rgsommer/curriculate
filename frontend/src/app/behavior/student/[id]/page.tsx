@@ -75,8 +75,9 @@ export default function StudentPage() {
   // Per-notice "request a meeting" toggle
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
   // Confirm-before-send preview pop-up
-  const [sendModal, setSendModal] = useState<{ id: string; text: string; edited: boolean } | null>(null);
+  const [sendModal, setSendModal] = useState<{ id: string; text: string; edited: boolean; evidenceCount: number } | null>(null);
   const [sendingModal, setSendingModal] = useState(false);
+  const [includeEvidence, setIncludeEvidence] = useState(false);
 
   // Log a parent meeting / contact (an interaction — no strike, nothing sent home)
   const [meetingNote, setMeetingNote] = useState("");
@@ -167,7 +168,7 @@ export default function StudentPage() {
   async function sendNoticeEdited(id: string) {
     try {
       await api(`/notices/${id}`, { method: "PUT", body: { renderedText: editText } });
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence } });
       setEditId(null);
       load();
     } catch (e: any) {
@@ -177,11 +178,23 @@ export default function StudentPage() {
 
   async function sendNotice(id: string) {
     try {
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence } });
       load();
     } catch (e: any) {
       setError(e.message);
     }
+  }
+
+  // Count photo/video evidence on the incidents that triggered a given notice.
+  function evidenceCountForNotice(n: { triggeringIncidentIds?: string[] }): number {
+    const ids = new Set((n.triggeringIncidentIds || []).map(String));
+    return (data?.incidents || [])
+      .filter((i) => ids.has(String(i._id)))
+      .reduce((sum, i) => sum + (i.attachments?.length || 0), 0);
+  }
+  function openSend(m: { id: string; text: string; edited: boolean; evidenceCount: number }) {
+    setIncludeEvidence(false); // default: keep evidence teacher-side
+    setSendModal(m);
   }
 
   // Confirm-before-send: runs the right send (edited or as-is) then closes the
@@ -407,7 +420,7 @@ export default function StudentPage() {
                       )}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {(n.status === "queued" || n.status === "failed") && (
-                          <button onClick={() => setSendModal({ id: n._id, text: editText, edited: true })} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
+                          <button onClick={() => openSend({ id: n._id, text: editText, edited: true, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white">
                             {n.status === "failed" ? "Save & retry send" : "Send now"}
                           </button>
                         )}
@@ -426,7 +439,7 @@ export default function StudentPage() {
                             Also request a meeting with the parents
                           </label>
                           <div className="mt-2 flex flex-wrap gap-2">
-                            <button onClick={() => setSendModal({ id: n._id, text: n.renderedText, edited: false })} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
+                            <button onClick={() => openSend({ id: n._id, text: n.renderedText, edited: false, evidenceCount: evidenceCountForNotice(n) })} className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white">
                               {n.status === "failed" ? "Retry send" : "Send now"}
                             </button>
                             <button onClick={() => dontSend(n._id)} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Don’t send</button>
@@ -535,6 +548,9 @@ export default function StudentPage() {
         noteText={sendModal?.text || ""}
         requestMeeting={!!(sendModal && meetingFor[sendModal.id])}
         onToggleMeeting={(v) => sendModal && setMeetingFor((m) => ({ ...m, [sendModal.id]: v }))}
+        evidenceCount={sendModal?.evidenceCount || 0}
+        includeEvidence={includeEvidence}
+        onToggleEvidence={setIncludeEvidence}
         busy={sendingModal}
         onConfirm={confirmSend}
         onClose={() => setSendModal(null)}

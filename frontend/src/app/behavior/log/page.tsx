@@ -61,6 +61,7 @@ export default function LogIncidentPage() {
   const [requestMeeting, setRequestMeeting] = useState(false);
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [includeEvidence, setIncludeEvidence] = useState(false);
 
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -246,7 +247,7 @@ export default function LogIncidentPage() {
     if (!notice) return;
     setSending(true);
     try {
-      await api(`/notices/${notice._id}/send`, { body: { requestMeeting } });
+      await api(`/notices/${notice._id}/send`, { body: { requestMeeting, includeEvidence } });
       setNotice({ ...notice, status: "sent" });
       setShowSendModal(false);
     } catch (e: any) {
@@ -383,6 +384,9 @@ export default function LogIncidentPage() {
           noteText={notice?.renderedText || ""}
           requestMeeting={requestMeeting}
           onToggleMeeting={setRequestMeeting}
+          evidenceCount={mediaFiles.length}
+          includeEvidence={includeEvidence}
+          onToggleEvidence={setIncludeEvidence}
           busy={sending}
           onConfirm={sendNow}
           onClose={() => setShowSendModal(false)}

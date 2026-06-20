@@ -79,6 +79,10 @@ const BehaviorNoticeSchema = new mongoose.Schema(
     // sweeper only dispatches autoDispatch notices, so draft-mode notices that
     // await a manual send are never swept.
     autoDispatch: { type: Boolean, default: true },
+    // Teacher chose to send the incident's photo/video evidence WITH this notice
+    // (email = attachments, Edsby = links). Default false: evidence stays
+    // teacher-side unless explicitly shared.
+    includeEvidence: { type: Boolean, default: false },
     queuedAt: { type: Date, default: () => new Date() },
     sentAt: { type: Date, default: null },
     cancelUntil: { type: Date, default: null }, // end of the cancellable window

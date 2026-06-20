@@ -428,12 +428,13 @@ function ExecutiveSummaryCard() {
   );
 }
 
-type Pending = { _id: string; studentId: string; studentName: string; classGroup?: string; reason?: string; ccVp?: boolean; count?: number; createdAt: string; renderedText?: string };
+type Pending = { _id: string; studentId: string; studentName: string; classGroup?: string; reason?: string; ccVp?: boolean; count?: number; evidenceCount?: number; createdAt: string; renderedText?: string };
 
 function PendingDecisions() {
   const [rows, setRows] = useState<Pending[] | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
+  const [evidenceFor, setEvidenceFor] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string>("");
   const [msg, setMsg] = useState<string>("");
   const [confirmRow, setConfirmRow] = useState<Pending | null>(null);
@@ -447,7 +448,7 @@ function PendingDecisions() {
     setBusy(id);
     setMsg("");
     try {
-      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id] } });
+      await api(`/notices/${id}/send`, { body: { requestMeeting: !!meetingFor[id], includeEvidence: !!evidenceFor[id] } });
       setRows((p) => (p || []).filter((n) => n._id !== id));
       setConfirmRow(null);
       setMsg("Sent to the parent ✓");
@@ -520,6 +521,9 @@ function PendingDecisions() {
         noteText={confirmRow?.renderedText || ""}
         requestMeeting={!!(confirmRow && meetingFor[confirmRow._id])}
         onToggleMeeting={(v) => confirmRow && setMeetingFor((m) => ({ ...m, [confirmRow._id]: v }))}
+        evidenceCount={confirmRow?.evidenceCount || 0}
+        includeEvidence={!!(confirmRow && evidenceFor[confirmRow._id])}
+        onToggleEvidence={(v) => confirmRow && setEvidenceFor((m) => ({ ...m, [confirmRow._id]: v }))}
         busy={!!busy}
         onConfirm={() => confirmRow && send(confirmRow._id)}
         onClose={() => setConfirmRow(null)}

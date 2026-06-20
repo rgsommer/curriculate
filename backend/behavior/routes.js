@@ -1978,6 +1978,12 @@ router.post("/notices/:id/send", authAny, loadMembership, canLog, async (req, re
       notice.renderedText = parts.join("\n\n");
       await notice.save();
     }
+    // Teacher's per-send choice: include the incident's photo/video evidence, or
+    // keep it teacher-side (default). Persist before dispatch reads it.
+    if ("includeEvidence" in (req.body || {})) {
+      notice.includeEvidence = !!req.body.includeEvidence;
+      await notice.save();
+    }
     const result = await dispatchNotice(notice._id, { force: true }); // explicit send — bypass the edit-defer window
     await audit(req.schoolId, "notice.sent_manual", req, { studentId: notice.studentId, noticeId: notice._id });
     res.json({ ok: result.ok !== false, status: result.status || (result.ok ? "sent" : "failed") });
@@ -2024,6 +2030,12 @@ router.get("/notices/pending", authAny, loadMembership, async (req, res, next) =
       .select("firstName lastName preferredName classGroup")
       .lean();
     const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+    // How many photo/video files sit on each notice's triggering incidents.
+    const allIncIds = [...new Set(notices.flatMap((n) => (n.triggeringIncidentIds || []).map(String)))];
+    const incs = allIncIds.length
+      ? await BehaviorIncident.find({ _id: { $in: allIncIds } }).select("attachments").lean()
+      : [];
+    const attCountById = Object.fromEntries(incs.map((i) => [String(i._id), (i.attachments || []).length]));
     res.json({
       ok: true,
       notices: notices.map((n) => {
@@ -2037,6 +2049,7 @@ router.get("/notices/pending", authAny, loadMembership, async (req, res, next) =
           ccVp: n.ccVp,
           sequenceNo: n.sequenceNo,
           count: (n.triggeringIncidentIds || []).length,
+          evidenceCount: (n.triggeringIncidentIds || []).reduce((sum, id) => sum + (attCountById[String(id)] || 0), 0),
           createdAt: n.createdAt,
           renderedText: n.renderedText,
         };

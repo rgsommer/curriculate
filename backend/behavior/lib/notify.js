@@ -9,6 +9,7 @@ import cron from "node-cron";
 import BehaviorNotice from "../models/BehaviorNotice.js";
 import BehaviorStudent from "../models/BehaviorStudent.js";
 import BehaviorIncident from "../models/BehaviorIncident.js";
+import { getEvidenceBytes, signEvidenceKey } from "./evidenceStore.js";
 import BehaviorConfig from "../models/BehaviorConfig.js";
 import BehaviorAuditLog from "../models/BehaviorAuditLog.js";
 import BehaviorTeacher from "../models/BehaviorTeacher.js";
@@ -28,15 +29,20 @@ export function getDefaultProviders(edsby = {}) {
  *
  * @returns {Promise<Array>} delivery records { channel, ok, error, at, failover? }
  */
-export async function sendWithFailover({ recipient, channels, subject, body, html, providers, allowEmailFailover = true }) {
+export async function sendWithFailover({ recipient, channels, subject, body, html, providers, allowEmailFailover = true, attachments, evidenceNote }) {
   const results = [];
+  // Email carries evidence as file attachments; Edsby (text only) carries it as
+  // a short links line appended to the message body.
+  const edsbyBody = evidenceNote ? `${body}\n\n${evidenceNote}` : body;
   for (const ch of channels) {
     const provider = providers[ch];
     if (!provider) {
       results.push({ channel: ch, ok: false, error: "no provider configured", at: new Date() });
       continue;
     }
-    const r = await provider.send({ recipient, subject, body, html });
+    const r = ch === "email"
+      ? await provider.send({ recipient, subject, body, html, attachments })
+      : await provider.send({ recipient, subject, body: edsbyBody, html });
     results.push({ channel: ch, ok: !!r.ok, error: r.error || "", at: new Date() });
 
     // Edsby failover: only when edsby failed, email wasn't already requested, we
@@ -44,7 +50,7 @@ export async function sendWithFailover({ recipient, channels, subject, body, htm
     // Without that opt-in we must NOT silently email a parent (the whole point of
     // an Edsby-only school), so the notice is just recorded as failed instead.
     if (ch === "edsby" && !r.ok && allowEmailFailover && !channels.includes("email") && recipient.email && providers.email) {
-      const fb = await providers.email.send({ recipient, subject, body, html });
+      const fb = await providers.email.send({ recipient, subject, body, html, attachments });
       results.push({
         channel: "email",
         ok: !!fb.ok,
@@ -147,12 +153,46 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
   // Only fall over to a parent's email if the division has opted into emailing
   // families; otherwise an Edsby failure must NOT become a surprise parent email.
   const allowEmailFailover = !!brand?.channels?.emailToParents;
+  // Optional photo/video evidence — only when the teacher chose to send it with
+  // this notice. Email gets the files as attachments; Edsby (text only) gets a
+  // short links line. Gathered from the incidents that triggered the notice.
+  // Wrapped so a storage hiccup never blocks the note itself.
+  let attachments;
+  let evidenceNote;
+  let evidenceHtml = "";
+  if (notice.includeEvidence) {
+    try {
+      const incs = await BehaviorIncident.find({ _id: { $in: notice.triggeringIncidentIds || [] } }).select("attachments").lean();
+      const items = incs.flatMap((i) => i.attachments || []);
+      if (items.length) {
+        attachments = [];
+        const links = [];
+        for (let n = 0; n < items.length; n++) {
+          const a = items[n];
+          const bytes = await getEvidenceBytes(a.key);
+          const ext = (a.key.split(".").pop() || (a.kind === "video" ? "mp4" : "jpg")).slice(0, 5);
+          const filename = `${a.kind}-${n + 1}.${ext}`;
+          if (bytes) attachments.push({ filename, content: bytes.buffer });
+          const url = await signEvidenceKey(a.key, 7 * 24 * 60 * 60); // 7-day link for Edsby
+          if (url) links.push(url);
+        }
+        if (!attachments.length) attachments = undefined;
+        if (links.length) {
+          evidenceNote = `Photo/video evidence (link${links.length > 1 ? "s" : ""} valid 7 days):\n${links.join("\n")}`;
+          evidenceHtml = `<p style="margin:12px 0 0;font-size:13px;color:#475569"><strong>Evidence attached</strong> (${attachments?.length || links.length} file${(attachments?.length || links.length) > 1 ? "s" : ""}).</p>`;
+        }
+      }
+    } catch (err) {
+      console.warn("[behavior/notify] evidence attach failed:", err?.message || err);
+    }
+  }
+
   const html = emailShell({
     title: positive ? "A note of good news" : "A note from school",
     schoolName,
     preheader: positive ? `Some good news about ${studentName}.` : `A behaviour notice about ${studentName}.`,
     accent: positive ? "#16a34a" : "#0f172a",
-    contentHtml: noteToHtml(notice.renderedText),
+    contentHtml: noteToHtml(notice.renderedText) + evidenceHtml,
   });
 
   const allDeliveries = [];
@@ -165,6 +205,8 @@ export async function dispatchNotice(noticeId, { providers, force = false } = {}
       html,
       providers: prov,
       allowEmailFailover,
+      attachments,
+      evidenceNote,
     });
     allDeliveries.push(...deliveries.map((d) => ({ ...d, recipient: recipient.email || recipient.edsbyParentId })));
   }

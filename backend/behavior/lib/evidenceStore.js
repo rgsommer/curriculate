@@ -62,6 +62,19 @@ export async function uploadEvidence({ buffer, contentType, schoolId }) {
   return { key, kind: kindFor(contentType), contentType, size: buffer.length };
 }
 
+/** Download a stored object's bytes (for emailing as an attachment). */
+export async function getEvidenceBytes(key) {
+  const client = s3();
+  if (!client || !key) return null;
+  try {
+    const resp = await client.send(new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    const bytes = await resp.Body.transformToByteArray();
+    return { buffer: Buffer.from(bytes), contentType: resp.ContentType || "application/octet-stream" };
+  } catch {
+    return null;
+  }
+}
+
 /** Short-lived signed GET URL for a stored key (null if unavailable). */
 export async function signEvidenceKey(key, expiresIn = GET_EXPIRY) {
   const client = s3();

@@ -26,7 +26,7 @@ function fromString(from) {
  * Send an email. Shape mirrors nodemailer: { from, to, subject, text, html, replyTo }.
  * Throws on failure (callers catch + report).
  */
-export async function sendEmail({ from, to, subject, text, html, replyTo }) {
+export async function sendEmail({ from, to, subject, text, html, replyTo, attachments }) {
   const key = process.env.RESEND_API_KEY;
   if (key) {
     const { Resend } = await import("resend");
@@ -38,10 +38,12 @@ export async function sendEmail({ from, to, subject, text, html, replyTo }) {
       text,
       html,
       replyTo: replyTo || undefined,
+      // Resend attachments: { filename, content: Buffer|base64 }.
+      attachments: attachments?.length ? attachments.map((a) => ({ filename: a.filename, content: a.content })) : undefined,
     });
     if (error) throw new Error(error.message || JSON.stringify(error));
     return data;
   }
   const { mailer } = await import("../../email/mailer.js");
-  return mailer.sendMail({ from, to, subject, text, html, replyTo });
+  return mailer.sendMail({ from, to, subject, text, html, replyTo, attachments });
 }
