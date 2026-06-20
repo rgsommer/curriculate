@@ -45,6 +45,7 @@ export default function SetupPage() {
         </Link>
       </Card>
       <HousesSection config={me.config} />
+      <HomeworkSettings config={me.config} />
       <EdsbySection edsby={me.config?.edsby} />
       <MyEdsbyCard />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
@@ -429,6 +430,59 @@ function ingestSnippet(apiBase: string, token: string) {
     onload: function (r) { console.log("Behaviours ingest:", r.status, r.responseText); }
   });
 })();`;
+}
+
+function HomeworkSettings({ config }: { config: any }) {
+  const hw = config?.homework || {};
+  const dstr = (d: any) => (d ? new Date(d).toISOString().slice(0, 10) : "");
+  const [terms, setTerms] = useState<string[]>([dstr(hw.termStarts?.[0]), dstr(hw.termStarts?.[1]), dstr(hw.termStarts?.[2])]);
+  const [currentTerm, setCurrentTerm] = useState<number>(hw.currentTerm ?? 0);
+  const [lateWeeks, setLateWeeks] = useState<number>(hw.lateWeeks ?? 3);
+  const [cooldown, setCooldown] = useState<number>(hw.messageCooldownDays ?? 7);
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setErr(null);
+    try {
+      const termStarts = terms.filter((t) => t).map((t) => new Date(t).toISOString());
+      await api("/config", {
+        method: "PUT",
+        body: { homework: { ...hw, termStarts, currentTerm: Number(currentTerm), lateWeeks: Number(lateWeeks), messageCooldownDays: Number(cooldown) } },
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e: any) { setErr(e.message); }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Homework</h2>
+      <p className="mt-1 text-sm text-slate-500">Term dates power outstanding-work reminders (only the current + previous term show) and CSV export. Subjects are added from the Homework tab.</p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        {[0, 1, 2].map((i) => (
+          <Field key={i} label={`Term ${i + 1} start`}>
+            <input type="date" value={terms[i]} onChange={(e) => setTerms((t) => t.map((v, j) => (j === i ? e.target.value : v)))} className={inputCls} />
+          </Field>
+        ))}
+      </div>
+      <div className="mt-3 grid grid-cols-3 gap-2">
+        <Field label="Current term">
+          <select value={currentTerm} onChange={(e) => setCurrentTerm(Number(e.target.value))} className={inputCls}>
+            <option value={0}>Term 1</option><option value={1}>Term 2</option><option value={2}>Term 3</option>
+          </select>
+        </Field>
+        <Field label="“Older than” weeks → 6.2">
+          <input type="number" min={1} value={lateWeeks} onChange={(e) => setLateWeeks(Number(e.target.value))} className={inputCls} />
+        </Field>
+        <Field label="Resend cooldown (days)">
+          <input type="number" min={1} value={cooldown} onChange={(e) => setCooldown(Number(e.target.value))} className={inputCls} />
+        </Field>
+      </div>
+      <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{saved ? "Saved ✓" : "Save homework settings"}</button>
+    </Card>
+  );
 }
 
 function EdsbySection({ edsby }: { edsby: any }) {

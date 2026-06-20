@@ -21,6 +21,9 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
               Dashboard
             </Link>
             <LogNavLink className="text-slate-600 hover:text-slate-900" />
+            <Link href="/behavior/homework" className="text-slate-600 hover:text-slate-900">
+              Homework
+            </Link>
             <Link href="/behavior/students" className="text-slate-600 hover:text-slate-900">
               Students
             </Link>
