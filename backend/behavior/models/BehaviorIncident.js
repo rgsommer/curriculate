@@ -33,6 +33,24 @@ const BehaviorIncidentSchema = new mongoose.Schema(
 
     detailText: { type: String, default: "" }, // optional free-text detail (goes in the parent note)
 
+    // Photo / video evidence captured at log time. Stored PRIVATELY in S3 (only
+    // the bare object key is kept here); access is via short-lived signed URLs,
+    // never a public link — these are images of minors. Never sent to parents.
+    attachments: {
+      type: [
+        {
+          key: { type: String, required: true }, // S3 object key
+          kind: { type: String, enum: ["image", "video"], default: "image" },
+          contentType: { type: String, default: "" },
+          size: { type: Number, default: 0 },
+          uploadedByTeacherId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorTeacher" },
+          at: { type: Date, default: () => new Date() },
+          _id: false,
+        },
+      ],
+      default: [],
+    },
+
     // Private teacher documentation on this incident. NOT sent to parents — for
     // internal records — but IS fed to the AI "Admin Summary". Append-only log.
     teacherNotes: {

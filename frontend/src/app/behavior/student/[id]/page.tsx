@@ -23,6 +23,7 @@ type StudentDetail = {
     teacherNotes?: TeacherNote[];
     timestamp: string;
     countedInNoticeId?: string | null;
+    attachments?: Array<{ key: string; kind: "image" | "video"; contentType?: string; at?: string; url?: string | null }>;
   }>;
   notices: Array<{
     _id: string;
@@ -477,6 +478,25 @@ export default function StudentPage() {
                     placeholder="Detail / comment…" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs" autoFocus />
                   <button onClick={() => saveIncidentEdit(inc._id)} className="rounded-lg bg-slate-900 px-2 py-1 text-xs text-white">Save</button>
                   <button onClick={() => setEditIncId(null)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">Cancel</button>
+                </div>
+              )}
+
+              {(inc.attachments || []).length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-2 pl-3">
+                  {inc.attachments!.map((a, i) =>
+                    a.url ? (
+                      <a key={i} href={a.url} target="_blank" rel="noreferrer" className="block h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-100" title="Open evidence">
+                        {a.kind === "video" ? (
+                          <video src={a.url} className="h-full w-full object-cover" muted />
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={a.url} alt="evidence" className="h-full w-full object-cover" />
+                        )}
+                      </a>
+                    ) : (
+                      <span key={i} className="flex h-20 w-20 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-xs text-slate-400">{a.kind}</span>
+                    )
+                  )}
                 </div>
               )}
 

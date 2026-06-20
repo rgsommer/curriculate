@@ -41,9 +41,13 @@ import { composeNotice, composePositiveNotice, makeDefaultAiClient, deterministi
 import { buildAvgsRouter } from "./avgsRoutes.js";
 import { emailShell, emailButton, noteToHtml, mdToHtml, monthlyKindChartHtml } from "./lib/emailTemplate.js";
 import { scheduleDispatch, dispatchNotice } from "./lib/notify.js";
+import { uploadEvidence, signEvidenceKey, deleteEvidenceKey, isAllowedType, evidenceStorageAvailable } from "./lib/evidenceStore.js";
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 8 * 1024 * 1024 } });
+// Photo/video evidence — larger cap (short phone clips), held in memory only
+// long enough to push to S3. 30 MB covers photos + brief videos.
+const uploadMedia = multer({ storage: multer.memoryStorage(), limits: { fileSize: 30 * 1024 * 1024, files: 5 } });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -1167,7 +1171,16 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
     const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
     const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
-    const incidentsOut = incidents.map((i) => ({ ...i, teacherName: tName[String(i.teacherId)] || "" }));
+    const incidentsOut = await Promise.all(
+      incidents.map(async (i) => ({
+        ...i,
+        teacherName: tName[String(i.teacherId)] || "",
+        // Sign each evidence key into a short-lived URL for display (private S3).
+        attachments: await Promise.all(
+          (i.attachments || []).map(async (a) => ({ key: a.key, kind: a.kind, contentType: a.contentType, at: a.at, url: await signEvidenceKey(a.key) }))
+        ),
+      }))
+    );
 
     res.json({
       ok: true,
@@ -2231,10 +2244,47 @@ router.delete("/incidents/:id", authAny, loadMembership, canLog, async (req, res
     if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
     if (!canEditIncident(req.membership, inc)) return res.status(403).json({ ok: false, error: "Only the teacher who logged it (or an admin) can delete it." });
     await HousePointEvent.deleteMany({ schoolId: req.schoolId, incidentId: inc._id });
+    // Remove any stored photo/video evidence so it doesn't outlive the incident.
+    for (const a of inc.attachments || []) await deleteEvidenceKey(a.key);
     await BehaviorIncident.deleteOne({ _id: inc._id });
     await audit(req.schoolId, "incident.deleted", req, { studentId: inc.studentId, meta: { behavior: inc.behaviorSnapshot?.name } });
     res.json({ ok: true });
   } catch (err) {
+    next(err);
+  }
+});
+
+// Attach photo/video evidence to an incident (camera capture at log time).
+// Stored privately in S3; only the logging teacher or an admin may attach.
+router.post("/incidents/:id/attachments", authAny, loadMembership, canLog, uploadMedia.array("files", 5), async (req, res, next) => {
+  try {
+    if (!evidenceStorageAvailable()) return res.status(503).json({ ok: false, error: "Evidence storage isn't configured on the server." });
+    const inc = await BehaviorIncident.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!inc) return res.status(404).json({ ok: false, error: "Incident not found" });
+    if (!canEditIncident(req.membership, inc)) return res.status(403).json({ ok: false, error: "Only the teacher who logged it (or an admin) can add evidence." });
+    const files = req.files || [];
+    if (!files.length) return res.status(400).json({ ok: false, error: "No files uploaded." });
+
+    const added = [];
+    for (const f of files) {
+      if (!isAllowedType(f.mimetype)) continue; // skip non image/video
+      const meta = await uploadEvidence({ buffer: f.buffer, contentType: f.mimetype, schoolId: req.schoolId });
+      added.push({ ...meta, uploadedByTeacherId: req.membership._id, at: new Date() });
+    }
+    if (!added.length) return res.status(400).json({ ok: false, error: "Only images or videos can be attached." });
+
+    inc.attachments.push(...added);
+    await inc.save();
+    await audit(req.schoolId, "incident.evidence_added", req, { studentId: inc.studentId, meta: { count: added.length } });
+
+    // Return freshly signed URLs so the client can show what it just uploaded.
+    const out = await Promise.all(
+      inc.attachments.map(async (a) => ({ key: a.key, kind: a.kind, contentType: a.contentType, at: a.at, url: await signEvidenceKey(a.key) }))
+    );
+    res.json({ ok: true, attachments: out });
+  } catch (err) {
+    // multer file-size errors surface as err.code === "LIMIT_FILE_SIZE"
+    if (err?.code === "LIMIT_FILE_SIZE") return res.status(413).json({ ok: false, error: "A file is too large (max 30 MB each). Try a shorter video." });
     next(err);
   }
 });

@@ -59,6 +59,8 @@ export default function LogIncidentPage() {
   const [note, setNote] = useState("");
   const [sendImmediately, setSendImmediately] = useState(false);
   const [requestMeeting, setRequestMeeting] = useState(false);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -186,12 +188,36 @@ export default function LogIncidentPage() {
       setCreatedIds((res.incidents || []).map((i) => i._id));
       setTrigger(res.triggerIncidents || []);
       setTriggerCount(res.triggerCount || 3);
+
+      // Upload any photo/video evidence to the incident just created.
+      const incId = res.incidents?.[0]?._id;
+      if (incId && mediaFiles.length) {
+        setUploadingMedia(true);
+        try {
+          const fd = new FormData();
+          for (const f of mediaFiles) fd.append("files", f);
+          await api(`/incidents/${incId}/attachments`, { body: fd });
+        } catch (e: any) {
+          setError(`Incident logged, but evidence upload failed: ${e.message}`);
+        } finally {
+          setUploadingMedia(false);
+        }
+      }
       setDone(true);
     } catch (e: any) {
       setError(e.message);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function onPickMedia(e: React.ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files || []);
+    if (picked.length) setMediaFiles((prev) => [...prev, ...picked].slice(0, 5));
+    e.target.value = ""; // let the same file be re-picked
+  }
+  function removeMedia(idx: number) {
+    setMediaFiles((prev) => prev.filter((_, i) => i !== idx));
   }
 
   async function undo() {
@@ -238,6 +264,7 @@ export default function LogIncidentPage() {
     setNote("");
     setSendImmediately(false);
     setRequestMeeting(false);
+    setMediaFiles([]);
     setKindFilter("negative");
     setNotice(null);
     setPositiveNotice(null);
@@ -501,6 +528,43 @@ export default function LogIncidentPage() {
           className="w-full rounded-xl border border-slate-300 px-4 py-3"
         />
 
+        {/* Photo / video evidence (camera or library) */}
+        <div>
+          <span className="mb-1 block text-sm font-medium text-slate-600">Photo / video evidence (optional)</span>
+          <div className="flex flex-wrap gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700">
+              📷 Take photo / video
+              <input type="file" accept="image/*,video/*" capture="environment" className="hidden" onChange={onPickMedia} />
+            </label>
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm text-slate-700">
+              🖼 From library
+              <input type="file" accept="image/*,video/*" multiple className="hidden" onChange={onPickMedia} />
+            </label>
+          </div>
+          {mediaFiles.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {mediaFiles.map((f, idx) => {
+                const url = URL.createObjectURL(f);
+                const isVideo = f.type.startsWith("video/");
+                return (
+                  <div key={idx} className="relative h-20 w-20 overflow-hidden rounded-lg border border-slate-200 bg-slate-100">
+                    {isVideo ? (
+                      <video src={url} className="h-full w-full object-cover" muted />
+                    ) : (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={url} alt="" className="h-full w-full object-cover" />
+                    )}
+                    <button type="button" onClick={() => removeMedia(idx)}
+                      className="absolute right-0 top-0 flex h-5 w-5 items-center justify-center bg-black/60 text-xs text-white">✕</button>
+                    {isVideo && <span className="absolute bottom-0 left-0 bg-black/60 px-1 text-[10px] text-white">video</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <p className="mt-1 text-xs text-slate-400">Stored privately for the student record — never sent to parents. Up to 5 files, 30 MB each.</p>
+        </div>
+
         {kindFilter === "negative" && (
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} className="mt-0.5" />
@@ -521,7 +585,7 @@ export default function LogIncidentPage() {
           disabled={!behaviorId || submitting}
           className={`w-full rounded-xl px-4 py-4 text-lg font-semibold text-white disabled:opacity-40 ${kindFilter === "positive" ? "bg-green-700" : "bg-slate-900"}`}
         >
-          {submitting ? "Submitting…" : kindFilter === "positive" ? "Log positive" : "Submit"}
+          {uploadingMedia ? "Uploading evidence…" : submitting ? "Submitting…" : kindFilter === "positive" ? "Log positive" : "Submit"}
         </button>
       </form>
     );
