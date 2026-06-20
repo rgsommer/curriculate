@@ -458,8 +458,10 @@ section("N. Truth or Dare — type plumbing + safety + library + selector");
     tierProgression: "linear",
     judgmentMode: "mixed",
     seedChallenges: [
-      { id: "s1", type: "truth", tier: "sprout", category: "recall", prompt: "Name a producer in a forest food web.", timeSeconds: 20, judgmentMode: "teacher", rewardTier: "small" },
-      { id: "s2", type: "dare",  tier: "sprout", category: "mime",   prompt: "Mime photosynthesis for 20 seconds.",   timeSeconds: 30, judgmentMode: "class-vote", rewardTier: "medium" },
+      { id: "s1", type: "truth", tier: "sprout", category: "recall",  prompt: "Name a producer in a forest food web.",            timeSeconds: 20, judgmentMode: "teacher",    rewardTier: "small"  },
+      { id: "s2", type: "dare",  tier: "sprout", category: "mime",    prompt: "Mime photosynthesis for 20 seconds.",                timeSeconds: 30, judgmentMode: "class-vote", rewardTier: "medium" },
+      { id: "s3", type: "truth", tier: "stem",   category: "explain", prompt: "Explain in one sentence why predators matter.",      timeSeconds: 30, judgmentMode: "teacher",    rewardTier: "medium" },
+      { id: "s4", type: "dare",  tier: "stem",   category: "narrate", prompt: "Narrate a 30-second nature documentary clip.",       timeSeconds: 40, judgmentMode: "class-vote", rewardTier: "medium" },
     ],
   });
   const tN = normalizeTaskByType("truth-or-dare", t);
@@ -568,12 +570,25 @@ section("N. Truth or Dare — type plumbing + safety + library + selector");
   const tooIntense = _pipeline({ taskType: "truth-or-dare", title: "x", prompt: "y", config: { subject: "s", unitName: "u", gradeLevel: 6, physicalIntensityMax: 9 } });
   assert(tooIntense.v.ok && tooIntense.n.config.physicalIntensityMax === 3, "physicalIntensityMax=9 clamped to 3 by sanitizer");
 
-  // Sanitizer drops malformed seedChallenges entries
+  // Sanitizer drops malformed seedChallenges entries. We need to ship
+  // enough valid seeds so the validator's ≥4-with-variety rule passes
+  // after the malformed one is dropped — otherwise this test would
+  // double-fail (the validator rejecting the resulting <4 seeds set
+  // would hide the sanitizer behaviour we're actually checking).
   const mixedSeeds = _pipeline({
     taskType: "truth-or-dare", title: "x", prompt: "y",
-    config: { subject: "s", unitName: "u", gradeLevel: 6, seedChallenges: [{ type: "truth" }, { type: "dare", prompt: "do a thing" }] },
+    config: {
+      subject: "s", unitName: "u", gradeLevel: 6,
+      seedChallenges: [
+        { type: "truth" }, // promptless — should be dropped
+        { type: "truth", tier: "sprout", prompt: "Q1?" },
+        { type: "truth", tier: "stem",   prompt: "Q2?" },
+        { type: "dare",  tier: "sprout", prompt: "Mime it." },
+        { type: "dare",  tier: "stem",   prompt: "Narrate it." },
+      ],
+    },
   });
-  assert(mixedSeeds.v.ok && mixedSeeds.n.config.seedChallenges.length === 1, "sanitizer drops promptless seed, keeps valid one");
+  assert(mixedSeeds.v.ok && mixedSeeds.n.config.seedChallenges.length === 4, "sanitizer drops promptless seed, keeps the 4 valid ones");
 
   // N.7 — generator returns library fallback when API key missing
   // (skipLibrary=false: even without OPENAI_API_KEY this should return a normalized challenge from the library)

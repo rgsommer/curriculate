@@ -1031,6 +1031,29 @@ explanation?: short note shown after submit
        DO NOT create a third "Both" / "Overlap" / "Intersection" category — the
        overlap region is represented by items whose "categories" array contains
        BOTH category names, not a separately-named category.
+
+    OVERLAP-RECOGNITION EXAMPLES (apply this thinking to YOUR topic):
+    For "Fractions vs Decimals" the BOTH region MUST include items like:
+       - "Tenths" (1/10 is a fraction, 0.1 is a decimal — same value)
+       - "Hundredths" (1/100 = 0.01)
+       - "Half" (1/2 = 0.5)
+       - "Mixed-form numbers" (e.g. 2 1/2 = 2.5)
+       - "Equivalent values like 1/4 and 0.25"
+    The DECIMALS-ONLY region is things like "Recurring decimal" or "Decimal point".
+    The FRACTIONS-ONLY region is things like "Numerator", "Denominator",
+       "Improper fraction" (which IS a fraction concept even though it
+       converts to a decimal — categorise by whose CONCEPT it is, not
+       what it CAN BE converted to).
+    Audit-2 #5 caught: "Tenths" was filed under Decimals-only, "Mixed
+    number" under Both. Both wrong by the rule above.
+
+    When deciding categories for an item, ask: "Is this item a CONCEPT in
+    category A?", "Is it a CONCEPT in category B?". An item belongs in the
+    overlap only if it is genuinely a concept in BOTH (e.g. "Half" is a
+    fraction concept AND a decimal concept). An item that is purely a
+    fraction concept but can be expressed as a decimal (like "Numerator")
+    stays in Fractions-only — the conversion possibility doesn't change
+    its category membership.
     2. config.items: array of objects with { "id": "item-0-Dog", "text": "Dog", "categories": ["Mammals"] }.
        For an overlap item, "categories" has length 2: ["Mammals","Flying animals"].
     3. Include a top-level "correctAnswer" mapping every item id to its category array.
@@ -4821,19 +4844,30 @@ config: {
       that earns zero coins can still tilt the ball home).
 
     REQUIRED config.questionBank: array of 4-8 curriculum questions.
-    Each question: { id: "q1", prompt: "string", correctAnswer: "string", reward: 1-3 }.
+    Each question: { id: "q1", prompt: "string", correctAnswer: "string", reward: { coins: 1-3 } }.
     The prompt MUST name the unit topic — no generic "Solve the problem".
     Mix question types (recall + apply + analyze). Vary reward values.
+    IMPORTANT: reward MUST be an OBJECT { coins: N } — a plain number
+    (reward: 1) is silently dropped by the renderer (audit-2 #3).
 
     Optional config.economy: { straightRailCost:3, curvedRailCost:5, bumperCost:4 }.
     Optional config.scoring: { successPoints:10, playPoints:1 }.
 
-    THEME the board to the lesson:
-    - History: cannonball-into-fort, ship-to-harbor, soldier-to-objective.
-    - Science: electron-through-circuit, water-droplet-through-cloud,
-      seed-into-soil, photon-to-leaf.
+    THEME the board to the lesson — the framing must be ABOUT the topic,
+    not borrowed from a different field. Audit-2 #3: a Photosynthesis
+    set picked an "electron through circuit" theme, which is electricity,
+    not biology, and confused students about what photosynthesis even is.
+    - History (War of 1812 / Civil War / etc.): cannonball-to-fort,
+      ship-to-harbor, soldier-to-objective — themes from THAT war.
+    - Photosynthesis specifically: sunbeam-to-leaf, water-droplet-to-roots,
+      CO₂-molecule-to-chloroplast — themes from the actual process.
+    - Other science: water-droplet-through-cloud (for water cycle),
+      seed-into-soil (for plant growth), photon-to-leaf (for photosynthesis).
     - Math: solving a maze of operations where the hole is the answer cell.
     - English: word-quest-to-destination, character-finds-resolution.
+    Rule: the title and prompt must NAME the unit topic. If you can't
+    explain to a student why your chosen theme connects to the topic,
+    PICK A DIFFERENT THEME.
 
     Worked example for Grade 7 War of 1812:
     {
@@ -5031,19 +5065,30 @@ config: {
     - config.judgmentMode ('teacher' | 'class-vote' | 'mixed', default 'mixed')
     - config.safeClassroomMode (bool, default false)
 
-    Optional config.seedChallenges (array, 1-3 entries): each entry shaped as
-      { type: 'truth' | 'dare',
-        tier: 'sprout' | 'stem' | 'big',
-        category: 'recall'|'explain'|'defend'|'mime'|'persuade'|'roleplay'|'improv'|'draw'|'narrate'|'compose'|'reflect'|'predict',
-        prompt: '...',
-        teacherHint: '...',
-        timeSeconds: 15-90,
-        physicalIntensity: 0-3,
-        socialIntensity: 0-3,
-        noiseExpected: 0-3,
-        acceptableAnswers: [...] | null,
-        judgmentMode: 'ai'|'teacher'|'class-vote',
-        rewardTier: 'small'|'medium'|'large' }
+    REQUIRED config.seedChallenges — array of 4-6 entries, with MANDATORY variety:
+      - AT LEAST 2 entries with type: "truth" (recall / explain / defend questions)
+      - AT LEAST 2 entries with type: "dare"  (mime / draw / persuade / roleplay challenges)
+      - Mix tiers: include AT LEAST one "sprout" and AT LEAST one "stem" so the
+        linear progression actually escalates difficulty.
+      - judgmentMode MUST be one of "teacher" or "class-vote" — "ai" is not
+        recognised by the renderer and gets coerced to "teacher".
+      - Each entry shape:
+        { type: "truth" | "dare",
+          tier: "sprout" | "stem" | "big",
+          category: "recall"|"explain"|"defend"|"mime"|"persuade"|"roleplay"|"improv"|"draw"|"narrate"|"compose"|"reflect"|"predict",
+          prompt: "...",
+          teacherHint: "...",
+          timeSeconds: 15-90,
+          physicalIntensity: 0-3,
+          socialIntensity: 0-3,
+          noiseExpected: 0-3,
+          acceptableAnswers: ["alt1","alt2",...] | null,
+          judgmentMode: "teacher" | "class-vote",
+          rewardTier: "small" | "medium" | "large" }
+      Why this matters: config.totalRounds is 6 by default. With only 1 seed,
+      the SAME challenge repeats every round. With only "truth" types, the
+      game stops being Truth-OR-Dare (the renderer's CHOOSING phase lets the
+      player pick either; only finding "truth" seeds defeats the format).
 
     SAFETY (absolute):
     - NO romance, attraction, personal disclosure, family income, religion-mockery,
@@ -5794,13 +5839,13 @@ const _DEFAULT_AFFINITY = { math: 0.7, science: 0.7, history: 0.7, language: 0.7
 */
 export const TASK_TYPE_FIX_VERSION = {
   // ── 2026-06 audit-driven fixes — testers re-validate after each ──
-  [TASK_TYPES.VENNSORT]:           2, // shell + aiPrompt rewrite for A/B/Both regions
+  [TASK_TYPES.VENNSORT]:           3, // (audit2 #5) overlap-recognition worked examples
   [TASK_TYPES.PHOTO]:              2, // single-instruction prompt enforcement
   [TASK_TYPES.MAKE_AND_SNAP]:      2, // matched single-instruction rules
   [TASK_TYPES.CAREERS]:            2, // title-eating sanitizer bug fix + per-mode aiPrompt
   [TASK_TYPES.SPEED_DRAW]:         2, // align to single config.word + new sanitizer/validator
   [TASK_TYPES.OPEN_TEXT]:          2, // reject placeholder prompts + un-nest
-  [TASK_TYPES.HOLE_IN_ONE]:        2, // full schema in aiPrompt + ≥ 3 questions required
+  [TASK_TYPES.HOLE_IN_ONE]:        3, // (audit2 #3) reward shape sanitizer + topic-themed framing
   [TASK_TYPES.NARRATION_SYNTHESIZE]: 2, // aiPrompt rewritten for oral teach-back, prompt-shape sanitizer
   [TASK_TYPES.ROLE_PLAY_DECK]:       2, // shell + aiPrompt + validator realigned to renderer's {name,role,characteristics,gender}
   [TASK_TYPES.MIND_MAPPER]:          2, // normalize accepts plain-string items so they survive into the renderer
@@ -5809,11 +5854,12 @@ export const TASK_TYPE_FIX_VERSION = {
   [TASK_TYPES.DIFF_DETECTIVE]:     2, // (#22) lenient scoring
   [TASK_TYPES.ART_VIEW]:           3, // (#13) DATE-FIT rule
   [TASK_TYPES.LEGENDS]:            2, // (#9) explicit DECOY TRUTH RULE
-  [TASK_TYPES.TIMELINE]:           2, // (#8) BCE branch in extractDateValue
-  [TASK_TYPES.PEER_EDITING]:       2, // (#7) drop unfindable errors after auto-repair
+  [TASK_TYPES.TIMELINE]:           3, // (audit2 #1) extend BCE branch to century patterns
+  [TASK_TYPES.PEER_EDITING]:       3, // (audit2 #2) edit-distance check on wordIndex word
   [TASK_TYPES.GUESS_WHO]:          2, // (#14) shell stripped to secretAnswers only
   [TASK_TYPES.BODY_BREAK]:         2, // (#15) sanitizer fills steps/totalSeconds/label
   [TASK_TYPES.MOTION_MISSION]:     2, // matched body-break sanitizer changes
+  [TASK_TYPES.TRUTH_OR_DARE]:      2, // (audit2 #4) require ≥ 4 seeds + truth+dare variety + tier variety
   [TASK_TYPES.HISTORICAL_DOC]:     2, // (#19) shorter timers
   [TASK_TYPES.WHAT_AM_I]:          2, // (#20) easier starter pool
   [TASK_TYPES.MYSTERY_CLUES]:      2, // pool rotation
@@ -7104,9 +7150,12 @@ export const TASK_SHELLS = {
     return { shell: JSON.stringify(shell, null, 2), fillInstructions: placeholders.join("\n"), placeholderNames: names };
   },
 
-  [TASK_TYPES.TRUTH_OR_DARE]: function buildTruthOrDareShell({ seedCount = 1 } = {}) {
-    // Clamp seedCount to 1-3
-    const N = Math.max(1, Math.min(3, Number(seedCount) || 1));
+  [TASK_TYPES.TRUTH_OR_DARE]: function buildTruthOrDareShell({ seedCount = 4 } = {}) {
+    // Default raised from 1 to 4 — validator requires ≥ 4 seeds with
+    // both type variety (truth + dare) and tier variety (sprout +
+    // stem). The old 1-seed shell forced the renderer to repeat the
+    // same challenge across all 6 rounds. See audit #4 (second sweep).
+    const N = Math.max(4, Math.min(8, Number(seedCount) || 4));
 
     const placeholders = [
       "TITLE: Short, exciting title (3-7 words) — e.g. 'Truth or Dare - Water Cycle'",

@@ -743,43 +743,46 @@ export function normalizeTaskByType(taskType, rawTask) {
           return isBce ? -y : y;
         }
 
+        // BCE applies to ALL the patterns below — wrap each return.
+        const signed = (v) => isBce ? -v : v;
+
         // Try decade: (1790s)
         const decade = hint.match(/\b(\d{3})0s\b/);
         if (decade) {
           const base = parseInt(decade[1], 10) * 10;
-          if (hint.includes("early")) return base + 2;
-          if (hint.includes("late")) return base + 8;
-          if (hint.includes("mid")) return base + 5;
-          return base + 5;
+          if (hint.includes("early")) return signed(base + 2);
+          if (hint.includes("late")) return signed(base + 8);
+          if (hint.includes("mid")) return signed(base + 5);
+          return signed(base + 5);
         }
 
         // Try century phrases with qualifier: (early 1700s), (mid-1800s), (late 1700s)
-        // Match qualifier + century as a unit to avoid cross-contamination
-        // in ranges like "late 1700s to early 1800s"
         const qualCentury = hint.match(/\b(early|late|mid)[- ]?(\d{4})s\b/);
         if (qualCentury) {
           const base = parseInt(qualCentury[2], 10);
-          if (qualCentury[1] === "early") return base + 15;
-          if (qualCentury[1] === "late") return base + 75;
-          return base + 50; // mid
+          if (qualCentury[1] === "early") return signed(base + 15);
+          if (qualCentury[1] === "late") return signed(base + 75);
+          return signed(base + 50);
         }
 
         // Try bare century without qualifier: (1700s)
         const bareCentury = hint.match(/\b(\d{4})s\b/);
-        if (bareCentury) return parseInt(bareCentury[1], 10) + 50;
+        if (bareCentury) return signed(parseInt(bareCentury[1], 10) + 50);
 
-        // Try ordinal century with qualifier: (early 19th century)
+        // Try ordinal century with qualifier: (early 19th century BCE / 4th century BCE)
+        // The audit-2 #1 case lived here — "4th century BCE" must sort as
+        // an older (more negative) year than "8th century BCE".
         const qualOrd = hint.match(/\b(early|late|mid)[- ]?(\d{1,2})(?:st|nd|rd|th)\s+century\b/);
         if (qualOrd) {
           const base = (parseInt(qualOrd[2], 10) - 1) * 100;
-          if (qualOrd[1] === "early") return base + 15;
-          if (qualOrd[1] === "late") return base + 75;
-          return base + 50;
+          if (qualOrd[1] === "early") return signed(base + 15);
+          if (qualOrd[1] === "late") return signed(base + 75);
+          return signed(base + 50);
         }
 
-        // Try bare ordinal century: (18th century)
+        // Try bare ordinal century: (18th century / 4th century BCE)
         const bareOrd = hint.match(/\b(\d{1,2})(?:st|nd|rd|th)\s+century\b/);
-        if (bareOrd) return (parseInt(bareOrd[1], 10) - 1) * 100 + 50;
+        if (bareOrd) return signed((parseInt(bareOrd[1], 10) - 1) * 100 + 50);
 
         return null;
       };
@@ -3796,18 +3799,35 @@ export function validateTaskByType(taskType, task) {
       if (cfg.judgmentMode && !allowedJudgmentModes.includes(cfg.judgmentMode)) {
         errors.push(`truth-or-dare config.judgmentMode must be one of ${allowedJudgmentModes.join("/")}`);
       }
-      // Seed challenge shape (lenient — runtime generator produces the real ones)
+      // Seed challenge shape. Seeds remain OPTIONAL at the validator
+      // level (the runtime generator can produce real challenges), but
+      // when the AI DOES ship them we enforce ≥ 4 with both type variety
+      // AND tier variety — audit-2 #4 caught a 1-seed truth-only set
+      // that repeated the same prompt across all 6 rounds.
       if (cfg.seedChallenges != null) {
         if (!Array.isArray(cfg.seedChallenges)) {
           errors.push("truth-or-dare config.seedChallenges must be an array");
-        } else if (cfg.seedChallenges.length > 5) {
-          errors.push("truth-or-dare config.seedChallenges max 5");
+        } else if (cfg.seedChallenges.length === 0) {
+          // Empty array is fine — equivalent to omitting.
+        } else if (cfg.seedChallenges.length < 4) {
+          errors.push(`truth-or-dare config.seedChallenges must have ≥ 4 entries when present (got ${cfg.seedChallenges.length}) — without variety the same challenge repeats every round`);
+        } else if (cfg.seedChallenges.length > 8) {
+          errors.push("truth-or-dare config.seedChallenges max 8");
         } else {
+          let truthCount = 0, dareCount = 0;
+          const tiersSeen = new Set();
           cfg.seedChallenges.forEach((c, i) => {
             if (!isObject(c)) { errors.push(`truth-or-dare seedChallenges[${i}] must be an object`); return; }
-            if (!["truth", "dare"].includes(c.type)) errors.push(`truth-or-dare seedChallenges[${i}].type must be truth|dare`);
+            if (!["truth", "dare"].includes(c.type)) {
+              errors.push(`truth-or-dare seedChallenges[${i}].type must be truth|dare`);
+            } else if (c.type === "truth") truthCount++;
+            else dareCount++;
             if (typeof c.prompt !== "string" || !c.prompt.trim()) errors.push(`truth-or-dare seedChallenges[${i}].prompt required`);
+            if (typeof c.tier === "string") tiersSeen.add(c.tier);
           });
+          if (truthCount < 2) errors.push(`truth-or-dare needs ≥ 2 "truth"-type seeds when present (got ${truthCount}) — the game is Truth-OR-Dare`);
+          if (dareCount < 2) errors.push(`truth-or-dare needs ≥ 2 "dare"-type seeds when present (got ${dareCount}) — the game is Truth-OR-Dare`);
+          if (tiersSeen.size < 2) errors.push(`truth-or-dare needs ≥ 2 different tiers across seeds when present (got ${[...tiersSeen].join("/") || "none"}) — linear progression needs escalation`);
         }
       }
       break;

@@ -866,20 +866,35 @@ export function sanitizeTaskShapeByType(type, task) {
         return true;
       });
 
-      // Final-state guard: drop errors whose wordIndex now points at the
-      // CORRECT word (which would make them un-findable for the student).
-      // These are leftovers from auto-repair failures — better to drop and
-      // let the validator reject for "too few errors" than ship a task
-      // where students can't actually find the marked errors.
+      // Final-state guard: each error's wordIndex must point at a word
+      // that PLAUSIBLY needs the marked correction. Two compounding
+      // failure modes from audit-2 #2:
+      //   (a) wordIndex points at the CORRECT word already → un-findable
+      //   (b) wordIndex points at a DIFFERENT word that doesn't resemble
+      //       the `correct` value → student can't reason about it
+      //       (e.g. error at idx 17 = "one", correct = "written").
+      // Filter both. Survivor count < 3 → regenerate.
       const passageWords = t.passage.split(/\s+/);
       const _strip = (w) => String(w || "").replace(/[.,;:!?"'()[\]{}]/g, "").toLowerCase();
       t.errors = t.errors.filter((e) => {
         if (e.wordIndex < 0 || e.wordIndex >= passageWords.length) return false;
         const atIdx = _strip(passageWords[e.wordIndex]);
         const correct = _strip(e.correct);
-        // If the word at the index is already the correct one, this error
-        // points at nothing the student can find — drop it.
-        if (atIdx && correct && atIdx === correct) return false;
+        if (!atIdx || !correct) return false;
+        // (a) already the correct word — no error to find.
+        if (atIdx === correct) return false;
+        // (b) resemblance check: for typo / grammar fixes the word at the
+        // index should be a plausible misspelling of `correct`. We allow
+        // up to half the correct word's length in edits PLUS a common-
+        // prefix floor of 2. "process" vs "proccess" (1 edit) passes;
+        // "one" vs "written" (5+ edits, no shared prefix) fails.
+        if (e.type === "typo" || e.type === "grammar") {
+          const d = _editDistance(atIdx, correct);
+          const maxAllowed = Math.max(3, Math.floor(correct.length / 2));
+          const sharedPrefix = _commonPrefixLen(atIdx, correct);
+          if (d > maxAllowed && sharedPrefix < 2) return false;
+        }
+        // delete/insert/logic don't have a string-similarity constraint.
         return true;
       });
 
@@ -1096,6 +1111,33 @@ export function sanitizeTaskShapeByType(type, task) {
     }
 
     t.config = cfg;
+  }
+
+  // ── HOLE_IN_ONE: coerce questionBank[i].reward number → {coins: N} ──
+  // HoleInOneTask.jsx reads `currentQ.reward.coins`. The AI ships rewards
+  // as plain integers (reward: 1, reward: 2) because the aiPrompt says
+  // "reward 1-3". A plain number passes the `||` short-circuit but
+  // Number((1).coins) === NaN, so the coin reward is silently dropped.
+  // Audit-2 #3: students earned zero coins despite answering correctly.
+  if (type === TASK_TYPES.HOLE_IN_ONE) {
+    const cfg = t.config && typeof t.config === "object" ? t.config : null;
+    if (cfg && Array.isArray(cfg.questionBank)) {
+      cfg.questionBank = cfg.questionBank.map((q) => {
+        if (!q || typeof q !== "object") return q;
+        const r = q.reward;
+        if (typeof r === "number" && Number.isFinite(r) && r > 0) {
+          return { ...q, reward: { coins: Math.max(1, Math.min(10, Math.round(r))) } };
+        }
+        if (r && typeof r === "object" && (r.coins == null || !Number.isFinite(Number(r.coins)))) {
+          return { ...q, reward: { ...r, coins: 1 } };
+        }
+        if (r == null) {
+          return { ...q, reward: { coins: 1 } };
+        }
+        return q;
+      });
+      t.config = cfg;
+    }
   }
 
   // ── OPEN_TEXT: un-nest prompt:{text,settings}, hoist root-level
