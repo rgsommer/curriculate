@@ -51,8 +51,8 @@ const EDSBY = [
     body: "Edsby cookies are HttpOnly, so they can't be read by a page. A small browser extension (download in Setup) pushes a fresh cookie and the jver/cver version headers into the app for you — so notices keep delivering without you re-pasting.",
   },
   {
-    title: "Automatic email fallback",
-    body: "If an Edsby post ever fails, the notice falls over to email automatically and the form key is refreshed before each broadcast — a notice never silently fails.",
+    title: "Reliable delivery",
+    body: "The Edsby form key is refreshed before each broadcast so posts don't fail on a stale session. If an Edsby post does fail, it's recorded as failed for you to retry — it falls back to a parent's email only if your division has opted into email (so families are never emailed by surprise).",
   },
 ];
 

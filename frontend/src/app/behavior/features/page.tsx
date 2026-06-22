@@ -1,174 +1,192 @@
 // src/app/behavior/features/page.tsx
 //
-// Public features/overview page for the Behaviours app. Reachable at
-// /behavior/features (and /behaviors/features via a redirect in next.config.js).
+// The Guide — a complete, administrator-ready overview of what Behaviours does.
+// Reachable at /behavior/features. Includes a Print / Save-as-PDF button.
 
 import Link from "next/link";
 import GuideGated from "../_components/GuideGated";
+import PrintButton from "../_components/PrintButton";
 
 export const metadata = {
-  title: "Behaviours — Features",
+  title: "Behaviours — Guide & overview",
   description:
-    "Track student behaviour across a whole school. One shared strike count per student, across every teacher, with automatic parent notices.",
+    "A school-wide, pastoral approach to behaviour: cross-teacher tracking of positives and negatives, early intervention, and parent communication that a teacher always reviews and sends — never auto-sent.",
 };
 
-const FEATURES = [
+// What it does — grouped, accurate to how it works today (nothing auto-sends).
+const TRACKING = [
   {
-    title: "One count per student — across every teacher",
-    body: "Incidents pool per student, not per teacher. Two strikes with each of six teachers still reaches the trigger. No more slipping through the cracks because each teacher counts separately.",
+    title: "One shared count per student — across every teacher",
+    body: "Incidents pool per student, not per teacher. Two concerns with each of six teachers still add up. No more slipping through the cracks because everyone counted separately — and no teacher is left fighting a pattern alone.",
   },
   {
-    title: "Positive or negative — your choice each time",
-    body: "When you log, you pick ✕ Negative (an offence) or ✓ Positive (a reward) first, then the list filters to match. Negatives count toward strikes; positives never do.",
+    title: "Positives and negatives, side by side",
+    body: "Every log is ✓ Positive or ✕ Negative. Negatives accumulate toward a threshold; positives are recognised, earn house points, and can trigger a good-news note home — they never count against a student.",
   },
   {
-    title: "Threshold & immediate triggers",
-    body: "Most behaviours count toward a shared strike total that fires a notice home at the trigger number. Serious ones (insolence, cheating) notify a parent immediately on a single incident.",
+    title: "Catch patterns early",
+    body: "The dashboard surfaces “Students to encourage” (at or one away from a threshold) so staff can step in supportively before things escalate — a quiet word or a check-in while the trend can still turn around.",
   },
   {
-    title: "30-day fade window",
-    body: "Old incidents stop counting toward the threshold after a configurable window, so a student isn't punished forever — but the full history is always kept.",
+    title: "A fade window, not a permanent record-against",
+    body: "Older incidents stop counting toward the threshold after a configurable window (e.g. 30 days), so a student isn't punished forever — though the full history is always kept for context.",
   },
   {
-    title: "AI-written notes home (with a safety net)",
-    body: "Each notice is composed to read naturally and adapt its tone to the history — gentler on a first contact, clearer on a repeat. If the AI is ever unavailable, a deterministic template still sends. A notice never silently fails.",
+    title: "Documented, defensible records",
+    body: "Each incident snapshots the wording at log time, who logged it, and any private teacher notes. Edit, correct, or undo with a full audit trail. A clean record protects students and staff alike.",
   },
   {
-    title: "Request a meeting on the spot",
-    body: "Before a notice goes out, tick “also request a meeting with the parents” and a meeting request is woven into the note — no need to write a separate email.",
-  },
-  {
-    title: "Signed by the right teachers",
-    body: "A notice is from the teachers whose incidents made up the strikes — each named with the behaviour they logged — not a single homeroom teacher.",
-  },
-  {
-    title: "VP escalation",
-    body: "The Vice-Principal is automatically copied on the second and later notices home for a student, so leadership is looped in exactly when a pattern is forming.",
-  },
-  {
-    title: "Log several students at once",
-    body: "For “these five weren't ready for class” moments, flip to the reverse flow: pick one behaviour, tap the students, log them all in one go. Each still gets their own record and trigger check.",
-  },
-  {
-    title: "Find any student fast",
-    body: "A Students tab and dashboard search open any student's full cross-teacher history — strikes, every incident, and every notice home — in one tap.",
-  },
-  {
-    title: "Students to encourage",
-    body: "The dashboard surfaces anyone at — or one incident away from — the trigger: a prompt to catch them doing well or check in before the next strike, while the trend can still turn around. Tap straight through to their record.",
-  },
-  {
-    title: "Who needs attention (admin)",
-    body: "A read-only, school-wide view for admins and the VP: students at or near a notice, the most-logged students over the last 90 days, and a per-class breakdown — the whole division at a glance.",
-  },
-  {
-    title: "Per-student communication history",
-    body: "Every notice — who it went to, on which channel, the full wording, whether the VP was copied — is kept in a timeline you can review before a parent meeting.",
-  },
-  {
-    title: "On-screen trend chart",
-    body: "Each student's record shows a month-by-month red/green timeline of incidents and positives, so a pattern — or a turnaround — is visible at a glance.",
-  },
-  {
-    title: "Edit, delete & undo",
-    body: "Fix a detail, remove a mistaken incident (which also unwinds any house points), or undo a just-logged entry. You can edit your own incidents; admins can edit any.",
-  },
-  {
-    title: "Log a parent meeting or call",
-    body: "Record a meeting or phone call on a student's record as an interaction — kept for the file and the AI summary, but it never counts as a strike and sends nothing home.",
-  },
-  {
-    title: "Print or export a record",
-    body: "One tap prints a clean copy of a student's full record — strikes, incidents and notices home — for a meeting, a file, or a PDF, with the buttons and menus stripped out.",
-  },
-  {
-    title: "Morning follow-up reminders",
-    body: "Consequences with a follow-up (e.g. lines due next day) appear each morning to check off Done / Not done / Waived. A missed consequence escalates automatically.",
-  },
-  {
-    title: "AI summaries — per student & division-wide",
-    body: "Generate an admin summary of a student's whole record (incl. private teacher notes), or a division/teacher executive summary of trends — both with a red/green timeline graph, copy-to-clipboard, and email to yourself or the VP.",
-  },
-  {
-    title: "Reports & charts",
-    body: "An in-app Reports view shows incidents and notices over time, by behaviour, by class, and by trigger type — and a Team & usage view shows who has joined, who's active, and who's still pending an invite.",
-  },
-  {
-    title: "Roster import + a ready-made behaviour set",
-    body: "Upload your roster as CSV or XLSX (a template is one click; messy rows handled, sensitive fields dropped, an optional House column assigns students). Then one click adds a full standard behaviour list — and any teacher can add their own private behaviours.",
-  },
-  {
-    title: "Roles, invites & privacy",
-    body: "Invite staff by email (locked to your school's domain), resend or revoke pending invites. Teachers log and view; only admins edit setup; the principal gets a read-only view. Every send and change is audit-logged.",
+    title: "Trends & summaries",
+    body: "Per-student red/green timelines, a school-wide “Who needs attention” view, division reports by behaviour / class / month, and AI summaries that fairly reflect offences, positives, interactions and follow-through.",
   },
 ];
 
-const STEPS = [
-  { n: "1", t: "Set up your division", d: "Upload the roster, set the trigger count and fade window, name your VP, and invite your staff." },
-  { n: "2", t: "Log in the moment", d: "Any teacher logs any student in a few taps. The shared count updates instantly across the whole school." },
-  { n: "3", t: "Notices go home automatically", d: "When a student hits the threshold (or an immediate behaviour is logged), a clear, history-aware note goes to the parents — and the VP when it's a repeat." },
+const COMMUNICATION = [
+  {
+    title: "Nothing is sent automatically",
+    body: "When a threshold is reached, the app PREPARES a message — it does not send it. The teacher reviews the exact wording, edits it freely, and explicitly presses Send. If they do nothing, nothing goes out.",
+  },
+  {
+    title: "A pastoral, tailored message — not a form letter",
+    body: "Each proposed note is written for this student and this situation: it names the behaviour plainly and respectfully, adapts its tone to the history (gentler on a first contact), and can suggest constructive next steps. The one-size-fits-all standard letter is gone.",
+  },
+  {
+    title: "Parents recognise who it's from",
+    body: "Messages go through Edsby by default, signed by the actual teacher(s) involved — addressed to the parent by name, never a stray placeholder. Direct email to families is off unless an admin deliberately turns it on.",
+  },
+  {
+    title: "Leadership looped in — on your terms",
+    body: "Copy the VP never, on the first notice, or (default) on the second-and-later — your choice in Setup. A second notice forming is exactly when leadership should know.",
+  },
+  {
+    title: "Evidence only if you choose",
+    body: "A teacher can attach a photo/video (kept private to the record) and decide, per message, whether to share it with the parent or keep it staff-side. Default: kept staff-side.",
+  },
+  {
+    title: "Request a meeting in one tick",
+    body: "Before sending, a teacher can add a request to meet — woven into the note — so a concern becomes a conversation, not just a notification.",
+  },
+];
+
+const ACTIONS = [
+  {
+    title: "An objective consequence ladder",
+    body: "Admins define a rule-based ladder by notice number — e.g. 2nd notice → white slip, 3rd → in-school suspension. It shows up automatically on the dashboard and the student's page so consequences are consistent and predictable.",
+  },
+  {
+    title: "AI coaching — from your approved list only",
+    body: "Given the pattern of behaviour, the app can suggest next steps in a supportive, coaching tone (meet with the student, restorative task, loss of a privilege, refer to the VP…). It only ever proposes consequences your admin has pre-approved — it never invents its own — and the teacher decides.",
+  },
+  {
+    title: "Privileges — lost and earned",
+    body: "Consequences can include losing a privilege (a place on a sports team, a year-end class/field trip). On the positive side, exemplary behaviour earns privileges — and the winning house can earn a reward outing (e.g. a day at Wonderland).",
+  },
+];
+
+const HOUSES = [
+  {
+    title: "Behaviour feeds house spirit",
+    body: "Positive behaviour earns house points; negatives can cost them (your choice per behaviour). The everyday work of citizenship becomes a shared, visible team effort rather than only a record of problems.",
+  },
+  {
+    title: "A live, student-facing leaderboard",
+    body: "Students follow standings, recent points and monthly competitions at a code-protected portal — house-level totals only, never individual names or records.",
+  },
+  {
+    title: "Reward the behaviour, not just the house",
+    body: "Because everything is tracked per student, the winning-house reward can be merit-based: include a student from another house whose conduct was exemplary, and hold back a student in the winning house whose conduct fell short. The privilege follows the behaviour.",
+  },
+];
+
+const HOMEWORK = [
+  {
+    title: "Homework, class work & formal discussions",
+    body: "A Homework tab tracks completion per class and subject: a single tap marks work shown (auto-scoring by how late it is), with excused (E) and edit options. Formal discussions are scored live — tap +/− as students speak, with a built-in fair-turns rule.",
+  },
+  {
+    title: "Outstanding-work reminders & term reports",
+    body: "See who has fallen behind (current + previous term) and send a supportive “catch-up” note home. End-of-term reports show class averages and each student's mark, and export to a CSV ready for Edsby import.",
+  },
+];
+
+const SAFEGUARDS = [
+  "No notice ever reaches a parent without a teacher reading the final wording and pressing Send.",
+  "Edsby-first delivery so families recognise the sender; direct email to parents is off by default.",
+  "Role-based access: teachers log & view; only admins change Setup; the principal gets a read-only overview.",
+  "Every notice and change is audit-logged. Sensitive roster fields (e.g. ethnicity) are never stored.",
+  "Photo/video evidence is stored privately and is never sent to a parent unless the teacher opts in for that message.",
 ];
 
 const TEACHER_STEPS = [
-  { t: "Sign in", d: "Use your school account. If you were invited, open the invite email, set your password, and you're in." },
-  { t: "Tap “Log an incident”", d: "From your dashboard, hit the big Log button — it's built to work one-handed on a phone while you're still in the room." },
-  { t: "Find the student", d: "Search by name (any student in the school) and tap them. No need to teach them — if you saw it, you can log it." },
-  { t: "Pick the behaviour(s) and submit", d: "Tap one or more behaviours, add an optional note, and submit. Most behaviours add to the student's shared strike count; ones marked “immediate” notify the parent on the spot." },
-  { t: "Watch the result", d: "If that incident reaches the threshold, you'll see a notice was triggered — with a short window to cancel the send if it was a mistake." },
-  { t: "Check status & history", d: "Open a student any time to see their current strikes across all teachers and every note that's gone home." },
-  { t: "Catch the good too", d: "Log positive behaviours the same way — they earn the student's house points and are documented, but never count as a strike. Enough of them triggers a good-news note home on their own." },
-  { t: "Log a group in one go", d: "On the Log screen, tap “Several students” to apply one behaviour to a whole group at once — handy for a quick “not ready for class.”" },
-  { t: "Fix a mistake", d: "Tapped the wrong thing? Undo a just-logged incident, or open the student to edit the detail or delete an incident — deleting also unwinds any house points it earned." },
-  { t: "Note a meeting or call", d: "On a student's record, log a parent meeting or phone call. It's kept on file (and in the AI summary) but never counts as a strike and sends nothing home." },
-  { t: "Clear your morning follow-ups", d: "Each morning you'll get a “Reminder for today” list of consequences to check off — mark each Done, Not done, or Waived." },
+  { t: "Sign in", d: "Use your school account. Invited staff open the invite email, set a password, and they're in." },
+  { t: "Tap “Log an incident”", d: "Built to work one-handed on a phone while you're still in the room. Search any student in the school — if you saw it, you can log it." },
+  { t: "Pick positive or negative, then the behaviour", d: "Add an optional note (and a photo/video if helpful). Most behaviours add to the shared count; serious ones flag immediately." },
+  { t: "Decide on the message", d: "If a threshold is reached, you're shown the proposed note. Edit it, choose whether to copy the VP or include evidence, then Send — or “Not this time”, which keeps the strikes for next time." },
+  { t: "Use the supports", d: "Open a student for their full cross-teacher history, the recommended next action, AI coaching, and a printable record. Clear your morning follow-ups as consequences come due." },
 ];
 
 export default function FeaturesPage() {
   return (
     <div className="space-y-10">
+      {/* Print-only chrome handling */}
+      <style>{`@media print {
+        .no-print { display: none !important; }
+        nav, header, footer { display: none !important; }
+        body { background: #fff !important; }
+        section { break-inside: avoid; }
+      }`}</style>
+
       {/* Hero */}
       <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-        <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Behaviours</p>
+        <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Behaviours — Guide &amp; overview</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
-          One shared behaviour count per student — across every teacher.
+          A school-wide, pastoral approach to behaviour.
         </h1>
         <p className="mt-3 max-w-2xl text-slate-600">
-          When each teacher tracks strikes separately, a student can misbehave all day and never
-          hit a consequence. Behaviours aggregates every incident per student across the whole
-          school, then notifies parents the moment a threshold is reached.
+          Behaviours helps a whole staff support students together: it tracks the positive and the negative across
+          every teacher, catches patterns early, keeps clear records, and turns a concern into a thoughtful,
+          teacher-written message home — one a teacher always reviews and sends. Nothing is ever sent automatically.
         </p>
-        <div className="mt-5 flex flex-wrap gap-3">
-          <Link href="/behavior" className="rounded-lg bg-slate-900 px-5 py-2.5 font-semibold text-white">
-            Open the app
-          </Link>
-          <Link href="/behavior/setup" className="rounded-lg border border-slate-300 px-5 py-2.5 font-semibold text-slate-700">
-            Set up your school
-          </Link>
+        <div className="no-print mt-5 flex flex-wrap gap-3">
+          <Link href="/behavior" className="rounded-lg bg-slate-900 px-5 py-2.5 font-semibold text-white">Open the app</Link>
+          <Link href="/behavior/setup" className="rounded-lg border border-slate-300 px-5 py-2.5 font-semibold text-slate-700">Set up your school</Link>
+          <PrintButton className="rounded-lg border border-slate-300 px-5 py-2.5 font-semibold text-slate-700" />
         </div>
       </section>
 
-      {/* How it works */}
-      <section>
-        <h2 className="text-xl font-semibold text-slate-900">How it works</h2>
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          {STEPS.map((s) => (
-            <div key={s.n} className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-sm font-bold text-white">
-                {s.n}
-              </div>
-              <h3 className="mt-3 font-semibold text-slate-900">{s.t}</h3>
-              <p className="mt-1 text-sm text-slate-600">{s.d}</p>
-            </div>
-          ))}
-        </div>
+      {/* For administrators — addresses the messaging concern head-on */}
+      <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6">
+        <h2 className="text-lg font-semibold text-emerald-900">For administrators: how messaging home works</h2>
+        <p className="mt-2 max-w-3xl text-sm leading-relaxed text-emerald-900/90">
+          The biggest worry with any behaviour system is automated, impersonal messages going to families. Behaviours is
+          built the other way around. When a threshold is reached, the app <strong>prepares</strong> a message and hands
+          it to the teacher — it never sends on its own. The teacher reads the exact wording, edits it freely, and
+          decides whether (and how) to send. Modern composition means we can do far better than a standard form letter:
+          each note is <strong>pastoral and specific</strong> — it names the behaviour plainly and respectfully, reflects
+          the student's history, and can suggest constructive next steps. Delivery defaults to <strong>Edsby</strong>, so
+          families recognise the sender, and it's <strong>signed by the actual teacher</strong>. Leadership is copied on
+          your schedule (off / first notice / second-and-later). In short: the school's voice, the teacher's judgement,
+          a kinder message — with the efficiency and consistency of shared tracking behind it.
+        </p>
       </section>
 
-      {/* Features grid */}
+      <Group title="Tracking, documenting & catching things early" items={TRACKING} />
+      <Group title="Communication home — reviewed and sent by a teacher" items={COMMUNICATION} />
+      <Group title="Recommended actions & consequences" items={ACTIONS} />
+
+      {/* Houses */}
       <section>
-        <h2 className="text-xl font-semibold text-slate-900">What it does</h2>
+        <div className="flex items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-green-600 text-sm text-white">🏆</span>
+          <h2 className="text-xl font-semibold text-slate-900">Houses &amp; a culture of citizenship</h2>
+        </div>
+        <p className="mt-1 max-w-2xl text-sm text-slate-600">
+          An optional house system that turns everyday behaviour into shared team spirit — rewarding the good, not just
+          policing the difficult.
+        </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
-          {FEATURES.map((f) => (
-            <div key={f.title} className="rounded-xl border border-slate-200 bg-white p-5">
+          {HOUSES.map((f) => (
+            <div key={f.title} className="rounded-xl border border-green-200 bg-green-50/50 p-5">
               <h3 className="font-semibold text-slate-900">{f.title}</h3>
               <p className="mt-1 text-sm leading-relaxed text-slate-600">{f.body}</p>
             </div>
@@ -176,18 +194,25 @@ export default function FeaturesPage() {
         </div>
       </section>
 
-      {/* Houses, Edsby & portal setup — only for signed-in staff */}
-      <GuideGated />
+      <Group title="Homework, class work & discussions" items={HOMEWORK} />
+
+      {/* Safeguards */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-6">
+        <h2 className="text-lg font-semibold text-slate-900">Privacy &amp; safeguards</h2>
+        <ul className="mt-2 space-y-1.5 text-sm text-slate-700">
+          {SAFEGUARDS.map((s, i) => (
+            <li key={i} className="flex gap-2"><span className="text-emerald-600">✓</span><span>{s}</span></li>
+          ))}
+        </ul>
+      </section>
 
       {/* For teachers */}
       <section>
-        <h2 className="text-xl font-semibold text-slate-900">For teachers — how to use it</h2>
+        <h2 className="text-xl font-semibold text-slate-900">For teachers — the everyday flow</h2>
         <ol className="mt-4 space-y-3">
           {TEACHER_STEPS.map((s, i) => (
             <li key={i} className="flex gap-3 rounded-xl border border-slate-200 bg-white p-4">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">
-                {i + 1}
-              </span>
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-700">{i + 1}</span>
               <div>
                 <p className="font-semibold text-slate-900">{s.t}</p>
                 <p className="mt-0.5 text-sm leading-relaxed text-slate-600">{s.d}</p>
@@ -195,35 +220,31 @@ export default function FeaturesPage() {
             </li>
           ))}
         </ol>
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Good to know</p>
-          <ul className="mt-1 list-inside list-disc space-y-1">
-            <li>You can log <span className="font-medium">any</span> student in the school — not just your own class.</li>
-            <li>The count is <span className="font-medium">shared</span>: your strike adds to whatever other teachers have logged today.</li>
-            <li>When a notice fires you get a brief window to <span className="font-medium">cancel</span> before it sends.</li>
-            <li>Open a student to see their full cross-teacher status and every past notice.</li>
-          </ul>
-        </div>
       </section>
 
-      {/* CTA */}
-      <section className="rounded-2xl border border-slate-200 bg-slate-900 p-7 text-center text-white">
-        <h2 className="text-2xl font-bold">Ready to make expectations consistent?</h2>
-        <p className="mx-auto mt-2 max-w-xl text-slate-300">
-          Set up your division in minutes — upload your roster, invite your staff, and start logging.
-        </p>
-        <Link
-          href="/behavior/setup"
-          className="mt-5 inline-block rounded-lg bg-white px-6 py-3 font-semibold text-slate-900"
-        >
-          Get started
-        </Link>
-      </section>
+      {/* Houses / Edsby / portal SETUP detail — only for signed-in staff */}
+      <GuideGated />
 
       <p className="pb-6 text-center text-xs text-slate-400">
-        Behaviours stores sensitive student information. Access is role-based and every notice is
-        audit-logged. Ask your administrator about your board&apos;s privacy approval before go-live.
+        Behaviours stores sensitive student information. Access is role-based and every notice is audit-logged. Ask your
+        administrator about your board&apos;s privacy approval before go-live.
       </p>
     </div>
+  );
+}
+
+function Group({ title, items }: { title: string; items: { title: string; body: string }[] }) {
+  return (
+    <section>
+      <h2 className="text-xl font-semibold text-slate-900">{title}</h2>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        {items.map((f) => (
+          <div key={f.title} className="rounded-xl border border-slate-200 bg-white p-5">
+            <h3 className="font-semibold text-slate-900">{f.title}</h3>
+            <p className="mt-1 text-sm leading-relaxed text-slate-600">{f.body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
