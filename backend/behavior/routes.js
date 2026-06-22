@@ -685,17 +685,31 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
           subject: `${inviter || "You're"} invited you to Behaviours`,
           text:
             `Hi,\n\n` +
-            `${by} has invited you to Behaviours — a tool for tracking student behaviour across teachers and keeping parents in the loop. ` +
-            `You'll be able to log incidents against any student and see each student's cross-teacher status.\n\n` +
+            `${by} has invited you to Behaviours at ${school?.name || "our school"}.\n\n` +
+            `If you teach on rotary, you see dozens of students across many classes — and a single off day can look small in each room while really being a pattern. Behaviours fixes that: every teacher's logs pool into ONE shared picture per student, so you're never the only one noticing, and no one is fighting it alone.\n\n` +
+            `What you can do:\n` +
+            `• Log any student in seconds on your phone — positives as well as concerns.\n` +
+            `• See a student's full cross-teacher history before you say a word to them.\n` +
+            `• When a pattern reaches the threshold, you get a ready-to-send, pastoral note home — you review and send it (nothing is ever auto-sent), with recommended next steps.\n` +
+            `• Catch the good too: positives earn house points and can send a good-news note home.\n` +
+            `• Track homework, class work and formal discussions, with end-of-term grades that export to Edsby.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
             `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
           html: emailShell({
             title: "You're invited to Behaviours",
             schoolName: school?.name || "Behaviours",
-            preheader: `${by} invited you to Behaviours.`,
+            preheader: `${by} invited you to Behaviours — one shared picture of every student.`,
             contentHtml:
-              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> has invited you to Behaviours — a tool for tracking student behaviour across teachers and keeping parents in the loop. ` +
-              `You'll be able to log incidents against any student and see each student's cross-teacher status.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> has invited you to <strong>Behaviours</strong> at ${escapeHtml(school?.name || "our school")}.</p>` +
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6">If you teach on <strong>rotary</strong>, you see dozens of students across many classes — and one off day can look small in each room while really being a pattern. Behaviours pools every teacher's logs into <strong>one shared picture per student</strong>, so you're never the only one noticing, and no one is fighting it alone.</p>` +
+              `<p style="margin:0 0 6px;color:#0f172a;font-weight:600">What you can do</p>` +
+              `<ul style="margin:0 0 14px;padding-left:18px;color:#334155;line-height:1.6">` +
+              `<li><strong>Log any student in seconds</strong> on your phone — positives as well as concerns.</li>` +
+              `<li>See a student's <strong>full cross-teacher history</strong> before you say a word.</li>` +
+              `<li>When a pattern hits the threshold you get a <strong>ready-to-send, pastoral note home</strong> — you review and send it (<strong>nothing is auto-sent</strong>), with recommended next steps.</li>` +
+              `<li><strong>Catch the good too:</strong> positives earn house points and can send a good-news note home.</li>` +
+              `<li>Track <strong>homework, class work &amp; formal discussions</strong>, with end-of-term grades that export to Edsby.</li>` +
+              `</ul>` +
               emailButton("Accept & set your password", link) +
               `<p style="color:#94a3b8;font-size:13px;word-break:break-all;margin:8px 0 0">Or paste this link: ${escapeHtml(link)}</p>` +
               `<p style="color:#94a3b8;font-size:13px;margin:12px 0 0">If you didn't expect this, you can ignore this email.</p>`,

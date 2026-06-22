@@ -287,7 +287,9 @@ function InviteSection({ domain, isOriginator }: { domain: string; isOriginator:
     <Card>
       <h2 id="invite" className="font-semibold">Invite teachers</h2>
       <p className="mt-1 text-sm text-slate-500">
-        Only <span className="font-medium">@{domain}</span> addresses can be invited.
+        Each invite email makes the case — especially to rotary teachers — for one shared, cross-teacher picture of every student,
+        logging in seconds, positives &amp; houses, and teacher-reviewed (never auto-sent) notes home. Only
+        <span className="font-medium"> @{domain}</span> addresses can be invited.
       </p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <textarea value={emails} onChange={(e) => setEmails(e.target.value)}
