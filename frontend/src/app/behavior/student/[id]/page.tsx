@@ -75,7 +75,7 @@ export default function StudentPage() {
   // Per-notice "request a meeting" toggle
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
   // Recommended actions (AI coaching, on demand)
-  const [rec, setRec] = useState<{ ai: { action: string; why: string }[]; aiUsed: boolean; offences: string[] } | null>(null);
+  const [rec, setRec] = useState<{ ai: { action: string; detail?: string; why: string }[]; aiUsed: boolean; offences: string[] } | null>(null);
   const [recBusy, setRecBusy] = useState(false);
   // Confirm-before-send preview pop-up
   const [sendModal, setSendModal] = useState<{ id: string; text: string; edited: boolean; evidenceCount: number } | null>(null);
@@ -387,7 +387,9 @@ export default function StudentPage() {
                   <ul className="mt-1 space-y-1.5">
                     {rec.ai.map((s, i) => (
                       <li key={i} className="text-sm">
-                        <span className="font-medium">{s.action}</span>{s.why ? <span className="text-slate-600"> — {s.why}</span> : null}
+                        <span className="font-medium">{s.action}</span>
+                        {s.detail ? <span className="text-slate-700"> — {s.detail}</span> : null}
+                        {s.why ? <span className="block text-xs text-slate-500">{s.why}</span> : null}
                       </li>
                     ))}
                   </ul>

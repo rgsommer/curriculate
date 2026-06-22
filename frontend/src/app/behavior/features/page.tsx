@@ -68,6 +68,39 @@ const COMMUNICATION = [
   },
 ];
 
+// Worked examples — concrete flows that show how the pieces fit together.
+const SCENARIOS = [
+  {
+    title: "1 · A concern builds across two teachers",
+    steps: [
+      "Mr. Okafor logs a negative (disrupting the lesson) for Jordan.",
+      "Ms. Bennett logs a positive (helped a classmate) — it's recorded and earns house points, but it does not cancel out the concern.",
+      "Later, Mr. Okafor logs another negative, and Jordan reaches the division's threshold.",
+    ],
+    outcome:
+      "A tailored, respectful note home is prepared and handed to Mr. Okafor to review, edit and send — nothing goes out until he does. Both teachers' entries (the concern and the praise) stay on Jordan's record, so the picture is fair.",
+  },
+  {
+    title: "2 · Catching a student doing well",
+    steps: [
+      "Three different teachers — Ms. Bennett, Mr. Singh and Mrs. Adeyemi — each log a positive for Jordan over a couple of weeks.",
+      "Jordan crosses the good-news threshold.",
+    ],
+    outcome:
+      "A warm, affirming note is prepared for the most recent teacher (Mrs. Adeyemi), naming all three teachers' praise and copying the other two. She reviews it and sends it home — good news only, no concerns, no points mentioned.",
+  },
+  {
+    title: "3 · A repeat pattern, with a recommended consequence",
+    steps: [
+      "Mr. Okafor logs three negatives for Jordan over several weeks.",
+      "The first passes the 30-day fade window, so it stops counting toward the threshold (it stays in the history).",
+      "A fourth negative comes in — the active count reaches the threshold again, and Jordan has already had a notice home this period.",
+    ],
+    outcome:
+      "Because it's a repeat, the prepared note recommends sending via Edsby and copying the VP. Alongside it, the recommended-actions panel shows the objective step (e.g. a white slip) plus AI coaching from your approved list (e.g. a 200-word reflection, or a detention) with a short rationale. Mr. Okafor reviews, adjusts, and sends.",
+  },
+];
+
 const ACTIONS = [
   {
     title: "An objective consequence ladder",
@@ -172,6 +205,23 @@ export default function FeaturesPage() {
 
       <Group title="Tracking, documenting & catching things early" items={TRACKING} />
       <Group title="Communication home — reviewed and sent by a teacher" items={COMMUNICATION} />
+
+      {/* Worked examples */}
+      <section>
+        <h2 className="text-xl font-semibold text-slate-900">What it looks like in practice</h2>
+        <div className="mt-4 space-y-4">
+          {SCENARIOS.map((s) => (
+            <div key={s.title} className="rounded-xl border border-slate-200 bg-white p-5">
+              <h3 className="font-semibold text-slate-900">{s.title}</h3>
+              <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-slate-600">
+                {s.steps.map((st, i) => <li key={i}>{st}</li>)}
+              </ol>
+              <p className="mt-2 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-900"><span className="font-semibold">Result:</span> {s.outcome}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <Group title="Recommended actions & consequences" items={ACTIONS} />
 
       {/* Houses */}

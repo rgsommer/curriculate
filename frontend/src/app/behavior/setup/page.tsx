@@ -453,8 +453,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
   const [ladder, setLadder] = useState<{ noticeNumber: number; action: string }[]>(
     (config?.consequenceLadder || []).map((l: any) => ({ noticeNumber: l.noticeNumber, action: l.action }))
   );
-  const [whitelist, setWhitelist] = useState<string[]>(config?.consequenceWhitelist || []);
-  const [newAllowed, setNewAllowed] = useState("");
+  const [whitelistText, setWhitelistText] = useState<string>((config?.consequenceWhitelist || []).join("\n"));
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -462,6 +461,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
     setErr(null);
     try {
       const clean = ladder.filter((l) => l.noticeNumber && l.action.trim()).map((l) => ({ noticeNumber: Number(l.noticeNumber), action: l.action.trim() }));
+      const whitelist = whitelistText.split("\n").map((s) => s.trim()).filter(Boolean);
       await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist } });
       setSaved(true); setTimeout(() => setSaved(false), 1500);
     } catch (e: any) { setErr(e.message); }
@@ -487,18 +487,15 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         <button onClick={() => setLadder((p) => [...p, { noticeNumber: (p[p.length - 1]?.noticeNumber || 1) + 1, action: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add step</button>
       </div>
 
-      <p className="mt-4 text-sm font-medium text-slate-700">Approved consequences (AI coach)</p>
-      <div className="mt-1 flex flex-wrap gap-1.5">
-        {whitelist.map((w, i) => (
-          <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">
-            {w}<button onClick={() => setWhitelist((p) => p.filter((_, j) => j !== i))} className="text-slate-400">✕</button>
-          </span>
-        ))}
-      </div>
-      <div className="mt-2 flex gap-2">
-        <input value={newAllowed} onChange={(e) => setNewAllowed(e.target.value)} placeholder="add an approved consequence…" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
-        <button onClick={() => { const v = newAllowed.trim(); if (v && !whitelist.includes(v)) setWhitelist((p) => [...p, v]); setNewAllowed(""); }} className="rounded-lg border border-slate-300 px-2 py-1 text-sm">Add</button>
-      </div>
+      <p className="mt-4 text-sm font-medium text-slate-700">Approved consequences (the AI coach picks only from these)</p>
+      <p className="text-xs text-slate-400">One per line. You don&apos;t need to say what merits each — the coach matches them to the behaviour. Where a line invites specifics (the line text + how many times, an essay word-count + topic, a reflection&apos;s verses), the coach fills those in by occurrence.</p>
+      <textarea
+        value={whitelistText}
+        onChange={(e) => setWhitelistText(e.target.value)}
+        rows={9}
+        className={`${inputCls} mt-1 font-sans`}
+        placeholder={"Lines (10×/20×/30×) — specify the line…\nEssay (150/200/350 words) on a relevant topic…\nApology letter…\nDetention\nWhite slip"}
+      />
 
       <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{saved ? "Saved ✓" : "Save recommended actions"}</button>
     </Card>

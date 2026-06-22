@@ -737,7 +737,7 @@ router.post("/refer", authAny, loadMembership, requireAdmin, async (req, res, ne
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
 
     const blurb =
-      "Behaviours tracks student behaviour across every teacher — one shared strike count per student — and sends history-aware notes home automatically when a threshold is reached. It also handles positive recognition, house points, and AI summaries for administrators.";
+      "Behaviours is a school-wide, pastoral approach to student conduct. It tracks the positive AND the negative across every teacher (one shared picture per student), catches patterns early, and keeps clear, defensible records. When it's time to involve home, it PREPARES a tailored, respectful note that the teacher reviews, edits and sends — nothing is ever auto-sent, and it goes through Edsby so families recognise the sender. It also offers recommended consequences (an admin-defined ladder plus AI coaching from a school-approved list), an optional Houses system with merit-based rewards, a Homework tab (completion, formal discussions, term reports), and AI summaries for leadership.";
     const sent = [];
     const failed = [];
     for (const email of emails) {
@@ -2894,20 +2894,28 @@ router.get("/students/:id/recommend", authAny, loadMembership, async (req, res, 
         const clientAi = makeDefaultAiClient(config || {});
         if (clientAi) {
           const name = student.preferredName || student.firstName || "the student";
+          const occ = noticesHomeCount + 1; // current occurrence # (drives magnitude)
+          // Number the list so the AI MUST pick an approved item by index — it can
+          // fill in the specifics (the exact line + how many times, the word count
+          // + topic, the verses theme) but can never invent a new consequence.
+          const numbered = whitelist.map((w, i) => `${i + 1}. ${w}`).join("\n");
           const prompt =
-            `You are a supportive behaviour COACH advising a teacher (not the student). ` +
-            `Suggest up to 3 next steps for ${name}, chosen ONLY from this approved list — do not invent anything outside it:\n` +
-            `${whitelist.map((w) => `- ${w}`).join("\n")}\n\n` +
-            `Recent offences (last ~4 months): ${typeSummary.join(", ") || "none"}. Notices home so far: ${noticesHomeCount}.\n\n` +
-            `Pick the most fitting actions for THIS pattern and, for each, give one short, warm, practical coaching sentence on why it fits and how to do it well. ` +
-            `Be encouraging and restorative in tone, not punitive. Output each as a line exactly like: ACTION || rationale  (ACTION must be copied verbatim from the list).`;
-          const out = await Promise.race([clientAi.complete(prompt, { maxTokens: 500 }), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 20000))]);
+            `You are a supportive behaviour COACH advising a teacher (not the student) at a Christian school. ` +
+            `This is roughly occurrence #${occ} of concern for ${name}; recent offences (last ~4 months): ${typeSummary.join(", ") || "none"}.\n\n` +
+            `Approved consequences (choose ONLY from these by number — never invent another):\n${numbered}\n\n` +
+            `Suggest up to 3 fitting next steps. Where an item asks you to specify something (the exact line and how many times, the essay word-count and topic, the apology focus, the reflection theme/verses), FILL IT IN appropriately for this pattern and occurrence number — heavier specifics for repeat occurrences. ` +
+            `Output each on its own line EXACTLY as:  N || specifics || why\n` +
+            `where N is the item number, "specifics" is the instantiated detail (or "—" if none needed), and "why" is one short, warm, restorative coaching sentence. Be encouraging, not punitive.`;
+          const out = await Promise.race([clientAi.complete(prompt, { maxTokens: 600 }), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 20000))]);
           const lines = String(out || "").split("\n").map((l) => l.trim()).filter(Boolean);
           for (const line of lines) {
-            const [actionRaw, ...rest] = line.replace(/^[-*\d.\s]+/, "").split("||");
-            const action = (actionRaw || "").trim();
-            const match = whitelist.find((w) => w.toLowerCase() === action.toLowerCase());
-            if (match && !ai.some((x) => x.action === match)) ai.push({ action: match, why: rest.join("||").trim() });
+            const parts = line.replace(/^[-*\s]+/, "").split("||").map((p) => p.trim());
+            const n = parseInt(parts[0], 10);
+            if (!n || n < 1 || n > whitelist.length) continue; // must be an approved index
+            const action = whitelist[n - 1];
+            const detail = parts[1] && parts[1] !== "—" ? parts[1] : "";
+            const why = parts[2] || "";
+            if (!ai.some((x) => x.action === action && x.detail === detail)) ai.push({ action, detail, why });
           }
           ai = ai.slice(0, 3);
           aiUsed = ai.length > 0;

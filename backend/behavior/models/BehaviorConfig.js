@@ -89,14 +89,15 @@ const BehaviorConfigSchema = new mongoose.Schema(
     consequenceWhitelist: {
       type: [String],
       default: [
-        "Quiet word with the student",
-        "Meet with the student",
-        "Meet with parents and student",
-        "Lines / written reflection",
+        "Lines (10×/20×/30× by occurrence) — specify the line, e.g. \"From now on, I will make sure I arrive on time each day.\"",
+        "Essay (150/200/350 words by occurrence) on a relevant topic, e.g. \"Why it is important for me to complete assignments on time.\"",
+        "Apology letter — clearly state what happened, what you wish you'd done differently, and what you'll do to prevent it.",
+        "Reflection on what happened in class today, using 3 relevant Bible verses.",
         "Detention",
-        "Restorative task (make it right)",
-        "Loss of a privilege",
-        "Refer to the VP",
+        "In-school suspension",
+        "At-home suspension",
+        "Meeting with the parents and the Principal (or VP)",
+        "White slip",
       ],
     },
 
