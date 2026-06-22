@@ -97,6 +97,8 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
+      {canLog && <ProbationWatch />}
+
       {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
 
       {housesOn && <HousesCard canLog={canLog} isAdmin={isAdmin} portalCode={me.config?.housePortalCode || ""} />}
@@ -293,6 +295,54 @@ function HousesCard({ canLog, isAdmin, portalCode }: { canLog: boolean; isAdmin:
         {houses.reduce((n, h) => n + (h.members || 0), 0)} students assigned · positive = awards, negative = incident deductions ·{" "}
         <a href="/houses" target="_blank" rel="noreferrer" className="underline">student board ↗</a>
       </p>
+    </Card>
+  );
+}
+
+// Students who've already had a notice home AND are back at/near the trigger —
+// heading for a second (VP-CC'd) notice. e.g. 1 notice + 2 strikes.
+function ProbationWatch() {
+  const [rows, setRows] = useState<StudentSummary[] | null>(null);
+  const [trigger, setTrigger] = useState(3);
+
+  useEffect(() => {
+    api<{ students: StudentSummary[]; triggerCount: number }>("/students")
+      .then((d) => {
+        const t = d.triggerCount || 3;
+        setTrigger(t);
+        const watch = (d.students || [])
+          .filter((s) => (s.noticesHomeCount || 0) >= 1 && (s.activeCount || 0) >= t - 1)
+          .sort((a, b) => (b.noticesHomeCount || 0) - (a.noticesHomeCount || 0) || (b.activeCount || 0) - (a.activeCount || 0));
+        setRows(watch);
+      })
+      .catch(() => setRows([]));
+  }, []);
+
+  if (!rows || rows.length === 0) return null;
+
+  return (
+    <Card>
+      <h2 className="font-semibold text-red-800">Under consideration for probation</h2>
+      <p className="mt-0.5 text-xs text-slate-500">
+        Already had a notice home and back at or near the {trigger}-strike trigger — the next incident sends a second notice (VP copied). A pattern worth a closer look.
+      </p>
+      <ul className="mt-2 divide-y divide-slate-100">
+        {rows.map((s) => (
+          <li key={s._id}>
+            <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between py-2 text-sm hover:text-slate-600">
+              <span className="font-medium">
+                {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
+              </span>
+              <span className="flex shrink-0 items-center gap-3">
+                <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"} home</span>
+                <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+                  {s.activeCount}/{trigger} →
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
