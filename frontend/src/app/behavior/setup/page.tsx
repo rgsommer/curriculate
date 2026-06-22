@@ -1,8 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, API_BASE, type Me } from "../_lib/api";
+
+// School-approved consequences shown by default (admins can edit). The AI coach
+// only ever suggests from this list, filling in specifics (line text, word
+// count, verses) by occurrence.
+const RECOMMENDED_CONSEQUENCES = [
+  "Lines (10×/20×/30× by occurrence) — give the exact line, e.g. \"From now on, I will arrive on time and ready to learn.\"",
+  "Essay (150 / 200 / 350 words by occurrence) on a relevant topic, e.g. \"Why it is important for me to complete assignments on time.\"",
+  "Apology letter — clearly state what happened, what you wish you had done differently, and what you will do to prevent it happening again.",
+  "Reflection on what happened in class today, using 3 relevant Bible verses.",
+  "Detention",
+  "In-school suspension",
+  "At-home suspension",
+  "Meeting with the parents and the Principal (or VP)",
+  "White slip",
+];
 
 export default function SetupPage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -455,18 +470,39 @@ function RecommendedActionsSettings({ config }: { config: any }) {
   const [ladder, setLadder] = useState<{ noticeNumber: number; action: string }[]>(
     (config?.consequenceLadder || []).map((l: any) => ({ noticeNumber: l.noticeNumber, action: l.action }))
   );
-  const [whitelistText, setWhitelistText] = useState<string>((config?.consequenceWhitelist || []).join("\n"));
+  // Pre-fill the approved list with the recommended defaults when the school
+  // hasn't set its own yet, so it's present without typing.
+  const [whitelistText, setWhitelistText] = useState<string>(
+    (config?.consequenceWhitelist && config.consequenceWhitelist.length ? config.consequenceWhitelist : RECOMMENDED_CONSEQUENCES).join("\n")
+  );
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Mark unsaved changes (skip the initial render).
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) { mounted.current = true; return; }
+    setDirty(true);
+    setSaved(false);
+  }, [ladder, whitelistText]);
 
   async function save() {
     setErr(null);
+    setBusy(true);
     try {
       const clean = ladder.filter((l) => l.noticeNumber && l.action.trim()).map((l) => ({ noticeNumber: Number(l.noticeNumber), action: l.action.trim() }));
       const whitelist = whitelistText.split("\n").map((s) => s.trim()).filter(Boolean);
       await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist } });
-      setSaved(true); setTimeout(() => setSaved(false), 1500);
-    } catch (e: any) { setErr(e.message); }
+      setDirty(false);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1800);
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -489,7 +525,10 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         <button onClick={() => setLadder((p) => [...p, { noticeNumber: (p[p.length - 1]?.noticeNumber || 1) + 1, action: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add step</button>
       </div>
 
-      <p className="mt-4 text-sm font-medium text-slate-700">Approved consequences (the AI coach picks only from these)</p>
+      <div className="mt-4 flex items-center justify-between gap-2">
+        <p className="text-sm font-medium text-slate-700">Approved consequences (the AI coach picks only from these)</p>
+        <button onClick={() => setWhitelistText(RECOMMENDED_CONSEQUENCES.join("\n"))} className="shrink-0 text-xs text-slate-500 underline">Load recommended list</button>
+      </div>
       <p className="text-xs text-slate-400">One per line. You don&apos;t need to say what merits each — the coach matches them to the behaviour. Where a line invites specifics (the line text + how many times, an essay word-count + topic, a reflection&apos;s verses), the coach fills those in by occurrence.</p>
       <textarea
         value={whitelistText}
@@ -499,7 +538,15 @@ function RecommendedActionsSettings({ config }: { config: any }) {
         placeholder={"Lines (10×/20×/30×) — specify the line…\nEssay (150/200/350 words) on a relevant topic…\nApology letter…\nDetention\nWhite slip"}
       />
 
-      <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{saved ? "Saved ✓" : "Save recommended actions"}</button>
+      <button
+        onClick={save}
+        disabled={busy || (!dirty && !saved)}
+        className={`mt-3 rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${
+          saved ? "bg-green-600" : dirty ? "bg-amber-600" : "bg-slate-900"
+        }`}
+      >
+        {busy ? "Saving…" : saved ? "Saved ✓" : dirty ? "Save changes" : "Saved"}
+      </button>
     </Card>
   );
 }
