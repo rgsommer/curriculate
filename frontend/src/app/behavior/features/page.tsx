@@ -161,16 +161,31 @@ const TEACHER_STEPS = [
 export default function FeaturesPage() {
   return (
     <div className="space-y-10">
-      {/* Print-only chrome handling */}
+      {/* Print styling — makes the browser's "Save as PDF" of this page look
+          like the designed leadership document (color bands, teal headings,
+          card boxes), while staying live. */}
       <style>{`@media print {
+        @page { margin: 1.4cm 1.5cm; }
         .no-print { display: none !important; }
         nav, header, footer { display: none !important; }
-        body { background: #fff !important; }
-        section { break-inside: avoid; }
+        html, body { background: #fff !important; }
+        /* Print the background fills (callouts, cards, title band). */
+        *, *::before, *::after { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        a { color: inherit !important; text-decoration: none !important; }
+        /* Dark title band like the document. */
+        #guide-hero { background: #0f172a !important; border: none !important; box-shadow: none !important; }
+        #guide-hero h1, #guide-hero p { color: #ffffff !important; }
+        #guide-hero .uppercase { color: #cbd5e1 !important; }
+        /* Teal section headings with an accent underline. */
+        section > h2 { color: #0f766e !important; border-bottom: 2px solid #99f6e4; padding-bottom: 3px; }
+        /* Keep cards and examples from splitting across pages. */
+        .rounded-xl, .rounded-2xl { break-inside: avoid; page-break-inside: avoid; }
+        h1, h2, h3 { break-after: avoid; }
+        .space-y-10 > * + * { margin-top: 1rem !important; }
       }`}</style>
 
       {/* Hero */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
+      <section id="guide-hero" className="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
         <p className="text-sm font-medium uppercase tracking-wide text-slate-400">Behaviours — Guide &amp; overview</p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight text-slate-900">
           A school-wide, pastoral approach to behaviour.
@@ -273,8 +288,11 @@ export default function FeaturesPage() {
         </ol>
       </section>
 
-      {/* Houses / Edsby / portal SETUP detail — only for signed-in staff */}
-      <GuideGated />
+      {/* Houses / Edsby / portal SETUP detail — only for signed-in staff, and
+          kept out of the printed overview (operational, not for the VP doc). */}
+      <div className="no-print">
+        <GuideGated />
+      </div>
 
       <p className="pb-6 text-center text-xs text-slate-400">
         Behaviours stores sensitive student information. Access is role-based and every notice is audit-logged. Ask your
