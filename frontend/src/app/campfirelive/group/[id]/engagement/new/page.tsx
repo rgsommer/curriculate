@@ -445,6 +445,50 @@ export default function NewEngagementPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Card occasion → default title + description (pre-filled, still editable).
+  const OCCASION_TITLE: Record<typeof occasion, string> = {
+    birthday: "Happy {age} Birthday! 🎂",
+    anniversary: "Happy Anniversary! 💍",
+    wedding: "Wishing you every happiness! 💒",
+    once: "Congratulations! 🎉",
+    mothers_day: HOLIDAY_PRESETS.mothers_day.titleHint,
+    fathers_day: HOLIDAY_PRESETS.fathers_day.titleHint,
+    custom: "Happy Holidays! 🗓️",
+  };
+  const OCCASION_DESC: Record<typeof occasion, string> = {
+    birthday: "Sign the card with your birthday wishes — it opens on the big day!",
+    anniversary:
+      "Sign the card with your anniversary wishes — it opens on the big day!",
+    wedding:
+      "Sign the card with your best wishes for the happy couple — it opens on the wedding day!",
+    once: "Sign the card with your wishes — it opens on the big day!",
+    mothers_day: "Sign the card with a message for Mom — it opens on Mother's Day!",
+    fathers_day: "Sign the card with a message for Dad — it opens on Father's Day!",
+    custom: "Sign the card — it opens on the day!",
+  };
+  const titleDefaults = new Set(Object.values(OCCASION_TITLE));
+  const descDefaults = new Set(Object.values(OCCASION_DESC));
+
+  // Pick a celebration occasion: pre-fill title + description (only overwriting blanks
+  // or a previous occasion's default, so a host's own wording is never clobbered).
+  const applyOccasion = (value: typeof occasion) => {
+    setOccasion(value);
+    if (value === "mothers_day" || value === "fathers_day") {
+      const p = HOLIDAY_PRESETS[value];
+      setNthWeek(p.nth.week);
+      setNthDow(p.nth.weekday);
+      setNthMonth(p.nth.month);
+    }
+    setTitle((t) =>
+      !t.trim() || t.includes("{age}") || titleDefaults.has(t)
+        ? OCCASION_TITLE[value]
+        : t
+    );
+    setDescription((d) =>
+      !d.trim() || descDefaults.has(d) ? OCCASION_DESC[value] : d
+    );
+  };
+
   const applyTemplate = (t: EngagementTemplate) => {
     setSelectedType(t.type);
     setTitle(t.title);
@@ -1324,6 +1368,41 @@ export default function NewEngagementPage() {
               </p>
             </div>
 
+            {/* Card occasion: pre-fills the title + description, still editable below */}
+            {selectedType === "birthday" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  What&apos;s the occasion?
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {(
+                    [
+                      { value: "birthday", label: "🎂 Birthday" },
+                      { value: "anniversary", label: "💍 Anniversary" },
+                      { value: "wedding", label: "💒 Wedding" },
+                      { value: "once", label: "🎉 One-time" },
+                      { value: "mothers_day", label: "💐 Mother's Day" },
+                      { value: "fathers_day", label: "👔 Father's Day" },
+                      { value: "custom", label: "🗓️ Holiday" },
+                    ] as const
+                  ).map((o) => (
+                    <button
+                      key={o.value}
+                      type="button"
+                      onClick={() => applyOccasion(o.value)}
+                      className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
+                        occasion === o.value
+                          ? "border-orange-500 bg-orange-50 text-slate-900"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
               <input
@@ -2172,56 +2251,6 @@ export default function NewEngagementPage() {
                     </div>
                   </div>
                 </label>
-              </div>
-            )}
-
-            {/* Card occasion: a real birthday (date + age) or a floating holiday */}
-            {selectedType === "birthday" && (
-              <div className="mb-3">
-                <label className="block text-sm font-medium text-slate-700 mb-1">
-                  What&apos;s the occasion?
-                </label>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(
-                    [
-                      { value: "birthday", label: "🎂 Birthday" },
-                      { value: "anniversary", label: "💍 Anniversary" },
-                      { value: "wedding", label: "💒 Wedding" },
-                      { value: "once", label: "🎉 One-time" },
-                      { value: "mothers_day", label: "💐 Mother's Day" },
-                      { value: "fathers_day", label: "👔 Father's Day" },
-                      { value: "custom", label: "🗓️ Holiday" },
-                    ] as const
-                  ).map((o) => (
-                    <button
-                      key={o.value}
-                      type="button"
-                      onClick={() => {
-                        setOccasion(o.value);
-                        if (o.value === "mothers_day" || o.value === "fathers_day") {
-                          const p = HOLIDAY_PRESETS[o.value];
-                          setNthWeek(p.nth.week);
-                          setNthDow(p.nth.weekday);
-                          setNthMonth(p.nth.month);
-                          // Swap a blank or leftover-birthday default title for the preset.
-                          if (!title.trim() || title.includes("{age}")) setTitle(p.titleHint);
-                        }
-                        // Wedding: friendly default title; great for a chip-in gift.
-                        if (o.value === "wedding") {
-                          if (!title.trim() || title.includes("{age}"))
-                            setTitle("Wishing you every happiness! 💒");
-                        }
-                      }}
-                      className={`rounded-lg border px-2 py-2 text-sm font-medium transition ${
-                        occasion === o.value
-                          ? "border-orange-500 bg-orange-50 text-slate-900"
-                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                      }`}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
               </div>
             )}
 
