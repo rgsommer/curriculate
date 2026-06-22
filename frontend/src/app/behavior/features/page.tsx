@@ -52,7 +52,7 @@ const COMMUNICATION = [
   },
   {
     title: "Parents recognise who it's from",
-    body: "Messages go through Edsby by default, signed by the actual teacher(s) involved — addressed to the parent by name, never a stray placeholder. Direct email to families is off unless an admin deliberately turns it on.",
+    body: "By default the proposed note is emailed to the teacher with a recommendation to post it to Edsby, so families recognise the sender — signed by the actual teacher(s), addressed to the parent by name, never a stray placeholder. Direct email to families is off unless an admin deliberately turns it on.",
   },
   {
     title: "Leadership looped in — on your terms",
@@ -196,8 +196,9 @@ export default function FeaturesPage() {
           it to the teacher — it never sends on its own. The teacher reads the exact wording, edits it freely, and
           decides whether (and how) to send. Modern composition means we can do far better than a standard form letter:
           each note is <strong>pastoral and specific</strong> — it names the behaviour plainly and respectfully, reflects
-          the student's history, and can suggest constructive next steps. Delivery defaults to <strong>Edsby</strong>, so
-          families recognise the sender, and it's <strong>signed by the actual teacher</strong>. Leadership is copied on
+          the student's history, and can suggest constructive next steps. By default it's <strong>emailed to the teacher with
+          a recommendation to post it to Edsby</strong>, so families recognise the sender and it's <strong>signed by the
+          actual teacher</strong>. Leadership is copied on
           your schedule (off / first notice / second-and-later). In short: the school's voice, the teacher's judgement,
           a kinder message — with the efficiency and consistency of shared tracking behind it.
         </p>
