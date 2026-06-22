@@ -97,7 +97,7 @@ export default function BehaviorDashboard() {
 
       {canLog && <ReminderToday />}
 
-      {canLog && <ProbationWatch />}
+      {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} />}
 
       {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
 
@@ -300,8 +300,9 @@ function HousesCard({ canLog, isAdmin, portalCode }: { canLog: boolean; isAdmin:
 }
 
 // Students who've already had a notice home AND are back at/near the trigger —
-// heading for a second (VP-CC'd) notice. e.g. 1 notice + 2 strikes.
-function ProbationWatch() {
+// heading for a further (VP-CC'd) notice. Shows the objective rule-based next
+// consequence (from the admin ladder); per-student AI coaching is on their page.
+function ProbationWatch({ ladder }: { ladder: { noticeNumber: number; action: string }[] }) {
   const [rows, setRows] = useState<StudentSummary[] | null>(null);
   const [trigger, setTrigger] = useState(3);
 
@@ -319,29 +320,35 @@ function ProbationWatch() {
   }, []);
 
   if (!rows || rows.length === 0) return null;
+  // The consequence the next notice would carry = ladder step for (notices + 1).
+  const nextAction = (notices: number) => ladder.find((l) => l.noticeNumber === notices + 1)?.action || null;
 
   return (
     <Card>
-      <h2 className="font-semibold text-red-800">Under consideration for probation</h2>
+      <h2 className="font-semibold text-red-800">Recommended actions</h2>
       <p className="mt-0.5 text-xs text-slate-500">
-        Already had a notice home and back at or near the {trigger}-strike trigger — the next incident sends a second notice (VP copied). A pattern worth a closer look.
+        Already had a notice home and back at or near the {trigger}-strike trigger. The next notice carries the rule-based consequence below; open a student for AI coaching suggestions too.
       </p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {rows.map((s) => (
-          <li key={s._id}>
-            <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between py-2 text-sm hover:text-slate-600">
-              <span className="font-medium">
-                {s.lastName}, {s.firstName} <span className="text-slate-400">{s.classGroup}</span>
-              </span>
-              <span className="flex shrink-0 items-center gap-3">
-                <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"} home</span>
-                <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
-                  {s.activeCount}/{trigger} →
+        {rows.map((s) => {
+          const action = nextAction(s.noticesHomeCount || 0);
+          return (
+            <li key={s._id}>
+              <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between gap-2 py-2 text-sm hover:text-slate-600">
+                <span className="min-w-0">
+                  <span className="font-medium">{s.lastName}, {s.firstName}</span> <span className="text-slate-400">{s.classGroup}</span>
+                  {action && <span className="mt-0.5 block text-xs text-red-700">Next: {action}</span>}
                 </span>
-              </span>
-            </Link>
-          </li>
-        ))}
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-xs text-slate-400">{s.noticesHomeCount} notice{(s.noticesHomeCount || 0) === 1 ? "" : "s"}</span>
+                  <span className={`font-semibold tabular-nums ${(s.activeCount || 0) >= trigger ? "text-red-600" : "text-orange-500"}`}>
+                    {s.activeCount}/{trigger} →
+                  </span>
+                </span>
+              </Link>
+            </li>
+          );
+        })}
       </ul>
     </Card>
   );

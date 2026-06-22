@@ -46,6 +46,7 @@ export default function SetupPage() {
       </Card>
       <HousesSection config={me.config} />
       <HomeworkSettings config={me.config} />
+      <RecommendedActionsSettings config={me.config} />
       <EdsbySection edsby={me.config?.edsby} />
       <MyEdsbyCard />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
@@ -146,6 +147,8 @@ function ConfigSection({ config }: { config: any }) {
     signatureBlock: config?.branding?.signatureBlock ?? "",
     edsby: config?.channels?.edsby ?? true,
     emailToParents: config?.channels?.emailToParents ?? false,
+    teacherDraft: config?.teacherDraft ?? true,
+    vpNotify: config?.vpNotify ?? "second",
     aiSendMode: config?.aiSendMode ?? "auto",
     reminderTime: config?.reminderTime ?? "07:30",
   }));
@@ -163,6 +166,8 @@ function ConfigSection({ config }: { config: any }) {
           vp: { name: c.vpName, email: c.vpEmail, edsbyId: c.vpEdsbyId },
           branding: { schoolName: c.schoolName, signatureBlock: c.signatureBlock },
           channels: { edsby: c.edsby, emailToParents: c.emailToParents, email: false },
+          teacherDraft: c.teacherDraft,
+          vpNotify: c.vpNotify,
           aiSendMode: c.aiSendMode,
           reminderTime: c.reminderTime,
         },
@@ -231,8 +236,20 @@ function ConfigSection({ config }: { config: any }) {
             )}
           </span>
         </label>
+        <label className="mt-2 flex items-start gap-2 text-sm">
+          <input type="checkbox" checked={c.teacherDraft} onChange={(e) => setC({ ...c, teacherDraft: e.target.checked })} className="mt-0.5" />
+          <span>Email the logging teacher a <span className="font-medium">suggested note</span> to review, edit and send (they can CC the VP).</span>
+        </label>
+        <div className="mt-3 flex items-center gap-2 text-sm">
+          <span className="text-slate-600">Copy the VP on:</span>
+          <select value={c.vpNotify} onChange={(e) => setC({ ...c, vpNotify: e.target.value })} className="rounded-lg border border-slate-300 px-2 py-1 text-sm">
+            <option value="off">Never</option>
+            <option value="first">1st notice and after</option>
+            <option value="second">2nd notice and after</option>
+          </select>
+        </div>
         <p className="mt-2 text-xs text-slate-500">
-          Either way, the logging teacher always gets an email copy of each notice <span className="font-medium">before</span> it goes out, and can cancel or edit it. Only an admin can change these settings.
+          The VP is reached over the same channel (Edsby via their Edsby id, or email if enabled). Only an admin can change these settings.
         </p>
       </div>
       <button onClick={save} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-white">
@@ -430,6 +447,62 @@ function ingestSnippet(apiBase: string, token: string) {
     onload: function (r) { console.log("Behaviours ingest:", r.status, r.responseText); }
   });
 })();`;
+}
+
+function RecommendedActionsSettings({ config }: { config: any }) {
+  const [ladder, setLadder] = useState<{ noticeNumber: number; action: string }[]>(
+    (config?.consequenceLadder || []).map((l: any) => ({ noticeNumber: l.noticeNumber, action: l.action }))
+  );
+  const [whitelist, setWhitelist] = useState<string[]>(config?.consequenceWhitelist || []);
+  const [newAllowed, setNewAllowed] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function save() {
+    setErr(null);
+    try {
+      const clean = ladder.filter((l) => l.noticeNumber && l.action.trim()).map((l) => ({ noticeNumber: Number(l.noticeNumber), action: l.action.trim() }));
+      await api("/config", { method: "PUT", body: { consequenceLadder: clean, consequenceWhitelist: whitelist } });
+      setSaved(true); setTimeout(() => setSaved(false), 1500);
+    } catch (e: any) { setErr(e.message); }
+  }
+
+  return (
+    <Card>
+      <h2 className="font-semibold">Recommended actions (consequences)</h2>
+      <p className="mt-1 text-sm text-slate-500">An objective ladder by notice number, plus the approved list the AI coach may suggest from. The AI never proposes anything outside this list.</p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+
+      <p className="mt-3 text-sm font-medium text-slate-700">Escalation ladder</p>
+      <div className="mt-1 space-y-1.5">
+        {ladder.map((l, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <span className="text-sm text-slate-500">Notice</span>
+            <input type="number" min={1} value={l.noticeNumber} onChange={(e) => setLadder((p) => p.map((x, j) => (j === i ? { ...x, noticeNumber: Number(e.target.value) } : x)))} className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+            <span className="text-sm text-slate-400">→</span>
+            <input value={l.action} onChange={(e) => setLadder((p) => p.map((x, j) => (j === i ? { ...x, action: e.target.value } : x)))} placeholder="e.g. White slip" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+            <button onClick={() => setLadder((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
+          </div>
+        ))}
+        <button onClick={() => setLadder((p) => [...p, { noticeNumber: (p[p.length - 1]?.noticeNumber || 1) + 1, action: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add step</button>
+      </div>
+
+      <p className="mt-4 text-sm font-medium text-slate-700">Approved consequences (AI coach)</p>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {whitelist.map((w, i) => (
+          <span key={i} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">
+            {w}<button onClick={() => setWhitelist((p) => p.filter((_, j) => j !== i))} className="text-slate-400">✕</button>
+          </span>
+        ))}
+      </div>
+      <div className="mt-2 flex gap-2">
+        <input value={newAllowed} onChange={(e) => setNewAllowed(e.target.value)} placeholder="add an approved consequence…" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+        <button onClick={() => { const v = newAllowed.trim(); if (v && !whitelist.includes(v)) setWhitelist((p) => [...p, v]); setNewAllowed(""); }} className="rounded-lg border border-slate-300 px-2 py-1 text-sm">Add</button>
+      </div>
+
+      <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{saved ? "Saved ✓" : "Save recommended actions"}</button>
+    </Card>
+  );
 }
 
 function HomeworkSettings({ config }: { config: any }) {

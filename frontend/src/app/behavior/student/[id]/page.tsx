@@ -74,6 +74,9 @@ export default function StudentPage() {
   const [noteText, setNoteText] = useState<Record<string, string>>({});
   // Per-notice "request a meeting" toggle
   const [meetingFor, setMeetingFor] = useState<Record<string, boolean>>({});
+  // Recommended actions (AI coaching, on demand)
+  const [rec, setRec] = useState<{ ai: { action: string; why: string }[]; aiUsed: boolean; offences: string[] } | null>(null);
+  const [recBusy, setRecBusy] = useState(false);
   // Confirm-before-send preview pop-up
   const [sendModal, setSendModal] = useState<{ id: string; text: string; edited: boolean; evidenceCount: number } | null>(null);
   const [sendingModal, setSendingModal] = useState(false);
@@ -239,6 +242,18 @@ export default function StudentPage() {
     }
   }
 
+  async function getRecommendations() {
+    setRecBusy(true);
+    try {
+      const r = await api<{ ai: any[]; aiUsed: boolean; offences: string[] }>(`/students/${params.id}/recommend`);
+      setRec({ ai: r.ai || [], aiUsed: !!r.aiUsed, offences: r.offences || [] });
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setRecBusy(false);
+    }
+  }
+
   async function logMeeting() {
     const text = meetingNote.trim();
     if (!text) return;
@@ -343,6 +358,46 @@ export default function StudentPage() {
           )}
         </div>
       </section>
+
+      {/* Recommended actions: objective ladder + AI coaching (whitelisted) */}
+      {(() => {
+        const ladder: { noticeNumber: number; action: string }[] = me?.config?.consequenceLadder || [];
+        const notices = data.noticesHomeCount || 0;
+        const currentStep = ladder.filter((l) => l.noticeNumber <= notices).sort((a, b) => a.noticeNumber - b.noticeNumber).pop();
+        const nextStep = ladder.find((l) => l.noticeNumber === notices + 1);
+        if (!ladder.length && notices === 0) return null;
+        return (
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <h2 className="font-semibold">Recommended actions</h2>
+            <div className="mt-2 space-y-1 text-sm">
+              {currentStep && <p>Rule-based (current — {notices} notice{notices === 1 ? "" : "s"} home): <span className="font-semibold">{currentStep.action}</span></p>}
+              {nextStep && <p className="text-slate-600">If a further notice fires: <span className="font-medium">{nextStep.action}</span></p>}
+              {!currentStep && !nextStep && <p className="text-slate-400">No rule-based ladder set (Setup → Recommended actions).</p>}
+            </div>
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              {!rec ? (
+                <button onClick={getRecommendations} disabled={recBusy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+                  {recBusy ? "Thinking…" : "Get coaching suggestions (AI)"}
+                </button>
+              ) : rec.ai.length === 0 ? (
+                <p className="text-sm text-slate-500">{rec.aiUsed ? "No suggestions." : "AI coaching unavailable (no key set), or no recent offences to assess."}</p>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-400">Coaching suggestions (from your approved list — your call):</p>
+                  <ul className="mt-1 space-y-1.5">
+                    {rec.ai.map((s, i) => (
+                      <li key={i} className="text-sm">
+                        <span className="font-medium">{s.action}</span>{s.why ? <span className="text-slate-600"> — {s.why}</span> : null}
+                      </li>
+                    ))}
+                  </ul>
+                  {rec.offences.length > 0 && <p className="mt-2 text-xs text-slate-400">Based on: {rec.offences.join(", ")}</p>}
+                </>
+              )}
+            </div>
+          </section>
+        );
+      })()}
 
       {/* Log a parent meeting / contact (interaction — no strike, nothing home) */}
       <section className="no-print rounded-xl border border-slate-200 bg-white p-5">

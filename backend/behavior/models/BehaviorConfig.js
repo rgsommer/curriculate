@@ -70,6 +70,36 @@ const BehaviorConfigSchema = new mongoose.Schema(
       updatedAt: { type: Date, default: null },
     },
 
+    // ── Trigger actions (what happens when a notice fires) ──────────────────
+    // VP is copied on the notice: "off", "first" (1st-or-later), or "second"
+    // (2nd-or-later, the default escalation point).
+    vpNotify: { type: String, enum: ["off", "first", "second"], default: "second" },
+    // Email the logging teacher a suggested parent note to review/edit/send.
+    teacherDraft: { type: Boolean, default: true },
+
+    // ── Recommended actions (consequences) ──────────────────────────────────
+    // Objective rule-based ladder by notice number (admin-defined), e.g.
+    //   [{ noticeNumber: 2, action: "White slip" }, { 3, "In-school suspension" }]
+    consequenceLadder: {
+      type: [{ noticeNumber: { type: Number }, action: { type: String, default: "" }, _id: false }],
+      default: [],
+    },
+    // The ONLY consequences the AI coach may suggest — keeps suggestions
+    // school-approved, age-appropriate and defensible (no freeform invention).
+    consequenceWhitelist: {
+      type: [String],
+      default: [
+        "Quiet word with the student",
+        "Meet with the student",
+        "Meet with parents and student",
+        "Lines / written reflection",
+        "Detention",
+        "Restorative task (make it right)",
+        "Loss of a privilege",
+        "Refer to the VP",
+      ],
+    },
+
     // ── AI note send behaviour (§8) ─────────────────────────────────────────
     // "auto"  → compose + send automatically on trigger (this school's choice).
     // "draft" → compose, hold for one-tap teacher send (toggle for later).

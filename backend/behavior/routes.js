@@ -224,7 +224,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -1503,7 +1503,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           reason: "immediate",
           contributingIncidents: [...createdIncidents, ...queued],
           sequenceNo,
-          ccVp: sequenceNo >= 2,
+          ccVp: config?.vpNotify === "off" ? false : config?.vpNotify === "first" ? true : sequenceNo >= 2,
         },
         awaitDecision: true,
       });
@@ -1520,7 +1520,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           const decision = evaluateIncident({
             newIncident: inc,
             priorIncidents: others,
-            config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
+            config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30, vpNotify: config?.vpNotify },
             student,
           });
           if (decision.shouldNotify) {
@@ -1635,7 +1635,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
       const decision = evaluateIncident({
         newIncident: inc.toObject(),
         priorIncidents: others,
-        config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30 },
+        config: { triggerCount: config?.triggerCount ?? 3, fadeWindowDays: config?.fadeWindowDays ?? 30, vpNotify: config?.vpNotify },
         student,
       });
       let notice = null;
@@ -1825,7 +1825,7 @@ async function composeAndCreateNotice({
   // or edit it on the dashboard first. Independent of the parent channel policy;
   // a failure here never blocks the notice.
   try {
-    if (sender?.email) {
+    if (sender?.email && config?.teacherDraft !== false) {
       const recipNames = recipients.map((r) => r.name || r.role).filter(Boolean).join(", ") || "the parent(s)";
       const chanLabel = (channels || []).includes("edsby") ? "Edsby" : ((channels || []).length ? channels.join(", ") : "no channel configured yet");
       const willSend = (awaitDecision || config?.aiSendMode === "draft")
@@ -2861,6 +2861,66 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
 // A teacher records that a meeting or contact happened. Logged as an
 // INTERACTION incident so it lives in the student's history for context but
 // never counts toward a notice and never sends anything home (§5a).
+// Recommended actions for a student: objective rule-based consequences (the
+// admin's escalation ladder, keyed to the notice count) + AI "coaching"
+// suggestions drawn ONLY from the school's approved whitelist. Read-only; the
+// teacher decides. The AI never invents consequences outside the whitelist.
+router.get("/students/:id/recommend", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const noticesHomeCount = student.noticesHomeCount || 0;
+
+    // Objective ladder: the step at the student's current notice level, + next.
+    const ladder = (config?.consequenceLadder || []).slice().sort((a, b) => a.noticeNumber - b.noticeNumber);
+    const current = ladder.filter((l) => l.noticeNumber <= noticesHomeCount).pop() || null;
+    const next = ladder.find((l) => l.noticeNumber === noticesHomeCount + 1) || null;
+
+    // Offence context for the coach (recent THRESHOLD/IMMEDIATE incidents).
+    const since = new Date(Date.now() - 120 * DAY_MS);
+    const incidents = await BehaviorIncident.find({ studentId: student._id, timestamp: { $gt: since } })
+      .select("behaviorSnapshot.name behaviorSnapshot.kind timestamp").sort({ timestamp: -1 }).limit(40).lean();
+    const offences = incidents.filter((i) => i.behaviorSnapshot?.kind !== "positive");
+    const byType = {};
+    for (const i of offences) { const n = i.behaviorSnapshot?.name || "Other"; byType[n] = (byType[n] || 0) + 1; }
+    const typeSummary = Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ×${v}`);
+
+    const whitelist = config?.consequenceWhitelist || [];
+    let ai = [];
+    let aiUsed = false;
+    if (whitelist.length && offences.length) {
+      try {
+        const clientAi = makeDefaultAiClient(config || {});
+        if (clientAi) {
+          const name = student.preferredName || student.firstName || "the student";
+          const prompt =
+            `You are a supportive behaviour COACH advising a teacher (not the student). ` +
+            `Suggest up to 3 next steps for ${name}, chosen ONLY from this approved list — do not invent anything outside it:\n` +
+            `${whitelist.map((w) => `- ${w}`).join("\n")}\n\n` +
+            `Recent offences (last ~4 months): ${typeSummary.join(", ") || "none"}. Notices home so far: ${noticesHomeCount}.\n\n` +
+            `Pick the most fitting actions for THIS pattern and, for each, give one short, warm, practical coaching sentence on why it fits and how to do it well. ` +
+            `Be encouraging and restorative in tone, not punitive. Output each as a line exactly like: ACTION || rationale  (ACTION must be copied verbatim from the list).`;
+          const out = await Promise.race([clientAi.complete(prompt, { maxTokens: 500 }), new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 20000))]);
+          const lines = String(out || "").split("\n").map((l) => l.trim()).filter(Boolean);
+          for (const line of lines) {
+            const [actionRaw, ...rest] = line.replace(/^[-*\d.\s]+/, "").split("||");
+            const action = (actionRaw || "").trim();
+            const match = whitelist.find((w) => w.toLowerCase() === action.toLowerCase());
+            if (match && !ai.some((x) => x.action === match)) ai.push({ action: match, why: rest.join("||").trim() });
+          }
+          ai = ai.slice(0, 3);
+          aiUsed = ai.length > 0;
+        }
+      } catch { /* coaching is best-effort */ }
+    }
+
+    res.json({ ok: true, noticesHomeCount, current, next, ladder, offences: typeSummary, whitelist, ai, aiUsed });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/students/:id/meeting", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });

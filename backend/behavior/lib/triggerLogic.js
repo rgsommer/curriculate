@@ -137,7 +137,10 @@ export function evaluateIncident({ newIncident, priorIncidents, config, student,
 
   // Next notice's sequence number this period drives tone + the CC-VP rule.
   const sequenceNo = (student?.noticesHomeCount || 0) + 1;
-  const ccVp = sequenceNo >= 2;
+  // VP copy: "off" never, "first" on every notice, "second" (default) on the
+  // 2nd-or-later notice — admin-configurable.
+  const vpNotify = config.vpNotify || "second";
+  const ccVp = vpNotify === "off" ? false : vpNotify === "first" ? true : sequenceNo >= 2;
 
   // IMMEDIATE: a single occurrence notifies right away. The notice carries this
   // offence PLUS any THRESHOLD incidents already accumulating in the queue, so
