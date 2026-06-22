@@ -585,6 +585,13 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const cookieSet = cookieStored;
   const formkeySet = formkeyStored;
 
+  // Collapsed by default (it's a long, set-once block). Auto-open when linked
+  // to directly (e.g. /behavior/setup#edsby from the Avgs "Connect Edsby" CTA).
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash === "#edsby") setOpen(true);
+  }, []);
+
   async function genIngestToken() {
     if (ingestTokenSet && !window.confirm("Generate a new token? Your existing script's token will stop working until you update it.")) return;
     setTokenBusy(true);
@@ -676,7 +683,15 @@ function EdsbySection({ edsby }: { edsby: any }) {
 
   return (
     <Card>
-      <h2 id="edsby" className="scroll-mt-20 font-semibold">Edsby connection</h2>
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between gap-2 text-left">
+        <h2 id="edsby" className="scroll-mt-20 font-semibold">Edsby connection</h2>
+        <span className="flex items-center gap-2 text-sm text-slate-400">
+          <span className={`rounded-full px-2 py-0.5 text-xs ${enabled ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"}`}>{enabled ? "on" : "off"}</span>
+          {open ? "▾" : "▸"}
+        </span>
+      </button>
+      {!open && <p className="mt-1 text-sm text-slate-400">Post notices over your school&apos;s Edsby session. Tap to configure.</p>}
+      {open && (<>
       <p className="mt-1 text-sm text-slate-500">
         Edsby has no public API, so notices are posted using your school&apos;s signed-in session — each
         parent messaged separately via their Edsby nid. The cookie + formkey are stored <span className="font-medium">encrypted</span> and never shown again.
@@ -810,6 +825,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
         The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
         Parent Edsby nids still need harvesting from Edsby (next step).
       </p>
+      </>)}
     </Card>
   );
 }
