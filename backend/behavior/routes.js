@@ -2815,7 +2815,26 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `Close with one short sentence on how the school could best support this teacher going forward (e.g. recognising their consistency, easing a heavy load, or helping ramp up positives). ` +
       `Write 3-4 short flowing paragraphs (~250-300 words) — continuous prose, NOT a headed report with section titles or bullet lists, and no separate "Conclusion" heading. Use ONLY the data; do not invent.\n\n${ctxText}`;
 
-    let summary = `Executive summary — ${who} (last ${months} months)\n\n${ctxText}`;
+    // Clean, reader-facing version used when the AI isn't available — the same
+    // figures as ctxText but WITHOUT the AI-only directives ("do not contradict",
+    // "three distinct threads", etc.), which must never reach a reader.
+    const fallbackText =
+      `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
+      `Students involved (any event type): ${students.size}.\n\n` +
+      `Offences (negative behaviour): ${totalOffences} total` +
+      (legacyOffences ? ` — ${offenceCount} logged in the app, plus ${legacyOffences} earlier offence(s) carried in from historical notices home.` : ".") + `\n` +
+      `Positive recognitions: ${positiveCount}${topPosTypes.length ? ` — e.g. ${topPosTypes.map(([k, v]) => `${k} ${v}`).join(", ")}` : ""}.\n` +
+      `Documented interactions (conversations & parent meetings): ${interactionCount}.\n\n` +
+      `By offence type: ${topTypes.map(([k, v]) => `${k} ${v}`).join(", ") || "none"}.\n` +
+      `Activity across ${activeMonths} month(s); ${teacherNoteCount} private teacher note(s) on file.\n` +
+      `Monthly offence volume: ${monthly.join("; ") || "n/a"}.\n` +
+      `Parent communication: ${notices.length} notice(s) home (${noticesSent} sent)` +
+      (legacyOffences ? " — these include the historical notices already counted in the offence total above, not additional events." : ".") + `\n` +
+      `Consequence follow-through: ${fuResolved} of ${fuTotal} resolved (${fuResolvedPct}%), ${fu.not_done} missed, ${fu.open} still open.\n` +
+      `Current strike load (division): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
+      (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
+
+    let summary = `Executive summary — ${who} (last ${months} months)\n\n${fallbackText}`;
     let aiUsed = false;
     const provided = String(req.body?.summaryText || "").trim();
     if (provided) {
