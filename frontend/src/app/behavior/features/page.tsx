@@ -156,6 +156,8 @@ const SAFEGUARDS = [
   "Role-based access: teachers log & view; only admins change Setup; the principal gets a read-only overview.",
   "Every notice and change is audit-logged. Sensitive roster fields (e.g. ethnicity) are never stored.",
   "Photo/video evidence is stored privately and is never sent to a parent unless the teacher opts in for that message.",
+  "Encrypted in transit (HTTPS) and at rest; secrets like Edsby session credentials are stored AES-256 encrypted and never shown again.",
+  "Built on enterprise cloud infrastructure (AWS, MongoDB) that supports Canadian-region data residency, so storage can be kept in Canada to meet your board's privacy requirements.",
 ];
 
 const TEACHER_STEPS = [
