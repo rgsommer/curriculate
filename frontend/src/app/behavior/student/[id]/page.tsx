@@ -317,6 +317,9 @@ export default function StudentPage() {
           <div className={`h-full ${pct >= 100 ? "bg-red-500" : pct >= 66 ? "bg-amber-500" : "bg-slate-700"}`} style={{ width: `${pct}%` }} />
         </div>
         <p className="mt-2 text-sm text-slate-500">{data.noticesHomeCount} notice(s) home this period.</p>
+        <a href="#incident-log" className="no-print mt-2 inline-block text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900">
+          Current log ↓
+        </a>
 
         <div className="mt-4 border-t border-slate-100 pt-3">
           <p className="text-sm font-medium text-slate-700">Admin summary (AI) → clipboard</p>
@@ -519,7 +522,7 @@ export default function StudentPage() {
       </section>
 
       {/* Incident log + teacher notes */}
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section id="incident-log" className="scroll-mt-4 rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Incident log</h2>
         <ul className="mt-2 divide-y divide-slate-100">
           {data.incidents.map((inc) => (
