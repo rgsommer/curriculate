@@ -106,8 +106,8 @@ function SetupForm({ session }) {
 
   async function downloadCurrentCsv() {
     const j = await fetch("/api/orders/catalog").then((r) => r.json());
-    const rows = [["supplier", "po", "category", "sku", "description", "uom", "price"]];
-    for (const it of j.items || []) rows.push([it.supplier, it.po, it.category, it.sku, it.description, it.uom, it.price]);
+    const rows = [["supplier", "po", "category", "sku", "description", "uom", "price", "image"]];
+    for (const it of j.items || []) rows.push([it.supplier, it.po, it.category, it.sku, it.description, it.uom, it.price, it.image || ""]);
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
@@ -223,7 +223,7 @@ function SetupForm({ session }) {
           </p>
         )}
         <p className="text-sm text-slate-600 mb-3">
-          To refresh for a new year: download the current catalog, edit prices/items in Excel, save as CSV (or keep .xlsx), then upload it here. Required columns: <span className="font-mono text-xs">supplier, po, category, sku, description, uom, price</span>.
+          To refresh for a new year: download the current catalog, edit prices/items in Excel, save as CSV (or keep .xlsx), then upload it here. Required columns: <span className="font-mono text-xs">supplier, po, category, sku, description, uom, price</span>. Add an optional <span className="font-mono text-xs">image</span> column (a public image URL per item) to show product photos; items without one show a category icon.
         </p>
         {uploadErr && <div className="mb-3 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">{uploadErr}</div>}
         {uploadMsg && <div className="mb-3 rounded-lg bg-green-50 border border-green-200 text-green-700 px-4 py-3 text-sm">{uploadMsg}</div>}

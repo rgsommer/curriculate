@@ -18,6 +18,7 @@ export type CatalogItem = {
   description: string;
   uom: string;
   price: number;
+  image?: string; // optional product image URL
 };
 
 const RAW: Omit<CatalogItem, "id">[] = [

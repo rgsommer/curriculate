@@ -16,6 +16,37 @@ import { getStoredSession, storeSession, clearSession, trySso, refreshAdmin } fr
 
 const money = (n) => "$" + (Math.round((n || 0) * 100) / 100).toFixed(2);
 
+// Emoji icon fallback by category keyword, when an item has no image URL.
+const ICONS = [
+  [/batter/i, "🔋"], [/dry.?erase|marker|sharpie|expo/i, "🖊️"], [/crayon/i, "🖍️"],
+  [/pencil/i, "✏️"], [/\bpens?\b/i, "🖊️"], [/highlighter/i, "🖍️"],
+  [/paper|construction|bristol|cartridge|tissue|newsprint|foolscap|chart|easel|manilla|poster/i, "📄"],
+  [/scissor/i, "✂️"], [/binder|duotang|report cover|folder|index/i, "📒"], [/glue/i, "🧴"],
+  [/tape/i, "🩹"], [/calculator/i, "🧮"], [/clip|fastener|stapl/i, "📎"], [/envelope/i, "✉️"],
+  [/ruler|protractor/i, "📐"], [/paint|tempera/i, "🎨"], [/clock/i, "🕐"], [/cord|power|extension/i, "🔌"],
+  [/label/i, "🏷️"], [/note|post.?it/i, "🗒️"], [/eraser/i, "🧽"], [/board/i, "📋"],
+  [/punch/i, "🕳️"], [/clay|model/i, "🧱"], [/chalk/i, "🪧"], [/tote|box|storage|bag/i, "📦"], [/exercise/i, "📓"],
+];
+function iconFor(category = "") {
+  for (const [re, ic] of ICONS) if (re.test(category)) return ic;
+  return "📦";
+}
+
+function ItemThumb({ item }) {
+  const [err, setErr] = useState(false);
+  if (item.image && !err) {
+    return (
+      <img src={item.image} alt="" loading="lazy" onError={() => setErr(true)}
+        className="w-10 h-10 shrink-0 object-contain rounded bg-white border border-slate-200" />
+    );
+  }
+  return (
+    <div className="w-10 h-10 shrink-0 rounded bg-slate-100 border border-slate-200 flex items-center justify-center text-lg" aria-hidden="true">
+      {iconFor(item.category)}
+    </div>
+  );
+}
+
 // Format a YYYY-MM-DD due date in local time (avoids the UTC off-by-one).
 const fmtDue = (d) => {
   if (!d) return "";
@@ -397,6 +428,7 @@ export default function OrdersPage() {
                                 <input type="number" min="0" value={qty[it.id] ?? ""}
                                   onChange={(e) => setItemQty(it.id, e.target.value)} placeholder="0"
                                   className={`w-16 shrink-0 rounded border px-2 py-1 text-center text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 ${qty[it.id] ? "border-indigo-400 bg-indigo-50 font-semibold" : "border-slate-300"}`} />
+                                <ItemThumb item={it} />
                                 <div className="min-w-0 flex-1">
                                   <div className="text-sm text-slate-800 leading-snug">{it.description}</div>
                                   <div className="text-xs text-slate-400">{it.sku} · {it.uom}</div>

@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Could not read that file. Use a .csv or .xlsx export." }, { status: 400 });
   }
 
-  const items: Array<{ supplier: string; po: string; category: string; sku: string; description: string; uom: string; price: number }> = [];
+  const items: Array<{ supplier: string; po: string; category: string; sku: string; description: string; uom: string; price: number; image?: string }> = [];
   const skipped: string[] = [];
   for (const row of rows) {
     const supplier = pick(row, ["supplier", "vendor"]);
@@ -64,6 +64,7 @@ export async function POST(req: Request) {
     const uom = pick(row, ["uom", "unitofmeasure", "unit", "pack"]);
     const priceStr = pick(row, ["price", "unitprice", "cost"]).replace(/[$,]/g, "");
     const price = Number(priceStr);
+    const image = pick(row, ["image", "imageurl", "img", "photo", "picture", "imagelink", "thumbnail"]);
 
     if (!sku || !description || !Number.isFinite(price)) {
       if (sku || description) skipped.push(sku || description);
@@ -77,6 +78,7 @@ export async function POST(req: Request) {
       description,
       uom: uom || "EACH",
       price: Math.round(price * 100) / 100,
+      ...(/^https?:\/\//i.test(image) ? { image } : {}),
     });
   }
 
