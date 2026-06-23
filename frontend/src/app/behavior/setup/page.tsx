@@ -62,6 +62,7 @@ export default function SetupPage() {
       <HousesSection config={me.config} />
       <HomeworkSettings config={me.config} />
       <RecommendedActionsSettings config={me.config} />
+      <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
       <MyEdsbyCard />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
@@ -464,6 +465,49 @@ function ingestSnippet(apiBase: string, token: string) {
     onload: function (r) { console.log("Behaviours ingest:", r.status, r.responseText); }
   });
 })();`;
+}
+
+function AdminDigestSettings({ config, myEmail }: { config: any; myEmail: string }) {
+  const d = config?.adminDigest || {};
+  const [enabled, setEnabled] = useState<boolean>(!!d.enabled);
+  const [recipient, setRecipient] = useState<string>(d.recipientEmail || "");
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function saveCfg(next: { enabled?: boolean; recipientEmail?: string }) {
+    const adminDigest = { enabled, recipientEmail: recipient, ...next };
+    setEnabled(adminDigest.enabled);
+    setRecipient(adminDigest.recipientEmail);
+    try { await api("/config", { method: "PUT", body: { adminDigest } }); } catch (e: any) { setMsg(`✗ ${e.message}`); }
+  }
+  async function sendNow() {
+    setBusy(true); setMsg("");
+    try {
+      const r = await api<{ ok: boolean; to?: string[]; error?: string }>("/admin-digest", { body: { recipientEmail: recipient } });
+      setMsg(r.ok ? `✓ Sent to ${(r.to || []).join(", ")}.` : `✗ ${r.error || "Failed"}`);
+    } catch (e: any) { setMsg(`✗ ${e.message}`); } finally { setBusy(false); }
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Weekly admin digest</h2>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={enabled} onChange={(e) => saveCfg({ enabled: e.target.checked })} />
+          {enabled ? "On" : "Off"}
+        </label>
+      </div>
+      <p className="mt-1 text-sm text-slate-500">A Monday email to leadership: the week&apos;s offences/positives/notices, who&apos;s at or nearing a notice, students to get ahead of, and gentle suggestions for supporting staff.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <input value={recipient} onChange={(e) => setRecipient(e.target.value)} onBlur={(e) => saveCfg({ recipientEmail: e.target.value })}
+          placeholder={`Send to (defaults to admins${myEmail ? `, e.g. ${myEmail}` : ""})`} className={`${inputCls} flex-1`} />
+        <button onClick={sendNow} disabled={busy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
+          {busy ? "Sending…" : "Send now"}
+        </button>
+      </div>
+      {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
+    </Card>
+  );
 }
 
 function RecommendedActionsSettings({ config }: { config: any }) {

@@ -619,6 +619,8 @@ try {
   startMorningReminders();
   const { startNoticeSweeper } = await import("./behavior/lib/notify.js");
   startNoticeSweeper();
+  const { startAdminDigest } = await import("./behavior/jobs/adminDigest.js");
+  startAdminDigest();
   console.error("[boot] behaviours module loaded OK");
 } catch (e) {
   console.error("[boot] ❌ behaviours module FAILED to load — continuing without it:\n", e?.stack || e);

@@ -224,7 +224,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -3176,6 +3176,97 @@ router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, r
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const insights = await buildSchoolInsights(req.schoolId, config);
     res.json({ ok: true, ...insights });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Compose the weekly admin digest email (subject/text/html) for a school.
+async function composeAdminDigest(schoolId, config) {
+  const insights = await buildSchoolInsights(schoolId, config);
+  const school = await BehaviorSchool.findById(schoolId).select("name").lean();
+  const since7 = new Date(Date.now() - 7 * DAY_MS);
+  const wk = await BehaviorIncident.find({ schoolId, timestamp: { $gt: since7 } })
+    .select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode").lean();
+  let wkPos = 0, wkNeg = 0, wkInt = 0;
+  for (const i of wk) {
+    const pos = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+    const intr = !pos && i.behaviorSnapshot?.triggerMode === "INTERACTION";
+    if (pos) wkPos += 1; else if (intr) wkInt += 1; else wkNeg += 1;
+  }
+  const wkNotices = await BehaviorNotice.countDocuments({ schoolId, sentAt: { $gt: since7 }, status: "sent" });
+
+  const li = (s) => `<li style="margin:3px 0">${s}</li>`;
+  const section = (title, inner) => `<h3 style="margin:18px 0 6px;font-size:15px;color:#0f172a">${title}</h3>${inner}`;
+  const flagged = insights.teachers.filter((t) => t.flag);
+  const suggestions = flagged.length
+    ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">` +
+        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} offence(s) and only ${t.positives} positive(s) this term — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
+      `</ul>`
+    : `<p style="margin:0;color:#64748b">No staff stand out as needing support this week. 👍</p>`;
+
+  const top = (arr, fmt) => arr.length ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${arr.slice(0, 6).map((x) => li(fmt(x))).join("")}</ul>` : `<p style="margin:0;color:#64748b">None.</p>`;
+
+  const contentHtml =
+    `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
+    `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} offence(s) · ${wkPos} positive(s) · ${wkInt} documented interaction(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
+    section("At or near a notice", top(insights.atThreshold, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.strikes}/${r.triggerCount} strikes`)) +
+    section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
+    section("Most-logged (90 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
+    section("Suggested support for staff", suggestions) +
+    `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
+    `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>`;
+
+  const text =
+    `Week in review for ${school?.name || "your school"}.\n` +
+    `${wkNeg} offences · ${wkPos} positives · ${wkInt} interactions · ${wkNotices} notices sent (last 7 days).\n\n` +
+    `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
+    `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
+    `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
+    `Open the dashboard → School insights for the full picture.`;
+
+  return {
+    subject: `Behaviours weekly digest — ${school?.name || "your school"}`,
+    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Behaviours", preheader: `${wkNeg} offences · ${wkPos} positives · ${wkNotices} notices this week`, contentHtml }),
+    text,
+  };
+}
+
+// Send the digest to a school's configured recipient (or its admins). force=true
+// ignores the once-a-week guard (used by the "send now" button).
+export async function sendAdminDigestForSchool(schoolId, { force = false } = {}) {
+  const config = await BehaviorConfig.findOne({ schoolId }).lean();
+  if (!config) return { ok: false, error: "no config" };
+  if (!force && !config.adminDigest?.enabled) return { ok: false, skipped: "disabled" };
+  if (!force && config.adminDigest?.lastSentAt && Date.now() - new Date(config.adminDigest.lastSentAt).getTime() < 6 * DAY_MS) {
+    return { ok: false, skipped: "already sent this week" };
+  }
+  // Recipient: configured address, else all originator/admin emails.
+  let to = [];
+  const explicit = (config.adminDigest?.recipientEmail || "").trim();
+  if (explicit) to = [explicit];
+  else {
+    const admins = await BehaviorTeacher.find({ schoolId, role: { $in: ["originator", "admin"] } }).select("email").lean();
+    to = [...new Set(admins.map((a) => a.email).filter(Boolean))];
+  }
+  if (!to.length) return { ok: false, error: "no recipient" };
+
+  const { subject, html, text } = await composeAdminDigest(schoolId, config);
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  await sendEmail({ from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined, to, subject, text, html });
+  await BehaviorConfig.updateOne({ schoolId }, { $set: { "adminDigest.lastSentAt": new Date() } });
+  return { ok: true, to };
+}
+
+// Send the weekly digest now (admin) — also used to preview/test.
+router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    if (req.body?.recipientEmail !== undefined) {
+      await BehaviorConfig.updateOne({ schoolId: req.schoolId }, { $set: { "adminDigest.recipientEmail": String(req.body.recipientEmail || "").trim().toLowerCase() } });
+    }
+    const r = await sendAdminDigestForSchool(req.schoolId, { force: true });
+    await audit(req.schoolId, "admin_digest.sent", req, { meta: { to: r.to, ok: r.ok } });
+    res.json(r.ok ? { ok: true, to: r.to } : { ok: false, error: r.error || r.skipped || "failed" });
   } catch (err) {
     next(err);
   }

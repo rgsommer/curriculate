@@ -77,6 +77,14 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Email the logging teacher a suggested parent note to review/edit/send.
     teacherDraft: { type: Boolean, default: true },
 
+    // Weekly admin digest (opt-in): a Monday email to leadership summarising the
+    // week — students/teachers/behaviours/notices + supportive suggestions.
+    adminDigest: {
+      enabled: { type: Boolean, default: false },
+      recipientEmail: { type: String, default: "", lowercase: true, trim: true },
+      lastSentAt: { type: Date, default: null },
+    },
+
     // ── Recommended actions (consequences) ──────────────────────────────────
     // Objective rule-based ladder by notice number (admin-defined), e.g.
     //   [{ noticeNumber: 2, action: "White slip" }, { 3, "In-school suspension" }]
