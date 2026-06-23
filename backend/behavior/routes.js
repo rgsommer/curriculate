@@ -681,6 +681,7 @@ router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, n
         await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to: email,
+          cc: inviterEmail || undefined, // copy the inviter so they see what was sent
           replyTo: inviterEmail || undefined,
           subject: `${inviter || "You're"} invited you to Behaviours`,
           text:
@@ -759,6 +760,7 @@ router.post("/refer", authAny, loadMembership, requireAdmin, async (req, res, ne
         await sendEmail({
           from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
           to: email,
+          cc: senderEmail || undefined, // copy the sender so they see what went out
           replyTo: senderEmail || undefined,
           subject: `${sender || "A colleague"} thought you'd like Behaviours`,
           text:
@@ -788,6 +790,78 @@ router.post("/refer", authAny, loadMembership, requireAdmin, async (req, res, ne
       }
     }
     await audit(req.schoolId, "refer.sent", req, { meta: { sent, failed } });
+    res.json({ ok: true, sent, failed });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// "Invite an admin" — a leadership-focused pitch a teacher can send to a
+// principal/VP at any school to consider adopting Behaviours. CC's the sender.
+router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const emails = (Array.isArray(req.body?.emails) ? req.body.emails : [req.body?.email])
+      .map((e) => { const m = String(e || "").match(/[\w.+-]+@[\w.-]+\.\w{2,}/); return m ? m[0].toLowerCase() : ""; })
+      .filter(Boolean);
+    if (!emails.length) return res.status(400).json({ ok: false, error: "Enter a valid email address." });
+    if (emails.length > 10) return res.status(400).json({ ok: false, error: "Up to 10 recipients at a time." });
+
+    const note = String(req.body?.note || "").trim().slice(0, 600);
+    const sender = (req.user?.name || "").trim();
+    const senderEmail = req.user?.email || "";
+    const by = sender ? `${sender}${senderEmail ? ` (${senderEmail})` : ""}` : "A teacher";
+    const learnUrl = `${appBase()}/behavior/features`;
+    const startUrl = `${appBase()}/behavior`;
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+
+    const points = [
+      ["Eases teacher &amp; admin burnout", "One shared, low-effort log per student — staff stop re-litigating the same concerns and stop chasing paper. Logging takes seconds on a phone."],
+      ["Consistency across the school", "Every teacher works from the same thresholds, the same record, and the same approved consequences — so students get a fair, predictable response, whoever is on duty."],
+      ["Documentation &amp; follow-through", "Time-stamped, attributed, audit-logged records; morning reminders so consequences are actually carried out, not forgotten."],
+      ["Positive AND negative", "It recognises good behaviour (house points, good-news notes home), not just problems — a healthier culture, and fairer to students."],
+      ["Houses &amp; school culture", "Optional house system ties everyday conduct to shared team spirit, with merit-based rewards."],
+      ["Eyes on trends + proactive handling", "Leadership sees behaviour trends, which students need getting ahead of, and which teachers may welcome support — early, not after a blow-up."],
+      ["Coaching newer teachers", "Suggested, school-approved next steps (in a supportive tone) help less-experienced staff respond well and consistently."],
+      ["Communication home stays human", "Notes home are pastoral and teacher-reviewed — nothing is auto-sent, and families are reached over a channel they recognise."],
+    ];
+    const textPoints = points.map(([h, b]) => `• ${h.replace(/&amp;/g, "&")}: ${b.replace(/&amp;/g, "&")}`).join("\n");
+    const htmlPoints = points.map(([h, b]) => `<li style="margin:4px 0"><strong>${h}:</strong> ${b}</li>`).join("");
+
+    const sent = [];
+    const failed = [];
+    for (const email of emails) {
+      try {
+        await sendEmail({
+          from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+          to: email,
+          cc: senderEmail || undefined,
+          replyTo: senderEmail || undefined,
+          subject: `${sender || "A teacher"} — a behaviour tool worth a look for our school`,
+          text:
+            `Hello,\n\n` +
+            `${by} thought Behaviours might be worth considering for your school.\n\n` +
+            `It's a school-wide, pastoral approach to student conduct that helps with:\n\n${textPoints}\n\n` +
+            (note ? `Their note: "${note}"\n\n` : "") +
+            `A short overview: ${learnUrl}\nSet it up for your division: ${startUrl}\n\n— Behaviours (curriculate.net)`,
+          html: emailShell({
+            title: "A behaviour tool worth a look",
+            schoolName: "Behaviours",
+            preheader: `${by} suggested Behaviours for your school.`,
+            contentHtml:
+              `<p style="margin:0 0 12px;color:#334155;line-height:1.6"><strong>${escapeHtml(by)}</strong> thought <strong>Behaviours</strong> might be worth considering for your school — a school-wide, pastoral approach to student conduct.</p>` +
+              (note ? `<blockquote style="margin:0 0 14px;padding:8px 14px;border-left:3px solid #cbd5e1;color:#475569;font-style:italic">${escapeHtml(note)}</blockquote>` : "") +
+              `<p style="margin:0 0 6px;color:#0f172a;font-weight:600">Why it helps a school</p>` +
+              `<ul style="margin:0 0 14px;padding-left:18px;color:#334155;line-height:1.6">${htmlPoints}</ul>` +
+              emailButton("Read the overview", learnUrl) +
+              `<p style="margin:14px 0 0;color:#475569">Or set it up for your division: <a href="${startUrl}" style="color:#0f172a">${escapeHtml(startUrl)}</a></p>`,
+          }),
+        });
+        sent.push(email);
+      } catch (mailErr) {
+        failed.push({ email, error: mailErr?.message || String(mailErr) });
+      }
+    }
+    await audit(req.schoolId, "invite_admin.sent", req, { meta: { sent, failed } });
     res.json({ ok: true, sent, failed });
   } catch (err) {
     next(err);
@@ -2995,70 +3069,113 @@ router.post("/students/:id/meeting", authAny, loadMembership, canLog, async (req
 // ── Intervention view (admin/VP read-only, school-wide) ──────────────────────
 // Who needs attention right now: students at/near the strike threshold, the
 // most-logged students, and a per-class breakdown. Read-only, admin only.
+// School-wide admin insights: who needs attention, behaviour trends, teachers
+// who may welcome support, and students to get ahead of. Shared by the
+// intervention view + the weekly admin digest. All signals are objective counts
+// presented supportively — never a judgement.
+async function buildSchoolInsights(schoolId, config) {
+  const triggerCount = config?.triggerCount ?? 3;
+  const fadeDays = config?.fadeWindowDays ?? 30;
+  const now = Date.now();
+  const fadeCutoff = now - fadeDays * DAY_MS;
+  const d180 = new Date(now - 180 * DAY_MS);
+  const d90 = now - 90 * DAY_MS;
+  const d14 = now - 14 * DAY_MS;
+  const d28 = now - 28 * DAY_MS;
+
+  const students = await BehaviorStudent.find({ schoolId, active: true })
+    .select("firstName preferredName lastName grade classGroup noticesHomeCount").lean();
+  const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
+  const nameOf = (s) => (s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "—");
+
+  // One pull of recent incidents; everything below is computed in memory.
+  const incs = await BehaviorIncident.find({ schoolId, timestamp: { $gt: d180 } })
+    .select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode studentId teacherId timestamp countedInNoticeId").lean();
+  const isPos = (i) => i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
+  const isInteraction = (i) => !isPos(i) && i.behaviorSnapshot?.triggerMode === "INTERACTION";
+  const isOffence = (i) => !isPos(i) && !isInteraction(i);
+
+  // Monthly trend (last 6 months): offences vs positives.
+  const trendMap = {};
+  for (const i of incs) {
+    const k = new Date(i.timestamp).toISOString().slice(0, 7);
+    (trendMap[k] ||= { neg: 0, pos: 0 });
+    if (isPos(i)) trendMap[k].pos += 1; else if (isOffence(i)) trendMap[k].neg += 1;
+  }
+  const trends = Object.keys(trendMap).sort().slice(-6).map((m) => ({ month: m, ...trendMap[m] }));
+
+  // Current strike load → at/near the threshold.
+  const strikes = {}; const lastStrike = {};
+  for (const i of incs) {
+    if (i.countedInNoticeId || i.behaviorSnapshot?.triggerMode !== "THRESHOLD" || new Date(i.timestamp).getTime() <= fadeCutoff) continue;
+    const sid = String(i.studentId);
+    strikes[sid] = (strikes[sid] || 0) + 1;
+    const t = new Date(i.timestamp).getTime();
+    if (!lastStrike[sid] || t > lastStrike[sid]) lastStrike[sid] = t;
+  }
+  const atThreshold = Object.keys(strikes).filter((sid) => strikes[sid] >= triggerCount - 1 && sById[sid])
+    .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", grade: sById[sid].grade || "—", strikes: strikes[sid], triggerCount, lastAt: new Date(lastStrike[sid]) }))
+    .sort((a, b) => b.strikes - a.strikes || b.lastAt - a.lastAt);
+
+  // Most-logged (90d) + per-class counts (90d).
+  const count90 = {}; const last90 = {}; const classCounts = {};
+  for (const i of incs) {
+    if (new Date(i.timestamp).getTime() <= d90) continue;
+    const sid = String(i.studentId);
+    count90[sid] = (count90[sid] || 0) + 1;
+    const t = new Date(i.timestamp).getTime();
+    if (!last90[sid] || t > last90[sid]) last90[sid] = t;
+    const cls = sById[sid]?.classGroup || "—";
+    classCounts[cls] = (classCounts[cls] || 0) + 1;
+  }
+  const topRepeat = Object.keys(count90).filter((sid) => sById[sid])
+    .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", count: count90[sid], lastAt: new Date(last90[sid]) }))
+    .sort((a, b) => b.count - a.count).slice(0, 15);
+  const byClass = Object.entries(classCounts).map(([classGroup, count]) => ({ classGroup, count }))
+    .sort((a, b) => b.count - a.count || a.classGroup.localeCompare(b.classGroup));
+
+  // Teachers who may welcome support: high offence volume + low positive share
+  // (90d). Objective counts, framed supportively — not a performance verdict.
+  const tStats = {};
+  for (const i of incs) {
+    if (new Date(i.timestamp).getTime() <= d90) continue;
+    const t = String(i.teacherId);
+    (tStats[t] ||= { neg: 0, pos: 0, students: new Set() });
+    tStats[t].students.add(String(i.studentId));
+    if (isPos(i)) tStats[t].pos += 1; else if (isOffence(i)) tStats[t].neg += 1;
+  }
+  const tDocs = await BehaviorTeacher.find({ _id: { $in: Object.keys(tStats) } }).select("name").lean();
+  const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
+  let teachers = Object.entries(tStats).map(([t, v]) => ({
+    teacherId: t, name: tName[t] || "teacher", negatives: v.neg, positives: v.pos, students: v.students.size,
+    posRatio: v.neg + v.pos ? Math.round((v.pos / (v.neg + v.pos)) * 100) : null,
+  })).sort((a, b) => b.negatives - a.negatives);
+  const avgNeg = teachers.length ? teachers.reduce((s, t) => s + t.negatives, 0) / teachers.length : 0;
+  for (const t of teachers) t.flag = t.negatives >= Math.max(8, avgNeg * 1.5) && (t.posRatio == null || t.posRatio < 25);
+
+  // Students to get ahead of: offences rising in the last 14 days vs the prior
+  // 14, where it's not yet at the formal threshold — a chance to act early.
+  const recent = {}; const prior = {};
+  for (const i of incs) {
+    if (!isOffence(i)) continue;
+    const t = new Date(i.timestamp).getTime();
+    const sid = String(i.studentId);
+    if (t > d14) recent[sid] = (recent[sid] || 0) + 1;
+    else if (t > d28) prior[sid] = (prior[sid] || 0) + 1;
+  }
+  const proactive = Object.keys(recent)
+    .filter((sid) => sById[sid] && recent[sid] >= 2 && recent[sid] >= (prior[sid] || 0))
+    .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", recent: recent[sid], prior: prior[sid] || 0, notices: sById[sid].noticesHomeCount || 0 }))
+    .sort((a, b) => b.recent - a.recent || b.notices - a.notices).slice(0, 15);
+
+  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive };
+}
+
 router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, res, next) => {
   try {
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    const triggerCount = config?.triggerCount ?? 3;
-    const fadeDays = config?.fadeWindowDays ?? 30;
-    const fadeCutoff = new Date(Date.now() - fadeDays * DAY_MS);
-
-    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
-      .select("firstName preferredName lastName grade classGroup noticesHomeCount")
-      .lean();
-    const sById = Object.fromEntries(students.map((s) => [String(s._id), s]));
-    const nameOf = (s) => (s ? `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() : "—");
-
-    // Current strike load (uncounted THRESHOLD incidents within the fade window).
-    const strikeAgg = await BehaviorIncident.aggregate([
-      { $match: { schoolId: req.schoolId, countedInNoticeId: null, "behaviorSnapshot.triggerMode": "THRESHOLD", timestamp: { $gt: fadeCutoff } } },
-      { $group: { _id: "$studentId", strikes: { $sum: 1 }, last: { $max: "$timestamp" } } },
-    ]);
-    const atThreshold = strikeAgg
-      .filter((a) => a.strikes >= triggerCount - 1 && sById[String(a._id)])
-      .map((a) => ({
-        studentId: String(a._id),
-        name: nameOf(sById[String(a._id)]),
-        classGroup: sById[String(a._id)].classGroup || "—",
-        grade: sById[String(a._id)].grade || "—",
-        strikes: a.strikes,
-        triggerCount,
-        lastAt: a.last,
-      }))
-      .sort((a, b) => b.strikes - a.strikes || new Date(b.lastAt) - new Date(a.lastAt));
-
-    // Most-logged students over the last 90 days (all incidents, any mode).
-    const since = new Date(Date.now() - 90 * DAY_MS);
-    const repeatAgg = await BehaviorIncident.aggregate([
-      { $match: { schoolId: req.schoolId, timestamp: { $gt: since } } },
-      { $group: { _id: "$studentId", n: { $sum: 1 }, last: { $max: "$timestamp" } } },
-      { $sort: { n: -1 } },
-      { $limit: 15 },
-    ]);
-    const topRepeat = repeatAgg
-      .filter((a) => sById[String(a._id)])
-      .map((a) => ({
-        studentId: String(a._id),
-        name: nameOf(sById[String(a._id)]),
-        classGroup: sById[String(a._id)].classGroup || "—",
-        count: a.n,
-        lastAt: a.last,
-      }));
-
-    // Per-class incident counts over the same 90-day window.
-    const byClassAgg = await BehaviorIncident.aggregate([
-      { $match: { schoolId: req.schoolId, timestamp: { $gt: since } } },
-      { $group: { _id: "$studentId", n: { $sum: 1 } } },
-    ]);
-    const classCounts = {};
-    for (const a of byClassAgg) {
-      const cls = sById[String(a._id)]?.classGroup || "—";
-      classCounts[cls] = (classCounts[cls] || 0) + a.n;
-    }
-    const byClass = Object.entries(classCounts)
-      .map(([classGroup, count]) => ({ classGroup, count }))
-      .sort((a, b) => b.count - a.count || a.classGroup.localeCompare(b.classGroup));
-
-    res.json({ ok: true, triggerCount, fadeDays, atThreshold, topRepeat, byClass });
+    const insights = await buildSchoolInsights(req.schoolId, config);
+    res.json({ ok: true, ...insights });
   } catch (err) {
     next(err);
   }

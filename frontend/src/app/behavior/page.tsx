@@ -110,7 +110,7 @@ export default function BehaviorDashboard() {
           <h2 className="font-semibold">Admin</h2>
           <div className="mt-2 flex flex-wrap gap-2 text-sm">
             <Link href="/behavior/intervention" className="rounded-lg border border-slate-300 px-3 py-1.5">
-              Who needs attention
+              School insights
             </Link>
             <Link href="/behavior/setup" className="rounded-lg border border-slate-300 px-3 py-1.5">
               Division setup
@@ -138,7 +138,7 @@ export default function BehaviorDashboard() {
 }
 
 function ReferColleague() {
-  const [open, setOpen] = useState(false);
+  const [kind, setKind] = useState<"" | "colleague" | "admin">("");
   const [email, setEmail] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
@@ -150,11 +150,12 @@ function ReferColleague() {
     setBusy(true);
     setMsg("");
     try {
-      const r = await api<{ sent: string[]; failed: { email: string }[] }>("/refer", { body: { email: to, note: note.trim() } });
+      const path = kind === "admin" ? "/invite-admin" : "/refer";
+      const r = await api<{ sent: string[]; failed: { email: string }[] }>(path, { body: { email: to, note: note.trim() } });
       if (r.sent?.length) {
-        setMsg(`✓ Info email sent to ${r.sent.join(", ")}.`);
+        setMsg(`✓ Sent to ${r.sent.join(", ")} (copied to you).`);
         setEmail(""); setNote("");
-        setOpen(false);
+        setKind("");
       } else {
         setMsg(`✗ Could not send${r.failed?.[0] ? ` (${r.failed[0].email})` : ""} — check email settings.`);
       }
@@ -168,31 +169,26 @@ function ReferColleague() {
   return (
     <div className="mt-3 border-t border-slate-100 pt-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm text-slate-600">Know another teacher or admin who&apos;d use this?</p>
-        <button onClick={() => { setOpen((o) => !o); setMsg(""); }} className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
-          {open ? "Cancel" : "Tell a colleague"}
-        </button>
+        <p className="text-sm text-slate-600">Spread the word — you&apos;ll be cc&apos;d on whatever you send.</p>
+        <div className="flex shrink-0 gap-1.5">
+          <button onClick={() => { setKind(kind === "colleague" ? "" : "colleague"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "colleague" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Tell a teacher</button>
+          <button onClick={() => { setKind(kind === "admin" ? "" : "admin"); setMsg(""); }} className={`rounded-lg border px-2.5 py-1.5 text-xs ${kind === "admin" ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>Invite an admin</button>
+        </div>
       </div>
-      {open && (
+      {kind && (
         <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <input
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            inputMode="email"
-            placeholder="their email address"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            rows={2}
-            placeholder="Optional personal note…"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-          />
-          <p className="text-xs text-slate-400">Sends an info email about Behaviours with a link to try it — it does not create an account or add them to your school.</p>
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" inputMode="email"
+            placeholder={kind === "admin" ? "principal / VP email address" : "their email address"}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Optional personal note…"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+          <p className="text-xs text-slate-400">
+            {kind === "admin"
+              ? "Sends a leadership-focused pitch (burnout, consistency, documentation, trends, coaching) with a link — no account created. You're cc'd."
+              : "Sends an info email about Behaviours with a link to try it — no account created. You're cc'd."}
+          </p>
           <button onClick={send} disabled={busy || !email.trim()} className="rounded-lg bg-slate-900 px-4 py-2 text-sm text-white disabled:opacity-40">
-            {busy ? "Sending…" : "Send info email"}
+            {busy ? "Sending…" : kind === "admin" ? "Send admin pitch" : "Send info email"}
           </button>
         </div>
       )}
