@@ -37,7 +37,15 @@ const TRACKING = [
   },
   {
     title: "Trends & summaries",
-    body: "Per-student red/green timelines, a school-wide “Who needs attention” view, division reports by behaviour / class / month, and AI summaries that fairly reflect offences, positives, interactions and follow-through.",
+    body: "Per-student red/green timelines, division reports by behaviour / class / month, and AI summaries that fairly reflect offences, positives, interactions and follow-through.",
+  },
+  {
+    title: "Leadership insights (admin)",
+    body: "A read-only School Insights view: the 6-month behaviour trend, students at or near a notice, students to get ahead of (rising in the last two weeks), most-logged, by-class totals, and staff activity — with a gentle flag for teachers who may welcome support (a heavy offence load with few positives), never a performance verdict.",
+  },
+  {
+    title: "Weekly admin digest",
+    body: "Opt-in: a Monday email to leadership summarising the week — offences/positives/notices, who's at or nearing a notice, students to get ahead of, and supportive suggestions for staff — so the picture comes to you without logging in.",
   },
 ];
 
