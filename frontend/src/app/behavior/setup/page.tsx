@@ -64,7 +64,6 @@ export default function SetupPage() {
       <RecommendedActionsSettings config={me.config} />
       <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
-      <MyEdsbyCard />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
       <AddStudentSection />
@@ -200,11 +199,11 @@ function ConfigSection({ config }: { config: any }) {
       <h2 className="font-semibold">Division thresholds & branding</h2>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
       <div className="mt-3 grid grid-cols-2 gap-3">
-        <Field label="Trigger count">
+        <Field label="Trigger count" hint="How many active strikes a student needs before a notice home is prepared (e.g. 3).">
           <input type="number" min={1} value={c.triggerCount}
             onChange={(e) => setC({ ...c, triggerCount: e.target.value as any })} className={inputCls} />
         </Field>
-        <Field label="Fade window (days)">
+        <Field label="Fade window (days)" hint="How long a strike keeps counting toward the trigger. After this many days an incident stops counting toward the next notice — it stays in the student's history for context, but no longer adds to the active strike total. So a student isn't punished forever for an old, one-off incident.">
           <input type="number" min={1} value={c.fadeWindowDays}
             onChange={(e) => setC({ ...c, fadeWindowDays: e.target.value as any })} className={inputCls} />
         </Field>
@@ -918,6 +917,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
         The cookie + formkey expire periodically — when Edsby sends start failing over to email, re-paste them.
         Parent Edsby nids still need harvesting from Edsby (next step).
       </p>
+      <MyEdsbyCard embedded />
       </>)}
     </Card>
   );
@@ -1549,10 +1549,15 @@ function TestToolsSection({ email }: { email: string }) {
 
 const inputCls = "w-full rounded-lg border border-slate-300 px-3 py-2 text-sm";
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-xs font-medium text-slate-500">{label}</span>
+      <span className="mb-1 flex items-center gap-1 text-xs font-medium text-slate-500">
+        {label}
+        {hint && (
+          <span title={hint} className="inline-flex h-4 w-4 cursor-help items-center justify-center rounded-full bg-slate-200 text-[10px] font-bold text-slate-600">i</span>
+        )}
+      </span>
       {children}
     </label>
   );
@@ -1565,7 +1570,7 @@ function Card({ children }: { children: React.ReactNode }) {
 // Every member (teachers included) can set their OWN Edsby identity so notices
 // post AS them. They enter their Edsby user nid + paste their session cookie;
 // jver/cver/base URL come from the school connection an admin set up.
-function MyEdsbyCard() {
+function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
   const [state, setState] = useState<{ userNid: string; hasCookie: boolean; baseUrl: string; edsbyEnabled: boolean } | null>(null);
   const [userNid, setUserNid] = useState("");
   const [cookie, setCookie] = useState("");
@@ -1612,8 +1617,12 @@ function MyEdsbyCard() {
 
   if (!state) return null;
 
+  const Wrap = embedded
+    ? ({ children }: { children: React.ReactNode }) => <div className="mt-4 border-t border-slate-200 pt-4">{children}</div>
+    : Card;
+
   return (
-    <Card>
+    <Wrap>
       <h2 className="font-semibold">My Edsby (post as me)</h2>
       <p className="mt-1 text-sm text-slate-500">
         So your notices home post from <em>your</em> Edsby account. Enter your Edsby user nid and paste your
@@ -1652,6 +1661,6 @@ function MyEdsbyCard() {
           (<code className="rounded bg-slate-100 px-1">/p/Panorama/&lt;nid&gt;</code> or the <code className="rounded bg-slate-100 px-1">create/&lt;nid&gt;</code> in a broadcast).
         </p>
       </details>
-    </Card>
+    </Wrap>
   );
 }

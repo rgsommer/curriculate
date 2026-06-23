@@ -55,6 +55,14 @@ const BehaviorTeacherSchema = new mongoose.Schema(
 
     // pending until they accept their invite and sign in; accepted thereafter.
     status: { type: String, enum: ["pending", "accepted"], default: "accepted", index: true },
+
+    // Lightweight app-usage signal: page loads in the current week (reset when
+    // weekKey rolls over). Drives the admin "are teachers using it?" view.
+    usage: {
+      weekKey: { type: String, default: "" }, // Monday (YYYY-MM-DD) of the week
+      loads: { type: Number, default: 0 },
+      lastSeenAt: { type: Date, default: null },
+    },
   },
   { timestamps: true }
 );

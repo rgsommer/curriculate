@@ -69,6 +69,15 @@ function escapeHtml(s) {
   return String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// The Monday (UTC, YYYY-MM-DD) of the week containing `d` — a stable weekly key
+// for the lightweight app-usage counter.
+function mondayKey(d = new Date()) {
+  const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dow = (t.getUTCDay() + 6) % 7; // 0 = Monday
+  t.setUTCDate(t.getUTCDate() - dow);
+  return t.toISOString().slice(0, 10);
+}
+
 // The pronoun to use in a note home: the student's explicit pronoun if set,
 // otherwise derived from their gender. Returns "" when unknown — the note then
 // uses the student's name rather than guessing or defaulting to singular "they".
@@ -154,6 +163,15 @@ router.get("/me", authAny, async (req, res, next) => {
   try {
     const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
     if (!membership) return res.json({ ok: true, membership: null, needsSetup: true });
+    // Lightweight usage signal: count this week's page loads (best-effort).
+    try {
+      const wk = mondayKey();
+      if (membership.usage?.weekKey === wk) {
+        await BehaviorTeacher.updateOne({ _id: membership._id }, { $inc: { "usage.loads": 1 }, $set: { "usage.lastSeenAt": new Date() } });
+      } else {
+        await BehaviorTeacher.updateOne({ _id: membership._id }, { $set: { "usage.weekKey": wk, "usage.loads": 1, "usage.lastSeenAt": new Date() } });
+      }
+    } catch { /* never block /me on the counter */ }
     const school = await BehaviorSchool.findById(membership.schoolId).lean();
     const config = await BehaviorConfig.findOne({ schoolId: membership.schoolId }).lean();
     const admins = await BehaviorTeacher.find({ schoolId: membership.schoolId, role: { $in: ["originator", "admin"] } })
@@ -3168,7 +3186,20 @@ async function buildSchoolInsights(schoolId, config) {
     .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", recent: recent[sid], prior: prior[sid] || 0, notices: sById[sid].noticesHomeCount || 0 }))
     .sort((a, b) => b.recent - a.recent || b.notices - a.notices).slice(0, 15);
 
-  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive };
+  // App usage this week (are staff actually using it?) — page loads per member.
+  const wk = mondayKey();
+  const members = await BehaviorTeacher.find({ schoolId, status: { $ne: "pending" } }).select("name email role usage").lean();
+  const usage = members
+    .map((m) => ({
+      name: m.name || m.email || "teacher",
+      role: m.role,
+      loads: m.usage?.weekKey === wk ? (m.usage.loads || 0) : 0,
+      lastSeenAt: m.usage?.lastSeenAt || null,
+    }))
+    .sort((a, b) => b.loads - a.loads || new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0));
+  const activeThisWeek = usage.filter((u) => u.loads > 0).length;
+
+  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive, usage, activeThisWeek };
 }
 
 router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, res, next) => {

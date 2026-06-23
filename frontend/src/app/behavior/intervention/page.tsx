@@ -17,6 +17,8 @@ type Intervention = {
   trends: Trend[];
   teachers: TeacherRow[];
   proactive: Proactive[];
+  usage?: Array<{ name: string; role: string; loads: number; lastSeenAt: string | null }>;
+  activeThisWeek?: number;
 };
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -157,6 +159,25 @@ export default function InterventionPage() {
           ))}
         </ul>
       </section>
+
+      {/* App usage this week */}
+      {data.usage && data.usage.length > 0 && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">App usage this week</h2>
+          <p className="mt-0.5 text-xs text-slate-400">{data.activeThisWeek ?? 0} of {data.usage.length} staff have opened it this week (page loads). A quick read on adoption.</p>
+          <ul className="mt-2 divide-y divide-slate-100">
+            {data.usage.map((u, i) => (
+              <li key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                <span className="font-medium">{u.name}{u.role === "principal" ? " (principal)" : u.role === "admin" || u.role === "originator" ? " (admin)" : ""}</span>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-xs text-slate-400">{u.lastSeenAt ? `last ${fmtDate(u.lastSeenAt)}` : "not yet"}</span>
+                  <span className={`rounded px-2 py-0.5 text-xs font-semibold ${u.loads > 0 ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-400"}`}>{u.loads} {u.loads === 1 ? "open" : "opens"}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Teachers who may welcome support */}
       {data.teachers && data.teachers.length > 0 && (
