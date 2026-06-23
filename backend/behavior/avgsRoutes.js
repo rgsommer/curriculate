@@ -41,7 +41,7 @@ const FETCH_CONCURRENCY = 4;
 // it's held only in memory for this request and never written to the database,
 // so the high-value (often admin) session isn't left warm on the server. Only
 // the non-secret base URL / version headers come from the stored config.
-async function loadEdsbySession(schoolId, overrideCookie) {
+async function loadEdsbySession(schoolId, { overrideCookie, membership } = {}) {
   const config = await BehaviorConfig.findOne({ schoolId }).lean();
   const e = config?.edsby || {};
   const pasted = String(overrideCookie || "").trim();
@@ -49,18 +49,29 @@ async function loadEdsbySession(schoolId, overrideCookie) {
     return { error: "Edsby base URL isn't set — an admin sets it once in Behaviours Setup → Edsby." };
   }
 
-  // Session priority: (1) cookie pasted for this run, (2) one-shot run slot the
-  // Cookie Sync extension pushed (if still within its TTL), (3) the stored
-  // persistent session. (1) and (2) are transient — nothing derived is saved.
+  // The pull runs as WHOEVER is signed in, when they've connected their own
+  // Edsby (Setup → My Edsby). So an admin like Steve, who can see every course,
+  // pulls all of them; a teacher pulls only theirs. Falls back to the school's
+  // shared connection (one-shot slot, then stored cookie) when the signed-in
+  // user hasn't connected their own.
+  // Priority: (1) pasted for this run, (2) signed-in user's own session,
+  // (3) one-shot run slot (within TTL), (4) school stored session.
   let cookie = pasted;
-  let fromRunSlot = false;
+  let fromRunSlot = false, fromTeacher = false;
+  let userNid = e.userNid || "";
+  const myCookie = membership?.edsbyCookieEnc ? decrypt(membership.edsbyCookieEnc) : "";
+  if (!cookie && myCookie) {
+    cookie = myCookie;
+    fromTeacher = true;
+    userNid = membership.edsbyUserNid || userNid;
+  }
   if (!cookie && e.runCookieEnc && e.runCookieExpiresAt && new Date(e.runCookieExpiresAt).getTime() > Date.now()) {
     cookie = decrypt(e.runCookieEnc);
     fromRunSlot = true;
   }
   if (!cookie) cookie = e.cookieEnc ? decrypt(e.cookieEnc) : "";
   if (!cookie) {
-    return { error: "Edsby isn't connected. Sync a one-time session from the Cookie Sync extension, paste a session below, or connect Edsby in Behaviours Setup." };
+    return { error: "Edsby isn't connected. Connect your own Edsby in Setup → My Edsby, sync a one-time session, paste a session below, or connect the school Edsby in Setup." };
   }
   return {
     session: {
@@ -68,9 +79,10 @@ async function loadEdsbySession(schoolId, overrideCookie) {
       cookie,
       jver: e.jver || "",
       cver: e.cver || "",
-      userNid: e.userNid || "", // used to refresh the formkey from the bootstrap
+      userNid, // used to refresh the formkey from the bootstrap
       transient: !!pasted || fromRunSlot, // pasted/one-shot → never persist anything derived
       fromRunSlot, // so the run can clear the one-shot slot when it's done
+      fromTeacher, // pulled as the signed-in user's own Edsby session
     },
   };
 }
@@ -92,11 +104,13 @@ async function getOrCreateConfig(schoolId) {
  * their class list (id+name). Refreshes/persists the formkey along the way.
  * Returns { people, view, diagnostics } or { error } / { sessionExpired }.
  */
-async function loadZoomRoster(schoolId, session, bodyZoomId) {
+async function loadZoomRoster(schoolId, session, bodyZoomId, membership) {
   const config = await BehaviorConfig.findOne({ schoolId }).lean();
   const e = config?.edsby || {};
   const hrCfg = await HonourRollConfig.findOne({ schoolId }).lean();
-  const nodeSpec = String(bodyZoomId || hrCfg?.zoomNid || e.zoomId || "").trim();
+  // Node priority: (1) passed for this run, (2) the signed-in user's own
+  // My-Students node (matches whose session is being used), (3) school config.
+  const nodeSpec = String(bodyZoomId || membership?.edsbyZoomNid || hrCfg?.zoomNid || e.zoomId || "").trim();
   const nodeIds = nodeSpec.split(",").map((s) => s.trim()).filter(Boolean);
   if (!nodeIds.length) {
     return { error: "No Edsby “My Students” node id set. In Edsby open My Students — the number in the page URL (/p/ZoomMyStudents/NUMBER) is it. Paste it in the “My Students node” box and Save." };
@@ -197,10 +211,10 @@ export function buildAvgsRouter({ requireAdmin }) {
   // This is the prerequisite the probe/refresh error messages point at.
   router.post("/harvest-nids", requireAdmin, async (req, res, next) => {
     try {
-      const { session, error } = await loadEdsbySession(req.schoolId, req.body?.edsbyCookie);
+      const { session, error } = await loadEdsbySession(req.schoolId, { overrideCookie: req.body?.edsbyCookie, membership: req.membership });
       if (error) return res.json({ ok: false, error });
 
-      const r = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
+      const r = await loadZoomRoster(req.schoolId, session, req.body?.zoomId, req.membership);
       if (r.error) return res.json({ ok: false, error: r.error });
       if (r.sessionExpired) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
@@ -326,10 +340,10 @@ export function buildAvgsRouter({ requireAdmin }) {
   router.post("/probe", requireAdmin, async (req, res, next) => {
     try {
       const cfg = await getOrCreateConfig(req.schoolId);
-      const { session, error } = await loadEdsbySession(req.schoolId, req.body?.edsbyCookie);
+      const { session, error } = await loadEdsbySession(req.schoolId, { overrideCookie: req.body?.edsbyCookie, membership: req.membership });
       if (error) return res.json({ ok: false, error });
 
-      const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
+      const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId, req.membership);
       if (roster.error) return res.json({ ok: false, error: roster.error });
       if (roster.sessionExpired) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });
@@ -389,10 +403,10 @@ export function buildAvgsRouter({ requireAdmin }) {
   router.post("/refresh", async (req, res, next) => {
     try {
       const cfg = await getOrCreateConfig(req.schoolId);
-      const { session, error } = await loadEdsbySession(req.schoolId, req.body?.edsbyCookie);
+      const { session, error } = await loadEdsbySession(req.schoolId, { overrideCookie: req.body?.edsbyCookie, membership: req.membership });
       if (error) return res.json({ ok: false, error });
 
-      const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId);
+      const roster = await loadZoomRoster(req.schoolId, session, req.body?.zoomId, req.membership);
       if (roster.error) return res.json({ ok: false, error: roster.error });
       if (roster.sessionExpired) {
         return res.json({ ok: false, error: "Edsby session cookie has expired — refresh it (Cookie Sync extension or re-paste in Behaviours Setup)." });

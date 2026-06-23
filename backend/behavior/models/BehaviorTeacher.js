@@ -45,6 +45,10 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     edsbyUserNid: { type: String, default: "" },
     edsbyCookieEnc: { type: String, default: "" },
     edsbyFormkeyEnc: { type: String, default: "" },
+    // This teacher's own Edsby "My Students" Zoom node(s) (comma-separated) —
+    // so the honour-roll/grade pull reads THEIR roster + classes when they're
+    // the signed-in user (an admin who sees all courses pulls all of them).
+    edsbyZoomNid: { type: String, default: "" },
 
     // Per-teacher morning-reminder delivery preference (brief §8b). Division
     // sets the send time; the teacher picks the channel(s). Used in Phase 2.

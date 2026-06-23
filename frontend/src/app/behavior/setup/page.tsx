@@ -1640,16 +1640,17 @@ function SaveButton({ state, onClick, label = "Save", className = "" }: { state:
 // post AS them. They enter their Edsby user nid + paste their session cookie;
 // jver/cver/base URL come from the school connection an admin set up.
 function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
-  const [state, setState] = useState<{ userNid: string; hasCookie: boolean; baseUrl: string; edsbyEnabled: boolean } | null>(null);
+  const [state, setState] = useState<{ userNid: string; hasCookie: boolean; zoomNid: string; baseUrl: string; edsbyEnabled: boolean } | null>(null);
   const [userNid, setUserNid] = useState("");
   const [cookie, setCookie] = useState("");
+  const [zoomNid, setZoomNid] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const saveState = useSaveState([userNid, cookie]);
+  const saveState = useSaveState([userNid, cookie, zoomNid]);
 
   useEffect(() => {
-    api<{ userNid: string; hasCookie: boolean; baseUrl: string; edsbyEnabled: boolean }>("/my-edsby")
-      .then((d) => { setState(d); setUserNid(d.userNid || ""); })
+    api<{ userNid: string; hasCookie: boolean; zoomNid: string; baseUrl: string; edsbyEnabled: boolean }>("/my-edsby")
+      .then((d) => { setState(d); setUserNid(d.userNid || ""); setZoomNid(d.zoomNid || ""); })
       .catch(() => {});
   }, []);
 
@@ -1657,10 +1658,10 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
     setMsg(null);
     try {
       await saveState.run(async () => {
-        const body: any = { userNid };
+        const body: any = { userNid, zoomNid };
         if (cookie.trim()) body.cookie = cookie.trim();
-        const r = await api<{ userNid: string; hasCookie: boolean }>("/my-edsby", { method: "PUT", body });
-        setState((s) => s && { ...s, userNid: r.userNid, hasCookie: r.hasCookie });
+        const r = await api<{ userNid: string; hasCookie: boolean; zoomNid: string }>("/my-edsby", { method: "PUT", body });
+        setState((s) => s && { ...s, userNid: r.userNid, hasCookie: r.hasCookie, zoomNid: r.zoomNid });
         setCookie("");
       });
     } catch (e: any) {
@@ -1672,10 +1673,11 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
     setMsg(null);
     try {
       await api("/my-edsby", { method: "PUT", body: { clear: true } });
-      setState((s) => s && { ...s, userNid: "", hasCookie: false });
+      setState((s) => s && { ...s, userNid: "", hasCookie: false, zoomNid: "" });
       setUserNid("");
       setCookie("");
-      setMsg("Disconnected — your notices will use the school connection.");
+      setZoomNid("");
+      setMsg("Disconnected — your notices and grade pulls will use the school connection.");
     } catch (e: any) {
       setMsg(e.message);
     } finally {
@@ -1691,12 +1693,13 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <Wrap>
-      <h2 className="font-semibold">My Edsby (post as me)</h2>
+      <h2 className="font-semibold">My Edsby (post &amp; pull as me)</h2>
       <p className="mt-1 text-sm text-slate-500">
-        So your notices home post from <em>your</em> Edsby account. Enter your Edsby user nid and paste your
-        session cookie. The base URL and version headers come from the school connection.
+        So your notices home post from <em>your</em> Edsby account — and the /avgs grade pull reads <em>your</em>
+        classes (an admin who sees every course pulls all of them). Enter your Edsby user nid, paste your session
+        cookie, and your “My Students” node. The base URL and version headers come from the school connection.
         {!state.edsbyEnabled && " (Edsby sending isn't enabled for your school yet — an admin sets that up.)"}
-        {" "}Leave this blank to send through the school's shared Edsby account instead.
+        {" "}Leave blank to use the school's shared Edsby connection instead.
       </p>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         <Field label="Your Edsby user nid (the sender)">
@@ -1706,6 +1709,10 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
         <Field label={`Session cookie ${state.hasCookie ? "(saved — blank keeps it)" : ""}`}>
           <input type="password" value={cookie} onChange={(e) => setCookie(e.target.value)}
             placeholder={state.hasCookie ? "•••••••• (already saved)" : "paste your Edsby cookie"}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+        </Field>
+        <Field label="My Students node(s) — for the grade pull">
+          <input value={zoomNid} onChange={(e) => setZoomNid(e.target.value)} inputMode="numeric" placeholder="from /p/ZoomMyStudents/NUMBER"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
         </Field>
       </div>

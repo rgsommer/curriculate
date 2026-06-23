@@ -463,12 +463,13 @@ router.post("/edsby/ingest", async (req, res) => {
 // shared Edsby connection.
 router.get("/my-edsby", authAny, loadMembership, async (req, res, next) => {
   try {
-    const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc").lean();
+    const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc edsbyZoomNid").lean();
     const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.baseUrl edsby.enabled").lean();
     res.json({
       ok: true,
       userNid: me?.edsbyUserNid || "",
       hasCookie: !!me?.edsbyCookieEnc,
+      zoomNid: me?.edsbyZoomNid || "",
       baseUrl: cfg?.edsby?.baseUrl || "",
       edsbyEnabled: !!cfg?.edsby?.enabled,
     });
@@ -485,15 +486,17 @@ router.put("/my-edsby", authAny, loadMembership, async (req, res, next) => {
       set.edsbyUserNid = "";
       set.edsbyCookieEnc = "";
       set.edsbyFormkeyEnc = "";
+      set.edsbyZoomNid = "";
     } else {
       if ("userNid" in b) set.edsbyUserNid = String(b.userNid || "").replace(/[^\d]/g, "").slice(0, 32);
       if (b.cookie && String(b.cookie).trim()) set.edsbyCookieEnc = encrypt(String(b.cookie).trim());
+      if ("zoomNid" in b) set.edsbyZoomNid = String(b.zoomNid || "").replace(/[^\d,]/g, "").replace(/,+/g, ",").replace(/^,|,$/g, "").slice(0, 200);
     }
     if (!Object.keys(set).length) return res.status(400).json({ ok: false, error: "Nothing to update." });
     await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: set });
     await audit(req.schoolId, "edsby.my_identity_updated", req, { meta: { fields: Object.keys(set) } });
-    const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc").lean();
-    res.json({ ok: true, userNid: me.edsbyUserNid || "", hasCookie: !!me.edsbyCookieEnc });
+    const me = await BehaviorTeacher.findById(req.membership._id).select("edsbyUserNid edsbyCookieEnc edsbyZoomNid").lean();
+    res.json({ ok: true, userNid: me.edsbyUserNid || "", hasCookie: !!me.edsbyCookieEnc, zoomNid: me.edsbyZoomNid || "" });
   } catch (err) {
     next(err);
   }

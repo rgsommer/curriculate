@@ -17,6 +17,13 @@ export function subjectOf(className) {
 
 const SKIP = /homeroom|learning skill|advisory|study hall/i;
 
+// Format a weighted average to 1 decimal WITHOUT rounding up — school policy is
+// "we don't round up," so 89.96 shows as 89.9 (and stays Honours, not High).
+export function fmtAvg(x) {
+  if (x === null || x === undefined || x === "") return "";
+  return (Math.floor(Number(x) * 10) / 10).toFixed(1);
+}
+
 export function buildSubjectGridCsv(students) {
   const subjects = new Set();
   const rows = (students || []).map((s) => {
@@ -33,7 +40,7 @@ export function buildSubjectGridCsv(students) {
       first,
       grade: s.grade || "",
       cell,
-      weighted: s.weightedAvg ?? "",
+      weighted: fmtAvg(s.weightedAvg),
       improvement: typeof s.improvement === "number" ? s.improvement : "",
     };
   });

@@ -12,7 +12,7 @@
  */
 
 import { Fragment, useEffect, useState } from "react";
-import { buildSubjectGridCsv, downloadCsvString } from "./gridCsv";
+import { buildSubjectGridCsv, downloadCsvString, fmtAvg } from "./gridCsv";
 import { api, getToken, loginHref, ApiError } from "../behavior/_lib/api";
 
 const TIER_LABEL = { "high-honours": "High Honours", honours: "Honours" };
@@ -178,7 +178,7 @@ export default function EdsbyHonours() {
     const rows = [["Grade", "Rank", "Student", "Class group", "Weighted Average", "Tier"]];
     for (const [label, list] of groupStudents(snapshot.students)) {
       list.forEach((s, i) =>
-        rows.push([label, i + 1, s.name, s.classGroup, s.weightedAvg?.toFixed(1) ?? "", TIER_LABEL[s.tier] || ""])
+        rows.push([label, i + 1, s.name, s.classGroup, fmtAvg(s.weightedAvg), TIER_LABEL[s.tier] || ""])
       );
     }
     const blob = new Blob([rows.map((r) => r.map(esc).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
@@ -462,7 +462,7 @@ export default function EdsbyHonours() {
                             {s.error && <span className="ml-2 text-xs text-red-500">{s.error}</span>}
                           </td>
                           <td className="py-2 text-right font-semibold text-slate-800">
-                            {s.weightedAvg === null || s.weightedAvg === undefined ? "—" : `${s.weightedAvg.toFixed(1)}%`}
+                            {s.weightedAvg === null || s.weightedAvg === undefined ? "—" : `${fmtAvg(s.weightedAvg)}%`}
                           </td>
                           <td className="w-32 px-4 py-2 text-right">
                             {s.tier && (
