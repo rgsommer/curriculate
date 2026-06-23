@@ -427,13 +427,13 @@ export default function LogIncidentPage() {
           <Link href={`/behavior/student/${student._id}`} className="text-sm text-slate-500 underline">full history</Link>
         </div>
 
-        {/* Current strikes + recent incidents for context while logging */}
+        {/* Recent events (all kinds) + strike count for context while logging */}
         {status && (
           <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold text-amber-900">Current strikes (all teachers)</h2>
+              <h2 className="text-sm font-semibold text-amber-900">Recent events (all teachers)</h2>
               <span className={`text-sm font-semibold ${countColor(status.activeCount, status.triggerCount)}`}>
-                {status.activeCount} / {status.triggerCount}
+                {status.activeCount} / {status.triggerCount} strikes
               </span>
             </div>
             {status.incidents.length > 0 ? (
@@ -452,7 +452,7 @@ export default function LogIncidentPage() {
                 ))}
               </ul>
             ) : (
-              <p className="mt-1 text-sm text-slate-500">No prior incidents.</p>
+              <p className="mt-1 text-sm text-slate-500">No recent events.</p>
             )}
           </div>
         )}
