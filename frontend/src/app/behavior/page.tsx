@@ -145,13 +145,23 @@ function ReferColleague() {
   const [msg, setMsg] = useState("");
 
   async function send() {
-    const to = email.trim();
-    if (!/^[\w.+-]+@[\w.-]+\.\w{2,}$/.test(to)) { setMsg("✗ Enter a valid email address."); return; }
+    // Accept several recipients at once, with or without display names:
+    //   "a@b.com, c@d.com"  or  "Jane Doe <jane@b.com>, vp@c.ca"
+    const chunks = email.split(/[,;\n]+/).map((s) => s.trim()).filter(Boolean);
+    const emails: string[] = [];
+    const invalid: string[] = [];
+    for (const c of chunks) {
+      const m = c.match(/[\w.+-]+@[\w.-]+\.\w{2,}/);
+      if (m) emails.push(m[0]); else invalid.push(c);
+    }
+    if (!emails.length) { setMsg("✗ Enter a valid email address."); return; }
+    if (invalid.length) { setMsg(`✗ Couldn't read an address in: ${invalid.join(", ")}`); return; }
+    if (emails.length > 10) { setMsg("✗ Up to 10 recipients at a time."); return; }
     setBusy(true);
     setMsg("");
     try {
       const path = kind === "admin" ? "/invite-admin" : "/refer";
-      const r = await api<{ sent: string[]; failed: { email: string }[] }>(path, { body: { email: to, note: note.trim() } });
+      const r = await api<{ sent: string[]; failed: { email: string }[] }>(path, { body: { emails, note: note.trim() } });
       if (r.sent?.length) {
         setMsg(`✓ Sent to ${r.sent.join(", ")} (copied to you).`);
         setEmail(""); setNote("");
@@ -177,8 +187,8 @@ function ReferColleague() {
       </div>
       {kind && (
         <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-          <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" inputMode="email"
-            placeholder={kind === "admin" ? "principal / VP email address" : "their email address"}
+          <input value={email} onChange={(e) => setEmail(e.target.value)} type="text" inputMode="email"
+            placeholder={kind === "admin" ? "principal / VP email(s) — comma-separated" : "their email(s) — comma-separated"}
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Optional personal note…"
             className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
