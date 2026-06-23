@@ -43,6 +43,42 @@ function rowNameColor(count: number, trigger: number) {
   return "";
 }
 
+// ── Recently-used behaviours (per device) ────────────────────────────────────
+// Ordering the picker by what this teacher actually reaches for makes entry
+// faster. Stored locally (no backend needed); most-recent id first, capped.
+const RECENT_BEHAVIORS_KEY = "behavior_recent_behaviors_v1";
+function loadRecentBehaviors(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const v = JSON.parse(localStorage.getItem(RECENT_BEHAVIORS_KEY) || "[]");
+    return Array.isArray(v) ? v.filter((x) => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+function recordRecentBehaviors(ids: string[]): string[] {
+  const clean = ids.filter(Boolean);
+  const next = [...clean, ...loadRecentBehaviors().filter((x) => !clean.includes(x))].slice(0, 50);
+  try {
+    localStorage.setItem(RECENT_BEHAVIORS_KEY, JSON.stringify(next));
+  } catch {
+    /* private mode / storage off — ordering just falls back to alphabetical */
+  }
+  return next;
+}
+function useRecentBehaviors() {
+  const [recent, setRecent] = useState<string[]>([]);
+  useEffect(() => { setRecent(loadRecentBehaviors()); }, []);
+  const record = (ids: string[]) => setRecent(recordRecentBehaviors(ids));
+  // behaviorId -> rank (0 = most recent).
+  const rank = useMemo(() => {
+    const m = new Map<string, number>();
+    recent.forEach((id, i) => { if (!m.has(id)) m.set(id, i); });
+    return m;
+  }, [recent]);
+  return { rank, record };
+}
+
 export default function LogIncidentPage() {
   const [students, setStudents] = useState<StudentSummary[]>([]);
   const [behaviors, setBehaviors] = useState<Behavior[]>([]);
@@ -51,6 +87,7 @@ export default function LogIncidentPage() {
   const [selectedClass, setSelectedClass] = useState<string>("");
   const [rosterTrigger, setRosterTrigger] = useState(3);
 
+  const { rank: recentRank, record: recordRecent } = useRecentBehaviors();
   const [student, setStudent] = useState<StudentSummary | null>(null);
   const [behaviorId, setBehaviorId] = useState("");
   const [kindFilter, setKindFilter] = useState<"negative" | "positive">("negative");
@@ -118,22 +155,42 @@ export default function LogIncidentPage() {
   );
   // Distinct keywords (offense categories) for the chip row + the filtered,
   // Interaction-first sorted offense options.
-  const keywords = useMemo(
-    () =>
-      Array.from(new Set(inKind.map((b) => b.keyword).filter((k): k is string => !!k))).sort((a, b) => a.localeCompare(b)),
-    [inKind]
-  );
+  // Keyword chips: those used most recently on this device first (ranked by the
+  // most-recent behaviour carrying that keyword), then the rest alphabetically.
+  const keywords = useMemo(() => {
+    const kws = Array.from(new Set(inKind.map((b) => b.keyword).filter((k): k is string => !!k)));
+    const kwRank = new Map<string, number>();
+    for (const b of inKind) {
+      if (!b.keyword) continue;
+      const r = recentRank.get(b._id);
+      if (r === undefined) continue;
+      const prev = kwRank.get(b.keyword);
+      if (prev === undefined || r < prev) kwRank.set(b.keyword, r);
+    }
+    return kws.sort((a, b) => {
+      const ra = kwRank.get(a), rb = kwRank.get(b);
+      if (ra !== undefined && rb !== undefined) return ra - rb;
+      if (ra !== undefined) return -1;
+      if (rb !== undefined) return 1;
+      return a.localeCompare(b);
+    });
+  }, [inKind, recentRank]);
+  // Dropdown options: recently-used first, otherwise interactions then alpha.
   const offenseOptions = useMemo(
     () =>
       [...inKind]
         .filter((b) => !keywordFilter || b.keyword === keywordFilter)
         .sort((a, b) => {
+          const ra = recentRank.get(a._id), rb = recentRank.get(b._id);
+          if (ra !== undefined && rb !== undefined) return ra - rb;
+          if (ra !== undefined) return -1;
+          if (rb !== undefined) return 1;
           const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
           const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
           if (ai !== bi) return ai - bi;
           return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
         }),
-    [inKind, keywordFilter]
+    [inKind, keywordFilter, recentRank]
   );
 
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
@@ -184,6 +241,7 @@ export default function LogIncidentPage() {
           sendImmediately,
         },
       });
+      recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
       setNotice(res.notice);
       setPositiveNotice(res.positiveNotice || null);
       setCreatedIds((res.incidents || []).map((i) => i._id));
@@ -692,22 +750,41 @@ function BatchLog({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ logged: number; behaviorName: string; results: any[] } | null>(null);
+  const { rank: recentRank, record: recordRecent } = useRecentBehaviors();
 
-  const keywords = useMemo(
-    () => Array.from(new Set(behaviors.map((b) => b.keyword).filter((k): k is string => !!k))).sort((a, b) => a.localeCompare(b)),
-    [behaviors]
-  );
+  const keywords = useMemo(() => {
+    const kws = Array.from(new Set(behaviors.map((b) => b.keyword).filter((k): k is string => !!k)));
+    const kwRank = new Map<string, number>();
+    for (const b of behaviors) {
+      if (!b.keyword) continue;
+      const r = recentRank.get(b._id);
+      if (r === undefined) continue;
+      const prev = kwRank.get(b.keyword);
+      if (prev === undefined || r < prev) kwRank.set(b.keyword, r);
+    }
+    return kws.sort((a, b) => {
+      const ra = kwRank.get(a), rb = kwRank.get(b);
+      if (ra !== undefined && rb !== undefined) return ra - rb;
+      if (ra !== undefined) return -1;
+      if (rb !== undefined) return 1;
+      return a.localeCompare(b);
+    });
+  }, [behaviors, recentRank]);
   const offenseOptions = useMemo(
     () =>
       [...behaviors]
         .filter((b) => !keywordFilter || b.keyword === keywordFilter)
         .sort((a, b) => {
+          const ra = recentRank.get(a._id), rb = recentRank.get(b._id);
+          if (ra !== undefined && rb !== undefined) return ra - rb;
+          if (ra !== undefined) return -1;
+          if (rb !== undefined) return 1;
           const ai = a.triggerMode === "INTERACTION" ? 0 : 1;
           const bi = b.triggerMode === "INTERACTION" ? 0 : 1;
           if (ai !== bi) return ai - bi;
           return String(a.keyword || a.name).toLowerCase().localeCompare(String(b.keyword || b.name).toLowerCase());
         }),
-    [behaviors, keywordFilter]
+    [behaviors, keywordFilter, recentRank]
   );
   const classes = useMemo(() => {
     const set = new Set<string>();
@@ -742,6 +819,7 @@ function BatchLog({
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
         },
       });
+      recordRecent([behaviorId]); // bubble this behaviour to the top of the picker
       setResult(r);
     } catch (e: any) {
       setError(e.message);
