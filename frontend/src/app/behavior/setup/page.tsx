@@ -167,13 +167,13 @@ function ConfigSection({ config }: { config: any }) {
     aiSendMode: config?.aiSendMode ?? "auto",
     reminderTime: config?.reminderTime ?? "07:30",
   }));
-  const [saved, setSaved] = useState(false);
+  const saveState = useSaveState(c);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     setErr(null);
     try {
-      await api("/config", {
+      await saveState.run(() => api("/config", {
         method: "PUT",
         body: {
           triggerCount: Number(c.triggerCount),
@@ -186,9 +186,7 @@ function ConfigSection({ config }: { config: any }) {
           aiSendMode: c.aiSendMode,
           reminderTime: c.reminderTime,
         },
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
+      }).then(() => undefined));
     } catch (e: any) {
       setErr(e.message);
     }
@@ -267,9 +265,7 @@ function ConfigSection({ config }: { config: any }) {
           The VP is reached over the same channel (Edsby via their Edsby id, or email if enabled). Only an admin can change these settings.
         </p>
       </div>
-      <button onClick={save} className="mt-4 rounded-lg bg-slate-900 px-4 py-2 text-white">
-        {saved ? "Saved ✓" : "Save configuration"}
-      </button>
+      <div className="mt-4"><SaveButton state={saveState} onClick={save} label="Save configuration" /></div>
     </Card>
   );
 }
@@ -602,19 +598,17 @@ function HomeworkSettings({ config }: { config: any }) {
   const [lateWeeks, setLateWeeks] = useState<number>(hw.lateWeeks ?? 3);
   const [cooldown, setCooldown] = useState<number>(hw.messageCooldownDays ?? 7);
   const [below, setBelow] = useState<number>(hw.outstandingBelow ?? 6);
-  const [saved, setSaved] = useState(false);
+  const saveState = useSaveState([terms, currentTerm, lateWeeks, cooldown, below]);
   const [err, setErr] = useState<string | null>(null);
 
   async function save() {
     setErr(null);
     try {
       const termStarts = terms.filter((t) => t).map((t) => new Date(t).toISOString());
-      await api("/config", {
+      await saveState.run(() => api("/config", {
         method: "PUT",
         body: { homework: { ...hw, termStarts, currentTerm: Number(currentTerm), lateWeeks: Number(lateWeeks), messageCooldownDays: Number(cooldown), outstandingBelow: Number(below) } },
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
+      }).then(() => undefined));
     } catch (e: any) { setErr(e.message); }
   }
 
@@ -646,7 +640,7 @@ function HomeworkSettings({ config }: { config: any }) {
           <input type="number" min={1} max={10} value={below} onChange={(e) => setBelow(Number(e.target.value))} className={inputCls} />
         </Field>
       </div>
-      <button onClick={save} className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{saved ? "Saved ✓" : "Save homework settings"}</button>
+      <div className="mt-3"><SaveButton state={saveState} onClick={save} label="Save homework settings" /></div>
     </Card>
   );
 }
@@ -660,7 +654,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
   const [cookie, setCookie] = useState("");
   const [formkey, setFormkey] = useState("");
   const [enabled, setEnabled] = useState(!!edsby?.enabled);
-  const [saved, setSaved] = useState(false);
+  const saveState = useSaveState([baseUrl, userNid, jver, cver, zoomId, cookie, formkey, enabled]);
   const [err, setErr] = useState<string | null>(null);
   const [testMsg, setTestMsg] = useState("");
   const [testBusy, setTestBusy] = useState(false);
@@ -756,18 +750,18 @@ function EdsbySection({ edsby }: { edsby: any }) {
   async function save() {
     setErr(null);
     try {
-      const body: any = { baseUrl: baseUrl.trim(), userNid: userNid.trim(), jver: jver.trim(), cver: cver.trim(), zoomId: zoomId.trim(), enabled };
-      const sentCookie = !!cookie.trim();
-      const sentFormkey = !!formkey.trim();
-      if (sentCookie) body.cookie = cookie.trim();
-      if (sentFormkey) body.formkey = formkey.trim();
-      await api("/config/edsby", { method: "PUT", body });
-      setCookie("");
-      setFormkey("");
-      if (sentCookie) setCookieStored(true);
-      if (sentFormkey) setFormkeyStored(true);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
+      await saveState.run(async () => {
+        const body: any = { baseUrl: baseUrl.trim(), userNid: userNid.trim(), jver: jver.trim(), cver: cver.trim(), zoomId: zoomId.trim(), enabled };
+        const sentCookie = !!cookie.trim();
+        const sentFormkey = !!formkey.trim();
+        if (sentCookie) body.cookie = cookie.trim();
+        if (sentFormkey) body.formkey = formkey.trim();
+        await api("/config/edsby", { method: "PUT", body });
+        setCookie("");
+        setFormkey("");
+        if (sentCookie) setCookieStored(true);
+        if (sentFormkey) setFormkeyStored(true);
+      });
     } catch (e: any) {
       setErr(e.message);
     }
@@ -890,9 +884,7 @@ function EdsbySection({ edsby }: { edsby: any }) {
         <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Send notices via Edsby
       </label>
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button onClick={save} className="rounded-lg bg-slate-900 px-4 py-2 text-white">
-          {saved ? "Saved ✓" : "Save Edsby connection"}
-        </button>
+        <SaveButton state={saveState} onClick={save} label="Save Edsby connection" />
         <button onClick={testEdsby} disabled={testBusy} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">
           {testBusy ? "Testing…" : "Test connection"}
         </button>
@@ -1567,6 +1559,37 @@ function Card({ children }: { children: React.ReactNode }) {
   return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">{children}</section>;
 }
 
+// Shared save-button UX: amber "Save changes" when dirty → "Saving…" → green
+// "Saved ✓" → back. Pass a snapshot of the form so it knows when it's dirty.
+function useSaveState(snapshot: unknown) {
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [dirty, setDirty] = useState(false);
+  const first = useRef(true);
+  const key = JSON.stringify(snapshot);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    setDirty(true);
+    setSaved(false);
+  }, [key]);
+  async function run(fn: () => Promise<void>) {
+    setBusy(true);
+    try { await fn(); setDirty(false); setSaved(true); setTimeout(() => setSaved(false), 1800); }
+    finally { setBusy(false); }
+  }
+  return { busy, saved, dirty, run };
+}
+
+function SaveButton({ state, onClick, label = "Save", className = "" }: { state: { busy: boolean; saved: boolean; dirty: boolean }; onClick: () => void; label?: string; className?: string }) {
+  const { busy, saved, dirty } = state;
+  return (
+    <button onClick={onClick} disabled={busy || (!dirty && !saved)}
+      className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-60 ${saved ? "bg-green-600" : dirty ? "bg-amber-600" : "bg-slate-900"} ${className}`}>
+      {busy ? "Saving…" : saved ? "Saved ✓" : dirty ? "Save changes" : label}
+    </button>
+  );
+}
+
 // Every member (teachers included) can set their OWN Edsby identity so notices
 // post AS them. They enter their Edsby user nid + paste their session cookie;
 // jver/cver/base URL come from the school connection an admin set up.
@@ -1576,6 +1599,7 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
   const [cookie, setCookie] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const saveState = useSaveState([userNid, cookie]);
 
   useEffect(() => {
     api<{ userNid: string; hasCookie: boolean; baseUrl: string; edsbyEnabled: boolean }>("/my-edsby")
@@ -1584,19 +1608,17 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
   }, []);
 
   async function save() {
-    setBusy(true);
     setMsg(null);
     try {
-      const body: any = { userNid };
-      if (cookie.trim()) body.cookie = cookie.trim();
-      const r = await api<{ userNid: string; hasCookie: boolean }>("/my-edsby", { method: "PUT", body });
-      setState((s) => s && { ...s, userNid: r.userNid, hasCookie: r.hasCookie });
-      setCookie("");
-      setMsg("Saved ✓");
+      await saveState.run(async () => {
+        const body: any = { userNid };
+        if (cookie.trim()) body.cookie = cookie.trim();
+        const r = await api<{ userNid: string; hasCookie: boolean }>("/my-edsby", { method: "PUT", body });
+        setState((s) => s && { ...s, userNid: r.userNid, hasCookie: r.hasCookie });
+        setCookie("");
+      });
     } catch (e: any) {
       setMsg(e.message);
-    } finally {
-      setBusy(false);
     }
   }
   async function disconnect() {
@@ -1642,12 +1664,10 @@ function MyEdsbyCard({ embedded = false }: { embedded?: boolean }) {
         </Field>
       </div>
       <div className="mt-3 flex items-center gap-2">
-        <button onClick={save} disabled={busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
-          {busy ? "Saving…" : "Save my Edsby"}
-        </button>
+        <SaveButton state={saveState} onClick={save} label="Save my Edsby" />
         {(state.userNid || state.hasCookie) && (
           <button onClick={disconnect} disabled={busy} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600">
-            Disconnect
+            {busy ? "…" : "Disconnect"}
           </button>
         )}
         {msg && <span className="text-xs text-slate-500">{msg}</span>}
