@@ -709,7 +709,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
             `${by} has invited you to Behaviours at ${school?.name || "our school"}.\n\n` +
             `If you teach on rotary, you see dozens of students across many classes — and a single off day can look small in each room while really being a pattern. Behaviours fixes that: every teacher's logs pool into ONE shared picture per student, so you're never the only one noticing, and no one is fighting it alone.\n\n` +
             `What you can do:\n` +
-            `• Log any student in seconds on your phone — positives as well as concerns.\n` +
+            `• Log any student in seconds from any device or desktop — positives as well as concerns.\n` +
             `• See a student's full cross-teacher history before you say a word to them.\n` +
             `• When a pattern reaches the threshold, you get a ready-to-send, pastoral note home — you review and send it (nothing is ever auto-sent), with recommended next steps.\n` +
             `• Catch the good too: positives earn house points and can send a good-news note home.\n` +
@@ -725,7 +725,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
               `<p style="margin:0 0 12px;color:#334155;line-height:1.6">If you teach on <strong>rotary</strong>, you see dozens of students across many classes — and one off day can look small in each room while really being a pattern. Behaviours pools every teacher's logs into <strong>one shared picture per student</strong>, so you're never the only one noticing, and no one is fighting it alone.</p>` +
               `<p style="margin:0 0 6px;color:#0f172a;font-weight:600">What you can do</p>` +
               `<ul style="margin:0 0 14px;padding-left:18px;color:#334155;line-height:1.6">` +
-              `<li><strong>Log any student in seconds</strong> on your phone — positives as well as concerns.</li>` +
+              `<li><strong>Log any student in seconds</strong> from any device or desktop — positives as well as concerns.</li>` +
               `<li>See a student's <strong>full cross-teacher history</strong> before you say a word.</li>` +
               `<li>When a pattern hits the threshold you get a <strong>ready-to-send, pastoral note home</strong> — you review and send it (<strong>nothing is auto-sent</strong>), with recommended next steps.</li>` +
               `<li><strong>Catch the good too:</strong> positives earn house points and can send a good-news note home.</li>` +
@@ -835,7 +835,7 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
 
     const points = [
-      ["Eases teacher &amp; admin burnout", "One shared, low-effort log per student — staff stop re-litigating the same concerns and stop chasing paper. Logging takes seconds on a phone."],
+      ["Eases teacher &amp; admin burnout", "One shared, low-effort log per student — staff stop re-litigating the same concerns and stop chasing paper. Logging takes seconds on any device or desktop."],
       ["Consistency across the school", "Every teacher works from the same thresholds, the same record, and the same approved consequences — so students get a fair, predictable response, whoever is on duty."],
       ["Documentation &amp; follow-through", "Time-stamped, attributed, audit-logged records; morning reminders so consequences are actually carried out, not forgotten."],
       ["Positive AND negative", "It recognises good behaviour (house points, good-news notes home), not just problems — a healthier culture, and fairer to students."],

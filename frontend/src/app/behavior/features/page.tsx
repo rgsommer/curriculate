@@ -162,7 +162,7 @@ const SAFEGUARDS = [
 
 const TEACHER_STEPS = [
   { t: "Sign in", d: "Use your school account. Invited staff open the invite email, set a password, and they're in." },
-  { t: "Tap “Log an incident”", d: "Built to work one-handed on a phone while you're still in the room. Search any student in the school — if you saw it, you can log it." },
+  { t: "Tap “Log an incident”", d: "Works on any device or desktop — one-handed on a phone while you're still in the room, or at your desk later. Search any student in the school — if you saw it, you can log it." },
   { t: "Pick positive or negative, then the behaviour", d: "Add an optional note (and a photo/video if helpful). Most behaviours add to the shared count; serious ones flag immediately." },
   { t: "Decide on the message", d: "If a threshold is reached, you're shown the proposed note. Edit it, choose whether to copy the VP or include evidence, then Send — or “Not this time”, which keeps the strikes for next time." },
   { t: "Use the supports", d: "Open a student for their full cross-teacher history, the recommended next action, AI coaching, and a printable record. Clear your morning follow-ups as consequences come due." },
