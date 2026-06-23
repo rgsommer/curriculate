@@ -2538,14 +2538,50 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
     });
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
+    const school = await BehaviorSchool.findById(req.schoolId).lean();
+    const schoolDomain = (school?.emailDomain || "").toLowerCase();
+    const vpEmail = (config?.vp?.email || "").toLowerCase();
+    const EMAIL_RX = /[\w.+-]+@[\w.-]+\.\w{2,}/g;
+    // Who a notice went to, by ROLE — note-worthy that the parent and (where
+    // applicable) the VP were contacted, WITHOUT printing raw email addresses.
+    // Pulls from the structured recipients/ccVp first, then from any leaked
+    // To-line in legacy renderedText (addresses before the salutation).
+    const describeRecipients = (n) => {
+      const emails = new Set();
+      (n.recipients || []).forEach((r) => { if (r.email) emails.add(String(r.email).toLowerCase()); });
+      const head = String(n.renderedText || "").split(/\bdear\b/i)[0];
+      (head.match(EMAIL_RX) || []).forEach((e) => emails.add(e.toLowerCase()));
+      let parent = false, vp = false, staff = false;
+      for (const e of emails) {
+        if (vpEmail && e === vpEmail) vp = true;
+        else if (schoolDomain && e.endsWith("@" + schoolDomain)) staff = true;
+        else parent = true;
+      }
+      if (n.ccVp || (n.recipients || []).some((r) => r.role === "vp")) vp = true;
+      const bits = [];
+      if (parent) bits.push("parent/guardian");
+      if (vp) bits.push("VP");
+      if (staff) bits.push("school staff");
+      return bits;
+    };
+    // Strip a leaked recipient/To prefix (emails / "undefined" / commas before
+    // the salutation) so the body reads as the actual message.
+    const cleanNoticeBody = (raw) =>
+      String(raw || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .replace(/^(?:\s*(?:[\w.+-]+@[\w.-]+\.\w{2,}|undefined|,)\s*)+/i, "")
+        .trim();
     // For "all", include the FULL note content — earlier/legacy offences often
     // exist only as notices home, so the note text is the record of what
     // happened. For "current", a brief line is enough.
     const noticeLines = notices.map((n) => {
       const date = new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA");
-      if (scope !== "all") return `- ${date}: notice #${n.sequenceNo} (${n.reason}, ${n.status})`;
-      const body = String(n.renderedText || "").replace(/\s+/g, " ").trim().slice(0, 600);
-      return `- ${date} (notice #${n.sequenceNo}, ${n.status}): ${body || `(${n.reason})`}`;
+      const to = describeRecipients(n);
+      const toLabel = to.length ? ` → emailed ${to.join(" + ")}` : "";
+      if (scope !== "all") return `- ${date}: notice #${n.sequenceNo} (${n.reason}, ${n.status})${toLabel}`;
+      const body = cleanNoticeBody(n.renderedText).slice(0, 600);
+      return `- ${date} (notice #${n.sequenceNo}, ${n.status})${toLabel}: ${body || `(${n.reason})`}`;
     });
 
     const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
