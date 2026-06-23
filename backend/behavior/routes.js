@@ -2549,6 +2549,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     });
 
     const name = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+    const studentFirst = student.preferredName || student.firstName || name;
     // Span across BOTH incidents and notices (legacy offences live in notices).
     const allTs = [
       ...incidents.map((i) => new Date(i.timestamp).getTime()),
@@ -2604,6 +2605,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     ]);
     const primaryTeacherId = primaryAgg[0]?._id || null;
     let practiceText = "";
+    let practiceConsistency = "";
     if (primaryTeacherId) {
       const pSince = new Date(); pSince.setMonth(pSince.getMonth() - 12);
       const gincs = await BehaviorIncident.find({ schoolId: req.schoolId, teacherId: primaryTeacherId, timestamp: { $gt: pSince } })
@@ -2629,8 +2631,28 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
           `\nGENERAL PRACTICE of ${pName} (last 12 months, across ALL their students — for the 1-2 consistency sentences only):\n` +
           `- ${gOff} offence(s) handled across ${gStudents.size} different student(s), alongside ${gPos} positive recognition(s) and ${gInt} documented interaction(s).\n` +
           (gfuTotal ? `- Followed through on ${gfuPct}% of ${gfuTotal} consequence(s) that carried a follow-up.\n` : "");
+        practiceConsistency =
+          `This sits within ${pName}'s consistent approach across ${gStudents.size} student(s) over the past year` +
+          `${gfuTotal && gfuPct >= 50 ? ` (with ${gfuPct}% consequence follow-through)` : ""}, so ${studentFirst} was held to the same standard as everyone else.`;
       }
     }
+
+    // A plain-language summative lead — the student's behaviour at a glance AND
+    // how staff handled it — so the summary opens with the overall picture before
+    // the detailed record. Mirrors the executive summary's "Overall picture".
+    const joinList = (arr) => arr.length <= 1 ? (arr[0] || "") : `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
+    const handledBits = [];
+    if (positiveCount) handledBits.push(`${positiveCount} positive recognition(s)`);
+    if (interactionCount) handledBits.push(`${interactionCount} documented interaction(s)`);
+    if (teacherNoteCount) handledBits.push(`${teacherNoteCount} private documentation note(s)`);
+    handledBits.push(`${notices.length} notice(s) home (${noticesSent} sent) keeping parents informed`);
+    const fuClause = fuTotal ? `, and ${fuResolved} of ${fuTotal} consequence(s) with a follow-up were resolved` : "";
+    const overview =
+      (scope === "current"
+        ? `Overall summary: this covers ${studentFirst}'s current active trigger — ${incidents.length} recent incident(s) counting toward a notice home. `
+        : `Overall summary: ${name}${student.classGroup ? ` (${student.classGroup})` : ""} has a behaviour record spanning ${span}, comprising ${incidents.length} individually-logged incident(s) and ${notices.length} notice(s) home${notices.length ? " — earlier offences are captured in those notices" : ""}. `) +
+      `Across the record, staff actively handled the behaviour rather than letting it go: ${joinList(handledBits)}${fuClause}.` +
+      (practiceConsistency ? ` ${practiceConsistency}` : "");
 
     const ctxText =
       `Student: ${name}${student.classGroup ? ` (${student.classGroup})` : ""}.\n` +
@@ -2646,9 +2668,11 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       `Base your assessment on ALL the records below — BOTH the individually-logged incidents AND the notices home (which, especially for earlier events, are the only record of past offences). ` +
       `State the overall date range and the number of events on file (counting notices that describe offences), then cover the pattern, frequency, types of behaviour, any escalation, and what has been communicated home. ` +
       (practiceText ? `Also weave in 1-2 sentences (no more) — using the GENERAL PRACTICE figures — situating how this student was handled within the teacher's consistent, balanced approach across their other students (the same standards and follow-through applied to everyone, not singling this student out). Keep it factual; do not dump the raw practice numbers as a separate section. ` : "") +
+      `OPEN with a single summative paragraph giving the overall picture of this student's behaviour AND how it was handled (the pattern at a glance plus the conscientious staff response), before going into the specifics. ` +
       `Be factual and tight: 2-3 short flowing paragraphs (~200 words) of continuous prose — NOT a headed report with section titles or bullet lists. You need not list every event, but the assessment must reflect the WHOLE record back to the earliest date. Use ONLY the data below — do not invent.\n\n${ctxText}`;
 
-    let summary = `Behaviour summary — ${name}\n\n${ctxText}`; // deterministic fallback
+    // Deterministic fallback opens with the same summative lead, then the record.
+    let summary = `Behaviour summary — ${name}\n\n${overview}\n\n${ctxText}`;
     let aiUsed = false;
     try {
       const client = makeDefaultAiClient(config || {});
