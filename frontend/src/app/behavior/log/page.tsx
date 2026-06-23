@@ -631,8 +631,9 @@ export default function LogIncidentPage() {
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} className="mt-0.5" />
             <span>
-              <span className="font-medium">Send a notice home immediately</span> — sends this offense plus any strikes already in the
-              queue, regardless of the count.
+              <span className="font-medium">Prepare a notice now — don&apos;t wait for the strike count</span> — bundles this offence with
+              any strikes already in the queue and drafts the note now, instead of waiting for the threshold. You still review and press Send,
+              and it goes out only through your normal delivery settings — never automatically to a parent.
             </span>
           </label>
         )}
