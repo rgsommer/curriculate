@@ -56,6 +56,13 @@ const BehaviorTeacherSchema = new mongoose.Schema(
     // pending until they accept their invite and sign in; accepted thereafter.
     status: { type: String, enum: ["pending", "accepted"], default: "accepted", index: true },
 
+    // Per-teacher homework grading thresholds (each teacher may set their own;
+    // null = fall back to the school default). Term dates stay admin-set.
+    homeworkPrefs: {
+      lateWeeks: { type: Number, default: null }, // older → 6.2 partial tap
+      outstandingBelow: { type: Number, default: null }, // report "needs attention" cutoff (/10)
+    },
+
     // Lightweight app-usage signal: page loads in the current week (reset when
     // weekKey rolls over). Drives the admin "are teachers using it?" view.
     usage: {

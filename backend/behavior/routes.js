@@ -660,7 +660,9 @@ router.post("/test-edsby-send", authAny, loadMembership, requireAdmin, async (re
 
 // ── Invites (§5d) ────────────────────────────────────────────────────────────
 
-router.post("/invite", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+// Any member can invite a teacher (domain-restricted); only the originator can
+// grant the admin role (guarded below).
+router.post("/invite", authAny, loadMembership, async (req, res, next) => {
   try {
     const role = ["admin", "teacher", "principal"].includes(req.body?.role) ? req.body.role : "teacher";
     // Only the originator may grant admin.
@@ -1307,7 +1309,9 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
 
 // Add a single student (admin) — used by the Setup "Add test student" button
 // and any one-off addition outside a bulk import.
-router.post("/students", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+// Add a single student mid-year — open to any teacher (not just admins). The
+// bulk roster import stays admin-only (it can replace the whole roster).
+router.post("/students", authAny, loadMembership, canLog, async (req, res, next) => {
   try {
     const b = req.body || {};
     if (!b.lastName && !b.firstName && !b.preferredName) {
@@ -3942,10 +3946,11 @@ const round1 = (n) => Math.round(n * 10) / 10;
 
 // Single-tap auto score for homework/work, by how late it's shown:
 //   ≤3 days → full · >3 days → 72% · older than lateWeeks → 62% (do-half rule).
-function autoHomeworkScore(assignment, config) {
+function autoHomeworkScore(assignment, config, prefs) {
   const denom = assignment.denom || 10;
   const ageDays = Math.floor((Date.now() - new Date(assignment.date).getTime()) / DAY_MS);
-  const lateWeeks = config?.homework?.lateWeeks ?? 3;
+  // The scoring teacher's own "older than" weeks if set, else the school default.
+  const lateWeeks = (prefs?.lateWeeks ?? null) != null ? prefs.lateWeeks : (config?.homework?.lateWeeks ?? 3);
   if (ageDays <= 3) return round1(denom);
   if (ageDays <= lateWeeks * 7) return round1(denom * 0.72);
   return round1(denom * 0.62);
@@ -4084,7 +4089,7 @@ router.post("/homework/score", authAny, loadMembership, canLog, async (req, res,
       score = round1(Number(req.body.score));
       manual = true;
     } else {
-      score = autoHomeworkScore(a, config); // single-tap auto
+      score = autoHomeworkScore(a, config, req.membership?.homeworkPrefs); // single-tap auto (teacher's own threshold)
     }
     await HomeworkScore.updateOne(
       { assignmentId: a._id, studentId, schoolId: req.schoolId },
@@ -4289,7 +4294,7 @@ const HW_TYPE_LABEL = { homework: "Homework", work: "Work", discussion: "Formal 
 // across that type's assignments. Blanks count as 0; "E" excused work is dropped
 // from both the grade and the denominator. "outstanding" = blank OR below the
 // setup threshold (out of 10). Shared by the report view + the CSV export.
-async function buildTermReport(schoolId, { classGroup, term, subject, type }, config) {
+async function buildTermReport(schoolId, { classGroup, term, subject, type, belowOverride }, config) {
   const ts = (config?.homework?.termStarts || []).map((d) => new Date(d)).sort((a, b) => a - b);
   const q = { schoolId, classGroup };
   if (subject) q.subject = subject;
@@ -4303,7 +4308,7 @@ async function buildTermReport(schoolId, { classGroup, term, subject, type }, co
     : [];
   const scMap = {};
   for (const sc of scores) scMap[`${sc.assignmentId}|${sc.studentId}`] = sc;
-  const below = config?.homework?.outstandingBelow ?? 6;
+  const below = (belowOverride ?? null) != null ? belowOverride : (config?.homework?.outstandingBelow ?? 6);
 
   const rows = students.map((s) => {
     let total = 0, outOf = 0, outstanding = 0, excused = 0;
@@ -4340,8 +4345,23 @@ router.get("/homework/report", authAny, loadMembership, async (req, res, next) =
       term,
       subject: String(req.query.subject || "").trim(),
       type: String(req.query.type || "").trim(),
+      belowOverride: req.membership?.homeworkPrefs?.outstandingBelow,
     }, config);
     res.json({ ok: true, term, ...r });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Each teacher's own homework grading thresholds (null = use school default).
+router.put("/homework/my-prefs", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const num = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
+    const set = {};
+    if ("lateWeeks" in (req.body || {})) set["homeworkPrefs.lateWeeks"] = num(req.body.lateWeeks);
+    if ("outstandingBelow" in (req.body || {})) set["homeworkPrefs.outstandingBelow"] = num(req.body.outstandingBelow);
+    if (Object.keys(set).length) await BehaviorTeacher.updateOne({ _id: req.membership._id }, { $set: set });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -4356,7 +4376,7 @@ router.get("/homework/export", authAny, loadMembership, async (req, res, next) =
     const type = String(req.query.type || "").trim();
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const term = req.query.term !== undefined && req.query.term !== "" ? Number(req.query.term) : (config?.homework?.currentTerm ?? 0);
-    const r = await buildTermReport(req.schoolId, { classGroup, term, subject, type }, config);
+    const r = await buildTermReport(req.schoolId, { classGroup, term, subject, type, belowOverride: req.membership?.homeworkPrefs?.outstandingBelow }, config);
 
     const esc = (v) => {
       const s = String(v ?? "");

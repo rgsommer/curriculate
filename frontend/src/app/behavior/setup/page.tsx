@@ -61,6 +61,7 @@ export default function SetupPage() {
       </Card>
       <HousesSection config={me.config} />
       <HomeworkSettings config={me.config} />
+      <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
       <RecommendedActionsSettings config={me.config} />
       <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
@@ -107,6 +108,11 @@ function ReadOnlySettings({ me }: { me: Me }) {
           View behaviours →
         </Link>
       </Card>
+
+      {/* Blocks teachers may edit themselves (the rest above is admin-managed). */}
+      <AddStudentSection />
+      <InviteSection domain={me.school?.emailDomain || ""} isOriginator={false} />
+      <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
       <MyEdsbyCard />
     </div>
   );
@@ -460,6 +466,40 @@ function ingestSnippet(apiBase: string, token: string) {
     onload: function (r) { console.log("Behaviours ingest:", r.status, r.responseText); }
   });
 })();`;
+}
+
+// Each teacher's own homework grading thresholds. Term dates are admin-set and
+// shown read-only (they apply to everyone).
+function TeacherHomeworkPrefs({ config, prefs }: { config: any; prefs: any }) {
+  const hw = config?.homework || {};
+  const [lateWeeks, setLateWeeks] = useState<string>(prefs?.lateWeeks != null ? String(prefs.lateWeeks) : "");
+  const [below, setBelow] = useState<string>(prefs?.outstandingBelow != null ? String(prefs.outstandingBelow) : "");
+  const saveState = useSaveState([lateWeeks, below]);
+  const [err, setErr] = useState<string | null>(null);
+  async function save() {
+    setErr(null);
+    try {
+      await saveState.run(() => api("/homework/my-prefs", { method: "PUT", body: { lateWeeks: lateWeeks === "" ? null : Number(lateWeeks), outstandingBelow: below === "" ? null : Number(below) } }).then(() => undefined));
+    } catch (e: any) { setErr(e.message); }
+  }
+  const termsStr = (hw.termStarts || []).map((d: any) => new Date(d).toLocaleDateString()).join(" · ") || "not set yet";
+  return (
+    <Card>
+      <h2 className="font-semibold">My homework thresholds</h2>
+      <p className="mt-1 text-sm text-slate-500">Your own grading thresholds — blank uses the school default. Term dates are set by an admin and apply to everyone.</p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Field label="“Older than” weeks → 6.2" hint="Work older than this many weeks scores 6.2 on a tap (do-half rule). Blank = the school default.">
+          <input type="number" min={1} value={lateWeeks} placeholder={`default ${hw.lateWeeks ?? 3}`} onChange={(e) => setLateWeeks(e.target.value)} className={inputCls} />
+        </Field>
+        <Field label="Outstanding if below (/10)" hint="In the term report a result counts as outstanding when blank or below this. Blank = the school default.">
+          <input type="number" min={1} max={10} value={below} placeholder={`default ${hw.outstandingBelow ?? 6}`} onChange={(e) => setBelow(e.target.value)} className={inputCls} />
+        </Field>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">Term dates (admin-set, apply to all): {termsStr}</p>
+      <div className="mt-3"><SaveButton state={saveState} onClick={save} label="Save my thresholds" /></div>
+    </Card>
+  );
 }
 
 function AdminDigestSettings({ config, myEmail }: { config: any; myEmail: string }) {
