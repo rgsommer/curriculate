@@ -157,7 +157,7 @@ const SAFEGUARDS = [
   "Every notice and change is audit-logged. Sensitive roster fields (e.g. ethnicity) are never stored.",
   "Photo/video evidence is stored privately and is never sent to a parent unless the teacher opts in for that message.",
   "Encrypted in transit (HTTPS) and at rest; secrets like Edsby session credentials are stored AES-256 encrypted and never shown again.",
-  "Built on enterprise cloud infrastructure (AWS, MongoDB) that supports Canadian-region data residency, so storage can be kept in Canada to meet your board's privacy requirements.",
+  "Data residency: storage can be set to keep data in the school's country of origin (e.g. a Canadian data region), in compliance with local data-residency and privacy requirements (such as PIPEDA in Canada).",
 ];
 
 const TEACHER_STEPS = [
