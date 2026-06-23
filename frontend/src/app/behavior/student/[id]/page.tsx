@@ -307,7 +307,7 @@ export default function StudentPage() {
       {/* Strikes + admin summary */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-semibold">Current strikes (all teachers)</h2>
+          <h2 className="font-semibold">Strikes toward a notice (all teachers)</h2>
           <span className="text-2xl font-bold">
             {data.activeCount}
             <span className="text-base font-normal text-slate-400"> / {data.triggerCount}</span>
