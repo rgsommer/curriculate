@@ -2803,6 +2803,38 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
     const totalOffences = offenceCount + legacyOffences;
     const topPosTypes = Object.entries(posByType).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+    // ── Synthesised "overall picture" — a plain-language read of the numbers, so
+    // the summary opens with the gestalt before the line-by-line figures. Used in
+    // the deterministic fallback and required of the AI version too.
+    const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const fmtMonth = (k) => { const [y, m] = String(k).split("-"); return MONTH_NAMES[+m - 1] ? `${MONTH_NAMES[+m - 1]} ${y}` : k; };
+    const listJoin = (arr) => arr.length <= 1 ? (arr[0] || "") : `${arr.slice(0, -1).join(", ")} and ${arr[arr.length - 1]}`;
+    const monthsSorted = Object.keys(byMonth).sort();
+    const vols = monthsSorted.map((k) => byMonth[k]);
+    let trendVerb = "held roughly steady";
+    if (vols.length >= 4) {
+      const mid = Math.floor(vols.length / 2);
+      const firstAvg = vols.slice(0, mid).reduce((a, b) => a + b, 0) / mid;
+      const lastAvg = vols.slice(mid).reduce((a, b) => a + b, 0) / (vols.length - mid);
+      if (lastAvg > firstAvg * 1.2) trendVerb = "risen";
+      else if (lastAvg < firstAvg * 0.8) trendVerb = "eased";
+    }
+    const peakMonth = monthsSorted.length ? monthsSorted.reduce((a, b) => (byMonth[b] > byMonth[a] ? b : a)) : "";
+    const peakVol = peakMonth ? byMonth[peakMonth] : 0;
+    const topTypeNames = topTypes.slice(0, 3).map(([k]) => k);
+    const subject = scope === "me" ? (req.membership.name || "This teacher") : "Across the division, staff";
+    const fuQuality = fuResolvedPct >= 80 ? "strong" : fuResolvedPct >= 50 ? "moderate" : "an area to tighten";
+    const overview =
+      `Overall picture: over the last ${months} months, ${subject} engaged with ${students.size} student(s) — ` +
+      `${totalOffences} offence(s), ${positiveCount} positive recognition(s) and ${interactionCount} documented interaction(s). ` +
+      (topTypeNames.length ? `Offences are concentrated in ${listJoin(topTypeNames)}, ` : "") +
+      `and the monthly offence load has ${trendVerb} on average across the window${peakMonth ? `; the busiest month was ${fmtMonth(peakMonth)} (${peakVol})` : ""}. ` +
+      (fuTotal ? `Consequence follow-through is ${fuQuality} (${fuResolvedPct}% of ${fuTotal} resolved), ` : "") +
+      `with the record kept across ${activeMonths} active month(s)${teacherNoteCount ? ` and ${teacherNoteCount} private note(s)` : ""}. ` +
+      (atThreshold ? `Division-wide, ${atThreshold} student(s) sit at or one away from the ${triggerCount}-strike trigger. ` : "") +
+      (positivesNew ? `Positive recognition was only recently introduced, so that thread is still getting underway.` : "");
+
     const ctxText =
       `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
       `Students involved (any event type): ${students.size}.\n` +
@@ -2832,12 +2864,14 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       `${scope === "me" ? "this teacher's overall engagement style, including the balance of positives and documented interactions vs. discipline, and the diligence shown in following process through;" : "patterns across the division and which behaviours dominate;"} ` +
       `and the current load. Keep the figures internally consistent (never more notices than total offences; positives and interactions are NOT offences and must not be added into the offence count). Be fair, professional and constructive — suitable for leadership to read in support of this teacher. Do not exaggerate or editorialise; let the comprehensiveness come from covering every thread accurately, not from length. ` +
       `Close with one short sentence on how the school could best support this teacher going forward (e.g. recognising their consistency, easing a heavy load, or helping ramp up positives). ` +
-      `Write 3-4 short flowing paragraphs (~250-300 words) — continuous prose, NOT a headed report with section titles or bullet lists, and no separate "Conclusion" heading. Use ONLY the data; do not invent.\n\n${ctxText}`;
+      `Write 3-4 short flowing paragraphs (~250-300 words) — continuous prose, NOT a headed report with section titles or bullet lists, and no separate "Conclusion" heading. ` +
+      `OPEN with a single 2-3 sentence "overall picture" paragraph that synthesises the whole period — the gestalt (volume of engagement, offence trend, balance of positives/interactions, and follow-through) — before going into the individual threads. Use ONLY the data; do not invent.\n\n${ctxText}`;
 
     // Clean, reader-facing version used when the AI isn't available — the same
     // figures as ctxText but WITHOUT the AI-only directives ("do not contradict",
     // "three distinct threads", etc.), which must never reach a reader.
     const fallbackText =
+      `${overview}\n\n` +
       `Window: last ${months} months (since ${cutoff.toISOString().slice(0, 10)}). Scope: ${who}.\n` +
       `Students involved (any event type): ${students.size}.\n\n` +
       `Offences (negative behaviour): ${totalOffences} total` +
