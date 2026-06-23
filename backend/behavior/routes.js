@@ -1169,6 +1169,7 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
 
     let imported = 0;
     let updated = 0;
+    const touchedIds = []; // every student present in this file (matched or created)
     for (const s of students) {
       // Resolve + strip the parsed house name into a real houseId.
       const { houseName, ...fields } = s;
@@ -1183,19 +1184,37 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
         : null;
 
       if (existing) {
+        // Update in place (same _id), so all incident/notice history stays
+        // attached, and re-activate in case a prior partial import deactivated them.
         Object.assign(existing, fields, { schoolId: req.schoolId, active: true });
         await existing.save();
+        touchedIds.push(existing._id);
         updated += 1;
       } else {
-        await BehaviorStudent.create({ ...fields, schoolId: req.schoolId });
+        const created = await BehaviorStudent.create({ ...fields, schoolId: req.schoolId });
+        touchedIds.push(created._id);
         imported += 1;
       }
     }
 
+    // Students no longer in the roster (e.g. last year's graduating grade) are
+    // deactivated — NOT deleted: their full history is retained and they still
+    // open from the management view. This is fully reversible: re-importing the
+    // complete roster matches them again and flips active back to true (above).
+    // Guarded on touchedIds.length so an empty/garbage file never wipes the list.
+    let deactivated = 0;
+    if (touchedIds.length) {
+      const r = await BehaviorStudent.updateMany(
+        { schoolId: req.schoolId, active: true, _id: { $nin: touchedIds } },
+        { $set: { active: false } }
+      );
+      deactivated = r.modifiedCount ?? r.nModified ?? 0;
+    }
+
     await audit(req.schoolId, "roster.imported", req, {
-      meta: { imported, updated, skippedCount: skipped.length, housesCreated, headerMap },
+      meta: { imported, updated, deactivated, skippedCount: skipped.length, housesCreated, headerMap },
     });
-    res.json({ ok: true, imported, updated, skipped, housesCreated, headerMap });
+    res.json({ ok: true, imported, updated, deactivated, skipped, housesCreated, headerMap });
   } catch (err) {
     next(err);
   }

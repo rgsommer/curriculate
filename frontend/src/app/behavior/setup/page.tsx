@@ -425,8 +425,14 @@ function RosterSection() {
         <div className="mt-3 text-sm">
           <p className="text-green-700">
             Imported {result.imported}, updated {result.updated}, skipped {result.skipped?.length || 0}
+            {result.deactivated ? `, deactivated ${result.deactivated} not in this file` : ""}
             {result.housesCreated ? `, created ${result.housesCreated} house${result.housesCreated === 1 ? "" : "s"}` : ""}.
           </p>
+          {result.deactivated > 0 && (
+            <p className="mt-1 text-xs text-slate-500">
+              Deactivated students keep all their history and aren&apos;t deleted — re-import the full roster to reactivate them.
+            </p>
+          )}
           {result.skipped?.length > 0 && (
             <ul className="mt-1 list-inside list-disc text-slate-500">
               {result.skipped.slice(0, 10).map((s: any, i: number) => (
