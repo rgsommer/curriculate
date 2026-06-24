@@ -139,4 +139,6 @@ export type Behavior = {
   consequenceText?: string;
   scope: "standard" | "custom";
   uniform?: boolean;
+  categories?: string[];
+  immediateWhiteSlip?: boolean;
 };

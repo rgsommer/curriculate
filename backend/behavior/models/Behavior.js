@@ -49,6 +49,12 @@ const BehaviorSchema = new mongoose.Schema(
     // Good Uniform Dress Down. GUDD threshold / fade / ladder live in BehaviorConfig.
     uniform: { type: Boolean, default: false },
 
+    // Immediate white slip: logging this behaviour emails the teacher (CC VP) a
+    // "White Slip: reason, teacher, date" notice and records it as a consequence.
+    // A serious-enough offence that warrants a white slip on a single occurrence.
+    // (White slips are a "behaviour"-category consequence.)
+    immediateWhiteSlip: { type: Boolean, default: false },
+
     // House points applied when this behaviour is logged (typically negative for
     // an offence; can be positive for a positive behaviour). 0 = no points.
     points: { type: Number, default: 0 },

@@ -16,6 +16,9 @@ type StudentDetail = {
   triggerCount: number;
   noticesHomeCount: number;
   gudd?: GuddStatus | null;
+  whiteSlipEligible?: boolean;
+  whiteSlipReasons?: Array<{ name: string; detail?: string; date: string }>;
+  notResponding?: { flag: boolean; interventions?: number; offencesSince?: number };
   incidents: Array<{
     _id: string;
     teacherId?: string;
@@ -95,6 +98,11 @@ export default function StudentPage() {
   const [consDetail, setConsDetail] = useState("");
   const [consBusy, setConsBusy] = useState(false);
   const [consMsg, setConsMsg] = useState("");
+
+  // White-slip recommendation (eligible students)
+  const [wsBusy, setWsBusy] = useState(false);
+  const [wsResult, setWsResult] = useState<{ note: string; emailedTo?: string; ccVp?: boolean } | null>(null);
+  const [wsCopyMsg, setWsCopyMsg] = useState("");
 
   const load = useCallback(() => {
     if (!params?.id) return;
@@ -263,6 +271,24 @@ export default function StudentPage() {
     }
   }
 
+  async function copyText(text: string) {
+    try { await navigator.clipboard.writeText(text); setWsCopyMsg("✓ Copied to clipboard."); }
+    catch { setWsCopyMsg("Select the text and copy manually."); }
+  }
+  async function recommendWhiteSlip() {
+    setWsBusy(true); setWsCopyMsg("");
+    try {
+      const r = await api<{ note: string; emailedTo?: string; ccVp?: boolean }>(`/students/${params.id}/white-slip`, { body: {} });
+      setWsResult(r);
+      await copyText(r.note);
+      load();
+    } catch (e: any) {
+      setWsResult({ note: `✗ ${e.message}` });
+    } finally {
+      setWsBusy(false);
+    }
+  }
+
   async function logConsequence() {
     const type = consType.trim();
     if (!type) return;
@@ -353,6 +379,20 @@ export default function StudentPage() {
             {data.gudd.lost && data.gudd.nextConsequence && (
               <span className="text-xs text-slate-500">Next infraction → {data.gudd.nextConsequence}</span>
             )}
+          </div>
+        )}
+        {data.notResponding?.flag && (
+          <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">
+            ⚠ Not responding to discipline so far — {data.notResponding.interventions} measure(s) home/applied, yet {data.notResponding.offencesSince} further offence(s) since. Consider a meeting, a behaviour plan, or VP involvement.
+          </p>
+        )}
+        {data.whiteSlipEligible && (
+          <div className="no-print mt-3">
+            <button onClick={recommendWhiteSlip} disabled={wsBusy}
+              className="rounded-lg border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50">
+              {wsBusy ? "Preparing…" : "Recommend a white slip"}
+            </button>
+            <p className="mt-1 text-xs text-slate-400">Copies a parent note to your clipboard and emails you a copy (CC the VP).</p>
           </div>
         )}
         <a href="#incident-log" className="no-print mt-2 inline-block text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900">
@@ -690,6 +730,26 @@ export default function StudentPage() {
         onConfirm={confirmSend}
         onClose={() => setSendModal(null)}
       />
+
+      {wsResult && (
+        <div className="no-print fixed inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setWsResult(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold">White slip — recommended note</h3>
+              <button onClick={() => setWsResult(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
+            </div>
+            <p className="mt-1 text-sm text-green-700">
+              {wsCopyMsg || "Prepared."}{wsResult.emailedTo ? ` Emailed to ${wsResult.emailedTo}${wsResult.ccVp ? " (CC VP)" : ""}.` : ""}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">Review and paste it to the parent via Edsby. Nothing was sent to the parent automatically.</p>
+            <textarea readOnly value={wsResult.note} rows={12} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" />
+            <div className="mt-3 flex justify-end gap-2">
+              <button onClick={() => copyText(wsResult.note)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Copy again</button>
+              <button onClick={() => setWsResult(null)} className="rounded-lg bg-slate-900 px-4 py-1.5 text-sm font-medium text-white">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

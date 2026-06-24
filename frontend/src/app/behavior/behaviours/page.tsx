@@ -94,6 +94,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : [])
   );
   const toggleCat = (c: string) => setCategories((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
+  const [immediateWhiteSlip, setImmediateWhiteSlip] = useState<boolean>(!!b?.immediateWhiteSlip);
   const [scopeStandard, setScopeStandard] = useState(!!allowStandard);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -119,6 +120,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
                 {c === "uniform" ? "Uniform" : c === "behaviour" ? "Behaviour" : "Prep"}
               </span>
             ))}
+            {b.immediateWhiteSlip ? <span className="ml-2 rounded bg-slate-200 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700">White slip</span> : null}
           </span>
           <span className="text-xs text-slate-400">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
@@ -133,10 +135,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]);
+        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]); setImmediateWhiteSlip(false);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, immediateWhiteSlip } });
       }
       onChanged();
     } catch (e: any) {
@@ -210,6 +212,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             {categories.includes("uniform") && (
               <p className="mt-1 text-slate-400">Uniform → counts as a strike <em>and</em> toward losing the Good Uniform Dress Down (threshold/fade/escalations in Setup).</p>
             )}
+            <label className="mt-2 flex items-start gap-2">
+              <input type="checkbox" checked={immediateWhiteSlip} onChange={(e) => setImmediateWhiteSlip(e.target.checked)} className="mt-0.5" />
+              <span><span className="font-medium">Immediate white slip</span> — logging this emails you (CC the VP) a “White Slip: reason, teacher, date” and records it. Tags the offence as Behaviour.</span>
+            </label>
           </div>
         )}
         <div className={`flex items-center justify-end gap-2 ${interaction || positive ? "col-span-2" : ""}`}>

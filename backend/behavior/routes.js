@@ -68,6 +68,13 @@ function cleanCategories(arr, kind) {
   if (kind === "positive" || !Array.isArray(arr)) return [];
   return [...new Set(arr.map((s) => String(s || "").toLowerCase().trim()).filter((c) => OFFENCE_CATEGORIES.includes(c)))];
 }
+// A white slip is a "behaviour"-category consequence, so an immediate-white-slip
+// behaviour is always at least "behaviour" category.
+function withBehaviourIfWhiteSlip(arr, immediateWhiteSlip) {
+  const a = Array.isArray(arr) ? [...arr] : [];
+  if (immediateWhiteSlip && !a.includes("behaviour")) a.push("behaviour");
+  return a;
+}
 
 // GUDD status for a student from their incidents + config. Counts uniform-flagged
 // infractions within the GUDD-specific fade window. Returns null when GUDD is off.
@@ -97,6 +104,50 @@ function guddStatus(incidents, config) {
     lost, atRisk: count > 0 && !lost,
     consequence, nextConsequence,
   };
+}
+
+// Immediate white slip: record it as a consequence and email the logging teacher
+// (CC the VP) — "White Slip: reason, teacher, date". Never sent to a parent.
+async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
+  const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+  const teacherName = req.membership?.name || req.user?.name || "Teacher";
+  const teacherEmail = req.user?.email || "";
+  const vpEmail = (config?.vp?.email || "").trim();
+  const when = new Date(at || Date.now());
+  try {
+    await BehaviorConsequence.create({
+      schoolId: req.schoolId, studentId: student._id,
+      type: "White slip", detail: behaviorName + (detailText ? ` — ${detailText}` : ""),
+      byTeacherId: req.membership._id, byName: teacherName, relatedIncidentId, at: when,
+    });
+  } catch (e) { console.warn("[behavior] white-slip consequence log failed:", e?.message || e); }
+  if (!teacherEmail && !vpEmail) return;
+  const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+  try {
+    await sendEmail({
+      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      to: teacherEmail || vpEmail,
+      cc: teacherEmail && vpEmail ? vpEmail : undefined,
+      subject: `White Slip — ${studentName}`,
+      text:
+        `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
+        `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
+        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA")}\n\n— Behaviours`,
+      html: emailShell({
+        title: "White Slip",
+        schoolName: config?.branding?.schoolName || "Behaviours",
+        preheader: `White slip — ${studentName}`,
+        contentHtml:
+          `<table style="width:100%;border-collapse:collapse;color:#334155;font-size:14px">` +
+          `<tr><td style="padding:4px 0;width:90px;color:#64748b">Student</td><td style="padding:4px 0"><strong>${escapeHtml(studentName)}</strong>${student.classGroup ? ` (${escapeHtml(student.classGroup)})` : ""}</td></tr>` +
+          `<tr><td style="padding:4px 0;color:#64748b">Reason</td><td style="padding:4px 0">${escapeHtml(behaviorName)}</td></tr>` +
+          (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
+          `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
+          `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA"))}</td></tr>` +
+          `</table>`,
+      }),
+    });
+  } catch (e) { console.warn("[behavior] white-slip email failed:", e?.message || e); }
 }
 
 function appBase() {
@@ -1433,6 +1484,37 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: -1 }).lean();
     const consequences = await BehaviorConsequence.find({ studentId: student._id }).sort({ at: -1 }).lean();
 
+    const triggerCount = config?.triggerCount ?? 3;
+    // White-slip eligibility: active BEHAVIOUR-category strikes have reached the
+    // trigger (white slips apply to behaviour offences). Reasons = those offences.
+    const activeBehaviour = incidents.filter((inc) => {
+      const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+      return mode === "THRESHOLD" && !inc.countedInNoticeId &&
+        new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
+        (inc.behaviorSnapshot?.categories || []).includes("behaviour");
+    });
+    const whiteSlipEligible = activeBehaviour.length >= triggerCount;
+    const whiteSlipReasons = activeBehaviour.slice(0, 6).map((i) => ({
+      name: i.behaviorSnapshot?.name || "", detail: i.detailText || "", date: i.timestamp,
+    }));
+
+    // "Not responding to discipline": repeated measures (≥2 notices + documented
+    // consequences) yet the student is still offending AFTER the most recent one.
+    const interventions = (student.noticesHomeCount || 0) + consequences.length;
+    const lastInterventionAt = Math.max(
+      0,
+      ...notices.map((n) => new Date(n.sentAt || n.createdAt).getTime()).filter((t) => t && !isNaN(t)),
+      ...consequences.map((c) => new Date(c.at).getTime()).filter((t) => t && !isNaN(t)),
+    );
+    const offencesSince = incidents.filter((inc) => {
+      const isPos = inc.behaviorSnapshot?.kind === "positive" || (inc.behaviorSnapshot?.points || 0) > 0;
+      const isInteraction = !isPos && inc.behaviorSnapshot?.triggerMode === "INTERACTION";
+      return !isPos && !isInteraction && new Date(inc.timestamp).getTime() > lastInterventionAt;
+    }).length;
+    const notResponding = interventions >= 2 && offencesSince >= 1
+      ? { flag: true, interventions, offencesSince }
+      : { flag: false };
+
     // Enrich incidents with the logging teacher's name for display.
     const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
     const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
@@ -1455,6 +1537,9 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       triggerCount: config?.triggerCount ?? 3,
       noticesHomeCount: student.noticesHomeCount || 0,
       gudd: guddStatus(incidents, config),
+      whiteSlipEligible,
+      whiteSlipReasons,
+      notResponding,
       incidents: incidentsOut,
       notices,
       consequences,
@@ -1619,8 +1704,9 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
       points: Number(req.body?.points) || 0,
-      categories: cleanCategories(req.body?.categories, kind),
+      categories: cleanCategories(withBehaviourIfWhiteSlip(req.body?.categories, req.body?.immediateWhiteSlip), kind),
       uniform: kind === "negative" && Array.isArray(req.body?.categories) && req.body.categories.includes("uniform"),
+      immediateWhiteSlip: kind === "negative" && !!req.body?.immediateWhiteSlip,
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
         ? req.body.followUpType
         : "none",
@@ -1661,13 +1747,14 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
-    if ("categories" in b) {
-      beh.categories = cleanCategories(b.categories, beh.kind);
+    if ("immediateWhiteSlip" in b) beh.immediateWhiteSlip = !!b.immediateWhiteSlip;
+    if ("categories" in b || "immediateWhiteSlip" in b) {
+      beh.categories = cleanCategories(withBehaviourIfWhiteSlip("categories" in b ? b.categories : beh.categories, beh.immediateWhiteSlip), beh.kind);
       beh.uniform = beh.categories.includes("uniform");
     }
     // Positive behaviours never count/notify → force INTERACTION + no consequence,
-    // and carry no offence categories (incl. uniform/GUDD).
-    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; beh.uniform = false; beh.categories = []; }
+    // and carry no offence categories (incl. uniform/GUDD) or white-slip flag.
+    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; beh.uniform = false; beh.categories = []; beh.immediateWhiteSlip = false; }
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
@@ -1745,6 +1832,11 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         timestamp,
       });
       createdIncidents.push(inc.toObject());
+
+      // Immediate white slip: email the teacher (CC VP) + record the consequence.
+      if (behavior.immediateWhiteSlip) {
+        await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
+      }
 
       // House points: apply this behaviour's point value to the student's house.
       if (behavior.points && student.houseId) {
@@ -3441,6 +3533,54 @@ router.delete("/consequences/:id", authAny, loadMembership, canLog, async (req, 
   }
 });
 
+// White-slip recommendation: compose a parent-facing note recommending a white
+// slip (with the behaviour-category reasons), return it for the clipboard, AND
+// email a copy to the teacher (CC the VP). Records the recommendation as a
+// consequence. Never auto-sends to a parent — the teacher posts it themselves.
+router.post("/students/:id/white-slip", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId }).lean();
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+    const fadeDays = config?.fadeWindowDays ?? 30;
+    const resetAt = student.thresholdResetAt ? new Date(student.thresholdResetAt).getTime() : 0;
+    const cutoff = Date.now() - fadeDays * DAY_MS;
+
+    const incs = await BehaviorIncident.find({ studentId: student._id }).sort({ timestamp: -1 }).limit(200).lean();
+    const reasons = incs.filter((inc) => {
+      const mode = inc.behaviorSnapshot?.triggerMode || (inc.immediateFlag ? "IMMEDIATE" : "THRESHOLD");
+      return mode === "THRESHOLD" && !inc.countedInNoticeId &&
+        new Date(inc.timestamp).getTime() > resetAt && new Date(inc.timestamp).getTime() > cutoff &&
+        (inc.behaviorSnapshot?.categories || []).includes("behaviour");
+    }).slice(0, 8);
+    if (!reasons.length) return res.status(400).json({ ok: false, error: "No active behaviour-category offences to base a white slip on." });
+
+    const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
+    const first = student.preferredName || student.firstName || studentName;
+    const teacherName = req.membership?.name || req.user?.name || "Teacher";
+    const schoolName = config?.branding?.schoolName || "";
+    const parentNames = (student.parents || []).map((p) => (p.name || "").trim()).filter(Boolean);
+    const greeting = parentNames.length === 1 ? `Dear ${parentNames[0]},`
+      : parentNames.length >= 2 ? `Dear ${parentNames[0]} and ${parentNames[1]},`
+      : "Dear Parent/Guardian,";
+    const reasonLines = reasons.map((i) => `  • ${new Date(i.timestamp).toLocaleDateString("en-CA")}: ${i.behaviorSnapshot?.name}${i.detailText ? ` — ${i.detailText}` : ""}`).join("\n");
+    const note =
+      `${greeting}\n\n` +
+      `I'm writing to let you know that a white slip is being recommended for ${first} in light of the following behavioural matters:\n\n${reasonLines}\n\n` +
+      `A white slip is a formal record of a behavioural concern at school. We're asking for your partnership in addressing this with ${first} at home, as a conversation or support there often makes a real difference. Please don't hesitate to reach out if you'd like to discuss it.\n\n` +
+      `Sincerely,\n${teacherName}${schoolName ? `\nTeacher, ${schoolName}` : ", Teacher"}`;
+
+    // Record the recommendation + email the teacher (CC VP).
+    await fireWhiteSlip({ req, student, config, behaviorName: `Recommended (${reasons.length} behaviour offence${reasons.length === 1 ? "" : "s"})`, detailText: "", at: new Date() });
+
+    await audit(req.schoolId, "white_slip.recommended", req, { studentId: String(student._id) });
+    const vpEmail = (config?.vp?.email || "").trim();
+    res.json({ ok: true, note, emailedTo: req.user?.email || "", ccVp: !!vpEmail });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ── Intervention view (admin/VP read-only, school-wide) ──────────────────────
 // Who needs attention right now: students at/near the strike threshold, the
 // most-logged students, and a per-class breakdown. Read-only, admin only.
@@ -3586,7 +3726,15 @@ async function buildSchoolInsights(schoolId, config) {
     gudd = { enabled: true, name: gcfg.name || "GUDD", threshold: gThreshold, students: gStudents };
   }
 
-  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive, usage, activeThisWeek, gudd };
+  // Not responding to discipline: ≥2 notices home yet still carrying ≥2 active
+  // strikes — repeated contact home hasn't shifted the pattern, so it may need a
+  // different approach (meeting, plan, VP involvement).
+  const notResponding = Object.keys(strikes)
+    .filter((sid) => sById[sid] && (sById[sid].noticesHomeCount || 0) >= 2 && strikes[sid] >= 2)
+    .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", grade: sById[sid].grade || "—", notices: sById[sid].noticesHomeCount || 0, strikes: strikes[sid], lastAt: new Date(lastStrike[sid]) }))
+    .sort((a, b) => b.notices - a.notices || b.strikes - a.strikes).slice(0, 15);
+
+  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive, usage, activeThisWeek, gudd, notResponding };
 }
 
 router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, res, next) => {

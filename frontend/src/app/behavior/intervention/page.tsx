@@ -22,6 +22,7 @@ type Intervention = {
   usage?: Array<{ name: string; role: string; loads: number; lastSeenAt: string | null }>;
   activeThisWeek?: number;
   gudd?: { enabled: boolean; name?: string; threshold?: number; students: GuddRow[] };
+  notResponding?: Array<{ studentId: string; name: string; classGroup: string; grade?: string; notices: number; strikes: number; lastAt: string }>;
 };
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -123,6 +124,25 @@ export default function InterventionPage() {
           })}
         </ul>
       </section>
+
+      {/* Not responding to discipline */}
+      {data.notResponding && data.notResponding.length > 0 && (
+        <section className="rounded-xl border border-rose-200 bg-rose-50/40 p-5">
+          <h2 className="font-semibold text-rose-900">Not responding to discipline</h2>
+          <p className="mt-1 text-sm text-slate-500">≥2 notices home yet still carrying active strikes — may need a meeting, a plan, or VP involvement.</p>
+          <ul className="mt-2 divide-y divide-rose-100">
+            {data.notResponding.map((r) => (
+              <li key={r.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <Link href={`/behavior/student/${r.studentId}`} className="font-medium hover:underline">
+                  {r.name}
+                  <span className="ml-2 text-xs font-normal text-slate-400">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
+                </Link>
+                <span className="shrink-0 text-xs text-slate-500">{r.notices} notice(s) · {r.strikes} active strike(s)</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* GUDD — students who've lost or are at risk of losing the dress-down */}
       {data.gudd?.enabled && (
