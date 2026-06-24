@@ -122,6 +122,10 @@ const ACTIONS = [
     title: "Privileges — lost and earned",
     body: "Consequences can include losing a privilege (a place on a sports team, a year-end class/field trip). On the positive side, exemplary behaviour earns privileges — and the winning house can earn a reward outing (e.g. a day at Wonderland).",
   },
+  {
+    title: "Uniform infractions & the GUDD",
+    body: "Flag a behaviour as a uniform infraction and it counts as a normal strike and toward losing the Good Uniform Dress Down (GUDD). Admins set the threshold, a separate fade window, and an escalation ladder — once the GUDD is lost, each further infraction triggers the next consequence. An always-visible GUDD indicator (green / amber / red) shows on the teacher's logging view and the student page, and leadership sees who's lost it or is at risk in School Insights.",
+  },
 ];
 
 const HOUSES = [

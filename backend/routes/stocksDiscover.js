@@ -18,6 +18,7 @@ import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 import { runDiscoveryScan, runHighConvictionScan, runMosaicForTickers, runMoonshotScan } from "../services/stocksDiscoveryService.js";
+import { isFmpEnabled, fmpDisabledReason } from "../services/fmpEnabled.js";
 
 const router = express.Router();
 
@@ -82,8 +83,16 @@ async function fetchCurrentPrice(ticker) {
 // POST /api/stocks-discover/scan — run a fresh scan
 router.post("/scan", requireStocksAuth, async (req, res) => {
   try {
-    if (!process.env.FMP_API_KEY) {
-      return res.status(503).json({ error: "Discovery requires FMP_API_KEY in env." });
+    // FMP gates the full universe screener. When disabled, surface a 200
+    // with a clear `disabled` flag so the UI can render "Discovery is off"
+    // instead of crashing or showing an opaque error.
+    if (!isFmpEnabled()) {
+      return res.json({
+        disabled: true,
+        reason: fmpDisabledReason() || "fmp_disabled",
+        message: "Discovery scanner is currently disabled (FMP is off). High-conviction and Moonshot modes still work without FMP — try those instead.",
+        candidates: [],
+      });
     }
     if (!process.env.ANTHROPIC_API_KEY) {
       return res.status(503).json({ error: "Discovery requires ANTHROPIC_API_KEY in env." });

@@ -681,6 +681,9 @@ const NON_TICKER_TOKENS = new Set([
 // real-time / 15-min-delayed quotes on the Premium plan; Yahoo is the
 // fallback for the rare ticker FMP doesn't cover.
 async function fetchFmpQuote(ticker) {
+  // Short-circuit cleanly when FMP is off — the validator falls through
+  // to Yahoo (already a robust fallback for US + Canadian listings).
+  if (process.env.FMP_DISABLED === "1") return null;
   const key = process.env.FMP_API_KEY || "";
   if (!key) return null;
   try {

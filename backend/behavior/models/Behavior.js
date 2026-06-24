@@ -39,6 +39,11 @@ const BehaviorSchema = new mongoose.Schema(
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },
 
+    // Uniform infraction (GUDD): when true, logging this behaviour still counts
+    // as a normal strike AND counts toward the student losing their Good Uniform
+    // Dress Down. GUDD threshold / fade / escalation ladder live in BehaviorConfig.
+    uniform: { type: Boolean, default: false },
+
     // House points applied when this behaviour is logged (typically negative for
     // an offence; can be positive for a positive behaviour). 0 = no points.
     points: { type: Number, default: 0 },

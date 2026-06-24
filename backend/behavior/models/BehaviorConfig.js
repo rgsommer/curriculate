@@ -175,6 +175,23 @@ const BehaviorConfigSchema = new mongoose.Schema(
       // when it's blank OR scored below this (out of 10).
       outstandingBelow: { type: Number, default: 6 },
     },
+
+    // GUDD — Good Uniform Dress Down. A uniform-flagged behaviour counts as a
+    // normal strike AND toward losing the GUDD. Has its OWN fade window (separate
+    // from the behaviour-strike fade) and its own escalation ladder applied once
+    // the GUDD is lost.
+    gudd: {
+      enabled: { type: Boolean, default: true },
+      name: { type: String, default: "GUDD" },
+      // Uniform infractions (within the fade window) needed to LOSE the GUDD.
+      threshold: { type: Number, default: 3 },
+      // Uniform infractions older than this stop counting toward the GUDD —
+      // independent of the behaviour-strike fade window.
+      fadeWindowDays: { type: Number, default: 30 },
+      // Consequences applied AFTER the GUDD is lost: the 1st further infraction
+      // gets escalations[0], the 2nd escalations[1], holding at the last.
+      escalations: { type: [String], default: ["Lunch detention", "Meeting with the VP"] },
+    },
   },
   { timestamps: true }
 );

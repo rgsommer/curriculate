@@ -29,6 +29,8 @@ const BehaviorIncidentSchema = new mongoose.Schema(
       // House points at log time: positive = a positive behaviour (reward),
       // negative = a deduction. Positive incidents NEVER count toward strikes.
       points: { type: Number, default: 0 },
+      // Frozen at log time: was this a uniform infraction (counts toward GUDD)?
+      uniform: { type: Boolean, default: false },
     },
 
     detailText: { type: String, default: "" }, // optional free-text detail (goes in the parent note)

@@ -115,6 +115,20 @@ export type StudentSummary = {
   grade?: string;
   activeCount?: number;
   noticesHomeCount?: number;
+  guddCount?: number;
+};
+
+// GUDD (Good Uniform Dress Down) status for a student.
+export type GuddStatus = {
+  enabled: boolean;
+  name: string;
+  count: number;
+  threshold: number;
+  fadeDays?: number;
+  lost: boolean;
+  atRisk: boolean;
+  consequence?: string;
+  nextConsequence?: string;
 };
 
 export type Behavior = {
@@ -124,4 +138,5 @@ export type Behavior = {
   triggerMode: "THRESHOLD" | "IMMEDIATE" | "INTERACTION";
   consequenceText?: string;
   scope: "standard" | "custom";
+  uniform?: boolean;
 };

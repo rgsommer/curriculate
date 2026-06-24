@@ -63,6 +63,7 @@ export default function SetupPage() {
       <HomeworkSettings config={me.config} />
       <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
       <RecommendedActionsSettings config={me.config} />
+      <GuddSettings config={me.config} />
       <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
@@ -632,6 +633,75 @@ function RecommendedActionsSettings({ config }: { config: any }) {
       >
         {busy ? "Saving…" : saved ? "Saved ✓" : dirty ? "Save changes" : "Saved"}
       </button>
+    </Card>
+  );
+}
+
+function GuddSettings({ config }: { config: any }) {
+  const g = config?.gudd || {};
+  const [enabled, setEnabled] = useState<boolean>(g.enabled !== false);
+  const [name, setName] = useState<string>(g.name || "GUDD");
+  const [threshold, setThreshold] = useState<number | string>(g.threshold ?? 3);
+  const [fadeDays, setFadeDays] = useState<number | string>(g.fadeWindowDays ?? 30);
+  const [escText, setEscText] = useState<string>(
+    (Array.isArray(g.escalations) && g.escalations.length ? g.escalations : ["Lunch detention", "Meeting with the VP"]).join("\n")
+  );
+  const [err, setErr] = useState<string | null>(null);
+  const saveState = useSaveState([enabled, name, threshold, fadeDays, escText]);
+
+  function save() {
+    setErr(null);
+    saveState.run(async () => {
+      const escalations = escText.split("\n").map((s) => s.trim()).filter(Boolean);
+      const gudd = {
+        enabled,
+        name: name.trim() || "GUDD",
+        threshold: Math.max(1, Number(threshold) || 3),
+        fadeWindowDays: Math.max(1, Number(fadeDays) || 30),
+        escalations,
+      };
+      try { await api("/config", { method: "PUT", body: { gudd } }); } catch (e: any) { setErr(e.message); throw e; }
+    });
+  }
+
+  return (
+    <Card>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">GUDD — Good Uniform Dress Down</h2>
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
+          {enabled ? "On" : "Off"}
+        </label>
+      </div>
+      <p className="mt-1 text-sm text-slate-500">
+        Flag a behaviour as a <span className="font-medium">uniform infraction</span> in the Behaviours list. Each one counts as a normal strike
+        <em> and</em> toward losing the GUDD. Once lost, the escalation ladder below applies to each further infraction.
+      </p>
+      {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
+
+      {enabled && (
+        <>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <label className="text-sm text-slate-600">
+              Name
+              <input value={name} onChange={(e) => setName(e.target.value)} className={`${inputCls} mt-1`} />
+            </label>
+            <label className="text-sm text-slate-600">
+              Infractions to lose it
+              <input type="number" min={1} value={threshold} onChange={(e) => setThreshold(e.target.value)} className={`${inputCls} mt-1`} />
+            </label>
+            <label className="text-sm text-slate-600" title="Uniform infractions older than this stop counting toward the GUDD — separate from the behaviour-strike fade window.">
+              Fade window (days)
+              <input type="number" min={1} value={fadeDays} onChange={(e) => setFadeDays(e.target.value)} className={`${inputCls} mt-1`} />
+            </label>
+          </div>
+          <p className="mt-3 text-sm font-medium text-slate-700">Escalation ladder (applied after the GUDD is lost)</p>
+          <p className="text-xs text-slate-400">One consequence per line. The 1st further infraction after the loss gets line 1, the 2nd gets line 2, holding at the last line.</p>
+          <textarea value={escText} onChange={(e) => setEscText(e.target.value)} rows={4} className={`${inputCls} mt-1 font-sans`}
+            placeholder={"Lunch detention\nMeeting with the VP\nIn-school suspension"} />
+        </>
+      )}
+      <div className="mt-3"><SaveButton state={saveState} onClick={save} label="Save GUDD settings" /></div>
     </Card>
   );
 }

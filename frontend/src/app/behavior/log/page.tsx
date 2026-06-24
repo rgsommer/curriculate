@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type Behavior, type StudentSummary } from "../_lib/api";
+import { api, getToken, loginHref, type Behavior, type StudentSummary, type GuddStatus } from "../_lib/api";
 import SendNoticeModal from "../_components/SendNoticeModal";
+import GuddChip from "../_components/GuddChip";
 
 type NoticeResult = { _id: string; status: string; cancelUntil?: string; ccVp?: boolean; renderedText?: string; reason?: string; autoDispatch?: boolean } | null;
 
@@ -100,7 +101,7 @@ export default function LogIncidentPage() {
   const [uploadingMedia, setUploadingMedia] = useState(false);
   const [includeEvidence, setIncludeEvidence] = useState(false);
 
-  const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[] } | null>(null);
+  const [status, setStatus] = useState<{ activeCount: number; triggerCount: number; incidents: any[]; gudd?: GuddStatus | null } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<NoticeResult>(null);
   const [showSendModal, setShowSendModal] = useState(false);
@@ -142,8 +143,8 @@ export default function LogIncidentPage() {
       return;
     }
     setOccurredAt(nowLocal()); // default the event time to now; teacher can adjust
-    api<{ activeCount: number; triggerCount: number; incidents: any[] }>(`/students/${student._id}`)
-      .then((d) => setStatus({ activeCount: d.activeCount, triggerCount: d.triggerCount, incidents: d.incidents || [] }))
+    api<{ activeCount: number; triggerCount: number; incidents: any[]; gudd?: GuddStatus | null }>(`/students/${student._id}`)
+      .then((d) => setStatus({ activeCount: d.activeCount, triggerCount: d.triggerCount, incidents: d.incidents || [], gudd: d.gudd || null }))
       .catch(() => setStatus(null));
   }, [student]);
 
@@ -494,6 +495,11 @@ export default function LogIncidentPage() {
                 {status.activeCount} / {status.triggerCount} strikes
               </span>
             </div>
+            {status.gudd?.enabled && (status.gudd.count > 0 || status.gudd.lost) && (
+              <div className="mt-2">
+                <GuddChip name={status.gudd.name} count={status.gudd.count} threshold={status.gudd.threshold} consequence={status.gudd.consequence} />
+              </div>
+            )}
             {status.incidents.length > 0 ? (
               <ul className="mt-2 divide-y divide-amber-100">
                 {status.incidents.slice(0, 5).map((i, idx) => (

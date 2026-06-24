@@ -13,6 +13,8 @@
 //
 // Cache: 7 days (transcripts don't change after they're posted).
 
+import { isFmpEnabled, fmpDisabledReason } from "./fmpEnabled.js";
+
 const CACHE = new Map(); // ticker → { fetchedAt, data }
 const TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -27,8 +29,8 @@ export async function getRecentTranscript(ticker) {
   if (cached && now - cached.fetchedAt < TTL_MS) return cached.data;
 
   let data;
-  if (!process.env.FMP_API_KEY) {
-    data = { ok: false, reason: "no_fmp_key" };
+  if (!isFmpEnabled()) {
+    data = { ok: false, reason: fmpDisabledReason() || "fmp_disabled" };
   } else {
     try {
       // FMP returns an array of transcripts, most recent first
@@ -255,6 +257,15 @@ export function formatTranscriptsBlock(transcripts) {
 
   // Don't render the block at all if there's nothing usable AND no setup tip to surface
   if (available.length === 0 && unavailable.length === 0) return "";
+
+  // If FMP is disabled (no key or kill-switched), silently omit the entire
+  // transcripts block from the prompt rather than nagging the AI with
+  // "upgrade to FMP Premium". The AI will fall back to its own web_search
+  // for earnings color if it needs it.
+  const disabledReasons = new Set(["fmp_kill_switch", "no_fmp_key", "fmp_disabled"]);
+  if (available.length === 0 && unavailable.every(([_, t]) => disabledReasons.has(t.reason))) {
+    return "";
+  }
 
   const lines = [];
   lines.push("EARNINGS TRANSCRIPTS — recent management commentary (analyze for tone shifts, guidance language, anxiety signals):");

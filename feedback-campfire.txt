@@ -1,13 +1,6 @@
 === CAMPFIRE (group engagement) FEEDBACK REPORT ===
-Generated: 2026-06-07T16:32:14.958Z
-Total: 4
+Generated: 2026-06-18T21:11:41.821Z
+Total: 0
 Since:  (all time)
 
-  [a93692] 2026-06-07T16:22:54.642Z  <Rgsommer@me.com>  page=/campfirelive/group/22466b5c-3204-412d-9a5a-33c2c7416faf
-    I can edit a group name but I should also be able to edit the group description
-  [a93493] 2026-06-07T16:10:11.232Z  <Rgsommer@me.com>  page=/campfirelive
-    When I went to press the button, which is nudge, the group stragglers or whatever it's called, it said that everyone in the list had already joined. Which I know is not true. So I went and individually, nudged them, and that worked
-  [a9346d] 2026-06-07T16:09:29.051Z  <Rgsommer@me.com>  page=/campfirelive
-    I think people's invitations to campfire are ending up in their junk folder. Could you do something to make that less likely to happen? I know it's possible because my other apps like start brief and a few other ones go right to the inbox.
-  [a93447] 2026-06-07T16:08:20.419Z  <Rgsommer@me.com>  page=/campfirelive
-    Is there somehow that we can render the campfire page without the top section? Referring to curiculate? Because I've noticed that some people get confused and they think they have to sign in using the curriculate get started. But so I would say, for campfire, leave off the top navigation. We can still leave the bottom, so they have an access to the other curricular features. But for campfire, let's leave the top off. If I leave an email, do you actually respond, let's add that
+  (none)

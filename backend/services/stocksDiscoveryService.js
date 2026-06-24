@@ -1,4 +1,5 @@
 // backend/services/stocksDiscoveryService.js
+import { isFmpEnabled, fmpDisabledReason } from "./fmpEnabled.js";
 //
 // Discovery engine for high-potential candidate stocks. Pulls a wide
 // universe via FMP screener, ranks by composite multi-bagger criteria, then
@@ -99,6 +100,12 @@ async function fmpFetchRaw(path) {
 }
 
 async function fmpGet(path) {
+  if (!isFmpEnabled()) {
+    const err = new Error("FMP is disabled (no key or kill-switch on)");
+    err.fmpDisabled = true;
+    err.reason = fmpDisabledReason() || "fmp_disabled";
+    throw err;
+  }
   if (!process.env.FMP_API_KEY) throw new Error("FMP_API_KEY not configured");
   let res = await fmpFetchRaw(path);
   // Auto-migrate: a 403 or "legacy endpoint" message on /api/v3 with a valid

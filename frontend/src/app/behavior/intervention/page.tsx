@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Me } from "../_lib/api";
+import GuddChip from "../_components/GuddChip";
 
 type Row = { studentId: string; name: string; classGroup: string; grade?: string; strikes?: number; triggerCount?: number; count?: number; lastAt: string };
+type GuddRow = { studentId: string; name: string; classGroup: string; grade?: string; count: number; threshold: number; lost: boolean; atRisk: boolean; consequence?: string; lastAt: string };
 type Trend = { month: string; neg: number; pos: number };
 type TeacherRow = { teacherId: string; name: string; negatives: number; positives: number; students: number; posRatio: number | null; flag?: boolean };
 type Proactive = { studentId: string; name: string; classGroup: string; recent: number; prior: number; notices: number };
@@ -19,6 +21,7 @@ type Intervention = {
   proactive: Proactive[];
   usage?: Array<{ name: string; role: string; loads: number; lastSeenAt: string | null }>;
   activeThisWeek?: number;
+  gudd?: { enabled: boolean; name?: string; threshold?: number; students: GuddRow[] };
 };
 
 const fmtDate = (d: string) => new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -120,6 +123,30 @@ export default function InterventionPage() {
           })}
         </ul>
       </section>
+
+      {/* GUDD — students who've lost or are at risk of losing the dress-down */}
+      {data.gudd?.enabled && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">{data.gudd.name || "GUDD"} — lost or at risk</h2>
+          {(!data.gudd.students || data.gudd.students.length === 0) && (
+            <p className="mt-1 text-sm text-slate-400">No uniform infractions on record right now.</p>
+          )}
+          <ul className="mt-2 divide-y divide-slate-100">
+            {(data.gudd.students || []).map((r) => (
+              <li key={r.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
+                <Link href={`/behavior/student/${r.studentId}`} className="font-medium hover:underline">
+                  {r.name}
+                  <span className="ml-2 text-xs font-normal text-slate-400">{[r.classGroup, r.grade].filter((x) => x && x !== "—").join(" · ")}</span>
+                </Link>
+                <span className="flex shrink-0 items-center gap-3">
+                  <span className="text-xs text-slate-400">last {fmtDate(r.lastAt)}</span>
+                  <GuddChip name={data.gudd!.name} count={r.count} threshold={r.threshold} consequence={r.consequence} size="xs" />
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {/* Most-logged */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { api, getToken, loginHref, type Me } from "../../_lib/api";
+import { api, getToken, loginHref, type Me, type GuddStatus } from "../../_lib/api";
+import GuddChip from "../../_components/GuddChip";
 import { Markdown } from "../../_lib/Markdown";
 import { Timeline, buildByMonth } from "../../_components/Timeline";
 import SendNoticeModal from "../../_components/SendNoticeModal";
@@ -14,6 +15,7 @@ type StudentDetail = {
   activeCount: number;
   triggerCount: number;
   noticesHomeCount: number;
+  gudd?: GuddStatus | null;
   incidents: Array<{
     _id: string;
     teacherId?: string;
@@ -317,6 +319,14 @@ export default function StudentPage() {
           <div className={`h-full ${pct >= 100 ? "bg-red-500" : pct >= 66 ? "bg-amber-500" : "bg-slate-700"}`} style={{ width: `${pct}%` }} />
         </div>
         <p className="mt-2 text-sm text-slate-500">{data.noticesHomeCount} notice(s) home this period.</p>
+        {data.gudd?.enabled && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <GuddChip name={data.gudd.name} count={data.gudd.count} threshold={data.gudd.threshold} consequence={data.gudd.consequence} />
+            {data.gudd.lost && data.gudd.nextConsequence && (
+              <span className="text-xs text-slate-500">Next infraction → {data.gudd.nextConsequence}</span>
+            )}
+          </div>
+        )}
         <a href="#incident-log" className="no-print mt-2 inline-block text-sm font-medium text-slate-600 underline underline-offset-2 hover:text-slate-900">
           Current log ↓
         </a>

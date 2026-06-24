@@ -10,6 +10,8 @@
 // Env: FMP_API_KEY required. If absent, all calls return { ok: false }
 // and the pipeline silently falls back to its prior behaviour.
 
+import { isFmpEnabled, fmpDisabledReason } from "./fmpEnabled.js";
+
 const CACHE = new Map(); // ticker → { fetchedAt, data }
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
@@ -77,8 +79,8 @@ export async function getFundamentals(ticker, currency = "USD") {
 
   let data;
   try {
-    if (!fmpKey()) {
-      data = { ok: false, reason: "FMP_API_KEY not set" };
+    if (!isFmpEnabled()) {
+      data = { ok: false, reason: fmpDisabledReason() || "fmp_disabled" };
     } else {
       // Three endpoints in parallel
       const [profile, ratios, metrics] = await Promise.all([
@@ -123,9 +125,19 @@ export async function getFundamentals(ticker, currency = "USD") {
   return data;
 }
 
-// One-liner human-readable formatter for injection into prompts.
+// One-liner human-readable formatter for injection into prompts. When FMP
+// is disabled the formatter returns an empty string so the AI prompt
+// silently omits the fundamentals line — cleaner than "unavailable"
+// which the AI sometimes echoes back as a confused warning.
 export function formatFundamentalsLine(f) {
-  if (!f || !f.ok) return `Fundamentals: unavailable${f?.reason ? ` (${f.reason})` : ""}`;
+  if (!f || !f.ok) {
+    // Disabled-FMP cases produce empty so the block disappears from the
+    // prompt entirely. Other failures (404 on the ticker, fetch_failed)
+    // still show a brief note since they're useful debugging signal.
+    const disabledReasons = new Set(["fmp_kill_switch", "no_fmp_key", "fmp_disabled", "FMP_API_KEY not set"]);
+    if (f && disabledReasons.has(f.reason)) return "";
+    return `Fundamentals: unavailable${f?.reason ? ` (${f.reason})` : ""}`;
+  }
   const parts = [];
   if (f.marketCap != null) {
     const cap = f.marketCap >= 1e12 ? `${(f.marketCap / 1e12).toFixed(2)}T`

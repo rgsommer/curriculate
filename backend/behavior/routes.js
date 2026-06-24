@@ -61,6 +61,36 @@ function emailDomain(email) {
   return at === -1 ? "" : e.slice(at + 1).trim();
 }
 
+// GUDD status for a student from their incidents + config. Counts uniform-flagged
+// infractions within the GUDD-specific fade window. Returns null when GUDD is off.
+//   count   uniform infractions in the window
+//   lost    count >= threshold (GUDD forfeited for this period)
+//   atRisk  some infractions but not yet lost
+//   consequence    the escalation already incurred at this count (after the loss)
+//   nextConsequence the consequence the NEXT infraction would trigger
+function guddStatus(incidents, config) {
+  const g = config?.gudd || {};
+  if (g.enabled === false) return null;
+  const threshold = g.threshold ?? 3;
+  const fadeDays = g.fadeWindowDays ?? 30;
+  const escalations = (Array.isArray(g.escalations) ? g.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
+  const cutoff = Date.now() - fadeDays * DAY_MS;
+  const count = (incidents || []).filter(
+    (i) => i.behaviorSnapshot?.uniform && new Date(i.timestamp).getTime() > cutoff
+  ).length;
+  const lost = count >= threshold;
+  const overBy = Math.max(0, count - threshold); // infractions beyond the loss point
+  const lastEsc = escalations.length ? escalations[escalations.length - 1] : "";
+  const consequence = overBy > 0 ? (escalations[overBy - 1] || lastEsc) : "";
+  const nextConsequence = lost ? (escalations[overBy] || lastEsc) : "";
+  return {
+    enabled: true, name: g.name || "GUDD",
+    count, threshold, fadeDays,
+    lost, atRisk: count > 0 && !lost,
+    consequence, nextConsequence,
+  };
+}
+
 function appBase() {
   return (process.env.APP_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
 }
@@ -242,7 +272,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -716,6 +746,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
             `• See a student's full cross-teacher history before you say a word to them.\n` +
             `• When a pattern reaches the threshold, you get a ready-to-send, pastoral note home — you review and send it (nothing is ever auto-sent), with recommended next steps.\n` +
             `• Catch the good too: positives earn house points and can send a good-news note home.\n` +
+            `• Track uniform infractions (GUDD) — they count as a strike and toward losing the Good Uniform Dress Down, with escalating consequences.\n` +
             `• Track homework, class work and formal discussions, with end-of-term grades that export to Edsby.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
             `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
@@ -732,6 +763,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
               `<li>See a student's <strong>full cross-teacher history</strong> before you say a word.</li>` +
               `<li>When a pattern hits the threshold you get a <strong>ready-to-send, pastoral note home</strong> — you review and send it (<strong>nothing is auto-sent</strong>), with recommended next steps.</li>` +
               `<li><strong>Catch the good too:</strong> positives earn house points and can send a good-news note home.</li>` +
+              `<li><strong>Uniform infractions (GUDD):</strong> count as a strike <em>and</em> toward losing the Good Uniform Dress Down, with escalating consequences.</li>` +
               `<li>Track <strong>homework, class work &amp; formal discussions</strong>, with end-of-term grades that export to Edsby.</li>` +
               `</ul>` +
               emailButton("Accept & set your password", link) +
@@ -843,6 +875,7 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
       ["Documentation &amp; follow-through", "Time-stamped, attributed, audit-logged records; morning reminders so consequences are actually carried out, not forgotten."],
       ["Positive AND negative", "It recognises good behaviour (house points, good-news notes home), not just problems — a healthier culture, and fairer to students."],
       ["Houses &amp; school culture", "Optional house system ties everyday conduct to shared team spirit, with merit-based rewards."],
+      ["Uniform tracking (GUDD)", "Uniform infractions count as a strike and toward losing a Good Uniform Dress Down, with an admin-set threshold, its own fade window, and escalating consequences — consistent, visible enforcement without nagging."],
       ["Eyes on trends + proactive handling", "Leadership sees behaviour trends, which students need getting ahead of, and which teachers may welcome support — early, not after a blow-up."],
       ["Coaching newer teachers", "Suggested, school-approved next steps (in a supportive tone) help less-experienced staff respond well and consistently."],
       ["Communication home stays human", "Notes home are pastoral and teacher-reviewed — nothing is auto-sent, and families are reached over a channel they recognise."],
@@ -1264,8 +1297,25 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
       { $group: { _id: "$studentId", n: { $sum: 1 } } },
     ]);
     const cnt = Object.fromEntries(agg.map((a) => [String(a._id), a.n]));
-    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0 }));
-    res.json({ ok: true, students: out, triggerCount });
+
+    // Per-student uniform-infraction count within the GUDD-specific fade window
+    // (independent of the strike fade), for the GUDD chip on the student list.
+    const gcfg = config?.gudd || {};
+    const guddOn = gcfg.enabled !== false;
+    let gcnt = {};
+    if (guddOn) {
+      const gCutoff = new Date(Date.now() - (gcfg.fadeWindowDays ?? 30) * DAY_MS);
+      const gagg = await BehaviorIncident.aggregate([
+        { $match: { schoolId: req.schoolId, studentId: { $in: students.map((s) => s._id) }, "behaviorSnapshot.uniform": true, timestamp: { $gt: gCutoff } } },
+        { $group: { _id: "$studentId", n: { $sum: 1 } } },
+      ]);
+      gcnt = Object.fromEntries(gagg.map((a) => [String(a._id), a.n]));
+    }
+    const out = students.map((s) => ({ ...s, activeCount: cnt[String(s._id)] || 0, guddCount: gcnt[String(s._id)] || 0 }));
+    res.json({
+      ok: true, students: out, triggerCount,
+      gudd: guddOn ? { enabled: true, name: gcfg.name || "GUDD", threshold: gcfg.threshold ?? 3 } : { enabled: false },
+    });
   } catch (err) {
     next(err);
   }
@@ -1321,6 +1371,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       activeCount,
       triggerCount: config?.triggerCount ?? 3,
       noticesHomeCount: student.noticesHomeCount || 0,
+      gudd: guddStatus(incidents, config),
       incidents: incidentsOut,
       notices,
     });
@@ -1484,6 +1535,7 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
       points: Number(req.body?.points) || 0,
+      uniform: kind === "negative" && !!req.body?.uniform, // GUDD only applies to offences
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
         ? req.body.followUpType
         : "none",
@@ -1524,8 +1576,10 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
-    // Positive behaviours never count/notify → force INTERACTION + no consequence.
-    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; }
+    if ("uniform" in b) beh.uniform = !!b.uniform;
+    // Positive behaviours never count/notify → force INTERACTION + no consequence,
+    // and can't be a uniform (GUDD) infraction.
+    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; beh.uniform = false; }
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
@@ -1595,6 +1649,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           kind: behavior.kind || "negative",
           consequenceText: behavior.consequenceText,
           points: behavior.points || 0,
+          uniform: behavior.uniform || false,
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
@@ -1748,6 +1803,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           kind: behavior.kind || "negative",
           consequenceText: behavior.consequenceText,
           points: behavior.points || 0,
+          uniform: behavior.uniform || false,
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
@@ -3248,7 +3304,7 @@ async function buildSchoolInsights(schoolId, config) {
 
   // One pull of recent incidents; everything below is computed in memory.
   const incs = await BehaviorIncident.find({ schoolId, timestamp: { $gt: d180 } })
-    .select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode studentId teacherId timestamp countedInNoticeId").lean();
+    .select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode behaviorSnapshot.uniform studentId teacherId timestamp countedInNoticeId").lean();
   const isPos = (i) => i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
   const isInteraction = (i) => !isPos(i) && i.behaviorSnapshot?.triggerMode === "INTERACTION";
   const isOffence = (i) => !isPos(i) && !isInteraction(i);
@@ -3339,7 +3395,37 @@ async function buildSchoolInsights(schoolId, config) {
     .sort((a, b) => b.loads - a.loads || new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0));
   const activeThisWeek = usage.filter((u) => u.loads > 0).length;
 
-  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive, usage, activeThisWeek };
+  // GUDD — students who've lost (or are at risk of losing) their Good Uniform
+  // Dress Down: uniform infractions within the GUDD fade window, with the next
+  // escalation consequence for those past the threshold.
+  let gudd = { enabled: false, students: [] };
+  const gcfg = config?.gudd || {};
+  if (gcfg.enabled !== false) {
+    const gThreshold = gcfg.threshold ?? 3;
+    const gCutoff = now - (gcfg.fadeWindowDays ?? 30) * DAY_MS;
+    const gEsc = (Array.isArray(gcfg.escalations) ? gcfg.escalations : []).map((s) => String(s || "").trim()).filter(Boolean);
+    const gCount = {}; const gLast = {};
+    for (const i of incs) {
+      if (!i.behaviorSnapshot?.uniform || new Date(i.timestamp).getTime() <= gCutoff) continue;
+      const sid = String(i.studentId);
+      gCount[sid] = (gCount[sid] || 0) + 1;
+      const t = new Date(i.timestamp).getTime();
+      if (!gLast[sid] || t > gLast[sid]) gLast[sid] = t;
+    }
+    const gStudents = Object.keys(gCount).filter((sid) => sById[sid])
+      .map((sid) => {
+        const count = gCount[sid];
+        const lost = count >= gThreshold;
+        const overBy = Math.max(0, count - gThreshold);
+        const lastEsc = gEsc.length ? gEsc[gEsc.length - 1] : "";
+        const consequence = overBy > 0 ? (gEsc[overBy - 1] || lastEsc) : "";
+        return { studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", grade: sById[sid].grade || "—", count, threshold: gThreshold, lost, atRisk: count > 0 && !lost, consequence, lastAt: new Date(gLast[sid]) };
+      })
+      .sort((a, b) => b.count - a.count || b.lastAt - a.lastAt);
+    gudd = { enabled: true, name: gcfg.name || "GUDD", threshold: gThreshold, students: gStudents };
+  }
+
+  return { triggerCount, fadeDays, atThreshold, topRepeat, byClass, trends, teachers, proactive, usage, activeThisWeek, gudd };
 }
 
 router.get("/intervention", authAny, loadMembership, requireAdmin, async (req, res, next) => {

@@ -90,6 +90,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
   const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
   const [points, setPoints] = useState<number | string>(b?.points ?? 0);
+  const [uniform, setUniform] = useState<boolean>(!!b?.uniform);
   const [scopeStandard, setScopeStandard] = useState(!!allowStandard);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -110,6 +111,7 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             {b.name}
             {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
             {b.points ? <PointsBadge points={b.points} /> : null}
+            {b.uniform ? <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">GUDD</span> : null}
           </span>
           <span className="text-xs text-slate-400">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
@@ -124,10 +126,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0);
+        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, uniform, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setUniform(false);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0 } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, uniform } });
       }
       onChanged();
     } catch (e: any) {
@@ -185,6 +187,12 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
                 ? "added to the student’s house when logged. Positive behaviours never count as a strike."
                 : "negative deducts from the student’s house; leave 0 for no points."}
             </span>
+          </label>
+        )}
+        {!positive && (
+          <label className="col-span-2 flex items-start gap-2 text-xs text-slate-600">
+            <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} className="mt-0.5" />
+            <span><span className="font-medium">Uniform infraction (GUDD)</span> — counts as a normal strike <em>and</em> toward losing the Good Uniform Dress Down. Threshold, fade window &amp; escalations are set in Setup.</span>
           </label>
         )}
         <div className={`flex items-center justify-end gap-2 ${interaction || positive ? "col-span-2" : ""}`}>
