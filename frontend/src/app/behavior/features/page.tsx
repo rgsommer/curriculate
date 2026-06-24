@@ -126,6 +126,22 @@ const ACTIONS = [
     title: "Uniform infractions & the GUDD",
     body: "Flag a behaviour as a uniform infraction and it counts as a normal strike and toward losing the Good Uniform Dress Down (GUDD). Admins set the threshold, a separate fade window, and an escalation ladder — once the GUDD is lost, each further infraction triggers the next consequence. An always-visible GUDD indicator (green / amber / red) shows on the teacher's logging view and the student page, and leadership sees who's lost it or is at risk in School Insights.",
   },
+  {
+    title: "Offence categories",
+    body: "Each offence is tagged by admins as Class preparedness, Behaviour and/or Uniform — teachers never have to pick; they just log. The categories drive reporting and rules (for example, a white slip may only be applied to a Behaviour-type offence).",
+  },
+  {
+    title: "Document the consequences you actually give",
+    body: "On a student's page, record a real consequence applied — a work detention, white slip, call home, lines — with a note. It's kept in the record and folded into the AI summaries, so the follow-through is visible, not just the offence.",
+  },
+  {
+    title: "White slips — recommended or immediate",
+    body: "When a student's Behaviour-category strikes reach the trigger, a “Recommend a white slip” button drafts a parent note with the reasons, copies it to your clipboard, and emails you a copy (CC the VP). Serious behaviours can be marked “Immediate white slip”: logging one emails a White Slip (reason, teacher, date) to you and the VP and records it — no waiting for a count.",
+  },
+  {
+    title: "Spot who isn't responding",
+    body: "A student who keeps offending despite repeated notices home is flagged — on their page and in School Insights — so leadership can step in with a meeting, a behaviour plan, or VP involvement before things escalate.",
+  },
 ];
 
 const HOUSES = [

@@ -28,8 +28,8 @@ const STEPS: { title: string; body: string }[] = [
     body: "Some offences are uniform infractions: they count as a normal strike and toward losing the Good Uniform Dress Down. A coloured GUDD chip (green / amber / red) shows where a student stands, with the next consequence once it’s lost.",
   },
   {
-    title: "5 · Record consequences",
-    body: "On a student’s page you can document a consequence you actually gave — a work detention, white slip, call home, and so on. It’s kept in the record and folded into the summaries.",
+    title: "5 · Record consequences & white slips",
+    body: "On a student’s page, document a consequence you actually gave — work detention, call home, lines. When their behaviour strikes reach the trigger, a “Recommend a white slip” button drafts a parent note (with reasons), copies it to your clipboard and emails you a copy, CC the VP. Some behaviours are “immediate white slip” — logging one notifies you and the VP automatically.",
   },
   {
     title: "6 · The student page",

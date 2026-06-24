@@ -806,7 +806,9 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
             `• When a pattern reaches the threshold, you get a ready-to-send, pastoral note home — you review and send it (nothing is ever auto-sent), with recommended next steps.\n` +
             `• Catch the good too: positives earn house points and can send a good-news note home.\n` +
             `• Track uniform infractions (GUDD) — they count as a strike and toward losing the Good Uniform Dress Down, with escalating consequences.\n` +
-            `• Track homework, class work and formal discussions, with end-of-term grades that export to Edsby.\n\n` +
+            `• Record the consequences you give (detention, call home, white slip) and get a ready-to-send white-slip note when a student is eligible.\n` +
+            `• Track homework, class work and formal discussions, with end-of-term grades that export to Edsby.\n` +
+            `• A Tour walks you through it, and a Feedback button is always there if you want something changed.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
             `If you didn't expect this, you can ignore this email.\n\n— Behaviours`,
           html: emailShell({
@@ -823,7 +825,9 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
               `<li>When a pattern hits the threshold you get a <strong>ready-to-send, pastoral note home</strong> — you review and send it (<strong>nothing is auto-sent</strong>), with recommended next steps.</li>` +
               `<li><strong>Catch the good too:</strong> positives earn house points and can send a good-news note home.</li>` +
               `<li><strong>Uniform infractions (GUDD):</strong> count as a strike <em>and</em> toward losing the Good Uniform Dress Down, with escalating consequences.</li>` +
+              `<li><strong>Record consequences &amp; white slips:</strong> log what you gave (detention, call home, white slip), with a ready-to-send white-slip note when a student is eligible.</li>` +
               `<li>Track <strong>homework, class work &amp; formal discussions</strong>, with end-of-term grades that export to Edsby.</li>` +
+              `<li>A <strong>Tour</strong> walks you through it, and a <strong>Feedback</strong> button is always there if you want something changed.</li>` +
               `</ul>` +
               emailButton("Accept & set your password", link) +
               `<p style="color:#94a3b8;font-size:13px;word-break:break-all;margin:8px 0 0">Or paste this link: ${escapeHtml(link)}</p>` +
@@ -948,6 +952,7 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
       ["Consequences &amp; follow-through", [
         "An objective consequence ladder by notice number, plus AI coaching that only ever suggests from your approved list.",
         "Staff can document real consequences applied (work detention, white slip, call home, …); morning reminders so follow-ups aren't forgotten.",
+        "White slips: a recommended-note button for eligible students (copies a parent note, CCs the VP), plus an 'immediate white slip' flag for serious behaviours that notifies the teacher and VP on the spot.",
       ]],
       ["Uniform &amp; the GUDD (Good Uniform Dress Down)", [
         "Uniform infractions count as a strike AND toward losing the GUDD, with an admin-set threshold, its own fade window, and escalating consequences.",
@@ -961,6 +966,7 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
       ]],
       ["Leadership insights &amp; reporting", [
         "School-wide insights: trends, who to get ahead of, which teachers may welcome support, and app-usage; an optional weekly admin digest.",
+        "Flags students who aren't responding to discipline (repeated notices home yet still offending) so you can step in early.",
         "Fair AI summaries per student / teacher / division — useful for supporting staff and for defensible documentation.",
       ]],
     ];
