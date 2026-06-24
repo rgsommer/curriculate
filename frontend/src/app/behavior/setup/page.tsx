@@ -595,6 +595,7 @@ function RecommendedActionsSettings({ config }: { config: any }) {
     <Card>
       <h2 className="font-semibold">Recommended actions (consequences)</h2>
       <p className="mt-1 text-sm text-slate-500">An objective ladder by notice number, plus the approved list the AI coach may suggest from. The AI never proposes anything outside this list.</p>
+      <p className="mt-1 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">Rule: a <span className="font-medium">white slip</span> may only be applied to an offence tagged <span className="font-medium">Behaviour</span> (set per behaviour in the Behaviours list — an offence can be tagged Class preparedness, Behaviour and/or Uniform).</p>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
 
       <p className="mt-3 text-sm font-medium text-slate-700">Escalation ladder</p>

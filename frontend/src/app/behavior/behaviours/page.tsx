@@ -90,7 +90,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
   const [consequenceText, setConsequenceText] = useState(b?.consequenceText || "");
   const [followUpType, setFollowUpType] = useState(b?.followUpType || "none");
   const [points, setPoints] = useState<number | string>(b?.points ?? 0);
-  const [uniform, setUniform] = useState<boolean>(!!b?.uniform);
+  const [categories, setCategories] = useState<string[]>(
+    Array.isArray(b?.categories) ? b.categories : (b?.uniform ? ["uniform"] : [])
+  );
+  const toggleCat = (c: string) => setCategories((p) => (p.includes(c) ? p.filter((x) => x !== c) : [...p, c]));
   const [scopeStandard, setScopeStandard] = useState(!!allowStandard);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -111,7 +114,11 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
             {b.name}
             {b.keyword ? <span className="ml-2 text-xs text-slate-400">#{b.keyword}</span> : null}
             {b.points ? <PointsBadge points={b.points} /> : null}
-            {b.uniform ? <span className="ml-2 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700">GUDD</span> : null}
+            {(b.categories || (b.uniform ? ["uniform"] : [])).map((c: string) => (
+              <span key={c} className={`ml-2 rounded px-1.5 py-0.5 text-[10px] font-semibold ${c === "uniform" ? "bg-indigo-100 text-indigo-700" : c === "behaviour" ? "bg-rose-100 text-rose-700" : "bg-sky-100 text-sky-700"}`}>
+                {c === "uniform" ? "Uniform" : c === "behaviour" ? "Behaviour" : "Prep"}
+              </span>
+            ))}
           </span>
           <span className="text-xs text-slate-400">{(b.kind === "positive" || (b.points ?? 0) > 0) ? "positive" : MODES.find((m) => m.v === b.triggerMode)?.label?.split(" —")[0]}</span>
         </div>
@@ -126,10 +133,10 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
     setErr(null);
     try {
       if (add) {
-        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, uniform, scope: scopeStandard ? "standard" : "custom" } });
-        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setUniform(false);
+        await api("/behaviors", { body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories, scope: scopeStandard ? "standard" : "custom" } });
+        setName(""); setKeyword(""); setKind("negative"); setConsequenceText(""); setTriggerMode("THRESHOLD"); setFollowUpType("none"); setPoints(0); setCategories([]);
       } else {
-        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, uniform } });
+        await api(`/behaviors/${b._id}`, { method: "PUT", body: { name, keyword, kind, triggerMode, consequenceText, followUpType, points: Number(points) || 0, categories } });
       }
       onChanged();
     } catch (e: any) {
@@ -190,10 +197,20 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
           </label>
         )}
         {!positive && (
-          <label className="col-span-2 flex items-start gap-2 text-xs text-slate-600">
-            <input type="checkbox" checked={uniform} onChange={(e) => setUniform(e.target.checked)} className="mt-0.5" />
-            <span><span className="font-medium">Uniform infraction (GUDD)</span> — counts as a normal strike <em>and</em> toward losing the Good Uniform Dress Down. Threshold, fade window &amp; escalations are set in Setup.</span>
-          </label>
+          <div className="col-span-2 text-xs text-slate-600">
+            <span className="font-medium">Category</span> <span className="text-slate-400">(teachers don&apos;t pick this — it shapes reporting &amp; rules)</span>
+            <div className="mt-1 flex flex-wrap gap-3">
+              {[["preparedness", "Class preparedness"], ["behaviour", "Behaviour"], ["uniform", "Uniform (GUDD)"]].map(([v, label]) => (
+                <label key={v} className="flex items-center gap-1.5">
+                  <input type="checkbox" checked={categories.includes(v)} onChange={() => toggleCat(v)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {categories.includes("uniform") && (
+              <p className="mt-1 text-slate-400">Uniform → counts as a strike <em>and</em> toward losing the Good Uniform Dress Down (threshold/fade/escalations in Setup).</p>
+            )}
+          </div>
         )}
         <div className={`flex items-center justify-end gap-2 ${interaction || positive ? "col-span-2" : ""}`}>
           {add && allowStandard && (

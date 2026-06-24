@@ -45,6 +45,7 @@ type StudentDetail = {
     deliveries?: Array<{ channel: string; ok: boolean; error?: string }>;
     fromTeachers: Array<{ name: string; behaviorName: string }>;
   }>;
+  consequences?: Array<{ _id: string; type: string; detail?: string; byName?: string; at: string }>;
 };
 
 const fmtDT = (d: string) =>
@@ -88,6 +89,12 @@ export default function StudentPage() {
   const [meetingNote, setMeetingNote] = useState("");
   const [meetingBusy, setMeetingBusy] = useState(false);
   const [meetingMsg, setMeetingMsg] = useState("");
+
+  // Document a consequence actually applied (work detention, white slip, …)
+  const [consType, setConsType] = useState("");
+  const [consDetail, setConsDetail] = useState("");
+  const [consBusy, setConsBusy] = useState(false);
+  const [consMsg, setConsMsg] = useState("");
 
   const load = useCallback(() => {
     if (!params?.id) return;
@@ -254,6 +261,27 @@ export default function StudentPage() {
     } finally {
       setRecBusy(false);
     }
+  }
+
+  async function logConsequence() {
+    const type = consType.trim();
+    if (!type) return;
+    setConsBusy(true);
+    setConsMsg("");
+    try {
+      await api(`/students/${params.id}/consequence`, { body: { type, detail: consDetail.trim() } });
+      setConsType(""); setConsDetail("");
+      setConsMsg("Consequence recorded in this student's history.");
+      load();
+    } catch (e: any) {
+      setConsMsg(`✗ ${e.message}`);
+    } finally {
+      setConsBusy(false);
+    }
+  }
+
+  async function removeConsequence(id: string) {
+    try { await api(`/consequences/${id}`, { method: "DELETE" }); load(); } catch (e: any) { setConsMsg(`✗ ${e.message}`); }
   }
 
   async function logMeeting() {
@@ -432,6 +460,43 @@ export default function StudentPage() {
           </button>
         </div>
         {meetingMsg && <p className="mt-2 text-sm text-green-700">{meetingMsg}</p>}
+      </section>
+
+      {/* Document a consequence actually applied */}
+      <section className="no-print rounded-xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold">Consequences applied</h2>
+        <p className="text-xs text-slate-400">Record a consequence you or an admin gave (e.g. work detention, white slip, call home). Kept in the record and included in summaries.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input list="consequence-types" value={consType} onChange={(e) => setConsType(e.target.value)}
+            placeholder="Consequence (e.g. Work detention)"
+            className="min-w-[12rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          <datalist id="consequence-types">
+            {["Work detention", "Lunch detention", "White slip", "Call home", "Lines", "Reflection", "Meeting with the VP", "In-school suspension"].map((c) => <option key={c} value={c} />)}
+          </datalist>
+          <input value={consDetail} onChange={(e) => setConsDetail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && logConsequence()}
+            placeholder="Optional note"
+            className="min-w-[12rem] flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm" />
+          <button onClick={logConsequence} disabled={consBusy || !consType.trim()}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            {consBusy ? "Saving…" : "Record"}
+          </button>
+        </div>
+        {consMsg && <p className={`mt-2 text-sm ${consMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{consMsg}</p>}
+        {(data.consequences || []).length > 0 && (
+          <ul className="mt-3 divide-y divide-slate-100">
+            {data.consequences!.map((c) => (
+              <li key={c._id} className="flex items-center justify-between gap-2 py-1.5 text-sm">
+                <span>
+                  <span className="font-medium text-slate-900">{c.type}</span>
+                  {c.detail ? <span className="text-slate-600"> — {c.detail}</span> : null}
+                  <span className="ml-2 text-xs text-slate-400">{fmtDT(c.at)}{c.byName ? ` · ${c.byName}` : ""}</span>
+                </span>
+                <button onClick={() => removeConsequence(c._id)} className="no-print shrink-0 text-xs text-red-600">remove</button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       {/* Trend over time */}

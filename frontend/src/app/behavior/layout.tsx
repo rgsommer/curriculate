@@ -2,6 +2,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import LogNavLink from "./_components/LogNavLink";
+import TourButton from "./_components/TourButton";
+import FeedbackButton from "./_components/FeedbackButton";
 
 export const metadata = {
   title: "Behaviours — Curriculate",
@@ -39,10 +41,12 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
             <Link href="/behavior/features" className="text-slate-600 hover:text-slate-900">
               Guide
             </Link>
+            <TourButton className="text-slate-600 hover:text-slate-900" />
           </nav>
         </div>
       </header>
       <main className="mx-auto max-w-3xl px-4 py-5">{children}</main>
+      <FeedbackButton />
     </div>
   );
 }
