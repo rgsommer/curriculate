@@ -31,6 +31,8 @@ const BehaviorIncidentSchema = new mongoose.Schema(
       points: { type: Number, default: 0 },
       // Frozen at log time: was this a uniform infraction (counts toward GUDD)?
       uniform: { type: Boolean, default: false },
+      // Frozen offence categories: "preparedness" | "behaviour" | "uniform".
+      categories: { type: [String], default: [] },
     },
 
     detailText: { type: String, default: "" }, // optional free-text detail (goes in the parent note)

@@ -39,9 +39,14 @@ const BehaviorSchema = new mongoose.Schema(
     // Consequence wording included in the note home automatically (§5a).
     consequenceText: { type: String, default: "" },
 
-    // Uniform infraction (GUDD): when true, logging this behaviour still counts
-    // as a normal strike AND counts toward the student losing their Good Uniform
-    // Dress Down. GUDD threshold / fade / escalation ladder live in BehaviorConfig.
+    // Offence categories (multi-select): "preparedness" (class preparedness),
+    // "behaviour", "uniform". Teachers don't pick these when logging — admins set
+    // them per behaviour. White-slip consequences require a "behaviour" category.
+    categories: { type: [String], enum: ["preparedness", "behaviour", "uniform"], default: [] },
+
+    // Uniform infraction (GUDD): mirrors categories including "uniform". When set,
+    // logging this behaviour still counts as a normal strike AND toward losing the
+    // Good Uniform Dress Down. GUDD threshold / fade / ladder live in BehaviorConfig.
     uniform: { type: Boolean, default: false },
 
     // House points applied when this behaviour is logged (typically negative for

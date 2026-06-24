@@ -91,9 +91,14 @@ export function deterministicNote(ctx) {
     const date = fmtDate(inc.date);
     const who = inc.teacherName ? ` (logged by ${inc.teacherName})` : "";
     const detail = inc.detail ? ` — ${inc.detail}` : "";
-    lines.push(`  • ${date ? date + ": " : ""}${inc.behaviorName}${who}${detail}`);
+    const uni = inc.uniform ? " [uniform / dress-code]" : "";
+    lines.push(`  • ${date ? date + ": " : ""}${inc.behaviorName}${uni}${who}${detail}`);
   }
   lines.push("");
+  if ((ctx.incidents || []).some((i) => i.uniform)) {
+    lines.push("Please note: item(s) above marked uniform/dress-code also count toward your child's uniform standing (the Good Uniform Dress Down).");
+    lines.push("");
+  }
   if ((ctx.consequences || []).length) {
     lines.push(`Consequence:`);
     for (const c of ctx.consequences) lines.push(`  • ${c}`);
@@ -192,8 +197,9 @@ export async function composePositiveNotice(ctx, opts = {}) {
 /** Build the instruction prompt for the AI provider from de-identified context. */
 export function buildPrompt(ctx) {
   const incidentLines = (ctx.incidents || [])
-    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.detail ? ` (${inc.detail})` : ""}`)
+    .map((inc) => `- ${fmtDate(inc.date)}: ${inc.behaviorName}${inc.uniform ? " [uniform/dress-code]" : ""}${inc.detail ? ` (${inc.detail})` : ""}`)
     .join("\n");
+  const hasUniform = (ctx.incidents || []).some((i) => i.uniform);
 
   // Background history is for the model's AWARENESS only — it shapes tone but is
   // NEVER summarized, listed, or quoted; at most an oblique reference is allowed.
@@ -237,6 +243,7 @@ export function buildPrompt(ctx) {
     historyBlock,
     positivesBlock,
     (ctx.consequences || []).length ? `Consequence(s) to state: ${ctx.consequences.join("; ")}.` : "",
+    hasUniform ? `One or more items are uniform/dress-code matters: briefly and kindly note that repeated uniform issues also affect the student's uniform standing (the school's "Good Uniform Dress Down"). Keep it factual, not a threat.` : "",
     ctx.ccVp ? `Mention that the Vice-Principal has been copied.` : "",
     `Sign off with this signature block exactly:\n${ctx.signature || ""}`,
     `Write only the note body (no subject line). Keep it under 220 words. Do not invent facts beyond those given, and do not recount the background history.`,

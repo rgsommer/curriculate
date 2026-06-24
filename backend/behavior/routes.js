@@ -26,6 +26,7 @@ import BehaviorNotice from "./models/BehaviorNotice.js";
 import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
+import BehaviorConsequence from "./models/BehaviorConsequence.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
@@ -59,6 +60,13 @@ function emailDomain(email) {
   const e = String(email || "").toLowerCase().replace(/[<>]/g, "").trim();
   const at = e.lastIndexOf("@");
   return at === -1 ? "" : e.slice(at + 1).trim();
+}
+
+// Sanitise an offence-category array to the allowed set; positives carry none.
+const OFFENCE_CATEGORIES = ["preparedness", "behaviour", "uniform"];
+function cleanCategories(arr, kind) {
+  if (kind === "positive" || !Array.isArray(arr)) return [];
+  return [...new Set(arr.map((s) => String(s || "").toLowerCase().trim()).filter((c) => OFFENCE_CATEGORIES.includes(c)))];
 }
 
 // GUDD status for a student from their incidents + config. Counts uniform-flagged
@@ -869,19 +877,47 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
     const startUrl = `${appBase()}/behavior`;
     const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
 
-    const points = [
-      ["Eases teacher &amp; admin burnout", "One shared, low-effort log per student — staff stop re-litigating the same concerns and stop chasing paper. Logging takes seconds on any device or desktop."],
-      ["Consistency across the school", "Every teacher works from the same thresholds, the same record, and the same approved consequences — so students get a fair, predictable response, whoever is on duty."],
-      ["Documentation &amp; follow-through", "Time-stamped, attributed, audit-logged records; morning reminders so consequences are actually carried out, not forgotten."],
-      ["Positive AND negative", "It recognises good behaviour (house points, good-news notes home), not just problems — a healthier culture, and fairer to students."],
-      ["Houses &amp; school culture", "Optional house system ties everyday conduct to shared team spirit, with merit-based rewards."],
-      ["Uniform tracking (GUDD)", "Uniform infractions count as a strike and toward losing a Good Uniform Dress Down, with an admin-set threshold, its own fade window, and escalating consequences — consistent, visible enforcement without nagging."],
-      ["Eyes on trends + proactive handling", "Leadership sees behaviour trends, which students need getting ahead of, and which teachers may welcome support — early, not after a blow-up."],
-      ["Coaching newer teachers", "Suggested, school-approved next steps (in a supportive tone) help less-experienced staff respond well and consistently."],
-      ["Communication home stays human", "Notes home are pastoral and teacher-reviewed — nothing is auto-sent, and families are reached over a channel they recognise."],
+    // Feature set grouped by category, with a few notes in each — so an admin
+    // sees the full breadth at a glance.
+    const sections = [
+      ["Shared tracking &amp; early intervention", [
+        "One shared count per student, pooled across every teacher — no more slipping through the cracks, and no teacher left fighting a pattern alone.",
+        "Positives and negatives side by side; a fade window so old incidents stop counting over time (full history kept).",
+        "Dashboard flags students at — or one step from — a threshold, for a quiet word before escalation.",
+      ]],
+      ["Offence types &amp; categories", [
+        "Each offence is categorised (class preparedness, behaviour, uniform) so reporting and rules are consistent — teachers just log; admins set the categories.",
+        "Defensible records: every incident time-stamped, attributed, snapshotted and audit-logged.",
+      ]],
+      ["Communication home (pastoral, never automatic)", [
+        "Nothing is auto-sent: at a threshold the app prepares a tailored, teacher-reviewed note; the teacher edits and sends.",
+        "Reaches families over a channel they recognise (Edsby by default); direct parent email is off unless an admin enables it.",
+        "Leadership looped in on your schedule (off / first notice / second-and-later).",
+      ]],
+      ["Consequences &amp; follow-through", [
+        "An objective consequence ladder by notice number, plus AI coaching that only ever suggests from your approved list.",
+        "Staff can document real consequences applied (work detention, white slip, call home, …); morning reminders so follow-ups aren't forgotten.",
+      ]],
+      ["Uniform &amp; the GUDD (Good Uniform Dress Down)", [
+        "Uniform infractions count as a strike AND toward losing the GUDD, with an admin-set threshold, its own fade window, and escalating consequences.",
+        "An always-visible indicator on the teacher and admin views shows who's lost it or is at risk.",
+      ]],
+      ["Houses &amp; school culture", [
+        "Optional house system ties everyday conduct to shared team spirit, with a live leaderboard and merit-based rewards.",
+      ]],
+      ["Homework, class work &amp; discussions", [
+        "Track completion per class/subject, live-scored formal discussions, outstanding-work reminders, and end-of-term reports that export to Edsby.",
+      ]],
+      ["Leadership insights &amp; reporting", [
+        "School-wide insights: trends, who to get ahead of, which teachers may welcome support, and app-usage; an optional weekly admin digest.",
+        "Fair AI summaries per student / teacher / division — useful for supporting staff and for defensible documentation.",
+      ]],
     ];
-    const textPoints = points.map(([h, b]) => `• ${h.replace(/&amp;/g, "&")}: ${b.replace(/&amp;/g, "&")}`).join("\n");
-    const htmlPoints = points.map(([h, b]) => `<li style="margin:4px 0"><strong>${h}:</strong> ${b}</li>`).join("");
+    const textPoints = sections.map(([h, items]) => `${String(h).replace(/&amp;/g, "&")}\n${items.map((b) => `  • ${b.replace(/&amp;/g, "&")}`).join("\n")}`).join("\n\n");
+    const htmlPoints = sections.map(([h, items]) =>
+      `<p style="margin:14px 0 4px;color:#0f172a;font-weight:600">${h}</p>` +
+      `<ul style="margin:0 0 6px;padding-left:18px;color:#334155;line-height:1.6">${items.map((b) => `<li style="margin:3px 0">${b}</li>`).join("")}</ul>`
+    ).join("");
 
     const sent = [];
     const failed = [];
@@ -919,6 +955,52 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
     }
     await audit(req.schoolId, "invite_admin.sent", req, { meta: { sent, failed } });
     res.json({ ok: true, sent, failed });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Feedback / feature requests from any member → emailed to the school's admins
+// (originator + admins), CC the sender so they have a copy. Lightweight: no model.
+router.post("/feedback", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const message = String(req.body?.message || "").trim();
+    if (!message) return res.status(400).json({ ok: false, error: "Please write your feedback first." });
+    const page = String(req.body?.page || "").trim().slice(0, 200);
+    const sender = (req.membership?.name || req.user?.name || "").trim();
+    const senderEmail = req.user?.email || "";
+
+    const admins = await BehaviorTeacher.find({ schoolId: req.schoolId, role: { $in: ["originator", "admin"] }, status: { $ne: "pending" } }).select("email").lean();
+    const to = [...new Set(admins.map((a) => a.email).filter(Boolean))];
+    // Always reach the product owner even if no admin email is on file.
+    if (!to.length) to.push(process.env.BEHAVIOR_FEEDBACK_EMAIL || "rgsommer@me.com");
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+
+    let sent = false, error = "";
+    try {
+      await sendEmail({
+        from: fromAddr ? { name: "Behaviours feedback", address: fromAddr } : undefined,
+        to,
+        cc: senderEmail || undefined,
+        replyTo: senderEmail || undefined,
+        subject: `Behaviours feedback from ${sender || "a teacher"}`,
+        text:
+          `${sender || "A teacher"}${senderEmail ? ` (${senderEmail})` : ""} sent feedback / a request:\n\n${message}\n\n` +
+          (page ? `From page: ${page}\n` : "") + `— Behaviours`,
+        html: emailShell({
+          title: "Feedback / feature request",
+          schoolName: "Behaviours",
+          preheader: `Feedback from ${sender || "a teacher"}`,
+          contentHtml:
+            `<p style="margin:0 0 8px;color:#334155"><strong>${escapeHtml(sender || "A teacher")}</strong>${senderEmail ? ` (${escapeHtml(senderEmail)})` : ""} sent feedback / a request:</p>` +
+            `<blockquote style="margin:0 0 12px;padding:10px 14px;border-left:3px solid #cbd5e1;color:#334155;white-space:pre-wrap">${escapeHtml(message)}</blockquote>` +
+            (page ? `<p style="margin:0;color:#94a3b8;font-size:13px">From page: ${escapeHtml(page)}</p>` : ""),
+        }),
+      });
+      sent = true;
+    } catch (e) { error = e?.message || String(e); }
+    await audit(req.schoolId, "feedback.sent", req, { meta: { sent, page } });
+    res.json({ ok: sent, sent, error });
   } catch (err) {
     next(err);
   }
@@ -1349,6 +1431,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
     }).length;
 
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: -1 }).lean();
+    const consequences = await BehaviorConsequence.find({ studentId: student._id }).sort({ at: -1 }).lean();
 
     // Enrich incidents with the logging teacher's name for display.
     const tIds = [...new Set(incidents.map((i) => String(i.teacherId)))];
@@ -1374,6 +1457,7 @@ router.get("/students/:id", authAny, loadMembership, async (req, res, next) => {
       gudd: guddStatus(incidents, config),
       incidents: incidentsOut,
       notices,
+      consequences,
     });
   } catch (err) {
     next(err);
@@ -1535,7 +1619,8 @@ router.post("/behaviors", authAny, loadMembership, canLog, async (req, res, next
       triggerMode,
       consequenceText: kind === "positive" ? "" : String(req.body?.consequenceText || ""),
       points: Number(req.body?.points) || 0,
-      uniform: kind === "negative" && !!req.body?.uniform, // GUDD only applies to offences
+      categories: cleanCategories(req.body?.categories, kind),
+      uniform: kind === "negative" && Array.isArray(req.body?.categories) && req.body.categories.includes("uniform"),
       followUpType: ["none", "next_school_day", "custom_deadline"].includes(req.body?.followUpType)
         ? req.body.followUpType
         : "none",
@@ -1576,10 +1661,13 @@ router.put("/behaviors/:id", authAny, loadMembership, canLog, async (req, res, n
     if ("consequenceText" in b) beh.consequenceText = String(b.consequenceText || "");
     if (["THRESHOLD", "IMMEDIATE", "INTERACTION"].includes(b.triggerMode)) beh.triggerMode = b.triggerMode;
     if ("points" in b) beh.points = Number(b.points) || 0;
-    if ("uniform" in b) beh.uniform = !!b.uniform;
+    if ("categories" in b) {
+      beh.categories = cleanCategories(b.categories, beh.kind);
+      beh.uniform = beh.categories.includes("uniform");
+    }
     // Positive behaviours never count/notify → force INTERACTION + no consequence,
-    // and can't be a uniform (GUDD) infraction.
-    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; beh.uniform = false; }
+    // and carry no offence categories (incl. uniform/GUDD).
+    if (beh.kind === "positive") { beh.triggerMode = "INTERACTION"; beh.consequenceText = ""; beh.uniform = false; beh.categories = []; }
     if (["none", "next_school_day", "custom_deadline"].includes(b.followUpType)) beh.followUpType = b.followUpType;
     if (typeof b.sortOrder === "number") beh.sortOrder = b.sortOrder;
     if (!beh.name) return res.status(400).json({ ok: false, error: "name required" });
@@ -1650,6 +1738,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           consequenceText: behavior.consequenceText,
           points: behavior.points || 0,
           uniform: behavior.uniform || false,
+          categories: behavior.categories || [],
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
@@ -1804,6 +1893,7 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           consequenceText: behavior.consequenceText,
           points: behavior.points || 0,
           uniform: behavior.uniform || false,
+          categories: behavior.categories || [],
         },
         detailText,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
@@ -1982,6 +2072,7 @@ async function composeAndCreateNotice({
       teacherName: i.__teacherName || "",
       date: i.timestamp,
       detail: personalize(i.detailText || ""),
+      uniform: !!i.behaviorSnapshot?.uniform,
     })),
     consequences: consequenceTexts.map(personalize),
     sequenceNo,
@@ -2661,17 +2752,23 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     // it describes the overall handling.
     const allIncs = scope === "all"
       ? incidents
-      : await BehaviorIncident.find({ studentId: student._id }).select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode teacherNotes timestamp").lean();
-    let offenceCount = 0, positiveCount = 0, interactionCount = 0, teacherNoteCount = 0;
+      : await BehaviorIncident.find({ studentId: student._id }).select("behaviorSnapshot.kind behaviorSnapshot.points behaviorSnapshot.triggerMode behaviorSnapshot.uniform teacherNotes timestamp").lean();
+    let offenceCount = 0, positiveCount = 0, interactionCount = 0, teacherNoteCount = 0, uniformCount = 0;
     for (const i of allIncs) {
       const isPositive = i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0;
       const isInteraction = !isPositive && (i.behaviorSnapshot?.triggerMode === "INTERACTION");
       if (isPositive) positiveCount += 1;
       else if (isInteraction) interactionCount += 1;
       else offenceCount += 1;
+      if (i.behaviorSnapshot?.uniform) uniformCount += 1;
       teacherNoteCount += i.teacherNotes?.length || 0;
     }
     const noticesSent = notices.filter((n) => n.status === "sent").length;
+    // Documented consequences actually applied (work detention, white slip, …).
+    const consequencesLogged = await BehaviorConsequence.find({ studentId: student._id }).sort({ at: 1 }).lean();
+    const conseqByType = {};
+    for (const c of consequencesLogged) conseqByType[c.type] = (conseqByType[c.type] || 0) + 1;
+    const conseqSummary = Object.entries(conseqByType).sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t} ×${n}`).join(", ");
     const fuAgg = await BehaviorFollowup.aggregate([
       { $match: { schoolId: req.schoolId, studentId: student._id } },
       { $group: { _id: "$status", n: { $sum: 1 } } },
@@ -2687,6 +2784,8 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       `- Documented interactions / parent meetings logged: ${interactionCount}.\n` +
       `- Private documentation notes on incidents: ${teacherNoteCount}.\n` +
       `- Notices home to parents: ${notices.length} (${noticesSent} sent) — parents were kept informed.\n` +
+      (consequencesLogged.length ? `- Consequences applied & documented: ${consequencesLogged.length}${conseqSummary ? ` (${conseqSummary})` : ""}.\n` : "") +
+      (uniformCount ? `- Uniform infractions (count toward the Good Uniform Dress Down): ${uniformCount}.\n` : "") +
       (fuTotal ? `- Consequence follow-through: ${fuResolved}/${fuTotal} consequence(s) with a follow-up were resolved (${fu.done} completed, ${fu.waived} waived), ${fu.not_done} missed, ${fu.open} still open.\n` : "");
 
     // GENERAL PRACTICE of the teacher most involved with this student — context
@@ -2740,13 +2839,16 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     if (positiveCount) handledBits.push(`${positiveCount} positive recognition(s)`);
     if (interactionCount) handledBits.push(`${interactionCount} documented interaction(s)`);
     if (teacherNoteCount) handledBits.push(`${teacherNoteCount} private documentation note(s)`);
+    if (consequencesLogged.length) handledBits.push(`${consequencesLogged.length} documented consequence(s)${conseqSummary ? ` (${conseqSummary})` : ""}`);
     handledBits.push(`${notices.length} notice(s) home (${noticesSent} sent) keeping parents informed`);
+    const uniformClause = uniformCount ? ` ${uniformCount} of the offences were uniform infractions (counting toward the Good Uniform Dress Down).` : "";
     const fuClause = fuTotal ? `, and ${fuResolved} of ${fuTotal} consequence(s) with a follow-up were resolved` : "";
     const overview =
       (scope === "current"
         ? `Overall summary: this covers ${studentFirst}'s current active trigger — ${incidents.length} recent incident(s) counting toward a notice home. `
         : `Overall summary: ${name}${student.classGroup ? ` (${student.classGroup})` : ""} has a behaviour record spanning ${span}, comprising ${incidents.length} individually-logged incident(s) and ${notices.length} notice(s) home${notices.length ? " — earlier offences are captured in those notices" : ""}. `) +
       `Across the record, staff actively handled the behaviour rather than letting it go: ${joinList(handledBits)}${fuClause}.` +
+      uniformClause +
       (practiceConsistency ? ` ${practiceConsistency}` : "");
 
     const ctxText =
@@ -2756,6 +2858,9 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       managementText +
       practiceText +
       `\n${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
+      (consequencesLogged.length
+        ? `Consequences applied & documented by staff:\n${consequencesLogged.map((c) => `- ${new Date(c.at).toLocaleDateString("en-CA")} — ${c.type}${c.detail ? `: ${c.detail}` : ""}${c.byName ? ` [by ${c.byName}]` : ""}`).join("\n")}\n\n`
+        : "") +
       `Notices home${scope === "all" ? " (full content = the record of earlier offences)" : ""}:\n${noticeLines.join("\n") || "(none)"}`;
     const prompt =
       `Write a thorough, objective summary of a student's behaviour record for a school administrator (VP/principal). ` +
@@ -3275,6 +3380,62 @@ router.post("/students/:id/meeting", authAny, loadMembership, canLog, async (req
     });
     await audit(req.schoolId, "meeting.log", req, { studentId: String(student._id), incidentId: String(inc._id) });
     res.json({ ok: true, incident: inc.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Document a consequence actually applied to a student (work detention, white
+// slip, call home, …). Separate from the consequence wording auto-included in a
+// notice. White-slip rule: when tied to an incident, that incident must be a
+// "behaviour"-category offence.
+router.post("/students/:id/consequence", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const student = await BehaviorStudent.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
+
+    const type = String(req.body?.type || "").trim();
+    if (!type) return res.status(400).json({ ok: false, error: "Pick or enter a consequence." });
+    const detail = String(req.body?.detail || "").trim();
+    const occurredAt = req.body?.occurredAt ? new Date(req.body.occurredAt) : null;
+    const at = occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : new Date();
+
+    let relatedIncidentId = null;
+    if (req.body?.relatedIncidentId) {
+      const inc = await BehaviorIncident.findOne({ _id: req.body.relatedIncidentId, studentId: student._id }).select("behaviorSnapshot.categories").lean();
+      if (inc) {
+        relatedIncidentId = inc._id;
+        // White-slip rule: only valid against a "behaviour"-category offence.
+        if (/white\s*slip/i.test(type) && !(inc.behaviorSnapshot?.categories || []).includes("behaviour")) {
+          return res.status(400).json({ ok: false, error: "A white slip can only be applied to a 'Behaviour'-type offence." });
+        }
+      }
+    }
+
+    const c = await BehaviorConsequence.create({
+      schoolId: req.schoolId, studentId: student._id,
+      type, detail, relatedIncidentId,
+      byTeacherId: req.membership._id, byName: req.membership.name || req.user?.name || "",
+      at,
+    });
+    await audit(req.schoolId, "consequence.log", req, { studentId: String(student._id), meta: { type } });
+    res.json({ ok: true, consequence: c.toObject() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/consequences/:id", authAny, loadMembership, canLog, async (req, res, next) => {
+  try {
+    const c = await BehaviorConsequence.findOne({ _id: req.params.id, schoolId: req.schoolId });
+    if (!c) return res.status(404).json({ ok: false, error: "Not found" });
+    const isAdmin = ["originator", "admin"].includes(req.membership.role);
+    if (!isAdmin && String(c.byTeacherId) !== String(req.membership._id)) {
+      return res.status(403).json({ ok: false, error: "Only the staff member who logged it (or an admin) can remove it." });
+    }
+    await BehaviorConsequence.deleteOne({ _id: c._id });
+    await audit(req.schoolId, "consequence.delete", req, { studentId: String(c.studentId), meta: { type: c.type } });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
