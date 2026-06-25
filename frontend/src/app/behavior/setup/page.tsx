@@ -102,8 +102,8 @@ function ReadOnlySettings({ me }: { me: Me }) {
       <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
       <MyEdsbyCard />
 
-      {/* Admin-managed, view-only — collapsed, kept at the bottom. */}
-      <ReadOnlyHouses />
+      {/* Houses committee members manage Houses fully; others see it read-only. */}
+      {me.membership?.housesCommittee ? <HousesSection config={me.config} /> : <ReadOnlyHouses />}
       <details className="rounded-2xl border border-slate-200 bg-white p-5">
         <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
           Division thresholds &amp; branding <span className="text-xs font-normal text-slate-400">view only ▾</span>
@@ -1077,7 +1077,7 @@ function HousesSection({ config }: { config?: any }) {
   async function toggleEnabled(on: boolean) {
     setEnabled(on);
     try {
-      await api("/config", { method: "PUT", body: { housesEnabled: on } });
+      await api("/houses/config", { method: "PUT", body: { housesEnabled: on } });
       if (on) load();
     } catch (e: any) {
       setErr(e.message);
@@ -1118,7 +1118,7 @@ function HousesSection({ config }: { config?: any }) {
   const [negCap, setNegCap] = useState<number | string>(config?.houseCaps?.negative ?? 0);
   const capsSave = useSaveState([posCap, negCap]);
   function saveCaps() {
-    capsSave.run(async () => { await api("/config", { method: "PUT", body: { houseCaps: { positive: Math.max(0, Number(posCap) || 0), negative: Math.max(0, Number(negCap) || 0) } } }); });
+    capsSave.run(async () => { await api("/houses/config", { method: "PUT", body: { houseCaps: { positive: Math.max(0, Number(posCap) || 0), negative: Math.max(0, Number(negCap) || 0) } } }); });
   }
 
   // House events with preset points.
@@ -1129,7 +1129,7 @@ function HousesSection({ config }: { config?: any }) {
   function saveEvents() {
     eventsSave.run(async () => {
       const clean = events.filter((e) => e.name.trim()).map((e) => ({ name: e.name.trim(), points: Number(e.points) || 0 }));
-      await api("/config", { method: "PUT", body: { houseEvents: clean } });
+      await api("/houses/config", { method: "PUT", body: { houseEvents: clean } });
     });
   }
 
@@ -1202,7 +1202,7 @@ function HousesSection({ config }: { config?: any }) {
 
   async function setCaptain(studentId: string, on: boolean) {
     setRoster((prev) => (prev || []).map((s) => (s._id === studentId ? { ...s, houseCaptain: on } : s)));
-    try { await api(`/students/${studentId}`, { method: "PATCH", body: { houseCaptain: on } }); }
+    try { await api("/houses/captain", { method: "PUT", body: { studentId, on } }); }
     catch (e: any) { setErr(e.message); loadRoster(); }
   }
 
@@ -1211,7 +1211,7 @@ function HousesSection({ config }: { config?: any }) {
     setResetBusy(true);
     try {
       const now = new Date().toISOString();
-      await api("/config", { method: "PUT", body: { housePointsResetAt: now } });
+      await api("/houses/config", { method: "PUT", body: { housePointsResetAt: now } });
       setResetAt(now);
       load();
     } catch (e: any) { setErr(e.message); }
@@ -1221,7 +1221,7 @@ function HousesSection({ config }: { config?: any }) {
     if (!window.confirm("Count ALL house points again (since the start)? This undoes the term reset.")) return;
     setResetBusy(true);
     try {
-      await api("/config", { method: "PUT", body: { housePointsResetAt: null } });
+      await api("/houses/config", { method: "PUT", body: { housePointsResetAt: null } });
       setResetAt(null);
       load();
     } catch (e: any) { setErr(e.message); }
@@ -1263,7 +1263,7 @@ function HousesSection({ config }: { config?: any }) {
     const houseReport = { enabled: reportOn, recipientEmail: recipient, ...next };
     setReportOn(houseReport.enabled);
     setRecipient(houseReport.recipientEmail);
-    try { await api("/config", { method: "PUT", body: { houseReport } }); } catch (e: any) { setErr(e.message); }
+    try { await api("/houses/config", { method: "PUT", body: { houseReport } }); } catch (e: any) { setErr(e.message); }
   }
   async function sendReport() {
     setReportBusy(true);

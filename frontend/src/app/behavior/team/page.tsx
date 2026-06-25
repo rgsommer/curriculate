@@ -10,6 +10,7 @@ type TeamRow = {
   name: string;
   email: string;
   role: string;
+  housesCommittee?: boolean;
   status: "pending" | "accepted";
   joinedAt: string | null;
   incidents: number;
@@ -63,6 +64,16 @@ export default function TeamPage() {
     }
   }
 
+  async function setCommittee(userId: string, on: boolean) {
+    setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, housesCommittee: on } : t)) });
+    try {
+      await api("/team/houses-committee", { method: "PUT", body: { userId, on } });
+    } catch (e: any) {
+      setErr(e.message);
+      setData((d) => d && { ...d, teachers: d.teachers.map((t) => (t.userId === userId ? { ...t, housesCommittee: !on } : t)) });
+    }
+  }
+
   async function resendInvite(email: string) {
     setNoteByEmail((n) => ({ ...n, [email]: "Sending…" }));
     try {
@@ -89,6 +100,7 @@ export default function TeamPage() {
   const { teachers, pending, stats } = data;
   const accepted = teachers.filter((t) => t.status === "accepted");
   const isOriginator = data.viewerRole === "originator";
+  const isAdmin = isOriginator || data.viewerRole === "admin";
 
   return (
     <div className="space-y-5">
@@ -119,6 +131,7 @@ export default function TeamPage() {
                 <th className="py-1.5 pr-3 text-right">Incidents</th>
                 <th className="py-1.5 pr-3 text-right">Notices</th>
                 <th className="py-1.5 text-center" title="Can edit Setup (roster, behaviours, Edsby, etc.)">Edit setup</th>
+                <th className="py-1.5 text-center" title="Can manage Houses (define/assign houses, groups, events, points, portal) without full Setup access">Houses cmte</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -158,10 +171,26 @@ export default function TeamPage() {
                       />
                     )}
                   </td>
+                  <td className="py-2 text-center">
+                    {t.role === "principal" ? (
+                      <span className="text-xs text-slate-400">—</span>
+                    ) : t.role === "originator" || t.role === "admin" ? (
+                      <span className="text-xs text-slate-400" title="Admins already manage Houses">admin</span>
+                    ) : (
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 cursor-pointer accent-slate-900 disabled:cursor-not-allowed disabled:opacity-40"
+                        checked={!!t.housesCommittee}
+                        disabled={!isAdmin || t.status === "pending"}
+                        title={isAdmin ? "Let this member manage Houses without full Setup access" : "Admins only"}
+                        onChange={(e) => setCommittee(t.userId, e.target.checked)}
+                      />
+                    )}
+                  </td>
                 </tr>
               ))}
               {teachers.length === 0 && (
-                <tr><td colSpan={7} className="py-3 text-slate-400">No members yet.</td></tr>
+                <tr><td colSpan={8} className="py-3 text-slate-400">No members yet.</td></tr>
               )}
             </tbody>
           </table>

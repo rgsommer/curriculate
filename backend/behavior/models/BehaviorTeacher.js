@@ -32,6 +32,10 @@ const BehaviorTeacherSchema = new mongoose.Schema(
       index: true,
     },
 
+    // Houses committee: a non-admin who may manage the Houses aspect (define/assign
+    // houses, split groups, rooms, events, caps, points, portal) without full Setup access.
+    housesCommittee: { type: Boolean, default: false },
+
     // Signature block appended to this teacher's notes home (brief §5c —
     // per-teacher, not a hardcoded single teacher).
     signature: { type: String, default: "" },

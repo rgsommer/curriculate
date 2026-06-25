@@ -217,6 +217,13 @@ function canLog(req, res, next) {
   next();
 }
 
+// Houses management: admins/originator OR a designated houses-committee member.
+function canManageHouses(req, res, next) {
+  const m = req.membership || {};
+  if (m.role === "originator" || m.role === "admin" || m.housesCommittee) return next();
+  return res.status(403).json({ ok: false, error: "Houses committee or admin only" });
+}
+
 async function audit(schoolId, type, req, extra = {}) {
   try {
     await BehaviorAuditLog.create({
@@ -1157,7 +1164,7 @@ router.get("/team", authAny, loadMembership, async (req, res, next) => {
       return res.status(403).json({ ok: false, error: "Admins and principals only" });
     }
     const teachers = await BehaviorTeacher.find({ schoolId: req.schoolId })
-      .select("name email role status createdAt userId")
+      .select("name email role status createdAt userId housesCommittee")
       .lean();
 
     const incAgg = await BehaviorIncident.aggregate([
@@ -1270,6 +1277,23 @@ router.put("/team/role", authAny, loadMembership, async (req, res, next) => {
     await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { role } });
     await audit(req.schoolId, "team.setup_access_changed", req, { meta: { target: target.email, role } });
     res.json({ ok: true, userId, role });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Toggle a member's houses-committee status (admins/originator). Committee members
+// can manage the Houses aspect without full Setup access.
+router.put("/team/houses-committee", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = String(req.body?.userId || "").trim();
+    const on = req.body?.on === true;
+    if (!userId) return res.status(400).json({ ok: false, error: "Missing userId." });
+    const target = await BehaviorTeacher.findOne({ schoolId: req.schoolId, userId });
+    if (!target) return res.status(404).json({ ok: false, error: "Member not found in this school." });
+    await BehaviorTeacher.updateOne({ _id: target._id }, { $set: { housesCommittee: on } });
+    await audit(req.schoolId, "team.houses_committee_changed", req, { meta: { target: target.email, on } });
+    res.json({ ok: true, userId, housesCommittee: on });
   } catch (err) {
     next(err);
   }
@@ -3964,6 +3988,41 @@ router.get("/daily-movers", authAny, loadMembership, async (req, res, next) => {
   }
 });
 
+// Houses-only config (caps, events, enable, report, term reset) — editable by the
+// houses committee as well as admins, without granting full Setup access.
+router.put("/houses/config", authAny, loadMembership, canManageHouses, async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const $set = {};
+    if ("housesEnabled" in b) $set.housesEnabled = !!b.housesEnabled;
+    if ("housePointsResetAt" in b) $set.housePointsResetAt = b.housePointsResetAt ? new Date(b.housePointsResetAt) : null;
+    if (b.houseCaps) $set.houseCaps = { positive: Math.max(0, Number(b.houseCaps.positive) || 0), negative: Math.max(0, Number(b.houseCaps.negative) || 0) };
+    if (Array.isArray(b.houseEvents)) $set.houseEvents = b.houseEvents.map((e) => ({ name: String(e.name || "").trim(), points: Number(e.points) || 0 })).filter((e) => e.name);
+    if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
+    if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
+    const config = await BehaviorConfig.findOneAndUpdate({ schoolId: req.schoolId }, { $set }, { new: true, upsert: true }).lean();
+    await audit(req.schoolId, "houses.config_updated", req, { meta: { keys: Object.keys($set) } });
+    res.json({ ok: true, config: sanitizeConfig(config) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Set/unset a house captain (committee or admin) — houses-scoped, so it doesn't
+// need the broader admin-only student PATCH.
+router.put("/houses/captain", authAny, loadMembership, canManageHouses, async (req, res, next) => {
+  try {
+    const studentId = String(req.body?.studentId || "").trim();
+    const on = req.body?.on === true;
+    if (!studentId) return res.status(400).json({ ok: false, error: "Missing studentId." });
+    const s = await BehaviorStudent.findOneAndUpdate({ _id: studentId, schoolId: req.schoolId }, { $set: { houseCaptain: on } }, { new: true }).select("houseCaptain").lean();
+    if (!s) return res.status(404).json({ ok: false, error: "Student not found" });
+    res.json({ ok: true, houseCaptain: s.houseCaptain });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Houses with their point totals + member counts (for the leaderboard).
 router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
@@ -3992,7 +4051,7 @@ router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   }
 });
 
-router.post("/houses", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/houses", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     const name = String(req.body?.name || "").trim();
     if (!name) return res.status(400).json({ ok: false, error: "name required" });
@@ -4006,7 +4065,7 @@ router.post("/houses", authAny, loadMembership, requireAdmin, async (req, res, n
   }
 });
 
-router.put("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.put("/houses/:id", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     const b = req.body || {};
     const $set = {};
@@ -4030,7 +4089,7 @@ router.put("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res
   }
 });
 
-router.delete("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.delete("/houses/:id", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     const house = await BehaviorHouse.findOneAndUpdate(
       { _id: req.params.id, schoolId: req.schoolId },
@@ -4087,7 +4146,7 @@ function variance(arr) {
 //                        join the house their family is already in.
 // In both modes families (same last name) stay together and placement greedily
 // minimises imbalance across total size, grade spread, and gender mix.
-router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/houses/backfill", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     const onlyUnassigned = req.body?.mode === "unassigned" || req.body?.onlyUnassigned === true;
     const NAMES = Array.isArray(req.body?.names) && req.body.names.length
@@ -4226,7 +4285,7 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
 // Split each house into two balanced sub-groups (#1 / #2) for booster events that
 // need two rooms — balancing grade + gender within the house, keeping siblings
 // together. Sets BehaviorStudent.houseGroup (1 or 2).
-router.post("/houses/split-groups", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/houses/split-groups", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true, houseId: { $ne: null } })
@@ -4308,7 +4367,7 @@ router.post("/houses/split-groups", authAny, loadMembership, requireAdmin, async
 // House standings report: each house's running total + its TOP 3 contributing
 // students (by positive points earned). Returns the data for an in-app preview
 // and, when { email: true }, sends it as an HTML standings email.
-router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/house-report", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).lean();
@@ -4578,7 +4637,7 @@ router.delete("/competitions/:id", authAny, loadMembership, requireAdmin, async 
 
 // Generate (or rotate) the 4-digit student-portal code (admin). Returned once;
 // share it with students. Unique across schools.
-router.post("/houses/portal-code", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+router.post("/houses/portal-code", authAny, loadMembership, canManageHouses, async (req, res, next) => {
   try {
     let code = "";
     const wanted = String(req.body?.code || "").trim();

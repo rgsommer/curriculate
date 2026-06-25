@@ -94,6 +94,7 @@ export type Membership = {
   role: "originator" | "admin" | "teacher" | "principal";
   name: string;
   email: string;
+  housesCommittee?: boolean;
   homeworkPrefs?: { lateWeeks?: number | null; outstandingBelow?: number | null };
 };
 
