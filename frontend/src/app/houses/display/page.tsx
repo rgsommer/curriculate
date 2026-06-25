@@ -88,13 +88,13 @@ export default function HousesDisplay() {
       <div className="mt-[2vh] grid min-h-0 flex-1 grid-cols-[38fr_62fr] gap-[2vw]">
         {/* Left: daily winners + rewards */}
         <div className="flex min-h-0 flex-col gap-[2vh]">
-          <div className="rounded-[1.2vw] bg-white/10 p-[1.6vw]">
+          <div className="rounded-[1.2vw] border-[0.25vw] border-transparent bg-white/10 p-[1.6vw]" style={ts ? { borderColor: ts.color, background: `${ts.color}26` } : undefined}>
             <div className="text-[1.1vw] uppercase tracking-wide text-slate-300">⭐ Top student today</div>
             {ts ? (
               <div className="mt-[1vh] flex items-center gap-[1.4vw]">
                 {ts.photoUrl
-                  ? <img src={ts.photoUrl} alt="" className="h-[10vw] w-[10vw] rounded-[1vw] object-cover" />
-                  : <div className="flex h-[10vw] w-[10vw] items-center justify-center rounded-[1vw] bg-white/15 text-[4vw]">🏅</div>}
+                  ? <img src={ts.photoUrl} alt="" className="h-[10vw] w-[10vw] rounded-[1vw] border-[0.35vw] object-cover" style={{ borderColor: ts.color }} />
+                  : <div className="flex h-[10vw] w-[10vw] items-center justify-center rounded-[1vw] border-[0.35vw] bg-white/15 text-[4vw]" style={{ borderColor: ts.color }}>🏅</div>}
                 <div className="min-w-0">
                   <div className="truncate text-[2.4vw] font-extrabold leading-tight">{ts.name}</div>
                   <div className="mt-[0.5vh] flex items-center gap-[0.6vw] text-[1.4vw]">
@@ -106,7 +106,7 @@ export default function HousesDisplay() {
             ) : <div className="mt-[1vh] text-[1.4vw] text-slate-300">No points yet today.</div>}
           </div>
 
-          <div className="rounded-[1.2vw] bg-white/10 p-[1.6vw]">
+          <div className="rounded-[1.2vw] border-[0.25vw] border-transparent bg-white/10 p-[1.6vw]" style={th ? { borderColor: th.color, background: `${th.color}26` } : undefined}>
             <div className="text-[1.1vw] uppercase tracking-wide text-slate-300">🏆 Top house today</div>
             {th ? (
               <div className="mt-[1vh] flex items-center gap-[1.2vw]">

@@ -218,17 +218,22 @@ function DailyMovers({ housesOn }: { housesOn: boolean }) {
       <h2 className="font-semibold">Daily Movers</h2>
       <p className="text-xs text-slate-400">Most behaviour movement today — points and logs since this morning.</p>
       <ul className="mt-2 divide-y divide-slate-100">
-        {movers.map((m) => (
-          <li key={m.studentId} className="flex items-center gap-2 py-1.5 text-sm">
-            {housesOn && m.house ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} title={m.house} /> : null}
-            <Link href={`/behavior/student/${m.studentId}`} className="truncate font-medium hover:underline">{m.name}</Link>
-            {m.classGroup ? <span className="shrink-0 text-xs text-slate-400">{m.classGroup}</span> : null}
-            <span className="ml-auto flex shrink-0 items-center gap-2">
-              {m.net ? <span className={`tabular-nums font-semibold ${m.net > 0 ? "text-green-600" : "text-red-600"}`}>{m.net > 0 ? `+${m.net}` : m.net} pts</span> : null}
-              {m.incidents ? <span className="text-xs text-slate-500">{m.incidents} log{m.incidents === 1 ? "" : "s"}</span> : null}
-            </span>
-          </li>
-        ))}
+        {movers.map((m, i) => {
+          const featured = i === 0 && housesOn && !!m.house;
+          return (
+            <li key={m.studentId}
+              className={`flex items-center gap-2 py-1.5 text-sm ${featured ? "rounded-lg border-l-4 pl-2" : ""}`}
+              style={featured ? { borderColor: m.color, background: `${m.color}14` } : undefined}>
+              {housesOn && m.house ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} title={m.house} /> : null}
+              <Link href={`/behavior/student/${m.studentId}`} className="truncate font-medium hover:underline">{m.name}</Link>
+              {featured ? <span className="shrink-0 rounded-full px-1.5 text-[10px] font-semibold" style={{ background: `${m.color}26`, color: m.color }}>⭐ {m.house}</span> : m.classGroup ? <span className="shrink-0 text-xs text-slate-400">{m.classGroup}</span> : null}
+              <span className="ml-auto flex shrink-0 items-center gap-2">
+                {m.net ? <span className={`tabular-nums font-semibold ${m.net > 0 ? "text-green-600" : "text-red-600"}`}>{m.net > 0 ? `+${m.net}` : m.net} pts</span> : null}
+                {m.incidents ? <span className="text-xs text-slate-500">{m.incidents} log{m.incidents === 1 ? "" : "s"}</span> : null}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </Card>
   );
