@@ -3907,6 +3907,13 @@ router.put("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res
     if ("sortOrder" in b) $set.sortOrder = Number(b.sortOrder) || 0;
     if ("roomGroup1" in b) $set.roomGroup1 = String(b.roomGroup1 || "").trim();
     if ("roomGroup2" in b) $set.roomGroup2 = String(b.roomGroup2 || "").trim();
+    if ("image" in b) {
+      const img = String(b.image || "");
+      if (img === "") $set.image = "";
+      else if (!/^data:image\/(png|jpe?g|webp|gif);base64,/.test(img)) return res.status(400).json({ ok: false, error: "Image must be a PNG/JPEG/WebP/GIF." });
+      else if (img.length > 400000) return res.status(400).json({ ok: false, error: "Image is too large — please use a smaller crest." });
+      else $set.image = img;
+    }
     const house = await BehaviorHouse.findOneAndUpdate({ _id: req.params.id, schoolId: req.schoolId }, { $set }, { new: true }).lean();
     if (!house) return res.status(404).json({ ok: false, error: "House not found" });
     res.json({ ok: true, house });
@@ -4233,6 +4240,7 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
         _id: String(h._id),
         name: h.name,
         color: h.color || "#0f172a",
+        image: h.image || "",
         points: totalById[String(h._id)] || 0,
         top: topByHouse[String(h._id)] || [],
         captains: captainsByHouse[String(h._id)] || [],
@@ -4249,7 +4257,9 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
         return (
           `<div style="margin:12px 0">` +
           `<div style="display:flex;align-items:center;gap:8px">` +
-          `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${h.color}"></span>` +
+          (h.image
+            ? `<img src="${h.image}" width="20" height="20" style="border-radius:4px;object-fit:cover;vertical-align:middle"/>`
+            : `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${h.color}"></span>`) +
           `<strong>${i + 1}. ${escapeHtml(h.name)}</strong>` +
           (h.captains.length ? `<span style="font-size:11px;color:#94a3b8">© ${escapeHtml(h.captains.join(", "))}</span>` : "") +
           `<span style="margin-left:auto;font-variant-numeric:tabular-nums;color:#0f172a">${h.points} pts</span>` +
@@ -4520,7 +4530,7 @@ router.get("/public/houses", async (req, res, next) => {
 
     const houseOut = houses
       .map((h) => ({
-        id: String(h._id), name: h.name, color: h.color || "#0f172a",
+        id: String(h._id), name: h.name, color: h.color || "#0f172a", image: h.image || "",
         points: totalById[String(h._id)] || 0, members: memberById[String(h._id)] || 0,
         captains: captainsByHouse[String(h._id)] || [],
       }))

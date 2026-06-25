@@ -11,6 +11,9 @@ const BehaviorHouseSchema = new mongoose.Schema(
     schoolId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorSchool", required: true, index: true },
     name: { type: String, required: true, trim: true },
     color: { type: String, default: "#0f172a" }, // hex for chips/leaderboard
+    // Optional house crest/logo as a small resized data URL (data:image/...;base64),
+    // shown on the portal, house listings and standings reports. Empty = none.
+    image: { type: String, default: "" },
     // Optional room labels for the two sub-groups during booster events
     // (e.g. Falcon #1 → 202, Falcon #2 → 204). Shown in the student look-up.
     roomGroup1: { type: String, default: "" },

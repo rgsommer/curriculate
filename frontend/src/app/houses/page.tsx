@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { API_BASE } from "../behavior/_lib/api";
 
-type House = { id: string; name: string; color: string; points: number; members: number; captains?: string[] };
+type House = { id: string; name: string; color: string; image?: string; points: number; members: number; captains?: string[] };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
 type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[] };
@@ -181,7 +181,9 @@ export default function HousesPortal() {
             {board.houses.map((h, i) => (
               <li key={h.id} className="flex items-center gap-3">
                 <span className="w-6 text-center text-lg">{MEDAL[i] || <span className="text-sm text-slate-400">{i + 1}</span>}</span>
-                <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />
+                {h.image
+                  ? <img src={h.image} alt="" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+                  : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: h.color }} />}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-baseline justify-between">
                     <span className="truncate font-semibold">{h.name}</span>

@@ -1201,6 +1201,35 @@ function HousesSection({ config }: { config?: any }) {
   async function save(h: any, patch: any) {
     try { await api(`/houses/${h._id}`, { method: "PUT", body: patch }); load(); } catch (e: any) { setErr(e.message); }
   }
+  // Resize a chosen image to a small square crest (≤256px) data URL, then save it.
+  async function uploadHouseImage(h: any, file: File) {
+    if (!file.type.startsWith("image/")) { setErr("Please choose an image file."); return; }
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            const max = 256;
+            const scale = Math.min(1, max / Math.max(img.width, img.height));
+            const w = Math.round(img.width * scale), hgt = Math.round(img.height * scale);
+            const canvas = document.createElement("canvas");
+            canvas.width = w; canvas.height = hgt;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return reject(new Error("Canvas unavailable"));
+            ctx.drawImage(img, 0, 0, w, hgt);
+            // PNG preserves transparency for crests/logos.
+            resolve(canvas.toDataURL("image/png"));
+          };
+          img.onerror = () => reject(new Error("Could not read that image."));
+          img.src = String(reader.result);
+        };
+        reader.onerror = () => reject(new Error("Could not read that file."));
+        reader.readAsDataURL(file);
+      });
+      await save(h, { image: dataUrl });
+    } catch (e: any) { setErr(e.message || "Image upload failed."); }
+  }
   async function remove(h: any) {
     if (!window.confirm(`Remove house "${h.name}"? (students keep their assignment; points are hidden)`)) return;
     try { await api(`/houses/${h._id}`, { method: "DELETE" }); load(); } catch (e: any) { setErr(e.message); }
@@ -1229,7 +1258,14 @@ function HousesSection({ config }: { config?: any }) {
         {houses?.map((h) => (
           <div key={h._id} className="flex items-center gap-2">
             <input type="color" defaultValue={h.color} onBlur={(e) => save(h, { color: e.target.value })} className="h-8 w-10 rounded border border-slate-300" />
+            <label className="relative h-8 w-8 shrink-0 cursor-pointer overflow-hidden rounded border border-slate-300 bg-slate-50" title={h.image ? "Change crest" : "Upload a crest/logo"}>
+              {h.image
+                ? <img src={h.image} alt="" className="h-full w-full object-cover" />
+                : <span className="flex h-full w-full items-center justify-center text-sm text-slate-400">＋</span>}
+              <input type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadHouseImage(h, f); e.target.value = ""; }} />
+            </label>
             <input defaultValue={h.name} onBlur={(e) => e.target.value.trim() && save(h, { name: e.target.value })} className={`${inputCls} flex-1`} />
+            {h.image && <button onClick={() => save(h, { image: "" })} className="text-xs text-slate-400 underline">clear</button>}
             <span className="w-24 text-right text-xs text-slate-400">{h.members} students · {h.points} pts</span>
             <button onClick={() => remove(h)} className="rounded-lg border border-red-300 px-2 py-1 text-xs text-red-700">Remove</button>
           </div>
