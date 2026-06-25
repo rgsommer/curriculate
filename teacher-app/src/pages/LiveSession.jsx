@@ -13,6 +13,7 @@ import { useAuth } from "../auth/useAuth";
 import SpotlightTour, { TourHelpButton, resetTour } from "../components/SpotlightTour";
 import { Modal, Button, Field, TextInput, TextArea, Select, ToggleGroup } from "../components/ui";
 import EndTimeControl from "../components/EndTimeControl";
+import GameMasterDashboard from "../components/GameMasterDashboard";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 const API_BASE = API_BASE_URL || "";
@@ -3788,7 +3789,39 @@ if (
         boxSizing: "border-box",
       }}
     >
-      {/* Header */}
+      {/* GAME MASTER DASHBOARD — pure-visual "Now Showing" banner.
+          Reads existing state only; emits nothing; changes no behavior.
+          Existing controls + workflows below remain untouched. */}
+      <GameMasterDashboard
+        roomCode={roomCode}
+        roomState={roomState}
+        taskset={
+          // Build a normalised taskset prop: prefer the full activeTasksetMeta
+          // when it carries a tasks array; fall back to a synthetic {tasks}
+          // sized from totalTasksInActiveSet so the dashboard can render the
+          // Round X of N counter even when only the count is known.
+          Array.isArray(activeTasksetMeta?.tasks) && activeTasksetMeta.tasks.length > 0
+            ? activeTasksetMeta
+            : totalTasksInActiveSet
+            ? {
+                tasks: Array.from({ length: totalTasksInActiveSet }, (_, i) => ({
+                  title: `Round ${i + 1}`,
+                })),
+                title: activeTasksetName,
+              }
+            : null
+        }
+        status={status}
+        isActive={!!roomState?.startedAt || /launching|live|in.?progress|started/i.test(status || "")}
+        ownerLabel={runByName ? `Presented by ${runByName}` : ""}
+        tasksetOwnerLabel={
+          reportOwnerName || reportOwnerEmail
+            ? `TaskSet from ${reportOwnerName || reportOwnerEmail}`
+            : ""
+        }
+      />
+
+      {/* Header (existing) */}
       <header
         style={{
           display: "flex",
