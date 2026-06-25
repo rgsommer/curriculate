@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { Routes, Route, Link, useLocation } from "react-router-dom";
 
 import LiveSession from "./pages/LiveSession.jsx";
+import QuickStart from "./pages/QuickStart.jsx";
 import HostView from "./pages/HostView.jsx";
 import TaskSets from "./pages/TaskSets.jsx";
 import TaskSetEditor from "./pages/TaskSetEditor.jsx";
@@ -415,6 +416,9 @@ function TeacherApp() {
 
         {/* Navigation links */}
         <nav>
+          <NavLinkButton to="/quickstart" active={typeof window !== "undefined" && window.location.pathname.startsWith("/quickstart")}>
+            🚀 Quick Start
+          </NavLinkButton>
           <NavLinkButton to="/" active={onLive}>
             Live
           </NavLinkButton>
@@ -487,6 +491,12 @@ function TeacherApp() {
           <Route
             path="/host"
             element={requireAuth(requireRoom(<HostView roomCode={roomCode} />))}
+          />
+
+          {/* Quick Start — anti-friction onboarding (pick a preset, launch) */}
+          <Route
+            path="/quickstart"
+            element={requireAuth(requireRoom(<QuickStart roomCode={roomCode} />))}
           />
 
           {/* Tasksets */}

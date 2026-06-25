@@ -551,6 +551,8 @@ app.use("/api", billingHandoffRouter);
 app.use("/api/speech", speechRouter);
 import upvoteRouter from "./routes/upvote.js";
 app.use("/api/upvote", upvoteRouter);
+import quickstartRouter from "./routes/quickstart.js";
+app.use("/api/quickstart", quickstartRouter);
 app.use("/api/voice", voiceRouter);
 app.use("/api/teacher-profile", teacherProfileRouter);
 app.use("/api/admin", adminRouter);
@@ -8931,6 +8933,92 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
 
   socket.on("loadTaskset", (payload) => {
     handleTeacherLoadTaskset(payload || {});
+  });
+
+  // ────────────────────────────────────────────────────────────────
+  // teacher:loadQuickstart — attach a static preset taskset directly
+  // to the room, bypassing the Mongo round-trip. Used by the
+  // anti-friction Quick Start onboarding flow: teacher picks a preset
+  // card, room gets the 8-task taskset attached + ready to launch.
+  //
+  // Payload: { roomCode, presetKey, onScreenOnly?, duelsEnabled? }
+  // ────────────────────────────────────────────────────────────────
+  socket.on("teacher:loadQuickstart", async (payload = {}, ack) => {
+    try {
+      const code = String(payload.roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") ack({ ok: false, error: "Room not found" });
+        return;
+      }
+      const { getQuickstartTaskset } = await import("../shared/quickstartTasksets.js");
+      const preset = getQuickstartTaskset(payload.presetKey);
+      if (!preset) {
+        if (typeof ack === "function") ack({ ok: false, error: `Unknown preset: ${payload.presetKey}` });
+        return;
+      }
+
+      // Mirror the on-screen filter that handleTeacherLoadTaskset applies.
+      const MOVEMENT_REQUIRED_TYPES = new Set([
+        "musical-chairs", "mad-dash", "mad-dash-sequence",
+        "physical-multiple-choice", "hidenseek", "treasure-runner",
+      ]);
+      let tasks = Array.isArray(preset.tasks) ? preset.tasks : [];
+      if (payload.onScreenOnly === true) {
+        tasks = tasks.filter(
+          (t) => !MOVEMENT_REQUIRED_TYPES.has(String(t?.taskType || "").toLowerCase())
+        );
+        room.onScreenOnly = true;
+      } else {
+        room.onScreenOnly = false;
+      }
+
+      room.taskset = {
+        _id: `quickstart:${preset.key}`,
+        name: preset.title,
+        title: preset.title,
+        subject: preset.subject,
+        gradeLevel: preset.gradeLevel,
+        topicTitle: preset.topic,
+        source: "quickstart",
+        quickstartKey: preset.key,
+        tasks,
+      };
+      if (typeof payload.duelsEnabled === "boolean") {
+        room.taskset.duelsEnabled = payload.duelsEnabled;
+      }
+      room.taskIndex = -1;
+      room.isActive = false;
+      room.startedAt = null;
+      room.navigationMode = "linear";
+
+      console.log(
+        `[quickstart] room ${code}: loaded preset "${preset.key}" — ` +
+          `${tasks.length} tasks (${preset.subject}, grade ${preset.gradeLevel})`
+      );
+
+      io.to(code).emit("taskset:loaded", {
+        tasksetId: room.taskset._id,
+        tasksetName: room.taskset.name,
+        taskCount: tasks.length,
+        source: "quickstart",
+      });
+
+      if (typeof ack === "function") {
+        ack({
+          ok: true,
+          roomCode: code,
+          tasksetId: room.taskset._id,
+          taskCount: tasks.length,
+          subject: preset.subject,
+          gradeLevel: preset.gradeLevel,
+          title: preset.title,
+        });
+      }
+    } catch (err) {
+      console.error("teacher:loadQuickstart failed:", err);
+      if (typeof ack === "function") ack({ ok: false, error: "Server error" });
+    }
   });
 
   socket.on("teacher:startSession", async (payload = {}) => {
