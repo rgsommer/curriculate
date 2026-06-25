@@ -3905,6 +3905,8 @@ router.put("/houses/:id", authAny, loadMembership, requireAdmin, async (req, res
     if ("name" in b) $set.name = String(b.name || "").trim();
     if ("color" in b) $set.color = String(b.color || "#0f172a");
     if ("sortOrder" in b) $set.sortOrder = Number(b.sortOrder) || 0;
+    if ("roomGroup1" in b) $set.roomGroup1 = String(b.roomGroup1 || "").trim();
+    if ("roomGroup2" in b) $set.roomGroup2 = String(b.roomGroup2 || "").trim();
     const house = await BehaviorHouse.findOneAndUpdate({ _id: req.params.id, schoolId: req.schoolId }, { $set }, { new: true }).lean();
     if (!house) return res.status(404).json({ ok: false, error: "House not found" });
     res.json({ ok: true, house });
@@ -4095,6 +4097,82 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
       meta: { mode: onlyUnassigned ? "unassigned" : "full", assigned: assignments.length, skipped, deactivated: deactivatedCount },
     });
     res.json({ ok: true, mode: onlyUnassigned ? "unassigned" : "full", assigned: assignments.length, skipped, deactivated: deactivatedCount, houses: summary });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Split each house into two balanced sub-groups (#1 / #2) for booster events that
+// need two rooms — balancing grade + gender within the house, keeping siblings
+// together. Sets BehaviorStudent.houseGroup (1 or 2).
+router.post("/houses/split-groups", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true, houseId: { $ne: null } })
+      .select("lastName grade gender houseId").lean();
+
+    const gradeKey = (s) => String(s.grade || "").trim() || "?";
+    const sexKey = (s) => {
+      const g = String(s.gender || "").trim().toLowerCase();
+      if (g.startsWith("m")) return "M";
+      if (g.startsWith("f")) return "F";
+      return "U";
+    };
+    const surnameKey = (s) => (s.lastName || "").trim().toLowerCase() || `__solo_${s._id}`;
+    const allGrades = [...new Set(students.map(gradeKey))];
+
+    const updates = [];
+    const summary = [];
+    // Group students by house.
+    const byHouse = new Map();
+    for (const s of students) {
+      const k = String(s.houseId);
+      if (!byHouse.has(k)) byHouse.set(k, []);
+      byHouse.get(k).push(s);
+    }
+
+    for (const house of houses) {
+      const roster = byHouse.get(String(house._id)) || [];
+      // Families together → bigger groups placed first (greedy, lowest variance).
+      const fam = new Map();
+      for (const s of roster) {
+        const key = surnameKey(s);
+        if (!fam.has(key)) fam.set(key, []);
+        fam.get(key).push(s);
+      }
+      const groups = [...fam.values()].sort((a, b) => b.length - a.length);
+      const B = [{ total: 0, grade: {}, gender: {} }, { total: 0, grade: {}, gender: {} }];
+      const score = (bi, group) => {
+        const sim = B.map((b) => ({ total: b.total, grade: { ...b.grade }, gender: { ...b.gender } }));
+        for (const s of group) {
+          sim[bi].total++;
+          sim[bi].grade[gradeKey(s)] = (sim[bi].grade[gradeKey(s)] || 0) + 1;
+          sim[bi].gender[sexKey(s)] = (sim[bi].gender[sexKey(s)] || 0) + 1;
+        }
+        let sc = variance(sim.map((x) => x.total)) * 3;
+        for (const g of allGrades) sc += variance(sim.map((x) => x.grade[g] || 0));
+        for (const sx of ["M", "F", "U"]) sc += variance(sim.map((x) => x.gender[sx] || 0));
+        return sc;
+      };
+      for (const group of groups) {
+        const bi = score(0, group) <= score(1, group) ? 0 : 1;
+        for (const s of group) {
+          updates.push({ updateOne: { filter: { _id: s._id }, update: { $set: { houseGroup: bi + 1 } } } });
+          B[bi].total++;
+          B[bi].grade[gradeKey(s)] = (B[bi].grade[gradeKey(s)] || 0) + 1;
+          B[bi].gender[sexKey(s)] = (B[bi].gender[sexKey(s)] || 0) + 1;
+        }
+      }
+      summary.push({
+        name: house.name,
+        group1: { total: B[0].total, byGrade: B[0].grade, byGender: B[0].gender, room: house.roomGroup1 || "" },
+        group2: { total: B[1].total, byGrade: B[1].grade, byGender: B[1].gender, room: house.roomGroup2 || "" },
+      });
+    }
+
+    if (updates.length) await BehaviorStudent.bulkWrite(updates);
+    await audit(req.schoolId, "houses.split_groups", req, { meta: { students: updates.length, houses: houses.length } });
+    res.json({ ok: true, students: updates.length, houses: summary });
   } catch (err) {
     next(err);
   }
@@ -4470,6 +4548,46 @@ router.get("/public/houses", async (req, res, next) => {
     }));
 
     res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Student self-lookup by last name (code-protected). Returns their house and
+// sub-group (#1/#2) + room, so a student can find where to go for a booster
+// event. Minimal PII: first name + grade only, to disambiguate same surnames.
+router.get("/public/houses/lookup", async (req, res, next) => {
+  try {
+    const code = String(req.query.code || "").trim();
+    if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
+    const lastName = String(req.query.lastName || "").trim();
+    if (lastName.length < 2) return res.status(400).json({ ok: false, error: "Type at least two letters of your last name." });
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId").lean();
+    if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
+
+    const rx = new RegExp("^" + lastName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+    const students = await BehaviorStudent.find({ schoolId: config.schoolId, active: true, lastName: rx, houseId: { $ne: null } })
+      .select("firstName preferredName lastName grade houseId houseGroup")
+      .sort({ lastName: 1, firstName: 1 })
+      .limit(40)
+      .lean();
+    const houses = await BehaviorHouse.find({ schoolId: config.schoolId }).select("name color roomGroup1 roomGroup2").lean();
+    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+
+    const matches = students.map((s) => {
+      const h = houseById[String(s.houseId)] || {};
+      const group = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : null;
+      const room = group === 1 ? (h.roomGroup1 || "") : group === 2 ? (h.roomGroup2 || "") : "";
+      return {
+        firstName: s.preferredName || s.firstName || "",
+        grade: s.grade || "",
+        house: h.name || "",
+        color: h.color || "#0f172a",
+        group,
+        room,
+      };
+    });
+    res.json({ ok: true, matches });
   } catch (err) {
     next(err);
   }

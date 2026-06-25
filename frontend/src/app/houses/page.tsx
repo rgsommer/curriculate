@@ -22,12 +22,37 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
   }
 }
 
+type Match = { firstName: string; grade: string; house: string; color: string; group: number | null; room: string };
+
 export default function HousesPortal() {
   const [code, setCode] = useState<string>("");
   const [input, setInput] = useState("");
   const [board, setBoard] = useState<Board | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // "Find your house" by last name
+  const [lookupName, setLookupName] = useState("");
+  const [matches, setMatches] = useState<Match[] | null>(null);
+  const [lookupBusy, setLookupBusy] = useState(false);
+  const [lookupErr, setLookupErr] = useState("");
+
+  async function doLookup(e?: React.FormEvent) {
+    e?.preventDefault();
+    const ln = lookupName.trim();
+    if (ln.length < 2) { setLookupErr("Type at least two letters of your last name."); return; }
+    setLookupBusy(true); setLookupErr(""); setMatches(null);
+    try {
+      const r = await fetch(`${API_BASE}/api/behavior/public/houses/lookup?code=${encodeURIComponent(code)}&lastName=${encodeURIComponent(ln)}`);
+      const d = await r.json();
+      if (!d.ok) { setLookupErr(d.error || "Could not look that up."); return; }
+      setMatches(d.matches || []);
+    } catch {
+      setLookupErr("Network error — try again.");
+    } finally {
+      setLookupBusy(false);
+    }
+  }
 
   // Restore the saved code (entered once, remembered on this device).
   useEffect(() => {
@@ -109,6 +134,41 @@ export default function HousesPortal() {
       </div>
 
       {err && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h2 className="font-semibold">Find your house</h2>
+        <p className="mt-1 text-sm text-slate-500">Type your last name to see your house and group.</p>
+        <form onSubmit={doLookup} className="mt-2 flex gap-2">
+          <input
+            value={lookupName}
+            onChange={(e) => setLookupName(e.target.value)}
+            placeholder="Last name"
+            className="flex-1 rounded-xl border border-slate-300 px-4 py-2.5"
+          />
+          <button type="submit" disabled={lookupBusy} className="rounded-xl bg-slate-900 px-4 py-2.5 font-semibold text-white disabled:opacity-40">
+            {lookupBusy ? "…" : "Find"}
+          </button>
+        </form>
+        {lookupErr && <p className="mt-2 text-sm text-red-600">{lookupErr}</p>}
+        {matches && matches.length === 0 && <p className="mt-2 text-sm text-slate-400">No match — check the spelling, or ask your teacher.</p>}
+        {matches && matches.length > 0 && (
+          <ul className="mt-3 space-y-2">
+            {matches.map((m, i) => (
+              <li key={i} className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                <span className="inline-block h-8 w-8 shrink-0 rounded-full" style={{ background: m.color }} />
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold">{m.firstName}{m.grade ? <span className="ml-1 text-xs font-normal text-slate-400">Gr {m.grade}</span> : null}</div>
+                  <div className="text-sm text-slate-600">
+                    {m.house || "—"}
+                    {m.group ? <span className="font-medium"> · Group #{m.group}</span> : null}
+                    {m.room ? <span className="text-slate-500"> → Room {m.room}</span> : null}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5">
         <h2 className="font-semibold">Leaderboard</h2>

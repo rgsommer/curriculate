@@ -47,6 +47,9 @@ const BehaviorStudentSchema = new mongoose.Schema(
     classGroup: { type: String, default: "", trim: true, index: true }, // e.g. "7A", "8B"
     grade: { type: String, default: "", trim: true, index: true },
     houseId: { type: mongoose.Schema.Types.ObjectId, ref: "BehaviorHouse", default: null, index: true },
+    // Sub-division of the house (1 or 2) for booster events that need two rooms,
+    // balanced by grade + gender. 0 = not split yet.
+    houseGroup: { type: Number, default: 0 },
     // Student leader for their house — shown on the standings/portal.
     houseCaptain: { type: Boolean, default: false },
     dob: { type: Date, default: null },

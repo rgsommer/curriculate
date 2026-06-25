@@ -1059,6 +1059,25 @@ function HousesSection({ config }: { config?: any }) {
   const [backfillBusy, setBackfillBusy] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState("");
 
+  // Split houses into two balanced sub-groups (#1/#2) for booster events.
+  const [splitBusy, setSplitBusy] = useState(false);
+  const [splitMsg, setSplitMsg] = useState("");
+  async function splitGroups() {
+    if (!window.confirm("Split each house into two groups (#1 / #2), balanced by grade and gender, with siblings kept together? This re-shuffles the existing groups.")) return;
+    setSplitBusy(true); setSplitMsg("");
+    try {
+      const r = await api<{ students: number; houses: { name: string; group1: { total: number }; group2: { total: number } }[] }>("/houses/split-groups", { body: {} });
+      setSplitMsg(`✓ Split ${r.students} students — ${r.houses.map((h) => `${h.name} ${h.group1.total}/${h.group2.total}`).join(" · ")}`);
+    } catch (e: any) {
+      setSplitMsg(`✗ ${e.message}`);
+    } finally {
+      setSplitBusy(false);
+    }
+  }
+  async function saveRoom(houseId: string, field: "roomGroup1" | "roomGroup2", value: string) {
+    try { await api(`/houses/${houseId}`, { method: "PUT", body: { [field]: value } }); } catch { /* non-fatal */ }
+  }
+
   // Student portal code.
   const [portalCode, setPortalCode] = useState(config?.housePortalCode || "");
   const [portalInput, setPortalInput] = useState("");
@@ -1240,6 +1259,30 @@ function HousesSection({ config }: { config?: any }) {
         </div>
         <p className="mt-1 text-xs text-slate-400">Use “Rebalance only unassigned” after a mid-year roster import to slot new students into the existing houses without reshuffling everyone.</p>
         {backfillMsg && <p className={`mt-2 text-xs ${backfillMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{backfillMsg}</p>}
+
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Booster-event groups (#1 / #2)</p>
+          <p className="text-xs text-slate-400">For events where a whole house won&apos;t fit one room, split each house into two groups — balanced by grade &amp; gender, siblings together. Set each group&apos;s room below; students see their group &amp; room in the House portal by typing their last name.</p>
+          <button onClick={splitGroups} disabled={splitBusy}
+            className="mt-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            {splitBusy ? "Splitting…" : "Split houses into 2 balanced groups"}
+          </button>
+          {splitMsg && <p className={`mt-2 text-xs ${splitMsg.startsWith("✓") ? "text-green-700" : "text-red-600"}`}>{splitMsg}</p>}
+          {houses && houses.length > 0 && (
+            <div className="mt-3 space-y-1.5">
+              {houses.map((h) => (
+                <div key={h._id} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="inline-block h-3 w-3 rounded-full" style={{ background: h.color }} />
+                  <span className="w-24 truncate">{h.name}</span>
+                  <input defaultValue={h.roomGroup1 || ""} onBlur={(e) => saveRoom(h._id, "roomGroup1", e.target.value)}
+                    placeholder="#1 room" className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                  <input defaultValue={h.roomGroup2 || ""} onBlur={(e) => saveRoom(h._id, "roomGroup2", e.target.value)}
+                    placeholder="#2 room" className="w-24 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Student portal code */}
