@@ -63,6 +63,13 @@ function emailDomain(email) {
 }
 
 // Sanitise an offence-category array to the allowed set; positives carry none.
+// Clamp an incident intensity weight to the allowed set {0.5, 1, 1.5, 2}.
+function clampWeight(w) {
+  const n = Number(w);
+  if (!n || isNaN(n)) return 1;
+  return [0.5, 1, 1.5, 2].reduce((best, v) => (Math.abs(v - n) < Math.abs(best - n) ? v : best), 1);
+}
+
 const OFFENCE_CATEGORIES = ["preparedness", "behaviour", "uniform"];
 function cleanCategories(arr, kind) {
   if (kind === "positive" || !Array.isArray(arr)) return [];
@@ -1800,11 +1807,15 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
       ? [req.body.behaviorId]
       : [];
     const detailText = String(req.body?.detailText || "");
+    const weight = clampWeight(req.body?.weight);
     // Optional event time (teacher may set/adjust when the incident occurred).
     const occurredAt = req.body?.occurredAt ? new Date(req.body.occurredAt) : null;
     const timestamp = occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : new Date();
     if (!studentId || !behaviorIds.length) {
       return res.status(400).json({ ok: false, error: "studentId and behaviorIds required" });
+    }
+    if (weight !== 1 && !detailText.trim()) {
+      return res.status(400).json({ ok: false, error: "Please add a note explaining the changed intensity (×" + weight + ")." });
     }
 
     const student = await BehaviorStudent.findOne({ _id: studentId, schoolId: req.schoolId });
@@ -1834,6 +1845,7 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
           categories: behavior.categories || [],
         },
         detailText,
+        weight,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
         timestamp,
       });
@@ -1844,11 +1856,12 @@ router.post("/incidents", authAny, loadMembership, canLog, async (req, res, next
         await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
       }
 
-      // House points: apply this behaviour's point value to the student's house.
-      if (behavior.points && student.houseId) {
+      // House points: this behaviour's value scaled by the intensity weight.
+      const pts = Math.round((behavior.points || 0) * weight);
+      if (pts && student.houseId) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
-          points: behavior.points, reason: behavior.name, behaviorId: behavior._id,
+          points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
           incidentId: inc._id, awardedByTeacherId: req.membership._id, at: timestamp,
         });
       }
@@ -1963,10 +1976,14 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
     const behaviorId = req.body?.behaviorId;
     const studentIds = Array.isArray(req.body?.studentIds) ? req.body.studentIds : [];
     const detailText = String(req.body?.detailText || "");
+    const weight = clampWeight(req.body?.weight);
     const occurredAt = req.body?.occurredAt ? new Date(req.body.occurredAt) : null;
     const timestamp = occurredAt && !isNaN(occurredAt.getTime()) ? occurredAt : new Date();
     if (!behaviorId || !studentIds.length) {
       return res.status(400).json({ ok: false, error: "behaviorId and studentIds required" });
+    }
+    if (weight !== 1 && !detailText.trim()) {
+      return res.status(400).json({ ok: false, error: "Please add a note explaining the changed intensity (×" + weight + ")." });
     }
 
     const behavior = await Behavior.findOne({ _id: behaviorId, schoolId: req.schoolId }).lean();
@@ -1994,14 +2011,16 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
           categories: behavior.categories || [],
         },
         detailText,
+        weight,
         immediateFlag: behavior.triggerMode === "IMMEDIATE",
         timestamp,
       });
 
-      if (behavior.points && student.houseId) {
+      const pts = Math.round((behavior.points || 0) * weight);
+      if (pts && student.houseId) {
         await HousePointEvent.create({
           schoolId: req.schoolId, houseId: student.houseId, studentId: student._id,
-          points: behavior.points, reason: behavior.name, behaviorId: behavior._id,
+          points: pts, reason: weight !== 1 ? `${behavior.name} (×${weight})` : behavior.name, behaviorId: behavior._id,
           incidentId: inc._id, awardedByTeacherId: req.membership._id, at: timestamp,
         });
       }
@@ -2787,7 +2806,8 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     const lines = incidents.map((i) => {
       const d = new Date(i.timestamp).toLocaleString("en-CA");
       const notes = (i.teacherNotes || []).map((n) => `    • teacher note (${n.name || "teacher"}): ${n.text}`).join("\n");
-      return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
+      const w = i.weight && i.weight !== 1 ? ` [intensity ×${i.weight}]` : "";
+      return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}${w} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
     });
     const notices = await BehaviorNotice.find({ studentId: student._id }).sort({ createdAt: 1 }).lean();
     const school = await BehaviorSchool.findById(req.schoolId).lean();

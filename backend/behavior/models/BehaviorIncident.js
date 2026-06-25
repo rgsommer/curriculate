@@ -37,6 +37,10 @@ const BehaviorIncidentSchema = new mongoose.Schema(
 
     detailText: { type: String, default: "" }, // optional free-text detail (goes in the parent note)
 
+    // Intensity weight (0.5 / 1 / 1.5 / 2; default 1). Scales the house points
+    // awarded and is surfaced in narrative reports. A note is required when ≠ 1.
+    weight: { type: Number, default: 1 },
+
     // Photo / video evidence captured at log time. Stored PRIVATELY in S3 (only
     // the bare object key is kept here); access is via short-lived signed URLs,
     // never a public link — these are images of minors. Never sent to parents.

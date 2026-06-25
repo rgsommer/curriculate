@@ -23,6 +23,7 @@ type StudentDetail = {
     _id: string;
     teacherId?: string;
     behaviorSnapshot: { name: string; triggerMode: string; kind?: string; points?: number };
+    weight?: number;
     detailText?: string;
     teacherName?: string;
     teacherNotes?: TeacherNote[];
@@ -645,6 +646,7 @@ export default function StudentPage() {
               <div className="flex items-start justify-between gap-2">
                 <span>
                   {inc.behaviorSnapshot.name}
+                  {inc.weight && inc.weight !== 1 ? <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">×{inc.weight.toFixed(1)}</span> : null}
                   {inc.behaviorSnapshot.triggerMode === "IMMEDIATE" && <span className="ml-2 text-xs text-amber-600">immediate</span>}
                   {inc.teacherName ? <span className="text-slate-400"> · {inc.teacherName}</span> : null}
                   {editIncId !== inc._id && inc.detailText ? <span className="text-slate-400"> — {inc.detailText}</span> : null}

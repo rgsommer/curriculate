@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, getToken, loginHref, type Behavior, type StudentSummary, type GuddStatus } from "../_lib/api";
 import SendNoticeModal from "../_components/SendNoticeModal";
@@ -67,6 +67,34 @@ function keywordCategoryMap(list: Behavior[]): Record<string, string> {
   return m;
 }
 
+// Intensity pill: tap cycles ×1 → ×1.5 → ×2 → ×0.5 (wrap, +0.5 each tap),
+// double-tap resets to ×1. Green when intensified on a positive, red on a
+// negative. Scales house points and shows in reports; a note is required when ≠1.
+function WeightPill({ value, onChange, kind }: { value: number; onChange: (n: number) => void; kind: "negative" | "positive" }) {
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const order = [0.5, 1, 1.5, 2];
+  function tap() {
+    if (timer.current) { clearTimeout(timer.current); timer.current = null; onChange(1); return; } // double-tap → reset
+    timer.current = setTimeout(() => { timer.current = null; const i = order.indexOf(value); onChange(order[(i + 1) % order.length] ?? 1); }, 220);
+  }
+  const active = value !== 1;
+  const tone = !active
+    ? "border-slate-300 bg-white text-slate-600"
+    : kind === "positive"
+    ? "border-green-500 bg-green-100 text-green-800"
+    : "border-red-500 bg-red-100 text-red-800";
+  return (
+    <button
+      type="button"
+      onClick={tap}
+      title="Intensity — scales the house points and how strongly this shows in reports. Tap to change (×0.5 to ×2), double-tap to reset. A note is required when it isn't ×1."
+      className={`rounded-full border px-3 py-1 text-xs font-semibold ${tone}`}
+    >
+      ×{value.toFixed(1)}
+    </button>
+  );
+}
+
 // Tint a keyword chip by its behaviours' offence category.
 // uniform = indigo, behaviour = rose, class preparedness = sky, report-only = green.
 function categoryChipClass(cat: string, selected: boolean) {
@@ -131,6 +159,7 @@ export default function LogIncidentPage() {
   const [keywordFilter, setKeywordFilter] = useState("");
   const [occurredAt, setOccurredAt] = useState("");
   const [note, setNote] = useState("");
+  const [weight, setWeight] = useState(1);
   const [sendImmediately, setSendImmediately] = useState(false);
   const [requestMeeting, setRequestMeeting] = useState(false);
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
@@ -269,6 +298,7 @@ export default function LogIncidentPage() {
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
     if (!student || !behaviorId) return;
+    if (weight !== 1 && !note.trim()) { setError(`Add a note explaining the changed intensity (×${weight.toFixed(1)}).`); return; }
     setSubmitting(true);
     setError(null);
     try {
@@ -277,6 +307,7 @@ export default function LogIncidentPage() {
           studentId: student._id,
           behaviorIds: [behaviorId],
           detailText: note.trim(),
+          weight,
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
           sendImmediately,
         },
@@ -361,6 +392,7 @@ export default function LogIncidentPage() {
     setKeywordFilter("");
     setOccurredAt("");
     setNote("");
+    setWeight(1);
     setSendImmediately(false);
     setRequestMeeting(false);
     setMediaFiles([]);
@@ -622,6 +654,13 @@ export default function LogIncidentPage() {
               No {kindFilter} behaviours yet — <Link href="/behavior/behaviours" className="underline">add one</Link>.
             </p>
           )}
+          {behaviorId && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-slate-600">Intensity</span>
+              <WeightPill value={weight} onChange={setWeight} kind={kindFilter} />
+              {weight !== 1 && <span className="text-xs text-amber-600">note required</span>}
+            </div>
+          )}
         </div>
         <Link href="/behavior/behaviours" className="text-xs text-slate-400 underline">manage behaviours</Link>
 
@@ -796,6 +835,7 @@ function BatchLog({
 }) {
   const [behaviorId, setBehaviorId] = useState("");
   const [keywordFilter, setKeywordFilter] = useState("");
+  const [weight, setWeight] = useState(1);
   const [selectedClass, setSelectedClass] = useState("");
   const [query, setQuery] = useState("");
   const [picked, setPicked] = useState<Record<string, boolean>>({});
@@ -864,6 +904,7 @@ function BatchLog({
 
   async function submit() {
     if (!behaviorId || pickedIds.length === 0) return;
+    if (weight !== 1 && !note.trim()) { setError(`Add a note explaining the changed intensity (×${weight.toFixed(1)}).`); return; }
     setSubmitting(true);
     setError(null);
     try {
@@ -872,6 +913,7 @@ function BatchLog({
           behaviorId,
           studentIds: pickedIds,
           detailText: note.trim(),
+          weight,
           occurredAt: occurredAt ? new Date(occurredAt).toISOString() : undefined,
         },
       });
@@ -964,6 +1006,13 @@ function BatchLog({
             </option>
           ))}
         </select>
+        {behaviorId && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <span className="text-slate-600">Intensity</span>
+            <WeightPill value={weight} onChange={setWeight} kind={behavior ? kindOf(behavior) : "negative"} />
+            {weight !== 1 && <span className="text-xs text-amber-600">note required</span>}
+          </div>
+        )}
         {behavior?.triggerMode === "IMMEDIATE" && (
           <p className="mt-1 text-xs text-amber-600">Heads up: this behaviour notifies home immediately — a notice will be queued for every student you select.</p>
         )}
