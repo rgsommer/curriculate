@@ -813,6 +813,21 @@ function BatchLog({
       return a.localeCompare(b);
     });
   }, [behaviors, recentRank]);
+  // Dominant offence category per keyword, to colour the chips.
+  const keywordCat = useMemo(() => {
+    const counts: Record<string, Record<string, number>> = {};
+    for (const b of behaviors) {
+      if (!b.keyword) continue;
+      const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
+      for (const c of cats) {
+        (counts[b.keyword] ||= {});
+        counts[b.keyword][c] = (counts[b.keyword][c] || 0) + 1;
+      }
+    }
+    const m: Record<string, string> = {};
+    for (const k of Object.keys(counts)) m[k] = Object.entries(counts[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    return m;
+  }, [behaviors]);
   const offenseOptions = useMemo(
     () =>
       [...behaviors]
@@ -931,8 +946,15 @@ function BatchLog({
               className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === "" ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>All</button>
             {keywords.map((k) => (
               <button key={k} type="button" onClick={() => { setKeywordFilter(k); setBehaviorId(""); }}
-                className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === k ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>{k}</button>
+                className={`rounded-full px-3 py-1 text-xs font-medium ${categoryChipClass(keywordCat[k] || "", keywordFilter === k)}`}>{k}</button>
             ))}
+          </div>
+        )}
+        {keywords.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
+            <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
           </div>
         )}
         <select value={behaviorId} onChange={(e) => setBehaviorId(e.target.value)} className="w-full rounded-xl border border-slate-300 px-4 py-3 text-lg">
