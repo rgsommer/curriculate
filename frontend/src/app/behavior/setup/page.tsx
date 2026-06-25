@@ -1133,6 +1133,18 @@ function HousesSection({ config }: { config?: any }) {
     });
   }
 
+  // Reward tiers: reach N points → unlock a reward.
+  const [rewards, setRewards] = useState<{ points: number; reward: string }[]>(
+    Array.isArray(config?.houseRewards) ? config.houseRewards.map((r: any) => ({ points: Number(r.points) || 0, reward: r.reward || "" })) : []
+  );
+  const rewardsSave = useSaveState(rewards);
+  function saveRewards() {
+    rewardsSave.run(async () => {
+      const clean = rewards.filter((r) => r.reward.trim() && r.points).map((r) => ({ points: Number(r.points) || 0, reward: r.reward.trim() }));
+      await api("/houses/config", { method: "PUT", body: { houseRewards: clean } });
+    });
+  }
+
   // Printable houses list — House · Student · Group · Room.
   const [printBusy, setPrintBusy] = useState(false);
   async function printHousesList() {
@@ -1442,6 +1454,24 @@ function HousesSection({ config }: { config?: any }) {
           </div>
           <div className="mt-2"><SaveButton state={eventsSave} onClick={saveEvents} label="Save events" /></div>
         </div>
+
+        {/* Reward tiers */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Rewards (reach X points → reward)</p>
+          <p className="text-xs text-slate-400">When a house&apos;s total reaches the points, it unlocks the reward — shown on the portal &amp; display board (e.g. 50 → “Ice cream sundae”).</p>
+          <div className="mt-2 space-y-1.5">
+            {rewards.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input type="number" min={1} value={r.points} onChange={(e) => setRewards((p) => p.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <span className="text-sm text-slate-400">pts →</span>
+                <input value={r.reward} onChange={(e) => setRewards((p) => p.map((x, j) => (j === i ? { ...x, reward: e.target.value } : x)))} placeholder="Reward (e.g. Ice cream sundae)" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <button onClick={() => setRewards((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
+              </div>
+            ))}
+            <button onClick={() => setRewards((p) => [...p, { points: 50, reward: "" }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add reward</button>
+          </div>
+          <div className="mt-2"><SaveButton state={rewardsSave} onClick={saveRewards} label="Save rewards" /></div>
+        </div>
       </div>
 
       {/* Student portal code */}
@@ -1457,6 +1487,7 @@ function HousesSection({ config }: { config?: any }) {
             {portalBusy ? "…" : portalCode ? "Random" : "Generate code"}
           </button>
           {portalCode && <a href="/houses" target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
+          {portalCode && <a href="/houses/display" target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the wall display ↗</a>}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
