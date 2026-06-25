@@ -42,6 +42,23 @@ export default function StudentsPage() {
   const houseName = (id?: string | null) => houses.find((h) => h._id === String(id))?.name || "";
   const houseColor = (id?: string | null) => houses.find((h) => h._id === String(id))?.color || "#94a3b8";
 
+  // Pull the latest Edsby overall averages and tick "Academic" for strong students.
+  const [acadBusy, setAcadBusy] = useState(false);
+  const [acadMsg, setAcadMsg] = useState("");
+  async function flagAcademics() {
+    const t = window.prompt("Flag students as Academic when their Edsby overall average is at least… (%)", "80");
+    if (t === null) return;
+    const threshold = Number(t) || 80;
+    setAcadBusy(true); setAcadMsg("");
+    try {
+      const r = await api<{ ok: boolean; flagged?: number; matched?: number; error?: string }>("/students/flag-academics", { body: { threshold } });
+      if (!r.ok) { setAcadMsg(`✗ ${r.error || "Could not flag."}`); return; }
+      setAcadMsg(`✓ Flagged ${r.flagged} academic (matched ${r.matched} to Edsby). Uncheck any individually as needed.`);
+      const d = await api<{ students: StudentSummary[] }>("/students");
+      setStudents(d.students || []);
+    } catch (e: any) { setAcadMsg(`✗ ${e.message}`); } finally { setAcadBusy(false); }
+  }
+
   const classes = useMemo(() => {
     const set = new Set<string>();
     for (const s of students) if ((s.classGroup || "").trim()) set.add(s.classGroup!.trim());
@@ -61,10 +78,21 @@ export default function StudentsPage() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-xl font-semibold">Students</h1>
-        <p className="text-sm text-slate-400">Search any student and open their full history, strikes, and notices home.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold">Students</h1>
+          <p className="text-sm text-slate-400">Search any student and open their full history, strikes, and notices home.</p>
+        </div>
+        {isAdmin && (
+          <div className="text-right">
+            <button onClick={flagAcademics} disabled={acadBusy} className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm disabled:opacity-40">
+              {acadBusy ? "Pulling…" : "🎓 Flag academics from Edsby"}
+            </button>
+            <p className="mt-1 max-w-xs text-xs text-slate-400">Uses the latest Edsby overall averages (refresh them in the Averages/Honour-roll panel first).</p>
+          </div>
+        )}
       </div>
+      {acadMsg && <p className={`text-sm ${acadMsg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{acadMsg}</p>}
 
       <div className="flex flex-wrap gap-2">
         {classes.map((c) => (
@@ -125,6 +153,9 @@ export default function StudentsPage() {
                 </label>
                 <label className="flex items-center gap-1" title="Behaviour concern — spread evenly across houses/rooms">
                   <input type="checkbox" checked={!!s.behaviourConcern} onChange={() => patchStudent(s, { behaviourConcern: !s.behaviourConcern })} /> ⚠ Behaviour
+                </label>
+                <label className="flex items-center gap-1" title="Academically strong — spread evenly across houses/rooms (can be set from Edsby averages)">
+                  <input type="checkbox" checked={!!s.academic} onChange={() => patchStudent(s, { academic: !s.academic })} /> 🎓 Academic
                 </label>
               </span>
             )}

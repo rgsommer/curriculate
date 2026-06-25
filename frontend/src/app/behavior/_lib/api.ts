@@ -121,6 +121,7 @@ export type StudentSummary = {
   houseGroup?: number;
   behaviourConcern?: boolean;
   sportsSkilled?: boolean;
+  academic?: boolean;
 };
 
 // GUDD (Good Uniform Dress Down) status for a student.

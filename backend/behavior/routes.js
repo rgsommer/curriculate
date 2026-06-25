@@ -27,6 +27,7 @@ import BehaviorConfig from "./models/BehaviorConfig.js";
 import BehaviorAuditLog from "./models/BehaviorAuditLog.js";
 import BehaviorFollowup from "./models/BehaviorFollowup.js";
 import BehaviorConsequence from "./models/BehaviorConsequence.js";
+import { HonourRollSnapshot } from "./models/HonourRoll.js";
 import BehaviorHouse from "./models/BehaviorHouse.js";
 import HousePointEvent from "./models/HousePointEvent.js";
 import HomeworkAssignment from "./models/HomeworkAssignment.js";
@@ -1450,7 +1451,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     // Sorted grade → class → name so the client can group by grade directly.
     // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
-      .select("lastName firstName preferredName classGroup grade active houseId houseGroup houseCaptain behaviourConcern sportsSkilled noticesHomeCount")
+      .select("lastName firstName preferredName classGroup grade active houseId houseGroup houseCaptain behaviourConcern sportsSkilled academic noticesHomeCount")
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
@@ -1644,6 +1645,7 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     if ("houseCaptain" in b) $set.houseCaptain = !!b.houseCaptain;
     if ("behaviourConcern" in b) $set.behaviourConcern = !!b.behaviourConcern;
     if ("sportsSkilled" in b) $set.sportsSkilled = !!b.sportsSkilled;
+    if ("academic" in b) $set.academic = !!b.academic;
     if ("houseGroup" in b) $set.houseGroup = [1, 2].includes(Number(b.houseGroup)) ? Number(b.houseGroup) : 0;
     if ("photoUrl" in b) $set.photoUrl = String(b.photoUrl || "").trim();
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
@@ -1654,7 +1656,41 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     ).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     if ("active" in b) await audit(req.schoolId, $set.active ? "student.reactivated" : "student.deactivated", req, { studentId: student._id });
-    res.json({ ok: true, active: student.active, houseId: student.houseId, houseCaptain: student.houseCaptain, behaviourConcern: student.behaviourConcern, sportsSkilled: student.sportsSkilled });
+    res.json({ ok: true, active: student.active, houseId: student.houseId, houseCaptain: student.houseCaptain, behaviourConcern: student.behaviourConcern, sportsSkilled: student.sportsSkilled, academic: student.academic, houseGroup: student.houseGroup });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Flag academically strong students from the latest Edsby overall-average
+// snapshot (run a refresh in the Honour-roll / avgs panel first). Sets academic
+// = true for students at/above the threshold; never auto-clears (manual unchecks
+// stick). Edsby is admin-managed, so this is admin-only.
+router.post("/students/flag-academics", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const threshold = Number(req.body?.threshold) > 0 ? Number(req.body.threshold) : 80;
+    const snap = await HonourRollSnapshot.findOne({ schoolId: req.schoolId }).sort({ takenAt: -1 }).lean();
+    if (!snap || !(snap.students || []).length) {
+      return res.json({ ok: false, error: "No Edsby averages yet — refresh them in the Honour-roll (averages) panel first.", flagged: 0, matched: 0 });
+    }
+    const avgByNid = new Map();
+    for (const s of snap.students) {
+      const a = typeof s.edsbyAverage === "number" ? s.edsbyAverage : s.weightedAvg;
+      if (typeof a === "number") avgByNid.set(String(s.edsbyNid), a);
+    }
+    const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true, edsbyStudentId: { $nin: ["", null] } })
+      .select("edsbyStudentId academic").lean();
+    const updates = [];
+    let matched = 0;
+    for (const s of students) {
+      const a = avgByNid.get(String(s.edsbyStudentId));
+      if (a === undefined) continue;
+      matched++;
+      if (a >= threshold && !s.academic) updates.push({ updateOne: { filter: { _id: s._id }, update: { $set: { academic: true } } } });
+    }
+    if (updates.length) await BehaviorStudent.bulkWrite(updates);
+    await audit(req.schoolId, "students.flag_academics", req, { meta: { threshold, flagged: updates.length, matched } });
+    res.json({ ok: true, flagged: updates.length, matched, threshold, snapshotAt: snap.takenAt });
   } catch (err) {
     next(err);
   }
@@ -4186,7 +4222,7 @@ router.post("/houses/backfill", authAny, loadMembership, canManageHouses, async 
     const K = houseIds.length;
 
     const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
-      .select("lastName grade gender houseId behaviourConcern sportsSkilled")
+      .select("lastName grade gender houseId behaviourConcern sportsSkilled academic")
       .lean();
 
     const surnameKey = (s) => (s.lastName || "").trim().toLowerCase() || `__solo_${s._id}`;
@@ -4204,11 +4240,12 @@ router.post("/houses/backfill", authAny, loadMembership, canManageHouses, async 
       h.gender[sexKey(s)] = (h.gender[sexKey(s)] || 0) + 1;
       if (s.behaviourConcern) h.concern++;
       if (s.sportsSkilled) h.sports++;
+      if (s.academic) h.academic++;
     };
 
     // Per-house tallies; seed with already-assigned students in unassigned mode
     // so balancing accounts for the current distribution.
-    const H = houseIds.map(() => ({ total: 0, grade: {}, gender: {}, concern: 0, sports: 0 }));
+    const H = houseIds.map(() => ({ total: 0, grade: {}, gender: {}, concern: 0, sports: 0, academic: 0 }));
     const familyHouse = {}; // surname -> house index a family is already in
     if (onlyUnassigned) {
       for (const s of students) {
@@ -4236,19 +4273,21 @@ router.post("/houses/backfill", authAny, loadMembership, canManageHouses, async 
     const groups = [...fam.values()].sort((a, b) => b.length - a.length);
 
     const scoreIfAdded = (hi, group) => {
-      const sim = H.map((h) => ({ total: h.total, grade: { ...h.grade }, gender: { ...h.gender }, concern: h.concern, sports: h.sports }));
+      const sim = H.map((h) => ({ total: h.total, grade: { ...h.grade }, gender: { ...h.gender }, concern: h.concern, sports: h.sports, academic: h.academic }));
       for (const s of group) {
         sim[hi].total++;
         sim[hi].grade[gradeKey(s)] = (sim[hi].grade[gradeKey(s)] || 0) + 1;
         sim[hi].gender[sexKey(s)] = (sim[hi].gender[sexKey(s)] || 0) + 1;
         if (s.behaviourConcern) sim[hi].concern++;
         if (s.sportsSkilled) sim[hi].sports++;
+        if (s.academic) sim[hi].academic++;
       }
       let score = variance(sim.map((x) => x.total)) * 3;
       for (const g of allGrades) score += variance(sim.map((x) => x.grade[g] || 0));
       for (const sx of ["M", "F", "U"]) score += variance(sim.map((x) => x.gender[sx] || 0));
       score += variance(sim.map((x) => x.concern)) * 2;
       score += variance(sim.map((x) => x.sports)) * 2;
+      score += variance(sim.map((x) => x.academic)) * 2;
       return score;
     };
 
@@ -4292,7 +4331,7 @@ router.post("/houses/split-groups", authAny, loadMembership, canManageHouses, as
   try {
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true, houseId: { $ne: null } })
-      .select("lastName grade gender houseId behaviourConcern sportsSkilled").lean();
+      .select("lastName grade gender houseId behaviourConcern sportsSkilled academic").lean();
 
     const gradeKey = (s) => String(s.grade || "").trim() || "?";
     const sexKey = (s) => {
@@ -4324,21 +4363,23 @@ router.post("/houses/split-groups", authAny, loadMembership, canManageHouses, as
         fam.get(key).push(s);
       }
       const groups = [...fam.values()].sort((a, b) => b.length - a.length);
-      const B = [{ total: 0, grade: {}, gender: {}, concern: 0, sports: 0 }, { total: 0, grade: {}, gender: {}, concern: 0, sports: 0 }];
+      const B = [{ total: 0, grade: {}, gender: {}, concern: 0, sports: 0, academic: 0 }, { total: 0, grade: {}, gender: {}, concern: 0, sports: 0, academic: 0 }];
       const score = (bi, group) => {
-        const sim = B.map((b) => ({ total: b.total, grade: { ...b.grade }, gender: { ...b.gender }, concern: b.concern, sports: b.sports }));
+        const sim = B.map((b) => ({ total: b.total, grade: { ...b.grade }, gender: { ...b.gender }, concern: b.concern, sports: b.sports, academic: b.academic }));
         for (const s of group) {
           sim[bi].total++;
           sim[bi].grade[gradeKey(s)] = (sim[bi].grade[gradeKey(s)] || 0) + 1;
           sim[bi].gender[sexKey(s)] = (sim[bi].gender[sexKey(s)] || 0) + 1;
           if (s.behaviourConcern) sim[bi].concern++;
           if (s.sportsSkilled) sim[bi].sports++;
+          if (s.academic) sim[bi].academic++;
         }
         let sc = variance(sim.map((x) => x.total)) * 3;
         for (const g of allGrades) sc += variance(sim.map((x) => x.grade[g] || 0));
         for (const sx of ["M", "F", "U"]) sc += variance(sim.map((x) => x.gender[sx] || 0));
         sc += variance(sim.map((x) => x.concern)) * 2;
         sc += variance(sim.map((x) => x.sports)) * 2;
+        sc += variance(sim.map((x) => x.academic)) * 2;
         return sc;
       };
       for (const group of groups) {
@@ -4350,6 +4391,7 @@ router.post("/houses/split-groups", authAny, loadMembership, canManageHouses, as
           B[bi].gender[sexKey(s)] = (B[bi].gender[sexKey(s)] || 0) + 1;
           if (s.behaviourConcern) B[bi].concern++;
           if (s.sportsSkilled) B[bi].sports++;
+          if (s.academic) B[bi].academic++;
         }
       }
       summary.push({
