@@ -2006,6 +2006,10 @@ router.post("/incidents/batch", authAny, loadMembership, canLog, async (req, res
         });
       }
 
+      if (behavior.immediateWhiteSlip) {
+        await fireWhiteSlip({ req, student, config, behaviorName: behavior.name, detailText, at: timestamp, relatedIncidentId: inc._id });
+      }
+
       const priorIncidents = await BehaviorIncident.find({ studentId: student._id }).lean();
       const others = priorIncidents.filter((p) => String(p._id) !== String(inc._id));
       const decision = evaluateIncident({

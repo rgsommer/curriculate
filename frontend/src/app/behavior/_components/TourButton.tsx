@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 
 // A lightweight guided tour of Behaviours for teachers — a step-through overlay,
@@ -16,27 +17,35 @@ const STEPS: { title: string; body: string }[] = [
     body: "Tap “Log” (top bar). Search any student in the school, choose ✓ Positive or ✕ Negative, pick the behaviour, add an optional note or photo, and submit. Works one-handed on a phone or at your desk. The behaviours you use most rise to the top.",
   },
   {
-    title: "2 · Strikes & notices home",
+    title: "2 · Log several students at once",
+    body: "Tap “Several students” (top-right of the logging page) when one thing applies to a group — a great clean-up, a noisy line, a whole table off-task. Pick the behaviour once, tick the students (by class or by searching), add a note, and submit. It logs one entry per student in seconds, instead of repeating yourself.",
+  },
+  {
+    title: "3 · Strikes & notices home",
     body: "Negatives add to a shared count. At the threshold you’re shown a ready-to-send, tailored note — you review/edit it and press Send (or “Not this time”). It reaches families over Edsby by default, signed by you. You always get your own copy first.",
   },
   {
-    title: "3 · Catch the good too",
+    title: "4 · Catch the good too",
     body: "Positives are recognised, earn house points, and enough of them sends a good-news note home. They never count against a student.",
   },
   {
-    title: "4 · Uniform & the GUDD",
+    title: "5 · Houses",
+    body: "If your school runs Houses, behaviours can carry points (a positive adds; a negative can deduct). Whether you log one student or several at once, each student’s House gets the points automatically — so a group positive lifts several Houses in one go. Students follow a live, name-free leaderboard.",
+  },
+  {
+    title: "6 · Uniform & the GUDD",
     body: "Some offences are uniform infractions: they count as a normal strike and toward losing the Good Uniform Dress Down. A coloured GUDD chip (green / amber / red) shows where a student stands, with the next consequence once it’s lost.",
   },
   {
-    title: "5 · Record consequences & white slips",
+    title: "7 · Record consequences & white slips",
     body: "On a student’s page, document a consequence you actually gave — work detention, call home, lines. When their behaviour strikes reach the trigger, a “Recommend a white slip” button drafts a parent note (with reasons), copies it to your clipboard and emails you a copy, CC the VP. Some behaviours are “immediate white slip” — logging one notifies you and the VP automatically.",
   },
   {
-    title: "6 · The student page",
+    title: "8 · The student page",
     body: "Open any student for their full cross-teacher history, the recommended next action, an AI summary for admin (copies to your clipboard), a printable record, and the “Current log” jump.",
   },
   {
-    title: "7 · Homework & reports",
+    title: "9 · Homework & reports",
     body: "The Homework tab tracks completion, runs live-scored formal discussions, sends outstanding-work reminders, and produces end-of-term reports that export to Edsby.",
   },
   {
@@ -56,8 +65,8 @@ export default function TourButton({ className = "" }: { className?: string }) {
   return (
     <>
       <button onClick={start} className={className || "text-slate-600 hover:text-slate-900"}>Tour</button>
-      {open && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => setOpen(false)}>
+      {open && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => setOpen(false)}>
           <div className="my-auto max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">Step {i + 1} of {STEPS.length}</span>
@@ -82,7 +91,8 @@ export default function TourButton({ className = "" }: { className?: string }) {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </>
   );
