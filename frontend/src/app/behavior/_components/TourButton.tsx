@@ -57,8 +57,8 @@ export default function TourButton({ className = "" }: { className?: string }) {
     <>
       <button onClick={start} className={className || "text-slate-600 hover:text-slate-900"}>Tour</button>
       {open && (
-        <div className="fixed inset-0 z-30 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setOpen(false)}>
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-slate-900/40 p-4" onClick={() => setOpen(false)}>
+          <div className="my-auto max-h-[85vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-slate-400">Step {i + 1} of {STEPS.length}</span>
               <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700" aria-label="Close">✕</button>
