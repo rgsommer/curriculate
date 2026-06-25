@@ -49,9 +49,9 @@ function rowNameColor(count: number, trigger: number) {
 function categoryChipClass(cat: string, selected: boolean) {
   if (selected) return "bg-slate-900 text-white";
   switch (cat) {
-    case "uniform": return "border border-indigo-300 bg-indigo-50 text-indigo-700";
-    case "behaviour": return "border border-rose-300 bg-rose-50 text-rose-700";
-    case "preparedness": return "border border-sky-300 bg-sky-50 text-sky-700";
+    case "uniform": return "border border-indigo-300 bg-indigo-100 text-indigo-800";
+    case "behaviour": return "border border-rose-300 bg-rose-100 text-rose-800";
+    case "preparedness": return "border border-sky-300 bg-sky-100 text-sky-800";
     default: return "border border-slate-300 bg-white text-slate-600";
   }
 }
