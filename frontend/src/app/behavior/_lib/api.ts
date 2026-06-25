@@ -117,6 +117,7 @@ export type StudentSummary = {
   activeCount?: number;
   noticesHomeCount?: number;
   guddCount?: number;
+  houseId?: string | null;
   houseGroup?: number;
   behaviourConcern?: boolean;
   sportsSkilled?: boolean;

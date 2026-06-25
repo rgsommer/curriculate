@@ -1644,6 +1644,7 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     if ("houseCaptain" in b) $set.houseCaptain = !!b.houseCaptain;
     if ("behaviourConcern" in b) $set.behaviourConcern = !!b.behaviourConcern;
     if ("sportsSkilled" in b) $set.sportsSkilled = !!b.sportsSkilled;
+    if ("houseGroup" in b) $set.houseGroup = [1, 2].includes(Number(b.houseGroup)) ? Number(b.houseGroup) : 0;
     if ("photoUrl" in b) $set.photoUrl = String(b.photoUrl || "").trim();
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const student = await BehaviorStudent.findOneAndUpdate(

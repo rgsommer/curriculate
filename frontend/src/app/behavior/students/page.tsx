@@ -17,6 +17,8 @@ export default function StudentsPage() {
   const [cls, setCls] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [houses, setHouses] = useState<{ _id: string; name: string; color?: string }[]>([]);
+  const [housesOn, setHousesOn] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -27,14 +29,18 @@ export default function StudentsPage() {
       })
       .catch((e) => setErr(e.message));
     api<Me>("/me").then((d) => setIsAdmin(d.membership?.role === "originator" || d.membership?.role === "admin")).catch(() => {});
+    api<{ enabled: boolean; houses: any[] }>("/houses").then((d) => { setHousesOn(!!d.enabled); setHouses(d.houses || []); }).catch(() => {});
   }, []);
 
-  async function toggleFlag(s: StudentSummary, field: "behaviourConcern" | "sportsSkilled") {
-    const next = !s[field];
-    setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, [field]: next } : x)));
-    try { await api(`/students/${s._id}`, { method: "PATCH", body: { [field]: next } }); }
-    catch { setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, [field]: !next } : x))); }
+  // Optimistic per-student update (flags, house, room). Reverts on failure.
+  async function patchStudent(s: StudentSummary, body: Partial<StudentSummary>) {
+    const prev = s;
+    setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, ...body } : x)));
+    try { await api(`/students/${s._id}`, { method: "PATCH", body }); }
+    catch (e: any) { setErr(e.message); setStudents((list) => list.map((x) => (x._id === s._id ? prev : x))); }
   }
+  const houseName = (id?: string | null) => houses.find((h) => h._id === String(id))?.name || "";
+  const houseColor = (id?: string | null) => houses.find((h) => h._id === String(id))?.color || "#94a3b8";
 
   const classes = useMemo(() => {
     const set = new Set<string>();
@@ -79,21 +85,46 @@ export default function StudentsPage() {
 
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
-          <li key={s._id} className="flex items-center gap-2 pr-3 hover:bg-slate-50">
-            <Link href={`/behavior/student/${s._id}`} className="flex min-w-0 flex-1 items-center justify-between px-4 py-3">
+          <li key={s._id} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2 hover:bg-slate-50">
+            <Link href={`/behavior/student/${s._id}`} className="flex min-w-0 flex-1 basis-48 items-center justify-between gap-2">
               <span className={`truncate font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
                 {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
-              <span className="ml-2 shrink-0 text-sm text-slate-400">{s.classGroup} →</span>
+              <span className="shrink-0 text-sm text-slate-400">{s.classGroup}</span>
             </Link>
+
+            {housesOn && (
+              isAdmin ? (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: houseColor(s.houseId) }} />
+                  <select value={s.houseId || ""} onChange={(e) => patchStudent(s, { houseId: e.target.value || null })}
+                    className="rounded-lg border border-slate-300 px-2 py-1 text-xs">
+                    <option value="">No house</option>
+                    {houses.map((h) => <option key={h._id} value={h._id}>{h.name}</option>)}
+                  </select>
+                  <select value={s.houseGroup || 0} onChange={(e) => patchStudent(s, { houseGroup: Number(e.target.value) })}
+                    title="Booster-event room (#1 / #2)" className="rounded-lg border border-slate-300 px-2 py-1 text-xs">
+                    <option value={0}>Room —</option>
+                    <option value={1}>#1</option>
+                    <option value={2}>#2</option>
+                  </select>
+                </span>
+              ) : s.houseId ? (
+                <span className="flex shrink-0 items-center gap-1.5 text-xs text-slate-500">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: houseColor(s.houseId) }} />
+                  {houseName(s.houseId)}{s.houseGroup ? ` · #${s.houseGroup}` : ""}
+                </span>
+              ) : null
+            )}
+
             {isAdmin && (
-              <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
-                <label className="flex items-center gap-1" title="Behaviour concern — spread evenly across houses/rooms">
-                  <input type="checkbox" checked={!!s.behaviourConcern} onChange={() => toggleFlag(s, "behaviourConcern")} /> concern
-                </label>
+              <span className="flex shrink-0 items-center gap-3 text-xs text-slate-500">
                 <label className="flex items-center gap-1" title="Sports-skilled — spread evenly across houses/rooms">
-                  <input type="checkbox" checked={!!s.sportsSkilled} onChange={() => toggleFlag(s, "sportsSkilled")} /> sport
+                  <input type="checkbox" checked={!!s.sportsSkilled} onChange={() => patchStudent(s, { sportsSkilled: !s.sportsSkilled })} /> ⚽ Sport
+                </label>
+                <label className="flex items-center gap-1" title="Behaviour concern — spread evenly across houses/rooms">
+                  <input type="checkbox" checked={!!s.behaviourConcern} onChange={() => patchStudent(s, { behaviourConcern: !s.behaviourConcern })} /> ⚠ Behaviour
                 </label>
               </span>
             )}
