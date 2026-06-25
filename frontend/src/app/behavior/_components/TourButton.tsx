@@ -30,7 +30,7 @@ const STEPS: { title: string; body: string }[] = [
   },
   {
     title: "5 · Houses",
-    body: "If your school runs Houses, behaviours can carry points (a positive adds; a negative can deduct). Whether you log one student or several at once, each student’s House gets the points automatically — so a group positive lifts several Houses in one go. Students follow a live, name-free leaderboard.",
+    body: "If your school runs Houses, behaviours can carry points (a positive adds; a negative can deduct), and each student’s House gets them automatically. You can also award points to a whole House for an event (trivia, clean-up, competition) from the dashboard — with one-tap presets if your admin set them up. Students follow a live, name-free leaderboard.",
   },
   {
     title: "6 · Uniform & the GUDD",

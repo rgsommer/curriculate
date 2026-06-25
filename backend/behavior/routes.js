@@ -972,7 +972,8 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
       ]],
       ["Houses &amp; school culture", [
         "Optional house system ties everyday conduct to shared team spirit, with a live leaderboard and merit-based rewards.",
-        "Any teacher can award points to a whole house for events (trivia, clean-ups, competitions); for booster events houses split into balanced #1/#2 room groups, and students look up their house, group and room by last name.",
+        "Any teacher can award points to a whole house for events (trivia, clean-ups, competitions) — with preset point values; for booster events houses split into balanced #1/#2 room groups, and students look up their house, group and room by last name.",
+        "Fair by design: per-student caps stop any one student dominating the standings, and house/room formation spreads grade, gender, behaviour-concern and sports-skilled students evenly.",
       ]],
       ["Homework, class work &amp; discussions", [
         "Track completion per class/subject, live-scored formal discussions, outstanding-work reminders, and end-of-term reports that export to Edsby.",

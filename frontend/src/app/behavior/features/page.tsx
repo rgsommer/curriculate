@@ -167,7 +167,15 @@ const HOUSES = [
   },
   {
     title: "Award points for house events",
-    body: "Any teacher can award (or deduct) points to a whole house for a house event — a trivia round, a clean-up, a competition: on the dashboard, the House points card → Give points → pick the house, enter the points and a reason.",
+    body: "Any teacher can award (or deduct) points to a whole house for a house event — a trivia round, a clean-up, a competition: on the dashboard, the House points card → Give points → pick the house, enter the points and a reason. Admins can predefine House events with set point values (e.g. “Trivia — 1st = 50”) for one-tap awarding.",
+  },
+  {
+    title: "Fair totals — per-student caps",
+    body: "Admins can cap how much any one student moves their house total (a positive cap and a negative cap; 0 = unlimited), so no single student dominates the standings. Points awarded to a whole house for an event are never capped.",
+  },
+  {
+    title: "Balanced houses & rooms",
+    body: "Auto-assign and the #1/#2 split balance grade and gender, keep siblings together, and also spread students flagged as a behaviour concern or as sports-skilled evenly — so no house or event room clusters them. Mark those flags on the Students page; print a House · Name · Room list from Setup.",
   },
   {
     title: "Event groups & a student look-up",
