@@ -345,7 +345,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd", "houseCaps", "houseEvents",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd", "houseCaps", "houseEvents", "houseRewards",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -1644,6 +1644,7 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     if ("houseCaptain" in b) $set.houseCaptain = !!b.houseCaptain;
     if ("behaviourConcern" in b) $set.behaviourConcern = !!b.behaviourConcern;
     if ("sportsSkilled" in b) $set.sportsSkilled = !!b.sportsSkilled;
+    if ("photoUrl" in b) $set.photoUrl = String(b.photoUrl || "").trim();
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const student = await BehaviorStudent.findOneAndUpdate(
       { _id: req.params.id, schoolId: req.schoolId },
@@ -3998,6 +3999,7 @@ router.put("/houses/config", authAny, loadMembership, canManageHouses, async (re
     if ("housePointsResetAt" in b) $set.housePointsResetAt = b.housePointsResetAt ? new Date(b.housePointsResetAt) : null;
     if (b.houseCaps) $set.houseCaps = { positive: Math.max(0, Number(b.houseCaps.positive) || 0), negative: Math.max(0, Number(b.houseCaps.negative) || 0) };
     if (Array.isArray(b.houseEvents)) $set.houseEvents = b.houseEvents.map((e) => ({ name: String(e.name || "").trim(), points: Number(e.points) || 0 })).filter((e) => e.name);
+    if (Array.isArray(b.houseRewards)) $set.houseRewards = b.houseRewards.map((r) => ({ points: Number(r.points) || 0, reward: String(r.reward || "").trim() })).filter((r) => r.reward && r.points);
     if (b.houseReport) $set.houseReport = { enabled: !!b.houseReport.enabled, recipientEmail: String(b.houseReport.recipientEmail || "").trim().toLowerCase() };
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const config = await BehaviorConfig.findOneAndUpdate({ schoolId: req.schoolId }, { $set }, { new: true, upsert: true }).lean();
@@ -4672,7 +4674,7 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps houseRewards").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
     const sid = new mongoose.Types.ObjectId(schoolId);
@@ -4728,7 +4730,37 @@ router.get("/public/houses", async (req, res, next) => {
       at: e.at,
     }));
 
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity });
+    // Daily winners (today): student who earned the most positive points, and the
+    // house that earned the most net points since local midnight.
+    const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
+    const [topStuAgg, topHouseAgg] = await Promise.all([
+      HousePointEvent.aggregate([
+        { $match: { schoolId: sid, studentId: { $ne: null }, points: { $gt: 0 }, at: { $gt: dayStart } } },
+        { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
+        { $sort: { pts: -1 } }, { $limit: 1 },
+      ]),
+      HousePointEvent.aggregate([
+        { $match: { schoolId: sid, at: { $gt: dayStart } } },
+        { $group: { _id: "$houseId", pts: { $sum: "$points" } } },
+        { $sort: { pts: -1 } }, { $limit: 1 },
+      ]),
+    ]);
+    let dailyTopStudent = null;
+    if (topStuAgg[0]) {
+      const stu = await BehaviorStudent.findById(topStuAgg[0]._id).select("firstName preferredName lastName photoUrl houseId").lean();
+      if (stu) {
+        const h = stu.houseId ? houseById[String(stu.houseId)] : null;
+        dailyTopStudent = { name: `${stu.preferredName || stu.firstName} ${stu.lastName}`.trim(), photoUrl: stu.photoUrl || "", house: h?.name || "", color: h?.color || "#0f172a", points: topStuAgg[0].pts };
+      }
+    }
+    let dailyTopHouse = null;
+    if (topHouseAgg[0] && houseById[String(topHouseAgg[0]._id)]) {
+      const h = houseById[String(topHouseAgg[0]._id)];
+      dailyTopHouse = { name: h.name, color: h.color || "#0f172a", image: h.image || "", points: topHouseAgg[0].pts };
+    }
+    const rewards = (config.houseRewards || []).slice().sort((a, b) => a.points - b.points);
+
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, rewards });
   } catch (err) {
     next(err);
   }

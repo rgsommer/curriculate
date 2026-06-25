@@ -25,6 +25,7 @@ const HEADER_ALIASES = {
   classGroup: ["class", "group", "class/group", "class group", "homeroom", "section"],
   grade: ["grade", "grade level", "year"],
   house: ["house", "house name", "team", "house/team"],
+  photoUrl: ["photo", "photo url", "photourl", "picture", "picture url", "image", "image url", "photo link"],
   dob: ["dob", "date of birth", "birthdate", "birth date"],
   parent1Name: ["parent 1 name", "parent1 name", "guardian 1 name", "parent 1", "parent name", "guardian name"],
   parent1Email: ["parent 1 email", "parent1 email", "guardian 1 email", "parent email", "guardian email", "email"],
@@ -124,6 +125,7 @@ function buildStudents(records, headers) {
       grade: stripTags(get(row, "grade")),
       // Resolved to a houseId at import time (matched/created by name).
       houseName: stripTags(get(row, "house")),
+      photoUrl: get(row, "photoUrl").trim(),
       dob: parseDob(get(row, "dob")),
       parents,
     });

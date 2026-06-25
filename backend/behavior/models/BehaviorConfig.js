@@ -203,6 +203,9 @@ const BehaviorConfigSchema = new mongoose.Schema(
     // Named house events with preset point values, for quick awarding (e.g.
     // { name: "Trivia — 1st", points: 50 }).
     houseEvents: { type: [{ name: { type: String, default: "" }, points: { type: Number, default: 0 } }], default: [] },
+    // Reward tiers: when a house's total reaches `points`, it unlocks `reward`
+    // (e.g. { points: 50, reward: "Ice cream sundae" }). Shown on the portal/display.
+    houseRewards: { type: [{ points: { type: Number, default: 0 }, reward: { type: String, default: "" } }], default: [] },
   },
   { timestamps: true }
 );

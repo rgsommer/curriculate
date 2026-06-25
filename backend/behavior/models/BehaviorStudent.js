@@ -56,6 +56,8 @@ const BehaviorStudentSchema = new mongoose.Schema(
     // concern, and a sports-skilled student — so neither clusters in one house/room.
     behaviourConcern: { type: Boolean, default: false },
     sportsSkilled: { type: Boolean, default: false },
+    // Optional photo URL (school-provided) shown on the houses display board.
+    photoUrl: { type: String, default: "" },
     dob: { type: Date, default: null },
 
     parents: { type: [ParentSchema], default: [] },
