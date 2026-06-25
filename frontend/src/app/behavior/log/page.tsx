@@ -745,7 +745,7 @@ export default function LogIncidentPage() {
             >
               <span className={`font-medium ${rowNameColor(s.activeCount || 0, rosterTrigger)}`}>
                 {s.lastName}, {s.firstName}
-                {s.preferredName ? ` (${s.preferredName})` : ""}
+                {s.preferredName && s.preferredName !== s.firstName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
               <span className="text-sm text-slate-400">{s.classGroup}</span>
@@ -980,7 +980,7 @@ function BatchLog({
               <button onClick={() => toggle(s._id)} className={`flex w-full items-center justify-between px-4 py-3 text-left hover:bg-slate-50 ${picked[s._id] ? "bg-slate-50" : ""}`}>
                 <span className={`flex items-center gap-2 font-medium ${rowNameColor(s.activeCount || 0, rosterTrigger)}`}>
                   <span className={`flex h-5 w-5 items-center justify-center rounded border text-xs ${picked[s._id] ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300"}`}>{picked[s._id] ? "✓" : ""}</span>
-                  {s.lastName}, {s.firstName}{s.preferredName ? ` (${s.preferredName})` : ""}
+                  {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName ? ` (${s.preferredName})` : ""}
                   {s.activeCount ? <span className="text-xs font-normal">({s.activeCount})</span> : null}
                 </span>
                 <span className="text-sm text-slate-400">{s.classGroup}</span>

@@ -73,7 +73,7 @@ export default function StudentsPage() {
           <li key={s._id}>
             <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50">
               <span className={`font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
-                {s.lastName}, {s.firstName}{s.preferredName ? ` (${s.preferredName})` : ""}
+                {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
               <span className="text-sm text-slate-400">{s.classGroup} →</span>
