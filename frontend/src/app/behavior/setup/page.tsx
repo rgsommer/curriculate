@@ -95,9 +95,20 @@ function ReadOnlySettings({ me }: { me: Me }) {
           .
         </p>
       </Card>
-      <Card>
-        <h2 className="font-semibold">Division settings</h2>
-        <div className="mt-2 divide-y divide-slate-100">
+
+      {/* Blocks teachers may act on themselves. */}
+      <AddStudentSection />
+      <InviteSection domain={me.school?.emailDomain || ""} isOriginator={false} />
+      <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
+      <MyEdsbyCard />
+
+      {/* Admin-managed, view-only — collapsed, kept at the bottom. */}
+      <ReadOnlyHouses />
+      <details className="rounded-2xl border border-slate-200 bg-white p-5">
+        <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
+          Division thresholds &amp; branding <span className="text-xs font-normal text-slate-400">view only ▾</span>
+        </summary>
+        <div className="mt-3 divide-y divide-slate-100">
           <Row label="Trigger count" val={c.triggerCount ?? 3} />
           <Row label="Fade window (days)" val={c.fadeWindowDays ?? 30} />
           <Row label="VP" val={c.vp?.name ? `${c.vp.name}${c.vp.email ? ` (${c.vp.email})` : ""}` : ""} />
@@ -108,14 +119,37 @@ function ReadOnlySettings({ me }: { me: Me }) {
         <Link href="/behavior/behaviours" className="mt-3 inline-block rounded-lg border border-slate-300 px-3 py-1.5 text-sm">
           View behaviours →
         </Link>
-      </Card>
-
-      {/* Blocks teachers may edit themselves (the rest above is admin-managed). */}
-      <AddStudentSection />
-      <InviteSection domain={me.school?.emailDomain || ""} isOriginator={false} />
-      <TeacherHomeworkPrefs config={me.config} prefs={me.membership?.homeworkPrefs} />
-      <MyEdsbyCard />
+      </details>
     </div>
+  );
+}
+
+// Read-only, collapsed Houses list for non-admins.
+function ReadOnlyHouses() {
+  const [houses, setHouses] = useState<any[] | null>(null);
+  useEffect(() => { api<{ houses: any[] }>("/houses").then((d) => setHouses(d.houses || [])).catch(() => setHouses([])); }, []);
+  if (houses && houses.length === 0) return null;
+  return (
+    <details className="rounded-2xl border border-slate-200 bg-white p-5">
+      <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">
+        Houses <span className="text-xs font-normal text-slate-400">view only ▾</span>
+      </summary>
+      <div className="mt-3 space-y-1.5">
+        {houses === null ? (
+          <p className="text-xs text-slate-400">Loading…</p>
+        ) : (
+          houses.map((h) => (
+            <div key={h._id} className="flex items-center gap-2 text-sm">
+              {h.image
+                ? <img src={h.image} alt="" className="h-5 w-5 rounded object-cover" />
+                : <span className="inline-block h-3 w-3 rounded-full" style={{ background: h.color || "#0f172a" }} />}
+              <span>{h.name}</span>
+              <span className="ml-auto text-xs text-slate-400">{h.members ?? 0} students</span>
+            </div>
+          ))
+        )}
+      </div>
+    </details>
   );
 }
 

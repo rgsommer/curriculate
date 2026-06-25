@@ -14,11 +14,11 @@ export default function BehaviorLayout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
-          <Link href="/behavior" className="text-lg font-semibold tracking-tight">
+        <div className="mx-auto flex max-w-3xl items-center gap-3 px-4 py-3">
+          <Link href="/behavior" className="shrink-0 text-lg font-semibold tracking-tight">
             Behaviours
           </Link>
-          <nav className="flex items-center gap-4 text-sm">
+          <nav className="flex min-w-0 flex-1 items-center gap-4 overflow-x-auto whitespace-nowrap text-sm [&>*]:shrink-0">
             <Link href="/behavior" className="text-slate-600 hover:text-slate-900">
               Dashboard
             </Link>

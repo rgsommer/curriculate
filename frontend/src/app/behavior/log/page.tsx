@@ -44,11 +44,35 @@ function rowNameColor(count: number, trigger: number) {
   return "";
 }
 
+// Map each keyword to a chip colour key. "report" (green) when every behaviour
+// under it is report-only (INTERACTION mode); otherwise the dominant offence
+// category (preparedness / behaviour / uniform).
+function keywordCategoryMap(list: Behavior[]): Record<string, string> {
+  const cat: Record<string, Record<string, number>> = {};
+  const total: Record<string, number> = {};
+  const interaction: Record<string, number> = {};
+  for (const b of list) {
+    if (!b.keyword) continue;
+    total[b.keyword] = (total[b.keyword] || 0) + 1;
+    if (b.triggerMode === "INTERACTION") interaction[b.keyword] = (interaction[b.keyword] || 0) + 1;
+    const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
+    for (const c of cats) { (cat[b.keyword] ||= {}); cat[b.keyword][c] = (cat[b.keyword][c] || 0) + 1; }
+  }
+  const m: Record<string, string> = {};
+  for (const k of Object.keys(total)) {
+    if (interaction[k] === total[k]) { m[k] = "report"; continue; } // all report-only → green
+    const cc = cat[k];
+    m[k] = cc ? Object.entries(cc).sort((a, b) => b[1] - a[1])[0][0] : "";
+  }
+  return m;
+}
+
 // Tint a keyword chip by its behaviours' offence category.
-// uniform = indigo, behaviour = rose, class preparedness = sky.
+// uniform = indigo, behaviour = rose, class preparedness = sky, report-only = green.
 function categoryChipClass(cat: string, selected: boolean) {
   if (selected) return "bg-slate-900 text-white";
   switch (cat) {
+    case "report": return "border border-emerald-400 bg-emerald-200 text-emerald-900"; // report-only (no strike)
     case "uniform": return "border border-indigo-400 bg-indigo-200 text-indigo-900";
     case "behaviour": return "border border-rose-400 bg-rose-200 text-rose-900";
     case "preparedness": return "border border-sky-400 bg-sky-200 text-sky-900";
@@ -188,23 +212,9 @@ export default function LogIncidentPage() {
       return a.localeCompare(b);
     });
   }, [inKind, recentRank]);
-  // Dominant offence category per keyword, to colour the chips.
-  const keywordCat = useMemo(() => {
-    const counts: Record<string, Record<string, number>> = {};
-    for (const b of inKind) {
-      if (!b.keyword) continue;
-      const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
-      for (const c of cats) {
-        (counts[b.keyword] ||= {});
-        counts[b.keyword][c] = (counts[b.keyword][c] || 0) + 1;
-      }
-    }
-    const m: Record<string, string> = {};
-    for (const k of Object.keys(counts)) {
-      m[k] = Object.entries(counts[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-    }
-    return m;
-  }, [inKind]);
+  // Per-keyword chip colour: "report" (green) when its behaviours are report-only
+  // (INTERACTION mode, no strike), else the dominant offence category.
+  const keywordCat = useMemo(() => keywordCategoryMap(inKind), [inKind]);
   // Dropdown options: recently-used first, otherwise interactions then alpha.
   const offenseOptions = useMemo(
     () =>
@@ -590,6 +600,7 @@ export default function LogIncidentPage() {
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
               <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-emerald-400" /> Report only</span>
             </div>
           )}
           <select
@@ -813,21 +824,8 @@ function BatchLog({
       return a.localeCompare(b);
     });
   }, [behaviors, recentRank]);
-  // Dominant offence category per keyword, to colour the chips.
-  const keywordCat = useMemo(() => {
-    const counts: Record<string, Record<string, number>> = {};
-    for (const b of behaviors) {
-      if (!b.keyword) continue;
-      const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
-      for (const c of cats) {
-        (counts[b.keyword] ||= {});
-        counts[b.keyword][c] = (counts[b.keyword][c] || 0) + 1;
-      }
-    }
-    const m: Record<string, string> = {};
-    for (const k of Object.keys(counts)) m[k] = Object.entries(counts[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
-    return m;
-  }, [behaviors]);
+  // Chip colour per keyword (report-only green, else offence category).
+  const keywordCat = useMemo(() => keywordCategoryMap(behaviors), [behaviors]);
   const offenseOptions = useMemo(
     () =>
       [...behaviors]
