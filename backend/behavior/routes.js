@@ -338,7 +338,7 @@ router.put("/config", authAny, loadMembership, requireAdmin, async (req, res, ne
       "aiSendMode", "cancelWindowSeconds", "aiProvider", "aiModel",
       "noticesResetMode", "termStartDates", "repeatScopeDays",
       "reminderTime", "manualNonSchoolDays", "houseReport", "housesEnabled", "housePointsResetAt",
-      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd",
+      "homework", "vpNotify", "teacherDraft", "consequenceLadder", "consequenceWhitelist", "adminDigest", "gudd", "houseCaps", "houseEvents",
     ];
     const update = {};
     for (const k of allowed) if (k in (req.body || {})) update[k] = req.body[k];
@@ -1425,7 +1425,7 @@ router.get("/students", authAny, loadMembership, async (req, res, next) => {
     // Sorted grade → class → name so the client can group by grade directly.
     // Returns the whole roster when there's no query (for the grouped picker).
     const students = await BehaviorStudent.find(filter)
-      .select("lastName firstName preferredName classGroup grade active houseId houseGroup houseCaptain noticesHomeCount")
+      .select("lastName firstName preferredName classGroup grade active houseId houseGroup houseCaptain behaviourConcern sportsSkilled noticesHomeCount")
       .sort({ grade: 1, classGroup: 1, lastName: 1, firstName: 1 })
       .limit(q ? 50 : 2000)
       .lean();
@@ -1617,6 +1617,8 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     if ("active" in b) $set.active = !!b.active;
     if ("houseId" in b) $set.houseId = b.houseId || null;
     if ("houseCaptain" in b) $set.houseCaptain = !!b.houseCaptain;
+    if ("behaviourConcern" in b) $set.behaviourConcern = !!b.behaviourConcern;
+    if ("sportsSkilled" in b) $set.sportsSkilled = !!b.sportsSkilled;
     if (!Object.keys($set).length) return res.status(400).json({ ok: false, error: "Nothing to update" });
     const student = await BehaviorStudent.findOneAndUpdate(
       { _id: req.params.id, schoolId: req.schoolId },
@@ -1625,7 +1627,7 @@ router.patch("/students/:id", authAny, loadMembership, requireAdmin, async (req,
     ).lean();
     if (!student) return res.status(404).json({ ok: false, error: "Student not found" });
     if ("active" in b) await audit(req.schoolId, $set.active ? "student.reactivated" : "student.deactivated", req, { studentId: student._id });
-    res.json({ ok: true, active: student.active, houseId: student.houseId, houseCaptain: student.houseCaptain });
+    res.json({ ok: true, active: student.active, houseId: student.houseId, houseCaptain: student.houseCaptain, behaviourConcern: student.behaviourConcern, sportsSkilled: student.sportsSkilled });
   } catch (err) {
     next(err);
   }
@@ -3887,22 +3889,45 @@ router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, 
 
 // ── Houses + points ──────────────────────────────────────────────────────────
 
+// House point totals, applying per-student caps (config.houseCaps). A single
+// student's positive and negative contributions are each capped (0 = unlimited);
+// house-level awards (no studentId — e.g. house events) are never capped.
+async function houseTotals(schoolId, cfg) {
+  const match = { schoolId };
+  if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
+  const posCap = Number(cfg?.houseCaps?.positive) || 0;
+  const negCap = Number(cfg?.houseCaps?.negative) || 0;
+  const rows = await HousePointEvent.aggregate([
+    { $match: match },
+    { $group: {
+      _id: { h: "$houseId", s: "$studentId" },
+      pos: { $sum: { $cond: [{ $gt: ["$points", 0] }, "$points", 0] } },
+      neg: { $sum: { $cond: [{ $lt: ["$points", 0] }, "$points", 0] } },
+    } },
+  ]);
+  const byHouse = {};
+  for (const r of rows) {
+    let pos = r.pos, neg = r.neg;
+    if (r._id.s) { // per-student → cap
+      if (posCap > 0) pos = Math.min(pos, posCap);
+      if (negCap > 0) neg = Math.max(neg, -negCap);
+    }
+    const hid = String(r._id.h);
+    byHouse[hid] = (byHouse[hid] || 0) + pos + neg;
+  }
+  return byHouse;
+}
+
 // Houses with their point totals + member counts (for the leaderboard).
 router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
     // Master switch: when Houses is off, the whole aspect is hidden — report no
     // houses so every consumer surface (leaderboard, assignment dropdown) hides.
-    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt").lean();
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("housesEnabled housePointsResetAt houseCaps").lean();
     if (!cfg?.housesEnabled) return res.json({ ok: true, enabled: false, houses: [] });
 
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
-    const pointMatch = { schoolId: req.schoolId };
-    if (cfg.housePointsResetAt) pointMatch.at = { $gt: new Date(cfg.housePointsResetAt) };
-    const totals = await HousePointEvent.aggregate([
-      { $match: pointMatch },
-      { $group: { _id: "$houseId", points: { $sum: "$points" } } },
-    ]);
-    const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
+    const totalById = await houseTotals(req.schoolId, cfg);
     const members = await BehaviorStudent.aggregate([
       { $match: { schoolId: req.schoolId, active: true, houseId: { $ne: null } } },
       { $group: { _id: "$houseId", n: { $sum: 1 } } },
@@ -4053,7 +4078,7 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
     const K = houseIds.length;
 
     const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true })
-      .select("lastName grade gender houseId")
+      .select("lastName grade gender houseId behaviourConcern sportsSkilled")
       .lean();
 
     const surnameKey = (s) => (s.lastName || "").trim().toLowerCase() || `__solo_${s._id}`;
@@ -4069,11 +4094,13 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
       h.total++;
       h.grade[gradeKey(s)] = (h.grade[gradeKey(s)] || 0) + 1;
       h.gender[sexKey(s)] = (h.gender[sexKey(s)] || 0) + 1;
+      if (s.behaviourConcern) h.concern++;
+      if (s.sportsSkilled) h.sports++;
     };
 
     // Per-house tallies; seed with already-assigned students in unassigned mode
     // so balancing accounts for the current distribution.
-    const H = houseIds.map(() => ({ total: 0, grade: {}, gender: {} }));
+    const H = houseIds.map(() => ({ total: 0, grade: {}, gender: {}, concern: 0, sports: 0 }));
     const familyHouse = {}; // surname -> house index a family is already in
     if (onlyUnassigned) {
       for (const s of students) {
@@ -4101,15 +4128,19 @@ router.post("/houses/backfill", authAny, loadMembership, requireAdmin, async (re
     const groups = [...fam.values()].sort((a, b) => b.length - a.length);
 
     const scoreIfAdded = (hi, group) => {
-      const sim = H.map((h) => ({ total: h.total, grade: { ...h.grade }, gender: { ...h.gender } }));
+      const sim = H.map((h) => ({ total: h.total, grade: { ...h.grade }, gender: { ...h.gender }, concern: h.concern, sports: h.sports }));
       for (const s of group) {
         sim[hi].total++;
         sim[hi].grade[gradeKey(s)] = (sim[hi].grade[gradeKey(s)] || 0) + 1;
         sim[hi].gender[sexKey(s)] = (sim[hi].gender[sexKey(s)] || 0) + 1;
+        if (s.behaviourConcern) sim[hi].concern++;
+        if (s.sportsSkilled) sim[hi].sports++;
       }
       let score = variance(sim.map((x) => x.total)) * 3;
       for (const g of allGrades) score += variance(sim.map((x) => x.grade[g] || 0));
       for (const sx of ["M", "F", "U"]) score += variance(sim.map((x) => x.gender[sx] || 0));
+      score += variance(sim.map((x) => x.concern)) * 2;
+      score += variance(sim.map((x) => x.sports)) * 2;
       return score;
     };
 
@@ -4153,7 +4184,7 @@ router.post("/houses/split-groups", authAny, loadMembership, requireAdmin, async
   try {
     const houses = await BehaviorHouse.find({ schoolId: req.schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const students = await BehaviorStudent.find({ schoolId: req.schoolId, active: true, houseId: { $ne: null } })
-      .select("lastName grade gender houseId").lean();
+      .select("lastName grade gender houseId behaviourConcern sportsSkilled").lean();
 
     const gradeKey = (s) => String(s.grade || "").trim() || "?";
     const sexKey = (s) => {
@@ -4185,17 +4216,21 @@ router.post("/houses/split-groups", authAny, loadMembership, requireAdmin, async
         fam.get(key).push(s);
       }
       const groups = [...fam.values()].sort((a, b) => b.length - a.length);
-      const B = [{ total: 0, grade: {}, gender: {} }, { total: 0, grade: {}, gender: {} }];
+      const B = [{ total: 0, grade: {}, gender: {}, concern: 0, sports: 0 }, { total: 0, grade: {}, gender: {}, concern: 0, sports: 0 }];
       const score = (bi, group) => {
-        const sim = B.map((b) => ({ total: b.total, grade: { ...b.grade }, gender: { ...b.gender } }));
+        const sim = B.map((b) => ({ total: b.total, grade: { ...b.grade }, gender: { ...b.gender }, concern: b.concern, sports: b.sports }));
         for (const s of group) {
           sim[bi].total++;
           sim[bi].grade[gradeKey(s)] = (sim[bi].grade[gradeKey(s)] || 0) + 1;
           sim[bi].gender[sexKey(s)] = (sim[bi].gender[sexKey(s)] || 0) + 1;
+          if (s.behaviourConcern) sim[bi].concern++;
+          if (s.sportsSkilled) sim[bi].sports++;
         }
         let sc = variance(sim.map((x) => x.total)) * 3;
         for (const g of allGrades) sc += variance(sim.map((x) => x.grade[g] || 0));
         for (const sx of ["M", "F", "U"]) sc += variance(sim.map((x) => x.gender[sx] || 0));
+        sc += variance(sim.map((x) => x.concern)) * 2;
+        sc += variance(sim.map((x) => x.sports)) * 2;
         return sc;
       };
       for (const group of groups) {
@@ -4205,6 +4240,8 @@ router.post("/houses/split-groups", authAny, loadMembership, requireAdmin, async
           B[bi].total++;
           B[bi].grade[gradeKey(s)] = (B[bi].grade[gradeKey(s)] || 0) + 1;
           B[bi].gender[sexKey(s)] = (B[bi].gender[sexKey(s)] || 0) + 1;
+          if (s.behaviourConcern) B[bi].concern++;
+          if (s.sportsSkilled) B[bi].sports++;
         }
       }
       summary.push({
@@ -4232,12 +4269,8 @@ router.post("/house-report", authAny, loadMembership, requireAdmin, async (req, 
     const resetAt = config?.housePointsResetAt ? new Date(config.housePointsResetAt) : null;
     const sinceMatch = resetAt ? { at: { $gt: resetAt } } : {};
 
-    // House totals (all events, +/-).
-    const totals = await HousePointEvent.aggregate([
-      { $match: { schoolId: req.schoolId, ...sinceMatch } },
-      { $group: { _id: "$houseId", points: { $sum: "$points" } } },
-    ]);
-    const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
+    // House totals (all events, +/-), with per-student caps applied.
+    const totalById = await houseTotals(req.schoolId, config);
 
     // Top contributors: POSITIVE points only, summed per (house, student),
     // globally sorted so the first 3 seen per house are its top 3.
@@ -4534,7 +4567,7 @@ router.get("/public/houses", async (req, res, next) => {
   try {
     const code = String(req.query.code || "").trim();
     if (!/^\d{3,6}$/.test(code)) return res.status(400).json({ ok: false, error: "Enter your school code." });
-    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt").lean();
+    const config = await BehaviorConfig.findOne({ housePortalCode: code, housesEnabled: true }).select("schoolId housePointsResetAt houseCaps").lean();
     if (!config) return res.status(404).json({ ok: false, error: "No school matches that code." });
     const schoolId = config.schoolId;
     const sid = new mongoose.Types.ObjectId(schoolId);
@@ -4543,11 +4576,7 @@ router.get("/public/houses", async (req, res, next) => {
     const houses = await BehaviorHouse.find({ schoolId, active: true }).sort({ sortOrder: 1, name: 1 }).lean();
     const pointMatch = { schoolId: sid };
     if (config.housePointsResetAt) pointMatch.at = { $gt: new Date(config.housePointsResetAt) };
-    const totals = await HousePointEvent.aggregate([
-      { $match: pointMatch },
-      { $group: { _id: "$houseId", points: { $sum: "$points" } } },
-    ]);
-    const totalById = Object.fromEntries(totals.map((t) => [String(t._id), t.points]));
+    const totalById = await houseTotals(sid, config);
     const members = await BehaviorStudent.aggregate([
       { $match: { schoolId: sid, active: true, houseId: { $ne: null } } },
       { $group: { _id: "$houseId", n: { $sum: 1 } } },

@@ -192,6 +192,17 @@ const BehaviorConfigSchema = new mongoose.Schema(
       // gets escalations[0], the 2nd escalations[1], holding at the last.
       escalations: { type: [String], default: ["Lunch detention", "Meeting with the VP"] },
     },
+
+    // Per-student caps on how much any ONE student can move their house total
+    // (0 = unlimited). Positive and negative contributions are capped separately;
+    // house-level event awards (no student) are never capped.
+    houseCaps: {
+      positive: { type: Number, default: 0 },
+      negative: { type: Number, default: 0 },
+    },
+    // Named house events with preset point values, for quick awarding (e.g.
+    // { name: "Trivia — 1st", points: 50 }).
+    houseEvents: { type: [{ name: { type: String, default: "" }, points: { type: Number, default: 0 } }], default: [] },
   },
   { timestamps: true }
 );

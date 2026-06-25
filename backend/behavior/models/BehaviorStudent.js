@@ -52,6 +52,10 @@ const BehaviorStudentSchema = new mongoose.Schema(
     houseGroup: { type: Number, default: 0 },
     // Student leader for their house — shown on the standings/portal.
     houseCaptain: { type: Boolean, default: false },
+    // Spread-evenly tags used when forming houses + booster groups: a behaviour
+    // concern, and a sports-skilled student — so neither clusters in one house/room.
+    behaviourConcern: { type: Boolean, default: false },
+    sportsSkilled: { type: Boolean, default: false },
     dob: { type: Date, default: null },
 
     parents: { type: [ParentSchema], default: [] },
