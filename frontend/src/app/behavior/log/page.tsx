@@ -44,6 +44,18 @@ function rowNameColor(count: number, trigger: number) {
   return "";
 }
 
+// Tint a keyword chip by its behaviours' offence category.
+// uniform = indigo, behaviour = rose, class preparedness = sky.
+function categoryChipClass(cat: string, selected: boolean) {
+  if (selected) return "bg-slate-900 text-white";
+  switch (cat) {
+    case "uniform": return "border border-indigo-300 bg-indigo-50 text-indigo-700";
+    case "behaviour": return "border border-rose-300 bg-rose-50 text-rose-700";
+    case "preparedness": return "border border-sky-300 bg-sky-50 text-sky-700";
+    default: return "border border-slate-300 bg-white text-slate-600";
+  }
+}
+
 // ── Recently-used behaviours (per device) ────────────────────────────────────
 // Ordering the picker by what this teacher actually reaches for makes entry
 // faster. Stored locally (no backend needed); most-recent id first, capped.
@@ -176,6 +188,23 @@ export default function LogIncidentPage() {
       return a.localeCompare(b);
     });
   }, [inKind, recentRank]);
+  // Dominant offence category per keyword, to colour the chips.
+  const keywordCat = useMemo(() => {
+    const counts: Record<string, Record<string, number>> = {};
+    for (const b of inKind) {
+      if (!b.keyword) continue;
+      const cats: string[] = (b as any).categories?.length ? (b as any).categories : ((b as any).uniform ? ["uniform"] : []);
+      for (const c of cats) {
+        (counts[b.keyword] ||= {});
+        counts[b.keyword][c] = (counts[b.keyword][c] || 0) + 1;
+      }
+    }
+    const m: Record<string, string> = {};
+    for (const k of Object.keys(counts)) {
+      m[k] = Object.entries(counts[k]).sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+    }
+    return m;
+  }, [inKind]);
   // Dropdown options: recently-used first, otherwise interactions then alpha.
   const offenseOptions = useMemo(
     () =>
@@ -550,10 +579,17 @@ export default function LogIncidentPage() {
               </button>
               {keywords.map((k) => (
                 <button key={k} type="button" onClick={() => { setKeywordFilter(k); setBehaviorId(""); }}
-                  className={`rounded-full px-3 py-1 text-xs font-medium ${keywordFilter === k ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-600"}`}>
+                  className={`rounded-full px-3 py-1 text-xs font-medium ${categoryChipClass(keywordCat[k] || "", keywordFilter === k)}`}>
                   {k}
                 </button>
               ))}
+            </div>
+          )}
+          {kindFilter === "negative" && keywords.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-sky-400" /> Class preparedness</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-rose-400" /> Behaviour</span>
+              <span className="inline-flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-indigo-400" /> Uniform (GUDD)</span>
             </div>
           )}
           <select
