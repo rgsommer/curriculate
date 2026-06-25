@@ -42,6 +42,7 @@ type StudentDetail = {
     renderedText: string;
     createdAt: string;
     sentAt?: string;
+    editedAfterSendAt?: string;
     legacyImport?: boolean;
     triggeringIncidentIds?: string[];
     cancelUntil?: string;
@@ -600,10 +601,10 @@ export default function StudentPage() {
                             {n.status === "failed" ? "Save & retry send" : "Send now"}
                           </button>
                         )}
-                        <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Save (keep queued)</button>
+                        <button onClick={() => saveNoticeEdit(n._id)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">{n.status === "sent" ? "Save changes" : "Save (keep queued)"}</button>
                         <button onClick={() => setEditId(null)} className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm">Cancel</button>
                       </div>
-                      <p className="mt-1 text-xs text-slate-400">Save keeps the note in the queue until you press Send.</p>
+                      <p className="mt-1 text-xs text-slate-400">{n.status === "sent" ? "Editing a sent notice updates the on-file record only — it is not re-sent to the parent." : "Save keeps the note in the queue until you press Send."}</p>
                     </div>
                   ) : (
                     <>
@@ -622,6 +623,13 @@ export default function StudentPage() {
                             <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
                           </div>
                         </>
+                      )}
+                      {n.status === "sent" && (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button onClick={() => { setEditId(n._id); setEditText(n.renderedText); }} className="rounded-lg border border-slate-300 px-3 py-1 text-xs">Edit note</button>
+                          {n.editedAfterSendAt && <span className="text-xs text-slate-400">edited after sending</span>}
+                          <span className="text-xs text-slate-400">Updates the record only — not re-sent.</span>
+                        </div>
                       )}
                       {n.status === "failed" && (
                         <p className="mt-1 text-xs text-red-600">

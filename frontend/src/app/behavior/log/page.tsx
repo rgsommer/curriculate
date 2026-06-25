@@ -262,6 +262,10 @@ export default function LogIncidentPage() {
     [inKind, keywordFilter, recentRank]
   );
 
+  // Selected behaviour + the house points this incident would apply (× intensity).
+  const selectedBehavior = useMemo(() => inKind.find((b) => b._id === behaviorId), [inKind, behaviorId]);
+  const incidentPoints = Math.round((selectedBehavior?.points || 0) * (weight || 1) * 10) / 10;
+
   // Distinct class codes (6A, 6B, 7A…), sorted naturally for the button row.
   const classes = useMemo(() => {
     const set = new Set<string>();
@@ -656,6 +660,11 @@ export default function LogIncidentPage() {
           )}
           {behaviorId && (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+              {!!incidentPoints && (
+                <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-semibold text-blue-700">
+                  {incidentPoints > 0 ? `+${incidentPoints}` : incidentPoints} house point{Math.abs(incidentPoints) === 1 ? "" : "s"}
+                </span>
+              )}
               <span className="text-slate-600">Intensity</span>
               <WeightPill value={weight} onChange={setWeight} kind={kindFilter} />
               {weight !== 1 && <span className="text-xs text-amber-600">note required</span>}

@@ -10,8 +10,8 @@ const FOLLOWUPS = [
   { v: "custom_deadline", label: "Custom deadline" },
 ];
 const MODES = [
-  { v: "INTERACTION", label: "Interaction — document only (no note home)" },
   { v: "THRESHOLD", label: "Counts toward strikes" },
+  { v: "INTERACTION", label: "Does NOT count toward strikes (document only)" },
   { v: "IMMEDIATE", label: "Notify immediately" },
 ];
 

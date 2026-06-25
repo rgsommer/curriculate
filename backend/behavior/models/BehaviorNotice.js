@@ -86,6 +86,10 @@ const BehaviorNoticeSchema = new mongoose.Schema(
     queuedAt: { type: Date, default: () => new Date() },
     sentAt: { type: Date, default: null },
     cancelUntil: { type: Date, default: null }, // end of the cancellable window
+    // The text as it was first delivered — preserved the first time a SENT notice
+    // is edited, so the record of what the parent actually received isn't lost.
+    sentTextSnapshot: { type: String, default: "" },
+    editedAfterSendAt: { type: Date, default: null },
   },
   { timestamps: true }
 );

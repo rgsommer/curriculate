@@ -2601,15 +2601,26 @@ router.put("/notices/:id", authAny, loadMembership, canLog, async (req, res, nex
   try {
     const notice = await BehaviorNotice.findOne({ _id: req.params.id, schoolId: req.schoolId });
     if (!notice) return res.status(404).json({ ok: false, error: "Notice not found" });
-    if (!["queued", "failed"].includes(notice.status)) {
-      return res.status(409).json({ ok: false, error: `Only queued or failed notices can be edited (this one is ${notice.status})` });
+    if (!["queued", "failed", "sent"].includes(notice.status)) {
+      return res.status(409).json({ ok: false, error: `This notice can't be edited (it is ${notice.status})` });
     }
-    if (typeof req.body?.renderedText === "string") notice.renderedText = req.body.renderedText;
-    const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
-    notice.cancelUntil = new Date(Date.now() + (config?.cancelWindowSeconds ?? 60) * 1000);
+    const editingSent = notice.status === "sent";
+    if (typeof req.body?.renderedText === "string") {
+      // Preserve what the parent actually received, the first time a sent notice is edited.
+      if (editingSent && !notice.sentTextSnapshot) notice.sentTextSnapshot = notice.renderedText;
+      notice.renderedText = req.body.renderedText;
+    }
+    if (editingSent) {
+      // Editing a delivered notice only updates the on-file record — it does NOT
+      // re-send or re-open a cancel window.
+      notice.editedAfterSendAt = new Date();
+    } else {
+      const config = await BehaviorConfig.findOne({ schoolId: req.schoolId }).lean();
+      notice.cancelUntil = new Date(Date.now() + (config?.cancelWindowSeconds ?? 60) * 1000);
+    }
     await notice.save();
-    await audit(req.schoolId, "notice.edited", req, { noticeId: notice._id, studentId: notice.studentId });
-    res.json({ ok: true, notice: { _id: notice._id, renderedText: notice.renderedText, status: notice.status, cancelUntil: notice.cancelUntil } });
+    await audit(req.schoolId, editingSent ? "notice.edited_after_send" : "notice.edited", req, { noticeId: notice._id, studentId: notice.studentId });
+    res.json({ ok: true, notice: { _id: notice._id, renderedText: notice.renderedText, status: notice.status, cancelUntil: notice.cancelUntil, editedAfterSendAt: notice.editedAfterSendAt } });
   } catch (err) {
     next(err);
   }

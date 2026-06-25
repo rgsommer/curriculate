@@ -141,4 +141,6 @@ export type Behavior = {
   uniform?: boolean;
   categories?: string[];
   immediateWhiteSlip?: boolean;
+  points?: number;
+  kind?: "negative" | "positive";
 };
