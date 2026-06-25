@@ -159,6 +159,19 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
 
   const interaction = triggerMode === "INTERACTION";
   const positive = kind === "positive";
+  // Unsaved-changes detection for an existing behaviour (drives the Save/Saved button).
+  const origCats = (b?.categories && b.categories.length ? b.categories : (b?.uniform ? ["uniform"] : [])) as string[];
+  const dirty = !add && (
+    name !== (b?.name || "") ||
+    keyword !== (b?.keyword || "") ||
+    kind !== (b?.kind || ((b?.points ?? 0) > 0 ? "positive" : "negative")) ||
+    triggerMode !== (b?.triggerMode || "THRESHOLD") ||
+    consequenceText !== (b?.consequenceText || "") ||
+    followUpType !== (b?.followUpType || "none") ||
+    Number(points) !== Number(b?.points ?? 0) ||
+    JSON.stringify([...categories].sort()) !== JSON.stringify([...origCats].sort()) ||
+    immediateWhiteSlip !== !!b?.immediateWhiteSlip
+  );
   return (
     <div className={`rounded-lg border p-3 ${tint}`}>
       {err && <p className="mb-1 text-xs text-red-600">{err}</p>}
@@ -224,9 +237,14 @@ function BehaviorRow({ b, add, editable, allowStandard, housesOn, onChanged }: {
               <input type="checkbox" checked={!scopeStandard} onChange={(e) => setScopeStandard(!e.target.checked)} /> private to me
             </label>
           )}
-          <button onClick={save} disabled={!name.trim() || busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
-            {add ? "Add" : busy ? "Saving…" : "Save"}
-          </button>
+          {add ? (
+            <button onClick={save} disabled={!name.trim() || busy} className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">Add</button>
+          ) : (
+            <button onClick={save} disabled={busy || !dirty}
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-100 ${dirty ? "bg-amber-500" : "bg-green-600"}`}>
+              {busy ? "Saving…" : dirty ? "Save" : "Saved"}
+            </button>
+          )}
           {!add && <button onClick={remove} className="rounded-lg border border-red-300 px-3 py-1.5 text-sm text-red-700">Remove</button>}
         </div>
       </div>

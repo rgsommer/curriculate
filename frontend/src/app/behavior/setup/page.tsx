@@ -120,6 +120,7 @@ function ReadOnlySettings({ me }: { me: Me }) {
           View behaviours →
         </Link>
       </details>
+      <TestToolsSection email={me.membership?.email || ""} collapsed canManageStudents={false} />
     </div>
   );
 }
@@ -1541,7 +1542,7 @@ function AddStudentSection() {
   );
 }
 
-function TestToolsSection({ email }: { email: string }) {
+function TestToolsSection({ email, collapsed = false, canManageStudents = true }: { email: string; collapsed?: boolean; canManageStudents?: boolean }) {
   const [created, setCreated] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -1669,7 +1670,8 @@ function TestToolsSection({ email }: { email: string }) {
 
   return (
     <Card>
-      <h2 className="font-semibold">Test &amp; cleanup</h2>
+      <details open={!collapsed}>
+      <summary className="flex cursor-pointer list-none items-center justify-between font-semibold">Test &amp; cleanup <span className="text-xs font-normal text-slate-400">▾</span></summary>
       {err && <p className="mt-2 text-sm text-red-600">{err}</p>}
 
       <div className="mt-3">
@@ -1726,6 +1728,7 @@ function TestToolsSection({ email }: { email: string }) {
         )}
       </div>
 
+      {canManageStudents && (
       <div className="mt-5 border-t border-slate-100 pt-4">
         <p className="text-sm font-medium text-slate-700">Manage / remove a student</p>
         <p className="text-xs text-slate-400">Deactivate hides a student who left (keeps their history). Delete is permanent.</p>
@@ -1765,6 +1768,8 @@ function TestToolsSection({ email }: { email: string }) {
           ))}
         </ul>
       </div>
+      )}
+      </details>
     </Card>
   );
 }
