@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { api, getToken, loginHref, type StudentSummary } from "../_lib/api";
+import { api, getToken, loginHref, type StudentSummary, type Me } from "../_lib/api";
 
 function rowNameColor(count: number, trigger: number) {
   if (count >= trigger - 1) return "text-orange-600";
@@ -16,6 +16,7 @@ export default function StudentsPage() {
   const [query, setQuery] = useState("");
   const [cls, setCls] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     if (!getToken()) return;
@@ -25,7 +26,15 @@ export default function StudentsPage() {
         if (d.triggerCount) setTrigger(d.triggerCount);
       })
       .catch((e) => setErr(e.message));
+    api<Me>("/me").then((d) => setIsAdmin(d.membership?.role === "originator" || d.membership?.role === "admin")).catch(() => {});
   }, []);
+
+  async function toggleFlag(s: StudentSummary, field: "behaviourConcern" | "sportsSkilled") {
+    const next = !s[field];
+    setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, [field]: next } : x)));
+    try { await api(`/students/${s._id}`, { method: "PATCH", body: { [field]: next } }); }
+    catch { setStudents((list) => list.map((x) => (x._id === s._id ? { ...x, [field]: !next } : x))); }
+  }
 
   const classes = useMemo(() => {
     const set = new Set<string>();
@@ -70,14 +79,24 @@ export default function StudentsPage() {
 
       <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
         {visible.map((s) => (
-          <li key={s._id}>
-            <Link href={`/behavior/student/${s._id}`} className="flex items-center justify-between px-4 py-3 hover:bg-slate-50">
-              <span className={`font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
+          <li key={s._id} className="flex items-center gap-2 pr-3 hover:bg-slate-50">
+            <Link href={`/behavior/student/${s._id}`} className="flex min-w-0 flex-1 items-center justify-between px-4 py-3">
+              <span className={`truncate font-medium ${rowNameColor(s.activeCount || 0, trigger)}`}>
                 {s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}
                 {s.activeCount ? <span className="ml-2 text-xs font-normal">({s.activeCount})</span> : null}
               </span>
-              <span className="text-sm text-slate-400">{s.classGroup} →</span>
+              <span className="ml-2 shrink-0 text-sm text-slate-400">{s.classGroup} →</span>
             </Link>
+            {isAdmin && (
+              <span className="flex shrink-0 items-center gap-2 text-xs text-slate-500">
+                <label className="flex items-center gap-1" title="Behaviour concern — spread evenly across houses/rooms">
+                  <input type="checkbox" checked={!!s.behaviourConcern} onChange={() => toggleFlag(s, "behaviourConcern")} /> concern
+                </label>
+                <label className="flex items-center gap-1" title="Sports-skilled — spread evenly across houses/rooms">
+                  <input type="checkbox" checked={!!s.sportsSkilled} onChange={() => toggleFlag(s, "sportsSkilled")} /> sport
+                </label>
+              </span>
+            )}
           </li>
         ))}
         {students.length === 0 && <li className="px-4 py-3 text-sm text-slate-400">No students yet — import a roster in Setup.</li>}

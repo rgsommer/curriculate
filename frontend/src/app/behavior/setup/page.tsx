@@ -1113,6 +1113,61 @@ function HousesSection({ config }: { config?: any }) {
     try { await api(`/houses/${houseId}`, { method: "PUT", body: { [field]: value } }); } catch { /* non-fatal */ }
   }
 
+  // Per-student point caps (0 = unlimited).
+  const [posCap, setPosCap] = useState<number | string>(config?.houseCaps?.positive ?? 0);
+  const [negCap, setNegCap] = useState<number | string>(config?.houseCaps?.negative ?? 0);
+  const capsSave = useSaveState([posCap, negCap]);
+  function saveCaps() {
+    capsSave.run(async () => { await api("/config", { method: "PUT", body: { houseCaps: { positive: Math.max(0, Number(posCap) || 0), negative: Math.max(0, Number(negCap) || 0) } } }); });
+  }
+
+  // House events with preset points.
+  const [events, setEvents] = useState<{ name: string; points: number }[]>(
+    Array.isArray(config?.houseEvents) ? config.houseEvents.map((e: any) => ({ name: e.name || "", points: Number(e.points) || 0 })) : []
+  );
+  const eventsSave = useSaveState(events);
+  function saveEvents() {
+    eventsSave.run(async () => {
+      const clean = events.filter((e) => e.name.trim()).map((e) => ({ name: e.name.trim(), points: Number(e.points) || 0 }));
+      await api("/config", { method: "PUT", body: { houseEvents: clean } });
+    });
+  }
+
+  // Printable houses list — House · Student · Group · Room.
+  const [printBusy, setPrintBusy] = useState(false);
+  async function printHousesList() {
+    setPrintBusy(true);
+    try {
+      const [hs, st] = await Promise.all([
+        api<{ houses: any[] }>("/houses"),
+        api<{ students: any[] }>("/students"),
+      ]);
+      const houseById: Record<string, any> = Object.fromEntries((hs.houses || []).map((h) => [String(h._id), h]));
+      const rows = (st.students || [])
+        .filter((s) => s.houseId)
+        .map((s) => {
+          const h = houseById[String(s.houseId)] || {};
+          const grp = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : "";
+          const room = grp === 1 ? (h.roomGroup1 || "") : grp === 2 ? (h.roomGroup2 || "") : "";
+          return { house: h.name || "—", houseSort: h.sortOrder ?? 99, name: `${s.lastName}, ${s.firstName}`, grade: s.grade || "", grp, room };
+        })
+        .sort((a, b) => a.houseSort - b.houseSort || a.house.localeCompare(b.house) || (Number(a.grp) || 0) - (Number(b.grp) || 0) || a.name.localeCompare(b.name));
+      const esc = (x: any) => String(x).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+      const body = rows.map((r) =>
+        `<tr><td>${esc(r.house)}</td><td>${esc(r.name)}</td><td>${esc(r.grade)}</td><td style="text-align:center">${r.grp ? "#" + r.grp : ""}</td><td>${esc(r.room)}</td></tr>`
+      ).join("");
+      const html = `<!doctype html><meta charset="utf-8"><title>Houses list</title>` +
+        `<style>body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;margin:24px}h1{font-size:16pt}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#0f766e;color:#fff}tr:nth-child(even) td{background:#f1f5f9}@media print{@page{margin:1.2cm}}</style>` +
+        `<h1>Houses — student list</h1><table><thead><tr><th>House</th><th>Student</th><th>Grade</th><th>Group</th><th>Room</th></tr></thead><tbody>${body || `<tr><td colspan="5">No students assigned to a house yet.</td></tr>`}</tbody></table>`;
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250); }
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setPrintBusy(false);
+    }
+  }
+
   // Student portal code.
   const [portalCode, setPortalCode] = useState(config?.housePortalCode || "");
   const [portalInput, setPortalInput] = useState("");
@@ -1353,6 +1408,39 @@ function HousesSection({ config }: { config?: any }) {
               ))}
             </div>
           )}
+          <button onClick={printHousesList} disabled={printBusy} className="mt-3 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
+            {printBusy ? "Preparing…" : "Print houses list (House · Name · Room)"}
+          </button>
+        </div>
+
+        {/* Per-student point caps */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">Per-student point caps</p>
+          <p className="text-xs text-slate-400">Limit how much any one student can move their house total (0 = unlimited). Positive and negative are capped separately; points awarded to a whole house aren&apos;t capped.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-1.5">Max + per student
+              <input type="number" min={0} value={posCap} onChange={(e) => setPosCap(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
+            <label className="flex items-center gap-1.5">Max − per student
+              <input type="number" min={0} value={negCap} onChange={(e) => setNegCap(e.target.value)} className="w-20 rounded-lg border border-slate-300 px-2 py-1" /></label>
+            <SaveButton state={capsSave} onClick={saveCaps} label="Save caps" />
+          </div>
+        </div>
+
+        {/* House events with preset points */}
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          <p className="text-sm font-medium text-slate-700">House events (preset points)</p>
+          <p className="text-xs text-slate-400">Define events with set point values for quick awarding from the dashboard (e.g. “Trivia — 1st” = 50).</p>
+          <div className="mt-2 space-y-1.5">
+            {events.map((ev, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input value={ev.name} onChange={(e) => setEvents((p) => p.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} placeholder="Event name" className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <input type="number" value={ev.points} onChange={(e) => setEvents((p) => p.map((x, j) => (j === i ? { ...x, points: Number(e.target.value) || 0 } : x)))} className="w-20 rounded-lg border border-slate-300 px-2 py-1 text-sm" />
+                <button onClick={() => setEvents((p) => p.filter((_, j) => j !== i))} className="text-xs text-red-600">remove</button>
+              </div>
+            ))}
+            <button onClick={() => setEvents((p) => [...p, { name: "", points: 0 }])} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">+ add event</button>
+          </div>
+          <div className="mt-2"><SaveButton state={eventsSave} onClick={saveEvents} label="Save events" /></div>
         </div>
       </div>
 
