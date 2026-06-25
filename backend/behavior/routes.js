@@ -4763,8 +4763,8 @@ router.get("/public/houses", async (req, res, next) => {
         .map((r) => ({ place: r.place, houseName: houseById[String(r.houseId)]?.name || "", houseColor: houseById[String(r.houseId)]?.color || "#0f172a" })),
     }));
 
-    // Recent point activity — last ~12 awards (house-level only, no student names).
-    const recent = await HousePointEvent.find(pointMatch).sort({ at: -1 }).limit(12).select("houseId points reason at").lean();
+    // Recent point activity — last ~12 POSITIVE awards (no deductions, no names).
+    const recent = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } }).sort({ at: -1 }).limit(12).select("houseId points reason at").lean();
     const activity = recent.map((e) => ({
       house: houseById[String(e.houseId)]?.name || "",
       color: houseById[String(e.houseId)]?.color || "#0f172a",
@@ -4803,7 +4803,25 @@ router.get("/public/houses", async (req, res, next) => {
     }
     const rewards = (config.houseRewards || []).slice().sort((a, b) => a.points - b.points);
 
-    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, rewards });
+    // Top 3 students overall (positive points earned since the reset).
+    const topStuOverall = await HousePointEvent.aggregate([
+      { $match: { ...pointMatch, studentId: { $ne: null }, points: { $gt: 0 } } },
+      { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
+      { $sort: { pts: -1 } }, { $limit: 3 },
+    ]);
+    let topStudents = [];
+    if (topStuOverall.length) {
+      const stus = await BehaviorStudent.find({ _id: { $in: topStuOverall.map((t) => t._id) } })
+        .select("firstName preferredName lastName photoUrl houseId").lean();
+      const byId = Object.fromEntries(stus.map((s) => [String(s._id), s]));
+      topStudents = topStuOverall.map((t, i) => {
+        const s = byId[String(t._id)]; if (!s) return null;
+        const h = s.houseId ? houseById[String(s.houseId)] : null;
+        return { rank: i + 1, name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(), photoUrl: s.photoUrl || "", house: h?.name || "", color: h?.color || "#0f172a", points: t.pts };
+      }).filter(Boolean);
+    }
+
+    res.json({ ok: true, enabled: true, schoolName: school?.name || "", houses: houseOut, competitions: compOut, activity, dailyTopStudent, dailyTopHouse, topStudents, rewards });
   } catch (err) {
     next(err);
   }

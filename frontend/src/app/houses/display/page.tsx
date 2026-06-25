@@ -5,12 +5,14 @@ import { API_BASE } from "../../behavior/_lib/api";
 
 type House = { id: string; name: string; color: string; image?: string; points: number };
 type Daily = { name: string; photoUrl?: string; house: string; color: string; points: number } | null;
+type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
 type Reward = { points: number; reward: string };
 type Board = {
   schoolName: string;
   houses: House[];
   dailyTopStudent: Daily;
   dailyTopHouse: { name: string; color: string; image?: string; points: number } | null;
+  topStudents: TopStudent[];
   rewards: Reward[];
 };
 
@@ -37,7 +39,7 @@ export default function HousesDisplay() {
         if (!alive) return;
         if (!d.ok) { setErr(d.error || "Could not load"); return; }
         setErr("");
-        setBoard({ schoolName: d.schoolName || "", houses: d.houses || [], dailyTopStudent: d.dailyTopStudent || null, dailyTopHouse: d.dailyTopHouse || null, rewards: d.rewards || [] });
+        setBoard({ schoolName: d.schoolName || "", houses: d.houses || [], dailyTopStudent: d.dailyTopStudent || null, dailyTopHouse: d.dailyTopHouse || null, topStudents: d.topStudents || [], rewards: d.rewards || [] });
         setUpdated(new Date());
       } catch { if (alive) setErr("Network error"); }
     };
@@ -116,6 +118,24 @@ export default function HousesDisplay() {
               </div>
             ) : <div className="mt-[1vh] text-[1.4vw] text-slate-300">No points yet today.</div>}
           </div>
+
+          {board && board.topStudents.length > 0 && (
+            <div className="rounded-[1.2vw] bg-white/10 p-[1.6vw]">
+              <div className="text-[1.1vw] uppercase tracking-wide text-slate-300">🏅 Top students</div>
+              <ul className="mt-[1vh] space-y-[1vh]">
+                {board.topStudents.map((s) => (
+                  <li key={s.rank} className="flex items-center gap-[1vw]">
+                    <span className="w-[2vw] text-center text-[1.6vw]">{["🥇", "🥈", "🥉"][s.rank - 1] || s.rank}</span>
+                    {s.photoUrl
+                      ? <img src={s.photoUrl} alt="" className="h-[3.4vw] w-[3.4vw] rounded-[0.6vw] border-[0.2vw] object-cover" style={{ borderColor: s.color }} />
+                      : <span className="inline-block h-[1.6vw] w-[1.6vw] rounded-full" style={{ background: s.color }} />}
+                    <span className="min-w-0 flex-1 truncate text-[1.5vw] font-bold">{s.name}</span>
+                    <span className="text-[1.5vw] font-extrabold tabular-nums text-emerald-300">{s.points}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {board && board.rewards.length > 0 && (
             <div className="min-h-0 flex-1 overflow-hidden rounded-[1.2vw] bg-white/10 p-[1.6vw]">

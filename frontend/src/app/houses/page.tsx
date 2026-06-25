@@ -6,7 +6,8 @@ import { API_BASE } from "../behavior/_lib/api";
 type House = { id: string; name: string; color: string; image?: string; points: number; members: number; captains?: string[] };
 type Comp = { name: string; monthLabel: string; scored: boolean; results: { place: number; houseName: string; houseColor: string }[] };
 type Activity = { house: string; color: string; points: number; reason: string; at: string };
-type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[] };
+type TopStudent = { rank: number; name: string; photoUrl?: string; house: string; color: string; points: number };
+type Board = { schoolName: string; houses: House[]; competitions: Comp[]; activity: Activity[]; topStudents: TopStudent[] };
 
 const KEY = "houses_portal_code";
 const MEDAL = ["🥇", "🥈", "🥉"];
@@ -16,7 +17,7 @@ async function fetchBoard(code: string): Promise<{ ok: boolean; error?: string; 
     const r = await fetch(`${API_BASE}/api/behavior/public/houses?code=${encodeURIComponent(code)}`);
     const d = await r.json();
     if (!d.ok) return { ok: false, error: d.error || "Could not load standings" };
-    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [] } };
+    return { ok: true, board: { schoolName: d.schoolName || "", houses: d.houses || [], competitions: d.competitions || [], activity: d.activity || [], topStudents: d.topStudents || [] } };
   } catch {
     return { ok: false, error: "Network error — try again" };
   }
@@ -201,6 +202,27 @@ export default function HousesPortal() {
           </ul>
         )}
       </section>
+
+      {board && board.topStudents.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <h2 className="font-semibold">Top students</h2>
+          <ul className="mt-3 space-y-2">
+            {board.topStudents.map((s) => (
+              <li key={s.rank} className="flex items-center gap-3">
+                <span className="w-6 text-center text-lg">{MEDAL[s.rank - 1] || <span className="text-sm text-slate-400">{s.rank}</span>}</span>
+                {s.photoUrl
+                  ? <img src={s.photoUrl} alt="" className="h-9 w-9 rounded-lg object-cover ring-2" style={{ ["--tw-ring-color" as any]: s.color }} />
+                  : <span className="inline-block h-4 w-4 shrink-0 rounded-full" style={{ background: s.color }} />}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-semibold">{s.name}</div>
+                  {s.house ? <div className="text-xs text-slate-400">{s.house}</div> : null}
+                </div>
+                <span className="shrink-0 tabular-nums font-bold">{s.points}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
 
       {board && board.competitions.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5">
