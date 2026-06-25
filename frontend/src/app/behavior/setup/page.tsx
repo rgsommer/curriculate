@@ -1373,7 +1373,7 @@ function HousesSection({ config }: { config?: any }) {
                     {caps.map((s) => (
                       <button key={s._id} onClick={() => setCaptain(s._id, false)}
                         className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-xs text-slate-700 ring-1 ring-slate-200">
-                        © {s.preferredName || s.firstName} {s.lastName} <span className="text-slate-400">✕</span>
+                        © {s.preferredName || s.firstName} {s.lastName}{s.houseGroup ? ` · #${s.houseGroup}` : ""} <span className="text-slate-400">✕</span>
                       </button>
                     ))}
                     {caps.length === 0 && <span className="text-xs text-slate-400">No captains yet.</span>}
@@ -1386,9 +1386,9 @@ function HousesSection({ config }: { config?: any }) {
                         <option value="">+ add captain…</option>
                         {nonCaps
                           .slice()
-                          .sort((a, b) => `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
+                          .sort((a, b) => (a.houseGroup || 0) - (b.houseGroup || 0) || `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
                           .map((s) => (
-                            <option key={s._id} value={s._id}>{s.lastName}, {s.firstName}{s.preferredName ? ` (${s.preferredName})` : ""}</option>
+                            <option key={s._id} value={s._id}>{s.houseGroup ? `#${s.houseGroup} · ` : ""}{s.lastName}, {s.firstName}{s.preferredName ? ` (${s.preferredName})` : ""}</option>
                           ))}
                       </select>
                     )}
