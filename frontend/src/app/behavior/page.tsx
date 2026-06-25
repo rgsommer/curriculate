@@ -82,7 +82,7 @@ export default function BehaviorDashboard() {
           href="/behavior/log"
           className="block rounded-xl bg-slate-900 px-5 py-4 text-center text-lg font-semibold text-white shadow-sm"
         >
-          + Log an incident
+          Quick Action — Log an incident
         </Link>
       )}
 
@@ -100,6 +100,8 @@ export default function BehaviorDashboard() {
       {canLog && <ProbationWatch ladder={me.config?.consequenceLadder || []} />}
 
       {canLog && <StudentsToWatch fadeDays={me.config?.fadeWindowDays} />}
+
+      {canLog && <DailyMovers housesOn={housesOn} />}
 
       {housesOn && <HousesCard canLog={canLog} isAdmin={isAdmin} portalCode={me.config?.housePortalCode || ""} events={me.config?.houseEvents || []} />}
 
@@ -204,6 +206,31 @@ function ReferColleague() {
       )}
       {msg && <p className={`mt-2 text-sm ${msg.startsWith("✗") ? "text-red-600" : "text-green-700"}`}>{msg}</p>}
     </div>
+  );
+}
+
+function DailyMovers({ housesOn }: { housesOn: boolean }) {
+  const [movers, setMovers] = useState<any[] | null>(null);
+  useEffect(() => { api<{ movers: any[] }>("/daily-movers").then((d) => setMovers(d.movers || [])).catch(() => setMovers([])); }, []);
+  if (!movers || movers.length === 0) return null;
+  return (
+    <Card>
+      <h2 className="font-semibold">Daily Movers</h2>
+      <p className="text-xs text-slate-400">Most behaviour movement today — points and logs since this morning.</p>
+      <ul className="mt-2 divide-y divide-slate-100">
+        {movers.map((m) => (
+          <li key={m.studentId} className="flex items-center gap-2 py-1.5 text-sm">
+            {housesOn && m.house ? <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: m.color }} title={m.house} /> : null}
+            <Link href={`/behavior/student/${m.studentId}`} className="truncate font-medium hover:underline">{m.name}</Link>
+            {m.classGroup ? <span className="shrink-0 text-xs text-slate-400">{m.classGroup}</span> : null}
+            <span className="ml-auto flex shrink-0 items-center gap-2">
+              {m.net ? <span className={`tabular-nums font-semibold ${m.net > 0 ? "text-green-600" : "text-red-600"}`}>{m.net > 0 ? `+${m.net}` : m.net} pts</span> : null}
+              {m.incidents ? <span className="text-xs text-slate-500">{m.incidents} log{m.incidents === 1 ? "" : "s"}</span> : null}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

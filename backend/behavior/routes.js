@@ -3919,6 +3919,51 @@ async function houseTotals(schoolId, cfg) {
   return byHouse;
 }
 
+// Daily Movers — students with the most behaviour movement TODAY: net house
+// points and the count of incidents/positives logged since local midnight.
+router.get("/daily-movers", authAny, loadMembership, async (req, res, next) => {
+  try {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const [pts, incs] = await Promise.all([
+      HousePointEvent.aggregate([
+        { $match: { schoolId: req.schoolId, studentId: { $ne: null }, at: { $gt: start } } },
+        { $group: { _id: "$studentId", net: { $sum: "$points" } } },
+      ]),
+      BehaviorIncident.aggregate([
+        { $match: { schoolId: req.schoolId, timestamp: { $gt: start } } },
+        { $group: {
+          _id: "$studentId",
+          count: { $sum: 1 },
+          pos: { $sum: { $cond: [{ $or: [{ $eq: ["$behaviorSnapshot.kind", "positive"] }, { $gt: ["$behaviorSnapshot.points", 0] }] }, 1, 0] } },
+        } },
+      ]),
+    ]);
+    const byId = {};
+    for (const p of pts) (byId[String(p._id)] ||= { net: 0, count: 0, pos: 0 }).net = p.net;
+    for (const i of incs) { const e = (byId[String(i._id)] ||= { net: 0, count: 0, pos: 0 }); e.count = i.count; e.pos = i.pos; }
+    const ids = Object.keys(byId);
+    if (!ids.length) return res.json({ ok: true, movers: [] });
+    const students = await BehaviorStudent.find({ _id: { $in: ids }, schoolId: req.schoolId })
+      .select("firstName preferredName lastName classGroup houseId").lean();
+    const houses = await BehaviorHouse.find({ schoolId: req.schoolId }).select("name color").lean();
+    const houseById = Object.fromEntries(houses.map((h) => [String(h._id), h]));
+    const movers = students.map((s) => {
+      const e = byId[String(s._id)];
+      const h = s.houseId ? houseById[String(s.houseId)] : null;
+      return {
+        studentId: String(s._id),
+        name: `${s.preferredName || s.firstName} ${s.lastName}`.trim(),
+        classGroup: s.classGroup || "",
+        house: h?.name || "", color: h?.color || "#0f172a",
+        net: e.net || 0, incidents: e.count || 0, positives: e.pos || 0,
+      };
+    }).sort((a, b) => Math.abs(b.net) - Math.abs(a.net) || b.incidents - a.incidents).slice(0, 10);
+    res.json({ ok: true, movers });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Houses with their point totals + member counts (for the leaderboard).
 router.get("/houses", authAny, loadMembership, async (req, res, next) => {
   try {
