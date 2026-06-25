@@ -812,6 +812,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
             `• See a student's full cross-teacher history before you say a word to them.\n` +
             `• When a pattern reaches the threshold, you get a ready-to-send, pastoral note home — you review and send it (nothing is ever auto-sent), with recommended next steps.\n` +
             `• Catch the good too: positives earn house points and can send a good-news note home.\n` +
+            `• Award house points for house events (trivia, clean-ups, competitions) right from the dashboard.\n` +
             `• Track uniform infractions (GUDD) — they count as a strike and toward losing the Good Uniform Dress Down, with escalating consequences.\n` +
             `• Record the consequences you give (detention, call home, white slip) and get a ready-to-send white-slip note when a student is eligible.\n` +
             `• Dial an incident's intensity up or down (×0.5–×2) when it's more or less serious than usual — it scales house points and reporting.\n` +
@@ -832,6 +833,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
               `<li>See a student's <strong>full cross-teacher history</strong> before you say a word.</li>` +
               `<li>When a pattern hits the threshold you get a <strong>ready-to-send, pastoral note home</strong> — you review and send it (<strong>nothing is auto-sent</strong>), with recommended next steps.</li>` +
               `<li><strong>Catch the good too:</strong> positives earn house points and can send a good-news note home.</li>` +
+              `<li><strong>House events:</strong> award house points to a whole house (trivia, clean-ups, competitions) from the dashboard.</li>` +
               `<li><strong>Uniform infractions (GUDD):</strong> count as a strike <em>and</em> toward losing the Good Uniform Dress Down, with escalating consequences.</li>` +
               `<li><strong>Record consequences &amp; white slips:</strong> log what you gave (detention, call home, white slip), with a ready-to-send white-slip note when a student is eligible.</li>` +
               `<li><strong>Intensity dial:</strong> nudge an incident up or down (×0.5&ndash;×2) when it's more or less serious than usual — it scales house points and reporting.</li>` +
@@ -970,6 +972,7 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
       ]],
       ["Houses &amp; school culture", [
         "Optional house system ties everyday conduct to shared team spirit, with a live leaderboard and merit-based rewards.",
+        "Any teacher can award points to a whole house for events (trivia, clean-ups, competitions); for booster events houses split into balanced #1/#2 room groups, and students look up their house, group and room by last name.",
       ]],
       ["Homework, class work &amp; discussions", [
         "Track completion per class/subject, live-scored formal discussions, outstanding-work reminders, and end-of-term reports that export to Edsby.",

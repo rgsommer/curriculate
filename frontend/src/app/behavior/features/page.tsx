@@ -165,6 +165,14 @@ const HOUSES = [
     title: "Reward the behaviour, not just the house",
     body: "Because everything is tracked per student, the winning-house reward can be merit-based: include a student from another house whose conduct was exemplary, and hold back a student in the winning house whose conduct fell short. The privilege follows the behaviour.",
   },
+  {
+    title: "Award points for house events",
+    body: "Any teacher can award (or deduct) points to a whole house for a house event — a trivia round, a clean-up, a competition: on the dashboard, the House points card → Give points → pick the house, enter the points and a reason.",
+  },
+  {
+    title: "Event groups & a student look-up",
+    body: "For booster events that won't fit a whole house in one room, split each house into two balanced groups (#1 / #2) — even by grade and gender, siblings together — and set a room for each. Students find their house, group and room at curriculate.net/houses just by typing their last name. Houses can also carry a crest/logo shown on the portal and reports.",
+  },
 ];
 
 const HOMEWORK = [
