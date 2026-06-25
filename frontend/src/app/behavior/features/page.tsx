@@ -24,6 +24,10 @@ const TRACKING = [
     body: "Every log is ✓ Positive or ✕ Negative. Negatives accumulate toward a threshold; positives are recognised, earn house points, and can trigger a good-news note home — they never count against a student.",
   },
   {
+    title: "Intensity weighting",
+    body: "When something is more — or less — significant than usual, tap the intensity pill while logging (×0.5 to ×2, default ×1). It scales the house points and how strongly the incident reads in reports, and requires a short note so the reason is on record. Works on a standout good deed as well as a serious concern.",
+  },
+  {
     title: "Catch patterns early",
     body: "The dashboard surfaces “Students to encourage” (at or one away from a threshold) so staff can step in supportively before things escalate — a quiet word or a check-in while the trend can still turn around.",
   },

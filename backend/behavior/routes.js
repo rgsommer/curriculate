@@ -814,6 +814,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
             `• Catch the good too: positives earn house points and can send a good-news note home.\n` +
             `• Track uniform infractions (GUDD) — they count as a strike and toward losing the Good Uniform Dress Down, with escalating consequences.\n` +
             `• Record the consequences you give (detention, call home, white slip) and get a ready-to-send white-slip note when a student is eligible.\n` +
+            `• Dial an incident's intensity up or down (×0.5–×2) when it's more or less serious than usual — it scales house points and reporting.\n` +
             `• Track homework, class work and formal discussions, with end-of-term grades that export to Edsby.\n` +
             `• A Tour walks you through it, and a Feedback button is always there if you want something changed.\n\n` +
             `Set your password and get started:\n${link}\n\n` +
@@ -833,6 +834,7 @@ router.post("/invite", authAny, loadMembership, async (req, res, next) => {
               `<li><strong>Catch the good too:</strong> positives earn house points and can send a good-news note home.</li>` +
               `<li><strong>Uniform infractions (GUDD):</strong> count as a strike <em>and</em> toward losing the Good Uniform Dress Down, with escalating consequences.</li>` +
               `<li><strong>Record consequences &amp; white slips:</strong> log what you gave (detention, call home, white slip), with a ready-to-send white-slip note when a student is eligible.</li>` +
+              `<li><strong>Intensity dial:</strong> nudge an incident up or down (×0.5&ndash;×2) when it's more or less serious than usual — it scales house points and reporting.</li>` +
               `<li>Track <strong>homework, class work &amp; formal discussions</strong>, with end-of-term grades that export to Edsby.</li>` +
               `<li>A <strong>Tour</strong> walks you through it, and a <strong>Feedback</strong> button is always there if you want something changed.</li>` +
               `</ul>` +
@@ -949,6 +951,7 @@ router.post("/invite-admin", authAny, loadMembership, async (req, res, next) => 
       ]],
       ["Offence types &amp; categories", [
         "Each offence is categorised (class preparedness, behaviour, uniform) so reporting and rules are consistent — teachers just log; admins set the categories.",
+        "An intensity dial (×0.5–×2, note required) lets staff weight a one-off as more or less serious — scaling house points and how it reads in reports.",
         "Defensible records: every incident time-stamped, attributed, snapshotted and audit-logged.",
       ]],
       ["Communication home (pastoral, never automatic)", [
