@@ -40,6 +40,10 @@ const TRACKING = [
     body: "Per-student red/green timelines, division reports by behaviour / class / month, and AI summaries that fairly reflect offences, positives, interactions and follow-through.",
   },
   {
+    title: "AI summaries — and how leadership uses them",
+    body: "One button writes a fair, comprehensive picture of a student's behaviour AND how staff handled it (including private notes), copied to the clipboard — ideal for prepping a parent meeting in seconds, or as defensible documentation if a teacher's handling is ever questioned. A per-teacher / division executive summary captures the trend, the balance of positives and interactions vs. discipline, and follow-through — written to support staff (useful at reviews or to back a colleague up), not to judge. All confidential — for leadership, never sent to parents.",
+  },
+  {
     title: "Leadership insights (admin)",
     body: "A read-only School Insights view: the 6-month behaviour trend, students at or near a notice, students to get ahead of (rising in the last two weeks), most-logged, by-class totals, and staff activity — with a gentle flag for teachers who may welcome support (a heavy offence load with few positives), never a performance verdict.",
   },
