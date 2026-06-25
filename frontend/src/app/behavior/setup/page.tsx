@@ -1388,7 +1388,7 @@ function HousesSection({ config }: { config?: any }) {
                           .slice()
                           .sort((a, b) => (a.houseGroup || 0) - (b.houseGroup || 0) || `${a.lastName} ${a.firstName}`.localeCompare(`${b.lastName} ${b.firstName}`))
                           .map((s) => (
-                            <option key={s._id} value={s._id}>{s.houseGroup ? `#${s.houseGroup} · ` : ""}{s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName ? ` (${s.preferredName})` : ""}</option>
+                            <option key={s._id} value={s._id}>{s.houseGroup ? `#${s.houseGroup} · ` : ""}{s.lastName}, {s.firstName}{s.preferredName && s.preferredName !== s.firstName && s.preferredName !== s.lastName ? ` (${s.preferredName})` : ""}</option>
                           ))}
                       </select>
                     )}
