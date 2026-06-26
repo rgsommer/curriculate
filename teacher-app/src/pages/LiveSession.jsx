@@ -14,6 +14,9 @@ import SpotlightTour, { TourHelpButton, resetTour } from "../components/Spotligh
 import { Modal, Button, Field, TextInput, TextArea, Select, ToggleGroup } from "../components/ui";
 import EndTimeControl from "../components/EndTimeControl";
 import GameMasterDashboard from "../components/GameMasterDashboard";
+import TeamConstellation from "../components/TeamConstellation";
+import LiveActivityFeed from "../components/LiveActivityFeed";
+import StreakBanner from "../components/StreakBanner";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 const API_BASE = API_BASE_URL || "";
@@ -3820,6 +3823,101 @@ if (
             : ""
         }
       />
+
+      {/* GAME MASTER PASS-2 — Teams overview + live activity feed.
+          Pure presentation, reads existing roomState only. The original
+          Teams section below remains as-is for fine-grained controls. */}
+      {(() => {
+        const teamsObj = roomState?.teams || {};
+        if (Object.keys(teamsObj).length === 0) return null;
+        const subsArr = Array.isArray(roomState?.submissions) ? roomState.submissions : [];
+        // Recent activity events derived from the rolling submission log.
+        // We map server submissions into the feed shape and keep the most
+        // recent 5; no socket changes, no extra requests.
+        const events = subsArr
+          .slice(-12)
+          .reverse()
+          .map((s, i) => {
+            const teamId = s?.teamId || s?.team || s?.id;
+            const team = teamsObj[teamId];
+            const teamName = team?.teamName || s?.teamName || "Team";
+            const points = typeof s?.points === "number" ? s.points : null;
+            const action = s?.correct === true
+              ? "Answered correctly"
+              : s?.correct === false
+              ? "Answered incorrectly"
+              : s?.taskTitle
+              ? `Submitted ${s.taskTitle}`
+              : s?.action || "Made a play";
+            const ts = s?.timestamp || s?.submittedAt || (Date.now() - i * 30_000);
+            return {
+              id: s?._id || s?.id || `${teamId}:${ts}:${i}`,
+              teamId,
+              teamName,
+              action,
+              points,
+              timestamp: typeof ts === "number" ? ts : new Date(ts).getTime(),
+            };
+          })
+          .filter((e) => e.teamId)
+          .slice(0, 5);
+
+        // Streak detection — walk the most recent submissions per team and
+        // count consecutive correct answers. Surface a streak only at 3+.
+        const correctByTeam = new Map();
+        for (let i = subsArr.length - 1; i >= 0; i -= 1) {
+          const s = subsArr[i];
+          const tid = s?.teamId || s?.team;
+          if (!tid) continue;
+          if (correctByTeam.has(tid) && correctByTeam.get(tid)._frozen) continue;
+          const entry = correctByTeam.get(tid) || { count: 0, _frozen: false };
+          if (s?.correct === true) entry.count += 1;
+          else if (s?.correct === false) entry._frozen = true;
+          correctByTeam.set(tid, entry);
+        }
+        let bestStreak = null;
+        for (const [tid, entry] of correctByTeam) {
+          if (entry.count >= 3 && (!bestStreak || entry.count > bestStreak.value)) {
+            bestStreak = {
+              kind: "correctStreak",
+              teamName: teamsObj[tid]?.teamName || "Team",
+              value: entry.count,
+            };
+          }
+        }
+
+        const totalForRing =
+          Array.isArray(activeTasksetMeta?.tasks) && activeTasksetMeta.tasks.length > 0
+            ? activeTasksetMeta.tasks.length
+            : Number(totalTasksInActiveSet) || 0;
+
+        return (
+          <>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 2fr) minmax(280px, 1fr)",
+                gap: 18,
+                alignItems: "start",
+              }}
+            >
+              <TeamConstellation
+                teams={teamsObj}
+                scores={roomState?.scores || {}}
+                stations={roomState?.stations || []}
+                submissions={submissions}
+                totalTasks={totalForRing}
+                taskIndex={typeof roomState?.taskIndex === "number" ? roomState.taskIndex : -1}
+                stationIdToColor={stationIdToColor}
+              />
+              <LiveActivityFeed events={events} maxRows={5} />
+            </div>
+            {bestStreak && (
+              <StreakBanner streak={bestStreak} />
+            )}
+          </>
+        );
+      })()}
 
       {/* Header (existing) */}
       <header
