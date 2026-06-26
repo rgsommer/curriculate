@@ -9,7 +9,7 @@
 // nothing, mutates nothing. The original renderTeamCard / Teams
 // section in LiveSession.jsx stays untouched as a fall-back display.
 
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 /* ──────────────────────────────────────────────────────────────────
    Stable per-team visuals — color + mascot derived from teamId so
@@ -167,6 +167,45 @@ export default function TeamConstellation({
   taskIndex = -1,
   stationIdToColor,
 }) {
+  // Pass-4 score-change micro-animations. Diff prev-vs-current
+  // scores; for any team whose score rose, drop a transient "+N"
+  // chip + glow pulse on its card. Each pulse self-clears.
+  // Skip the first mount so initial scores don't pulse.
+  const prevScoresRef = useRef(null);
+  const [pulses, setPulses] = useState({}); // { teamId: { delta, key } }
+
+  useEffect(() => {
+    if (prevScoresRef.current === null) {
+      prevScoresRef.current = { ...(scores || {}) };
+      return;
+    }
+    const prev = prevScoresRef.current;
+    const next = scores || {};
+    const newPulses = {};
+    for (const [tid, raw] of Object.entries(next)) {
+      const cur = Number(raw) || 0;
+      const before = Number(prev[tid]) || 0;
+      if (cur > before) {
+        newPulses[tid] = { delta: cur - before, key: Date.now() + tid };
+      }
+    }
+    prevScoresRef.current = { ...next };
+    if (Object.keys(newPulses).length === 0) return;
+    setPulses((p) => ({ ...p, ...newPulses }));
+    // No cleanup — re-renders shouldn't cancel an in-flight pulse.
+    // The key check guards against clearing a fresher pulse that
+    // started before the timer fired.
+    Object.entries(newPulses).forEach(([tid, info]) => {
+      setTimeout(() => {
+        setPulses((p) => {
+          if (p[tid]?.key !== info.key) return p;
+          const { [tid]: _drop, ...rest } = p;
+          return rest;
+        });
+      }, 1500);
+    });
+  }, [scores]);
+
   const teamRows = useMemo(() => {
     const arr = Object.entries(teams || {}).map(([teamId, team]) => {
       const score = Number(scores?.[teamId]) || 0;
@@ -215,6 +254,21 @@ export default function TeamConstellation({
     >
       <style>{`
         @keyframes tcCardIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+        @keyframes tcScorePulse {
+          0%   { box-shadow: 0 0 0 0 var(--pulse-color), 0 4px 14px rgba(15,23,42,0.32); }
+          40%  { box-shadow: 0 0 0 8px transparent, 0 18px 38px var(--pulse-color); }
+          100% { box-shadow: 0 0 0 0 transparent, 0 4px 14px rgba(15,23,42,0.32); }
+        }
+        @keyframes tcFloatPlus {
+          0%   { opacity: 0; transform: translate(0, 0) scale(0.7); }
+          15%  { opacity: 1; transform: translate(0, -4px) scale(1.1); }
+          85%  { opacity: 1; transform: translate(0, -32px) scale(1); }
+          100% { opacity: 0; transform: translate(0, -52px) scale(0.95); }
+        }
+        @keyframes tcScoreFlash {
+          0%,100% { color: #fef3c7; text-shadow: none; }
+          50%     { color: #fff; text-shadow: 0 0 18px var(--pulse-color); }
+        }
       `}</style>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
         <div style={{ fontSize: "0.82rem", fontWeight: 900, letterSpacing: 0.6, textTransform: "uppercase", color: "#cbd5e1" }}>
@@ -240,9 +294,11 @@ export default function TeamConstellation({
             ? (stationIdToColor?.(station.id) || palette.primary)
             : palette.primary;
           const isLeader = rank === 1;
+          const pulse = pulses[teamId] || null;
           return (
             <div
               key={teamId}
+              data-pulse={pulse ? "1" : "0"}
               style={{
                 position: "relative",
                 padding: "20px 18px 16px",
@@ -252,8 +308,11 @@ export default function TeamConstellation({
                 boxShadow: isLeader
                   ? `0 0 0 1px ${palette.glow}, 0 18px 38px ${palette.glow}`
                   : `0 4px 14px rgba(15,23,42,0.32)`,
-                animation: `tcCardIn 0.36s cubic-bezier(.22,1,.36,1) ${idx * 50}ms both`,
-                overflow: "hidden",
+                animation: pulse
+                  ? `tcCardIn 0.36s cubic-bezier(.22,1,.36,1) ${idx * 50}ms both, tcScorePulse 1.4s ease-out`
+                  : `tcCardIn 0.36s cubic-bezier(.22,1,.36,1) ${idx * 50}ms both`,
+                overflow: "visible",
+                "--pulse-color": palette.glow,
               }}
             >
               {/* Subtle radial sheen behind mascot */}
@@ -300,13 +359,45 @@ export default function TeamConstellation({
                   >
                     {team?.teamName || palette.name}
                   </div>
-                  <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 6 }}>
-                    <span style={{ fontSize: "1.85rem", fontWeight: 900, lineHeight: 1, color: "#fef3c7", fontVariantNumeric: "tabular-nums" }}>
+                  <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 6, position: "relative" }}>
+                    <span
+                      style={{
+                        fontSize: "1.85rem",
+                        fontWeight: 900,
+                        lineHeight: 1,
+                        color: "#fef3c7",
+                        fontVariantNumeric: "tabular-nums",
+                        animation: pulse ? "tcScoreFlash 1.4s ease-out" : "none",
+                        "--pulse-color": palette.glow,
+                      }}
+                    >
                       {score.toLocaleString()}
                     </span>
                     <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94a3b8", letterSpacing: 0.6 }}>
                       PTS
                     </span>
+                    {pulse && (
+                      <span
+                        data-testid={`score-pulse-${teamId}`}
+                        aria-hidden="true"
+                        style={{
+                          position: "absolute",
+                          left: "100%",
+                          marginLeft: 8,
+                          bottom: 0,
+                          fontSize: "0.95rem",
+                          fontWeight: 900,
+                          color: palette.ring,
+                          letterSpacing: 0.4,
+                          textShadow: `0 0 12px ${palette.glow}`,
+                          animation: "tcFloatPlus 1.5s cubic-bezier(.22,1,.36,1) forwards",
+                          pointerEvents: "none",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        +{pulse.delta}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <MiniRing percent={teamProgress} color={palette.ring} size={56} stroke={6} />

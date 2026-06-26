@@ -19,6 +19,9 @@ import LiveActivityFeed from "../components/LiveActivityFeed";
 import StreakBanner from "../components/StreakBanner";
 import SessionModeToggle, { useSessionMode } from "../components/SessionModeToggle";
 import CelebrationLayer from "../components/CelebrationLayer";
+import ThemePicker, { useTheme } from "../components/ThemePicker";
+import StageTimeline from "../components/StageTimeline";
+import GMQuickControls from "../components/GMQuickControls";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 const API_BASE = API_BASE_URL || "";
@@ -296,6 +299,11 @@ export default function LiveSession({ roomCode: roomCodeProp }) {
   // Pass-3 — explicit two modes. Persisted across sessions.
   const [sessionMode, setSessionMode] = useSessionMode();
   const isGameMaster = sessionMode === "game-master";
+  // Pass-4 — theme selection + local GM-mode toggles (pause/reveal
+  // are presentation flags, not authoritative session state).
+  const [sessionThemeId, setSessionThemeId, sessionTheme] = useTheme();
+  const [gmPaused, setGmPaused] = useState(false);
+  const [gmRevealed, setGmRevealed] = useState(false);
 
   const location = useLocation();
   const qs = new URLSearchParams(location.search || "");
@@ -3814,25 +3822,25 @@ if (
         gap: 16,
         minHeight: "100%",
         boxSizing: "border-box",
-        background: isGameMaster
-          ? "linear-gradient(180deg, #0b1024 0%, #111a3a 100%)"
-          : undefined,
+        background: isGameMaster ? sessionTheme.backdrop : undefined,
         transition: "background 0.35s ease-out",
       }}
     >
-      {/* Pass-3 mode toggle + celebration overlay.
-          Toggle stays visible in BOTH modes so the teacher can switch
-          back to controls without leaving the page. CelebrationLayer
-          stays mounted always but is muted in Command Center so a
-          teacher working through the panel isn't interrupted. */}
+      {/* Pass-3/4 toolbar: mode toggle + theme picker.
+          Both stay visible in BOTH modes so the teacher can flip
+          presentation without leaving the page. */}
       <div
         style={{
           display: "flex",
           justifyContent: "flex-end",
           alignItems: "center",
           gap: 12,
+          flexWrap: "wrap",
         }}
       >
+        {isGameMaster && (
+          <ThemePicker themeId={sessionThemeId} onChange={setSessionThemeId} />
+        )}
         <SessionModeToggle mode={sessionMode} onChange={setSessionMode} />
       </div>
       <CelebrationLayer
@@ -3843,6 +3851,7 @@ if (
         treatsGiven={
           typeof treatsConfig?.given === "number" ? treatsConfig.given : 0
         }
+        sessionEnded={isEndingSession}
         muted={!isGameMaster}
       />
 
@@ -3877,6 +3886,43 @@ if (
             : ""
         }
       />
+
+      {/* PASS-4 — Session arc + Game-Master chip toolbar.
+          Stage timeline shows the arc of the session (Warm-up → …
+          → Final Challenge); chip toolbar is the slim in-mode
+          control panel. Both render in BOTH modes, but the toolbar
+          really earns its keep in Game Master Mode (Command Center
+          still has the full original controls below). */}
+      {totalTasksForCelebration > 0 && (
+        <StageTimeline
+          taskIndex={typeof roomState?.taskIndex === "number" ? roomState.taskIndex : -1}
+          totalTasks={totalTasksForCelebration}
+          themeId={sessionThemeId}
+          status={status}
+          isActive={!!roomState?.startedAt}
+        />
+      )}
+      {isGameMaster && (
+        <GMQuickControls
+          themeId={sessionThemeId}
+          onNextRound={handleForceNextTask}
+          onPauseToggle={() => setGmPaused((v) => !v)}
+          paused={gmPaused}
+          onRevealToggle={() => setGmRevealed((v) => !v)}
+          revealed={gmRevealed}
+          onTreat={handleGiveTreat}
+          treatAvailable={
+            !!treatsConfig?.enabled &&
+            (typeof treatsConfig?.given === "number" &&
+            typeof treatsConfig?.total === "number"
+              ? treatsConfig.given < treatsConfig.total
+              : true)
+          }
+          onEndSession={handleEndSessionAndEmail}
+          isEndingSession={isEndingSession}
+          isActive={!!roomState?.startedAt}
+        />
+      )}
 
       {/* GAME MASTER PASS-2 — Teams overview + live activity feed.
           Pure presentation, reads existing roomState only. The original

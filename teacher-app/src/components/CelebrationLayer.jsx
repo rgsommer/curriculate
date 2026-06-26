@@ -74,12 +74,16 @@ export default function CelebrationLayer({
   totalTasks = 0,
   treatsGiven = 0,
   muted = false,
+  // Pass-4: when this flips true (e.g. session ends, leaderboard
+  // locked), fire the big finale: 200-spark cascade + winner banner.
+  sessionEnded = false,
 }) {
   // Refs for "what was the previous value" comparisons.
   const initRef = useRef(false);
   const lastTopRef = useRef(topTeamId);
   const lastTaskIdxRef = useRef(taskIndex);
   const lastTreatsRef = useRef(treatsGiven);
+  const lastEndedRef = useRef(sessionEnded);
 
   // Single active moment at a time (no stacking on screen).
   const [moment, setMoment] = useState(null); // { kind, headline, sub, color, key }
@@ -89,13 +93,17 @@ export default function CelebrationLayer({
     setMoment({ ...m, key: Date.now() });
     if (m.confetti) {
       setConfetti({ sparks: m.confetti, color: m.color });
-      // Confetti auto-clears after the longest spark animation.
-      setTimeout(() => setConfetti(null), 2000);
+      // Confetti auto-clears after the longest spark animation. Big
+      // bursts (finale) need longer; per-spark stagger means the last
+      // spark fires up to (sparks * 22ms) after the first.
+      const confettiMs = 2000 + Math.max(0, m.confetti - 40) * 18;
+      setTimeout(() => setConfetti(null), confettiMs);
     }
-    // Banner auto-clears.
+    // Banner auto-clears (per-moment override allowed).
+    const bannerMs = typeof m.bannerMs === "number" ? m.bannerMs : 3600;
     setTimeout(() => {
       setMoment((cur) => (cur && cur.key === m.key + 0 ? null : cur));
-    }, 3600);
+    }, bannerMs);
   };
 
   useEffect(() => {
@@ -169,6 +177,34 @@ export default function CelebrationLayer({
     lastTreatsRef.current = treatsGiven;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [treatsGiven, muted]);
+
+  // Pass-4: session-complete finale. Honours muted so a Command-Center
+  // teacher who closes the session doesn't get a confetti shower.
+  useEffect(() => {
+    if (!initRef.current) {
+      lastEndedRef.current = sessionEnded;
+      return;
+    }
+    if (muted) {
+      lastEndedRef.current = sessionEnded;
+      return;
+    }
+    if (sessionEnded && !lastEndedRef.current) {
+      const winnerLine = topTeamName
+        ? `${topTeamName} take the crown 👑`
+        : "Session complete 👑";
+      fire({
+        kind: "sessionFinale",
+        headline: winnerLine,
+        sub: "Three cheers for everyone in the room",
+        color: "#facc15",
+        confetti: 200,
+        bannerMs: 7000,
+      });
+    }
+    lastEndedRef.current = sessionEnded;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionEnded, topTeamName, muted]);
 
   // Single-time stylesheet injection.
   useEffect(() => {
