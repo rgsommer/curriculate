@@ -17,6 +17,8 @@ import GameMasterDashboard from "../components/GameMasterDashboard";
 import TeamConstellation from "../components/TeamConstellation";
 import LiveActivityFeed from "../components/LiveActivityFeed";
 import StreakBanner from "../components/StreakBanner";
+import SessionModeToggle, { useSessionMode } from "../components/SessionModeToggle";
+import CelebrationLayer from "../components/CelebrationLayer";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 const API_BASE = API_BASE_URL || "";
@@ -291,6 +293,9 @@ export function isObjectiveScoringTaskType(taskType) {
 export default function LiveSession({ roomCode: roomCodeProp }) {
   const [status, setStatus] = useState("Checking connection…");
   const { user } = useAuth();
+  // Pass-3 — explicit two modes. Persisted across sessions.
+  const [sessionMode, setSessionMode] = useSessionMode();
+  const isGameMaster = sessionMode === "game-master";
 
   const location = useLocation();
   const qs = new URLSearchParams(location.search || "");
@@ -3781,6 +3786,25 @@ if (
     );
   };
 
+  // Pass-3 derived signals for the celebration layer.
+  const topTeamForCelebration = (() => {
+    const scoresObj = roomState?.scores || {};
+    const teamsObj = roomState?.teams || {};
+    let topId = null;
+    let topPts = -Infinity;
+    for (const [tid, pts] of Object.entries(scoresObj)) {
+      const n = typeof pts === "number" ? pts : Number(pts) || 0;
+      if (n > topPts) { topPts = n; topId = tid; }
+    }
+    return {
+      id: topPts > 0 ? topId : null,
+      name: topId ? (teamsObj[topId]?.teamName || "") : "",
+    };
+  })();
+  const totalTasksForCelebration =
+    (Array.isArray(activeTasksetMeta?.tasks) && activeTasksetMeta.tasks.length) ||
+    Number(totalTasksInActiveSet) || 0;
+
   return (
     <div
       style={{
@@ -3790,8 +3814,38 @@ if (
         gap: 16,
         minHeight: "100%",
         boxSizing: "border-box",
+        background: isGameMaster
+          ? "linear-gradient(180deg, #0b1024 0%, #111a3a 100%)"
+          : undefined,
+        transition: "background 0.35s ease-out",
       }}
     >
+      {/* Pass-3 mode toggle + celebration overlay.
+          Toggle stays visible in BOTH modes so the teacher can switch
+          back to controls without leaving the page. CelebrationLayer
+          stays mounted always but is muted in Command Center so a
+          teacher working through the panel isn't interrupted. */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <SessionModeToggle mode={sessionMode} onChange={setSessionMode} />
+      </div>
+      <CelebrationLayer
+        topTeamId={topTeamForCelebration.id}
+        topTeamName={topTeamForCelebration.name}
+        taskIndex={typeof roomState?.taskIndex === "number" ? roomState.taskIndex : -1}
+        totalTasks={totalTasksForCelebration}
+        treatsGiven={
+          typeof treatsConfig?.given === "number" ? treatsConfig.given : 0
+        }
+        muted={!isGameMaster}
+      />
+
       {/* GAME MASTER DASHBOARD — pure-visual "Now Showing" banner.
           Reads existing state only; emits nothing; changes no behavior.
           Existing controls + workflows below remain untouched. */}
@@ -3919,6 +3973,10 @@ if (
         );
       })()}
 
+      {/* COMMAND CENTER surface — original controls. Hidden in
+          Game Master Mode so the broadcast layer fills the screen. */}
+      {!isGameMaster && (
+      <>
       {/* Header (existing) */}
       <header
         style={{
@@ -6979,6 +7037,9 @@ Thomas | Soldier | loyal, brave, disciplined`}
             </button>
           </div>
         </div>
+      )}
+
+      </>
       )}
 
       {/* Spotlight tour for LiveSession */}
