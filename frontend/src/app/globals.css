@@ -33,6 +33,13 @@ body.capacitor-native {
 body.capacitor-native header.sticky {
   padding-top: env(safe-area-inset-top, 0px);
 }
+/* iOS-only: hide in-app purchase surfaces (premium upgrade, gift chip-in) to
+   comply with App Store Guideline 3.1.1 (digital goods must use Apple IAP).
+   NativeBridge adds `capacitor-ios` only inside the iOS shell; web/Android keep
+   the payment UI. Mark elements with `data-hide-on-ios`. */
+body.capacitor-ios [data-hide-on-ios] {
+  display: none !important;
+}
 
 /* ── TeeboPay standalone shell ──
    TeeboPay (/teebopay/*) is its own product brand. Hide Curriculate's

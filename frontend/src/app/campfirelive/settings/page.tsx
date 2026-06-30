@@ -150,7 +150,9 @@ export default function SettingsPage() {
         )}
 
         {!profile?.is_premium && (
-          <div className="space-y-3">
+          /* Premium purchase is hidden in the iOS app (App Store 3.1.1 — digital
+             goods must use Apple IAP). Web & Android keep it. */
+          <div data-hide-on-ios className="space-y-3">
             <div className="rounded-xl border-2 border-orange-300 bg-gradient-to-r from-orange-50 to-rose-50 p-5">
               <div className="flex justify-between items-start mb-3">
                 <div>

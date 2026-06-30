@@ -68,9 +68,9 @@ function Shell({ children }: { children: React.ReactNode }) {
       {/* Guest: prompt to save the account for cross-device access */}
       <GuestUpgrade />
 
-      {/* Trial banner */}
+      {/* Trial banner (hidden in the iOS app — no in-app purchase per App Store 3.1.1) */}
       {!profile?.is_premium && isTrialActive && trialDaysLeft <= 14 && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800">
+        <div data-hide-on-ios className="bg-amber-50 border-b border-amber-200 px-4 py-2 text-center text-sm text-amber-800">
           Your free trial ends in <strong>{trialDaysLeft} days</strong>.{" "}
           <Link href="/campfirelive/settings" className="underline font-semibold">
             Upgrade now
@@ -79,7 +79,7 @@ function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       {!isTrialActive && !profile?.is_premium && (
-        <div className="bg-red-50 border-b border-red-200 px-4 py-2 text-center text-sm text-red-800">
+        <div data-hide-on-ios className="bg-red-50 border-b border-red-200 px-4 py-2 text-center text-sm text-red-800">
           Your free trial has ended.{" "}
           <Link href="/campfirelive/settings" className="underline font-semibold">
             Upgrade to continue

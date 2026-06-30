@@ -32,7 +32,11 @@ type CapPlugins = {
   };
 };
 
-function cap(): { isNativePlatform?: () => boolean; Plugins?: CapPlugins } | null {
+function cap(): {
+  isNativePlatform?: () => boolean;
+  getPlatform?: () => string;
+  Plugins?: CapPlugins;
+} | null {
   if (typeof window === "undefined") return null;
   return (window as unknown as { Capacitor?: ReturnType<typeof cap> }).Capacitor ?? null;
 }
@@ -72,6 +76,8 @@ export default function NativeBridge() {
     if (!c?.isNativePlatform?.()) return; // plain browser → nothing to do
 
     document.body.classList.add("capacitor-native");
+    // iOS shell only: flags `data-hide-on-ios` payment surfaces off (App Store 3.1.1).
+    if (c.getPlatform?.() === "ios") document.body.classList.add("capacitor-ios");
 
     const plugins = c.Plugins ?? {};
 
