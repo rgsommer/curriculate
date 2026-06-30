@@ -5075,9 +5075,12 @@ export default function EngagementDetailPage() {
                   </div>
                   {(() => {
                     // Pie of the top 10 candidates' vote share for this award.
+                    // Ordered for maximum hue separation between consecutive slices —
+                    // most awards have only 2–4 winners, so the first colors must be
+                    // very distinct (orange / blue / red / green), not adjacent purples.
                     const PIE = [
-                      "#d946ef", "#a855f7", "#6366f1", "#3b82f6", "#06b6d4",
-                      "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#94a3b8",
+                      "#f97316", "#3b82f6", "#ef4444", "#22c55e", "#a855f7",
+                      "#eab308", "#06b6d4", "#ec4899", "#14b8a6", "#64748b",
                     ];
                     const top10 = entries.slice(0, 10);
                     const total10 = top10.reduce((s, e) => s + e.n, 0) || 1;
