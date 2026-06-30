@@ -23,6 +23,7 @@ type CapPlugins = {
       cb: (data: { url?: string }) => void
     ) => Promise<{ remove: () => void }> | { remove: () => void };
   };
+  Browser?: { close?: () => Promise<void> };
   PushNotifications?: {
     checkPermissions: () => Promise<{ receive: string }>;
     requestPermissions: () => Promise<{ receive: string }>;
@@ -37,14 +38,31 @@ function cap(): { isNativePlatform?: () => boolean; Plugins?: CapPlugins } | nul
 }
 
 async function applySessionFromUrl(url: string) {
-  // Tokens arrive in the URL fragment (#access_token=…&refresh_token=…).
-  const hash = url.includes("#") ? url.split("#")[1] : "";
-  const params = new URLSearchParams(hash);
-  const access_token = params.get("access_token");
-  const refresh_token = params.get("refresh_token");
-  if (access_token && refresh_token) {
-    await supabase.auth.setSession({ access_token, refresh_token });
-    window.location.replace("/campfirelive");
+  // Only handle our OAuth callback, not other deep links (e.g. invite links).
+  if (!url.includes("auth-callback")) return;
+  try {
+    // PKCE flow (supabase-js default): the redirect carries ?code=… and we trade
+    // it for a session using the verifier stashed in this webview's localStorage
+    // when signInWithOAuth ran. This is the path that actually fires today.
+    const query = url.includes("?") ? url.split("?")[1].split("#")[0] : "";
+    const code = new URLSearchParams(query).get("code");
+    if (code) {
+      await supabase.auth.exchangeCodeForSession(code);
+      window.location.replace("/campfirelive");
+      return;
+    }
+    // Implicit flow fallback: tokens in the fragment (#access_token=…&refresh_token=…).
+    const hash = url.includes("#") ? url.split("#")[1] : "";
+    const params = new URLSearchParams(hash);
+    const access_token = params.get("access_token");
+    const refresh_token = params.get("refresh_token");
+    if (access_token && refresh_token) {
+      await supabase.auth.setSession({ access_token, refresh_token });
+      window.location.replace("/campfirelive");
+    }
+  } catch {
+    // Sign-in failed to complete — drop the user on the auth screen to retry.
+    window.location.replace("/campfirelive/auth");
   }
 }
 
@@ -57,9 +75,12 @@ export default function NativeBridge() {
 
     const plugins = c.Plugins ?? {};
 
-    // 1 + 2: handle the OAuth deep-link return.
+    // 1 + 2: handle the OAuth deep-link return, then dismiss the system browser.
     plugins.App?.addListener("appUrlOpen", (data) => {
-      if (data?.url) applySessionFromUrl(data.url);
+      if (!data?.url) return;
+      applySessionFromUrl(data.url).finally(() => {
+        plugins.Browser?.close?.().catch(() => {});
+      });
     });
 
     // 3: native push registration (best-effort; backend send wired in phase 2).
