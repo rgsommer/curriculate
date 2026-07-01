@@ -41,6 +41,15 @@ body.capacitor-ios [data-hide-on-ios] {
   display: none !important;
 }
 
+/* Android-only: hide ALL money-collection surfaces (chip-in, pledge/sponsor,
+   prize pot, group-gift chip-ins, paid raffle entry, QR donation collection)
+   so the Google Play build presents no financial features. NativeBridge adds
+   `capacitor-android` only inside the Android shell; web/iOS keep the money UI.
+   Mark elements with `data-hide-on-android`. */
+body.capacitor-android [data-hide-on-android] {
+  display: none !important;
+}
+
 /* ── TeeboPay standalone shell ──
    TeeboPay (/teebopay/*) is its own product brand. Hide Curriculate's
    site header and footer so visitors see only the TeeboPay identity. */

@@ -924,6 +924,8 @@ export default function EngagementDetailPage() {
     giftId?: string,
     pledgeFields?: { perUnitCents: number; maxCents: number }
   ) => {
+    // Android native shell collects no money (Google Play "no financial features").
+    if (typeof window !== "undefined" && (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.() === "android") return;
     if (chippingIn || !engagementId) return;
     setChippingIn(true);
     try {
@@ -996,6 +998,8 @@ export default function EngagementDetailPage() {
   // capped at their max) upfront; the release flow refunds the shortfall. Lump →
   // charge it flat. pledge fields let the cron settle each pledge to the result.
   const submitPledge = async () => {
+    // Android native shell collects no money (Google Play "no financial features").
+    if (typeof window !== "undefined" && (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.() === "android") return;
     const p = pledgeOf(engagement.config);
     if (!p || chippingIn) return;
     if (pledgeMode === "lump") {
@@ -1028,6 +1032,8 @@ export default function EngagementDetailPage() {
   // Pledge Drive host: post the actual result → settle all pledges (auto-refund the
   // shortfall, pay the recipient, thank everyone).
   const settlePledge = async () => {
+    // Android native shell collects no money (Google Play "no financial features").
+    if (typeof window !== "undefined" && (window as unknown as { Capacitor?: { getPlatform?: () => string } }).Capacitor?.getPlatform?.() === "android") return;
     const p = pledgeOf(engagement.config);
     if (!p || settlingPledge || !session) return;
     const actual = Math.round(parseFloat(pledgeResultInput) || 0);
@@ -4150,7 +4156,7 @@ export default function EngagementDetailPage() {
         {/* Group chip-ins — an engagement can have several (one per guest). Each
             member starts at most one; the host can start more. */}
         {(gifts.length > 0 || open) && (
-          <div className="mt-4 space-y-3 border-t border-slate-100 pt-3">
+          <div data-hide-on-android className="mt-4 space-y-3 border-t border-slate-100 pt-3">
             {gifts.map((g) => {
               const t = giftTotals[g.id] ?? { total_cents: 0, contributors: 0 };
               const canSee =
@@ -7131,6 +7137,7 @@ export default function EngagementDetailPage() {
                   📸 Enter your photo
                 </a>
                 <a
+                  data-hide-on-android
                   href="#prizepot"
                   onClick={(e) => {
                     e.preventDefault();
@@ -7888,6 +7895,7 @@ export default function EngagementDetailPage() {
       {/* ── PLEDGE DRIVE: sponsor form + anonymized leaderboard ── */}
       {pledge && engagement.gift_enabled && (
         <div
+          data-hide-on-android
           id="prizepot"
           className="mb-6 scroll-mt-4 rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 to-orange-50 p-5 shadow-sm"
         >
@@ -8090,7 +8098,7 @@ export default function EngagementDetailPage() {
       )}
 
       {(engagement.gift_enabled || !!raffle) && !isGiftHidden && !pledge && (
-        <div id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
+        <div data-hide-on-android id="prizepot" className="mb-6 scroll-mt-4 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="flex items-center justify-between gap-2 mb-1">
             <h2 className="font-bold text-slate-900">
               {draw ? "🎟️ Raffle pot" : raffle ? "🏆 Prize pot" : "🎁 Group gift"}
@@ -8297,7 +8305,7 @@ export default function EngagementDetailPage() {
         !hasPaidEntry &&
         !hasResponded &&
         engagement.status === "active" && (
-          <div className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-6 shadow-sm text-center">
+          <div data-hide-on-android className="mb-6 rounded-2xl border-2 border-amber-300 bg-amber-50/60 p-6 shadow-sm text-center">
             <div className="text-3xl mb-1">🎟️</div>
             <h2 className="font-bold text-amber-900">
               Entry: {formatMoney(entryFeeCents, engagement.gift_currency)}
@@ -8336,7 +8344,7 @@ export default function EngagementDetailPage() {
           const suggested =
             suggestedRaw && suggestedRaw.length ? suggestedRaw : [500, 1000, 2000];
           return (
-            <div className="mb-6 rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5">
+            <div data-hide-on-android className="mb-6 rounded-2xl border border-fuchsia-200 bg-fuchsia-50 p-5">
               <div className="text-sm font-bold text-fuchsia-900">
                 🎁 Prize pot — winner of “{label}”
               </div>

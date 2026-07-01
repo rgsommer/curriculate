@@ -1276,6 +1276,7 @@ export default function NewEngagementPage() {
               ([type, meta]) => (
                 <button
                   key={type}
+                  data-hide-on-android={type === "raffle_draw" || type === "pledge_drive" ? "" : undefined}
                   onClick={() => handleSelectType(type)}
                   className="rounded-2xl border border-slate-200 bg-white p-4 text-center shadow-sm hover:shadow-md hover:-translate-y-0.5 transition"
                 >
@@ -2021,7 +2022,7 @@ export default function NewEngagementPage() {
                 </p>
 
                 {/* Optional: gift-card the winner of one award */}
-                <div className="mt-4 rounded-xl border border-fuchsia-200 bg-fuchsia-50/50 p-3">
+                <div data-hide-on-android className="mt-4 rounded-xl border border-fuchsia-200 bg-fuchsia-50/50 p-3">
                   <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                     <input
                       type="checkbox"
@@ -2801,7 +2802,7 @@ export default function NewEngagementPage() {
             {(selectedType === "challenge" ||
               selectedType === "scavenger_hunt" ||
               selectedType === "tournament") && (
-              <div>
+              <div data-hide-on-android>
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
@@ -3136,7 +3137,7 @@ export default function NewEngagementPage() {
               selectedType === "pledge_drive" ||
               selectedType === "raffle_draw"
             ) && (
-            <div>
+            <div data-hide-on-android>
               <label className="flex items-start gap-3 cursor-pointer">
                 <input
                   type="checkbox"

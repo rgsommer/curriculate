@@ -78,6 +78,9 @@ export default function NativeBridge() {
     document.body.classList.add("capacitor-native");
     // iOS shell only: flags `data-hide-on-ios` payment surfaces off (App Store 3.1.1).
     if (c.getPlatform?.() === "ios") document.body.classList.add("capacitor-ios");
+    // Android shell only: flags `data-hide-on-android` money-collection surfaces off
+    // (Google Play "no financial features" build).
+    if (c.getPlatform?.() === "android") document.body.classList.add("capacitor-android");
 
     const plugins = c.Plugins ?? {};
 
