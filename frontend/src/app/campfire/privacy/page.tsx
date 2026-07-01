@@ -187,7 +187,9 @@ export default function CampfirePrivacyPage() {
         </h2>
         <p>
           We keep your information for as long as your account is active or as needed to
-          provide the service. You can request access to, correction of, or deletion of
+          provide the service. You can permanently delete your account and all associated
+          data yourself at any time in the app under <strong>Settings &rarr; Delete
+          account</strong>. You can also request access to, correction of, or deletion of
           your personal information — including revoking Google sign-in and deleting your
           account and associated data — by emailing{" "}
           <a className="text-orange-600 hover:underline" href={`mailto:${CONTACT}`}>
