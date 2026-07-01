@@ -1349,6 +1349,32 @@ router.post("/invite/:id/revoke", authAny, loadMembership, requireAdmin, async (
 
 // ── Roster import (§3) ───────────────────────────────────────────────────────
 
+// Strip parent identity the school has no way to use, per enabled channels.
+// Mutates each student's parents[] in place:
+//   - edsbyParentId  → kept only if Edsby posting is on
+//   - name           → kept only if SOME channel is on (Edsby or email)
+//   - email          → kept only if email-to-parents is on
+// A parent left with no usable field is removed. With every channel off, no
+// parent identity is stored at all.
+function sanitizeParentsByChannel(students, cfg) {
+  const edsbyOn = !!cfg?.edsby?.enabled;
+  const emailOn = !!cfg?.channels?.emailToParents;
+  for (const s of students) {
+    if (!s || !Array.isArray(s.parents)) continue;
+    s.parents = s.parents
+      .map((p) =>
+        p
+          ? {
+              name: edsbyOn || emailOn ? p.name || "" : "",
+              email: emailOn ? p.email || "" : "",
+              edsbyParentId: edsbyOn ? p.edsbyParentId || "" : "",
+            }
+          : null
+      )
+      .filter((p) => p && (p.name || p.email || p.edsbyParentId));
+  }
+}
+
 router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.single("file"), async (req, res, next) => {
   try {
     // Accept either an uploaded file (CSV or XLSX) or raw CSV text in the body.
@@ -1361,6 +1387,15 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
       return res.status(400).json({ ok: false, error: "No file or CSV provided" });
     }
     const { students, skipped, headerMap } = parsed;
+
+    // Privacy: store parent identity only to the extent the system can actually
+    // contact the parent. NID needs Edsby posting; name needs SOME delivery
+    // channel (Edsby or email); email needs email-to-parents. With every channel
+    // off there's no way to reach parents, so we store no parent data at all.
+    // Re-importing with a channel off also strips data stored before, because
+    // parents[] is overwritten on update below.
+    const cfg = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.enabled channels.emailToParents").lean();
+    sanitizeParentsByChannel(students, cfg);
 
     // Resolve any "House" column to a houseId, matching existing houses by name
     // (case-insensitive) and creating any that are new to this school.
@@ -1604,13 +1639,20 @@ router.post("/students", authAny, loadMembership, canLog, async (req, res, next)
     if (!b.lastName && !b.firstName && !b.preferredName) {
       return res.status(400).json({ ok: false, error: "A name is required" });
     }
-    const parents = (Array.isArray(b.parents) ? b.parents : [])
-      .filter((p) => p && (p.email || p.name || p.edsbyParentId))
-      .map((p) => ({
-        name: String(p.name || "").trim(),
-        email: String(p.email || "").trim().toLowerCase(),
-        edsbyParentId: String(p.edsbyParentId || "").trim(),
-      }));
+    // Store parent identity only to the extent the enabled channels can use it
+    // (same rule as the roster import via sanitizeParentsByChannel).
+    const cfgEdsby = await BehaviorConfig.findOne({ schoolId: req.schoolId }).select("edsby.enabled channels.emailToParents").lean();
+    const wrap = {
+      parents: (Array.isArray(b.parents) ? b.parents : [])
+        .filter((p) => p && (p.email || p.name || p.edsbyParentId))
+        .map((p) => ({
+          name: String(p.name || "").trim(),
+          email: String(p.email || "").trim().toLowerCase(),
+          edsbyParentId: String(p.edsbyParentId || "").trim(),
+        })),
+    };
+    sanitizeParentsByChannel([wrap], cfgEdsby);
+    const parents = wrap.parents;
     const student = await BehaviorStudent.create({
       schoolId: req.schoolId,
       externalId: String(b.externalId || "").trim(),
