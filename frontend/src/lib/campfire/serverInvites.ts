@@ -23,14 +23,42 @@ export function campfireFrom() {
 // Deliverability defaults applied to every Campfire email: a real Reply-To (not
 // the noreply sender) and a List-Unsubscribe header — both signal legitimacy to
 // spam filters (Gmail/Yahoo look for List-Unsubscribe on notification mail).
-export function mailDefaults() {
+export function mailDefaults(to?: string) {
   const addr = process.env.CONTACT_REPLYTO || "admin@curriculate.net";
+  const base = (process.env.CAMPFIRE_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
+  // Prefer an HTTPS unsubscribe that we actually PROCESS (writes to the opt-out list);
+  // keep the mailto as a fallback. When the recipient is known, prefill their address.
+  const httpUnsub = to
+    ? `${base}/campfire/unsubscribe?e=${encodeURIComponent(to.trim().toLowerCase())}`
+    : `${base}/campfire/unsubscribe`;
   return {
     replyTo: addr,
     headers: {
-      "List-Unsubscribe": `<mailto:${addr}?subject=unsubscribe%20campfire>`,
+      "List-Unsubscribe": `<${httpUnsub}>, <mailto:${addr}?subject=unsubscribe%20campfire>`,
     },
   };
+}
+
+// Drop any addresses that have opted out of Campfire email. Defensive: if the opt-out
+// table doesn't exist yet (migration 076 not applied) or the query errors, return the
+// list unfiltered rather than block all mail.
+export async function filterOptedOut(
+  admin: SupabaseClient,
+  emails: string[]
+): Promise<string[]> {
+  if (!emails.length) return emails;
+  try {
+    const lower = Array.from(new Set(emails.map((e) => e.trim().toLowerCase())));
+    const { data, error } = await admin
+      .from("campfire_email_optouts")
+      .select("email")
+      .in("email", lower);
+    if (error) return emails;
+    const opted = new Set((data ?? []).map((r) => r.email as string));
+    return emails.filter((e) => !opted.has(e.trim().toLowerCase()));
+  } catch {
+    return emails;
+  }
 }
 
 export function escapeHtml(str: string) {
@@ -121,7 +149,7 @@ export async function getNonResponderEmails(
     const email = data?.user?.email;
     if (email) emails.push(email);
   }
-  return emails;
+  return filterOptedOut(admin, emails);
 }
 
 // Emails of every member of a group.
@@ -140,7 +168,7 @@ export async function getGroupMemberEmails(
     const email = data?.user?.email || (m.notify_email as string | null);
     if (email) emails.push(email);
   }
-  return emails;
+  return filterOptedOut(admin, emails);
 }
 
 // Emails invited to the group but not yet joined (status 'pending') — used to nudge
@@ -159,7 +187,7 @@ export async function getPendingInviteeEmails(
     const em = (r.email as string | null)?.trim();
     if (em) set.add(em);
   }
-  return Array.from(set);
+  return filterOptedOut(admin, Array.from(set));
 }
 
 // Resolve a card's recipient(s) from the excluded surprise user ids: a display
