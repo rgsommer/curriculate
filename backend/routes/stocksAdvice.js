@@ -2033,6 +2033,84 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
 //   send  — if true, also email it via Resend. Default false (preview only).
 //   to    — override recipient (defaults to the authenticated user's email).
 // ─────────────────────────────────────────────────────────────────────
+// Read-only diagnostic — answers "why am I not receiving daily briefings?"
+// in one call. Reports every link in the chain (env flags, portfolio config,
+// tz-adjusted scheduling match, recent cron activity, Resend key presence)
+// so we can see WHICH link is broken instead of guessing.
+router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    const now = new Date();
+    const tz = profile?.briefingTz || "America/New_York";
+    let hhmmInTz = null, ymdInTz = null;
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(now);
+      const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+      ymdInTz = `${p.year}-${p.month}-${p.day}`;
+      hhmmInTz = `${p.hour === "24" ? "00" : p.hour}:${p.minute}`;
+    } catch (e) { /* bad tz */ }
+
+    const sentKey = `${ymdInTz}|${hhmmInTz}`;
+    const times = Array.isArray(profile?.briefingTimes) ? profile.briefingTimes : [];
+    const timeMatches = hhmmInTz && times.includes(hhmmInTz);
+    const alreadySentThisSlot = profile?.lastBriefingSentKey === sentKey;
+    const wouldBeDueNow = !!(profile && (profile.positions?.length) && times.length && timeMatches && !alreadySentThisSlot);
+
+    // Latest cron-generated snapshot proves the scheduler HAS fired lately.
+    let latestCronSnapshot = null, latestOnDemandSnapshot = null;
+    try {
+      const [cron, onDemand] = await Promise.all([
+        StocksAdviceSnapshot.findOne({ email: req.stocksUser.email, source: "cron" }).sort({ createdAt: -1 }).select("createdAt").lean(),
+        StocksAdviceSnapshot.findOne({ email: req.stocksUser.email, source: { $in: ["on-demand", "manual"] } }).sort({ createdAt: -1 }).select("createdAt").lean(),
+      ]);
+      latestCronSnapshot = cron?.createdAt || null;
+      latestOnDemandSnapshot = onDemand?.createdAt || null;
+    } catch (e) { /* ignore */ }
+
+    // Recent AI-rec activity proves the cron+parse+persist chain is intact.
+    let recentRecCount = 0;
+    try {
+      const { default: StocksAdviceRec } = await import("../models/StocksAdviceRec.js");
+      recentRecCount = await StocksAdviceRec.countDocuments({ email: req.stocksUser.email, generatedAt: { $gte: new Date(Date.now() - 7 * 86400e3) } });
+    } catch { /* ignore */ }
+
+    const checks = [];
+    const add = (name, ok, note) => checks.push({ name, ok: !!ok, note });
+    add("Cron flag enabled (STOCKS_BRIEFING_ENABLED=1)", process.env.STOCKS_BRIEFING_ENABLED === "1", process.env.STOCKS_BRIEFING_ENABLED === "1" ? null : "Backend env has cron disabled — no per-minute tick is scheduled.");
+    add("Resend key present (RESEND_API_KEY)", !!process.env.RESEND_API_KEY, !!process.env.RESEND_API_KEY ? null : "Emails cannot be sent without a Resend key.");
+    add("Portfolio has positions", (profile?.positions?.length || 0) > 0, (profile?.positions?.length || 0) > 0 ? null : "Cron skips users with zero positions.");
+    add("Portfolio has riskTolerance", !!profile?.riskTolerance, !!profile?.riskTolerance ? null : "riskTolerance is null on your portfolio (some paths filter it out).");
+    add("briefingTimes configured", times.length > 0, times.length > 0 ? null : "Set briefing times on the Advice settings (up to 4).");
+    add(`Current time (${hhmmInTz || "?"} ${tz}) matches a briefingTime`, !!timeMatches, timeMatches ? null : `Your times are [${times.join(", ") || "empty"}]; check right at one of those minutes.`);
+    add("Not already sent this slot (idempotency)", !alreadySentThisSlot, alreadySentThisSlot ? `lastBriefingSentKey=${profile.lastBriefingSentKey} — cron will skip until the next scheduled slot.` : null);
+    add("Cron produced a snapshot within last 48h", !!latestCronSnapshot && (Date.now() - new Date(latestCronSnapshot).getTime()) < 48 * 86400e3 / 24, latestCronSnapshot ? `latest cron snapshot: ${new Date(latestCronSnapshot).toISOString()}` : "No cron-generated snapshot ever — the scheduler has never successfully finished for this user (crash / env issue / config).");
+
+    res.json({
+      email: req.stocksUser.email,
+      now: now.toISOString(),
+      currentTimeInTz: hhmmInTz,
+      currentDateInTz: ymdInTz,
+      briefingTz: tz,
+      briefingTimes: times,
+      lastBriefingSentKey: profile?.lastBriefingSentKey || null,
+      wouldBeDueNow,
+      latestCronSnapshot,
+      latestOnDemandSnapshot,
+      recentRecCount7d: recentRecCount,
+      env: {
+        STOCKS_BRIEFING_ENABLED: process.env.STOCKS_BRIEFING_ENABLED === "1",
+        RESEND_API_KEY_present: !!process.env.RESEND_API_KEY,
+        STOCKS_BRIEFING_FROM: process.env.STOCKS_BRIEFING_FROM || "(default) Stocks Advisor <noreply@curriculate.net>",
+      },
+      checks,
+      summary: checks.filter((c) => !c.ok).map((c) => c.name),
+    });
+  } catch (err) {
+    console.error("briefing-diagnostics error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 router.post("/send-briefing", requireStocksAuth, async (req, res) => {
   try {
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
