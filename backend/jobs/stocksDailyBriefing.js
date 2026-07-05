@@ -1097,7 +1097,7 @@ async function findUsersDueForBriefing(now) {
 
 // Send the briefing for a single user, then stamp lastBriefingSentKey so
 // the same slot doesn't fire again within the same minute window.
-async function sendBriefingForUser(p, sendKey) {
+export async function sendBriefingForUser(p, sendKey) {
   // Persist the exact stage + message of any failure so the diagnostic
   // endpoint can show WHY silently-failing sends silently-failed.
   const recordFail = async (stage, err) => {

@@ -6861,6 +6861,8 @@ function TradesView({ sessionToken }) {
 // cross-domain / cookie fiddling.
 function BriefingDiagnosticsCard({ sessionToken }) {
   const [busy, setBusy] = useState(false);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState(null);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
 
@@ -6880,6 +6882,23 @@ function BriefingDiagnosticsCard({ sessionToken }) {
     } finally { setBusy(false); }
   };
 
+  const triggerNow = async () => {
+    if (triggering) return;
+    setTriggering(true); setTriggerMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/trigger-briefing-now`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setTriggerMsg(j.note || "Send triggered. Wait ~90s then click Run diagnostics.");
+    } catch (e) {
+      setTriggerMsg(`Trigger failed: ${e?.message || "network"}`);
+    } finally { setTriggering(false); }
+  };
+
   return (
     <div className="sa-card" style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -6889,10 +6908,21 @@ function BriefingDiagnosticsCard({ sessionToken }) {
             Not receiving daily briefing emails? Run this — it checks every link in the chain (cron flag, Resend key, portfolio config, scheduling match, idempotency, recent successful sends).
           </div>
         </div>
-        <button className="sa-btn" onClick={run} disabled={busy}>
-          {busy ? "Checking…" : "Run diagnostics"}
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="sa-btn" onClick={run} disabled={busy}>
+            {busy ? "Checking…" : "Run diagnostics"}
+          </button>
+          <button className="sa-btn secondary" onClick={triggerNow} disabled={triggering} title="Force-fire a real briefing send now, off-schedule. If it works you get an email; if not, the failure appears in diagnostics.">
+            {triggering ? "Triggering…" : "Force-send now"}
+          </button>
+        </div>
       </div>
+
+      {triggerMsg && (
+        <div style={{ marginTop: 10, fontSize: 12.5, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", borderRadius: 8, padding: "10px 12px" }}>
+          {triggerMsg}
+        </div>
+      )}
 
       {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
 

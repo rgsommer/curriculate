@@ -2136,6 +2136,41 @@ router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
   }
 });
 
+// Force-fire a briefing send for the CURRENT user, off the schedule. Returns
+// immediately (202) — the actual send runs in the background so the fetch
+// can't time out on a proxy. The result lands in lastBriefingSuccessAt (or
+// lastBriefingError on the portfolio doc) within ~60-120s; the diagnostic
+// endpoint shows it. Only affects the caller's own portfolio.
+router.post("/trigger-briefing-now", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email });
+    if (!profile || !profile.positions?.length) return res.status(400).json({ error: "No portfolio with positions." });
+    const now = new Date();
+    const sendKey = `manual-${now.toISOString().slice(0, 19).replace("T", "|")}`;
+
+    // Fire and forget — don't await; return 202 so the caller sees success
+    // instantly and can poll /briefing-diagnostics for the outcome.
+    (async () => {
+      try {
+        const { sendBriefingForUser } = await import("../jobs/stocksDailyBriefing.js");
+        await sendBriefingForUser(profile, sendKey);
+      } catch (e) {
+        console.error("[trigger-briefing-now] outer error:", e?.message);
+      }
+    })();
+
+    res.status(202).json({
+      triggered: true,
+      sendKey,
+      email: req.stocksUser.email,
+      note: "Send is running in the background. Wait ~60-120s then click Run diagnostics again to see the result (success timestamp updates OR a red error banner appears with the exact stage that failed).",
+    });
+  } catch (err) {
+    console.error("trigger-briefing-now error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 router.post("/send-briefing", requireStocksAuth, async (req, res) => {
   try {
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
