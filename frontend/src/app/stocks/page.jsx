@@ -5911,6 +5911,8 @@ function PerformanceView({ sessionToken }) {
           actionable hints when sections below come back empty. */}
       <DataStatusPanel data={dataStatus} />
 
+      <BriefingDiagnosticsCard sessionToken={sessionToken} />
+
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
       <AdviceScorecardCard
         scorecard={scorecard}
@@ -6854,6 +6856,86 @@ function TradesView({ sessionToken }) {
 // the database. Each row shows what's in the DB and, if empty, the
 // concrete next-step that would populate it.
 // =============================================================================
+// One-click diagnostic for "why aren't my briefings arriving?" Runs from
+// inside the app so the user's session cookie is always attached — no
+// cross-domain / cookie fiddling.
+function BriefingDiagnosticsCard({ sessionToken }) {
+  const [busy, setBusy] = useState(false);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null); setData(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/briefing-diagnostics`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setData(j);
+    } catch (e) {
+      setErr(e?.message || "Diagnostics failed");
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Briefing diagnostics</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            Not receiving daily briefing emails? Run this — it checks every link in the chain (cron flag, Resend key, portfolio config, scheduling match, idempotency, recent successful sends).
+          </div>
+        </div>
+        <button className="sa-btn" onClick={run} disabled={busy}>
+          {busy ? "Checking…" : "Run diagnostics"}
+        </button>
+      </div>
+
+      {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+
+      {data && (
+        <div style={{ marginTop: 14 }}>
+          {Array.isArray(data.summary) && data.summary.length > 0 ? (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+              <b>{data.summary.length} failing check{data.summary.length === 1 ? "" : "s"}:</b> {data.summary.join(" · ")}
+            </div>
+          ) : (
+            <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", borderRadius: 8, padding: "10px 12px", fontSize: 13, marginBottom: 12 }}>
+              ✓ All chain checks pass. If briefings still aren't arriving, look at Resend logs (delivery/bounce/spam) — the sending pipeline itself is healthy.
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+            {(data.checks || []).map((c, i) => (
+              <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 13 }}>
+                <span style={{ fontWeight: 700, color: c.ok ? "var(--sa-green)" : "var(--sa-red)", minWidth: 14 }}>{c.ok ? "✓" : "✗"}</span>
+                <div style={{ flex: 1 }}>
+                  <div>{c.name}</div>
+                  {c.note && <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 2 }}>{c.note}</div>}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 11, color: "var(--sa-muted)", background: "var(--sa-panel-2)", padding: "8px 10px", borderRadius: 6, fontFamily: "SF Mono,Menlo,Consolas,monospace", lineHeight: 1.6 }}>
+            <div>current time in {data.briefingTz}: <b>{data.currentTimeInTz}</b> · date {data.currentDateInTz}</div>
+            <div>your briefingTimes: <b>[{(data.briefingTimes || []).join(", ") || "empty"}]</b></div>
+            <div>would be due right now: <b>{data.wouldBeDueNow ? "yes" : "no"}</b> · lastBriefingSentKey: <b>{data.lastBriefingSentKey || "(never)"}</b></div>
+            <div>latest cron snapshot: <b>{data.latestCronSnapshot ? new Date(data.latestCronSnapshot).toLocaleString() : "(none)"}</b></div>
+            <div>latest on-demand snapshot: <b>{data.latestOnDemandSnapshot ? new Date(data.latestOnDemandSnapshot).toLocaleString() : "(none)"}</b></div>
+            <div>AI recs generated (last 7d): <b>{data.recentRecCount7d}</b></div>
+            <div>env: STOCKS_BRIEFING_ENABLED=<b>{String(data.env?.STOCKS_BRIEFING_ENABLED)}</b> · RESEND_API_KEY=<b>{data.env?.RESEND_API_KEY_present ? "present" : "MISSING"}</b></div>
+            <div>from: <b>{data.env?.STOCKS_BRIEFING_FROM}</b></div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DataStatusPanel({ data }) {
   if (!data) return null;
   const fmtDate = (d) => d ? new Date(d).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
