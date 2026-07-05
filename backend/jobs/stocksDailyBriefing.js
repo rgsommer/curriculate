@@ -20,6 +20,7 @@
 
 import cron from "node-cron";
 import StocksPortfolio from "../models/StocksPortfolio.js";
+import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
 import { writeDailySnapshot } from "../routes/stocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
@@ -1097,21 +1098,38 @@ async function findUsersDueForBriefing(now) {
 // Send the briefing for a single user, then stamp lastBriefingSentKey so
 // the same slot doesn't fire again within the same minute window.
 async function sendBriefingForUser(p, sendKey) {
+  // Persist the exact stage + message of any failure so the diagnostic
+  // endpoint can show WHY silently-failing sends silently-failed.
+  const recordFail = async (stage, err) => {
+    try {
+      await StocksPortfolio.updateOne(
+        { email: p.email },
+        { $set: {
+            lastBriefingErrorAt: new Date(),
+            lastBriefingErrorStage: stage,
+            lastBriefingErrorMessage: String(err?.message || err).slice(0, 500),
+          } }
+      );
+    } catch { /* ignore */ }
+  };
+
+  let md;
   try {
     const includeMonthly = isLastTradingDayOfMonth(new Date());
-    let md = await generateBriefing(p);
+    try { md = await generateBriefing(p); }
+    catch (e) { await recordFail("generateBriefing", e); throw e; }
     if (includeMonthly) {
       const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
       const block = formatAllReportsMarkdown(reports);
       if (block) md = `${block}\n\n---\n\n${md}`;
     }
     // Same price-validation + correction pass the manual /send-briefing uses.
-    // This is the cron path that emails users daily — the one that had been
-    // shipping unverified prices ("SOUN $9.27 verified" while real was $8.01).
+    // Never throws — returns the (corrected or as-is) markdown.
     md = await validateAndCorrectBriefing(md, p);
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
-    await emailBriefing({ to: p.email, subject, md });
+    try { await emailBriefing({ to: p.email, subject, md }); }
+    catch (e) { await recordFail("emailBriefing", e); throw e; }
     await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" });
 
     const recs = parseRecsFromBriefing(md);
@@ -1127,14 +1145,19 @@ async function sendBriefingForUser(p, sendKey) {
       );
     }
 
-    // Stamp idempotency key
+    // Stamp idempotency key + clear any prior error state (this send succeeded).
     await StocksPortfolio.updateOne(
       { email: p.email },
-      { $set: { lastBriefingSentKey: sendKey } }
+      {
+        $set: { lastBriefingSentKey: sendKey, lastBriefingSuccessAt: new Date() },
+        $unset: { lastBriefingErrorAt: 1, lastBriefingErrorStage: 1, lastBriefingErrorMessage: 1 },
+      }
     );
 
     console.log(`[stocks-briefing] ✓ ${p.email} @ ${sendKey} — ${recs.length} recs tracked`);
   } catch (err) {
+    // recordFail was already called for the specific stage that threw; this
+    // just logs to Render for anyone tailing.
     console.error(`[stocks-briefing] ✗ ${p.email}:`, err?.message);
   }
 }
@@ -1151,6 +1174,15 @@ export function scheduleDailyBriefing() {
   return cron.schedule("* * * * *", async () => {
     try {
       const due = await findUsersDueForBriefing(new Date());
+      // Heartbeat FIRST, so a stale heartbeat unambiguously means "the tick
+      // isn't firing" (server dead) vs "the tick is firing but no one is due".
+      try {
+        await StocksSystemHeartbeat.findOneAndUpdate(
+          { name: "daily-briefing-tick" },
+          { $set: { lastTickAt: new Date(), lastTickDueCount: due.length } },
+          { upsert: true, setDefaultsOnInsert: true }
+        );
+      } catch (e) { console.warn("[stocks-briefing] heartbeat write failed:", e?.message); }
       if (due.length === 0) return;
       console.log(`[stocks-briefing] tick: ${due.length} user(s) due`);
       for (const { portfolio, sendKey } of due) {

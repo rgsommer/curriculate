@@ -6920,12 +6920,21 @@ function BriefingDiagnosticsCard({ sessionToken }) {
             ))}
           </div>
 
+          {data.lastBriefingError && (
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b", borderRadius: 8, padding: "10px 12px", fontSize: 12.5, marginBottom: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>🔥 Last send failed at stage: {data.lastBriefingError.stage || "(unknown)"}</div>
+              <div style={{ fontSize: 12 }}>{data.lastBriefingError.message}</div>
+              {data.lastBriefingError.at && <div style={{ fontSize: 11, color: "#7f1d1d", marginTop: 4 }}>at {new Date(data.lastBriefingError.at).toLocaleString()}</div>}
+            </div>
+          )}
+
           <div style={{ fontSize: 11, color: "var(--sa-muted)", background: "var(--sa-panel-2)", padding: "8px 10px", borderRadius: 6, fontFamily: "SF Mono,Menlo,Consolas,monospace", lineHeight: 1.6 }}>
             <div>current time in {data.briefingTz}: <b>{data.currentTimeInTz}</b> · date {data.currentDateInTz}</div>
             <div>your briefingTimes: <b>[{(data.briefingTimes || []).join(", ") || "empty"}]</b></div>
             <div>would be due right now: <b>{data.wouldBeDueNow ? "yes" : "no"}</b> · lastBriefingSentKey: <b>{data.lastBriefingSentKey || "(never)"}</b></div>
-            <div>latest cron snapshot: <b>{data.latestCronSnapshot ? new Date(data.latestCronSnapshot).toLocaleString() : "(none)"}</b></div>
-            <div>latest on-demand snapshot: <b>{data.latestOnDemandSnapshot ? new Date(data.latestOnDemandSnapshot).toLocaleString() : "(none)"}</b></div>
+            <div>last successful send: <b>{data.lastBriefingSuccessAt ? new Date(data.lastBriefingSuccessAt).toLocaleString() : "(never)"}</b></div>
+            <div>cron heartbeat: <b>{data.cronHeartbeat?.lastTickAt ? new Date(data.cronHeartbeat.lastTickAt).toLocaleString() : "(no heartbeat yet)"}</b> · last tick due-count: <b>{data.cronHeartbeat?.lastTickDueCount ?? "—"}</b></div>
+            <div>latest snapshot (source={data.latestSnapshotSource || "—"}): <b>{data.latestCronSnapshot ? new Date(data.latestCronSnapshot).toLocaleString() : (data.latestOnDemandSnapshot ? new Date(data.latestOnDemandSnapshot).toLocaleString() : "(none)")}</b></div>
             <div>AI recs generated (last 7d): <b>{data.recentRecCount7d}</b></div>
             <div>env: STOCKS_BRIEFING_ENABLED=<b>{String(data.env?.STOCKS_BRIEFING_ENABLED)}</b> · RESEND_API_KEY=<b>{data.env?.RESEND_API_KEY_present ? "present" : "MISSING"}</b></div>
             <div>from: <b>{data.env?.STOCKS_BRIEFING_FROM}</b></div>

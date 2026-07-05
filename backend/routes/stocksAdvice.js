@@ -2057,15 +2057,27 @@ router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
     const wouldBeDueNow = !!(profile && (profile.positions?.length) && times.length && timeMatches && !alreadySentThisSlot);
 
     // Latest cron-generated snapshot proves the scheduler HAS fired lately.
-    let latestCronSnapshot = null, latestOnDemandSnapshot = null;
+    // saveAdviceSnapshot UPSERTS one doc per user and stamps `generatedAt` on
+    // every write — so that's the real "last run" marker, not createdAt
+    // (which stays frozen at first insert).
+    let latestCronSnapshot = null, latestOnDemandSnapshot = null, latestSnapshotSource = null;
     try {
-      const [cron, onDemand] = await Promise.all([
-        StocksAdviceSnapshot.findOne({ email: req.stocksUser.email, source: "cron" }).sort({ createdAt: -1 }).select("createdAt").lean(),
-        StocksAdviceSnapshot.findOne({ email: req.stocksUser.email, source: { $in: ["on-demand", "manual"] } }).sort({ createdAt: -1 }).select("createdAt").lean(),
-      ]);
-      latestCronSnapshot = cron?.createdAt || null;
-      latestOnDemandSnapshot = onDemand?.createdAt || null;
+      const snap = await StocksAdviceSnapshot.findOne({ email: req.stocksUser.email }).sort({ generatedAt: -1 }).select("generatedAt source").lean();
+      if (snap) {
+        latestSnapshotSource = snap.source || null;
+        if (snap.source === "cron") latestCronSnapshot = snap.generatedAt;
+        else latestOnDemandSnapshot = snap.generatedAt;
+      }
     } catch (e) { /* ignore */ }
+
+    // Cron-tick heartbeat (proves the every-minute scheduler is alive).
+    let lastCronTickAt = null, lastCronTickDueCount = null;
+    try {
+      const { default: StocksSystemHeartbeat } = await import("../models/StocksSystemHeartbeat.js");
+      const hb = await StocksSystemHeartbeat.findOne({ name: "daily-briefing-tick" }).lean();
+      lastCronTickAt = hb?.lastTickAt || null;
+      lastCronTickDueCount = hb?.lastTickDueCount ?? null;
+    } catch { /* model may not exist yet if backend hasn't been redeployed */ }
 
     // Recent AI-rec activity proves the cron+parse+persist chain is intact.
     let recentRecCount = 0;
@@ -2083,7 +2095,12 @@ router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
     add("briefingTimes configured", times.length > 0, times.length > 0 ? null : "Set briefing times on the Advice settings (up to 4).");
     add(`Current time (${hhmmInTz || "?"} ${tz}) matches a briefingTime`, !!timeMatches, timeMatches ? null : `Your times are [${times.join(", ") || "empty"}]; check right at one of those minutes.`);
     add("Not already sent this slot (idempotency)", !alreadySentThisSlot, alreadySentThisSlot ? `lastBriefingSentKey=${profile.lastBriefingSentKey} — cron will skip until the next scheduled slot.` : null);
-    add("Cron produced a snapshot within last 48h", !!latestCronSnapshot && (Date.now() - new Date(latestCronSnapshot).getTime()) < 48 * 86400e3 / 24, latestCronSnapshot ? `latest cron snapshot: ${new Date(latestCronSnapshot).toISOString()}` : "No cron-generated snapshot ever — the scheduler has never successfully finished for this user (crash / env issue / config).");
+    const cronFreshMs = 172_800_000; // 48h
+    add("Cron produced a snapshot within last 48h", !!latestCronSnapshot && (Date.now() - new Date(latestCronSnapshot).getTime()) < cronFreshMs, latestCronSnapshot ? `latest cron snapshot: ${new Date(latestCronSnapshot).toISOString()}` : "No cron-generated snapshot ever — the scheduler has never successfully finished for this user (crash / env issue / config).");
+    add("Cron scheduler ticked within last 5 min", !!lastCronTickAt && (Date.now() - new Date(lastCronTickAt).getTime()) < 5 * 60 * 1000, lastCronTickAt ? `last tick: ${new Date(lastCronTickAt).toISOString()}` : "No heartbeat ever recorded — either the tick never fires (backend not deployed with heartbeat yet) or the scheduler process is dead.");
+    if (profile?.lastBriefingErrorMessage) {
+      add(`Last briefing send succeeded (no recent error)`, false, `stage=${profile.lastBriefingErrorStage || "?"} at=${profile.lastBriefingErrorAt ? new Date(profile.lastBriefingErrorAt).toISOString() : "?"} — "${profile.lastBriefingErrorMessage}"`);
+    }
 
     res.json({
       email: req.stocksUser.email,
@@ -2096,7 +2113,15 @@ router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
       wouldBeDueNow,
       latestCronSnapshot,
       latestOnDemandSnapshot,
+      latestSnapshotSource,
       recentRecCount7d: recentRecCount,
+      cronHeartbeat: { lastTickAt: lastCronTickAt, lastTickDueCount: lastCronTickDueCount },
+      lastBriefingError: profile?.lastBriefingErrorMessage ? {
+        at: profile.lastBriefingErrorAt || null,
+        stage: profile.lastBriefingErrorStage || null,
+        message: profile.lastBriefingErrorMessage,
+      } : null,
+      lastBriefingSuccessAt: profile?.lastBriefingSuccessAt || null,
       env: {
         STOCKS_BRIEFING_ENABLED: process.env.STOCKS_BRIEFING_ENABLED === "1",
         RESEND_API_KEY_present: !!process.env.RESEND_API_KEY,

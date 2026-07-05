@@ -245,6 +245,12 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // "YYYY-MM-DD|HH:MM" so the tick doesn't double-send when a tick
     // overlaps two ticks (e.g. process restart, clock skew).
     lastBriefingSentKey: { type: String, default: "" },
+    // Diagnostics — populated by sendBriefingForUser so /briefing-diagnostics
+    // can report exactly which stage failed on the last unsuccessful attempt.
+    lastBriefingSuccessAt: { type: Date, default: null },
+    lastBriefingErrorAt: { type: Date, default: null },
+    lastBriefingErrorStage: { type: String, default: null },
+    lastBriefingErrorMessage: { type: String, default: null },
     // Planned withdrawals — "I need $X by date Y" so AI recs can prepare
     // cash and avoid locking it up in long-horizon buys.
     plannedWithdrawals: {
