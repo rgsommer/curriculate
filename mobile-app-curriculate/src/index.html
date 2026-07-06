@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0b1024" />
+    <title>Curriculate</title>
+    <style>
+      /*
+       * Offline / boot splash served from www/. The Capacitor shell
+       * loads the production URL by default; this file only renders
+       * when the network is gone or production is unreachable.
+       *
+       * Keep it dependency-free — no JS bundle, no fonts, no images.
+       * One file that opens immediately and lets the user retry.
+       */
+      :root {
+        --bg: #0b1024;
+        --bg2: #111a3a;
+        --accent: #a855f7;
+        --accent2: #38bdf8;
+        --text: #fff;
+        --muted: rgba(255, 255, 255, 0.72);
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        padding-top: max(24px, env(safe-area-inset-top));
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+        text-align: center;
+      }
+      .logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 28px;
+        background: linear-gradient(
+          135deg,
+          var(--accent) 0%,
+          var(--accent2) 100%
+        );
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 48px;
+        margin-bottom: 24px;
+        box-shadow: 0 18px 60px rgba(168, 85, 247, 0.35);
+        animation: pulse 2.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.05); }
+      }
+      h1 {
+        font-size: 1.55rem;
+        font-weight: 900;
+        letter-spacing: 0.2px;
+        margin: 0 0 10px;
+      }
+      p {
+        color: var(--muted);
+        margin: 0 0 24px;
+        max-width: 320px;
+        line-height: 1.55;
+      }
+      button {
+        appearance: none;
+        border: none;
+        padding: 14px 28px;
+        border-radius: 999px;
+        font-size: 1rem;
+        font-weight: 800;
+        letter-spacing: 0.3px;
+        background: linear-gradient(
+          135deg,
+          var(--accent) 0%,
+          var(--accent2) 100%
+        );
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 12px 32px rgba(168, 85, 247, 0.4);
+      }
+      button:active { transform: translateY(1px); }
+      .small {
+        margin-top: 18px;
+        font-size: 0.78rem;
+        color: rgba(255, 255, 255, 0.45);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo" aria-hidden="true">🎬</div>
+      <h1>Curriculate</h1>
+      <p>
+        Can't reach the live session servers right now. Check your
+        connection and tap retry.
+      </p>
+      <button onclick="window.location.href='https://set.curriculate.net?app=1'">
+        Retry
+      </button>
+      <div class="small">curriculate.net</div>
+    </div>
+  </body>
+</html>
