@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f5f7ff" />
+    <title>Curriculate Student</title>
+    <style>
+      /*
+       * Offline / boot fallback served from www/. The shell loads the
+       * production student app by default; this only renders when the
+       * network is gone or production is unreachable. Dependency-free.
+       */
+      :root {
+        --bg: #f5f7ff;
+        --bg2: #e8eeff;
+        --accent: #3aa0ff;
+        --accent2: #8b5cf6;
+        --ink: #0f172a;
+        --muted: #475569;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+          Roboto, "Helvetica Neue", Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        min-height: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        padding-top: max(24px, env(safe-area-inset-top));
+        padding-bottom: max(24px, env(safe-area-inset-bottom));
+        text-align: center;
+      }
+      .logo {
+        width: 96px;
+        height: 96px;
+        border-radius: 26px;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 46px;
+        margin-bottom: 22px;
+        box-shadow: 0 16px 44px rgba(59, 160, 255, 0.28);
+        animation: pulse 2.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50%      { transform: scale(1.05); }
+      }
+      h1 { font-size: 1.5rem; font-weight: 900; margin: 0 0 10px; }
+      p { color: var(--muted); margin: 0 0 24px; max-width: 320px; line-height: 1.55; }
+      button {
+        appearance: none;
+        border: none;
+        padding: 14px 28px;
+        border-radius: 999px;
+        font-size: 1rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+        color: #fff;
+        cursor: pointer;
+        box-shadow: 0 12px 30px rgba(139, 92, 246, 0.32);
+      }
+      button:active { transform: translateY(1px); }
+      .small { margin-top: 18px; font-size: 0.78rem; color: #94a3b8; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="logo" aria-hidden="true">🎓</div>
+      <h1>Curriculate Student</h1>
+      <p>
+        Can't reach the game servers right now. Check your connection and
+        tap retry to join your session.
+      </p>
+      <button onclick="window.location.href='https://play.curriculate.net'">
+        Retry
+      </button>
+      <div class="small">play.curriculate.net</div>
+    </div>
+  </body>
+</html>

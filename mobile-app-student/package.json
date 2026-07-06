@@ -1,0 +1,35 @@
+{
+  "name": "curriculate-student",
+  "version": "1.0.0",
+  "description": "Curriculate Student — join and play live classroom sessions (iOS + iPad + Android Capacitor shell)",
+  "private": true,
+  "scripts": {
+    "build:web": "mkdir -p www && cp src/index.html www/index.html",
+    "cap:init": "npx cap init 'Curriculate Student' net.curriculate.student --web-dir www",
+    "cap:add:ios": "npx cap add ios",
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npm run build:web && npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android",
+    "cap:run:android": "npm run cap:sync && npx cap run android",
+    "icons": "npx capacitor-assets generate --iconBackgroundColor '#ffffff' --splashBackgroundColor '#f5f7ff'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/browser": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/haptics": "^6.0.0",
+    "@capacitor/ios": "^6.2.1",
+    "@capacitor/keyboard": "^6.0.0",
+    "@capacitor/motion": "^6.0.0",
+    "@capacitor/network": "^6.0.0",
+    "@capacitor/screen-orientation": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.0",
+    "@capacitor/cli": "^6.0.0"
+  }
+}
