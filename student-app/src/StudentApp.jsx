@@ -5488,8 +5488,15 @@ function StudentApp() {
             }
           }}
         />
-        <div style={{ marginTop: 10, fontWeight: 700, opacity: 0.8, textAlign: "center" }}>
-          Waiting for your first task…
+        <div style={{ marginTop: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+          <img
+            src="/images/crue-badge.png"
+            alt="Crue"
+            style={{ width: 56, height: 56, borderRadius: "50%", animation: "crue-bob 3s ease-in-out infinite" }}
+          />
+          <div style={{ fontWeight: 700, opacity: 0.85, textAlign: "center" }}>
+            Crue's lining up your first task…
+          </div>
         </div>
       </section>
     )}
@@ -6121,8 +6128,15 @@ function StudentApp() {
               }}
             >
               {waitingForLaunch && !tasksStartedRef.current && (
-                <div>Waiting for Curriculate to Launch...</div>
-              )}                      
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, pointerEvents: "none" }}>
+                  <img
+                    src="/images/crue-badge.png"
+                    alt="Crue"
+                    style={{ width: 68, height: 68, borderRadius: "50%", animation: "crue-bob 3s ease-in-out infinite" }}
+                  />
+                  <div>Get ready — Crue's about to launch your hunt!</div>
+                </div>
+              )}
             </div>
           )}
         </div>
