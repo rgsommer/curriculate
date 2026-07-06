@@ -2575,6 +2575,22 @@ export async function createAiTaskset(req, res) {
       playabilityReplaced,
     });
 
+    // Final guarantee: never persist a taskset in an unsanitized shape.
+    // The playability auto-repair pass runs AFTER the per-task sanitize, so
+    // re-run the canonical deterministic sanitizer over every task one last
+    // time before save (idempotent — a no-op on already-clean tasks). This
+    // makes every generated taskset match the Diagnose & Fix output.
+    const sanitizedFinal = (Array.isArray(finalized) ? finalized : []).map((task) => {
+      const type = String(task?.taskType || task?.type || "").trim();
+      if (!type) return task;
+      try {
+        return sanitizeTaskShapeByType(type, task) || task;
+      } catch (e) {
+        console.warn("[AI] final sanitize sweep skipped a task:", e?.message || e);
+        return task;
+      }
+    });
+
     const doc = await TaskSet.create({
       name: displayName,
       title: displayName,
@@ -2584,7 +2600,7 @@ export async function createAiTaskset(req, res) {
       learningGoal,
       topicLabel,
       durationMinutes: durationMinutes || undefined,
-      tasks: finalized,
+      tasks: sanitizedFinal,
       ...(displays.length > 0 ? { displays } : {}),
       ...(isAtDeskOnly ? { atDeskOnly: true } : {}),
       ...(isQuestMode ? { questModeEnabled: true } : {}),
