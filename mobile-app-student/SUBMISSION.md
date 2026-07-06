@@ -59,6 +59,32 @@ npx cap sync
 4. Data safety form: camera, microphone, motion; no third-party sharing.
 5. Mark as suitable for tablets. Send for review.
 
+## App Review notes (paste into App Store Connect / Play Console)
+
+**No login required.** Set "Sign-In Required" to OFF.
+
+```
+Curriculate Student is how students join and play live classroom game
+sessions run by their teacher. Normally a teacher starts a session and
+shares a room code.
+
+To review WITHOUT needing a teacher or a second device, we've set up a
+self-running demo room:
+
+1. Launch the app.
+2. On the join screen, enter room code: CRUEDEMO
+3. Enter any team name (e.g. "Reviewers") and one member name.
+4. Tap "Join Room". The demo session auto-starts within a couple of
+   seconds — no teacher needed.
+5. Play through the tasks (a short "Water Cycle" set). Camera/microphone
+   prompts appear only for optional task types and can be declined; the
+   app remains fully usable.
+
+No account, purchase, or teacher device is required to review the app.
+```
+
+**Verified:** the `CRUEDEMO` room self-provisions and auto-starts on join (backend deployed + tested in production).
+
 ## What still needs a human / accounts
 
 - Code signing (Apple Team; Android upload keystore)
