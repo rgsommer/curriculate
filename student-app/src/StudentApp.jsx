@@ -3843,6 +3843,28 @@ function StudentApp() {
           transform: rotate(45deg);
         }
 
+        .crue-cheer {
+          position: fixed;
+          left: 50%;
+          bottom: 28px;
+          width: 128px;
+          height: 128px;
+          z-index: 60;
+          pointer-events: none;
+          filter: drop-shadow(0 12px 26px rgba(0,0,0,0.5));
+          transform-origin: bottom center;
+          animation: crue-pop 0.5s cubic-bezier(0.18, 0.89, 0.32, 1.28) both,
+            crue-wiggle 0.7s ease-in-out 0.5s 2;
+        }
+        @keyframes crue-pop {
+          0%   { transform: translate(-50%, 70px) scale(0.3); opacity: 0; }
+          100% { transform: translate(-50%, 0) scale(1); opacity: 1; }
+        }
+        @keyframes crue-wiggle {
+          0%, 100% { transform: translate(-50%, 0) rotate(-6deg); }
+          50%      { transform: translate(-50%, -6px) rotate(6deg); }
+        }
+
         .task-card {
           position: relative;
           overflow: hidden;
@@ -4672,8 +4694,18 @@ function StudentApp() {
             animation: "offlinePulse 2s ease-in-out infinite",
           }}
         >
-          <span style={{ fontSize: "1.3rem", marginRight: 8 }}>📡</span>
-          Wi-Fi lost — reconnecting…
+          <img
+            src="/images/crue-badge.png"
+            alt="Crue"
+            style={{
+              width: 30,
+              height: 30,
+              borderRadius: "50%",
+              verticalAlign: "middle",
+              marginRight: 8,
+            }}
+          />
+          Wi-Fi hiccup — hang tight, I'll get you back in…
           <style>{`
             @keyframes offlinePulse {
               0%, 100% { opacity: 1; }
@@ -7233,6 +7265,15 @@ function StudentApp() {
           />
         ))}
       </div>
+    )}
+
+    {/* Crue pops up to cheer on a big score */}
+    {showConfetti && (
+      <img
+        src="/images/crue-badge.png"
+        alt="Crue cheering"
+        className="crue-cheer"
+      />
     )}
 
     {/* STUDENT FEEDBACK BUTTON — always visible */}
