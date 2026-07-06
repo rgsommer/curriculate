@@ -1,5 +1,6 @@
 import User from "../models/User.js";
 import ReferralCode from "../models/ReferralCode.js";
+import { tierRank } from "../utils/tierGate.js";
 
 /**
  * Curriculate Stripe → Plan resolver (Teacher + School tiers)
@@ -85,17 +86,33 @@ export const PLAN = {
 export async function resolveAccessForUser(user) {
   if (!user) return PLAN.FREE;
 
-  // Normalize tier
-  const rawTier = String(user.subscriptionTier || user.plan || user.tier || "FREE").toUpperCase();
-  const tier = PLAN[rawTier] ? rawTier : "FREE";
+  // Reconcile the several tier fields this codebase has accumulated:
+  //   - user.planTier         → written by the Stripe webhook (e.g. "TEACHER_PRO", "SCHOOL_PLUS", "FREE")
+  //   - user.subscriptionTier → enum FREE|PLUS|PRO (manual grants / comp accounts / legacy)
+  //   - user.plan / user.tier → older aliases
+  // Rank each with the shared substring ranker (so "PRO", "TEACHER_PRO",
+  // "SCHOOL_PRO_YEARLY" all count as PRO) and take the highest. The old code
+  // did an exact PLAN[rawTier] lookup on subscriptionTier alone, which never
+  // matched the webhook's "TEACHER_*" values nor the "PLUS"/"PRO" enum — so it
+  // silently downgraded every paid user to FREE.
+  const labels = [user.planTier, user.subscriptionTier, user.plan, user.tier];
+  const rank = Math.max(0, ...labels.map((l) => tierRank(l))); // 0=FREE 1=PLUS 2=PRO
+  const isSchool = labels.some((l) => String(l || "").toUpperCase().includes("SCHOOL"));
 
-  // Base access from tier table
-  const base = PLAN[tier] || PLAN.FREE;
+  // Feature template for that rank (school variants keep their larger seat caps)
+  const templateKey =
+    rank >= 2 ? (isSchool ? "SCHOOL_PRO" : "TEACHER_PRO")
+      : rank >= 1 ? (isSchool ? "SCHOOL_PLUS" : "TEACHER_PLUS")
+        : "FREE";
+  const base = PLAN[templateKey] || PLAN.FREE;
+
+  // Short, frontend-facing label the UI and tierGate both understand: FREE | PLUS | PRO
+  const shortTier = rank >= 2 ? "PRO" : rank >= 1 ? "PLUS" : "FREE";
 
   // Include a few helpful fields (safe + lightweight)
   const access = {
     ...base,
-    tier: base.tier || tier,
+    tier: shortTier,
 
     // Stripe/customer linkage (if present)
     stripeCustomerId: user.stripeCustomerId || null,

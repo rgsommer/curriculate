@@ -8756,13 +8756,11 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
               }
             } catch (_) { /* default to FREE */ }
 
-            // Determine selfie + themed permissions by tier
-            if (tierLabel === "TEACHER_PLUS" || tierLabel === "SCHOOL_PLUS") {
+            // Determine selfie + themed permissions by tier.
+            // PLUS and PRO both unlock selfie + themed; PRO satisfies a PLUS gate.
+            if (hasTierAtLeast(tierLabel, "PLUS")) {
               allowSelfie = true;
               allowThemed = true;
-            } else if (tierLabel === "TEACHER_PRO" || tierLabel === "SCHOOL_PRO") {
-              allowSelfie = true;
-              allowThemed = true; // Pro includes everything in Plus
             } else {
               // FREE tier: allow selfie for first 2 sessions only
               const selfieCount = Number(selfieProfile.freeSelfieSessionsUsed || 0);
