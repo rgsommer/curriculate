@@ -3801,6 +3801,48 @@ function StudentApp() {
           color: #9ca3af;
         }
 
+        .crue-greet {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+        .crue-avatar {
+          width: 76px;
+          height: 76px;
+          flex-shrink: 0;
+          filter: drop-shadow(0 6px 14px rgba(234,88,12,0.35));
+          animation: crue-bob 3s ease-in-out infinite;
+        }
+        @keyframes crue-bob {
+          0%, 100% { transform: translateY(0) rotate(-2deg); }
+          50%      { transform: translateY(-5px) rotate(2deg); }
+        }
+        .crue-bubble {
+          position: relative;
+          flex: 1;
+          background: linear-gradient(135deg, rgba(251,146,60,0.16), rgba(234,88,12,0.12));
+          border: 1px solid rgba(251,146,60,0.35);
+          color: #fed7aa;
+          font-size: 0.9rem;
+          line-height: 1.4;
+          padding: 11px 13px;
+          border-radius: 14px;
+        }
+        .crue-bubble strong { color: #fdba74; }
+        .crue-bubble::before {
+          content: "";
+          position: absolute;
+          left: -7px;
+          top: 26px;
+          width: 14px;
+          height: 14px;
+          background: rgba(251,146,60,0.16);
+          border-left: 1px solid rgba(251,146,60,0.35);
+          border-bottom: 1px solid rgba(251,146,60,0.35);
+          transform: rotate(45deg);
+        }
+
         .task-card {
           position: relative;
           overflow: hidden;
@@ -4531,7 +4573,7 @@ function StudentApp() {
           {/* Session auto-end countdown — visible only when the teacher
               has declared an end time. Shows how long until the session
               auto-ends; gives students a sense of pacing. */}
-          {roomState.endsAt && (
+          {roomState?.endsAt && (
             <SessionEndCountdown endsAt={roomState.endsAt} />
           )}
 
@@ -4666,6 +4708,17 @@ function StudentApp() {
       {!joined && !bumped && (
         <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
           <div className="join-card">
+            <div className="crue-greet">
+              <img
+                src="/images/crue-badge.png"
+                alt="Crue the fox"
+                className="crue-avatar"
+              />
+              <div className="crue-bubble">
+                Hi, I'm <strong>Crue!</strong> Pop in your room code and
+                let's play. 🦊
+              </div>
+            </div>
             <h2
               style={{
                 marginTop: 0,
