@@ -1678,6 +1678,65 @@ const {
 } = engine;
 
 
+// ====================================================================
+//  REVIEWER DEMO ROOM (App Store / Play Store review)
+// ====================================================================
+// A reserved room code that self-provisions with a validated taskset and
+// auto-starts on first join — so an app reviewer (or anyone) can play a
+// full session with NO teacher present. Everything here is scoped to
+// DEMO_ROOM_CODE only; real classrooms use random codes and never touch
+// this path, so it cannot affect live sessions.
+const DEMO_ROOM_CODE = String(process.env.DEMO_ROOM_CODE || "CRUEDEMO").toUpperCase();
+const DEMO_TASKSET_ID = process.env.DEMO_TASKSET_ID || "6a4c1d5b47e980468c345af2";
+const DEMO_MOVEMENT_TYPES = new Set([
+  "musical-chairs", "mad-dash", "mad-dash-sequence",
+  "physical-multiple-choice", "hidenseek", "treasure-runner",
+]);
+
+async function provisionDemoRoom(code) {
+  try {
+    if (rooms[code]) return rooms[code];
+    const doc = await TaskSet.findById(DEMO_TASKSET_ID).lean().catch(() => null);
+    const allTasks = Array.isArray(doc?.tasks) ? doc.tasks : [];
+    // Keep only at-desk tasks so no physical QR-station scanning is required.
+    const tasks = allTasks.filter(
+      (t) => !DEMO_MOVEMENT_TYPES.has(String(t?.taskType || "").toLowerCase())
+    );
+    if (!doc || tasks.length === 0) {
+      console.warn(`[demoRoom] taskset ${DEMO_TASKSET_ID} missing or has no at-desk tasks`);
+      return null;
+    }
+    const room = await createRoom(code, `demo:${code}`, "Classroom");
+    // No stations → no color/station assignment → students skip the scan gate.
+    room.stations = {};
+    room.onScreenOnly = true;
+    room.isDemo = true;
+    room.navigationMode = "linear";
+    room.taskIndex = -1;
+    room.isActive = false;
+    room.startedAt = null;
+    room.taskset = {
+      _id: String(doc._id),
+      name: doc.tasksetName || "Curriculate Demo",
+      title: doc.tasksetName || "Curriculate Demo",
+      subject: doc.subject || "General",
+      gradeLevel: doc.gradeLevel || 5,
+      source: "demo",
+      tasks,
+    };
+    // Auto-start the moment the first team joins — no teacher launch needed.
+    room.autoStart = { armed: true, mode: "first_ready" };
+    rooms[code] = room;
+    console.log(
+      `[demoRoom] provisioned ${code} with ${tasks.length} at-desk tasks (autoStart first_ready)`
+    );
+    return room;
+  } catch (err) {
+    console.error("[demoRoom] provision failed:", err);
+    return null;
+  }
+}
+
 
 // ====================================================================
 //  SOCKET.IO – EVENT HANDLERS
@@ -2743,7 +2802,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
         return;
       }
 
-      const room = rooms[code];
+      let room = rooms[code];
+      // Reviewer demo: self-provision the reserved room on first join so the
+      // reviewer can play without a teacher. No-op for every real room code.
+      if (!room && code === DEMO_ROOM_CODE) {
+        room = await provisionDemoRoom(code);
+      }
       if (!room) {
         if (typeof ack === "function") {
           ack({
