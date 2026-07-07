@@ -590,16 +590,19 @@ router.post("/:id/sanitize", auth, async (req, res) => {
 
     // ── Response ──
     const totalFixed = issuesFixed + aiRepaired;
+    // Ground truth: never claim "all fixed" unless the RE-CHECKED, saved tasks
+    // actually pass the playability assessor. paIssues (recomputed above over
+    // the saved set) is authoritative — the old `needsAiRepair.length ===
+    // aiRepaired` count could report "All fixed" while a repair silently left a
+    // task unplayable (schema-valid but empty).
+    const stillBroken = paIssues.length;
     let message;
-    if (issuesFound === 0) {
+    if (issuesFound === 0 && stillBroken === 0) {
       message = `All ${tasks.length} tasks passed validation.`;
-    } else if (totalFixed > 0 && needsAiRepair.length === aiRepaired) {
+    } else if (stillBroken === 0) {
       message = `Found ${issuesFound} issue(s). All fixed (${issuesFixed} structural, ${aiRepaired} AI-repaired).`;
-    } else if (totalFixed > 0) {
-      const remaining = diagnostics.filter((d) => !d.fixed).length;
-      message = `Found ${issuesFound} issue(s). Fixed ${totalFixed} (${issuesFixed} structural, ${aiRepaired} AI-repaired). ${remaining} task(s) still need attention.`;
     } else {
-      message = `Found ${issuesFound} issue(s) across ${diagnostics.length} task(s). Could not auto-fix — logged for developer review.`;
+      message = `Found ${issuesFound} issue(s). Fixed ${totalFixed} (${issuesFixed} structural, ${aiRepaired} AI-repaired). ${stillBroken} task(s) still need attention — not auto-repairable; logged for review.`;
     }
 
     const payload = {
