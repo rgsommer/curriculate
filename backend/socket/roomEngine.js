@@ -7,6 +7,7 @@ import Session from "../models/Session.js";
 import TeamSession from "../models/TeamSession.js";
 import { TASK_TYPE_META, TASK_TYPES } from "../../shared/taskTypes.js";
 import { COLORS } from "../../shared/colors.js";
+import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 import { recordNoiseSample, computeNoiseSummary } from "../utils/noiseTelemetry.js";
 
 // ================================
@@ -970,6 +971,31 @@ export function createRoomEngine(io, deps = {}) {
 
     const task = tasks[index];
     if (!task) return;
+
+    // ── Serve-time playability gate ──────────────────────────────────
+    // Never present a defective task to a student. If this task is missing
+    // its essential parts, skip it and serve the next playable one. This is
+    // the runtime backstop behind generation-time validation: even if a bad
+    // task somehow reaches a live room, a kid never sees it — the session
+    // just moves on. (current-events is an intentional shell resolved just
+    // below at launch time, so it's exempt.)
+    if (task.taskType !== "current-events" && task.taskType !== TASK_TYPES?.CURRENT_EVENTS) {
+      try {
+        const play = assessTaskPlayability(task);
+        if (play && play.playable === false) {
+          console.warn(
+            `[playability-gate] room ${room.code}: skipping unplayable task #${index} ` +
+              `(${task.taskType}) — ${(play.issues || []).join("; ")}`
+          );
+          room.teams[teamId].taskIndex = index + 1;
+          return sendTaskToTeam(room, teamId, index + 1);
+        }
+      } catch (e) {
+        // Never let the gate itself break serving — if assessment throws,
+        // fall through and serve the task rather than trap the team.
+        console.warn("[playability-gate] assessment error, serving task:", e?.message || e);
+      }
+    }
 
     // ── Current Events: lazily resolve at launch time ──
     // The persisted task is only a SHELL (lessonTopic / subject / grade / region / worldview).
