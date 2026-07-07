@@ -18,6 +18,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getPlayerName } from "../../../utils/playerName";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 
 const PHASES = Object.freeze({
   IDLE:       "idle",
@@ -147,6 +148,26 @@ export default function TruthOrDareTask({
   const [liveStealOpen, setLiveStealOpen]       = useState(false);
   const [liveVerdict, setLiveVerdict]           = useState(null);
   const [liveEnded, setLiveEnded]               = useState(false);
+
+  // ── P1 safety: don't sit in a server-gated phase forever ──────────────
+  // Live mode advances only when the server drives the spotlight. If those
+  // events never arrive (no teacher orchestrating, too few players, a dropped
+  // event), IDLE renders an empty shell with no way forward. Nudge the server
+  // once, then surface a clear "Continue" so the student is never trapped.
+  const [liveStuck, setLiveStuck] = useState(false);
+  useServerEventTimeout({
+    armed: isLive && livePhase === PHASES.IDLE && !liveStuck,
+    timeoutMs: 12000,
+    resetKey: liveRoundIndex,
+    onTimeout: () => {
+      try { socket?.emit?.("tod:requestState", { roomCode, teamId }); } catch { /* noop */ }
+      setLiveStuck(true);
+    },
+  });
+  // Clear the stuck state whenever the server does move us forward.
+  useEffect(() => {
+    if (livePhase !== PHASES.IDLE && liveStuck) setLiveStuck(false);
+  }, [livePhase, liveRoundIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!isLive) return;
@@ -398,6 +419,27 @@ export default function TruthOrDareTask({
         challenge={challenge}
         phase={phase}
       />
+
+      {!ended && isLive && phase === PHASES.IDLE && liveStuck && (
+        <div style={{ textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>
+            Waiting for your teacher to start the round…
+          </div>
+          <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>
+            This is taking longer than usual — you can keep going.
+          </div>
+          <button
+            type="button"
+            onClick={() => { try { onSubmit?.({ skipped: true, reason: "tod-idle-timeout" }); } catch { /* noop */ } }}
+            style={{
+              padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800,
+              background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer",
+            }}
+          >
+            Continue →
+          </button>
+        </div>
+      )}
 
       {!ended && phase === PHASES.SELECTING && (
         <SpotlightWheel reel={liveReel} selectedPlayer={selectedPlayer} practiceMode={practiceMode} me={ME} />
