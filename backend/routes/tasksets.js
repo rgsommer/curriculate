@@ -6,7 +6,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import TaskSet from "../models/TaskSet.js";
 import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
-import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 import { validateAiTask, regenerateSingleTask, buildPeerEditingErrors, buildSpotItems } from "../controllers/sharedTasksetController.js";
 import TaskDiagnosticLog from "../models/TaskDiagnosticLog.js";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
