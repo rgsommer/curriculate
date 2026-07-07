@@ -21,6 +21,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { getPlayerName } from "../../../utils/playerName";
 import TaskInstructions from "../TaskInstructions";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 
 const PHASE = {
   PICK_DRAWER: "pick-drawer",
@@ -60,6 +61,12 @@ export default function SpeedDrawTask({
   })();
   const hasNames = safeMembers.length > 0;
 
+  // Count of *real* (non-bot, non-padded) team members. The PICK_DRAWER phase
+  // needs at least 2 people to yield a meaningful drawer/guesser split.
+  const realMemberCount = (Array.isArray(memberNames) ? memberNames : [])
+    .map((n) => String(n || "").trim())
+    .filter(Boolean).length;
+
   // Phase + per-phase state
   const [phase, setPhase] = useState(hasNames ? PHASE.PICK_DRAWER : PHASE.SECRET);
   const [drawerIdx, setDrawerIdx] = useState(0);
@@ -70,7 +77,28 @@ export default function SpeedDrawTask({
   const [photo, setPhoto] = useState(null);
   const [guesser, setGuesser] = useState(null);
   const [submitted, setSubmitted] = useState(false);
+  const [liveStuck, setLiveStuck] = useState(false);
   const fileInputRef = useRef(null);
+
+  // ── Safety net: PICK_DRAWER with fewer than 2 real members is a dead-end.
+  // The drawer/guesser split is degenerate (in practice mode a padded roster
+  // hides it; in a live single-member handoff there's simply no one to guess),
+  // and if the server ever gates this phase the round can't resolve. Arm only
+  // in that genuinely-stuck waiting state; there is no server nudge event to
+  // emit here (single-device task), so we just surface a "Continue" escape.
+  const waitingStuckPhase =
+    phase === PHASE.PICK_DRAWER && !practiceMode && realMemberCount < 2;
+  useServerEventTimeout({
+    armed: waitingStuckPhase && !liveStuck,
+    timeoutMs: 5000,
+    onTimeout: () => {
+      setLiveStuck(true);
+    },
+  });
+  // Clear the stuck flag once we're no longer in the degenerate waiting phase.
+  useEffect(() => {
+    if (!waitingStuckPhase && liveStuck) setLiveStuck(false);
+  }, [waitingStuckPhase, liveStuck]);
 
   /* ------------------------------------------------------------------ */
   /*  Timer (only ticks during DRAWING phase)                           */
@@ -139,6 +167,21 @@ export default function SpeedDrawTask({
           "When time's up, the word is revealed and the team taps who guessed.",
         ]}
       />
+
+      {/* ─── Stuck safety net (PICK_DRAWER, <2 real members) ─── */}
+      {waitingStuckPhase && liveStuck && (
+        <div style={{ textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Waiting for your teacher…</div>
+          <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>This is taking longer than usual — you can keep going.</div>
+          <button
+            type="button"
+            onClick={() => { try { onSubmit?.({ skipped: true, reason: "speed-draw-timeout" }); } catch { /* noop */ } }}
+            style={{ padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800, background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer" }}
+          >
+            Continue →
+          </button>
+        </div>
+      )}
 
       {/* ─── Pick drawer ─── */}
       {phase === PHASE.PICK_DRAWER && (

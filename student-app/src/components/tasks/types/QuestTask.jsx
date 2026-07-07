@@ -12,6 +12,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import QrScanner from "../../QrScanner";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 import { effectiveInflation, priceMultiplier, inflatedCost } from "@shared/questPricing.js";
 
 export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, teamId, taskIndex, practiceMode = false }) {
@@ -78,6 +79,27 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
   const [showPriceToast, setShowPriceToast] = useState(true);
 
   const isLive = !!(socket && roomCode && teamId) && !practiceMode;
+
+  // ── P1 safety: don't sit forever waiting on the first server state ──────
+  // Live mode gates everything on the server: `state` starts null and only
+  // becomes real once quest:requestState resolves or a quest:stateUpdated
+  // broadcast arrives. If neither happens (WiFi drop, dropped event, no
+  // orchestration) `state` stays null → coins 0 and every action is disabled.
+  // Nudge the server once, then surface a "Continue" so the student isn't
+  // trapped in a dead, empty shell.
+  const [liveStuck, setLiveStuck] = useState(false);
+  useServerEventTimeout({
+    armed: isLive && state === null && !liveStuck,
+    timeoutMs: 8000,
+    onTimeout: () => {
+      try { socket?.emit?.("quest:requestState", { roomCode, teamId }); } catch { /* noop */ }
+      setLiveStuck(true);
+    },
+  });
+  // Clear the stuck flag once the server actually delivers state.
+  useEffect(() => {
+    if (state !== null && liveStuck) setLiveStuck(false);
+  }, [state, liveStuck]);
 
   // Always-on tick: refreshes the rising-price display AND drives practice regen.
   useEffect(() => {
@@ -346,6 +368,22 @@ export default function QuestTask({ task, onSubmit, disabled, socket, roomCode, 
       <div style={tagStrip}>Mission</div>
       <div style={titleStyle}>{cfg.title || task?.title || "The Quest"}</div>
       {cfg.scenario ? <p style={scenarioStyle}>{cfg.scenario}</p> : null}
+
+      {/* P1 safety net: the live economy never loaded (server state still null
+          after the timeout). Everything below would be inert — give a way out. */}
+      {isLive && state === null && liveStuck && (
+        <div style={{ textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Waiting for your teacher…</div>
+          <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>This is taking longer than usual — you can keep going.</div>
+          <button
+            type="button"
+            onClick={() => { try { onSubmit?.({ skipped: true, reason: "quest-timeout" }); } catch { /* noop */ } }}
+            style={{ padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800, background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer" }}
+          >
+            Continue →
+          </button>
+        </div>
+      )}
 
       {/* One-time urgency nudge: depot prices climb all game → stock up early. */}
       {showPriceToast && meta?.inflation?.enabled && (

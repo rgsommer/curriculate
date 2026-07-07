@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/AIDebateJudgeTask.jsx
 import React, { useState, useEffect } from "react";
 import TaskInstructions from "../TaskInstructions";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 
 export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, onSubmit, presenter }) {
   const config = task?.config || {};
@@ -39,6 +40,7 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
   const [secondsLeft, setSecondsLeft] = useState(goalSeconds);
   const [isJudging, setIsJudging] = useState(false);
   const [verdict, setVerdict] = useState(null);
+  const [liveStuck, setLiveStuck] = useState(false);
   const [showFullFeedback, setShowFullFeedback] = useState(false);
   // Key arguments captured for each side so the AI judge has real content to
   // evaluate (the debate itself is spoken/in-person). Without these the judge
@@ -60,6 +62,31 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
     socket.on("ai-judge:verdict", handleVerdict);
     return () => socket.off("ai-judge:verdict", handleVerdict);
   }, [socket, onSubmit]);
+
+  // ── P1 safety: don't sit forever waiting on the AI verdict ────────────
+  // After SUMMON we set isJudging=true and wait on the "ai-judge:verdict"
+  // socket event. If it never arrives (WiFi drop, dropped event, no server
+  // orchestrating), the button is disabled and there's no way forward.
+  // Re-request the verdict once, then surface a clear "Continue".
+  useServerEventTimeout({
+    armed: isJudging && !verdict && !liveStuck,
+    timeoutMs: 30000,
+    onTimeout: () => {
+      try {
+        socket?.emit?.("ai-judge:request", {
+          roomCode,
+          topic,
+          affirmative: affArgs,
+          negative: negArgs,
+        });
+      } catch { /* noop */ }
+      setLiveStuck(true);
+    },
+  });
+  // Clear the stuck flag once the verdict actually arrives (waiting ends).
+  useEffect(() => {
+    if ((verdict || !isJudging) && liveStuck) setLiveStuck(false);
+  }, [verdict, isJudging]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debate countdown (client-side, presentational time goal).
   useEffect(() => {
@@ -342,6 +369,20 @@ export default function AIDebateJudgeTask({ task, socket, roomCode, disabled, on
       {isJudging && (
         <div className="mt-16 text-4xl text-purple-600 animate-pulse">
           AI is analyzing speeches, logic, delivery, and rebuttals...
+        </div>
+      )}
+
+      {isJudging && liveStuck && (
+        <div style={{ textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Waiting for your teacher…</div>
+          <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>This is taking longer than usual — you can keep going.</div>
+          <button
+            type="button"
+            onClick={() => { try { onSubmit?.({ skipped: true, reason: "ai-debate-judge-timeout" }); } catch { /* noop */ } }}
+            style={{ padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800, background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer" }}
+          >
+            Continue →
+          </button>
         </div>
       )}
     </div>

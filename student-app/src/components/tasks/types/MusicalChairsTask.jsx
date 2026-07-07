@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import VictoryScreen from "../../VictoryScreen";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 
 /**
  * Musical Chairs (tap answer -> scan -> next question)
@@ -55,6 +56,14 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
   const [locked, setLocked] = useState(false); // locked after tap until scan
   const [scannedThisRound, setScannedThisRound] = useState(false);
 
+  // After the final question is scanned in live mode, the UI sits waiting for a
+  // server `winnerTeam` broadcast to declare the result. That event has no
+  // reliable backend emitter, so without a safety net the student is stuck on
+  // an empty end screen forever. `finishedWaiting` marks that server-gated
+  // wait; `liveStuck` flips true once the timeout fires so we can offer an exit.
+  const [finishedWaiting, setFinishedWaiting] = useState(false);
+  const [liveStuck, setLiveStuck] = useState(false);
+
   const instructions = useMemo(() => {
     return (
       task?.instructions ||
@@ -99,7 +108,27 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
     setSelectedIndex(null);
     setLocked(false);
     setScannedThisRound(false);
+    setFinishedWaiting(false);
+    setLiveStuck(false);
   }, [task?.taskType, task?.title, task?.prompt]);
+
+  // ── Safety net: don't sit forever waiting for a `winnerTeam` broadcast ──
+  // Live mode's final screen depends on the server declaring a winner. That
+  // event isn't reliably emitted, so once we've scanned the last question we
+  // nudge the server for fresh room state and, if nothing arrives, surface a
+  // "Continue" escape so the student is never trapped.
+  useServerEventTimeout({
+    armed: !practiceMode && finishedWaiting && !task?.winnerTeam && !liveStuck,
+    timeoutMs: 15000,
+    onTimeout: () => {
+      try { socket?.emit?.("room:request-state", { roomCode: task?.roomCode }); } catch { /* noop */ }
+      setLiveStuck(true);
+    },
+  });
+  // Clear the stuck flag if the server does declare a winner.
+  useEffect(() => {
+    if (task?.winnerTeam && liveStuck) setLiveStuck(false);
+  }, [task?.winnerTeam]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Countdown presenter
   useEffect(() => {
@@ -247,6 +276,7 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
         // Reset so they can't keep scanning
         setLocked(true);
         setScannedThisRound(true);
+        setFinishedWaiting(true); // arm the winnerTeam safety-net timeout
         return;
       }
 
@@ -600,6 +630,17 @@ export default function MusicalChairsTask({ task, onSubmit, disabled, socket, pr
           role="alert"
         >
           {errorMsg}
+        </div>
+      )}
+
+      {finishedWaiting && !task?.winnerTeam && liveStuck && (
+        <div style={{ textAlign: "center", padding: "20px 16px" }}>
+          <div style={{ fontWeight: 800, marginBottom: 6 }}>Waiting for your teacher…</div>
+          <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>This is taking longer than usual — you can keep going.</div>
+          <button type="button" onClick={() => { try { onSubmit?.({ skipped: true, reason: "musical-chairs-timeout" }); } catch {} }}
+            style={{ padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800, background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer" }}>
+            Continue →
+          </button>
         </div>
       )}
 

@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/FlashcardsRaceTask.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getPlayerName } from "../../../utils/playerName";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 import confetti from "canvas-confetti";
 
 /**
@@ -70,6 +71,26 @@ export default function FlashcardsRaceTask(props) {
   // group taps "Next Card". Tester: "leave the correct answer up longer to be
   // able to see it. Have a continue button BEFORE showing the next card."
   const [lastResult, setLastResult] = useState(null); // { correct, otherStole } | null
+
+  // Server-event safety net: in a LIVE session the component sits in "waiting"
+  // until flashcards-race:start arrives. If that event never lands (WiFi drop,
+  // no teacher orchestrating), the buzz UI never renders. Arm a timeout only in
+  // that genuine server-gated waiting phase; on fire, nudge the server for state
+  // and surface a Continue escape.
+  const [liveStuck, setLiveStuck] = useState(false);
+  useServerEventTimeout({
+    armed: !isDemoLocal && phase === "waiting" && !liveStuck,
+    timeoutMs: 8000,
+    onTimeout: () => {
+      try { socket?.emit?.("flashcards-race:requestState", { roomCode }); } catch { /* noop */ }
+      setLiveStuck(true);
+    },
+  });
+
+  // Clear the stuck flag once the server moves us out of the waiting phase.
+  useEffect(() => {
+    if (phase !== "waiting" && liveStuck) setLiveStuck(false);
+  }, [phase, liveStuck]);
 
   const tickRef = useRef(null);
 
@@ -522,9 +543,23 @@ export default function FlashcardsRaceTask(props) {
           <span style={pill}>Waiting for the race…</span>
         </div>
         <div style={cardBox}>
-          <div style={{ fontWeight: 900, opacity: 0.85 }}>
-            Waiting for your next task… Get ready to Curriculate!
-          </div>
+          {liveStuck ? (
+            <div style={{ textAlign: "center", padding: "20px 16px" }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Waiting for your teacher…</div>
+              <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>This is taking longer than usual — you can keep going.</div>
+              <button
+                type="button"
+                onClick={() => { try { onSubmit?.({ skipped: true, reason: "flashcards-race-timeout" }); } catch {} }}
+                style={{ padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800, background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer" }}
+              >
+                Continue →
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontWeight: 900, opacity: 0.85 }}>
+              Waiting for your next task… Get ready to Curriculate!
+            </div>
+          )}
         </div>
       </div>
     );

@@ -1,5 +1,6 @@
 // student-app/src/components/tasks/types/MoodCheckInTask.jsx
 import React, { useEffect, useMemo, useState } from "react";
+import { useServerEventTimeout } from "../useServerEventTimeout.js";
 
 const MOODS = [
   { emoji: "😄", label: "Super excited!" },
@@ -101,6 +102,7 @@ export default function MoodCheckInTask({
   const [excitement, setExcitement] = useState("");
   const [showConfetti, setShowConfetti] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [liveStuck, setLiveStuck] = useState(false);
 
   // Keep moods array aligned if playerCount changes
   useEffect(() => {
@@ -112,6 +114,23 @@ export default function MoodCheckInTask({
   }, [playerCount]);
 
   const allSelected = moods.every((m) => m !== null);
+
+  // ── Safety net: absent/late members leave ghost mood slots unfilled, so
+  // `allSelected` never becomes true and submit stays disabled forever. There's
+  // no server here to unblock us — after a grace window we surface a "Continue"
+  // escape so the team is never trapped waiting on someone who never acts.
+  const waitingForMembers = !allSelected && !submitted && !disabled;
+  useServerEventTimeout({
+    armed: waitingForMembers && !liveStuck,
+    timeoutMs: 12000,
+    onTimeout: () => {
+      setLiveStuck(true);
+    },
+  });
+  // Clear the stuck flag if everyone ends up selecting after all.
+  useEffect(() => {
+    if (!waitingForMembers && liveStuck) setLiveStuck(false);
+  }, [waitingForMembers]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getDisplayName = (idx) => {
     const raw = nameOf(memberNames?.[idx]).trim();
@@ -327,6 +346,17 @@ export default function MoodCheckInTask({
           {!allSelected && (
             <div style={{ marginTop: 10, fontSize: "0.95rem", fontWeight: 700, opacity: 0.9 }}>
               Select a mood for every player to continue.
+            </div>
+          )}
+
+          {waitingForMembers && liveStuck && (
+            <div style={{ textAlign: "center", padding: "20px 16px" }}>
+              <div style={{ fontWeight: 800, marginBottom: 6 }}>Waiting for your teacher…</div>
+              <div style={{ opacity: 0.75, fontSize: "0.9rem", marginBottom: 14 }}>This is taking longer than usual — you can keep going.</div>
+              <button type="button" onClick={() => { try { onSubmit?.({ skipped: true, reason: "mood-checkin-timeout" }); } catch {} }}
+                style={{ padding: "11px 24px", borderRadius: 999, border: "none", fontWeight: 800, background: "linear-gradient(135deg,#fb923c,#ea580c)", color: "#fff", cursor: "pointer" }}>
+                Continue →
+              </button>
             </div>
           )}
         </div>
