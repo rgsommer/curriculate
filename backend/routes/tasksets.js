@@ -97,6 +97,46 @@ function ownedOrLegacyQuery(userId) {
 }
 
 /**
+ * Playability gate for manual/editor saves. The AI generator hard-gates
+ * unplayable tasks (silently dropping); for a deliberate human save we REJECT
+ * with a clear, per-task message instead. Returns true (and sends the 400) if
+ * any task is missing essential parts. No path may persist a broken task.
+ */
+function rejectIfUnplayable(res, tasks) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  const unplayable = [];
+  for (let i = 0; i < list.length; i++) {
+    const t = list[i];
+    if (!t || typeof t !== "object") continue;
+    if (String(t.taskType || "") === "current-events") continue; // lazy shell
+    try {
+      const p = assessTaskPlayability(t);
+      if (p && p.playable === false) {
+        unplayable.push({
+          index: i,
+          taskType: t.taskType || t.type || "unknown",
+          title: t.title || `Task ${i + 1}`,
+          issues: p.issues || [],
+        });
+      }
+    } catch {
+      /* assessor error — don't block a save on a bug in the checker */
+    }
+  }
+  if (unplayable.length === 0) return false;
+  const first = unplayable[0];
+  res.status(400).json({
+    ok: false,
+    error:
+      `"${first.title}" (${first.taskType}) is missing essential parts: ` +
+      `${(first.issues || []).join("; ")}. Add these before saving.` +
+      (unplayable.length > 1 ? ` (${unplayable.length} tasks need attention.)` : ""),
+    unplayable,
+  });
+  return true;
+}
+
+/**
  * Create a task set (manual save endpoint).
  * POST /api/tasksets
  */
@@ -104,6 +144,9 @@ router.post("/", auth, async (req, res) => {
   try {
     const b = req.body || {};
     const now = new Date();
+
+    // No path may persist a task missing its essential parts.
+    if (rejectIfUnplayable(res, b.tasks)) return;
 
     const doc = await TaskSet.create({
       ...b,
@@ -229,6 +272,11 @@ router.get("/:id", auth, async (req, res) => {
 router.put("/:id", auth, async (req, res) => {
   try {
     const b = req.body || {};
+
+    // Same playability gate for edits. Only runs when the update includes
+    // tasks (partial PUTs — rename, meta — omit them and pass through).
+    if (Array.isArray(b.tasks) && rejectIfUnplayable(res, b.tasks)) return;
+
     const updated = await TaskSet.findOneAndUpdate(
       { _id: req.params.id, ...ownedOrLegacyQuery(req.userId) },
       { $set: { ...b, updatedAt: new Date() } },
