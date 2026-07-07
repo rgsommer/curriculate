@@ -1687,10 +1687,17 @@ const {
 // DEMO_ROOM_CODE only; real classrooms use random codes and never touch
 // this path, so it cannot affect live sessions.
 const DEMO_ROOM_CODE = String(process.env.DEMO_ROOM_CODE || "CRUEDEMO").toUpperCase();
-const DEMO_TASKSET_ID = process.env.DEMO_TASKSET_ID || "6a4c1d5b47e980468c345af2";
-const DEMO_MOVEMENT_TYPES = new Set([
-  "musical-chairs", "mad-dash", "mad-dash-sequence",
-  "physical-multiple-choice", "hidenseek", "treasure-runner",
+const DEMO_TASKSET_ID = process.env.DEMO_TASKSET_ID || "6a4c498fda85f44ff4ba4a25";
+// Allow-list of self-contained, solo-completable task types. The reviewer
+// plays alone with no teacher, so the demo must exclude anything that needs
+// teammates, turn-taking, performance judging, a camera/mic, or movement
+// (e.g. truth-or-dare, mime, draw, debates, QR-station scans). Only types in
+// this set are ever served in the demo room.
+const DEMO_SOLO_SAFE_TYPES = new Set([
+  "multiple-choice", "true-false", "true-false-tictactoe", "true-false-connect-four",
+  "short-answer", "reading-comp", "matching", "sort", "sequence", "vennsort",
+  "timeline", "flashcards", "flashcards-race", "brain-blitz", "brain-spark-notes",
+  "mind-mapper", "labelme", "mapit",
 ]);
 
 async function provisionDemoRoom(code) {
@@ -1698,12 +1705,13 @@ async function provisionDemoRoom(code) {
     if (rooms[code]) return rooms[code];
     const doc = await TaskSet.findById(DEMO_TASKSET_ID).lean().catch(() => null);
     const allTasks = Array.isArray(doc?.tasks) ? doc.tasks : [];
-    // Keep only at-desk tasks so no physical QR-station scanning is required.
+    // Keep only self-contained, solo-completable tasks (see allow-list above)
+    // so a lone reviewer can finish every task with no teammates or scanning.
     const tasks = allTasks.filter(
-      (t) => !DEMO_MOVEMENT_TYPES.has(String(t?.taskType || "").toLowerCase())
+      (t) => DEMO_SOLO_SAFE_TYPES.has(String(t?.taskType || "").toLowerCase())
     );
     if (!doc || tasks.length === 0) {
-      console.warn(`[demoRoom] taskset ${DEMO_TASKSET_ID} missing or has no at-desk tasks`);
+      console.warn(`[demoRoom] taskset ${DEMO_TASKSET_ID} missing or has no solo-safe tasks`);
       return null;
     }
     const room = await createRoom(code, `demo:${code}`, "Classroom");
