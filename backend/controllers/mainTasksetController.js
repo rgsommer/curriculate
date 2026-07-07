@@ -2580,16 +2580,42 @@ export async function createAiTaskset(req, res) {
     // re-run the canonical deterministic sanitizer over every task one last
     // time before save (idempotent — a no-op on already-clean tasks). This
     // makes every generated taskset match the Diagnose & Fix output.
-    const sanitizedFinal = (Array.isArray(finalized) ? finalized : []).map((task) => {
-      const type = String(task?.taskType || task?.type || "").trim();
-      if (!type) return task;
-      try {
-        return sanitizeTaskShapeByType(type, task) || task;
-      } catch (e) {
-        console.warn("[AI] final sanitize sweep skipped a task:", e?.message || e);
-        return task;
-      }
-    });
+    let hardGateDropped = 0;
+    const sanitizedFinal = (Array.isArray(finalized) ? finalized : [])
+      .map((task) => {
+        const type = String(task?.taskType || task?.type || "").trim();
+        if (!type) return task;
+        try {
+          return sanitizeTaskShapeByType(type, task) || task;
+        } catch (e) {
+          console.warn("[AI] final sanitize sweep skipped a task:", e?.message || e);
+          return task;
+        }
+      })
+      // Hard playability gate: never PERSIST an unplayable task. validateTaskByType
+      // checks the generation schema (an *empty* essential array passes); this catches
+      // the schema-valid-but-unplayable case (e.g. peer-editing with 0 errors, mapit
+      // with 0 markers) that otherwise reaches a live room. Upstream already attempts
+      // repair; anything still unplayable here is dropped rather than saved.
+      .filter((task) => {
+        try {
+          if (String(task?.taskType || "") === "current-events") return true; // lazy shell
+          const p = assessTaskPlayability(task);
+          if (p && p.playable === false) {
+            hardGateDropped++;
+            console.warn(
+              `[AI] hard-gate dropped unplayable ${task?.taskType}: ${(p.issues || []).join("; ")}`
+            );
+            return false;
+          }
+        } catch {
+          /* assessor error → keep the task rather than lose content on a bug */
+        }
+        return true;
+      });
+    if (hardGateDropped) {
+      console.warn(`[AI] hard-gate dropped ${hardGateDropped} unplayable task(s) before save`);
+    }
 
     const doc = await TaskSet.create({
       name: displayName,

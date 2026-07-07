@@ -6,6 +6,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import TaskSet from "../models/TaskSet.js";
 import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
+import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 import { validateAiTask, regenerateSingleTask, buildPeerEditingErrors, buildSpotItems } from "../controllers/sharedTasksetController.js";
 import TaskDiagnosticLog from "../models/TaskDiagnosticLog.js";
 import { TASK_TYPES } from "../../shared/taskTypes.js";
@@ -353,6 +354,27 @@ router.post("/:id/sanitize", auth, async (req, res) => {
         if (!v2.ok) postErrors = v2.errors || [];
       } catch (e) {
         postErrors = [e?.message || "Post-sanitize validation error"];
+      }
+
+      // Gate on PLAYABILITY too, not just schema. validateAiTask passes an
+      // *empty* essential array (e.g. peer-editing with 0 errors, mapit with
+      // 0 markers); assessTaskPlayability catches it. Merge its issues so the
+      // task is counted as broken and queued for AI repair below.
+      try {
+        const paOrig = assessTaskPlayability(raw);
+        if (paOrig && paOrig.playable === false) {
+          for (const iss of paOrig.issues || []) {
+            if (!originalErrors.includes(iss)) originalErrors.push(iss);
+          }
+        }
+        const paPost = assessTaskPlayability(task);
+        if (paPost && paPost.playable === false) {
+          for (const iss of paPost.issues || []) {
+            if (!postErrors.includes(iss)) postErrors.push(iss);
+          }
+        }
+      } catch {
+        /* assessor error — fall back to schema-only result */
       }
 
       const structurallyFixed = originalErrors.length > 0 && postErrors.length < originalErrors.length;
