@@ -471,6 +471,35 @@ function StudentApp() {
   const [currentAnswerDraft, setCurrentAnswerDraft] = useState("");
   const currentTaskRef = useRef(null);
   const lastSubmissionRef = useRef(null); // used for richer feedback (e.g., MadDash times)
+
+  // ── Stuck-watchdog ──────────────────────────────────────────────
+  // A universal safety net: NO task may ever trap a student. If a task has
+  // been on screen with no student activity for STUCK_MS (a genuine dead-end,
+  // e.g. a turn-based task that never got its turn), surface an escape that
+  // skips the task via the normal skip path. Any interaction re-arms the
+  // timer, so students actively working never see it.
+  const STUCK_MS = 30000;
+  const [stuckEscape, setStuckEscape] = useState(false);
+  const stuckTimerRef = useRef(null);
+  useEffect(() => {
+    const clear = () => {
+      if (stuckTimerRef.current) { clearTimeout(stuckTimerRef.current); stuckTimerRef.current = null; }
+    };
+    clear();
+    setStuckEscape(false);
+    if (!currentTask || tasksetComplete || isMysteryMode) return;
+    const arm = () => { clear(); stuckTimerRef.current = setTimeout(() => setStuckEscape(true), STUCK_MS); };
+    arm();
+    const onActivity = () => { setStuckEscape(false); arm(); };
+    document.addEventListener("pointerdown", onActivity, true);
+    document.addEventListener("keydown", onActivity, true);
+    return () => {
+      clear();
+      document.removeEventListener("pointerdown", onActivity, true);
+      document.removeEventListener("keydown", onActivity, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTask?._id, currentTask?.id, currentTaskIndex, tasksetComplete, isMysteryMode]);
   const pmcRescanTimerRef = useRef(null);
     useEffect(() => { currentTaskRef.current = currentTask; }, [currentTask]);
   const taskLockedRef = useRef(false);
@@ -3863,6 +3892,29 @@ function StudentApp() {
         @keyframes crue-wiggle {
           0%, 100% { transform: translate(-50%, 0) rotate(-6deg); }
           50%      { transform: translate(-50%, -6px) rotate(6deg); }
+        }
+
+        .stuck-escape {
+          position: fixed;
+          left: 50%;
+          transform: translateX(-50%);
+          bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+          z-index: 80;
+          border: 1px solid rgba(251,146,60,0.6);
+          background: linear-gradient(135deg, #fb923c, #ea580c);
+          color: #fff;
+          font-weight: 800;
+          font-size: 0.9rem;
+          padding: 11px 20px;
+          border-radius: 999px;
+          box-shadow: 0 10px 28px rgba(234,88,12,0.45);
+          cursor: pointer;
+          animation: stuck-rise 0.35s ease-out both;
+        }
+        .stuck-escape:active { transform: translateX(-50%) translateY(1px); }
+        @keyframes stuck-rise {
+          from { opacity: 0; transform: translateX(-50%) translateY(16px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
         }
 
         .task-card {
@@ -7288,6 +7340,24 @@ function StudentApp() {
         alt="Crue cheering"
         className="crue-cheer"
       />
+    )}
+
+    {/* STUCK-WATCHDOG ESCAPE — only appears on a genuine dead-end */}
+    {stuckEscape && currentTask && !tasksetComplete && !submitting && !taskLocked && (
+      <button
+        type="button"
+        className="stuck-escape"
+        onClick={() => {
+          setStuckEscape(false);
+          handleSubmitAnswer({
+            type: currentTask?.taskType || currentTask?.type,
+            skipped: true,
+            reason: "stuck-watchdog",
+          });
+        }}
+      >
+        🦊 Stuck? Skip this task →
+      </button>
     )}
 
     {/* STUDENT FEEDBACK BUTTON — always visible */}
