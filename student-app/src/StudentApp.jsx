@@ -4790,8 +4790,11 @@ function StudentApp() {
 
       {/* JOIN CARD */}
       {!joined && !bumped && (
-        <main style={{ flex: 1, display: "flex", alignItems: "flex-start" }}>
-          <div className="join-card">
+        <main style={{ flex: 1, display: "flex", padding: "8px 0" }}>
+          {/* margin:auto centers the card both axes and, unlike align-items:center,
+              degrades safely (scrolls, never clips the top) if it ever overflows a
+              short screen. */}
+          <div className="join-card" style={{ margin: "auto" }}>
             <div className="crue-greet">
               <img
                 src="/images/crue-badge.png"
