@@ -7,7 +7,7 @@ import Link from "next/link";
 
 export default function AuthPage() {
   const router = useRouter();
-  const { signUp, signIn, signInWithGoogle, signInAsGuest, user } = useAuth();
+  const { signUp, signIn, signInWithGoogle, signInWithApple, signInAsGuest, user } = useAuth();
   const [guestName, setGuestName] = useState("");
   const [guestLoading, setGuestLoading] = useState(false);
   const [mode, setMode] = useState<"signin" | "signup">("signin");
@@ -124,7 +124,7 @@ export default function AuthPage() {
         {/* Google sign in */}
         <button
           onClick={() => signInWithGoogle(next)}
-          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 flex items-center justify-center gap-3 mb-6"
+          className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50 flex items-center justify-center gap-3 mb-3"
         >
           <svg className="w-5 h-5" viewBox="0 0 24 24">
             <path
@@ -146,6 +146,21 @@ export default function AuthPage() {
           </svg>
           Continue with Google
         </button>
+
+        {/* Apple sign in — required by App Store Guideline 4.8 when Google is offered.
+            Gated behind NEXT_PUBLIC_APPLE_SIGNIN so it only appears once Sign in with Apple
+            is configured in Supabase + Apple Developer (otherwise the button would error). */}
+        {process.env.NEXT_PUBLIC_APPLE_SIGNIN === "1" && (
+        <button
+          onClick={() => signInWithApple(next)}
+          className="w-full rounded-xl bg-black px-4 py-3 text-sm font-medium text-white shadow-sm hover:bg-slate-900 flex items-center justify-center gap-2 mb-6"
+        >
+          <svg viewBox="0 0 24 24" className="w-5 h-5" fill="currentColor" aria-hidden="true">
+            <path d="M17.05 12.04c-.03-2.6 2.13-3.85 2.22-3.91-1.21-1.77-3.09-2.02-3.76-2.05-1.6-.16-3.12.94-3.93.94-.81 0-2.06-.92-3.39-.9-1.74.03-3.35 1.01-4.25 2.57-1.81 3.14-.46 7.78 1.3 10.32.86 1.24 1.89 2.63 3.24 2.58 1.3-.05 1.79-.84 3.36-.84 1.57 0 2.01.84 3.39.81 1.4-.02 2.29-1.26 3.14-2.51.99-1.44 1.4-2.83 1.42-2.9-.03-.01-2.73-1.05-2.76-4.16zM14.6 4.6c.72-.87 1.2-2.08 1.07-3.28-1.03.04-2.28.69-3.02 1.56-.66.77-1.24 2-1.08 3.18 1.15.09 2.32-.59 3.03-1.46z" />
+          </svg>
+          Continue with Apple
+        </button>
+        )}
 
         {/* Guest / class join — no account, no email */}
         <div className="rounded-xl border border-orange-200 bg-orange-50/50 p-3 mb-6">

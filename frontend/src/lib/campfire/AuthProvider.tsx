@@ -15,6 +15,7 @@ interface AuthState {
   signUp: (email: string, password: string, displayName: string, next?: string) => Promise<{ error: string | null }>;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signInWithGoogle: (next?: string) => Promise<void>;
+  signInWithApple: (next?: string) => Promise<void>;
   signInAsGuest: (
     displayName: string
   ) => Promise<{ error: string | null; rateLimited?: boolean }>;
@@ -35,6 +36,7 @@ const AuthContext = createContext<AuthState>({
   signUp: async () => ({ error: null }),
   signIn: async () => ({ error: null }),
   signInWithGoogle: async () => {},
+  signInWithApple: async () => {},
   signInAsGuest: async () => ({ error: null }),
   isGuest: false,
   linkGoogle: async () => ({ error: null }),
@@ -114,10 +116,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error?.message ?? null };
   };
 
-  const signInWithGoogle = async (next?: string) => {
-    // In the Capacitor native shell, Google blocks OAuth inside the embedded
-    // webview — so open the consent page in the SYSTEM browser and let it deep-link
-    // back via campfire://auth-callback (NativeBridge sets the session on return).
+  // Google AND Apple share the same flow. Sign in with Apple is required by App Store
+  // Guideline 4.8 whenever a third-party (Google) login is offered.
+  const signInWithProvider = async (provider: "google" | "apple", next?: string) => {
+    // In the Capacitor native shell, OAuth is blocked inside the embedded webview — open
+    // the consent page in the SYSTEM browser and let it deep-link back via
+    // campfire://auth-callback (NativeBridge sets the session on return).
     const w =
       typeof window === "undefined"
         ? null
@@ -129,7 +133,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }).Capacitor;
     if (w?.isNativePlatform?.()) {
       const { data } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: { redirectTo: "campfire://auth-callback", skipBrowserRedirect: true },
       });
       if (data?.url) {
@@ -139,10 +143,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     await supabase.auth.signInWithOAuth({
-      provider: "google",
+      provider,
       options: { redirectTo: callbackUrl(next) },
     });
   };
+  const signInWithGoogle = (next?: string) => signInWithProvider("google", next);
+  const signInWithApple = (next?: string) => signInWithProvider("apple", next);
 
   // No-account class join: an anonymous session carrying just a display name.
   // (Requires "Allow anonymous sign-ins" enabled in Supabase Auth settings.)
@@ -200,6 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signUp,
         signIn,
         signInWithGoogle,
+        signInWithApple,
         signInAsGuest,
         isGuest,
         linkGoogle,
