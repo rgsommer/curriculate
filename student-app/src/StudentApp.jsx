@@ -3780,6 +3780,13 @@ function StudentApp() {
           color: #e5e7eb;
         }
 
+        /* Tablet+: scale the whole card up so it fills the larger screen
+           instead of floating small. DOM transform → text stays crisp,
+           and every element (incl. inline-styled bits) enlarges uniformly. */
+        @media (min-width: 820px) {
+          .join-card { transform: scale(1.35); transform-origin: center center; }
+        }
+
         .join-card input {
           width: 100%;
           padding: 8px 10px;
