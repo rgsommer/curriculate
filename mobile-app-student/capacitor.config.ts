@@ -33,7 +33,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 1500,
       launchAutoHide: true,
-      backgroundColor: "#f5f7ff",
+      backgroundColor: "#ffffff",
       androidSplashResourceName: "splash",
       androidScaleType: "CENTER_CROP",
       showSpinner: false,
@@ -42,7 +42,7 @@ const config: CapacitorConfig = {
     },
     StatusBar: {
       style: "DARK", // dark icons for the light splash / join screens
-      backgroundColor: "#f5f7ff",
+      backgroundColor: "#ffffff",
       overlaysWebView: false,
     },
     Keyboard: {
@@ -56,7 +56,7 @@ const config: CapacitorConfig = {
     allowMixedContent: false,
     captureInput: true,
     webContentsDebuggingEnabled: false,
-    backgroundColor: "#f5f7ff",
+    backgroundColor: "#ffffff",
   },
 
   // ── iOS specifics ──────────────────────────────────────────────
@@ -64,7 +64,7 @@ const config: CapacitorConfig = {
     contentInset: "automatic",
     scrollEnabled: true,
     limitsNavigationsToAppBoundDomains: false,
-    backgroundColor: "#f5f7ff",
+    backgroundColor: "#ffffff",
     // Let the WebView present the camera/mic without an extra tap gate,
     // so getUserMedia (QR scanner, audio tasks) starts smoothly.
     preferredContentMode: "mobile",
