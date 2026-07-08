@@ -7384,20 +7384,21 @@ function StudentApp() {
     }}>
       v{BUILD_MARKER}
     </div>
-    <div
-      style={{
-        marginTop: 16,
-        height: "50vh",
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
-        backgroundColor: displayAssignedColor
-          ? displayAssignedColor
-          : stationInfo?.color
-          ? stationInfo.color
-          : "#e5e7eb",
-        boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
-      }}
-    />
+    {/* Decorative station-color band — only when the team actually has a
+        scanned station color. Without one (join screen, at-desk / on-screen
+        sessions, demo rooms) it used to render as a big empty gray panel. */}
+    {(displayAssignedColor || stationInfo?.color) && (
+      <div
+        style={{
+          marginTop: 16,
+          height: "50vh",
+          borderTopLeftRadius: 32,
+          borderTopRightRadius: 32,
+          backgroundColor: displayAssignedColor || stationInfo?.color,
+          boxShadow: "0 -4px 12px rgba(15,23,42,0.25)",
+        }}
+      />
+    )}
   </div>
   </>
   </ThemeModeContext.Provider>
