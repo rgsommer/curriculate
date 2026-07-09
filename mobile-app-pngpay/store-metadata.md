@@ -1,18 +1,19 @@
-# TeeBee Field — App Store & Play Store Metadata
+# PNGPay — App Store & Play Store Metadata
 
-The field companion to TeeBee's payroll suite. Supervisors submit their team's
-hours and leave from the job site; the bookkeeper approves and pays back at the
-office. Loads the live TeeBee app in a native shell, so it's always up to date.
+The mobile companion to TeeBee's payroll suite, carrying the PNGPay name your
+users already know. Supervisors submit their team's hours and leave from the
+job site; the office bookkeeper approves and pays. Loads the live app in a
+native shell, so it's always up to date.
 
-- **App ID:** `net.curriculate.teebeefield`
-- **App name:** TeeBee Field
+- **App ID:** `net.curriculate.pngpay`
+- **App name:** PNGPay
 - **Loads:** `https://www.curriculate.net/teebeepay/app?app=1&view=team`
 - **Sign-in:** email + one-time PIN (first-party; no social login)
 
 ---
 
 ## App Name
-**TeeBee Field**
+**PNGPay**
 
 ## Subtitle (App Store, 30 chars max)
 Team hours, from the field
@@ -24,10 +25,10 @@ Supervisors submit team hours & leave on the go. Bookkeeper approves & pays.
 
 **Submit your team's hours from wherever the work is.**
 
-TeeBee Field is the on-site companion to TeeBee — the payroll and accounting
-platform built for Papua New Guinean businesses. Supervisors record each team
-member's hours and leave for the pay period right from their phone, then the
-office bookkeeper reviews, approves, and pays.
+PNGPay is the on-site companion to your TeeBee payroll — built for Papua New
+Guinean businesses. Supervisors record each team member's hours and leave for
+the pay period right from their phone, then the office bookkeeper reviews,
+approves, and pays.
 
 **What you can do:**
 • See your team for the current pay period at a glance
@@ -47,11 +48,11 @@ office bookkeeper reviews, approves, and pays.
 Site supervisors, team leads, and division managers who are responsible for
 their crew's time but don't run the payroll themselves.
 
-TeeBee Field requires a TeeBee account. Your administrator sets you up as a
-supervisor and you sign in with your email and a one-time code.
+PNGPay requires an account. Your administrator sets you up as a supervisor and
+you sign in with your email and a one-time code.
 
 ## Keywords (App Store, 100 chars max)
-payroll,timesheet,hours,supervisor,team,leave,roster,attendance,PNG,TeeBee
+payroll,timesheet,hours,supervisor,team,leave,roster,attendance,PNG,kina
 
 ## Categories
 - Primary: Business
@@ -74,7 +75,7 @@ Declare these truthfully on both stores (App Privacy / Data safety form):
 | Push token | Yes (if enabled) | Hours-due reminders | Yes | No |
 
 - **No advertising. No third-party tracking. No location. No camera.**
-- Data is transmitted over HTTPS to TeeBee's servers and processed for payroll.
+- Data is transmitted over HTTPS and processed for payroll.
 - Privacy policy: https://www.curriculate.net/privacy
 - Account deletion: handled by the account administrator; contact
   info@teebeeaccountants.com.pg
@@ -88,10 +89,10 @@ Declare these truthfully on both stores (App Privacy / Data safety form):
 
 ## App Review Notes (paste into "Notes for Review")
 
-> TeeBee Field is a role-specific companion to the TeeBee payroll platform.
-> Site supervisors use it to submit their team's hours and leave for a pay
-> period; the office bookkeeper then approves and processes payroll in the
-> main TeeBee web app.
+> PNGPay is a role-specific companion to the TeeBee payroll platform (PNGPay is
+> the established name for this payroll system in Papua New Guinea). Site
+> supervisors use it to submit their team's hours and leave for a pay period;
+> the office bookkeeper then approves and processes payroll in the main web app.
 >
 > **Sign-in is email + one-time PIN (a first-party mechanism). The app does
 > not offer any third-party or social login, so Sign in with Apple (4.8) does
@@ -103,7 +104,7 @@ Declare these truthfully on both stores (App Privacy / Data safety form):
 >
 > Native capabilities beyond the web experience: push notifications
 > (hours-due reminders), haptic feedback, Android back-button handling, and a
-> WebView locked to the TeeBee app (external links open in the system
+> WebView locked to the payroll app (external links open in the system
 > browser). No camera or location is used.
 
 **Demo account (fill in before submitting):**
@@ -128,8 +129,8 @@ Capture on the live app signed in as the demo supervisor:
 Required sizes:
 - **iOS:** 6.7" and 6.5" iPhone (portrait); 12.9" iPad if you enable iPad.
 - **Android:** phone (≥ 2 shots), plus 7" and 10" tablet if targeting tablets.
-- **Play feature graphic:** 1024×500 PNG (navy #0f2c52 background, TeeBee mark).
+- **Play feature graphic:** 1024×500 PNG (navy #0f2c52 background, gold Kina mark).
 
 ## App Preview Video (optional, 15–30s)
 Open app → sign in → team appears → tap a name, enter hours → record a leave day
-→ submit → "sent to bookkeeper for approval." End card: "TeeBee — payroll for PNG."
+→ submit → "sent to bookkeeper for approval." End card: "PNGPay — payroll for PNG."

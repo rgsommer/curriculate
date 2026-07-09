@@ -42,7 +42,7 @@ async function api(path, opts = {}) {
   return j;
 }
 
-// The TeeBee Field app (Capacitor shell) opens /teebeepay/app?app=1&view=team
+// The PNGPay app (Capacitor shell) opens /teebeepay/app?app=1&view=team
 // so a supervisor lands directly on their team's hours screen after sign-in.
 function fieldTeamMode() {
   try { return new URLSearchParams(window.location.search).get("view") === "team"; }

@@ -1,12 +1,12 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "net.curriculate.teebeefield",
-  appName: "TeeBee Field",
+  appId: "net.curriculate.pngpay",
+  appName: "PNGPay",
   webDir: "www",
 
   // ── Live URL mode ──────────────────────────────────────────────
-  // Loads the hosted TeeBee app instead of a bundled static export, so
+  // Loads the hosted TeeBee payroll app instead of a bundled static export, so
   // supervisors always run the latest build with no store resubmission for
   // content changes. `?app=1` hides the website chrome (safe-area native
   // layout); `view=team` deep-links straight to the supervisor's team
@@ -20,7 +20,7 @@ const config: CapacitorConfig = {
     SplashScreen: {
       launchShowDuration: 1800,
       launchAutoHide: true,
-      backgroundColor: "#0f2c52", // TeeBee navy
+      backgroundColor: "#0f2c52", // navy
       androidSplashResourceName: "splash",
       androidScaleType: "CENTER_CROP",
       showSpinner: false,
@@ -45,7 +45,7 @@ const config: CapacitorConfig = {
     contentInset: "always",
     allowsLinkPreview: false,
     scrollEnabled: true,
-    scheme: "TeeBee Field",
+    scheme: "PNGPay",
   },
 
   // Android-specific

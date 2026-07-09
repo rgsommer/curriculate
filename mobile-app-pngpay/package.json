@@ -1,11 +1,11 @@
 {
-  "name": "teebee-field",
+  "name": "pngpay",
   "version": "1.0.0",
-  "description": "TeeBee Field — supervisors submit team hours and leave on the go",
+  "description": "PNGPay — supervisors submit team hours and leave on the go",
   "private": true,
   "scripts": {
-    "build:web": "mkdir -p www && cp index.html www/index.html && cp teebee-icon.png www/teebee-icon.png",
-    "cap:init": "npx cap init 'TeeBee Field' net.curriculate.teebeefield --web-dir www",
+    "build:web": "mkdir -p www && cp index.html www/index.html && cp pngpay-icon.png www/pngpay-icon.png",
+    "cap:init": "npx cap init 'PNGPay' net.curriculate.pngpay --web-dir www",
     "cap:add:ios": "npx cap add ios",
     "cap:add:android": "npx cap add android",
     "cap:sync": "npm run build:web && npx cap sync",

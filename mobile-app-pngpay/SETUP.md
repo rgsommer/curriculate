@@ -1,13 +1,13 @@
-# TeeBee Field — Mobile App Setup
+# PNGPay — Mobile App Setup
 
 ## Architecture
 
-A **live-URL Capacitor wrapper**. The app loads the hosted TeeBee app inside a
-native WebView and adds native capabilities on top:
+A **live-URL Capacitor wrapper**. The app loads the hosted TeeBee payroll app
+inside a native WebView and adds native capabilities on top:
 
 - **Push notifications** — hours-due reminders / approval notices
 - **Haptics** — subtle feedback on submit
-- **Deep links** — TeeBee links open in the app
+- **Deep links** — payroll links open in the app
 - **Locked navigation** — stays in `/teebeepay`; other links open the system browser
 
 The URL it loads is:
@@ -21,6 +21,9 @@ There is **no camera** and **no location** — fewer permissions, faster review.
 Sign-in is first-party **email + one-time PIN**, so Sign in with Apple (4.8)
 does not apply.
 
+> PNGPay is the established name for this payroll system in Papua New Guinea, so
+> the app carries it for user recognition. It runs on the same TeeBee backend.
+
 ## Prerequisites
 - Node.js 18+
 - Xcode 15+ (iOS) / Android Studio (Android)
@@ -28,7 +31,7 @@ does not apply.
 
 ## Quick Start
 ```bash
-cd mobile-app-field
+cd mobile-app-pngpay
 
 npm install
 
@@ -50,19 +53,19 @@ npm run cap:open:ios
 npm run cap:open:android
 ```
 
-> Icons/splash are pre-generated in `resources/` (TeeBee red `#b9302a` icon
-> with gold `#f4b400` monogram; navy `#0f2c52` splash). Re-run `npm run icons`
-> after replacing them to regenerate every platform size.
+> Icons/splash are pre-generated in `resources/` (red `#b9302a` icon with a gold
+> `#f4b400` Kina "K" mark; navy `#0f2c52` splash). Re-run `npm run icons` after
+> replacing them to regenerate every platform size.
 
 ## Project Structure
 ```
-mobile-app-field/
-├── capacitor.config.ts    # appId net.curriculate.teebeefield, live URL, plugins
+mobile-app-pngpay/
+├── capacitor.config.ts    # appId net.curriculate.pngpay, live URL, plugins
 ├── package.json           # deps + cap scripts (no camera)
 ├── index.html             # fallback splash while the live app loads
-├── teebee-icon.png        # badge used by index.html
+├── pngpay-icon.png        # badge used by index.html
 ├── www/                   # built web assets (git-ignored)
-├── src/native-bridge.js   # push, haptics, deep links, nav guard (window.TeebeeNative)
+├── src/native-bridge.js   # push, haptics, deep links, nav guard (window.PngpayNative)
 ├── resources/             # icon.png (1024²) + splash.png (2732²) sources
 ├── ios/  android/         # generated native projects (git-ignored)
 ├── store-metadata.md      # listing copy, privacy, review notes

@@ -1,14 +1,14 @@
 /**
- * native-bridge.js — TeeBee Field
+ * native-bridge.js — PNGPay
  *
- * Injected into the WebView to bridge the hosted TeeBee app to native
- * Capacitor APIs. Exposes a global `TeebeeNative` object.
+ * Injected into the WebView to bridge the hosted TeeBee payroll app to native
+ * Capacitor APIs. Exposes a global `PngpayNative` object.
  *
- * The Field app is a role-specific tool for supervisors: submit team hours
- * and leave, then hand off to the bookkeeper for approval. It deliberately
- * has NO camera (fewer permissions, faster review). Its native value-add is
- * push (hours-due reminders), haptics, back-button handling, and keeping the
- * WebView locked to the TeeBee app.
+ * PNGPay is a role-specific tool for supervisors: submit team hours and leave,
+ * then hand off to the bookkeeper for approval. It deliberately has NO camera
+ * (fewer permissions, faster review). Its native value-add is push (hours-due
+ * reminders), haptics, back-button handling, and keeping the WebView locked to
+ * the TeeBee app.
  */
 
 import { PushNotifications } from "@capacitor/push-notifications";
@@ -99,7 +99,7 @@ export async function initNative() {
   setupPushListeners();
   setupNavigationGuard();
 
-  window.TeebeeNative = {
+  window.PngpayNative = {
     registerPush,
     hapticLight,
     hapticMedium,
@@ -107,7 +107,7 @@ export async function initNative() {
     platform: window.Capacitor?.getPlatform() || "web",
   };
 
-  console.log("[TeeBee Field] Native bridge initialized on", window.TeebeeNative.platform);
+  console.log("[PNGPay] Native bridge initialized on", window.PngpayNative.platform);
 }
 
 if (window.Capacitor) {
