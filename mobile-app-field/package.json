@@ -1,0 +1,31 @@
+{
+  "name": "teebee-field",
+  "version": "1.0.0",
+  "description": "TeeBee Field — supervisors submit team hours and leave on the go",
+  "private": true,
+  "scripts": {
+    "build:web": "mkdir -p www && cp index.html www/index.html && cp teebee-icon.png www/teebee-icon.png",
+    "cap:init": "npx cap init 'TeeBee Field' net.curriculate.teebeefield --web-dir www",
+    "cap:add:ios": "npx cap add ios",
+    "cap:add:android": "npx cap add android",
+    "cap:sync": "npm run build:web && npx cap sync",
+    "cap:open:ios": "npx cap open ios",
+    "cap:open:android": "npx cap open android",
+    "icons": "npx capacitor-assets generate --iconBackgroundColor '#0f2c52' --splashBackgroundColor '#0f2c52'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.1",
+    "@capacitor/app": "^6.0.0",
+    "@capacitor/browser": "^6.0.0",
+    "@capacitor/core": "^6.0.0",
+    "@capacitor/haptics": "^6.0.0",
+    "@capacitor/keyboard": "^6.0.0",
+    "@capacitor/push-notifications": "^6.0.0",
+    "@capacitor/splash-screen": "^6.0.0",
+    "@capacitor/status-bar": "^6.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.0",
+    "@capacitor/cli": "^6.0.0"
+  }
+}

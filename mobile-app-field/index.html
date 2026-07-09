@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="color-scheme" content="light" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>TeeBee Field</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f2c52;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      color: #fff;
+    }
+    .loader { text-align: center; }
+    .loader img { width: 76px; height: auto; margin-bottom: 16px; border-radius: 16px; }
+    .loader h1 { font-size: 24px; font-weight: 800; letter-spacing: -0.4px; }
+    .loader p { margin-top: 8px; font-size: 14px; opacity: 0.75; }
+  </style>
+</head>
+<body>
+  <!--
+    Shown only briefly while the native shell loads the live TeeBee app.
+    Acts as a fallback splash if the network is slow.
+  -->
+  <div class="loader">
+    <img src="teebee-icon.png" alt="TeeBee" />
+    <h1>TeeBee Field</h1>
+    <p>Loading your team…</p>
+  </div>
+
+  <script>
+    // If opened in a regular browser (not the native shell), send the user
+    // to the live team screen. Capacitor overrides this with server.url.
+    if (!window.Capacitor) {
+      window.location.href = "https://www.curriculate.net/teebeepay/app?view=team";
+    }
+  </script>
+</body>
+</html>

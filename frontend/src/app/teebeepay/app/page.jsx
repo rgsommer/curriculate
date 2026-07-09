@@ -42,6 +42,13 @@ async function api(path, opts = {}) {
   return j;
 }
 
+// The TeeBee Field app (Capacitor shell) opens /teebeepay/app?app=1&view=team
+// so a supervisor lands directly on their team's hours screen after sign-in.
+function fieldTeamMode() {
+  try { return new URLSearchParams(window.location.search).get("view") === "team"; }
+  catch { return false; }
+}
+
 export default function TeebeePayApp() {
   const [view, setView] = useState("loading"); // loading | login | dashboard | company | new_period | period | users | service_fees | employee | my_team
   const [me, _setMe] = useState(null);
@@ -57,14 +64,16 @@ export default function TeebeePayApp() {
       try {
         const { user } = await api("/api/teebeepay/me");
         _setMe(user); setMe(user);
-        setView("dashboard");
+        // Field/supervisor app deep-links straight to the team hours screen.
+        setView(fieldTeamMode() ? "my_team" : "dashboard");
       } catch { setView("login"); }
     })();
   }, []);
 
-  // Direct employees (clearance 0) to their self-serve portal once signed in.
+  // Direct employees (clearance 0) to their self-serve portal once signed in —
+  // unless we're in field/supervisor mode, which lands on the team screen.
   useEffect(() => {
-    if (me && me.clearance === 0 && (view === "dashboard" || view === "loading")) {
+    if (me && me.clearance === 0 && !fieldTeamMode() && (view === "dashboard" || view === "loading")) {
       setView("my_stubs");
     }
   }, [me, view]);
