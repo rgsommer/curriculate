@@ -2136,6 +2136,67 @@ router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
   }
 });
 
+// Ping Anthropic with the deployed ANTHROPIC_API_KEY using a minimal Haiku
+// completion (max_tokens: 1) so we see EXACTLY what the key sees. Returns the
+// raw status + response body plus the key's identifiable prefix (first 20
+// chars) so the user can match it against their Anthropic Console workspace.
+// Cost per call is fractions of a cent.
+router.get("/check-anthropic", requireStocksAuth, async (req, res) => {
+  try {
+    const key = process.env.ANTHROPIC_API_KEY || "";
+    if (!key) return res.json({ ok: false, error: "ANTHROPIC_API_KEY not set on backend" });
+    const keyPrefix = key.slice(0, 20) + "…";
+    const t0 = Date.now();
+    let status = null, body = "", parsed = null, errShape = null;
+    try {
+      const r = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "x-api-key": key,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "claude-haiku-4-5",
+          max_tokens: 1,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      });
+      status = r.status;
+      body = await r.text().catch(() => "");
+      try { parsed = JSON.parse(body); errShape = parsed?.error || null; } catch { /* keep raw */ }
+    } catch (e) {
+      body = `network: ${e?.message || e}`;
+    }
+    const elapsedMs = Date.now() - t0;
+
+    const ok = status === 200;
+    const diagnostic = ok
+      ? "✓ The deployed key can successfully call Claude — Anthropic sees credit available."
+      : status === 401
+      ? "✗ Key is invalid or revoked. Rotate ANTHROPIC_API_KEY on Render."
+      : status === 400 && /credit|balance|payment/i.test(body)
+      ? "✗ The deployed key IS the one Anthropic is telling you has no credit. The account/workspace this key belongs to has a low or zero balance — even if a different Anthropic account of yours has money."
+      : status === 429
+      ? "✗ Rate-limited. Not a credit issue — the key is fine, Anthropic is just throttling."
+      : `✗ Non-200 response (${status}). See raw body below.`;
+
+    res.json({
+      ok,
+      status,
+      elapsedMs,
+      keyPrefix,
+      errorType: errShape?.type || null,
+      errorMessage: errShape?.message || null,
+      rawBody: body.slice(0, 800),
+      diagnostic,
+    });
+  } catch (err) {
+    console.error("check-anthropic error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 // Force-fire a briefing send for the CURRENT user, off the schedule. Returns
 // immediately (202) — the actual send runs in the background so the fetch
 // can't time out on a proxy. The result lands in lastBriefingSuccessAt (or

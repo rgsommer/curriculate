@@ -6865,6 +6865,8 @@ function BriefingDiagnosticsCard({ sessionToken }) {
   const [triggerMsg, setTriggerMsg] = useState(null);
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
+  const [anthropicBusy, setAnthropicBusy] = useState(false);
+  const [anthropicResult, setAnthropicResult] = useState(null);
 
   const run = async () => {
     if (busy) return;
@@ -6899,6 +6901,21 @@ function BriefingDiagnosticsCard({ sessionToken }) {
     } finally { setTriggering(false); }
   };
 
+  const checkAnthropic = async () => {
+    if (anthropicBusy) return;
+    setAnthropicBusy(true); setAnthropicResult(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/check-anthropic`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      setAnthropicResult(j);
+    } catch (e) {
+      setAnthropicResult({ ok: false, diagnostic: `Network error: ${e?.message || e}` });
+    } finally { setAnthropicBusy(false); }
+  };
+
   return (
     <div className="sa-card" style={{ marginBottom: 18 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
@@ -6915,8 +6932,20 @@ function BriefingDiagnosticsCard({ sessionToken }) {
           <button className="sa-btn secondary" onClick={triggerNow} disabled={triggering} title="Force-fire a real briefing send now, off-schedule. If it works you get an email; if not, the failure appears in diagnostics.">
             {triggering ? "Triggering…" : "Force-send now"}
           </button>
+          <button className="sa-btn secondary" onClick={checkAnthropic} disabled={anthropicBusy} title="Ping Anthropic with the deployed ANTHROPIC_API_KEY and show exactly what the server sees. Diagnoses 'low credit balance' errors by revealing which key/account is actually being used.">
+            {anthropicBusy ? "Pinging Anthropic…" : "Check Anthropic key"}
+          </button>
         </div>
       </div>
+
+      {anthropicResult && (
+        <div style={{ marginTop: 12, fontSize: 12.5, background: anthropicResult.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${anthropicResult.ok ? "#bbf7d0" : "#fecaca"}`, color: anthropicResult.ok ? "#166534" : "#991b1b", borderRadius: 8, padding: "10px 12px" }}>
+          <div style={{ fontWeight: 700, marginBottom: 6 }}>{anthropicResult.diagnostic || (anthropicResult.ok ? "OK" : "Failed")}</div>
+          <div style={{ fontFamily: "SF Mono,Menlo,Consolas,monospace", fontSize: 11.5, lineHeight: 1.55, color: anthropicResult.ok ? "#14532d" : "#7f1d1d", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {`status: ${anthropicResult.status ?? "—"}\nelapsed: ${anthropicResult.elapsedMs ?? "—"}ms\nkey prefix (match this in Anthropic Console → API Keys): ${anthropicResult.keyPrefix ?? "—"}\nerror.type: ${anthropicResult.errorType ?? "—"}\nerror.message: ${anthropicResult.errorMessage ?? "—"}\n\nraw response body:\n${anthropicResult.rawBody ?? ""}`}
+          </div>
+        </div>
+      )}
 
       {triggerMsg && (
         <div style={{ marginTop: 10, fontSize: 12.5, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af", borderRadius: 8, padding: "10px 12px" }}>
