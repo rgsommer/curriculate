@@ -2122,6 +2122,8 @@ router.get("/briefing-diagnostics", requireStocksAuth, async (req, res) => {
         message: profile.lastBriefingErrorMessage,
       } : null,
       lastBriefingSuccessAt: profile?.lastBriefingSuccessAt || null,
+      lastBriefingAttemptAt: profile?.lastBriefingAttemptAt || null,
+      lastBriefingAttemptKey: profile?.lastBriefingAttemptKey || null,
       env: {
         STOCKS_BRIEFING_ENABLED: process.env.STOCKS_BRIEFING_ENABLED === "1",
         RESEND_API_KEY_present: !!process.env.RESEND_API_KEY,

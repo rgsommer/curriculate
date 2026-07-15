@@ -1098,9 +1098,21 @@ async function findUsersDueForBriefing(now) {
 // Send the briefing for a single user, then stamp lastBriefingSentKey so
 // the same slot doesn't fire again within the same minute window.
 export async function sendBriefingForUser(p, sendKey) {
+  // Stamp attempt-time FIRST thing so the diagnostic can prove the function
+  // was actually entered (vs. the trigger's fire-and-forget never running,
+  // or the dyno napping through the scheduled slot).
+  try {
+    await StocksPortfolio.updateOne(
+      { email: p.email },
+      { $set: { lastBriefingAttemptAt: new Date(), lastBriefingAttemptKey: sendKey } }
+    );
+  } catch (e) { console.warn("[stocks-briefing] attempt-stamp failed:", e?.message); }
+
   // Persist the exact stage + message of any failure so the diagnostic
   // endpoint can show WHY silently-failing sends silently-failed.
+  let recorded = false;
   const recordFail = async (stage, err) => {
+    recorded = true;
     try {
       await StocksPortfolio.updateOne(
         { email: p.email },
@@ -1130,34 +1142,41 @@ export async function sendBriefingForUser(p, sendKey) {
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     try { await emailBriefing({ to: p.email, subject, md }); }
     catch (e) { await recordFail("emailBriefing", e); throw e; }
-    await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" });
+    try { await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" }); }
+    catch (e) { await recordFail("saveAdviceSnapshot", e); throw e; }
 
     const recs = parseRecsFromBriefing(md);
     if (recs.length) {
-      await StocksAdviceRec.insertMany(
-        recs.map((r) => ({
-          email: p.email,
-          generatedAt: new Date(),
-          source: "ai",
-          ...r,
-          rationale: "Daily briefing — server-side cron",
-        }))
-      );
+      try {
+        await StocksAdviceRec.insertMany(
+          recs.map((r) => ({
+            email: p.email,
+            generatedAt: new Date(),
+            source: "ai",
+            ...r,
+            rationale: "Daily briefing — server-side cron",
+          }))
+        );
+      } catch (e) { await recordFail("insertRecs", e); throw e; }
     }
 
     // Stamp idempotency key + clear any prior error state (this send succeeded).
-    await StocksPortfolio.updateOne(
-      { email: p.email },
-      {
-        $set: { lastBriefingSentKey: sendKey, lastBriefingSuccessAt: new Date() },
-        $unset: { lastBriefingErrorAt: 1, lastBriefingErrorStage: 1, lastBriefingErrorMessage: 1 },
-      }
-    );
+    try {
+      await StocksPortfolio.updateOne(
+        { email: p.email },
+        {
+          $set: { lastBriefingSentKey: sendKey, lastBriefingSuccessAt: new Date() },
+          $unset: { lastBriefingErrorAt: 1, lastBriefingErrorStage: 1, lastBriefingErrorMessage: 1 },
+        }
+      );
+    } catch (e) { await recordFail("stampSuccess", e); throw e; }
 
     console.log(`[stocks-briefing] ✓ ${p.email} @ ${sendKey} — ${recs.length} recs tracked`);
   } catch (err) {
-    // recordFail was already called for the specific stage that threw; this
-    // just logs to Render for anyone tailing.
+    // If none of the inner catches labeled the stage, this outer catch
+    // records it as "unknown" — the message still tells us what actually
+    // threw (e.g. a null-deref inside validateAndCorrectBriefing).
+    if (!recorded) await recordFail("unknown", err);
     console.error(`[stocks-briefing] ✗ ${p.email}:`, err?.message);
   }
 }

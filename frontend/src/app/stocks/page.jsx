@@ -6992,6 +6992,7 @@ function BriefingDiagnosticsCard({ sessionToken }) {
             <div>your briefingTimes: <b>[{(data.briefingTimes || []).join(", ") || "empty"}]</b></div>
             <div>would be due right now: <b>{data.wouldBeDueNow ? "yes" : "no"}</b> · lastBriefingSentKey: <b>{data.lastBriefingSentKey || "(never)"}</b></div>
             <div>last successful send: <b>{data.lastBriefingSuccessAt ? new Date(data.lastBriefingSuccessAt).toLocaleString() : "(never)"}</b></div>
+            <div>last attempt (function entered): <b>{data.lastBriefingAttemptAt ? new Date(data.lastBriefingAttemptAt).toLocaleString() : "(never)"}</b>{data.lastBriefingAttemptKey ? ` · key=${data.lastBriefingAttemptKey}` : ""}</div>
             <div>cron heartbeat: <b>{data.cronHeartbeat?.lastTickAt ? new Date(data.cronHeartbeat.lastTickAt).toLocaleString() : "(no heartbeat yet)"}</b> · last tick due-count: <b>{data.cronHeartbeat?.lastTickDueCount ?? "—"}</b></div>
             <div>latest snapshot (source={data.latestSnapshotSource || "—"}): <b>{data.latestCronSnapshot ? new Date(data.latestCronSnapshot).toLocaleString() : (data.latestOnDemandSnapshot ? new Date(data.latestOnDemandSnapshot).toLocaleString() : "(none)")}</b></div>
             <div>AI recs generated (last 7d): <b>{data.recentRecCount7d}</b></div>
