@@ -15,6 +15,7 @@
 import { getTechnicals } from "./stocksTechnicals.js";
 import { getFundamentals } from "./stocksFundamentals.js";
 import { getCatalysts } from "./stocksCatalystsFmp.js";
+import { getShortInterest } from "./stocksShortInterest.js";
 
 // ── Risk-mode weight presets (each sums to 1.0) ────────────────────────
 // "balanced" matches the spec exactly. The others re-tilt emphasis without
@@ -445,6 +446,9 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
     // Earnings date + analyst actions — swing-catalyst awareness
     getCatalysts(ticker, ccy).catch(() => null),
   ]);
+  // Short interest — needs tech context to score the squeeze so it
+  // sequences AFTER the tech promise resolves.
+  const shortInterest = await getShortInterest(ticker, ccy, tech).catch(() => null);
 
   // Merge the two fundamentals sources (discovery FMP fetch + getFundamentals)
   const f = {
@@ -483,7 +487,7 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
 
   return {
     sub: { fundamentals, momentum, technical, riskControl },
-    raw: { tech, returns, relStrength6mPp, fundamentals: f, liquidityUsdPerDay, catalysts },
+    raw: { tech, returns, relStrength6mPp, fundamentals: f, liquidityUsdPerDay, catalysts, shortInterest },
     moonshot: { preParabolic, realityLag },
   };
 }

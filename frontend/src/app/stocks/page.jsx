@@ -5303,6 +5303,29 @@ function HighConvictionCard({ pick, rank }) {
         </div>
       )}
 
+      {mf.shortInterestData && (mf.shortInterestData.siPctOfFloat != null || mf.shortInterestData.squeezeScore != null) && (
+        <div style={{ marginTop: 10, fontSize: 12, background: mf.shortInterestData.setupType === "short-squeeze-candidate" ? "#fef3c7" : mf.shortInterestData.setupType === "high-si-warning" ? "#fef2f2" : "var(--sa-panel-2)", border: `1px solid ${mf.shortInterestData.setupType === "short-squeeze-candidate" ? "#fde68a" : mf.shortInterestData.setupType === "high-si-warning" ? "#fecaca" : "var(--sa-border)"}`, borderRadius: 8, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: mf.shortInterestData.setupType === "short-squeeze-candidate" ? "#92400e" : "var(--sa-muted)", marginBottom: 4 }}>
+            {mf.shortInterestData.setupType === "short-squeeze-candidate" ? "🎯 Short-squeeze setup" : mf.shortInterestData.setupType === "high-si-warning" ? "⚠ High short interest" : "📊 Short interest"}
+          </div>
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+            {mf.shortInterestData.siPctOfFloat != null && <span><span style={{ color: "var(--sa-muted)" }}>SI:</span> <b>{mf.shortInterestData.siPctOfFloat.toFixed(1)}% of float</b></span>}
+            {mf.shortInterestData.dtc != null && <span><span style={{ color: "var(--sa-muted)" }}>DTC:</span> <b>{mf.shortInterestData.dtc.toFixed(1)}d</b></span>}
+            {mf.shortInterestData.momChangePct != null && <span><span style={{ color: "var(--sa-muted)" }}>MoM:</span> <b style={{ color: mf.shortInterestData.momChangePct >= 0 ? "#a16207" : "#166534" }}>{mf.shortInterestData.momChangePct >= 0 ? "+" : ""}{mf.shortInterestData.momChangePct.toFixed(0)}%</b></span>}
+            {mf.shortInterestData.floatShares != null && <span><span style={{ color: "var(--sa-muted)" }}>Float:</span> <b>{(mf.shortInterestData.floatShares / 1e6).toFixed(0)}M</b></span>}
+            {mf.shortInterestData.squeezeScore != null && <span><span style={{ color: "var(--sa-muted)" }}>Squeeze score:</span> <b>{mf.shortInterestData.squeezeScore}</b></span>}
+          </div>
+          {mf.shortInterestData.setupType === "short-squeeze-candidate" && mf.shortInterestData.squeezeContributors?.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 11, color: "#78350f" }}>
+              {mf.shortInterestData.squeezeContributors.slice(0, 4).map((c, i) => <div key={i}>· {c}</div>)}
+            </div>
+          )}
+          {mf.shortInterestData.reportDate && (
+            <div style={{ marginTop: 4, fontSize: 10.5, color: "var(--sa-muted)" }}>FINRA report {mf.shortInterestData.reportDate}</div>
+          )}
+        </div>
+      )}
+
       {mf.catalystsData && (mf.catalystsData.nextEarnings || (mf.catalystsData.recentAnalysts?.length > 0)) && (
         <div style={{ marginTop: 10, fontSize: 12, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px" }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#1e40af", marginBottom: 4 }}>🗓 Catalysts</div>

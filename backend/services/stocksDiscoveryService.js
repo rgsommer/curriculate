@@ -1027,6 +1027,17 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
         analystSummary: c.raw.catalysts.analystSummary || null,
         recentAnalysts: (c.raw.catalysts.analysts || []).slice(0, 5),
       } : null,
+      // Short interest + squeeze setup (Yahoo → FINRA data)
+      shortInterestData: c.raw?.shortInterest?.ok ? {
+        siPctOfFloat: c.raw.shortInterest.raw.siPctOfFloat,
+        dtc: c.raw.shortInterest.raw.dtc,
+        momChangePct: c.raw.shortInterest.raw.momChangePct,
+        floatShares: c.raw.shortInterest.raw.floatShares,
+        reportDate: c.raw.shortInterest.raw.reportDate,
+        squeezeScore: c.raw.shortInterest.squeeze?.score ?? null,
+        squeezeContributors: c.raw.shortInterest.squeeze?.contributors ?? [],
+        setupType: c.raw.shortInterest.setupType,
+      } : null,
     };
 
     // Persist (upsert by email+ticker+day) — score mirrors weightedScore so

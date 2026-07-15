@@ -39,6 +39,7 @@ import { briefingToAdviceCards } from "../jobs/stocksDailyBriefing.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
+import { getShortInterest, formatShortInterestLine } from "../services/stocksShortInterest.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
@@ -202,7 +203,8 @@ export async function computeQuantSignals(profile, topN = 8) {
         getFundamentals(a.ticker, ccy).catch(() => ({ ok: false })),
         getCatalysts(a.ticker, ccy).catch(() => null),
       ]);
-      out[a.ticker] = { tech, fund, catalysts, ccy };
+      const shortInterest = await getShortInterest(a.ticker, ccy, tech).catch(() => null);
+      out[a.ticker] = { tech, fund, catalysts, shortInterest, ccy };
     })
   );
   return out;
@@ -217,6 +219,11 @@ function formatQuantSignalsBlock(quantSignals) {
     lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
     const catLine = formatCatalystsLine(sig.catalysts);
     if (catLine) lines.push(`  ${catLine}`);
+    const siLine = formatShortInterestLine(sig.shortInterest);
+    if (siLine) lines.push(`  ${siLine}`);
+    if (sig.shortInterest?.squeeze?.contributors?.length && sig.shortInterest.setupType) {
+      lines.push(`    Squeeze contributors: ${sig.shortInterest.squeeze.contributors.slice(0, 5).join(" · ")}`);
+    }
     if (Array.isArray(sig.tech?.setups) && sig.tech.setups.length > 0) {
       for (const s of sig.tech.setups) {
         lines.push(`  Setup [${s.type} ${s.score}]: ${s.name}`);
@@ -502,6 +509,7 @@ SENIOR-ANALYST EXPECTATIONS (read carefully — what separates this from generic
 5d. NAMED SETUPS: if a "Setup [...]" block is present under a ticker, USE THE EVIDENCE BULLETS DIRECTLY — they carry the exact trigger price, pattern mechanics, and named framework (VCP, bull flag, pocket pivot, coiled spring, inside day). Quote the setup name + score + trigger price verbatim ("VCP score 85, long trigger $184.20 on RVOL >1.5, stop $178.40"). Do NOT invent setups — only ones present in the block. No setup block = no named pattern; do not fabricate.
 5e. MULTI-TIMEFRAME CONFLUENCE (MTF): if the technicals line includes "MTF: 🟢🟢🟢 ALIGNED UP", weekly + daily + hourly + 15m frames all point the same direction — this is the highest-conviction swing setup. "🔴🔴🔴 ALIGNED DOWN" = same conviction bearish. "🟡 CONFLICTING FRAMES" = timeframes disagree — LOWER conviction, wait for alignment before sizing up. "⚪ mixed" = mostly neutral. Cite the MTF verdict in your rec and adjust sizing: aligned = full size, mixed = half size, conflicting = pass or wait.
 5f. CATALYSTS (earnings + analyst actions): when a "Catalysts:" line or "Analyst YYYY-MM-DD" bullets are present, USE THEM DIRECTLY. Earnings 🔥 (within 3d) = do NOT initiate a new position — earnings gaps blow through stops; wait for the print. Earnings ⚡ (within 7d) = tighten stops, avoid adding. Analyst upgrades in the last 7d from top-tier firms (Goldman, JPM, Morgan Stanley, Barclays) are documented catalysts — cite them by firm + date + price target. "Analysts 30d: +5 bullish" = confirming institutional conviction. "-4 bearish" = warning sign. Downgrades within 3d of your entry = seriously consider passing.
+5g. SHORT INTEREST + SQUEEZE (when "Short:" line present): SI >20% of float + DTC >5d + uptrend + RVOL >2 + rising MoM = classic short-squeeze setup. If "🎯 SQUEEZE SETUP score N" appears, cite the score + the specific contributors (from the "Squeeze contributors:" bullet if present) and consider a tactical long — asymmetric upside as shorts cover. "⚠ high-SI" without the squeeze flag = high risk of gap-down on any bad news; require MORE conviction before longing. Falling MoM SI = shorts are already covering (upside partially spent) OR fundamentals validating (downside continuing) — read direction from price/trend.
 6. **DO NOT RESTATE THE USER'S UNREALIZED P/L IN PROSE.** The frontend's rec table and Holdings panel already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body but the app data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" / "up Y%" / "unrealized loss of $Z" in card bodies unless the number EXACTLY matches the cost basis in the LIFECYCLE block. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT echo this aggregate dollar figure in the advice cards. Use percentages, % of book, and per-position values, but never the total portfolio dollar amount.
 

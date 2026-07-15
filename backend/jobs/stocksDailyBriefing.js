@@ -27,6 +27,7 @@ import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
+import { getShortInterest, formatShortInterestLine } from "../services/stocksShortInterest.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
@@ -514,7 +515,11 @@ async function computeQuantSignals(profile, topN = 8) {
         getFundamentals(ticker, ccy).catch(() => ({ ok: false })),
         getCatalysts(ticker, ccy).catch(() => null),
       ]);
-      out[ticker] = { tech, fund, catalysts, ccy };
+      // Short interest reads bimonthly FINRA data (cheap Yahoo call, 24h
+      // cache) and takes optional tech context to compute the squeeze
+      // score — so it goes AFTER tech resolves.
+      const shortInterest = await getShortInterest(ticker, ccy, tech).catch(() => null);
+      out[ticker] = { tech, fund, catalysts, shortInterest, ccy };
     })
   );
   return out;
@@ -528,6 +533,8 @@ function formatQuantSignalsBlock(quantSignals) {
     lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
     const catLine = formatCatalystsLine(sig.catalysts);
     if (catLine) lines.push(`  ${catLine}`);
+    const siLine = formatShortInterestLine(sig.shortInterest);
+    if (siLine) lines.push(`  ${siLine}`);
     // Named setups — emit full evidence per detected pattern so the AI
     // can quote specific trigger prices and pattern mechanics, not just
     // "there's a bull flag."
@@ -752,6 +759,7 @@ SENIOR-ANALYST EXPECTATIONS:
 5d. NAMED SETUPS (this is what separates swing pros from tourists): if a "Setup [...]" block is present under a ticker, USE THE EVIDENCE BULLETS DIRECTLY. They contain the specific trigger price ("break above $X on RVOL >1.5"), pattern mechanics (contractions, pole size, flag range), and named framework (Minervini VCP, O'Neil pocket pivot, bull flag). Cite the setup name, the score, and the trigger price VERBATIM in your recommendation — e.g. "VCP score 85 with 4 shrinking contractions [7.1% → 4.3% → 2.8% → 1.9%] — long trigger $184.20 on RVOL >1.5, stop $178.40 (2.5×ATR)." Do not invent setups; only cite ones present in the block. If NO setup block appears, the ticker has no named pattern — do NOT fabricate one.
 5e. MTF CONFLUENCE (when present): "🟢🟢🟢 ALIGNED UP" or "🔴🔴🔴 ALIGNED DOWN" in the technicals line means all timeframes agree — highest-conviction swings. "🟡 CONFLICTING FRAMES" = downgrade sizing. "⚪ mixed" = neutral. Cite the MTF verdict and adjust sizing accordingly.
 5f. CATALYSTS: use the "Catalysts:" line and "Analyst YYYY-MM-DD" bullets. Earnings 🔥 (≤3d) = do NOT enter new positions; earnings gaps blow through stops. Earnings ⚡ (≤7d) = tighten stops, avoid adding. Recent upgrades from Goldman/JPM/MS/Barclays are real catalysts — cite firm + date + PT. Net analyst score is a confirming signal (bullish/bearish); a fresh downgrade within 3d of the current setup is a warning.
+5g. SHORT SQUEEZE: "Short:" line shows SI% of float + DTC + MoM change. "🎯 SQUEEZE SETUP score ≥60" + confirming uptrend + RVOL = tactical long candidate (asymmetric upside as shorts cover). "⚠ high-SI" without squeeze flag = elevated gap-down risk. Cite the specific score + SI% + DTC when calling a squeeze play.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** The Holdings table and the rec rows already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body and the app's data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" or "up Y%" or "unrealized loss of $Z" in prose unless the number you write matches the Holdings table EXACTLY. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output. Discuss percentages, % of book, and individual position values, but never echo the total portfolio dollar amount.
 
