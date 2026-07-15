@@ -32,6 +32,8 @@ async function fetchDailyOHLC(ticker, days = 260) {
     const closes = q.close || [];
     const highs = q.high || [];
     const lows = q.low || [];
+    const opens = q.open || [];
+    const volumes = q.volume || [];
     const points = [];
     for (let i = 0; i < timestamps.length; i++) {
       if (closes[i] != null && Number.isFinite(closes[i])) {
@@ -40,6 +42,8 @@ async function fetchDailyOHLC(ticker, days = 260) {
           close: closes[i],
           high: Number.isFinite(highs[i]) ? highs[i] : closes[i],
           low: Number.isFinite(lows[i]) ? lows[i] : closes[i],
+          open: Number.isFinite(opens[i]) ? opens[i] : closes[i],
+          volume: Number.isFinite(volumes[i]) ? volumes[i] : 0,
         });
       }
     }
@@ -101,6 +105,74 @@ function recentCross(closes, lookback = 60) {
     prevSign = sign;
   }
   return null;
+}
+
+// Volume analytics — the missing swing-trade signal. Everything a swing
+// trader watches for volume-based edge in one pass over the last 30 days:
+//   • RVOL = today's volume / 20d avg — >2 means unusual interest
+//   • dry-up = 5d avg < 60% of 20d avg — coiled spring pre-breakout
+//   • climax bars = any bar >3x 20d avg in last 5 days — capitulation
+//     (down bar) or blow-off (up bar)
+//   • pocket pivot = today up AND today's volume > every DOWN day's
+//     volume of the prior 10 sessions (O'Neil / Morales signal)
+//   • OBV trend 10d = accumulation vs distribution direction
+function volumeAnalytics(points) {
+  if (!Array.isArray(points) || points.length < 21) return null;
+  const vols = points.map((p) => p.volume);
+  const last = points.length - 1;
+  const todayVol = vols[last];
+  const last20 = vols.slice(-21, -1); // prior 20 (exclude today)
+  const avg20 = last20.reduce((a, b) => a + b, 0) / 20;
+  if (!(avg20 > 0)) return null;
+  const rvol = todayVol / avg20;
+
+  const last5 = vols.slice(-5);
+  const avg5 = last5.reduce((a, b) => a + b, 0) / 5;
+  const dryUp = avg5 < avg20 * 0.6;
+  const dryUpRatioPct = (avg5 / avg20) * 100;
+
+  // Climax bars in last 5 sessions
+  const climax = [];
+  for (let i = points.length - 5; i < points.length; i++) {
+    if (i < 0) continue;
+    const r = vols[i] / avg20;
+    if (r >= 3) {
+      const up = points[i].close >= points[i].open;
+      climax.push({ daysAgo: points.length - 1 - i, rvol: +r.toFixed(1), direction: up ? "up (blow-off/breakout)" : "down (capitulation/panic)" });
+    }
+  }
+
+  // Pocket pivot: today up on volume > every down-day volume in the prior 10 sessions
+  const todayUp = points[last].close > points[last].open;
+  let pocketPivot = false;
+  if (todayUp && points.length >= 11) {
+    const prior10 = points.slice(-11, -1);
+    const maxDownVol = Math.max(0, ...prior10.filter((p) => p.close < p.open).map((p) => p.volume));
+    pocketPivot = todayVol > maxDownVol && maxDownVol > 0;
+  }
+
+  // OBV — cumulative signed volume — last 10-day slope tells accumulation direction
+  let obv = 0;
+  const obvSeries = [obv];
+  for (let i = 1; i < points.length; i++) {
+    const dir = points[i].close > points[i - 1].close ? 1 : points[i].close < points[i - 1].close ? -1 : 0;
+    obv += dir * vols[i];
+    obvSeries.push(obv);
+  }
+  const obv10 = obvSeries.slice(-10);
+  const obvSlope = obv10[obv10.length - 1] - obv10[0];
+  const obvTrend = obvSlope > 0 ? "accumulation" : obvSlope < 0 ? "distribution" : "flat";
+
+  return {
+    todayVolume: Math.round(todayVol),
+    avg20dVolume: Math.round(avg20),
+    rvol: +rvol.toFixed(2),
+    dryUp,
+    dryUpRatioPct: +dryUpRatioPct.toFixed(0),
+    climaxBars: climax,
+    pocketPivot,
+    obvTrend,
+  };
 }
 
 // Fibonacci retracement from swing high↔low over `lookback` days of intraday
@@ -250,6 +322,9 @@ export async function getTechnicals(ticker, currency = null) {
         // Fibonacci retracement over a 6-month swing window — pullback /
         // bounce zones the AI can cite as concrete support/resistance.
         fib: fibonacciRetracement(points, 120),
+        // Volume — RVOL, dry-up, climax bars, pocket pivot, OBV trend.
+        // The single biggest missing signal for swing setups.
+        volume: volumeAnalytics(points),
       };
     }
   } catch (e) {
@@ -287,7 +362,28 @@ export function formatTechnicalsLine(t) {
   }
   const fibLine = formatFibLine(t.fib);
   if (fibLine) parts.push(fibLine);
+  const volLine = formatVolumeLine(t.volume);
+  if (volLine) parts.push(volLine);
   return parts.join(" · ");
+}
+
+// One-line volume summary. Traders read the whole story from these:
+// RVOL says "unusual attention today," dry-up says "coiled spring,"
+// climax says "something just happened at capitulation intensity,"
+// pocket pivot is the O'Neil breakout confirmation signal, OBV says
+// "smart money quietly accumulating or unloading."
+export function formatVolumeLine(v) {
+  if (!v) return null;
+  const parts = [];
+  const rvolFlag = v.rvol >= 3 ? " 🔥" : v.rvol >= 2 ? " ⚡" : v.rvol < 0.5 ? " 💤" : "";
+  parts.push(`RVOL ${v.rvol.toFixed(2)}x${rvolFlag}`);
+  if (v.dryUp) parts.push(`💤 dry-up (5d vol ${v.dryUpRatioPct}% of 20d avg — pre-breakout compression)`);
+  if (Array.isArray(v.climaxBars) && v.climaxBars.length) {
+    parts.push(`💥 climax bar${v.climaxBars.length > 1 ? "s" : ""}: ${v.climaxBars.map((c) => `${c.daysAgo}d ago ${c.rvol}x ${c.direction}`).join(", ")}`);
+  }
+  if (v.pocketPivot) parts.push(`🎯 POCKET PIVOT (up-day vol > every down-day vol of prior 10 sessions — O'Neil breakout signal)`);
+  parts.push(`OBV ${v.obvTrend}`);
+  return `Volume: ${parts.join(" · ")}`;
 }
 
 // One-line Fib summary for prompt injection. Shows the 6mo swing high/low,
