@@ -524,6 +524,15 @@ function formatQuantSignalsBlock(quantSignals) {
     lines.push(`${ticker} (${sig.ccy}):`);
     lines.push(`  Fundamentals: ${formatFundamentalsLine(sig.fund)}`);
     lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
+    // Named setups — emit full evidence per detected pattern so the AI
+    // can quote specific trigger prices and pattern mechanics, not just
+    // "there's a bull flag."
+    if (Array.isArray(sig.tech?.setups) && sig.tech.setups.length > 0) {
+      for (const s of sig.tech.setups) {
+        lines.push(`  Setup [${s.type} ${s.score}]: ${s.name}`);
+        for (const e of s.evidence) lines.push(`    · ${e}`);
+      }
+    }
   }
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
@@ -727,6 +736,7 @@ SENIOR-ANALYST EXPECTATIONS:
 5. Cite SPECIFIC numbers (RSI 32, P/E 87, ATR $14, 2.5×ATR stop = $407) not vague descriptors.
 5b. FIB RETRACEMENT: the technicals block shows Fibonacci levels drawn from the last 6mo swing. Anchor entry/exit targets to REAL Fib levels when applicable — e.g. "add on pullback to 61.8% Fib at $X" or "trim into 78.6% resistance at $Y". If the ticker is IN THE GOLDEN POCKET (61.8-65% retrace) and other signals confirm, that is a high-conviction reversal setup — say so and size accordingly. Do not invent Fib levels; only quote the numbers in the technicals block.
 5c. VOLUME (swing-trade edge): the technicals Volume block is CRITICAL. Interpret it as follows: RVOL >2 = unusual attention; DRY-UP flag = pre-breakout compression (bullish setup); CLIMAX BAR up = blow-off top or breakout confirmation depending on context; CLIMAX BAR down = capitulation (often a bottoming signal); POCKET PIVOT flag = O'Neil early-buy signal (add on this); OBV accumulation = smart money buying, distribution = selling. CITE THESE EXPLICITLY: don't say "volume looks good," say "RVOL 2.4x + pocket pivot + OBV accumulation → institutional accumulation confirmed, add on this bar." Volume with no price/pattern context is noise; volume WITH a setup is edge.
+5d. NAMED SETUPS (this is what separates swing pros from tourists): if a "Setup [...]" block is present under a ticker, USE THE EVIDENCE BULLETS DIRECTLY. They contain the specific trigger price ("break above $X on RVOL >1.5"), pattern mechanics (contractions, pole size, flag range), and named framework (Minervini VCP, O'Neil pocket pivot, bull flag). Cite the setup name, the score, and the trigger price VERBATIM in your recommendation — e.g. "VCP score 85 with 4 shrinking contractions [7.1% → 4.3% → 2.8% → 1.9%] — long trigger $184.20 on RVOL >1.5, stop $178.40 (2.5×ATR)." Do not invent setups; only cite ones present in the block. If NO setup block appears, the ticker has no named pattern — do NOT fabricate one.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** The Holdings table and the rec rows already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body and the app's data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" or "up Y%" or "unrealized loss of $Z" in prose unless the number you write matches the Holdings table EXACTLY. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output. Discuss percentages, % of book, and individual position values, but never echo the total portfolio dollar amount.
 

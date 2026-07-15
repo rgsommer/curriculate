@@ -175,6 +175,145 @@ function volumeAnalytics(points) {
   };
 }
 
+// Named-setup detectors — turn OHLC+volume into the specific swing-trade
+// patterns human traders name (VCP, bull flag, coiled spring, inside day,
+// pocket pivot). Each setup carries a score + concrete evidence + a
+// TRIGGER price the trader can act on. The AI cites these directly
+// instead of guessing structure from prose.
+function detectSetups(points, tech, vol) {
+  const setups = [];
+  if (!Array.isArray(points) || points.length < 15) return setups;
+  const last = points.length - 1;
+  const closes = points.map((p) => p.close);
+
+  // Inside day — today's H<yesterday's H AND today's L>yesterday's L.
+  // Tight-range continuation; break of parent bar's high/low is the trigger.
+  if (points.length >= 2) {
+    const t = points[last], y = points[last - 1];
+    if (t.high < y.high && t.low > y.low) {
+      setups.push({
+        name: "Inside day",
+        type: "neutral",
+        score: 60,
+        evidence: [
+          `Today's range [$${t.low.toFixed(2)}–$${t.high.toFixed(2)}] contained within yesterday's [$${y.low.toFixed(2)}–$${y.high.toFixed(2)}]`,
+          `LONG trigger: break above $${y.high.toFixed(2)}. SHORT trigger: break below $${y.low.toFixed(2)}.`,
+        ],
+      });
+    }
+  }
+
+  // Pocket pivot (surfaced from volumeAnalytics as a named setup).
+  if (vol?.pocketPivot) {
+    setups.push({
+      name: "Pocket pivot",
+      type: "bullish",
+      score: 75,
+      evidence: [
+        `Today's up-day volume exceeds every down-day volume of the prior 10 sessions`,
+        `O'Neil/Morales early-entry signal — institutional accumulation before mainstream attention`,
+      ],
+    });
+  }
+
+  // Coiled spring — 20d vol compressed to <70% of 60d vol while price still above SMA50.
+  if (points.length >= 60 && tech?.ok && tech.priceVsSma50 != null) {
+    const returns = [];
+    for (let i = 1; i < points.length; i++) returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    const sd = (a) => { const m = a.reduce((s, x) => s + x, 0) / a.length; return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / a.length); };
+    const v20 = sd(returns.slice(-20));
+    const v60 = sd(returns.slice(-60));
+    if (v60 > 0 && v20 / v60 < 0.70 && tech.priceVsSma50 >= 0) {
+      setups.push({
+        name: "Coiled spring (volatility squeeze)",
+        type: "bullish",
+        score: 70,
+        evidence: [
+          `20d realized vol is ${((v20 / v60) * 100).toFixed(0)}% of 60d — coiling`,
+          `Price ${tech.priceVsSma50 >= 0 ? "above" : "below"} SMA50 (+${tech.priceVsSma50.toFixed(1)}%) — uptrend intact`,
+          `Breakout trigger: any day closing >2×20d ATR above today on RVOL >1.5`,
+        ],
+      });
+    }
+  }
+
+  // Bull flag — 5-day pole ≥10%, then 3-8 day tight consolidation with declining volume.
+  if (points.length >= 15) {
+    for (let poleEnd = last - 3; poleEnd >= last - 8; poleEnd--) {
+      if (poleEnd < 5) continue;
+      const poleStart = poleEnd - 5;
+      const poleGain = (points[poleEnd].close - points[poleStart].close) / points[poleStart].close;
+      if (poleGain < 0.10) continue;
+      const flag = points.slice(poleEnd + 1);
+      if (flag.length < 3 || flag.length > 8) continue;
+      const flagHi = Math.max(...flag.map((p) => p.high));
+      const flagLo = Math.min(...flag.map((p) => p.low));
+      const flagRange = (flagHi - flagLo) / points[poleEnd].close;
+      if (flagRange > 0.10) continue;
+      const poleVolAvg = points.slice(poleStart, poleEnd + 1).reduce((s, p) => s + p.volume, 0) / 6;
+      const flagVolAvg = flag.reduce((s, p) => s + p.volume, 0) / flag.length;
+      if (poleVolAvg <= 0 || flagVolAvg >= poleVolAvg) continue;
+      const poleHi = Math.max(...points.slice(poleStart, poleEnd + 1).map((p) => p.high));
+      setups.push({
+        name: "Bull flag",
+        type: "bullish",
+        score: 78,
+        evidence: [
+          `Pole: +${(poleGain * 100).toFixed(1)}% over 5 sessions ending ${last - poleEnd}d ago`,
+          `Flag: ${flag.length}-day consolidation, range ${(flagRange * 100).toFixed(1)}%`,
+          `Volume declining in flag to ${((flagVolAvg / poleVolAvg) * 100).toFixed(0)}% of pole avg — clean pattern`,
+          `LONG trigger: break above $${poleHi.toFixed(2)} on RVOL >1.5`,
+        ],
+      });
+      break;
+    }
+  }
+
+  // VCP — 3+ local peaks with each pullback shallower than the last, final contraction <8%.
+  if (points.length >= 60) {
+    const peaks = [];
+    for (let i = 3; i < points.length - 3; i++) {
+      const h = points[i].high;
+      let isPeak = true;
+      for (let j = 1; j <= 3; j++) {
+        if (points[i - j].high >= h || points[i + j].high >= h) { isPeak = false; break; }
+      }
+      if (isPeak) peaks.push({ idx: i, high: h });
+    }
+    if (peaks.length >= 3) {
+      const recent = peaks.slice(-4);
+      const contractions = [];
+      for (let i = 0; i < recent.length - 1; i++) {
+        const p1 = recent[i], p2 = recent[i + 1];
+        const troughLow = Math.min(...points.slice(p1.idx, p2.idx + 1).map((x) => x.low));
+        contractions.push((p1.high - troughLow) / p1.high);
+      }
+      const lastPeak = recent[recent.length - 1];
+      const finalTrough = Math.min(...points.slice(lastPeak.idx).map((x) => x.low));
+      const finalDepth = (lastPeak.high - finalTrough) / lastPeak.high;
+      contractions.push(finalDepth);
+      let shrinking = true;
+      for (let i = 1; i < contractions.length; i++) {
+        if (contractions[i] > contractions[i - 1] * 0.85) { shrinking = false; break; }
+      }
+      if (shrinking && contractions.length >= 3 && finalDepth < 0.08) {
+        setups.push({
+          name: "VCP (Volatility Contraction Pattern)",
+          type: "bullish",
+          score: 85,
+          evidence: [
+            `${contractions.length} shrinking contractions: ${contractions.map((c) => (c * 100).toFixed(1) + "%").join(" → ")}`,
+            `Final contraction only ${(finalDepth * 100).toFixed(1)}% — tight pivot`,
+            `LONG trigger: break above pivot high $${lastPeak.high.toFixed(2)} on RVOL >1.5 (Minervini standard)`,
+          ],
+        });
+      }
+    }
+  }
+
+  return setups.sort((a, b) => b.score - a.score);
+}
+
 // Fibonacci retracement from swing high↔low over `lookback` days of intraday
 // bars. Traders treat these ratios as high-probability reversal zones — the
 // 61.8-65% band ("golden pocket") in particular. Direction is whichever
@@ -326,6 +465,9 @@ export async function getTechnicals(ticker, currency = null) {
         // The single biggest missing signal for swing setups.
         volume: volumeAnalytics(points),
       };
+      // Named-setup detection depends on tech + vol being computed —
+      // add it AFTER the main data block so it can consume them.
+      data.setups = detectSetups(points, data, data.volume);
     }
   } catch (e) {
     data = { ok: false, reason: e?.message || "fetch failed" };
@@ -364,7 +506,21 @@ export function formatTechnicalsLine(t) {
   if (fibLine) parts.push(fibLine);
   const volLine = formatVolumeLine(t.volume);
   if (volLine) parts.push(volLine);
+  const setupLine = formatSetupsLine(t.setups);
+  if (setupLine) parts.push(setupLine);
   return parts.join(" · ");
+}
+
+// One-line named-setup summary. Each setup shows type + score + name
+// so the AI can pick which to cite. The full evidence array lives on
+// t.setups for card UI or deeper reasoning.
+export function formatSetupsLine(setups) {
+  if (!Array.isArray(setups) || setups.length === 0) return null;
+  const parts = setups.slice(0, 3).map((s) => {
+    const emoji = s.type === "bullish" ? "🟢" : s.type === "bearish" ? "🔴" : "⚪";
+    return `${emoji} ${s.name} (${s.score})`;
+  });
+  return `Setups: ${parts.join(" · ")}`;
 }
 
 // One-line volume summary. Traders read the whole story from these:
