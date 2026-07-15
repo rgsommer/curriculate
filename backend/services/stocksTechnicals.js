@@ -103,6 +103,70 @@ function recentCross(closes, lookback = 60) {
   return null;
 }
 
+// Fibonacci retracement from swing high↔low over `lookback` days of intraday
+// bars. Traders treat these ratios as high-probability reversal zones — the
+// 61.8-65% band ("golden pocket") in particular. Direction is whichever
+// extreme was set MOST RECENTLY: if the high came after the low we're in an
+// uptrend and levels are pullback targets from the high; the reverse means
+// we're in a downtrend and levels are bounce targets from the low.
+function fibonacciRetracement(points, lookback = 120) {
+  if (!Array.isArray(points) || points.length < 20) return null;
+  const slice = points.slice(-lookback);
+  let hiIdx = 0, loIdx = 0;
+  for (let i = 1; i < slice.length; i++) {
+    if (slice[i].high > slice[hiIdx].high) hiIdx = i;
+    if (slice[i].low < slice[loIdx].low) loIdx = i;
+  }
+  const swingHigh = slice[hiIdx].high;
+  const swingLow = slice[loIdx].low;
+  if (!(swingHigh > swingLow)) return null;
+
+  const direction = hiIdx > loIdx ? "uptrend" : "downtrend";
+  const range = swingHigh - swingLow;
+  const ratios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  const levels = ratios.map((r) => ({
+    pct: +(r * 100).toFixed(1),
+    // Uptrend: 0% = high (nothing retraced), 100% = low (full retrace)
+    // Downtrend: 0% = low, 100% = high
+    price: direction === "uptrend"
+      ? swingHigh - range * r
+      : swingLow + range * r,
+  }));
+
+  const last = slice[slice.length - 1].close;
+  const sorted = [...levels].sort((a, b) => a.price - b.price);
+  let zoneLower = null, zoneUpper = null;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    if (last >= sorted[i].price && last <= sorted[i + 1].price) {
+      zoneLower = sorted[i]; zoneUpper = sorted[i + 1]; break;
+    }
+  }
+  let nearest = sorted[0], minDist = Math.abs(last - sorted[0].price);
+  for (const l of sorted) {
+    const d = Math.abs(last - l.price);
+    if (d < minDist) { minDist = d; nearest = l; }
+  }
+  const goldenPocket = direction === "uptrend"
+    ? { min: swingHigh - range * 0.65, max: swingHigh - range * 0.618 }
+    : { min: swingLow + range * 0.618, max: swingLow + range * 0.65 };
+  const inGoldenPocket = last >= goldenPocket.min && last <= goldenPocket.max;
+
+  return {
+    direction,
+    swingHigh, swingLow,
+    swingHighDaysAgo: slice.length - 1 - hiIdx,
+    swingLowDaysAgo: slice.length - 1 - loIdx,
+    lookbackDays: slice.length,
+    levels,
+    currentPrice: last,
+    nearestLevel: nearest,
+    nearestDistancePct: last ? (minDist / last) * 100 : null,
+    zoneLower, zoneUpper,
+    goldenPocket,
+    inGoldenPocket,
+  };
+}
+
 // Resolve the exchange listing to fetch from Yahoo. A CAD-held name with a
 // bare symbol (e.g. ENB) must hit the TSX listing (ENB.TO), not the US ADR —
 // otherwise the technicals (RSI/SMA/ATR/last price) are computed off the wrong
@@ -183,6 +247,9 @@ export async function getTechnicals(ticker, currency = null) {
         priceVsSma200: sma200 ? ((last - sma200) / sma200) * 100 : null,
         // Suggested 2.5-ATR stop level (the senior-analyst default)
         suggested25AtrStop: atr14 != null ? last - 2.5 * atr14 : null,
+        // Fibonacci retracement over a 6-month swing window — pullback /
+        // bounce zones the AI can cite as concrete support/resistance.
+        fib: fibonacciRetracement(points, 120),
       };
     }
   } catch (e) {
@@ -218,5 +285,30 @@ export function formatTechnicalsLine(t) {
     const stopStr = Number.isFinite(t.suggested25AtrStop) ? ` → 2.5×ATR stop $${t.suggested25AtrStop.toFixed(2)}` : "";
     parts.push(`ATR $${t.atr14.toFixed(2)}${pctStr}${stopStr}`);
   }
+  const fibLine = formatFibLine(t.fib);
+  if (fibLine) parts.push(fibLine);
   return parts.join(" · ");
+}
+
+// One-line Fib summary for prompt injection. Shows the 6mo swing high/low,
+// which direction the retracement is drawn from, where current price sits
+// relative to the nearest level, and whether we're in the "golden pocket"
+// (61.8-65% retrace — the highest-probability reversal zone). The AI uses
+// these as CONCRETE support/resistance anchors when picking entries/exits.
+export function formatFibLine(fib) {
+  if (!fib) return null;
+  const dir = fib.direction === "uptrend" ? "↑ from $" + fib.swingLow.toFixed(2) + " → $" + fib.swingHigh.toFixed(2)
+                                          : "↓ from $" + fib.swingHigh.toFixed(2) + " → $" + fib.swingLow.toFixed(2);
+  const near = fib.nearestLevel;
+  const dist = fib.nearestDistancePct != null ? ` (${fib.nearestDistancePct.toFixed(1)}% away)` : "";
+  const zone = fib.zoneLower && fib.zoneUpper
+    ? `zone ${fib.zoneLower.pct}%→${fib.zoneUpper.pct}% [$${fib.zoneLower.price.toFixed(2)}–$${fib.zoneUpper.price.toFixed(2)}]`
+    : "outside range";
+  const gp = fib.inGoldenPocket ? " · 🎯 GOLDEN POCKET (high-conviction reversal zone)" : "";
+  // Include the four most-watched levels explicitly so the AI can quote them.
+  const keyLevels = fib.levels
+    .filter((l) => [23.6, 38.2, 50, 61.8, 78.6].includes(l.pct))
+    .map((l) => `${l.pct}%=$${l.price.toFixed(2)}`)
+    .join(", ");
+  return `Fib ${fib.direction} ${dir} · ${zone} · nearest ${near.pct}%=$${near.price.toFixed(2)}${dist} · levels [${keyLevels}]${gp}`;
 }

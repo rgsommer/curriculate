@@ -340,6 +340,21 @@ export function deriveProjection({ tech, price, riskMode = "balanced", timeHoriz
   const risk = last - stop;
   const target = last + rr * risk;
   const entryLow = atr ? Math.max(stop, last - atr) : last * 0.97;
+
+  // Fib anchors: the nearest retracement level BELOW current price is a
+  // technical support (better limit-buy anchor than pure ATR), and the
+  // swing HIGH is a natural resistance target. The AI can cite these
+  // directly in entry/exit reasoning.
+  const fib = tech?.ok ? tech.fib : null;
+  let fibSupport = null, fibResistance = null, fibNote = null;
+  if (fib && Array.isArray(fib.levels)) {
+    const below = fib.levels.filter((l) => l.price < last).sort((a, b) => b.price - a.price)[0];
+    const above = fib.levels.filter((l) => l.price > last).sort((a, b) => a.price - b.price)[0];
+    if (below) fibSupport = { pct: below.pct, price: Number(below.price.toFixed(2)) };
+    if (above) fibResistance = { pct: above.pct, price: Number(above.price.toFixed(2)) };
+    if (fib.inGoldenPocket) fibNote = `🎯 IN GOLDEN POCKET (61.8-65% retrace) — high-conviction reversal zone`;
+  }
+
   return {
     entryZone: `${entryLow.toFixed(2)}–${last.toFixed(2)}`,
     target: Number(target.toFixed(2)),
@@ -349,6 +364,9 @@ export function deriveProjection({ tech, price, riskMode = "balanced", timeHoriz
     timeframe: TIMEFRAME_BY_HORIZON[timeHorizon] || "~3–9 months",
     rr,
     basis: `Rules-based: 2.5×ATR stop, ${rr}:1 reward target`,
+    fibSupport,
+    fibResistance,
+    fibNote,
   };
 }
 
