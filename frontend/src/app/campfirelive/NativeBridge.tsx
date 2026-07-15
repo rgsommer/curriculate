@@ -93,10 +93,20 @@ export default function NativeBridge() {
     });
 
     // 3: native push registration (best-effort; backend send wired in phase 2).
+    //
+    // ANDROID GUARD: @capacitor/push-notifications uses Firebase Cloud Messaging on
+    // Android. We have NOT configured Firebase yet (no google-services.json), so calling
+    // push.register() makes the native side throw "Default FirebaseApp is not initialized"
+    // — an unhandled Java exception that crashes the whole app on launch (the JS try/catch
+    // below can't catch a native crash). This is what Google flagged under the Broken
+    // Functionality policy. Skip push on Android until FCM is set up; iOS is unaffected
+    // (it degrades gracefully without the push entitlement). Re-enable by dropping this
+    // guard once android/app/google-services.json exists.
+    const isAndroid = c.getPlatform?.() === "android";
     (async () => {
       try {
         const push = plugins.PushNotifications;
-        if (!push) return;
+        if (!push || isAndroid) return;
         let perm = await push.checkPermissions();
         if (perm.receive === "prompt") perm = await push.requestPermissions();
         if (perm.receive !== "granted") return;
