@@ -28,6 +28,7 @@ import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnical
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
 import { getShortInterest, formatShortInterestLine } from "../services/stocksShortInterest.js";
+import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
@@ -186,6 +187,12 @@ export async function monitorOpenRecs(email) {
 
     if (targetHit) {
       updates.push({ id: rec._id, set: { status: "target-hit", hitAt: now, hitPrice: px, lastCheckedAt: now, lastCheckedPrice: px } });
+      // Auto-emit a companion SELL rec so the BUY→SELL trail is complete
+      // in the /advice history — no orphan BUYs marked "target-hit" with
+      // no persisted exit action.
+      if (rec.action === "BUY") {
+        await insertAutoSellTrail({ buyRec: rec, hitPrice: px, hitAt: now, reason: "target-hit" });
+      }
       const dir = rec.action === "BUY" ? "above target" : "below target";
       const exit = rec.action === "BUY" ? "Consider TRIMming to lock in gains." : "Consider re-entering the position.";
       targetAlerts.push(
@@ -193,6 +200,9 @@ export async function monitorOpenRecs(email) {
       );
     } else if (stopHit) {
       updates.push({ id: rec._id, set: { status: "stop-hit", hitAt: now, hitPrice: px, lastCheckedAt: now, lastCheckedPrice: px } });
+      if (rec.action === "BUY") {
+        await insertAutoSellTrail({ buyRec: rec, hitPrice: px, hitAt: now, reason: "stop-hit" });
+      }
       const exit = rec.action === "BUY"
         ? `Thesis invalidated. **SELL the position** at market unless you have a high-conviction reason to override.`
         : `Position is moving against you. **Cover / re-evaluate the SHORT thesis** now.`;
@@ -1069,6 +1079,9 @@ export async function runDailyBriefing(opts = {}) {
       // Persist actionable recs for the scorecard
       const recs = parseRecsFromBriefing(md);
       if (recs.length) {
+        // Ensure every BUY ships with target + stop — auto-fill from ATR
+        // if the AI omitted them so no rec goes un-monitorable.
+        await enrichRecsWithExitDefaults(recs);
         await StocksAdviceRec.insertMany(
           recs.map((r) => ({
             email: p.email,
@@ -1182,6 +1195,9 @@ export async function sendBriefingForUser(p, sendKey) {
 
     const recs = parseRecsFromBriefing(md);
     if (recs.length) {
+      // Fill missing exit levels before persisting so every BUY is
+      // monitorable and trail-eligible.
+      try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
       try {
         await StocksAdviceRec.insertMany(
           recs.map((r) => ({

@@ -27,6 +27,7 @@ import { processEightKsOnce } from "../jobs/stocksEightKPoll.js";
 import { analyzeTradeJournal } from "../services/stocksTradeJournalAnalysis.js";
 import { runBacktest } from "../services/stocksBacktest.js";
 import { runPointInTimeBacktest } from "../services/stocksPointInTimeBacktest.js";
+import { enrichRecsWithExitDefaults } from "../services/stocksRecTrail.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import { runDailyPickGenerationOnce, sweepOpenPicks, generateAndPersistPicksForUser } from "../jobs/stocksDailyPick.js";
 import {
@@ -1436,6 +1437,9 @@ async function finalizeAdvice({ email, profile, textOut, sources = [] }) {
   });
   let inserted = [];
   if (recsToSave.length) {
+    // Fill missing target/stop from ATR so every BUY has a monitorable
+    // exit plan before it lands in Mongo.
+    try { await enrichRecsWithExitDefaults(recsToSave); } catch { /* ignore */ }
     try {
       inserted = await StocksAdviceRec.insertMany(recsToSave);
     } catch (e) { console.warn("advice-rec save warning:", e?.message); }
@@ -2002,6 +2006,7 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     });
     let inserted = [];
     if (recsToSave.length) {
+      try { await enrichRecsWithExitDefaults(recsToSave); } catch { /* ignore */ }
       try { inserted = await StocksAdviceRec.insertMany(recsToSave); } catch (e) {
         console.warn("consensus rec save warning:", e?.message);
       }
@@ -2307,15 +2312,18 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       // them when the client is just sending a previously-previewed briefing).
       const recs = parseRecsFromBriefing(markdown);
       if (recs.length) {
-        StocksAdviceRec.insertMany(
-          recs.map((r) => ({
-            email: profile.email,
-            generatedAt: new Date(),
-            source: "ai",
-            ...r,
-            rationale: "On-demand briefing",
-          }))
-        ).catch((e) => console.warn("brief-recs save warning:", e?.message));
+        (async () => {
+          try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
+          await StocksAdviceRec.insertMany(
+            recs.map((r) => ({
+              email: profile.email,
+              generatedAt: new Date(),
+              source: "ai",
+              ...r,
+              rationale: "On-demand briefing",
+            }))
+          );
+        })().catch((e) => console.warn("brief-recs save warning:", e?.message));
         tracked = recs.length;
       }
     }

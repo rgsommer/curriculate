@@ -10,7 +10,14 @@ const StocksAdviceRecSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, lowercase: true, index: true },
     generatedAt: { type: Date, required: true, default: Date.now, index: true },
-    source: { type: String, enum: ["ai", "rule"], default: "ai" },
+    source: { type: String, enum: ["ai", "rule", "auto-sell-trail"], default: "ai" },
+    // Set on trail-SELL recs auto-emitted when a BUY rec's target or stop
+    // fires, so /advice history shows the full BUY→SELL round trip.
+    linkedBuyRecId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksAdviceRec", default: null, index: true },
+    // Set on BUY recs whose targets/stops were AUTO-FILLED from technicals
+    // when the AI omitted them — so we can audit the derivation later
+    // (rather than silently attributing default values to the AI's judgment).
+    exitLevelsFilledBy: { type: String, enum: [null, "ai", "atr-defaults"], default: null },
 
     // Parsed from the recommendation body
     ticker: { type: String, required: true, uppercase: true },
