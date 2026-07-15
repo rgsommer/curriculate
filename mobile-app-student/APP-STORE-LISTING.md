@@ -44,7 +44,7 @@ What you can do:
 • See your team climb the live leaderboard
 
 Made for classrooms:
-• Works on iPhone, iPad, and Android tablets
+• Works on iPhone and iPad
 • Fast join-by-code — students are playing in seconds
 • Built for class sets of shared devices
 
@@ -113,3 +113,12 @@ No account, purchase, or teacher device is required to review the app.
 ## 5. Age Rating questionnaire
 
 Answer **None / No** to every content question (violence, profanity, sexual content, gambling, horror, mature/suggestive, contests, unrestricted web). Result: **4+**.
+
+---
+
+## 6. App Review history / standing answers
+
+**Rejection 2026-07-15 (v1.0 build 6), two items — both resolved:**
+
+- **2.3.10 Accurate Metadata:** description mentioned "Android tablets." Fix: description must not reference other platforms. Bullet changed to "Works on iPhone and iPad" (Android line is Play-only). Keep all Apple metadata Android-free.
+- **2.1(b) Information Needed (business model):** standing answer — the student app is **free, no account, no IAP, no paid unlocks**. Students join a teacher-hosted session with a room code and never pay. Teachers subscribe separately on curriculate.net (B2B SaaS, on the web, outside the app); that purchase is never surfaced, linked, or unlocked in the student app. No enterprise services are sold in-app. Reply with these answers verbatim if 2.1(b) recurs.
