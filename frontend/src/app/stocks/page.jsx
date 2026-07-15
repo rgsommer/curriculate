@@ -5261,6 +5261,20 @@ function HighConvictionCard({ pick, rank }) {
             <span><span style={{ color: "var(--sa-muted)" }}>Target:</span> <b>${mf.projection.target} {ccy}</b></span>
             <span><span style={{ color: "var(--sa-muted)" }}>Stop:</span> <b>${mf.projection.stop} {ccy}</b></span>
           </div>
+          {(mf.projection.fibSupport || mf.projection.fibResistance || mf.projection.fibNote) && (
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--sa-border)", fontSize: 11.5 }}>
+              <span style={{ color: "var(--sa-muted)", fontWeight: 600 }}>Fib anchors:</span>
+              {mf.projection.fibSupport && (
+                <span><span style={{ color: "var(--sa-muted)" }}>support</span> <b>{mf.projection.fibSupport.pct}% = ${mf.projection.fibSupport.price} {ccy}</b></span>
+              )}
+              {mf.projection.fibResistance && (
+                <span><span style={{ color: "var(--sa-muted)" }}>resistance</span> <b>{mf.projection.fibResistance.pct}% = ${mf.projection.fibResistance.price} {ccy}</b></span>
+              )}
+              {mf.projection.fibNote && (
+                <span style={{ color: "#a16207", fontWeight: 700 }}>{mf.projection.fibNote}</span>
+              )}
+            </div>
+          )}
           <div style={{ marginTop: 4, fontSize: 10.5, color: "var(--sa-muted)" }}>
             {mf.projection.basis} — mechanical projection, not a forecast.
           </div>
