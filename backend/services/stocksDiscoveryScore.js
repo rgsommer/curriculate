@@ -435,7 +435,9 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
   const sym = resolveSymbol(ticker, ccy);
 
   const [tech, history, getFund] = await Promise.all([
-    getTechnicals(ticker, ccy).catch(() => ({ ok: false })),
+    // Include multi-timeframe confluence — high-conviction picks earn
+    // the extra 2 FMP calls per ticker for the pro swing-workflow signal.
+    getTechnicals(ticker, ccy, { includeMultiTimeframe: true }).catch(() => ({ ok: false })),
     fetchYahooDaily(sym, "1y").catch(() => null),
     // Merge in getFundamentals (P/E, P/S, sector) if the FMP discovery fetch was thin
     getFundamentals(ticker, ccy).catch(() => ({ ok: false })),

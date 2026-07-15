@@ -390,10 +390,14 @@ function resolveSymbol(ticker, currency) {
   return t;
 }
 
-export async function getTechnicals(ticker, currency = null) {
+export async function getTechnicals(ticker, currency = null, opts = {}) {
   const now = Date.now();
   const sym = resolveSymbol(ticker, currency);
-  const cached = CACHE.get(sym);
+  const includeMtf = !!opts.includeMultiTimeframe;
+  // Cache key includes MTF flag so a call with mtf doesn't return a
+  // previously-cached record without it (and vice-versa).
+  const cacheKey = includeMtf ? `${sym}|mtf` : sym;
+  const cached = CACHE.get(cacheKey);
   if (cached && now - cached.fetchedAt < TTL_MS) return cached.data;
 
   let data;
@@ -468,12 +472,26 @@ export async function getTechnicals(ticker, currency = null) {
       // Named-setup detection depends on tech + vol being computed —
       // add it AFTER the main data block so it can consume them.
       data.setups = detectSetups(points, data, data.volume);
+
+      // Optional: multi-timeframe confluence (weekly + daily + 1h + 15m).
+      // Opt-in because it costs 2 FMP calls per ticker — cheap for
+      // discovery scans (~10 tickers) but expensive for briefings
+      // that fetch every holding (could hit 40+ FMP calls/day/user).
+      if (includeMtf) {
+        try {
+          const { getMultiTimeframeConfluence } = await import("./stocksIntradayFmp.js");
+          data.mtf = await getMultiTimeframeConfluence(sym, points, currency);
+        } catch (e) {
+          console.warn(`[technicals] mtf ${sym} failed: ${e?.message}`);
+          data.mtf = null;
+        }
+      }
     }
   } catch (e) {
     data = { ok: false, reason: e?.message || "fetch failed" };
   }
 
-  CACHE.set(sym, { fetchedAt: now, data });
+  CACHE.set(cacheKey, { fetchedAt: now, data });
   return data;
 }
 
@@ -508,7 +526,25 @@ export function formatTechnicalsLine(t) {
   if (volLine) parts.push(volLine);
   const setupLine = formatSetupsLine(t.setups);
   if (setupLine) parts.push(setupLine);
+  const mtfLine = formatMtfLineInline(t.mtf);
+  if (mtfLine) parts.push(mtfLine);
   return parts.join(" · ");
+}
+
+// Inlined so we don't need a circular ESM import back to
+// stocksIntradayFmp.js just for a string formatter.
+function formatMtfLineInline(mtf) {
+  if (!mtf) return null;
+  const emoji = mtf.confluence === "aligned"
+    ? (mtf.direction === "up" ? "🟢🟢🟢 ALIGNED UP" : "🔴🔴🔴 ALIGNED DOWN")
+    : mtf.confluence === "conflicting" ? "🟡 CONFLICTING FRAMES" : "⚪ mixed";
+  const per = [
+    `wk ${mtf.weekly?.bias || "—"}`,
+    `d ${mtf.daily?.bias || "—"}`,
+    `1h ${mtf.hourly?.bias || (mtf.hourlyBarsAvailable ? "—" : "no data")}`,
+    `15m ${mtf.min15?.bias || (mtf.min15BarsAvailable ? "—" : "no data")}`,
+  ].join(" · ");
+  return `MTF: ${emoji} [${per}]`;
 }
 
 // One-line named-setup summary. Each setup shows type + score + name

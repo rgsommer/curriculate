@@ -17,6 +17,7 @@ import cron from "node-cron";
 import { Resend } from "resend";
 import StocksAlert from "../models/StocksAlert.js";
 import { getTechnicals } from "../services/stocksTechnicals.js";
+import { getRealtimeQuote } from "../services/stocksIntradayFmp.js";
 
 const FROM = process.env.STOCKS_BRIEFING_FROM || "Stocks Advisor <noreply@curriculate.net>";
 const TZ = "America/New_York";
@@ -76,12 +77,32 @@ export async function processAlertsOnce() {
 
   for (const [key, group] of byTicker.entries()) {
     const [ticker, currency] = key.split("|");
-    let tech;
-    try { tech = await getTechnicals(ticker, currency); }
-    catch (e) { console.warn(`[stocks-alerts] fetch ${ticker} failed: ${e?.message}`); continue; }
-    if (!tech?.ok || tech.last == null) continue;
-    const price = tech.last;
-    const rvol = tech.volume?.rvol ?? null;
+    // Real-time quote from FMP (60s cache) — the whole point of the
+    // alerts cron. Falls back to Yahoo's cached daily close only if
+    // FMP is unavailable, so alerts still fire (just less timely).
+    let price = null;
+    let rvol = null;
+    let source = null;
+    try {
+      const rt = await getRealtimeQuote(ticker, currency);
+      if (rt?.price != null) {
+        price = rt.price;
+        source = "fmp-realtime";
+        // Compute RVOL from FMP's day volume vs avg volume.
+        if (rt.volume != null && rt.avgVolume) rvol = rt.volume / rt.avgVolume;
+      }
+    } catch (e) { console.warn(`[stocks-alerts] FMP quote ${ticker} failed: ${e?.message}`); }
+    if (price == null) {
+      try {
+        const tech = await getTechnicals(ticker, currency);
+        if (tech?.ok && tech.last != null) {
+          price = tech.last;
+          rvol = tech.volume?.rvol ?? null;
+          source = "yahoo-daily";
+        }
+      } catch (e) { console.warn(`[stocks-alerts] Yahoo fallback ${ticker} failed: ${e?.message}`); continue; }
+    }
+    if (price == null) continue;
 
     for (const a of group) {
       const priceHit = a.condition === "above" ? price >= a.price : price <= a.price;
@@ -100,7 +121,7 @@ export async function processAlertsOnce() {
           { $set: { active: false, triggeredAt: nowIso, triggeredPrice: price, triggeredRvol: rvol, lastCheckedAt: nowIso } }
         );
         fired++;
-        console.log(`[stocks-alerts] 🔔 ${a.email} · ${a.ticker} ${a.condition} $${a.price} @ $${price.toFixed(2)}${rvol != null ? ` (RVOL ${rvol.toFixed(2)}x)` : ""}`);
+        console.log(`[stocks-alerts] 🔔 ${a.email} · ${a.ticker} ${a.condition} $${a.price} @ $${price.toFixed(2)}${rvol != null ? ` (RVOL ${rvol.toFixed(2)}x)` : ""} via ${source}`);
       } catch (e) {
         console.warn(`[stocks-alerts] email/persist ${a.ticker} failed: ${e?.message}`);
       }
