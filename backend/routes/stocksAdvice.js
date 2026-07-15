@@ -22,6 +22,8 @@ import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import StocksAlert from "../models/StocksAlert.js";
 import { processAlertsOnce } from "../jobs/stocksAlerts.js";
+import StocksEightK from "../models/StocksEightK.js";
+import { processEightKsOnce } from "../jobs/stocksEightKPoll.js";
 import {
   generateBriefing,
   emailBriefing,
@@ -2792,6 +2794,41 @@ router.post("/alerts/:id/rearm", requireStocksAuth, async (req, res) => {
     res.json({ rearmed: true });
   } catch (err) {
     console.error("alerts rearm error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// SEC 8-K feed — recent material events for the user's tracked tickers
+// (portfolio + active alerts). Returned newest-first, ~30d default.
+router.get("/eightk-feed", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).select({ "positions.ticker": 1 }).lean();
+    const alerts = await StocksAlert.find({ email: req.stocksUser.email, active: true }).select({ ticker: 1 }).lean();
+    const tickers = new Set();
+    const norm = (t) => String(t || "").toUpperCase().replace(/\..*$/, "");
+    for (const p of profile?.positions || []) { const t = norm(p.ticker); if (t) tickers.add(t); }
+    for (const a of alerts) { const t = norm(a.ticker); if (t) tickers.add(t); }
+    if (tickers.size === 0) return res.json({ items: [], trackedTickers: [] });
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const items = await StocksEightK.find({ ticker: { $in: [...tickers] }, filedAt: { $gte: since } })
+      .sort({ filedAt: -1 })
+      .limit(50)
+      .lean();
+    res.json({ items, trackedTickers: [...tickers] });
+  } catch (err) {
+    console.error("eightk-feed error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// Force one 8-K poll cycle now — same processing the cron runs. Useful
+// for verifying setup or catching filings between the 15/60min ticks.
+router.post("/eightk-poll-now", requireStocksAuth, async (req, res) => {
+  try {
+    const stats = await processEightKsOnce({ sinceDaysBack: 7 });
+    res.json(stats);
+  } catch (err) {
+    console.error("eightk-poll-now error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });

@@ -5950,6 +5950,8 @@ function PerformanceView({ sessionToken }) {
 
       <AlertsCard sessionToken={sessionToken} />
 
+      <EightKFeedCard sessionToken={sessionToken} />
+
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
       <AdviceScorecardCard
         scorecard={scorecard}
@@ -7062,6 +7064,89 @@ function AlertsCard({ sessionToken }) {
             <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>No alerts yet. Arm one above.</div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function EightKFeedCard({ sessionToken }) {
+  const [items, setItems] = useState([]);
+  const [tracked, setTracked] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [polling, setPolling] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/eightk-feed`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (r.ok) { setItems(j.items || []); setTracked(j.trackedTickers || []); }
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, [sessionToken]);
+
+  const pollNow = async () => {
+    if (polling) return;
+    setPolling(true); setMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/eightk-poll-now`, {
+        method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      setMsg({ ok: true, text: `Polled ${j.tickersChecked} tickers · ${j.newFilings} new filings · ${j.emails} emails sent` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e?.message || "Poll failed" }); }
+    finally { setPolling(false); }
+  };
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>📄 SEC 8-K feed <span style={{ fontSize: 11, color: "var(--sa-muted)", fontWeight: 400 }}>(last 30d, {tracked.length} tickers tracked)</span></h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            Real-time material events (M&A, earnings, exec changes, restatements, bankruptcies) for your portfolio + alert tickers. High-signal items email you within ~15 min of filing.
+          </div>
+        </div>
+        <button className="sa-btn ghost" onClick={pollNow} disabled={polling}>{polling ? "Polling…" : "Poll now"}</button>
+      </div>
+
+      {msg && (
+        <div style={{ marginTop: 10, fontSize: 12.5, background: msg.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${msg.ok ? "#bbf7d0" : "#fecaca"}`, color: msg.ok ? "#166534" : "#991b1b", borderRadius: 8, padding: "8px 10px" }}>
+          {msg.text}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>Loading…</div>
+      ) : items.length === 0 ? (
+        <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>
+          {tracked.length === 0
+            ? "No tracked tickers — add positions or alerts, then filings will appear here."
+            : "No 8-K filings in last 30 days for tracked tickers. Click Poll now to check."}
+        </div>
+      ) : (
+        <div style={{ marginTop: 12 }}>
+          {items.map((f) => (
+            <div key={f._id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 10px", borderRadius: 6, background: f.highSignal ? "#fef3c7" : "var(--sa-panel-2)", fontSize: 12.5, marginBottom: 5 }}>
+              <b style={{ minWidth: 60 }}>{f.ticker}</b>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600 }}>
+                  {f.highSignal && <span style={{ color: "#92400e", marginRight: 6 }}>⚡</span>}
+                  {(f.itemLabels || []).slice(0, 2).join(" · ")}{(f.itemLabels || []).length > 2 ? ` +${f.itemLabels.length - 2} more` : ""}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 2 }}>
+                  Items {(f.itemNumbers || []).join(", ")} · {new Date(f.filedAt).toLocaleString()}
+                </div>
+              </div>
+              {f.url && <a href={f.url} target="_blank" rel="noopener noreferrer" className="sa-btn ghost" style={{ padding: "2px 8px", fontSize: 11 }}>SEC filing →</a>}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
