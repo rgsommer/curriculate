@@ -1,6 +1,11 @@
-import type { CapacitorConfig } from "@capacitor/cli";
+// Plain-JS Capacitor config (not .ts) on purpose: the Capacitor 6 CLI parses a
+// .ts config through the classic TypeScript API, which the newer native
+// TypeScript compiler (v7) no longer exposes — that combo throws
+// "Cannot read properties of undefined (reading 'CommonJS')". A .js config is
+// require()'d directly and sidesteps the TypeScript parser entirely.
 
-const config: CapacitorConfig = {
+/** @type {import('@capacitor/cli').CapacitorConfig} */
+const config = {
   appId: "net.curriculate.pngpay",
   appName: "PNGPay",
   webDir: "www",
@@ -56,4 +61,4 @@ const config: CapacitorConfig = {
   },
 };
 
-export default config;
+module.exports = config;
