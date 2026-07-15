@@ -37,6 +37,7 @@ import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMa
 import { briefingToAdviceCards } from "../jobs/stocksDailyBriefing.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
+import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
@@ -195,11 +196,12 @@ export async function computeQuantSignals(profile, topN = 8) {
       // ENB.TO) for BOTH feeds — otherwise technicals/last-price come from the
       // US ADR and the AI reasons (and the verified-prices block anchors) on
       // the wrong market.
-      const [tech, fund] = await Promise.all([
+      const [tech, fund, catalysts] = await Promise.all([
         getTechnicals(a.ticker, ccy).catch(() => ({ ok: false })),
         getFundamentals(a.ticker, ccy).catch(() => ({ ok: false })),
+        getCatalysts(a.ticker, ccy).catch(() => null),
       ]);
-      out[a.ticker] = { tech, fund, ccy };
+      out[a.ticker] = { tech, fund, catalysts, ccy };
     })
   );
   return out;
@@ -212,10 +214,19 @@ function formatQuantSignalsBlock(quantSignals) {
     lines.push(`${ticker} (${sig.ccy}):`);
     lines.push(`  Fundamentals: ${formatFundamentalsLine(sig.fund)}`);
     lines.push(`  Technicals:   ${formatTechnicalsLine(sig.tech)}`);
+    const catLine = formatCatalystsLine(sig.catalysts);
+    if (catLine) lines.push(`  ${catLine}`);
     if (Array.isArray(sig.tech?.setups) && sig.tech.setups.length > 0) {
       for (const s of sig.tech.setups) {
         lines.push(`  Setup [${s.type} ${s.score}]: ${s.name}`);
         for (const e of s.evidence) lines.push(`    · ${e}`);
+      }
+    }
+    if (Array.isArray(sig.catalysts?.analysts) && sig.catalysts.analysts.length > 0) {
+      const top = sig.catalysts.analysts.slice(0, 5);
+      for (const a of top) {
+        const pt = a.priceTarget != null ? ` → PT $${a.priceTarget}` : "";
+        lines.push(`    · Analyst ${a.date}: ${a.firm} ${a.action}${a.priorGrade ? ` (${a.priorGrade}→${a.newGrade})` : (a.newGrade ? ` (${a.newGrade})` : "")}${pt}`);
       }
     }
   }
@@ -489,6 +500,7 @@ SENIOR-ANALYST EXPECTATIONS (read carefully — what separates this from generic
 5c. VOLUME: the technicals block includes a Volume line — this is the swing-trade edge. RVOL >2 = unusual attention; DRY-UP flag = pre-breakout compression; CLIMAX BAR (up) = blow-off or breakout confirmation; CLIMAX BAR (down) = capitulation / potential bottom; POCKET PIVOT flag = O'Neil early-entry signal; OBV trend = smart-money direction. QUOTE the specific numbers ("RVOL 2.4x with pocket pivot + OBV accumulation") not vague descriptions ("volume is strong").
 5d. NAMED SETUPS: if a "Setup [...]" block is present under a ticker, USE THE EVIDENCE BULLETS DIRECTLY — they carry the exact trigger price, pattern mechanics, and named framework (VCP, bull flag, pocket pivot, coiled spring, inside day). Quote the setup name + score + trigger price verbatim ("VCP score 85, long trigger $184.20 on RVOL >1.5, stop $178.40"). Do NOT invent setups — only ones present in the block. No setup block = no named pattern; do not fabricate.
 5e. MULTI-TIMEFRAME CONFLUENCE (MTF): if the technicals line includes "MTF: 🟢🟢🟢 ALIGNED UP", weekly + daily + hourly + 15m frames all point the same direction — this is the highest-conviction swing setup. "🔴🔴🔴 ALIGNED DOWN" = same conviction bearish. "🟡 CONFLICTING FRAMES" = timeframes disagree — LOWER conviction, wait for alignment before sizing up. "⚪ mixed" = mostly neutral. Cite the MTF verdict in your rec and adjust sizing: aligned = full size, mixed = half size, conflicting = pass or wait.
+5f. CATALYSTS (earnings + analyst actions): when a "Catalysts:" line or "Analyst YYYY-MM-DD" bullets are present, USE THEM DIRECTLY. Earnings 🔥 (within 3d) = do NOT initiate a new position — earnings gaps blow through stops; wait for the print. Earnings ⚡ (within 7d) = tighten stops, avoid adding. Analyst upgrades in the last 7d from top-tier firms (Goldman, JPM, Morgan Stanley, Barclays) are documented catalysts — cite them by firm + date + price target. "Analysts 30d: +5 bullish" = confirming institutional conviction. "-4 bearish" = warning sign. Downgrades within 3d of your entry = seriously consider passing.
 6. **DO NOT RESTATE THE USER'S UNREALIZED P/L IN PROSE.** The frontend's rec table and Holdings panel already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body but the app data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" / "up Y%" / "unrealized loss of $Z" in card bodies unless the number EXACTLY matches the cost basis in the LIFECYCLE block. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT echo this aggregate dollar figure in the advice cards. Use percentages, % of book, and per-position values, but never the total portfolio dollar amount.
 

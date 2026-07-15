@@ -1020,6 +1020,13 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
       hypePenaltyApplied: !!p.hypePenaltyApplied,
       dataFlags,
       sources: arr(p.sources).filter((s) => s && s.url).map((s) => ({ title: s.title || s.url, url: s.url })),
+      // Real catalysts from FMP (earnings date + recent analyst actions)
+      // so the card can render them next to the AI's narrative.
+      catalystsData: c.raw?.catalysts ? {
+        nextEarnings: c.raw.catalysts.earnings || null,
+        analystSummary: c.raw.catalysts.analystSummary || null,
+        recentAnalysts: (c.raw.catalysts.analysts || []).slice(0, 5),
+      } : null,
     };
 
     // Persist (upsert by email+ticker+day) — score mirrors weightedScore so

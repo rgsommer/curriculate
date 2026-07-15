@@ -14,6 +14,7 @@
 
 import { getTechnicals } from "./stocksTechnicals.js";
 import { getFundamentals } from "./stocksFundamentals.js";
+import { getCatalysts } from "./stocksCatalystsFmp.js";
 
 // ── Risk-mode weight presets (each sums to 1.0) ────────────────────────
 // "balanced" matches the spec exactly. The others re-tilt emphasis without
@@ -434,13 +435,15 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
   const ccy = currency || "USD";
   const sym = resolveSymbol(ticker, ccy);
 
-  const [tech, history, getFund] = await Promise.all([
+  const [tech, history, getFund, catalysts] = await Promise.all([
     // Include multi-timeframe confluence — high-conviction picks earn
     // the extra 2 FMP calls per ticker for the pro swing-workflow signal.
     getTechnicals(ticker, ccy, { includeMultiTimeframe: true }).catch(() => ({ ok: false })),
     fetchYahooDaily(sym, "1y").catch(() => null),
     // Merge in getFundamentals (P/E, P/S, sector) if the FMP discovery fetch was thin
     getFundamentals(ticker, ccy).catch(() => ({ ok: false })),
+    // Earnings date + analyst actions — swing-catalyst awareness
+    getCatalysts(ticker, ccy).catch(() => null),
   ]);
 
   // Merge the two fundamentals sources (discovery FMP fetch + getFundamentals)
@@ -480,7 +483,7 @@ export async function computeDeterministicFactors({ ticker, currency, marketCap,
 
   return {
     sub: { fundamentals, momentum, technical, riskControl },
-    raw: { tech, returns, relStrength6mPp, fundamentals: f, liquidityUsdPerDay },
+    raw: { tech, returns, relStrength6mPp, fundamentals: f, liquidityUsdPerDay, catalysts },
     moonshot: { preParabolic, realityLag },
   };
 }

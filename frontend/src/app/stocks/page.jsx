@@ -5303,6 +5303,33 @@ function HighConvictionCard({ pick, rank }) {
         </div>
       )}
 
+      {mf.catalystsData && (mf.catalystsData.nextEarnings || (mf.catalystsData.recentAnalysts?.length > 0)) && (
+        <div style={{ marginTop: 10, fontSize: 12, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#1e40af", marginBottom: 4 }}>🗓 Catalysts</div>
+          {mf.catalystsData.nextEarnings && (
+            <div style={{ marginTop: 4 }}>
+              <b>Next earnings:</b> {mf.catalystsData.nextEarnings.date} ({mf.catalystsData.nextEarnings.time?.toUpperCase() || "—"}) — in <b style={{ color: mf.catalystsData.nextEarnings.daysAway <= 3 ? "#991b1b" : mf.catalystsData.nextEarnings.daysAway <= 7 ? "#92400e" : "inherit" }}>{mf.catalystsData.nextEarnings.daysAway}d</b>
+              {mf.catalystsData.nextEarnings.epsEstimate != null && <span style={{ color: "var(--sa-muted)" }}> · est EPS ${mf.catalystsData.nextEarnings.epsEstimate.toFixed(2)}</span>}
+            </div>
+          )}
+          {mf.catalystsData.analystSummary?.total > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <b>Analysts (30d):</b> {mf.catalystsData.analystSummary.total} actions —
+              <span style={{ color: "#166534", marginLeft: 4 }}>{mf.catalystsData.analystSummary.ups} up</span> ·
+              <span style={{ color: "#991b1b", marginLeft: 4 }}>{mf.catalystsData.analystSummary.downs} down</span> ·
+              <span style={{ color: "var(--sa-muted)", marginLeft: 4 }}>{mf.catalystsData.analystSummary.inits} init</span>
+            </div>
+          )}
+          {mf.catalystsData.recentAnalysts?.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 11, color: "var(--sa-text-2)" }}>
+              {mf.catalystsData.recentAnalysts.slice(0, 3).map((a, i) => (
+                <div key={i}>· {a.date} · <b>{a.firm}</b> {a.action}{a.priorGrade ? ` (${a.priorGrade}→${a.newGrade})` : ""}{a.priceTarget ? ` → PT $${a.priceTarget}` : ""}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {mf.adversarial && (
         <div style={{ marginTop: 10, fontSize: 12, background: mf.adversarial.verdict === "confirmed_long" ? "#f0fdf4" : "#fef3c7", border: `1px solid ${mf.adversarial.verdict === "confirmed_long" ? "#bbf7d0" : "#fde68a"}`, borderRadius: 8, padding: "10px 12px" }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 4 }}>🎯 Adversarial short-seller stress-test</div>
