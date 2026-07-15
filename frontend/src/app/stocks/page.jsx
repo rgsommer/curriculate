@@ -5979,6 +5979,8 @@ function PerformanceView({ sessionToken }) {
 
       <EightKFeedCard sessionToken={sessionToken} />
 
+      <TradeJournalAnalysisCard sessionToken={sessionToken} />
+
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
       <AdviceScorecardCard
         scorecard={scorecard}
@@ -7091,6 +7093,133 @@ function AlertsCard({ sessionToken }) {
             <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>No alerts yet. Arm one above.</div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function TradeJournalAnalysisCard({ sessionToken }) {
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/trade-journal/analyze`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setResult(j);
+    } catch (e) { setErr(e?.message || "Analysis failed"); }
+    finally { setBusy(false); }
+  };
+
+  const a = result?.analysis;
+  const r = result?.rollups;
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>🧠 Trade journal pattern learning</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            AI reads your closed trades and finds YOUR specific winning + losing patterns. Personal edge, nothing generic. Needs ≥5 closed round-trips (FIFO-paired BUY/SELL legs).
+          </div>
+        </div>
+        <button className="sa-btn" onClick={run} disabled={busy}>{busy ? "Analyzing…" : "Run analysis"}</button>
+      </div>
+
+      {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+      {result && !result.ok && (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--sa-muted)", background: "var(--sa-panel-2)", borderRadius: 8, padding: "10px 12px" }}>
+          {result.reason}
+        </div>
+      )}
+      {result?.ok && (
+        <div style={{ marginTop: 14 }}>
+          {r && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
+              {[
+                { label: "Closed trades", v: r.totalTrades },
+                { label: "Win rate", v: `${r.winRate.toFixed(0)}%` },
+                { label: "Avg winner", v: `+${r.avgWinnerPct.toFixed(1)}%`, color: "#166534" },
+                { label: "Avg loser", v: `${r.avgLoserPct.toFixed(1)}%`, color: "#991b1b" },
+                { label: "Avg hold", v: `${r.avgHoldDays.toFixed(0)}d` },
+                { label: "Net $", v: `${r.netDollarsTotal >= 0 ? "+" : ""}$${r.netDollarsTotal.toFixed(0)}`, color: r.netDollarsTotal >= 0 ? "#166534" : "#991b1b" },
+              ].map((s, i) => (
+                <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 6, textAlign: "center" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{s.label}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, color: s.color || "inherit" }}>{s.v}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {a?.personalEdgeSummary && (
+            <div style={{ fontSize: 13, lineHeight: 1.55, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", borderRadius: 8, padding: "12px 14px", marginBottom: 12 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#1e40af", marginBottom: 4 }}>💎 Your edge</div>
+              {a.personalEdgeSummary}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            {a?.winningPatterns?.length > 0 && (
+              <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#166534", marginBottom: 6 }}>✓ Winning patterns</div>
+                {a.winningPatterns.map((p, i) => <div key={i} style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>· {p}</div>)}
+              </div>
+            )}
+            {a?.losingPatterns?.length > 0 && (
+              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#991b1b", marginBottom: 6 }}>✗ Losing patterns</div>
+                {a.losingPatterns.map((p, i) => <div key={i} style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>· {p}</div>)}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            {a?.hiddenStrength && (
+              <div style={{ background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#6d28d9", marginBottom: 4 }}>🔎 Hidden strength</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>{a.hiddenStrength}</div>
+              </div>
+            )}
+            {a?.hiddenWeakness && (
+              <div style={{ background: "#fefce8", border: "1px solid #fef08a", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#a16207", marginBottom: 4 }}>💧 Hidden leak</div>
+                <div style={{ fontSize: 12.5, lineHeight: 1.55 }}>{a.hiddenWeakness}</div>
+              </div>
+            )}
+          </div>
+
+          {a?.concreteRecommendations?.length > 0 && (
+            <div style={{ background: "var(--sa-panel-2)", borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 6 }}>📋 Concrete rule changes</div>
+              {a.concreteRecommendations.map((rec, i) => <div key={i} style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.5 }}>{i + 1}. {rec}</div>)}
+            </div>
+          )}
+
+          {r?.byHoldBand?.length > 0 && (
+            <div style={{ marginTop: 10, fontSize: 11.5 }}>
+              <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 6 }}>Win rate by hold length</div>
+              {r.byHoldBand.map((b, i) => (
+                <div key={i} style={{ display: "flex", gap: 12, padding: "3px 0" }}>
+                  <span style={{ minWidth: 180 }}>{b.band}</span>
+                  <span>{b.count} trades</span>
+                  <span style={{ color: b.winRate >= 60 ? "#166534" : b.winRate < 40 ? "#991b1b" : "inherit" }}>{b.winRate?.toFixed(0)}% win</span>
+                  <span style={{ color: b.avgGainPct >= 0 ? "#166534" : "#991b1b" }}>avg {b.avgGainPct >= 0 ? "+" : ""}{b.avgGainPct?.toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--sa-muted)", textAlign: "right" }}>
+            Analyzed {result.closedTradesCount} closed round-trips at {new Date(result.analyzedAt).toLocaleString()}
+          </div>
+        </div>
       )}
     </div>
   );

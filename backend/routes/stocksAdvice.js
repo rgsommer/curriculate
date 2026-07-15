@@ -24,6 +24,7 @@ import StocksAlert from "../models/StocksAlert.js";
 import { processAlertsOnce } from "../jobs/stocksAlerts.js";
 import StocksEightK from "../models/StocksEightK.js";
 import { processEightKsOnce } from "../jobs/stocksEightKPoll.js";
+import { analyzeTradeJournal } from "../services/stocksTradeJournalAnalysis.js";
 import {
   generateBriefing,
   emailBriefing,
@@ -2806,6 +2807,19 @@ router.post("/alerts/:id/rearm", requireStocksAuth, async (req, res) => {
     res.json({ rearmed: true });
   } catch (err) {
     console.error("alerts rearm error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// Trade journal AI analysis — pairs BUY/SELL legs FIFO into closed
+// round trips, computes rollups, asks Anthropic for THIS trader's
+// specific winning/losing patterns. Personal compounding edge.
+router.get("/trade-journal/analyze", requireStocksAuth, async (req, res) => {
+  try {
+    const result = await analyzeTradeJournal({ email: req.stocksUser.email });
+    res.json(result);
+  } catch (err) {
+    console.error("trade-journal analyze error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });
