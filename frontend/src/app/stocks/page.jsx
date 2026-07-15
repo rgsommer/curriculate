@@ -5994,7 +5994,7 @@ function PerformanceView({ sessionToken }) {
 
       {/* ── DATA STATUS: how much is actually in the database, with
           actionable hints when sections below come back empty. */}
-      <DataStatusPanel data={dataStatus} />
+      <DataStatusPanel data={dataStatus} sessionToken={sessionToken} />
 
       <BriefingDiagnosticsCard sessionToken={sessionToken} />
 
@@ -7856,7 +7856,7 @@ function BriefingDiagnosticsCard({ sessionToken }) {
   );
 }
 
-function DataStatusPanel({ data }) {
+function DataStatusPanel({ data, sessionToken }) {
   if (!data) return null;
   const fmtDate = (d) => d ? new Date(d).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
   const rows = [
@@ -7867,10 +7867,11 @@ function DataStatusPanel({ data }) {
         ? `${data.adviceRecs.last7d} in last 7d · ${data.adviceRecs.last30d} in 30d · ${data.adviceRecs.last90d} in 90d`
         : null,
       hint: !data.adviceRecs?.total
-        ? "Click 🧠 Update Advice on the Advice tab OR 📧 Email Briefing → Send. Each successful run should insert one row per actionable BUY/SELL/TRIM."
+        ? "Zero recs parsed from any briefing so far. Click 🔬 Diagnose parsing below to see what format the AI is emitting — most likely a missing <RECS> JSON block (fixed 2026-07-15; next briefing should populate)."
         : data.adviceRecs.last7d === 0
         ? `${data.adviceRecs.total} recs exist but none in the last 7 days. Switch the scorecard window to 30d/90d, or run Update Advice now.`
         : null,
+      action: !data.adviceRecs?.total ? "diagnose-parsing" : null,
     },
     {
       label: "Portfolio snapshots",
@@ -7931,6 +7932,63 @@ function DataStatusPanel({ data }) {
           </div>
         ))}
       </div>
+      {rows.some((r) => r.action === "diagnose-parsing") && <RecParseDiagnostic sessionToken={sessionToken} />}
+    </div>
+  );
+}
+
+function RecParseDiagnostic({ sessionToken }) {
+  const [busy, setBusy] = useState(false);
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    if (busy || !sessionToken) return;
+    setBusy(true); setErr(null); setData(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/rec-parse-diagnostic`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setData(j);
+    } catch (e) { setErr(e?.message || "Diagnostic failed"); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div style={{ marginTop: 12, padding: "10px 12px", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: 6 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 12.5, color: "#78350f" }}>
+          <b>🔬 Diagnose rec parsing</b> — reads the latest briefing and shows what the parser found, whether the AI emitted the required &lt;RECS&gt; block, and any lines that look actionable but weren't captured.
+        </div>
+        <button className="sa-btn" onClick={run} disabled={busy}>{busy ? "Running…" : "Run diagnostic"}</button>
+      </div>
+      {err && <div style={{ marginTop: 10, color: "#991b1b" }}>{err}</div>}
+      {data && !data.ok && <div style={{ marginTop: 10, fontSize: 12 }}>{data.reason}</div>}
+      {data?.ok && (
+        <div style={{ marginTop: 10, fontSize: 12, lineHeight: 1.6 }}>
+          <div><b>Snapshot from:</b> {new Date(data.generatedAt).toLocaleString()} · markdown length {data.markdownLength.toLocaleString()} chars</div>
+          <div><b>&lt;RECS&gt; block present:</b> {data.hasJsonBlock ? "✓ yes" : "✗ no"}</div>
+          <div><b>Parsed:</b> {data.parsedCount} recs</div>
+          <div style={{ marginTop: 6, color: "#78350f" }}>{data.hint}</div>
+          {data.probableRecLines.length > 0 && (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>Lines with BUY/SELL/TRIM ({data.probableRecLines.length})</summary>
+              <div style={{ marginTop: 6, background: "#fff", padding: "6px 8px", borderRadius: 4, fontFamily: "SF Mono,Menlo,Consolas,monospace", fontSize: 11, whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto" }}>
+                {data.probableRecLines.map((l, i) => <div key={i}>{l}</div>)}
+              </div>
+            </details>
+          )}
+          <details style={{ marginTop: 8 }}>
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Last 2500 chars of briefing (looking for &lt;RECS&gt; block)</summary>
+            <div style={{ marginTop: 6, background: "#fff", padding: "6px 8px", borderRadius: 4, fontFamily: "SF Mono,Menlo,Consolas,monospace", fontSize: 10.5, whiteSpace: "pre-wrap", maxHeight: 260, overflowY: "auto" }}>
+              {data.markdownTail}
+            </div>
+          </details>
+        </div>
+      )}
     </div>
   );
 }

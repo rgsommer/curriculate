@@ -2831,6 +2831,48 @@ router.post("/alerts/:id/rearm", requireStocksAuth, async (req, res) => {
   }
 });
 
+// Diagnose why AI advice recs = 0. Loads the latest briefing snapshot,
+// runs parseRecsFromBriefing on it, and returns what was found + a peek
+// at the markdown so we can see the format the AI is actually emitting.
+router.get("/rec-parse-diagnostic", requireStocksAuth, async (req, res) => {
+  try {
+    const snap = await StocksAdviceSnapshot.findOne({ email: req.stocksUser.email })
+      .sort({ generatedAt: -1 })
+      .lean();
+    if (!snap?.markdown) {
+      return res.json({ ok: false, reason: "No briefing snapshot yet — send a briefing first." });
+    }
+    const md = snap.markdown;
+    const parsed = parseRecsFromBriefing(md);
+    // Was a <RECS> JSON block present?
+    const hasJsonBlock = /<RECS>[\s\S]*?<\/RECS>/i.test(md);
+    // Lines that LOOK like they might be actionable (contain BUY/SELL/TRIM
+    // in caps) but weren't parsed — so we can extend the parser or coach
+    // the AI's format.
+    const probableRecLines = md.split(/\r?\n/)
+      .filter((l) => /\b(BUY|SELL|TRIM)\b/.test(l))
+      .slice(0, 30);
+    res.json({
+      ok: true,
+      generatedAt: snap.generatedAt,
+      markdownLength: md.length,
+      markdownTail: md.slice(-2500),
+      hasJsonBlock,
+      parsedCount: parsed.length,
+      parsed,
+      probableRecLines,
+      hint: parsed.length === 0
+        ? (hasJsonBlock
+          ? "A <RECS> block exists but parsed to 0 — probably invalid JSON or empty array. Check markdownTail."
+          : "No <RECS> block and regex found nothing. Next briefing should include the block; probableRecLines shows what the AI is currently emitting.")
+        : `Parsed ${parsed.length} recs successfully.`,
+    });
+  } catch (err) {
+    console.error("rec-parse-diagnostic error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 // Test A: forced daily picks — list, generate-now, sweep-now
 router.get("/daily-picks", requireStocksAuth, async (req, res) => {
   try {

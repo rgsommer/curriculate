@@ -649,6 +649,25 @@ Required addition per rec body (EVERY BUY/SELL/TRIM rec, no exceptions):
   Account: <Non-Spousal | RRSP | TFSA | RESP | FHSA> · uses $<X> of $<Y> <CCY> available · leaves $<Z>.
 
 The "Account:" line is MANDATORY. If you omit it the rec is invalid. The account named MUST be one that holds enough cash in the trade's currency to cover the size you proposed — verify against the per-account cash inventory below before writing the rec.
+
+MANDATORY MACHINE-READABLE REC BLOCK — at the very end of your briefing, emit an exact block for automated parsing. Format:
+
+<RECS>
+[
+  {"action":"BUY","ticker":"NVDA","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100},
+  {"action":"SELL","ticker":"ENB","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500}
+]
+</RECS>
+
+Rules for the block:
+- Include one JSON object per actionable BUY / SELL / TRIM rec that appears in the narrative above. HOLD entries may be omitted.
+- ticker is the exact exchange symbol (never a brand name).
+- entry is the recommended entry price you cited in the narrative, in the security's native currency.
+- target and stop are REQUIRED numbers for every BUY (not null). Use the same values you cited in the narrative.
+- currency is "USD" or "CAD" — must match the security's native listing.
+- horizonDays is an integer (days). Convert weeks→×7, months→×30.
+- Do not wrap the block in code fences. No prose inside <RECS>...</RECS>. Nothing else after </RECS>.
+- If there are ZERO actionable recs, emit "<RECS>[]</RECS>" — never omit the block.
 `;
 
   const priceCurrencyBlock = `
@@ -868,7 +887,57 @@ const BRIEFING_REC_STOP_WORDS = new Set([
   "MARKET","LIMIT","GTC","DAY","OCO",
 ]);
 
+// Extract the trailing machine-readable rec block the AI is instructed to
+// emit — `<RECS>[{...}, ...]</RECS>` (with optional whitespace). Tolerant
+// of code fences, extra whitespace, and trailing commas inside the JSON.
+// Returns an array of {action, ticker, entryPrice, targetPrice, stopPrice,
+// horizonDays, entryCurrency, shares} — same shape as the regex path.
+function extractRecsFromJsonBlock(text) {
+  if (!text) return null;
+  const m = text.match(/<RECS>\s*([\s\S]*?)\s*<\/RECS>/i);
+  if (!m) return null;
+  let raw = m[1].trim();
+  // Strip optional code fences the model sometimes adds around JSON.
+  raw = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  // Tolerate trailing commas.
+  raw = raw.replace(/,\s*(\}|\])/g, "$1");
+  let arr;
+  try { arr = JSON.parse(raw); } catch { return null; }
+  if (!Array.isArray(arr)) return null;
+  const out = [];
+  for (const r of arr) {
+    if (!r || typeof r !== "object") continue;
+    const action = String(r.action || "").toUpperCase();
+    if (!["BUY", "SELL", "TRIM", "HOLD"].includes(action)) continue;
+    const ticker = String(r.ticker || "").toUpperCase().replace(/\.+$/, "");
+    if (!ticker || !/^[A-Z][A-Z0-9.\-]{0,15}$/.test(ticker)) continue;
+    const entryPrice = Number.isFinite(+r.entry) ? +r.entry
+      : Number.isFinite(+r.entryPrice) ? +r.entryPrice : null;
+    if (!(entryPrice > 0)) continue;
+    out.push({
+      action,
+      ticker,
+      shares: Number.isFinite(+r.shares) ? Math.floor(+r.shares) : null,
+      entryPrice,
+      targetPrice: Number.isFinite(+r.target) ? +r.target
+        : Number.isFinite(+r.targetPrice) ? +r.targetPrice : null,
+      stopPrice: Number.isFinite(+r.stop) ? +r.stop
+        : Number.isFinite(+r.stopPrice) ? +r.stopPrice : null,
+      horizonDays: Number.isFinite(+r.horizonDays) ? +r.horizonDays : 30,
+      entryCurrency: ["USD", "CAD"].includes(String(r.currency || r.entryCurrency || "").toUpperCase())
+        ? String(r.currency || r.entryCurrency).toUpperCase()
+        : "USD",
+    });
+  }
+  return out;
+}
+
 export function parseRecsFromBriefing(text) {
+  // Prefer the machine-parseable JSON block emitted at the end of the
+  // briefing. If it's present and well-formed, we're done.
+  const jsonRecs = extractRecsFromJsonBlock(text);
+  if (Array.isArray(jsonRecs) && jsonRecs.length > 0) return jsonRecs;
+
   const recs = [];
   const re = /Action:\s*(BUY|SELL|TRIM|HOLD)\s*(\d[\d,]*)?\s*(?:sh)?\s*([A-Z][A-Z0-9.\-]{0,15})\b[^.]*?(?:Entry:\s*\$?([\d.]+))?[^.]*?(?:Target:\s*\$?([\d.]+))?[^.]*?(?:Stop:\s*\$?([\d.]+))?[^.]*?(?:Horizon:\s*([^.\n]+))?/gi;
   let m;
