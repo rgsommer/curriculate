@@ -231,7 +231,10 @@ export async function monitorOpenRecs(email) {
 // and applies real visual structure.
 export function md2html(md) {
   if (!md) return "";
-  let h = md
+  // Strip the machine-parseable rec block before HTML rendering — the
+  // block belongs in persisted markdown for parseRecsFromBriefing, not
+  // in the human-readable email/card.
+  let h = stripRecsBlock(md)
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   // headings — visually distinct h2 / h3 with separators
   h = h.replace(/^######\s+(.+)$/gm, "<h6 style='margin:18px 0 6px;font-size:13px;color:#0b1220'>$1</h6>")
@@ -834,11 +837,25 @@ Return ONLY the markdown briefing. No JSON, no wrapping prose. First character o
 // Convert briefing markdown into an array of {title, body} cards by
 // splitting on H2/H3 headings. Used to populate the in-app Advice tab from
 // the latest briefing without a separate Anthropic call.
+// The machine-parseable <RECS>[...]</RECS> block belongs in the persisted
+// markdown so parseRecsFromBriefing can consume it, but it shouldn't render
+// inside the user-facing narrative. Everything downstream that produces
+// HUMAN output strips it first; parsing paths keep the full markdown.
+export function stripRecsBlock(md) {
+  if (!md) return md;
+  // Also drop the "---" horizontal-rule separator that often precedes the
+  // block so we don't leave an orphan divider.
+  return md.replace(/\n?-{3,}\s*\n?\s*<RECS>[\s\S]*?<\/RECS>\s*$/i, "")
+           .replace(/<RECS>[\s\S]*?<\/RECS>/gi, "")
+           .trim();
+}
+
 export function briefingToAdviceCards(md) {
   if (!md || typeof md !== "string") return [];
+  const cleaned = stripRecsBlock(md);
   const cards = [];
   // Split on lines beginning with ## or ### (preserves the marker via lookahead)
-  const parts = md.split(/\n(?=##{1,2}\s)/);
+  const parts = cleaned.split(/\n(?=##{1,2}\s)/);
   for (const part of parts) {
     const m = part.match(/^#{2,3}\s+(.+?)\n([\s\S]*)$/);
     if (!m) continue;
