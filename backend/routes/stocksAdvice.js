@@ -20,6 +20,8 @@ import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
+import StocksAlert from "../models/StocksAlert.js";
+import { processAlertsOnce } from "../jobs/stocksAlerts.js";
 import {
   generateBriefing,
   emailBriefing,
@@ -2716,6 +2718,93 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("scorecard error:", err);
     res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ── Price alerts ────────────────────────────────────────────────────────
+// User creates alerts on ticker+condition+price(+optional RVOL floor).
+// The stocksAlerts cron fires an email when triggered, marks inactive.
+
+router.get("/alerts", requireStocksAuth, async (req, res) => {
+  try {
+    const items = await StocksAlert.find({ email: req.stocksUser.email })
+      .sort({ active: -1, createdAt: -1 })
+      .limit(200)
+      .lean();
+    res.json({ items });
+  } catch (err) {
+    console.error("alerts list error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+router.post("/alerts", requireStocksAuth, async (req, res) => {
+  try {
+    const { ticker, condition, price, rvolMin, note, currency } = req.body || {};
+    if (!ticker || typeof ticker !== "string") return res.status(400).json({ error: "ticker required" });
+    if (!["above", "below"].includes(condition)) return res.status(400).json({ error: "condition must be 'above' or 'below'" });
+    const p = Number(price);
+    if (!(p > 0)) return res.status(400).json({ error: "price must be > 0" });
+    const rv = rvolMin == null || rvolMin === "" ? null : Number(rvolMin);
+    if (rv != null && !(rv > 0)) return res.status(400).json({ error: "rvolMin must be > 0 or empty" });
+    const doc = await StocksAlert.create({
+      email: req.stocksUser.email,
+      ticker: ticker.toUpperCase().trim(),
+      currency: (currency || "USD").toUpperCase(),
+      condition,
+      price: p,
+      rvolMin: rv,
+      note: String(note || "").slice(0, 200),
+      active: true,
+      createdVia: "web",
+    });
+    res.json({ item: doc.toObject() });
+  } catch (err) {
+    console.error("alerts create error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+router.delete("/alerts/:id", requireStocksAuth, async (req, res) => {
+  try {
+    const result = await StocksAlert.deleteOne({
+      _id: req.params.id,
+      email: req.stocksUser.email,
+    });
+    if (result.deletedCount === 0) return res.status(404).json({ error: "Not found" });
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error("alerts delete error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// Re-arm an inactive alert (post-trigger the user wants the same condition
+// watched again). Restores active=true and clears trigger fields.
+router.post("/alerts/:id/rearm", requireStocksAuth, async (req, res) => {
+  try {
+    const result = await StocksAlert.updateOne(
+      { _id: req.params.id, email: req.stocksUser.email },
+      { $set: { active: true, triggeredAt: null, triggeredPrice: null, triggeredRvol: null } }
+    );
+    if (result.matchedCount === 0) return res.status(404).json({ error: "Not found" });
+    res.json({ rearmed: true });
+  } catch (err) {
+    console.error("alerts rearm error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// On-demand tick — fires the same processing the cron runs, so the user can
+// verify their alert logic without waiting for the next 5-minute tick or for
+// market hours to open. Useful for testing.
+router.post("/alerts/tick-now", requireStocksAuth, async (req, res) => {
+  try {
+    const { checked, fired } = await processAlertsOnce();
+    res.json({ checked, fired });
+  } catch (err) {
+    console.error("alerts tick-now error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
   }
 });
 

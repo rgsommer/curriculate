@@ -144,6 +144,7 @@ import stocksDiscoverRouter from "./routes/stocksDiscover.js";
 import stocksReconcileRouter from "./routes/stocksReconcile.js";
 import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
+import { scheduleStocksAlerts } from "./jobs/stocksAlerts.js";
 // Substitute-teacher staffing app (/subs)
 import subsAuthRouter from "./routes/subsAuth.js";
 import subsAdminRouter from "./routes/subsAdmin.js";
@@ -19471,4 +19472,5 @@ server.listen(PORT, () => {
   scheduleWeeklyDiscovery();
   scheduleDiscoveryOutcomeTracker();
   scheduleDailyPortfolioSnapshot();
+  scheduleStocksAlerts();
 })

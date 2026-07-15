@@ -5948,6 +5948,8 @@ function PerformanceView({ sessionToken }) {
 
       <BriefingDiagnosticsCard sessionToken={sessionToken} />
 
+      <AlertsCard sessionToken={sessionToken} />
+
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
       <AdviceScorecardCard
         scorecard={scorecard}
@@ -6894,6 +6896,177 @@ function TradesView({ sessionToken }) {
 // One-click diagnostic for "why aren't my briefings arriving?" Runs from
 // inside the app so the user's session cookie is always attached — no
 // cross-domain / cookie fiddling.
+function AlertsCard({ sessionToken }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [form, setForm] = useState({ ticker: "", condition: "above", price: "", rvolMin: "", currency: "USD", note: "" });
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/alerts`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (r.ok) setItems(j.items || []);
+    } finally { setLoading(false); }
+  };
+
+  useEffect(() => { load(); }, [sessionToken]);
+
+  const create = async (e) => {
+    e?.preventDefault?.();
+    if (creating) return;
+    setCreating(true); setMsg(null);
+    try {
+      const body = {
+        ticker: form.ticker.toUpperCase().trim(),
+        condition: form.condition,
+        price: Number(form.price),
+        rvolMin: form.rvolMin === "" ? null : Number(form.rvolMin),
+        currency: form.currency,
+        note: form.note.trim(),
+      };
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/alerts`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setForm({ ticker: "", condition: "above", price: "", rvolMin: "", currency: "USD", note: "" });
+      setMsg({ ok: true, text: `Alert armed for ${body.ticker} ${body.condition} $${body.price}` });
+      load();
+    } catch (e) {
+      setMsg({ ok: false, text: e?.message || "Failed" });
+    } finally { setCreating(false); }
+  };
+
+  const remove = async (id) => {
+    if (!confirm("Delete this alert?")) return;
+    await fetch(`${BACKEND_URL}/api/stocks-advice/alerts/${id}`, {
+      method: "DELETE", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+    load();
+  };
+
+  const rearm = async (id) => {
+    await fetch(`${BACKEND_URL}/api/stocks-advice/alerts/${id}/rearm`, {
+      method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+    load();
+  };
+
+  const tickNow = async () => {
+    setMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/alerts/tick-now`, {
+        method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      setMsg({ ok: true, text: `Tick complete — checked ${j.checked}, fired ${j.fired}` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e?.message || "Tick failed" }); }
+  };
+
+  const active = items.filter((a) => a.active);
+  const triggered = items.filter((a) => !a.active);
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>🔔 Price alerts</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            Fires an email when a ticker crosses a level (optionally on RVOL ≥ N). Cron ticks every 5 min during US market hours.
+          </div>
+        </div>
+        <button className="sa-btn ghost" onClick={tickNow} title="Force one alert-check now, off-schedule, ignoring market hours">Tick now</button>
+      </div>
+
+      <form onSubmit={create} style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr auto", gap: 8, alignItems: "end" }}>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Ticker</div>
+          <input value={form.ticker} onChange={(e) => setForm({ ...form, ticker: e.target.value })} placeholder="NVDA" required style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Condition</div>
+          <select value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }}>
+            <option value="above">above</option>
+            <option value="below">below</option>
+          </select>
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Price</div>
+          <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} placeholder="145.00" required style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>RVOL min (optional)</div>
+          <input type="number" step="0.1" value={form.rvolMin} onChange={(e) => setForm({ ...form, rvolMin: e.target.value })} placeholder="2.0" style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Ccy</div>
+          <select value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }}>
+            <option value="USD">USD</option>
+            <option value="CAD">CAD</option>
+          </select>
+        </label>
+        <button className="sa-btn" type="submit" disabled={creating}>{creating ? "Adding…" : "Arm alert"}</button>
+      </form>
+      <input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="Note (optional) — e.g. 'add on VCP breakout'" style={{ width: "100%", marginTop: 6, padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 12 }} />
+
+      {msg && (
+        <div style={{ marginTop: 10, fontSize: 12.5, background: msg.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${msg.ok ? "#bbf7d0" : "#fecaca"}`, color: msg.ok ? "#166534" : "#991b1b", borderRadius: 8, padding: "8px 10px" }}>
+          {msg.text}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>Loading alerts…</div>
+      ) : (
+        <>
+          {active.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 6 }}>Active ({active.length})</div>
+              {active.map((a) => (
+                <div key={a._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 6, background: "var(--sa-panel-2)", fontSize: 12.5, marginBottom: 4 }}>
+                  <b style={{ minWidth: 60 }}>{a.ticker}</b>
+                  <span>{a.condition === "above" ? "↑" : "↓"} ${a.price} {a.currency}</span>
+                  {a.rvolMin && <span style={{ color: "var(--sa-muted)" }}>+ RVOL ≥ {a.rvolMin}x</span>}
+                  {a.note && <span style={{ flex: 1, color: "var(--sa-text-2)", fontStyle: "italic" }}>{a.note}</span>}
+                  <button className="sa-btn ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => remove(a._id)}>Delete</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {triggered.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 6 }}>Triggered ({triggered.length})</div>
+              {triggered.slice(0, 20).map((a) => (
+                <div key={a._id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 8px", borderRadius: 6, background: "#fefce8", fontSize: 12, marginBottom: 4 }}>
+                  <b style={{ minWidth: 60 }}>{a.ticker}</b>
+                  <span>{a.condition === "above" ? "↑" : "↓"} ${a.price}</span>
+                  <span style={{ color: "var(--sa-muted)" }}>→ fired @ ${a.triggeredPrice?.toFixed(2)} {a.triggeredAt ? `on ${new Date(a.triggeredAt).toLocaleString()}` : ""}</span>
+                  <span style={{ flex: 1 }} />
+                  <button className="sa-btn ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => rearm(a._id)}>Re-arm</button>
+                  <button className="sa-btn ghost" style={{ padding: "2px 8px", fontSize: 11 }} onClick={() => remove(a._id)}>Delete</button>
+                </div>
+              ))}
+            </div>
+          )}
+          {active.length === 0 && triggered.length === 0 && (
+            <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>No alerts yet. Arm one above.</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function BriefingDiagnosticsCard({ sessionToken }) {
   const [busy, setBusy] = useState(false);
   const [triggering, setTriggering] = useState(false);
