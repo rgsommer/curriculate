@@ -26,6 +26,9 @@ import StocksEightK from "../models/StocksEightK.js";
 import { processEightKsOnce } from "../jobs/stocksEightKPoll.js";
 import { analyzeTradeJournal } from "../services/stocksTradeJournalAnalysis.js";
 import { runBacktest } from "../services/stocksBacktest.js";
+import { runPointInTimeBacktest } from "../services/stocksPointInTimeBacktest.js";
+import StocksDailyPick from "../models/StocksDailyPick.js";
+import { runDailyPickGenerationOnce, sweepOpenPicks, generateAndPersistPicksForUser } from "../jobs/stocksDailyPick.js";
 import {
   generateBriefing,
   emailBriefing,
@@ -2816,6 +2819,70 @@ router.post("/alerts/:id/rearm", requireStocksAuth, async (req, res) => {
     res.json({ rearmed: true });
   } catch (err) {
     console.error("alerts rearm error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// Test A: forced daily picks — list, generate-now, sweep-now
+router.get("/daily-picks", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.max(1, Math.min(365, Number(req.query.days) || 60));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const items = await StocksDailyPick.find({ email: req.stocksUser.email, pickDate: { $gte: since } })
+      .sort({ pickDate: -1 })
+      .lean();
+    const closed = items.filter((p) => p.status !== "open" && p.pnlPct != null);
+    const perTrade = 5000; // display default — real cap comes from user preference
+    const netPnl = closed.reduce((s, p) => s + (perTrade * (p.pnlPct / 100)), 0);
+    const wins = closed.filter((p) => p.pnlPct > 0);
+    const summary = {
+      totalPicks: items.length,
+      openCount: items.filter((p) => p.status === "open").length,
+      closedCount: closed.length,
+      winRate: closed.length ? (wins.length / closed.length) * 100 : null,
+      avgReturnPct: closed.length ? closed.reduce((s, p) => s + p.pnlPct, 0) / closed.length : null,
+      netPnlAt5kPerTrade: netPnl,
+    };
+    res.json({ items, summary });
+  } catch (err) {
+    console.error("daily-picks list error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+router.post("/daily-picks/generate-now", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = { email: req.stocksUser.email };
+    const result = await generateAndPersistPicksForUser(profile, { n: 2 });
+    res.json(result);
+  } catch (err) {
+    console.error("daily-picks generate-now error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+router.post("/daily-picks/sweep-now", requireStocksAuth, async (req, res) => {
+  try {
+    const result = await sweepOpenPicks();
+    res.json(result);
+  } catch (err) {
+    console.error("daily-picks sweep-now error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// Test B: point-in-time backtest
+router.get("/backtest-pit", requireStocksAuth, async (req, res) => {
+  try {
+    const capital = Math.max(1000, Math.min(10_000_000, Number(req.query.capital) || 50000));
+    const days = Math.max(7, Math.min(180, Number(req.query.days) || 30));
+    const picksPerDay = Math.max(1, Math.min(5, Number(req.query.picksPerDay) || 2));
+    const horizonDays = Math.max(2, Math.min(60, Number(req.query.horizonDays) || 10));
+    const maxConcurrent = Math.max(1, Math.min(30, Number(req.query.maxConcurrent) || 10));
+    const result = await runPointInTimeBacktest({ email: req.stocksUser.email, capital, days, picksPerDay, horizonDays, maxConcurrent });
+    res.json(result);
+  } catch (err) {
+    console.error("backtest-pit error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });

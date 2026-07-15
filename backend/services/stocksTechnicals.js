@@ -390,6 +390,64 @@ function resolveSymbol(ticker, currency) {
   return t;
 }
 
+// Pure computation from a points array — no fetching, no caching, no MTF.
+// Used by the point-in-time backtest which needs to compute the exact
+// same signals but on data sliced to a historical decision date. Callers
+// that need MTF must call the async pipeline (getTechnicals) — MTF pulls
+// live FMP intraday, which by definition can't be reconstructed point-in-time.
+export function computeTechnicalsFromPoints(points, currency = null) {
+  if (!Array.isArray(points) || points.length < 50) return { ok: false, reason: "insufficient history" };
+  const closes = points.map((p) => p.close);
+  const last = closes[closes.length - 1];
+  const sma20 = sma(closes, 20);
+  const sma50 = sma(closes, 50);
+  const sma200 = sma(closes, 200);
+  const rsi14 = rsi(closes, 14);
+  const cross = recentCross(closes, 60);
+  let vol = null;
+  if (closes.length >= 21) {
+    const returns = [];
+    for (let i = closes.length - 20; i < closes.length; i++) returns.push((closes[i] - closes[i - 1]) / closes[i - 1]);
+    const mean = returns.reduce((a, b) => a + b, 0) / returns.length;
+    const variance = returns.reduce((s, r) => s + (r - mean) ** 2, 0) / returns.length;
+    vol = Math.sqrt(variance) * Math.sqrt(252) * 100;
+  }
+  let atr14 = null;
+  if (points.length >= 15) {
+    const trs = [];
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i], prev = points[i - 1];
+      trs.push(Math.max(p.high - p.low, Math.abs(p.high - prev.close), Math.abs(p.low - prev.close)));
+    }
+    let atr = trs.slice(0, 14).reduce((a, b) => a + b, 0) / 14;
+    for (let i = 14; i < trs.length; i++) atr = (atr * 13 + trs[i]) / 14;
+    atr14 = atr;
+  }
+  const data = {
+    ok: true, currency, last, sma20, sma50, sma200, rsi14,
+    recentCross: cross, annualizedVolPct: vol, atr14,
+    atrPctOfPrice: atr14 != null && last ? (atr14 / last) * 100 : null,
+    priceVsSma50: sma50 ? ((last - sma50) / sma50) * 100 : null,
+    priceVsSma200: sma200 ? ((last - sma200) / sma200) * 100 : null,
+    suggested25AtrStop: atr14 != null ? last - 2.5 * atr14 : null,
+    fib: fibonacciRetracement(points, 120),
+    volume: volumeAnalytics(points),
+  };
+  data.setups = detectSetups(points, data, data.volume);
+  return data;
+}
+
+// Expose the raw Yahoo daily fetch so the point-in-time backtest can grab
+// 1Y of bars once per ticker and re-slice for each historical decision date
+// (rather than fetching N times).
+export async function fetchDailyOhlcForBacktest(ticker, currency = null, days = 400) {
+  const sym = resolveSymbol(ticker, currency);
+  try {
+    const { points } = await fetchDailyOHLC(sym, days);
+    return { sym, points };
+  } catch { return { sym, points: [] }; }
+}
+
 export async function getTechnicals(ticker, currency = null, opts = {}) {
   const now = Date.now();
   const sym = resolveSymbol(ticker, currency);

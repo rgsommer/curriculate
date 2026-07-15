@@ -6002,6 +6002,10 @@ function PerformanceView({ sessionToken }) {
 
       <EightKFeedCard sessionToken={sessionToken} />
 
+      <DailyPickCard sessionToken={sessionToken} />
+
+      <PointInTimeBacktestCard sessionToken={sessionToken} />
+
       <BacktestCard sessionToken={sessionToken} />
 
       <TradeJournalAnalysisCard sessionToken={sessionToken} />
@@ -7118,6 +7122,254 @@ function AlertsCard({ sessionToken }) {
             <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>No alerts yet. Arm one above.</div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+// ── Test A: forced daily-pick discipline ───────────────────────────
+function DailyPickCard({ sessionToken }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const load = async () => {
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/daily-picks?days=60`, { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } });
+      const j = await r.json();
+      if (r.ok) setData(j);
+    } catch { /* ignore */ }
+  };
+  useEffect(() => { load(); }, [sessionToken]);
+
+  const generateNow = async () => {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/daily-picks/generate-now`, { method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || "generate failed");
+      setMsg({ ok: true, text: j.skipped ? `Already have ${j.existing} picks today` : `Generated ${j.inserted?.length ?? 0} picks` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e?.message || "Failed" }); }
+    finally { setBusy(false); }
+  };
+  const sweepNow = async () => {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/daily-picks/sweep-now`, { method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } });
+      const j = await r.json();
+      setMsg({ ok: true, text: `Swept ${j.checked} · closed ${j.closed}` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e?.message || "Failed" }); }
+    finally { setBusy(false); }
+  };
+
+  const items = data?.items || [];
+  const s = data?.summary;
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>🎯 Test A · Forced daily picks (real-time discipline)</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            Cron generates <b>exactly 2 picks/day</b> at 09:15 ET using the deterministic composite score — no cherry-picking, no LLM narrative. Every pick tracked to close. Requires STOCKS_DAILY_PICK_ENABLED=1.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button className="sa-btn ghost" onClick={sweepNow} disabled={busy}>Sweep now</button>
+          <button className="sa-btn" onClick={generateNow} disabled={busy}>Generate now</button>
+        </div>
+      </div>
+
+      {msg && <div style={{ marginTop: 10, fontSize: 12.5, background: msg.ok ? "#f0fdf4" : "#fef2f2", border: `1px solid ${msg.ok ? "#bbf7d0" : "#fecaca"}`, color: msg.ok ? "#166534" : "#991b1b", borderRadius: 8, padding: "8px 10px" }}>{msg.text}</div>}
+
+      {s && s.totalPicks > 0 && (
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+          {[
+            { label: "Total picks", v: s.totalPicks },
+            { label: "Open", v: s.openCount },
+            { label: "Closed", v: s.closedCount },
+            { label: "Win rate", v: s.winRate != null ? `${s.winRate.toFixed(0)}%` : "—" },
+            { label: "Avg return", v: s.avgReturnPct != null ? `${s.avgReturnPct >= 0 ? "+" : ""}${s.avgReturnPct.toFixed(1)}%` : "—", color: (s.avgReturnPct ?? 0) >= 0 ? "#166534" : "#991b1b" },
+            { label: "Net P&L @ $5k/trade", v: `${s.netPnlAt5kPerTrade >= 0 ? "+" : ""}$${Math.round(s.netPnlAt5kPerTrade).toLocaleString()}`, color: s.netPnlAt5kPerTrade >= 0 ? "#166534" : "#991b1b" },
+          ].map((x, i) => (
+            <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 6, textAlign: "center" }}>
+              <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{x.label}</div>
+              <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, color: x.color || "inherit" }}>{x.v}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {items.length > 0 && (
+        <div style={{ marginTop: 12, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid var(--sa-border)", color: "var(--sa-muted)", textTransform: "uppercase", fontSize: 10, letterSpacing: ".06em" }}>
+                <th style={{ padding: "5px 8px", textAlign: "left" }}>Pick date</th>
+                <th style={{ padding: "5px 8px", textAlign: "left" }}>Ticker</th>
+                <th style={{ padding: "5px 8px", textAlign: "right" }}>Entry</th>
+                <th style={{ padding: "5px 8px", textAlign: "right" }}>Stop</th>
+                <th style={{ padding: "5px 8px", textAlign: "right" }}>Target</th>
+                <th style={{ padding: "5px 8px", textAlign: "right" }}>Score</th>
+                <th style={{ padding: "5px 8px", textAlign: "left" }}>Setup</th>
+                <th style={{ padding: "5px 8px", textAlign: "left" }}>Status</th>
+                <th style={{ padding: "5px 8px", textAlign: "right" }}>Return</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((p) => (
+                <tr key={p._id} style={{ borderBottom: "1px solid var(--sa-border)" }}>
+                  <td style={{ padding: "5px 8px" }}>{new Date(p.pickDate).toLocaleDateString()}</td>
+                  <td style={{ padding: "5px 8px", fontWeight: 700 }}>{p.ticker}</td>
+                  <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${p.entryPrice.toFixed(2)}</td>
+                  <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b", fontVariantNumeric: "tabular-nums" }}>${p.stopPrice?.toFixed(2) ?? "—"}</td>
+                  <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>${p.targetPrice?.toFixed(2) ?? "—"}</td>
+                  <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600 }}>{p.deterministicScore ?? "—"}</td>
+                  <td style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{p.setupName || "—"}</td>
+                  <td style={{ padding: "5px 8px", fontSize: 10.5 }}>{p.status}</td>
+                  <td style={{ padding: "5px 8px", textAlign: "right", color: (p.pnlPct ?? 0) >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>{p.pnlPct != null ? `${p.pnlPct >= 0 ? "+" : ""}${p.pnlPct.toFixed(1)}%` : "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {(!items || items.length === 0) && <div style={{ marginTop: 12, fontSize: 12, color: "var(--sa-muted)" }}>No picks yet. Click <b>Generate now</b> to seed today's picks; the cron takes over from tomorrow morning.</div>}
+    </div>
+  );
+}
+
+// ── Test B: point-in-time historical backtest ──────────────────────
+function PointInTimeBacktestCard({ sessionToken }) {
+  const [capital, setCapital] = useState(50000);
+  const [days, setDays] = useState(30);
+  const [picksPerDay, setPicksPerDay] = useState(2);
+  const [horizonDays, setHorizonDays] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const q = new URLSearchParams({ capital: String(capital), days: String(days), picksPerDay: String(picksPerDay), horizonDays: String(horizonDays) });
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/backtest-pit?${q.toString()}`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setResult(j);
+    } catch (e) { setErr(e?.message || "Backtest failed"); }
+    finally { setBusy(false); }
+  };
+
+  const p = result?.portfolio;
+  const money = (v) => `${v < 0 ? "-" : ""}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>🔬 Test B · Point-in-time historical backtest</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            Walks each trading day D; uses <b>only OHLC data through D</b> to pick top N; simulates forward against actual future bars. Signals: technicals + Fib + volume + named setups. No lookahead. No LLM narrative (deterministic composite only). No cherry-picking.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Capital ($)</div>
+          <input type="number" value={capital} onChange={(e) => setCapital(Number(e.target.value))} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Lookback (days)</div>
+          <input type="number" value={days} onChange={(e) => setDays(Number(e.target.value))} min={7} max={180} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Picks / day</div>
+          <input type="number" value={picksPerDay} onChange={(e) => setPicksPerDay(Number(e.target.value))} min={1} max={5} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Horizon (days)</div>
+          <input type="number" value={horizonDays} onChange={(e) => setHorizonDays(Number(e.target.value))} min={2} max={60} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <button className="sa-btn" onClick={run} disabled={busy}>{busy ? "Running…" : "Run PIT backtest"}</button>
+      </div>
+
+      {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+      {result && !result.ok && <div style={{ marginTop: 12, fontSize: 13, color: "var(--sa-muted)", background: "var(--sa-panel-2)", borderRadius: 8, padding: "10px 12px" }}>{result.reason}</div>}
+
+      {result?.ok && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
+            {[
+              { label: "Capital", v: money(result.startingCapital) },
+              { label: "Final value", v: money(p.finalValue), color: p.totalNetPnl >= 0 ? "#166534" : "#991b1b" },
+              { label: "Net P&L", v: `${p.totalNetPnl >= 0 ? "+" : ""}${money(p.totalNetPnl)}`, color: p.totalNetPnl >= 0 ? "#166534" : "#991b1b" },
+              { label: "Return", v: pct(p.totalReturnPct), color: p.totalReturnPct >= 0 ? "#166534" : "#991b1b" },
+              { label: "SPY", v: pct(p.benchmarkSpyPct) },
+              { label: "Alpha", v: pct(p.alphaPct), color: (p.alphaPct ?? 0) >= 0 ? "#166534" : "#991b1b" },
+              { label: "Trades", v: result.tradesExecuted },
+              { label: "Win rate", v: p.winRate != null ? `${p.winRate.toFixed(0)}%` : "—" },
+              { label: "Avg winner", v: p.avgWinnerPct != null ? `+${p.avgWinnerPct.toFixed(1)}%` : "—", color: "#166534" },
+              { label: "Avg loser", v: p.avgLoserPct != null ? `${p.avgLoserPct.toFixed(1)}%` : "—", color: "#991b1b" },
+            ].map((s, i) => (
+              <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 6, textAlign: "center" }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{s.label}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginTop: 2, color: s.color || "inherit" }}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 8 }}>
+            Universe: {result.universeSize} tickers · {result.tradingDaysProcessed} trading days · horizon {result.horizonDays}d · picks/day {result.picksPerDay}
+          </div>
+
+          {result.trades.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--sa-border)", color: "var(--sa-muted)", textTransform: "uppercase", fontSize: 10, letterSpacing: ".06em" }}>
+                    <th style={{ padding: "5px 8px", textAlign: "left" }}>Ticker</th>
+                    <th style={{ padding: "5px 8px", textAlign: "left" }}>Entry</th>
+                    <th style={{ padding: "5px 8px", textAlign: "left" }}>Exit</th>
+                    <th style={{ padding: "5px 8px", textAlign: "right" }}>Held</th>
+                    <th style={{ padding: "5px 8px", textAlign: "right" }}>Score</th>
+                    <th style={{ padding: "5px 8px", textAlign: "right" }}>Return</th>
+                    <th style={{ padding: "5px 8px", textAlign: "right" }}>P&L</th>
+                    <th style={{ padding: "5px 8px", textAlign: "left" }}>Exit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.trades.map((t, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid var(--sa-border)" }}>
+                      <td style={{ padding: "5px 8px", fontWeight: 700 }}>{t.ticker}</td>
+                      <td style={{ padding: "5px 8px" }}>{t.entryDate} <span style={{ color: "var(--sa-muted)", fontSize: 10 }}>${t.entryPrice.toFixed(2)}</span></td>
+                      <td style={{ padding: "5px 8px" }}>{t.exitDate} <span style={{ color: "var(--sa-muted)", fontSize: 10 }}>${t.exitPrice.toFixed(2)}</span></td>
+                      <td style={{ padding: "5px 8px", textAlign: "right" }}>{t.holdDays}d</td>
+                      <td style={{ padding: "5px 8px", textAlign: "right" }}>{t.deterministicScore}</td>
+                      <td style={{ padding: "5px 8px", textAlign: "right", color: t.pnlPct >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>{t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(1)}%</td>
+                      <td style={{ padding: "5px 8px", textAlign: "right", color: t.pnlDollars >= 0 ? "#166534" : "#991b1b", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{t.pnlDollars >= 0 ? "+" : ""}${Math.abs(Math.round(t.pnlDollars)).toLocaleString()}</td>
+                      <td style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{t.exitReason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ marginTop: 14, fontSize: 10.5, color: "var(--sa-muted)", background: "var(--sa-panel-2)", padding: "8px 10px", borderRadius: 6 }}>
+            ⚠ {result.disclaimer}
+          </div>
+        </div>
       )}
     </div>
   );
