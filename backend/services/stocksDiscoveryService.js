@@ -46,6 +46,7 @@ import { assessMoonshot, buildMoonshotResult, syntheticInsiderScore, MOONSHOT_DI
 import { getInsiderEdgarSignal } from "./stocksInsiderEdgar.js";
 import { compareTranscriptsQoQ } from "./stocksEarningsTranscripts.js";
 import { getPatentsSignal } from "./stocksPatentsUspto.js";
+import { verifyPicksBatch } from "./stocksAdversarialVerify.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -1049,6 +1050,33 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
     } catch (e) {
       console.warn("[high-conviction] save failed:", e?.message);
     }
+  }
+
+  // Adversarial verify: attack every pick with a skeptical short-seller before
+  // shipping. Adjusts weightedScore (small penalty for risk_flagged, sharper
+  // for reject), attaches .adversarial to each pick for the UI badge. Picks
+  // whose bear thesis is stronger than their bull case are dropped entirely.
+  try {
+    const quantByTicker = {};
+    for (const p of picks) {
+      const c = withFactors.find((x) => x.ticker === p.ticker);
+      if (c) quantByTicker[p.ticker] = { tech: c.raw?.tech, fund: c.raw?.fundamentals };
+    }
+    const verdicts = await verifyPicksBatch(picks, quantByTicker);
+    for (const p of picks) {
+      const v = verdicts[p.ticker];
+      if (!v || !p.multiFactor) continue;
+      p.multiFactor.adversarial = v;
+      const base = p.multiFactor.weightedScore ?? 0;
+      p.multiFactor.weightedScore = Math.max(0, Math.min(100, base + v.confidenceAdjustment));
+      if (p.score != null) p.score = p.multiFactor.weightedScore;
+    }
+    // Drop picks the adversarial pass rejected outright (bear > bull).
+    for (let i = picks.length - 1; i >= 0; i--) {
+      if (picks[i].multiFactor?.adversarial?.verdict === "reject") picks.splice(i, 1);
+    }
+  } catch (e) {
+    console.warn("[high-conviction] adversarial verify failed:", e?.message);
   }
 
   // Folding Mosaic in may reorder the picks — sort by the final blended score.

@@ -5183,6 +5183,17 @@ function HighConvictionCard({ pick, rank }) {
             {mf.hypePenaltyApplied && (
               <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "var(--sa-red-soft)", color: "var(--sa-red)" }}>HYPE-PENALIZED</span>
             )}
+            {mf.adversarial?.verdict && (() => {
+              const v = mf.adversarial.verdict;
+              const style = v === "confirmed_long"
+                ? { bg: "#dcfce7", fg: "#166534", label: "✓ BEAR-TESTED" }
+                : v === "risk_flagged"
+                ? { bg: "#fef3c7", fg: "#92400e", label: "⚠ BEAR-CASE FLAGGED" }
+                : { bg: "#fee2e2", fg: "#991b1b", label: "✗ ADVERSARIAL REJECT" };
+              return (
+                <span title={`Adjusted score by ${mf.adversarial.confidenceAdjustment >= 0 ? "+" : ""}${mf.adversarial.confidenceAdjustment}`} style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: style.bg, color: style.fg }}>{style.label}</span>
+              );
+            })()}
           </div>
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
             {price} · {cap} · {market} · {pick.sector || "—"} · {mf.timeHorizon || "medium-term"}
@@ -5289,6 +5300,16 @@ function HighConvictionCard({ pick, rank }) {
       {mf.whatProvesWrong && (
         <div style={{ marginTop: 8, fontSize: 12 }}>
           <span style={{ fontWeight: 700, color: "var(--sa-red)" }}>What proves this wrong: </span>{mf.whatProvesWrong}
+        </div>
+      )}
+
+      {mf.adversarial && (
+        <div style={{ marginTop: 10, fontSize: 12, background: mf.adversarial.verdict === "confirmed_long" ? "#f0fdf4" : "#fef3c7", border: `1px solid ${mf.adversarial.verdict === "confirmed_long" ? "#bbf7d0" : "#fde68a"}`, borderRadius: 8, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 4 }}>🎯 Adversarial short-seller stress-test</div>
+          {mf.adversarial.bearThesis && <div style={{ marginTop: 4 }}><b>Bear thesis:</b> {mf.adversarial.bearThesis}</div>}
+          {mf.adversarial.weakestPoint && <div style={{ marginTop: 4 }}><b>Weakest bull-case point:</b> {mf.adversarial.weakestPoint}</div>}
+          {mf.adversarial.hiddenRisk && <div style={{ marginTop: 4 }}><b>Risk the bull thesis missed:</b> {mf.adversarial.hiddenRisk}</div>}
+          {mf.adversarial.reasoning && <div style={{ marginTop: 6, fontStyle: "italic", color: "var(--sa-text-2)" }}>Verdict: {mf.adversarial.reasoning}</div>}
         </div>
       )}
 
