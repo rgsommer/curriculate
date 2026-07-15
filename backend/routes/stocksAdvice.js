@@ -25,6 +25,7 @@ import { processAlertsOnce } from "../jobs/stocksAlerts.js";
 import StocksEightK from "../models/StocksEightK.js";
 import { processEightKsOnce } from "../jobs/stocksEightKPoll.js";
 import { analyzeTradeJournal } from "../services/stocksTradeJournalAnalysis.js";
+import { runBacktest } from "../services/stocksBacktest.js";
 import {
   generateBriefing,
   emailBriefing,
@@ -2815,6 +2816,21 @@ router.post("/alerts/:id/rearm", requireStocksAuth, async (req, res) => {
     res.json({ rearmed: true });
   } catch (err) {
     console.error("alerts rearm error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// Paper-trade backtest — "if I had followed every BUY rec for the
+// last N days with $C, what would ROI have been?" Compares vs SPY.
+router.get("/backtest", requireStocksAuth, async (req, res) => {
+  try {
+    const capital = Math.max(1000, Math.min(10_000_000, Number(req.query.capital) || 50000));
+    const days = Math.max(7, Math.min(365, Number(req.query.days) || 30));
+    const maxConcurrent = Math.max(1, Math.min(30, Number(req.query.maxConcurrent) || 10));
+    const result = await runBacktest({ email: req.stocksUser.email, capital, days, maxConcurrent });
+    res.json(result);
+  } catch (err) {
+    console.error("backtest error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
   }
 });

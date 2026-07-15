@@ -6002,6 +6002,8 @@ function PerformanceView({ sessionToken }) {
 
       <EightKFeedCard sessionToken={sessionToken} />
 
+      <BacktestCard sessionToken={sessionToken} />
+
       <TradeJournalAnalysisCard sessionToken={sessionToken} />
 
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
@@ -7116,6 +7118,131 @@ function AlertsCard({ sessionToken }) {
             <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)" }}>No alerts yet. Arm one above.</div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function BacktestCard({ sessionToken }) {
+  const [capital, setCapital] = useState(50000);
+  const [days, setDays] = useState(30);
+  const [maxConcurrent, setMaxConcurrent] = useState(10);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const q = new URLSearchParams({ capital: String(capital), days: String(days), maxConcurrent: String(maxConcurrent) });
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/backtest?${q.toString()}`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setResult(j);
+    } catch (e) { setErr(e?.message || "Backtest failed"); }
+    finally { setBusy(false); }
+  };
+
+  const p = result?.portfolio;
+  const money = (v, ccy) => `${v < 0 ? "-" : ""}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 })}${ccy ? " " + ccy : ""}`;
+  const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>💰 Paper-trade backtest</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            "If I had followed every AI BUY rec for the last N days with $C, what would ROI have been?" Equal-weighted, exits use target/stop-hits or mark-to-market vs today. Benchmark: SPY buy-and-hold same window.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Starting capital ($)</div>
+          <input type="number" value={capital} onChange={(e) => setCapital(Number(e.target.value))} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Lookback (days)</div>
+          <input type="number" value={days} onChange={(e) => setDays(Number(e.target.value))} min={7} max={365} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Max concurrent positions</div>
+          <input type="number" value={maxConcurrent} onChange={(e) => setMaxConcurrent(Number(e.target.value))} min={1} max={30} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <button className="sa-btn" onClick={run} disabled={busy}>{busy ? "Running…" : "Run backtest"}</button>
+      </div>
+
+      {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+
+      {result && !result.ok && (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--sa-muted)", background: "var(--sa-panel-2)", borderRadius: 8, padding: "10px 12px" }}>
+          {result.reason}
+        </div>
+      )}
+
+      {result?.ok && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 14 }}>
+            {[
+              { label: `Starting capital`, v: money(result.startingCapital) },
+              { label: `Final value`, v: money(p.finalValue), color: p.totalNetPnl >= 0 ? "#166534" : "#991b1b" },
+              { label: `Net P&L`, v: `${p.totalNetPnl >= 0 ? "+" : ""}${money(p.totalNetPnl)}`, color: p.totalNetPnl >= 0 ? "#166534" : "#991b1b" },
+              { label: `Return`, v: pct(p.totalReturnPct), color: p.totalReturnPct >= 0 ? "#166534" : "#991b1b" },
+              { label: `SPY same window`, v: pct(p.benchmarkSpyPct) },
+              { label: `Alpha vs SPY`, v: pct(p.alphaPct), color: (p.alphaPct ?? 0) >= 0 ? "#166534" : "#991b1b" },
+            ].map((s, i) => (
+              <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 6, textAlign: "center" }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{s.label}</div>
+                <div style={{ fontSize: 16, fontWeight: 700, marginTop: 2, color: s.color || "inherit" }}>{s.v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 8 }}>
+            {result.tradesExecuted} paper trades from {result.buysConsidered} BUY recs ({result.totalRecsInWindow} total recs in window) · {result.skipped.length} skipped · Cash left uninvested: {money(p.cashLeftUninvested)}
+          </div>
+
+          {result.trades.length > 0 && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ borderBottom: "1px solid var(--sa-border)", color: "var(--sa-muted)", textTransform: "uppercase", fontSize: 10.5, letterSpacing: ".06em" }}>
+                    <th style={{ padding: "6px 8px", textAlign: "left" }}>Ticker</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Entry</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Exit</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Held</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>Return</th>
+                    <th style={{ padding: "6px 8px", textAlign: "right" }}>P&L</th>
+                    <th style={{ padding: "6px 8px", textAlign: "left" }}>Exit reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.trades.map((t, i) => (
+                    <tr key={i} style={{ borderBottom: "1px solid var(--sa-border)" }}>
+                      <td style={{ padding: "6px 8px", fontWeight: 700 }}>{t.ticker} <span style={{ color: "var(--sa-muted)", fontSize: 10 }}>{t.currency}</span></td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${t.entryPrice.toFixed(2)} <span style={{ color: "var(--sa-muted)", fontSize: 10 }}>{new Date(t.entryDate).toLocaleDateString()}</span></td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${t.exitPrice.toFixed(2)} <span style={{ color: "var(--sa-muted)", fontSize: 10 }}>{new Date(t.exitDate).toLocaleDateString()}</span></td>
+                      <td style={{ padding: "6px 8px", textAlign: "right" }}>{t.holdDays}d</td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", color: t.pnlPct >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>{t.pnlPct >= 0 ? "+" : ""}{t.pnlPct.toFixed(1)}%</td>
+                      <td style={{ padding: "6px 8px", textAlign: "right", color: t.pnlDollars >= 0 ? "#166534" : "#991b1b", fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{t.pnlDollars >= 0 ? "+" : ""}{money(t.pnlDollars, t.currency)}</td>
+                      <td style={{ padding: "6px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{t.exitReason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          <div style={{ marginTop: 14, fontSize: 10.5, color: "var(--sa-muted)", background: "var(--sa-panel-2)", padding: "8px 10px", borderRadius: 6 }}>
+            ⚠ {result.disclaimer}
+          </div>
+        </div>
       )}
     </div>
   );
