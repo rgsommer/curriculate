@@ -63,7 +63,14 @@ export async function POST(req: Request) {
       });
     }
 
-    const pin = newPin();
+    // Store-review demo account: one env-allowlisted email gets a fixed PIN
+    // instead of an emailed one, so App Store / Play Store reviewers can sign
+    // in without receiving mail. Inert unless both env vars are set.
+    const demoEmail = (process.env.DEMO_REVIEW_EMAIL || "").trim().toLowerCase();
+    const demoPin = (process.env.DEMO_REVIEW_PIN || "").trim();
+    const isDemoFixed = !!demoEmail && !!demoPin && emailRaw === demoEmail;
+
+    const pin = isDemoFixed ? demoPin : newPin();
     const secret = getSecret();
     const tokenPayload = {
       email: emailRaw,
@@ -76,8 +83,11 @@ export async function POST(req: Request) {
     };
     const token = signToken(tokenPayload, secret);
 
-    // Email it
-    if (process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY) {
+    // Email it (skipped for the fixed-PIN demo account — reviewers use the
+    // PIN from the review notes, so no mailbox is needed).
+    if (isDemoFixed) {
+      // no-op: the client already holds the token; reviewer enters the fixed PIN
+    } else if (process.env.RESEND_PNGPAY_API_KEY || process.env.RESEND_API_KEY) {
       try {
         await resend.emails.send({
           from: FROM,
