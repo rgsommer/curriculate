@@ -112,6 +112,33 @@ try {
     status: "approved", is_demo: true,
   });
 
+  // 7. Optional: wire a Principal (e.g. Theresia) as the supervisor of a
+  //    SECOND demo team, so their own Principal login also lights up the field
+  //    view — that's what makes the Office ⇄ Field toggle appear for them.
+  //    Set DEMO_PRINCIPAL_EMAIL to enable (their real login email).
+  const principalEmail = (process.env.DEMO_PRINCIPAL_EMAIL || "").trim().toLowerCase();
+  if (principalEmail) {
+    const { doc: pSup } = await upsert(Employees,
+      { company_id: cid, email: principalEmail },
+      { company_id: cid, first_name: "Demo", last_name: "Principal", email: principalEmail,
+        pay_type: "salary", annual_salary: 0, default_hours: 80, fte_pct: 100,
+        dependents: 0, residency_status: "resident", declaration_lodged: true,
+        is_active: 1, division_id: null, is_demo: true });
+    const { doc: divB } = await upsert(Divisions, { company_id: cid, name: "Site Crew B" }, {
+      company_id: cid, name: "Site Crew B", supervisor_submits_hours: true,
+      default_hours: 80, timesheet_mode: false, is_active: 1, is_demo: true });
+    await Divisions.updateOne({ _id: divB._id }, { $set: { supervisor_employee_id: pSup._id } });
+    for (const t of [{ first_name: "Sam", last_name: "Aila" }, { first_name: "Rita", last_name: "Kama" }]) {
+      await upsert(Employees,
+        { company_id: cid, first_name: t.first_name, last_name: t.last_name },
+        { company_id: cid, first_name: t.first_name, last_name: t.last_name, email: null,
+          pay_type: "hourly", hourly_rate: 6.5, default_hours: 80, fte_pct: 100,
+          dependents: 0, residency_status: "resident", declaration_lodged: true,
+          is_active: 1, division_id: divB._id, is_demo: true });
+    }
+    console.log("   Field toggle: ", principalEmail, "now supervises Site Crew B (Sam Aila, Rita Kama)");
+  }
+
   console.log("\n✅ Demo seeded into", MONGO_DB);
   console.log("   Company:    ", COMPANY_NAME, `(${cid})`);
   console.log("   Division:   ", DIVISION_NAME, "· supervisor_submits_hours = true");

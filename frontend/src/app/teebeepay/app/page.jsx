@@ -90,7 +90,7 @@ export default function TeebeePayApp() {
       minHeight: "100vh", background: "#f6f7f9", color: C.ink,
       fontFamily: "system-ui, -apple-system, 'Segoe UI', Inter, Roboto, sans-serif",
     }}>
-      {view !== "login" && <AppHeader me={me} onSignOut={signOut}
+      {view !== "login" && <AppHeader me={me} onSignOut={signOut} view={view}
         onUsers={() => setView("users")}
         onServiceFees={() => setView("service_fees")}
         onAuditLog={() => setView("audit_log")}
@@ -138,7 +138,7 @@ export default function TeebeePayApp() {
 
 /* ─────────── Header / shared bits ─────────── */
 
-function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, onAuditLog, onMyTeam }) {
+function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, onAuditLog, onMyTeam, view }) {
   const displayName = me?.first_name || me?.last_name
     ? `${me.first_name || ""} ${me.last_name || ""}`.trim()
     : me?.email || "";
@@ -164,11 +164,32 @@ function AppHeader({ me, onSignOut, onUsers, onServiceFees, onHome, onProfile, o
         <strong style={{ fontSize: 17 }}>TeebeePay</strong>
       </button>
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-        {hasTeam && (
+        {/* Dual-role users (supervise a team AND have office access) get a
+            clear Office ⇄ Field toggle. Pure supervisors keep the single
+            "My team" button; office-only users see nothing here. */}
+        {hasTeam && me?.clearance >= 1 ? (
+          <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: 999, padding: 3 }}>
+            {[
+              { key: "office", label: "Office", icon: <Building2 size={13} />, on: () => onHome(), active: view !== "my_team" },
+              { key: "field",  label: "Field",  icon: <Network size={13} />,  on: () => onMyTeam(), active: view === "my_team" },
+            ].map((seg) => (
+              <button key={seg.key} onClick={seg.on} title={seg.key === "field" ? "Enter your team's hours" : "Back to the office view"}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, border: "none", cursor: "pointer",
+                  padding: "6px 13px", borderRadius: 999, fontSize: 12.5, fontWeight: 600,
+                  background: seg.active ? "#fff" : "transparent",
+                  color: seg.active ? C.ink : C.muted,
+                  boxShadow: seg.active ? "0 1px 2px rgba(0,0,0,0.10)" : "none",
+                }}>
+                {seg.icon} {seg.label}
+              </button>
+            ))}
+          </div>
+        ) : hasTeam ? (
           <button onClick={onMyTeam} style={{ ...btnGhostSmall, background: "#fef3c7", borderColor: "#fde68a", color: "#9c6c00" }} title="Enter your team's hours">
             <Network size={14} /> My team
           </button>
-        )}
+        ) : null}
         {me?.clearance >= 4 && (
           <button onClick={onServiceFees} style={btnGhostSmall} title="Service fees">
             <Percent size={14} /> Fees
