@@ -2134,7 +2134,34 @@ function PriceWarningsBanner() {
   return null;
 }
 
-function renderAdviceBody(body, priceLookup = null) {
+// Given a current price + a rec (with entry / stop), return a "zone status"
+// used to color the rec block: "in-entry" (current within ±2.5% of entry AND
+// above stop — the sweet spot to take the trade), "near-entry" (within ±5%
+// of entry, above stop — chase but still tradeable), "stopped" (price ≤ stop
+// — thesis invalidated), or null (no signal — leave neutral). Pure function
+// so it can drive both the freeform advice cards and the structured
+// HighConviction/DailyPick cards from the same rule.
+function entryZoneStatus(currentPrice, rec) {
+  if (currentPrice == null || !rec || !Number.isFinite(rec.entryPrice)) return null;
+  const entry = rec.entryPrice;
+  const stop = Number.isFinite(rec.stopPrice) ? rec.stopPrice : null;
+  const price = currentPrice;
+  if (stop != null && price <= stop) return "stopped";
+  const distPct = Math.abs((price - entry) / entry) * 100;
+  if (distPct <= 2.5) return "in-entry";
+  if (distPct <= 5) return "near-entry";
+  return null;
+}
+
+// Palette for the zone status — used consistently everywhere.
+function zoneStyle(status) {
+  if (status === "in-entry") return { bg: "#f0fdf4", border: "#86efac", accent: "#166534", tag: "IN ENTRY ZONE" };
+  if (status === "near-entry") return { bg: "#fefce8", border: "#fde68a", accent: "#a16207", tag: "NEAR ENTRY" };
+  if (status === "stopped") return { bg: "#fef2f2", border: "#fecaca", accent: "#991b1b", tag: "STOPPED OUT" };
+  return null;
+}
+
+function renderAdviceBody(body, priceLookup = null, recLookup = null) {
   if (!body) return null;
   const text = String(body).trim();
   if (!text) return null;
@@ -2161,10 +2188,17 @@ function renderAdviceBody(body, priceLookup = null) {
             .map(s => s.replace(/\.+$/, "").trim())
             .filter(s => s.length > 3);
           const allSentences = actionDetail ? [actionDetail, ...sentences] : sentences;
-          // Current price lookup for ticker
           const px = priceLookup ? priceLookup(c.ticker) : null;
+          const rec = recLookup ? recLookup(c.ticker) : null;
+          const zone = entryZoneStatus(px?.price, rec);
+          const zs = zoneStyle(zone);
+          // Zone background wins over the neutral panel-2 when active. Left
+          // border still comes from the action palette so BUY/SELL/HOLD
+          // colour cues aren't lost.
+          const blockBg = zs ? zs.bg : "var(--sa-panel-2)";
+          const blockBorderColor = zs ? zs.border : (pal ? pal.fg : "var(--sa-border)");
           return (
-            <div key={i} style={{ padding: "10px 14px", background: "var(--sa-panel-2)", borderRadius: 8, borderLeft: pal ? `3px solid ${pal.fg}` : "3px solid var(--sa-border)", minWidth: 0, overflow: "hidden" }}>
+            <div key={i} style={{ padding: "10px 14px", background: blockBg, borderRadius: 8, borderLeft: `3px solid ${blockBorderColor}`, minWidth: 0, overflow: "hidden" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
                 <span style={{ fontWeight: 700, fontSize: 15, color: "var(--sa-text)" }}>{c.ticker}</span>
                 {px && (
@@ -2177,7 +2211,19 @@ function renderAdviceBody(body, priceLookup = null) {
                     {actionLabel}
                   </span>
                 )}
+                {zs && (
+                  <span style={{ background: zs.border, color: zs.accent, padding: "2px 9px", borderRadius: 99, fontSize: 10.5, fontWeight: 700, letterSpacing: ".05em" }}>
+                    {zs.tag}
+                  </span>
+                )}
               </div>
+              {rec && Number.isFinite(rec.entryPrice) && (
+                <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 6, fontVariantNumeric: "tabular-nums" }}>
+                  entry ${rec.entryPrice.toFixed(2)}
+                  {Number.isFinite(rec.targetPrice) ? ` · target $${rec.targetPrice.toFixed(2)}` : ""}
+                  {Number.isFinite(rec.stopPrice) ? ` · stop $${rec.stopPrice.toFixed(2)}` : ""}
+                </div>
+              )}
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--sa-text-2)", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                 {allSentences.map((s, j) => (
                   <li key={j} style={{ marginBottom: 3 }}>{renderInlineBold(s)}</li>
@@ -2208,15 +2254,28 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   // Build a ticker → { price, currency } lookup from the user's positions
   // so per-ticker advice cards can display the current price next to the
   // ticker symbol. Uses the native trading currency of each position.
-  const priceLookup = useMemo(() => {
+  // Live prices for held positions — used to color the rec block green
+  // when the current price is inside the entry zone. Extended below by
+  // fetchedPrices for tickers we don't hold (unowned recs).
+  const heldPriceLookup = useMemo(() => {
     const m = {};
     for (const p of user.positions || []) {
       if (m[p.ticker]) continue;
       if (p.ccy === "USD" && p.priceUsd != null) m[p.ticker] = { price: p.priceUsd, currency: "USD" };
       else if (p.ccy === "CAD" && p.priceCad != null) m[p.ticker] = { price: p.priceCad, currency: "CAD" };
     }
-    return (ticker) => m[ticker] || null;
+    return m;
   }, [user.positions]);
+  // Recent BUY recs keyed by ticker — for entry-zone coloring. Fetched
+  // lazily when the Advice tab mounts and the snapshot/AI advice loads.
+  const [recMap, setRecMap] = useState({});
+  const [fetchedPriceMap, setFetchedPriceMap] = useState({});
+  const priceLookup = useMemo(() => {
+    return (ticker) => heldPriceLookup[ticker] || fetchedPriceMap[ticker] || null;
+  }, [heldPriceLookup, fetchedPriceMap]);
+  const recLookup = useMemo(() => {
+    return (ticker) => recMap[ticker] || null;
+  }, [recMap]);
   const [consensusBusy, setConsensusBusy] = useState(false);
   const [consensusData, setConsensusData] = useState(null); // { consensus, alternatives, sources }
   const [busy, setBusy] = useState(false);
@@ -2267,6 +2326,68 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
     })();
     return () => { cancelled = true; };
   }, [sessionToken]);
+
+  // Scrape all **TICKER**: mentions across every advice surface currently
+  // rendered — snapshot cards, AI advice cards, consensus cards. Then batch
+  // fetch: recent BUY recs (for entry/target/stop) + live prices (for tickers
+  // we don't already hold). Both feed the entry-zone color coding.
+  useEffect(() => {
+    if (!sessionToken) return;
+    const bodies = [];
+    if (snapshotAdvice?.advice) for (const c of snapshotAdvice.advice) if (c.body) bodies.push(c.body);
+    if (aiAdvice?.advice) for (const c of aiAdvice.advice) if (c.body) bodies.push(c.body);
+    if (consensusData?.consensus) for (const c of consensusData.consensus) if (c.body) bodies.push(c.body);
+    if (bodies.length === 0) return;
+    const tickerRe = /\*\*([A-Z][A-Z0-9.\-]{0,9})\*\*:/g;
+    const tickers = new Set();
+    for (const b of bodies) {
+      let m;
+      while ((m = tickerRe.exec(b)) !== null) tickers.add(m[1]);
+    }
+    if (tickers.size === 0) return;
+    const list = [...tickers];
+    let cancelled = false;
+    (async () => {
+      // Recent open BUY recs (last 14 days) — matched by ticker.
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-advice/recs-for-tickers?tickers=${encodeURIComponent(list.join(","))}&hours=${14 * 24}`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (r.ok) {
+          const j = await r.json();
+          const map = {};
+          for (const rec of j.recs || []) {
+            if (rec.action !== "BUY") continue;
+            if (map[rec.ticker]) continue; // keep newest (list is sorted -generatedAt)
+            map[rec.ticker] = { entryPrice: rec.entryPrice, targetPrice: rec.targetPrice, stopPrice: rec.stopPrice, currency: rec.entryCurrency };
+          }
+          if (!cancelled) setRecMap(map);
+        }
+      } catch { /* ignore */ }
+      // Live prices for tickers we don't already hold (held ones use
+      // heldPriceLookup). Uses the same public backend proxy as
+      // refreshPrices — no auth required.
+      const needPrices = list.filter((t) => !heldPriceLookup[t]);
+      if (needPrices.length === 0) return;
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-prices`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: needPrices }),
+        });
+        if (r.ok) {
+          const j = await r.json();
+          const priceMap = {};
+          for (const [t, q] of Object.entries(j.prices || {})) {
+            if (q?.price != null) priceMap[t] = { price: q.price, currency: q.currency || "USD" };
+          }
+          if (!cancelled) setFetchedPriceMap((prev) => ({ ...prev, ...priceMap }));
+        }
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, snapshotAdvice, aiAdvice, consensusData, heldPriceLookup]);
 
   const handleRefresh = async () => {
     if (busy) return;
@@ -2446,7 +2567,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
             <PriceWarningsBanner warnings={c.priceWarnings} />
             {hasRecs ? (
               <>
-                {parsed.intro && renderAdviceBody(parsed.intro, priceLookup)}
+                {parsed.intro && renderAdviceBody(parsed.intro, priceLookup, recLookup)}
                 <RecsTable
                   recs={parsed.recs}
                   onExecuteRec={onExecuteRec}
@@ -2460,7 +2581,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
               // No structured recs detected — render with the smart body
               // renderer: per-ticker mini-cards when the briefing emitted
               // "Signals per holding" content, otherwise prose with bold.
-              renderAdviceBody(c.body, priceLookup)
+              renderAdviceBody(c.body, priceLookup, recLookup)
             )}
             {c.meta && <div className="meta">{c.meta}</div>}
           </div>
@@ -2488,12 +2609,12 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                 <PriceWarningsBanner warnings={c.priceWarnings} />
                 {hasRecs ? (
                   <>
-                    {parsed.intro && renderAdviceBody(parsed.intro, priceLookup)}
+                    {parsed.intro && renderAdviceBody(parsed.intro, priceLookup, recLookup)}
                     <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} executedRecKeys={executedRecKeys} recKey={recKey} pnlMap={pnlMap} />
                     {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{renderInlineBold(parsed.outro)}</p>}
                   </>
                 ) : (
-                  renderAdviceBody(c.body, priceLookup)
+                  renderAdviceBody(c.body, priceLookup, recLookup)
                 )}
                 {c.meta && <div className="meta">{c.meta}</div>}
               </div>
@@ -5166,11 +5287,60 @@ function MoonshotCard({ pick, rank }) {
 
 function HighConvictionCard({ pick, rank }) {
   const [showDetail, setShowDetail] = useState(false);
+  const [livePrice, setLivePrice] = useState(null);
   const mf = pick.multiFactor || {};
   const ccy = pick.currencyAtDiscovery || "USD";
   const risk = hcRiskColor(mf.riskRating);
   const cap = pick.marketCap ? `$${(pick.marketCap / 1e9).toFixed(pick.marketCap >= 1e9 ? 2 : 3)}B` : "—";
   const price = pick.priceAtDiscovery != null ? `$${pick.priceAtDiscovery} ${ccy}` : "—";
+
+  // Live price for entry-zone highlight. Cheap: one price fetch per card
+  // on mount; the response is cached upstream so 10 cards on the page are
+  // effectively 10 identical calls — trivial.
+  useEffect(() => {
+    if (!pick.ticker) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-prices`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: [pick.ticker] }),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        const q = j.prices?.[pick.ticker];
+        if (!cancelled && q?.price != null) setLivePrice(q.price);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [pick.ticker]);
+
+  // Parse entryZone strings like "$140.00-$148.00", "140-148", or "$145" into
+  // a numeric range. Used for the definitive "current price inside AI-stated
+  // entry zone" check that beats a ±% heuristic when we have real bounds.
+  const parseEntryRange = (s) => {
+    if (!s) return null;
+    const nums = String(s).match(/-?\d+(?:\.\d+)?/g);
+    if (!nums || nums.length === 0) return null;
+    const a = parseFloat(nums[0]);
+    const b = nums.length > 1 ? parseFloat(nums[1]) : a;
+    return { low: Math.min(a, b), high: Math.max(a, b) };
+  };
+  const entryRange = parseEntryRange(mf.projection?.entryZone);
+  // Zone status: use the AI's stated range when we have one, else fall back
+  // to the ±2.5% heuristic against the range midpoint.
+  let projZone = null;
+  if (livePrice != null && entryRange) {
+    const stop = Number.isFinite(mf.projection?.stop) ? mf.projection.stop : (Number.isFinite(+mf.projection?.stop) ? +mf.projection.stop : null);
+    if (stop != null && livePrice <= stop) projZone = "stopped";
+    else if (livePrice >= entryRange.low && livePrice <= entryRange.high) projZone = "in-entry";
+    else {
+      const mid = (entryRange.low + entryRange.high) / 2;
+      const distPct = Math.abs((livePrice - mid) / mid) * 100;
+      if (distPct <= 5) projZone = "near-entry";
+    }
+  }
+  const projZoneStyle = zoneStyle(projZone);
   // Which market the opportunity is in (exchange + country).
   const exch = (pick.exchange || "").toUpperCase();
   const isCanada = ccy === "CAD" || /^(TSX|TSXV|CN|NEO|NE)$/.test(exch) || /\.(TO|V|NE|CN)$/i.test(pick.ticker || "");
@@ -5258,7 +5428,18 @@ function HighConvictionCard({ pick, rank }) {
       </div>
 
       {mf.projection && (
-        <div style={{ marginTop: 10, border: "1px solid var(--sa-border)", borderRadius: 8, padding: "8px 10px", fontSize: 12 }}>
+        <div style={{
+          marginTop: 10,
+          border: `1px solid ${projZoneStyle ? projZoneStyle.border : "var(--sa-border)"}`,
+          background: projZoneStyle ? projZoneStyle.bg : "transparent",
+          borderRadius: 8, padding: "8px 10px", fontSize: 12,
+        }}>
+          {projZoneStyle && (
+            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6, alignItems: "baseline" }}>
+              <span style={{ background: projZoneStyle.border, color: projZoneStyle.accent, padding: "2px 9px", borderRadius: 99, fontSize: 10.5, fontWeight: 700, letterSpacing: ".05em" }}>{projZoneStyle.tag}</span>
+              {livePrice != null && <span style={{ fontSize: 11, color: "var(--sa-muted)" }}>live: ${livePrice.toFixed(2)} {ccy}</span>}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "baseline" }}>
             <span>
               <span style={{ color: "var(--sa-muted)" }}>Projected ROI:</span>{" "}
@@ -7136,6 +7317,8 @@ function DailyPickCard({ sessionToken }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
+  // Live prices per pick ticker — drives entry-zone row coloring.
+  const [pickPrices, setPickPrices] = useState({});
 
   const load = async () => {
     try {
@@ -7145,6 +7328,30 @@ function DailyPickCard({ sessionToken }) {
     } catch { /* ignore */ }
   };
   useEffect(() => { load(); }, [sessionToken]);
+
+  // Fetch live prices for every OPEN pick's ticker whenever picks reload,
+  // so the entry-zone highlight reflects today's market.
+  useEffect(() => {
+    const opens = (data?.items || []).filter((p) => p.status === "open");
+    if (opens.length === 0) { setPickPrices({}); return; }
+    const tickers = [...new Set(opens.map((p) => p.ticker))];
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-prices`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers }),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        const m = {};
+        for (const [t, q] of Object.entries(j.prices || {})) if (q?.price != null) m[t] = q.price;
+        setPickPrices(m);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [data]);
 
   const generateNow = async () => {
     if (busy) return;
@@ -7225,19 +7432,30 @@ function DailyPickCard({ sessionToken }) {
               </tr>
             </thead>
             <tbody>
-              {items.map((p) => (
-                <tr key={p._id} style={{ borderBottom: "1px solid var(--sa-border)" }}>
-                  <td style={{ padding: "5px 8px" }}>{new Date(p.pickDate).toLocaleDateString()}</td>
-                  <td style={{ padding: "5px 8px", fontWeight: 700 }}>{p.ticker}</td>
-                  <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${p.entryPrice.toFixed(2)}</td>
-                  <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b", fontVariantNumeric: "tabular-nums" }}>${p.stopPrice?.toFixed(2) ?? "—"}</td>
-                  <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>${p.targetPrice?.toFixed(2) ?? "—"}</td>
-                  <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600 }}>{p.deterministicScore ?? "—"}</td>
-                  <td style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{p.setupName || "—"}</td>
-                  <td style={{ padding: "5px 8px", fontSize: 10.5 }}>{p.status}</td>
-                  <td style={{ padding: "5px 8px", textAlign: "right", color: (p.pnlPct ?? 0) >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>{p.pnlPct != null ? `${p.pnlPct >= 0 ? "+" : ""}${p.pnlPct.toFixed(1)}%` : "—"}</td>
-                </tr>
-              ))}
+              {items.map((p) => {
+                const livePx = pickPrices[p.ticker];
+                const zone = p.status === "open" ? entryZoneStatus(livePx, { entryPrice: p.entryPrice, stopPrice: p.stopPrice }) : null;
+                const zs = zoneStyle(zone);
+                return (
+                  <tr key={p._id} style={{ borderBottom: "1px solid var(--sa-border)", background: zs ? zs.bg : "transparent" }}>
+                    <td style={{ padding: "5px 8px" }}>{new Date(p.pickDate).toLocaleDateString()}</td>
+                    <td style={{ padding: "5px 8px", fontWeight: 700 }}>
+                      {p.ticker}
+                      {zs && <span style={{ marginLeft: 6, background: zs.border, color: zs.accent, padding: "1px 6px", borderRadius: 99, fontSize: 9.5, fontWeight: 700, letterSpacing: ".04em", verticalAlign: "middle" }}>{zs.tag}</span>}
+                    </td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      ${p.entryPrice.toFixed(2)}
+                      {livePx != null && <div style={{ fontSize: 9.5, color: "var(--sa-muted)" }}>now ${livePx.toFixed(2)}</div>}
+                    </td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b", fontVariantNumeric: "tabular-nums" }}>${p.stopPrice?.toFixed(2) ?? "—"}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>${p.targetPrice?.toFixed(2) ?? "—"}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600 }}>{p.deterministicScore ?? "—"}</td>
+                    <td style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{p.setupName || "—"}</td>
+                    <td style={{ padding: "5px 8px", fontSize: 10.5 }}>{p.status}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: (p.pnlPct ?? 0) >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>{p.pnlPct != null ? `${p.pnlPct >= 0 ? "+" : ""}${p.pnlPct.toFixed(1)}%` : "—"}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
