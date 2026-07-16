@@ -77,6 +77,7 @@ export async function GET(req: Request) {
       return {
         id: c._id.toString(),
         name: c.name, abbreviation: c.abbreviation || "",
+        is_demo: !!c.is_demo,
         pay_interval: c.pay_interval || "fortnightly",
         default_hours: c.default_hours || 80,
         currency: c.currency || "PGK",

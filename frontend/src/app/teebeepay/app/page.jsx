@@ -352,6 +352,10 @@ function Dashboard({ me, onPick }) {
   useEffect(() => { refresh(); }, [refresh]);
 
   const greeting = me?.first_name ? `Welcome back, ${me.first_name}.` : "Welcome back.";
+  // The demo company is surfaced as its own labelled entry (a safe sandbox to
+  // explore/show the platform) and kept out of the real-client roster below.
+  const demo = companies?.find((c) => c.is_demo) || null;
+  const realCompanies = companies?.filter((c) => !c.is_demo) || [];
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px" }}>
@@ -365,9 +369,33 @@ function Dashboard({ me, onPick }) {
       </div>
       <p style={{ color: C.muted, fontSize: 15, margin: "0 0 28px" }}>
         {companies == null ? "Loading client companies…" :
-         companies.length === 0 ? "No companies yet — add your first one to get started." :
-         `${companies.length} ${companies.length === 1 ? "company" : "companies"} on your roster.`}
+         realCompanies.length === 0 ? "No companies yet — add your first one to get started." :
+         `${realCompanies.length} ${realCompanies.length === 1 ? "company" : "companies"} on your roster.`}
       </p>
+
+      {demo && (
+        <button onClick={() => onPick(demo.id)} style={{
+          width: "100%", textAlign: "left", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 14,
+          background: "linear-gradient(90deg,#fff7ed,#fffdf7)",
+          border: `1px solid ${C.gold}`, borderLeft: `4px solid ${C.red}`,
+          borderRadius: 12, padding: "15px 18px", marginBottom: 22,
+        }}>
+          <div style={{ width: 42, height: 42, borderRadius: 10, background: C.red, color: C.gold,
+            display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20, flexShrink: 0 }}>K</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 16, fontWeight: 700 }}>{demo.name}</span>
+              <span style={{ background: C.red, color: "#fff", padding: "2px 8px", borderRadius: 999,
+                fontSize: 10.5, fontWeight: 700, letterSpacing: 0.04, textTransform: "uppercase" }}>Demo</span>
+            </div>
+            <div style={{ fontSize: 12.5, color: C.muted, marginTop: 3 }}>
+              A safe sandbox to explore or show the full platform — nothing here touches real client data.
+            </div>
+          </div>
+          <ChevronRight size={20} color={C.muted} style={{ flexShrink: 0 }} />
+        </button>
+      )}
 
       {me?.clearance >= 2 && <ManagerStepsForToday onOpenCompany={onPick} />}
 
@@ -375,7 +403,7 @@ function Dashboard({ me, onPick }) {
 
       {companies == null ? <Centered><Loader2 className="tbp-spin" size={24} color={C.red} /></Centered> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
-          {companies.map((c) => {
+          {realCompanies.map((c) => {
             const badge = c.status === "pending_approval"
               ? { bg: "#fef3c7", bd: "#fde68a", color: "#9c6c00", label: "Awaiting approval" }
               : c.status === "approved_pending_upload"
