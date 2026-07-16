@@ -29,6 +29,8 @@ import { getFundamentals, formatFundamentalsLine } from "../services/stocksFunda
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
 import { getShortInterest, formatShortInterestLine } from "../services/stocksShortInterest.js";
 import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
+import { generateDailyPicksForUser } from "../services/stocksDailyPickEngine.js";
+import StocksDailyPick from "../models/StocksDailyPick.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
@@ -570,7 +572,17 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "") {
+function formatDailyPicksBlock(dailyPicks) {
+  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
+  const lines = dailyPicks.map((p, i) => {
+    return `Pick ${i + 1}: ${p.ticker} @ $${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · score ${p.deterministicScore}${p.setupName ? ` · setup: ${p.setupName}` : ""}${p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : ""}\n    · ${p.rationale}`;
+  });
+  return `\nTODAY'S ${dailyPicks.length} SWING-TRADE PICKS (deterministic composite — must appear in briefing under a "## 🎯 Today's Swing-Trade Picks" section, one narrative paragraph per pick, and MUST appear in the trailing <RECS> block):
+${lines.join("\n")}
+`;
+}
+
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -804,6 +816,7 @@ ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
+${formatDailyPicksBlock(dailyPicks)}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -823,6 +836,7 @@ Write a markdown briefing with these sections:
 ${cashSection}
 6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
 7. **Aggressive new ideas** — 1-2 unowned names with price targets. For each, suggest the optimal account based on Canadian tax treatment (e.g., "US growth name → TFSA"; "Canadian dividend payer → Non-Spousal for the dividend tax credit").
+8. **🎯 Today's Swing-Trade Picks** — REQUIRED section (heading must be exactly "## 🎯 Today's Swing-Trade Picks"). Use the TODAY'S SWING-TRADE PICKS block above as the SOURCE OF TRUTH. Write ONE narrative paragraph per pick that: (a) quotes the exact entry/target/stop from the block verbatim (they are deterministic and already validated), (b) explains the setup name + score in plain English, (c) says how this fits the 10-day horizon. Each pick MUST also appear as its own entry in the trailing <RECS> block with action="BUY". Do NOT invent your own picks here — use the ones listed in the source block. If the block is empty (no picks passed threshold today), write "No deterministic swing picks passed the 40-point threshold today." and skip the section entirely.
 
 Length: 700-1100 words. Date-stamp the top.
 
@@ -1004,7 +1018,7 @@ export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -1013,9 +1027,35 @@ export async function generateBriefing(profile) {
     computeLessons(profile.email).catch((e) => { console.warn("[computeLessons] warn:", e?.message); return null; }),
     getTranscriptsForTopHoldings(profile).catch((e) => { console.warn("[getTranscriptsForTopHoldings] warn:", e?.message); return null; }),
     buildStarredWatchListBlock(profile.email).catch(() => ""),
+    // Deterministic swing-trade picks — feed the AI so it can narrate them
+    // in a dedicated section, AND persist them to StocksDailyPick so Test A
+    // tracking works whether or not the daily-pick cron ran independently.
+    generateDailyPicksForUser({ email: profile.email, n: 2 }).catch((e) => { console.warn("[generateDailyPicksForUser] warn:", e?.message); return []; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock);
+  // Idempotently persist daily picks (safe if the daily-pick cron already
+  // generated them; upsert-by-day check inside the model won't matter here
+  // since we insert fresh docs — dedupe happens on generateAndPersistPicksForUser).
+  try {
+    for (const p of dailyPicks) {
+      await StocksDailyPick.create({
+        email: profile.email,
+        pickDate: new Date(),
+        ticker: p.ticker,
+        currency: "USD",
+        entryPrice: p.entryPrice,
+        targetPrice: p.targetPrice,
+        stopPrice: p.stopPrice,
+        horizonDays: 10,
+        deterministicScore: p.deterministicScore,
+        scoreContributors: p.scoreContributors,
+        setupName: p.setupName,
+        mtfConfluence: p.mtfConfluence,
+        rationale: `Injected from morning briefing · ${p.rationale}`,
+      });
+    }
+  } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks);
 
   // Anthropic call with retry-on-truncation. When the response stops
   // because we hit max_tokens (rather than because the model finished),
