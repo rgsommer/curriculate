@@ -25,6 +25,7 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
+import StocksAdviceRec from "../models/StocksAdviceRec.js";
 
 const router = express.Router();
 
@@ -326,6 +327,31 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     portfolio.lastSyncedAt = new Date();
     await portfolio.save();
 
+    // If the caller didn't tell us which rec this trade fulfills, try to
+    // auto-link: for each BUY/SELL leg, find the newest OPEN rec of the
+    // matching action + ticker + currency in the last 30 days.
+    // First match wins — the linkage is nice-to-have (drives the
+    // "trades executed since last briefing" narration), not critical, so
+    // we prefer a best-effort single-shot rather than a per-leg fanout.
+    let autoLinkedRecId = linkedAdviceRecId || null;
+    if (!autoLinkedRecId) {
+      try {
+        const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        for (const leg of normLegs) {
+          if (!(leg.side === "BUY" || leg.side === "SELL") || !leg.ticker) continue;
+          const match = await StocksAdviceRec.findOne({
+            email: req.stocksUser.email,
+            ticker: leg.ticker,
+            action: leg.side,
+            entryCurrency: leg.currency || "USD",
+            status: "open",
+            generatedAt: { $gte: cutoff },
+          }).sort({ generatedAt: -1 }).select({ _id: 1 }).lean();
+          if (match) { autoLinkedRecId = match._id; break; }
+        }
+      } catch (e) { console.warn("[stocks-trade] auto-link warn:", e?.message); }
+    }
+
     // Journal the trade
     const entry = await StocksTradeJournal.create({
       email: req.stocksUser.email,
@@ -336,7 +362,7 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       netCashCad: netCashCadOfTrade(normLegs, fx),
       fxUsdCadAtTrade: fx,
       notes: String(notes || "").slice(0, 500),
-      linkedAdviceRecId: linkedAdviceRecId || null,
+      linkedAdviceRecId: autoLinkedRecId,
     });
 
     res.json({ ok: true, portfolio: portfolio.toObject(), trade: entry.toObject() });

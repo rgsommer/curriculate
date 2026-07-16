@@ -31,6 +31,7 @@ import { getShortInterest, formatShortInterestLine } from "../services/stocksSho
 import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
 import { generateDailyPicksForUser } from "../services/stocksDailyPickEngine.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
+import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
@@ -572,6 +573,25 @@ function formatQuantSignalsBlock(quantSignals) {
   return `\nQUANT SIGNALS PER HOLDING (pre-computed — use THESE numbers, don't guess):\n${lines.join("\n")}\n`;
 }
 
+function formatRecentTradesBlock(recentTrades) {
+  if (!Array.isArray(recentTrades) || recentTrades.length === 0) return "";
+  const lines = [];
+  for (const t of recentTrades) {
+    const when = new Date(t.executedAt).toISOString().slice(0, 10);
+    for (const leg of t.legs || []) {
+      if (leg.side !== "BUY" && leg.side !== "SELL") continue;
+      const linked = t.linkedAdviceRecId;
+      const linkedStr = linked && linked.ticker === leg.ticker && linked.action === leg.side
+        ? ` [fulfilled AI rec: entry $${linked.entryPrice}, target $${linked.targetPrice ?? "—"}, stop $${linked.stopPrice ?? "—"}, horizon ${linked.horizonDays ?? "?"}d]`
+        : "";
+      const notesStr = t.notes ? ` — "${String(t.notes).slice(0, 120)}"` : "";
+      lines.push(`  ${when}: ${leg.side} ${leg.shares || "?"} sh ${leg.ticker} @ $${leg.pricePerShare?.toFixed?.(2) || leg.pricePerShare} ${leg.currency} in ${t.accountName || t.account}${linkedStr}${notesStr}`);
+    }
+  }
+  if (lines.length === 0) return "";
+  return `\nTRADES YOU EXECUTED SINCE LAST BRIEFING — you must acknowledge each of these explicitly (see instruction below):\n${lines.join("\n")}\n`;
+}
+
 function formatDailyPicksBlock(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   const lines = dailyPicks.map((p, i) => {
@@ -582,7 +602,7 @@ ${lines.join("\n")}
 `;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -816,6 +836,7 @@ ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
+${formatRecentTradesBlock(recentTrades)}
 ${formatDailyPicksBlock(dailyPicks)}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
@@ -829,6 +850,11 @@ Use the web_search tool aggressively — at least 6-10 searches across the signa
 
 Write a markdown briefing with these sections:
 0. **🚨 Open recommendation alerts** — surface verbatim the ALERTS block above if non-empty. Otherwise write "No targets or stops hit overnight."
+0b. **✅ Trades you executed since last briefing** — REQUIRED when the "TRADES YOU EXECUTED SINCE LAST BRIEFING" block above is non-empty. Heading must be exactly "## ✅ Trades you executed". Write ONE line per BUY/SELL leg from the block, in this format:
+   • For a BUY fulfilling an AI rec: "**BOUGHT** N sh TICKER @ $entry_actual CCY on YYYY-MM-DD — this fulfills the [target-hit/AI rec/high-conviction] BUY. Current price $X (Y% vs entry). Target $target, stop $stop. Position on track [OR: past halfway to target, tighten trailing stop / or: pulled back to entry, still valid]."
+   • For a BUY without a linked rec: "**BOUGHT** N sh TICKER @ $entry_actual — no linked AI rec; treat as a fresh position. Current $X. Consider a stop at 2.5×ATR below entry."
+   • For a SELL: "**SOLD** N sh TICKER @ $exit_price — [closed the (BUY-rec-date) position / partial trim / rebalance]. Realized ~$Y or ~Z% vs original basis."
+   Skip this section entirely if the block is empty (write nothing, do not include a "no trades" placeholder).
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, a 2-3 line block citing specific signals you found via web_search (news + earnings + corporate actions + analyst moves + insider activity + technical setup + applicable macro). Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
 3. **Performance snapshot** — week/month/3M moves on top names
@@ -1017,8 +1043,15 @@ export function parseRecsFromBriefing(text) {
 export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
   const summary = portfolioSummary(profile);
+  // Trades executed since the last successful briefing (or last 3 days if
+  // none yet). Feeds the "TRADES YOU EXECUTED" prompt block so the AI can
+  // acknowledge what the user actually took vs what was just recommended.
+  const lastBriefingAt = profile.lastBriefingSuccessAt
+    ? new Date(profile.lastBriefingSuccessAt)
+    : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -1031,6 +1064,14 @@ export async function generateBriefing(profile) {
     // in a dedicated section, AND persist them to StocksDailyPick so Test A
     // tracking works whether or not the daily-pick cron ran independently.
     generateDailyPicksForUser({ email: profile.email, n: 2 }).catch((e) => { console.warn("[generateDailyPicksForUser] warn:", e?.message); return []; }),
+    // Trades the user actually executed since the last successful briefing.
+    // Populated with each trade's linked rec (if any) so the AI can quote
+    // the target/stop of the rec that was taken.
+    StocksTradeJournal.find({ email: profile.email, executedAt: { $gte: lastBriefingAt } })
+      .populate("linkedAdviceRecId", "ticker action entryPrice targetPrice stopPrice horizonDays")
+      .sort({ executedAt: -1 })
+      .lean()
+      .catch((e) => { console.warn("[recentTrades] warn:", e?.message); return []; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   // Idempotently persist daily picks (safe if the daily-pick cron already
@@ -1055,7 +1096,7 @@ export async function generateBriefing(profile) {
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades);
 
   // Anthropic call with retry-on-truncation. When the response stops
   // because we hit max_tokens (rather than because the model finished),
