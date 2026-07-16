@@ -2135,21 +2135,31 @@ function PriceWarningsBanner() {
 }
 
 // Given a current price + a rec (with entry / stop), return a "zone status"
-// used to color the rec block: "in-entry" (current within ±2.5% of entry AND
-// above stop — the sweet spot to take the trade), "near-entry" (within ±5%
-// of entry, above stop — chase but still tradeable), "stopped" (price ≤ stop
-// — thesis invalidated), or null (no signal — leave neutral). Pure function
-// so it can drive both the freeform advice cards and the structured
-// HighConviction/DailyPick cards from the same rule.
+// used to color the rec block:
+//   • "in-entry" (green) — current within ±2.5% of entry AND above stop:
+//     the sweet spot to take the trade
+//   • "near-entry" (amber) — current within ±5%, above stop: chase but
+//     still tradeable
+//   • "priced-out" (red) — current > 5% above entry: missed the entry,
+//     chasing this far above is bad R:R
+//   • "stopped" (red) — current ≤ stop: thesis invalidated
+//   • null — no rec data or well below entry but above stop (rare)
+// Pure function so both the freeform advice cards and the structured
+// HighConviction/DailyPick cards apply the same rule.
 function entryZoneStatus(currentPrice, rec) {
   if (currentPrice == null || !rec || !Number.isFinite(rec.entryPrice)) return null;
   const entry = rec.entryPrice;
   const stop = Number.isFinite(rec.stopPrice) ? rec.stopPrice : null;
   const price = currentPrice;
   if (stop != null && price <= stop) return "stopped";
-  const distPct = Math.abs((price - entry) / entry) * 100;
-  if (distPct <= 2.5) return "in-entry";
-  if (distPct <= 5) return "near-entry";
+  const distPct = ((price - entry) / entry) * 100;
+  const abs = Math.abs(distPct);
+  if (abs <= 2.5) return "in-entry";
+  if (abs <= 5) return "near-entry";
+  // Beyond ±5% — split: above = priced-out (chase risk), below = pullback
+  // territory that we don't tag (no color) since it may just be a
+  // pending entry opportunity as long as it's still above stop.
+  if (distPct > 5) return "priced-out";
   return null;
 }
 
@@ -2157,6 +2167,7 @@ function entryZoneStatus(currentPrice, rec) {
 function zoneStyle(status) {
   if (status === "in-entry") return { bg: "#f0fdf4", border: "#86efac", accent: "#166534", tag: "IN ENTRY ZONE" };
   if (status === "near-entry") return { bg: "#fefce8", border: "#fde68a", accent: "#a16207", tag: "NEAR ENTRY" };
+  if (status === "priced-out") return { bg: "#fef2f2", border: "#fecaca", accent: "#991b1b", tag: "PRICED OUT" };
   if (status === "stopped") return { bg: "#fef2f2", border: "#fecaca", accent: "#991b1b", tag: "STOPPED OUT" };
   return null;
 }
@@ -5327,17 +5338,23 @@ function HighConvictionCard({ pick, rank }) {
     return { low: Math.min(a, b), high: Math.max(a, b) };
   };
   const entryRange = parseEntryRange(mf.projection?.entryZone);
-  // Zone status: use the AI's stated range when we have one, else fall back
-  // to the ±2.5% heuristic against the range midpoint.
+  // Zone status: use the AI's stated range when we have one, matching the
+  // same semantics as entryZoneStatus (below stop = stopped, inside range =
+  // in-entry, chased above range = priced-out, near either side = amber).
   let projZone = null;
   if (livePrice != null && entryRange) {
     const stop = Number.isFinite(mf.projection?.stop) ? mf.projection.stop : (Number.isFinite(+mf.projection?.stop) ? +mf.projection.stop : null);
     if (stop != null && livePrice <= stop) projZone = "stopped";
     else if (livePrice >= entryRange.low && livePrice <= entryRange.high) projZone = "in-entry";
-    else {
-      const mid = (entryRange.low + entryRange.high) / 2;
-      const distPct = Math.abs((livePrice - mid) / mid) * 100;
-      if (distPct <= 5) projZone = "near-entry";
+    else if (livePrice > entryRange.high) {
+      // Chased above the range — near if within 5% of the high, priced-out otherwise
+      const abovePct = ((livePrice - entryRange.high) / entryRange.high) * 100;
+      projZone = abovePct <= 5 ? "near-entry" : "priced-out";
+    } else if (livePrice < entryRange.low) {
+      // Below the low but above stop — near-entry if within 5% of low,
+      // else no tag (pullback opportunity, not a chase)
+      const belowPct = ((entryRange.low - livePrice) / entryRange.low) * 100;
+      if (belowPct <= 5) projZone = "near-entry";
     }
   }
   const projZoneStyle = zoneStyle(projZone);
