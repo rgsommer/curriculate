@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">PNGPay</string>
+    <string name="title_activity_main">PNGPay</string>
+    <string name="package_name">net.curriculate.pngpay</string>
+    <string name="custom_url_scheme">net.curriculate.pngpay</string>
+</resources>

@@ -40,9 +40,6 @@ const config = {
       resize: "body",
       style: "LIGHT",
     },
-    PushNotifications: {
-      presentationOptions: ["badge", "sound", "alert"],
-    },
   },
 
   // iOS-specific

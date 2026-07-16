@@ -5,10 +5,15 @@
 A **live-URL Capacitor wrapper**. The app loads the hosted TeeBee payroll app
 inside a native WebView and adds native capabilities on top:
 
-- **Push notifications** — hours-due reminders / approval notices
 - **Haptics** — subtle feedback on submit
 - **Deep links** — payroll links open in the app
 - **Locked navigation** — stays in `/teebeepay`; other links open the system browser
+
+> **Push notifications are NOT in v1.** They were cut to keep the first store
+> review minimal (no Firebase/APNs, no notification permission). To add them
+> later: reinstall `@capacitor/push-notifications`, restore the push block in
+> `src/native-bridge.js`, add `google-services.json` (Android) + an APNs key
+> and iOS push entitlement, then bump the version and resubmit.
 
 The URL it loads is:
 ```
@@ -73,13 +78,11 @@ mobile-app-pngpay/
 ```
 
 ## Native permissions
-| Store | Permission | Why |
-|-------|-----------|-----|
-| iOS Info.plist | Push (UIBackgroundModes → remote-notification) | Hours-due reminders |
-| Android Manifest | `POST_NOTIFICATIONS`, Firebase (FCM) | Hours-due reminders |
+v1 uses **no sensitive permissions** — no camera, location, or push. The
+WebView needs only internet access (added by Capacitor automatically).
 
-Do **not** add camera or location entries — the app does not use them, and an
-unused permission is a rejection risk.
+Do **not** add camera, location, or notification entries — the app does not use
+them in v1, and an unused permission is a rejection risk.
 
 ## App Review notes
 Business apps that require login **must** ship a demo account or reviewers
@@ -93,7 +96,6 @@ that one account. See `store-metadata.md` for the full paste-ready notes.
 ### iOS (App Store)
 - [ ] Xcode project builds + runs on simulator
 - [ ] App icon (1024²) + splash configured (`npm run icons`)
-- [ ] Push entitlement enabled; APNs key uploaded
 - [ ] Support URL set (curriculate.net/contact) + privacy URL (curriculate.net/privacy)
 - [ ] App Privacy form filled (email, name, employment info; no tracking)
 - [ ] Screenshots: 6.7" + 6.5" iPhone (+ iPad if enabled)
@@ -103,7 +105,6 @@ that one account. See `store-metadata.md` for the full paste-ready notes.
 ### Android (Play Store)
 - [ ] Android Studio project builds + runs on emulator
 - [ ] Adaptive icon + splash configured
-- [ ] Firebase (FCM) configured for push
 - [ ] Data safety form filled (matches store-metadata table)
 - [ ] Support + privacy URLs set
 - [ ] Screenshots: phone (≥2) + 7"/10" tablet; feature graphic 1024×500

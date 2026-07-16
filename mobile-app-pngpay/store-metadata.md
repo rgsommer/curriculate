@@ -36,7 +36,6 @@ approves, and pays.
 • Record leave and absences (annual, sick, unpaid, and more) with notes
 • Add a quick note against anyone's pay for the bookkeeper
 • Submit the whole team in one tap when the period closes
-• Get a reminder when hours are due, so nothing is missed
 
 **Built for how payrolls actually run:**
 • Your entries flow straight to the bookkeeper for approval — no paper, no
@@ -72,7 +71,6 @@ Declare these truthfully on both stores (App Privacy / Data safety form):
 | Email address | Yes | Account sign-in (email-PIN) | Yes | No |
 | Name | Yes | Identify supervisor & team members | Yes | No |
 | Employment info (hours, leave) | Yes | Core app function — payroll input | Yes | No |
-| Push token | Yes (if enabled) | Hours-due reminders | Yes | No |
 
 - **No advertising. No third-party tracking. No location. No camera.**
 - Data is transmitted over HTTPS and processed for payroll.
@@ -102,17 +100,22 @@ Declare these truthfully on both stores (App Privacy / Data safety form):
 > It is pre-loaded with a sample company and team so you can see the full
 > flow: view team → enter hours/leave → submit for approval.
 >
-> Native capabilities beyond the web experience: push notifications
-> (hours-due reminders), haptic feedback, Android back-button handling, and a
-> WebView locked to the payroll app (external links open in the system
-> browser). No camera or location is used.
+> Native capabilities beyond the web experience: haptic feedback, Android
+> back-button handling, and a WebView locked to the payroll app (external links
+> open in the system browser). No camera, location, or push notifications are
+> used.
 
-**Demo account (fill in before submitting):**
-- Email: `__________`  (a supervisor with a division where "supervisor submits hours" is on)
-- PIN delivery: the code is emailed on sign-in. Either (a) give reviewers an
-  inbox they can check, or (b) set a fixed review PIN for this account.
-  ⚠️ Apple reviewers cannot receive your email PIN — provide a mailbox or a
-  fixed code, or the app will be rejected as "unable to sign in."
+**Demo account (seeded in production — ready for reviewers):**
+- Sign-in URL: `https://www.curriculate.net/teebeepay/app?view=team`
+- Email: `reviewer@teebeeaccountants.com.pg`  (supervisor of the "Site Crew" division, "supervisor submits hours" = on)
+- PIN: `246810`  (fixed review PIN — no mailbox needed)
+- Company: "PNGPay Demo Co", team: Joe Kaupa, Mary Wari, Peter Namaliu, Grace Bani
+
+  This account is pre-seeded (scripts/seed-demo-supervisor.mjs) and uses a
+  fixed PIN via the server's `DEMO_REVIEW_EMAIL` + `DEMO_REVIEW_PIN` env vars,
+  so reviewers sign in with the code above — no email inbox required. Sign in
+  with Apple (4.8) does not apply (first-party email-PIN only).
+  ⚠️ The PIN above MUST match the `DEMO_REVIEW_PIN` env var set on the server.
 
 ---
 

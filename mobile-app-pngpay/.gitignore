@@ -1,6 +1,30 @@
 node_modules/
 www/
-ios/
-android/
 .DS_Store
 *.log
+
+# ── Native platform folders ARE committed (they hold signing config, icons,
+#    splash, and manifest edits that must survive `cap sync`). Only generated
+#    build output and secrets are ignored below. ──
+
+# Signing secrets — NEVER commit these
+keystore.properties
+*.keystore
+*.jks
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
+
+# Android build output
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+android/.idea/
+*.iml
+
+# iOS build output
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/.xcode.env.local

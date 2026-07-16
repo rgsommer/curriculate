@@ -6,46 +6,18 @@
  *
  * PNGPay is a role-specific tool for supervisors: submit team hours and leave,
  * then hand off to the bookkeeper for approval. It deliberately has NO camera
- * (fewer permissions, faster review). Its native value-add is push (hours-due
- * reminders), haptics, back-button handling, and keeping the WebView locked to
- * the TeeBee app.
+ * (fewer permissions, faster review). Its native value-add is haptics,
+ * back-button handling, and keeping the WebView locked to the TeeBee app.
+ *
+ * Push notifications are intentionally NOT included in v1 — no Firebase/APNs
+ * dependency, no notification permission — to keep the first store review
+ * minimal. Reintroduce via @capacitor/push-notifications in a later release.
  */
 
-import { PushNotifications } from "@capacitor/push-notifications";
 import { Haptics, ImpactStyle } from "@capacitor/haptics";
 import { App } from "@capacitor/app";
 import { SplashScreen } from "@capacitor/splash-screen";
 import { Browser } from "@capacitor/browser";
-
-// ── Push Notifications ──────────────────────────────────────────
-// Hours-due reminders and approval notices, delivered as native push.
-export async function registerPush() {
-  const permission = await PushNotifications.requestPermissions();
-  if (permission.receive !== "granted") {
-    console.log("Push permission denied");
-    return null;
-  }
-  await PushNotifications.register();
-  return new Promise((resolve) => {
-    PushNotifications.addListener("registration", (token) => resolve(token.value));
-    PushNotifications.addListener("registrationError", (err) => {
-      console.error("Push registration failed:", err);
-      resolve(null);
-    });
-  });
-}
-
-function setupPushListeners() {
-  PushNotifications.addListener("pushNotificationReceived", (n) => {
-    console.log("Push received:", n);
-  });
-  // Tapping a reminder jumps to the relevant screen (default: team hours).
-  PushNotifications.addListener("pushNotificationActionPerformed", (action) => {
-    const data = action.notification?.data || {};
-    if (data.url) window.location.href = data.url;
-    else window.location.href = "/teebeepay/app?view=team";
-  });
-}
 
 // ── Haptics ─────────────────────────────────────────────────────
 export async function hapticLight() { await Haptics.impact({ style: ImpactStyle.Light }); }
@@ -96,11 +68,9 @@ function setupNavigationGuard() {
 export async function initNative() {
   await SplashScreen.hide();
   setupAppListeners();
-  setupPushListeners();
   setupNavigationGuard();
 
   window.PngpayNative = {
-    registerPush,
     hapticLight,
     hapticMedium,
     isNative: true,
