@@ -104,8 +104,18 @@ async function resolveUniverseForUser(email) {
 
 // Pick top N (default 2) — the honest discipline that this feature exists to
 // enforce. Returns an array (possibly empty if no candidate scored > 40).
-export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = "USD" } = {}) {
-  const universe = await resolveUniverseForUser(email);
+//
+// excludeTickers: an array of tickers to skip entirely — used by the daily
+// briefing to avoid emitting a fresh BUY pick for something the user
+// already holds or just executed via a linked rec. Silent filter (no
+// warning) — the pick is simply not a candidate for a NEW entry, though
+// the AI's "Signals per holding" section still manages the position.
+export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = "USD", excludeTickers = [] } = {}) {
+  const rawUniverse = await resolveUniverseForUser(email);
+  const excludeSet = new Set(
+    (excludeTickers || []).map((t) => String(t || "").toUpperCase().replace(/\..*$/, ""))
+  );
+  const universe = rawUniverse.filter((t) => !excludeSet.has(String(t).toUpperCase().replace(/\..*$/, "")));
   const scored = [];
 
   for (const ticker of universe) {

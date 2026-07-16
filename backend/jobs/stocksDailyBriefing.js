@@ -855,6 +855,7 @@ Write a markdown briefing with these sections:
    • For a BUY without a linked rec: "**BOUGHT** N sh TICKER @ $entry_actual — no linked AI rec; treat as a fresh position. Current $X. Consider a stop at 2.5×ATR below entry."
    • For a SELL: "**SOLD** N sh TICKER @ $exit_price — [closed the (BUY-rec-date) position / partial trim / rebalance]. Realized ~$Y or ~Z% vs original basis."
    Skip this section entirely if the block is empty (write nothing, do not include a "no trades" placeholder).
+   **NO-REPEAT INVARIANT**: any BUY leg in the executed-trades block turns that ticker into a MANAGE-EXISTING-POSITION line item in section 2 for the rest of this briefing. Sections 4 (Today's one action), 7 (Aggressive new ideas), and 8 (Today's Swing-Trade Picks) MUST NOT propose a fresh BUY on that ticker — the user already owns it. If you would have picked the same name again, upgrade the section-2 line for it to an "ADD to position at $X, target $Y" instruction instead. Every ticker in the current portfolio's positions list is subject to the same rule.
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, a 2-3 line block citing specific signals you found via web_search (news + earnings + corporate actions + analyst moves + insider activity + technical setup + applicable macro). Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
 3. **Performance snapshot** — week/month/3M moves on top names
@@ -1063,7 +1064,14 @@ export async function generateBriefing(profile) {
     // Deterministic swing-trade picks — feed the AI so it can narrate them
     // in a dedicated section, AND persist them to StocksDailyPick so Test A
     // tracking works whether or not the daily-pick cron ran independently.
-    generateDailyPicksForUser({ email: profile.email, n: 2 }).catch((e) => { console.warn("[generateDailyPicksForUser] warn:", e?.message); return []; }),
+    // Exclude tickers the user already holds so we don't propose a fresh
+    // entry on a position they just took (or took a while ago) — the
+    // "Signals per holding" section manages those instead.
+    generateDailyPicksForUser({
+      email: profile.email,
+      n: 2,
+      excludeTickers: (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")),
+    }).catch((e) => { console.warn("[generateDailyPicksForUser] warn:", e?.message); return []; }),
     // Trades the user actually executed since the last successful briefing.
     // Populated with each trade's linked rec (if any) so the AI can quote
     // the target/stop of the rec that was taken.
