@@ -2234,13 +2234,26 @@ function renderAdviceBody(body, priceLookup = null, recLookup = null) {
                   </span>
                 )}
               </div>
-              {rec && Number.isFinite(rec.entryPrice) && (
-                <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 6, fontVariantNumeric: "tabular-nums" }}>
-                  entry ${rec.entryPrice.toFixed(2)}
-                  {Number.isFinite(rec.targetPrice) ? ` · target $${rec.targetPrice.toFixed(2)}` : ""}
-                  {Number.isFinite(rec.stopPrice) ? ` · stop $${rec.stopPrice.toFixed(2)}` : ""}
-                </div>
-              )}
+              {rec && Number.isFinite(rec.entryPrice) && (() => {
+                const roiPct = Number.isFinite(rec.targetPrice)
+                  ? ((rec.targetPrice - rec.entryPrice) / rec.entryPrice) * 100 : null;
+                const downsidePct = Number.isFinite(rec.stopPrice)
+                  ? ((rec.stopPrice - rec.entryPrice) / rec.entryPrice) * 100 : null;
+                const rr = (roiPct != null && downsidePct != null && downsidePct < 0)
+                  ? Math.abs(roiPct / downsidePct) : null;
+                return (
+                  <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 6, fontVariantNumeric: "tabular-nums" }}>
+                    entry ${rec.entryPrice.toFixed(2)}
+                    {Number.isFinite(rec.targetPrice) && (
+                      <> · target ${rec.targetPrice.toFixed(2)} <b style={{ color: "#166534" }}>({roiPct >= 0 ? "+" : ""}{roiPct.toFixed(1)}%)</b></>
+                    )}
+                    {Number.isFinite(rec.stopPrice) && (
+                      <> · stop ${rec.stopPrice.toFixed(2)} <b style={{ color: "#991b1b" }}>({downsidePct.toFixed(1)}%)</b></>
+                    )}
+                    {rr != null && <> · R:R <b>1:{rr.toFixed(1)}</b></>}
+                  </div>
+                );
+              })()}
               <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.55, color: "var(--sa-text-2)", wordBreak: "break-word", overflowWrap: "anywhere" }}>
                 {allSentences.map((s, j) => (
                   <li key={j} style={{ marginBottom: 3 }}>{renderInlineBold(s)}</li>
@@ -7470,8 +7483,18 @@ function DailyPickCard({ sessionToken }) {
                       ${p.entryPrice.toFixed(2)}
                       {livePx != null && <div style={{ fontSize: 9.5, color: "var(--sa-muted)" }}>now ${livePx.toFixed(2)}</div>}
                     </td>
-                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b", fontVariantNumeric: "tabular-nums" }}>${p.stopPrice?.toFixed(2) ?? "—"}</td>
-                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>${p.targetPrice?.toFixed(2) ?? "—"}</td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b", fontVariantNumeric: "tabular-nums" }}>
+                      ${p.stopPrice?.toFixed(2) ?? "—"}
+                      {Number.isFinite(p.stopPrice) && (
+                        <div style={{ fontSize: 9.5 }}>({(((p.stopPrice - p.entryPrice) / p.entryPrice) * 100).toFixed(1)}%)</div>
+                      )}
+                    </td>
+                    <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>
+                      ${p.targetPrice?.toFixed(2) ?? "—"}
+                      {Number.isFinite(p.targetPrice) && (
+                        <div style={{ fontSize: 9.5 }}>(+{(((p.targetPrice - p.entryPrice) / p.entryPrice) * 100).toFixed(1)}%)</div>
+                      )}
+                    </td>
                     <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600 }}>{p.deterministicScore ?? "—"}</td>
                     <td style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{p.setupName || "—"}</td>
                     <td style={{ padding: "5px 8px", fontSize: 10.5 }}>{p.status}</td>
