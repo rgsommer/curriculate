@@ -1079,14 +1079,18 @@ export default function StocksAdvisorPage() {
         const q = prices?.[ent.exchangeTicker];
         if (q) priceByOrig[`${ent.originalTicker}|${ent.currency}`] = q;
       }
+      const fxRate = user.fxUsdCad || 1.37;
       const updated = user.positions.map((p) => {
         const q = priceByOrig[`${p.ticker}|${p.ccy}`];
         if (!q) return p;
-        // Write to the currency field that matches the position's
-        // native trading currency — never let a USD ADR price overwrite
-        // a CAD-sub priceCad and vice versa.
-        if (p.ccy === "USD") return { ...p, priceUsd: q.price };
-        if (p.ccy === "CAD") return { ...p, priceCad: q.price };
+        // Write BOTH sides — refresh the position's native-currency price
+        // AND its FX-converted sibling. Historical seed data has both
+        // fields populated, and the dashboard's totalCad formula
+        // (p.priceCad ?? p.priceUsd*fx) prefers priceCad when present, so
+        // a USD-native refresh that only touched priceUsd left the CAD
+        // view showing stale numbers.
+        if (p.ccy === "USD") return { ...p, priceUsd: q.price, priceCad: q.price * fxRate };
+        if (p.ccy === "CAD") return { ...p, priceCad: q.price, priceUsd: q.price / fxRate };
         return p;
       });
       updateUser(() => ({ positions: updated }));
