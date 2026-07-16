@@ -2241,16 +2241,26 @@ function renderAdviceBody(body, priceLookup = null, recLookup = null) {
                   ? ((rec.stopPrice - rec.entryPrice) / rec.entryPrice) * 100 : null;
                 const rr = (roiPct != null && downsidePct != null && downsidePct < 0)
                   ? Math.abs(roiPct / downsidePct) : null;
+                // Compound-annualize the ROI so a 3.5% over 7d and a 3.5%
+                // over 30d land on comparable scales. Formula assumes the
+                // same setup is repeatable — sensible over a period, silly
+                // if annualized numbers go to 4-digit % for 1-2d horizons.
+                const h = Number.isFinite(rec.horizonDays) && rec.horizonDays > 0 ? rec.horizonDays : null;
+                const annualized = (roiPct != null && h != null)
+                  ? (Math.pow(1 + roiPct / 100, 365 / h) - 1) * 100 : null;
                 return (
                   <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 6, fontVariantNumeric: "tabular-nums" }}>
                     entry ${rec.entryPrice.toFixed(2)}
                     {Number.isFinite(rec.targetPrice) && (
-                      <> · target ${rec.targetPrice.toFixed(2)} <b style={{ color: "#166534" }}>({roiPct >= 0 ? "+" : ""}{roiPct.toFixed(1)}%)</b></>
+                      <> · target ${rec.targetPrice.toFixed(2)} <b style={{ color: "#166534" }}>({roiPct >= 0 ? "+" : ""}{roiPct.toFixed(1)}%{h ? ` over ${h}d` : ""})</b></>
                     )}
                     {Number.isFinite(rec.stopPrice) && (
                       <> · stop ${rec.stopPrice.toFixed(2)} <b style={{ color: "#991b1b" }}>({downsidePct.toFixed(1)}%)</b></>
                     )}
                     {rr != null && <> · R:R <b>1:{rr.toFixed(1)}</b></>}
+                    {annualized != null && (
+                      <> · <b style={{ color: "#166534" }}>ann. {annualized >= 0 ? "+" : ""}{annualized.toFixed(0)}%</b></>
+                    )}
                   </div>
                 );
               })()}
@@ -7491,9 +7501,17 @@ function DailyPickCard({ sessionToken }) {
                     </td>
                     <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>
                       ${p.targetPrice?.toFixed(2) ?? "—"}
-                      {Number.isFinite(p.targetPrice) && (
-                        <div style={{ fontSize: 9.5 }}>(+{(((p.targetPrice - p.entryPrice) / p.entryPrice) * 100).toFixed(1)}%)</div>
-                      )}
+                      {Number.isFinite(p.targetPrice) && (() => {
+                        const roi = ((p.targetPrice - p.entryPrice) / p.entryPrice) * 100;
+                        const h = Number.isFinite(p.horizonDays) && p.horizonDays > 0 ? p.horizonDays : null;
+                        const ann = h ? (Math.pow(1 + roi / 100, 365 / h) - 1) * 100 : null;
+                        return (
+                          <>
+                            <div style={{ fontSize: 9.5 }}>(+{roi.toFixed(1)}%{h ? ` / ${h}d` : ""})</div>
+                            {ann != null && <div style={{ fontSize: 9.5, color: "#14532d" }}>ann. +{ann.toFixed(0)}%</div>}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: "5px 8px", textAlign: "right", fontWeight: 600 }}>{p.deterministicScore ?? "—"}</td>
                     <td style={{ padding: "5px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>{p.setupName || "—"}</td>
