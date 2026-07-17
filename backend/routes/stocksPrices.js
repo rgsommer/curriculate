@@ -203,6 +203,8 @@ const HISTORY_TTL_MS = 60 * 1000;
 // Map UI range → (Yahoo range, Yahoo interval)
 function yahooRangeFor(uiRange) {
   switch (uiRange) {
+    case "1h":  return { range: "1d",  interval: "1m"  };
+    case "4h":  return { range: "1d",  interval: "5m"  };
     case "1d":  return { range: "1d",  interval: "5m"  };
     case "3d":  return { range: "5d",  interval: "30m" };
     case "7d":  return { range: "5d",  interval: "60m" };
@@ -213,12 +215,14 @@ function yahooRangeFor(uiRange) {
   }
 }
 
-// Trim the series to the last N calendar days based on uiRange
+// Trim the series to the last N calendar days (fractional for intraday)
 function trimToRange(points, uiRange) {
   if (!points.length) return points;
   const lastT = points[points.length - 1].t;
   let days = 30;
-  if (uiRange === "1d") days = 1.1;
+  if (uiRange === "1h") days = 1 / 24 * 1.05; // ~1h with a small buffer
+  else if (uiRange === "4h") days = 4 / 24 * 1.05;
+  else if (uiRange === "1d") days = 1.1;
   else if (uiRange === "3d") days = 3.1;
   else if (uiRange === "7d") days = 7.1;
   else if (uiRange === "30d") days = 30.1;

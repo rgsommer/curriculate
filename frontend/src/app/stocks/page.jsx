@@ -6835,7 +6835,7 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
   const totalPct = totalStartCad > 0 ? (totalDeltaCad / totalStartCad) * 100 : null;
   const showTotal = totalPct != null && Number.isFinite(totalPct) && coveredTickers > 0;
   const totalColor = totalPct == null ? "var(--sa-muted)" : (totalPct >= 0 ? "var(--sa-green)" : "var(--sa-red)");
-  const rangeLabel = { "1d": "today", "3d": "3 days", "7d": "7 days", "30d": "30 days", "1y": "1 year", "2y": "2 years" }[range];
+  const rangeLabel = { "1h": "past hour", "4h": "past 4 hours", "1d": "today", "3d": "3 days", "7d": "7 days", "30d": "30 days", "1y": "1 year", "2y": "2 years" }[range];
 
   return (
     <div className="sa-card" style={{ marginBottom: 24 }}>
@@ -6865,7 +6865,7 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
         <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end" }}>
           <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
             {[
-              ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"], ["1y", "1Y"], ["2y", "2Y"],
+              ["1h", "1H"], ["4h", "4H"], ["1d", "1D"], ["3d", "3D"], ["7d", "7D"], ["30d", "30D"], ["1y", "1Y"], ["2y", "2Y"],
             ].map(([v, label]) => (
               <button
                 key={v}
@@ -7056,7 +7056,7 @@ function MultiLineChart({ series, range, mode = "pct" }) {
   // X-axis tick labels — based on range
   const fmtTick = (t) => {
     const d = new Date(t * 1000);
-    if (range === "1d") return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (range === "1h" || range === "4h" || range === "1d") return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     if (range === "1y" || range === "2y") return d.toLocaleDateString([], { month: "short", year: "2-digit" });
     return d.toLocaleDateString([], { month: "short", day: "numeric" });
   };
