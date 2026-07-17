@@ -395,13 +395,14 @@ CANONICAL TICKER RULE (read carefully):
 - When in doubt, web_search "<company name> stock ticker" first and use what comes back. Do NOT guess from the company name.
 
 PRICE INTEGRITY (mandatory — accuracy is more important than completeness):
-- For ANY ticker not in the user's current holdings table above, you MUST web_search "<TICKER> stock price" or "<TICKER> Yahoo Finance" and use ONLY the live quote you retrieve. Do NOT quote prices from memory — your training data is months stale and you will be wrong by 30-200%.
-- Before recommending any ticker, verify it is currently tradable. Watch out for renamed/delisted symbols:
+- HELD-POSITION TICKERS ARE PRE-VERIFIED. Any ticker that appears in the user's current holdings table above is REAL, TRADABLE, and ALREADY VALIDATED by the backend before this prompt was built. You must NEVER produce a "Ticker Not Found", "UNABLE TO VERIFY", or similar cautionary card for a ticker the user already owns. This includes household names like PLTR (Palantir), NVDA, TSLA, SOUN, RUM, DJT, ENB, etc. The user's ownership IS the verification. If your web_search fails or is rate-limited for a held ticker, use the price shown in the holdings table as authoritative and move on — do NOT invent a "not found" card claiming the ticker was rejected by FMP/Yahoo. That claim is false and alarming.
+- For ANY ticker NOT in the user's current holdings table, you MUST web_search "<TICKER> stock price" or "<TICKER> Yahoo Finance" and use ONLY the live quote you retrieve. Do NOT quote prices from memory — your training data is months stale and you will be wrong by 30-200%.
+- Before recommending a NEW ticker (one not already owned), verify it is currently tradable. Watch out for renamed/delisted symbols:
    • SQ (Square) was renamed to XYZ in early 2025 — recommend XYZ, not SQ
    • FB → META (long ago)
    • TWTR delisted (Musk acquisition)
    • Any ticker you remember from before 2024 — VERIFY before recommending
-- If web_search returns no clean quote for a ticker you're considering, DO NOT recommend it. Pick a different ticker you CAN verify.
+- If web_search returns no clean quote for a NEW ticker you're considering, DO NOT recommend it. Pick a different one. Do NOT emit a card about the failure — just silently move on.
 - If you find a current price, state it exactly as retrieved and include "(verified via web_search)" inline. Example: "ROKU at $128 USD (verified)" — not "ROKU at $67.50".
 - The user has explicitly caught the AI quoting SQ at $79 (deprecated ticker) and ROKU at $67 (stale by ~50%). This is a known failure mode you must actively guard against.
 `;
