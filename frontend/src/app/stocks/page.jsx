@@ -7636,14 +7636,30 @@ function DailyPickCard({ sessionToken }) {
             <tbody>
               {items.map((p) => {
                 const livePx = pickPrices[p.ticker];
-                const zone = p.status === "open" ? entryZoneStatus(livePx, { entryPrice: p.entryPrice, stopPrice: p.stopPrice }) : null;
+                const entered = !!p.enteredAt;
+                // Entry-zone highlight suppressed once user has entered —
+                // the pick is no longer a fresh idea, it's an active position.
+                const zone = (p.status === "open" && !entered) ? entryZoneStatus(livePx, { entryPrice: p.entryPrice, stopPrice: p.stopPrice }) : null;
                 const zs = zoneStyle(zone);
+                // Muted row bg + explicit tag when entered.
+                const rowBg = entered ? "#f1f5f9" : (zs ? zs.bg : "transparent");
+                const rowOpacity = entered ? 0.75 : 1;
                 return (
-                  <tr key={p._id} style={{ borderBottom: "1px solid var(--sa-border)", background: zs ? zs.bg : "transparent" }}>
+                  <tr key={p._id} style={{ borderBottom: "1px solid var(--sa-border)", background: rowBg, opacity: rowOpacity }}>
                     <td style={{ padding: "5px 8px" }}>{new Date(p.pickDate).toLocaleDateString()}</td>
                     <td style={{ padding: "5px 8px", fontWeight: 700 }}>
                       {p.ticker}
-                      {zs && <span style={{ marginLeft: 6, background: zs.border, color: zs.accent, padding: "1px 6px", borderRadius: 99, fontSize: 9.5, fontWeight: 700, letterSpacing: ".04em", verticalAlign: "middle" }}>{zs.tag}</span>}
+                      {entered && (
+                        <span style={{ marginLeft: 6, background: "#dbeafe", color: "#1e40af", padding: "1px 6px", borderRadius: 99, fontSize: 9.5, fontWeight: 700, letterSpacing: ".04em", verticalAlign: "middle" }}>
+                          POSITION ENTERED
+                        </span>
+                      )}
+                      {!entered && zs && <span style={{ marginLeft: 6, background: zs.border, color: zs.accent, padding: "1px 6px", borderRadius: 99, fontSize: 9.5, fontWeight: 700, letterSpacing: ".04em", verticalAlign: "middle" }}>{zs.tag}</span>}
+                      {entered && p.enteredShares && p.enteredPrice != null && (
+                        <div style={{ fontSize: 9.5, color: "var(--sa-muted)", fontWeight: 400, marginTop: 2 }}>
+                          bought {p.enteredShares} sh @ ${Number(p.enteredPrice).toFixed(2)} on {new Date(p.enteredAt).toLocaleDateString()}
+                        </div>
+                      )}
                     </td>
                     <td style={{ padding: "5px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
                       ${p.entryPrice.toFixed(2)}

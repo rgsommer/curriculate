@@ -45,6 +45,14 @@ const StocksDailyPickSchema = new mongoose.Schema(
     pnlPct: { type: Number, default: null },
     lastCheckedAt: { type: Date, default: null },
     lastCheckedPrice: { type: Number, default: null },
+    // Set when the user actually acts on the pick via a recorded trade.
+    // Keeps status="open" so target/stop tracking continues, but the
+    // UI mutes the row + shows "POSITION ENTERED" so a scanning eye
+    // stops treating it as a fresh idea.
+    enteredAt: { type: Date, default: null },
+    enteredPrice: { type: Number, default: null },
+    enteredShares: { type: Number, default: null },
+    enteredTradeId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksTradeJournal", default: null },
   },
   { timestamps: true }
 );

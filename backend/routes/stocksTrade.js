@@ -26,6 +26,7 @@ import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
+import StocksDailyPick from "../models/StocksDailyPick.js";
 
 const router = express.Router();
 
@@ -364,6 +365,34 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       notes: String(notes || "").slice(0, 500),
       linkedAdviceRecId: autoLinkedRecId,
     });
+
+    // Mark any open DailyPick on the same ticker as ENTERED so the Daily
+    // Picks card visually acknowledges that the user acted on the pick.
+    // Pick stays status="open" — target/stop monitoring continues from
+    // the actual fill. First matching open pick per BUY leg wins.
+    try {
+      const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      for (const leg of normLegs) {
+        if (leg.side !== "BUY" || !leg.ticker) continue;
+        await StocksDailyPick.updateOne(
+          {
+            email: req.stocksUser.email,
+            ticker: leg.ticker,
+            status: "open",
+            enteredAt: null,
+            pickDate: { $gte: cutoff },
+          },
+          {
+            $set: {
+              enteredAt: entry.executedAt,
+              enteredPrice: leg.pricePerShare,
+              enteredShares: leg.shares,
+              enteredTradeId: entry._id,
+            },
+          }
+        );
+      }
+    } catch (e) { console.warn("[stocks-trade] daily-pick entry-stamp warn:", e?.message); }
 
     res.json({ ok: true, portfolio: portfolio.toObject(), trade: entry.toObject() });
   } catch (err) {

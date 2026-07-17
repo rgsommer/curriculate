@@ -1082,14 +1082,24 @@ export async function generateBriefing(profile) {
       .catch((e) => { console.warn("[recentTrades] warn:", e?.message); return []; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
-  // Idempotently persist daily picks (safe if the daily-pick cron already
-  // generated them; upsert-by-day check inside the model won't matter here
-  // since we insert fresh docs — dedupe happens on generateAndPersistPicksForUser).
+  // Idempotently persist daily picks. The daily-pick cron may have already
+  // written today's rows, and briefing preview may fire multiple times
+  // per day — dedupe by (email, ticker, ymd) so a scanning user doesn't
+  // see the same pick 4× on the Daily Picks card.
   try {
+    const now = new Date();
+    const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+    const dayEnd = new Date(now); dayEnd.setHours(23, 59, 59, 999);
     for (const p of dailyPicks) {
+      const dupe = await StocksDailyPick.exists({
+        email: profile.email,
+        ticker: p.ticker,
+        pickDate: { $gte: dayStart, $lte: dayEnd },
+      });
+      if (dupe) continue;
       await StocksDailyPick.create({
         email: profile.email,
-        pickDate: new Date(),
+        pickDate: now,
         ticker: p.ticker,
         currency: "USD",
         entryPrice: p.entryPrice,
