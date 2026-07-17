@@ -33,6 +33,9 @@ import { generateDailyPicksForUser } from "../services/stocksDailyPickEngine.js"
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import { getSectorRotation, formatSectorRotationBlock } from "../services/stocksSectorRotation.js";
 import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
+import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedLiquidity.js";
+import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
+import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -528,16 +531,17 @@ async function computeQuantSignals(profile, topN = 8) {
       // Pass currency so a CAD holding resolves to its TSX listing (ENB →
       // ENB.TO) — without it the technicals/last-price come from the US ADR
       // and the briefing reasons on the wrong market/currency.
-      const [tech, fund, catalysts] = await Promise.all([
+      const [tech, fund, catalysts, options] = await Promise.all([
         getTechnicals(ticker, ccy).catch(() => ({ ok: false })),
         getFundamentals(ticker, ccy).catch(() => ({ ok: false })),
         getCatalysts(ticker, ccy).catch(() => null),
+        getOptionsMetrics(ticker).catch(() => null),
       ]);
       // Short interest reads bimonthly FINRA data (cheap Yahoo call, 24h
       // cache) and takes optional tech context to compute the squeeze
       // score — so it goes AFTER tech resolves.
       const shortInterest = await getShortInterest(ticker, ccy, tech).catch(() => null);
-      out[ticker] = { tech, fund, catalysts, shortInterest, ccy };
+      out[ticker] = { tech, fund, catalysts, shortInterest, options, ccy };
     })
   );
   return out;
@@ -553,6 +557,8 @@ function formatQuantSignalsBlock(quantSignals) {
     if (catLine) lines.push(`  ${catLine}`);
     const siLine = formatShortInterestLine(sig.shortInterest);
     if (siLine) lines.push(`  ${siLine}`);
+    const optLine = formatOptionsLine(sig.options);
+    if (optLine) lines.push(`  ${optLine}`);
     // Named setups — emit full evidence per detected pattern so the AI
     // can quote specific trigger prices and pattern mechanics, not just
     // "there's a bull flag."
@@ -608,7 +614,7 @@ ${lines.join("\n")}
 `;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -831,6 +837,9 @@ SENIOR-ANALYST EXPECTATIONS:
 5f. CATALYSTS: use the "Catalysts:" line and "Analyst YYYY-MM-DD" bullets. Earnings 🔥 (≤3d) = do NOT enter new positions; earnings gaps blow through stops. Earnings ⚡ (≤7d) = tighten stops, avoid adding. Recent upgrades from Goldman/JPM/MS/Barclays are real catalysts — cite firm + date + PT. Net analyst score is a confirming signal (bullish/bearish); a fresh downgrade within 3d of the current setup is a warning.
 5g. SHORT SQUEEZE: "Short:" line shows SI% of float + DTC + MoM change. "🎯 SQUEEZE SETUP score ≥60" + confirming uptrend + RVOL = tactical long candidate (asymmetric upside as shorts cover). "⚠ high-SI" without squeeze flag = elevated gap-down risk. Cite the specific score + SI% + DTC when calling a squeeze play.
 5h. TRAILING STOP (per-holding daily): every technicals block includes "Trailing stop N% from 60d high $X → $Y · Z% slack · limit offset $O". This is the actionable "sell if hit" line — a ratcheting stop anchored to the 60-session watermark high, using 2.5×ATR as the trail width. The limit offset $O is the broker LIMIT price cushion below the trigger (1% of price, 1.5% for high-vol names) so a trailing-stop-LIMIT order still fills in a fast down move. In the section-2 per-holding line (and in section 0b for a fresh BUY that just fulfilled a rec), CITE THE FULL ORDER SETUP: "Trail stop: N% ($Y trigger, $O limit offset — enter both in broker) · Z% slack" — quoting all three numbers verbatim so the user can enter them in the broker without recomputing. If slack is ≤3%, add "⚠ approaching trail stop — trim or tighten manually." If STOP HIT flag appears, the position has already broken the trailing stop level; instruct SELL at market. Trailing stops beat static stops because they lock in gains as the price rises; users should be told the current level every day.
+5i. OPTIONS FLOW (when "Options:" line present): shows put/call OI ratio + IV rank. P/C OI >1.3 = bearish crowd positioning; <0.7 = bullish; between = neutral. IV rank ≥80 (🔥 rich) = premium is expensive vs its own history — good time to SELL premium (covered calls, cash-secured puts) but a BAD time to buy protective puts. IV rank ≤20 (💤 cheap) = the reverse; time to BUY premium (hedges are cheap). Cite these when discussing hedging or income overlays. Elevated P/C combined with rising IV = market bracing for volatility — reduce position size ahead of the catalyst.
+5j. FED LIQUIDITY REGIME (the macro dimension): when a "FED LIQUIDITY REGIME" block appears above, it OVERRULES individual signal calls. 🔴 RISK-OFF regime = TRIM position sizes, tighten stops, avoid speculative entries — the tide is going out. 🟢 RISK-ON = full size, take breakouts, hold winners longer. ⚪ NEUTRAL = business as usual. Cite the regime score and top contributor when calling any full-size trade — "regime is risk-on with 3 supporting factors, so I'm taking full size on this pocket pivot" — so the user understands the macro alignment.
+5k. CONGRESSIONAL TRADES: when the CONGRESSIONAL TRADES block appears with your holdings, it means a member of Congress has recently disclosed a trade on the same ticker. Multiple recent PURCHASES by different members = potential positive catalyst (they may have committee-derived information). Multiple SALES = watch out — they may know something is wrong. Weight defense-committee members' trades on defense stocks higher, etc. Cite specific filers ("Sen. X purchased 2026-07-10, disclosed 2026-07-15") when the signal is strong.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** The Holdings table and the rec rows already show the user's actual P/L computed from their real cost basis. If you write "BBAI down -7.7%" in your card body and the app's data shows BBAI is actually +333%, you will mislead the user into selling a winner. Refer to the LIFECYCLE block's cost-basis numbers when reasoning about tax impact, but do NOT narrate "down X%" or "up Y%" or "unrealized loss of $Z" in prose unless the number you write matches the Holdings table EXACTLY. If unsure, just say "current position" without restating P/L.
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output. Discuss percentages, % of book, and individual position values, but never echo the total portfolio dollar amount.
 
@@ -847,6 +856,8 @@ ${formatRecentTradesBlock(recentTrades)}
 ${formatDailyPicksBlock(dailyPicks)}
 ${formatSectorRotationBlock(sectorRotation)}
 ${formatCorrelationBlock(correlations)}
+${formatFedLiquidityBlock(fedLiquidity)}
+${formatCongressionalBlock(congressional)}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -1061,7 +1072,7 @@ export async function generateBriefing(profile) {
     : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -1107,6 +1118,13 @@ export async function generateBriefing(profile) {
       }
       return await computeCorrelations({ tickers, currencies, weights });
     })().catch((e) => { console.warn("[correlations] warn:", e?.message); return null; }),
+    // Fed liquidity regime — cached 12h, free from FRED
+    getFedLiquidity().catch((e) => { console.warn("[fedLiquidity] warn:", e?.message); return null; }),
+    // Congressional trades matching user's holdings (last 45d)
+    (async () => {
+      const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean);
+      return await getCongressionalTradesForTickers(tickers, { maxAgeDays: 45 });
+    })().catch((e) => { console.warn("[congressional] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   // Idempotently persist daily picks. The daily-pick cron may have already
@@ -1141,7 +1159,7 @@ export async function generateBriefing(profile) {
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional);
 
   // Anthropic call with retry-on-truncation. When the response stops
   // because we hit max_tokens (rather than because the model finished),
