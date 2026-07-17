@@ -251,6 +251,14 @@ const StocksPortfolioSchema = new mongoose.Schema(
     lastBriefingErrorAt: { type: Date, default: null },
     lastBriefingErrorStage: { type: String, default: null },
     lastBriefingErrorMessage: { type: String, default: null },
+    // Attempt-stamp: written at the TOP of sendBriefingForUser before any
+    // other work. Proves the function was entered when success and error
+    // stamps don't tell the whole story (e.g., silent hang, dyno sleep).
+    // Missing from the schema until 2026-07-17 — writes were silently
+    // dropped by Mongoose strict mode for the week between the code
+    // change and this fix.
+    lastBriefingAttemptAt: { type: Date, default: null },
+    lastBriefingAttemptKey: { type: String, default: null },
     // Planned withdrawals — "I need $X by date Y" so AI recs can prepare
     // cash and avoid locking it up in long-horizon buys.
     plannedWithdrawals: {
