@@ -1955,17 +1955,28 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
           {(() => {
             const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
             const color = (v) => v == null ? "inherit" : (v >= 0 ? "#166534" : "#991b1b");
+            const ann = perfIndicators.annualizedFrom14dPct;
+            const projected12mo = (ann != null && Number.isFinite(perfIndicators.current))
+              ? perfIndicators.current * (1 + ann / 100) : null;
             const cells = [
               { label: "Portfolio value", v: `$${Math.round(perfIndicators.current).toLocaleString()} CAD` },
               { label: "Week over week", v: pct(perfIndicators.wowChangePct), color: color(perfIndicators.wowChangePct) },
               { label: `YTD${perfIndicators.ytdAnchorDate && perfIndicators.ytdAnchorDate.slice(0, 4) !== String(new Date().getUTCFullYear()) ? ` (since ${perfIndicators.ytdAnchorDate})` : ""}`, v: pct(perfIndicators.ytdChangePct), color: color(perfIndicators.ytdChangePct) },
               { label: "14d avg daily", v: pct(perfIndicators.avg14dDailyPct), color: color(perfIndicators.avg14dDailyPct) },
-              { label: "Annualized (from 14d)", v: perfIndicators.annualizedFrom14dPct == null ? "—" : `${perfIndicators.annualizedFrom14dPct >= 0 ? "+" : ""}${perfIndicators.annualizedFrom14dPct.toFixed(0)}%`, color: color(perfIndicators.annualizedFrom14dPct) },
+              {
+                label: "Annualized (from 14d)",
+                v: ann == null ? "—" : `${ann >= 0 ? "+" : ""}${ann.toFixed(0)}%`,
+                color: color(ann),
+                sub: projected12mo != null ? `→ $${Math.round(projected12mo).toLocaleString()} in 12mo` : null,
+              },
             ];
             return cells.map((c, i) => (
               <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel)", border: "1px solid var(--sa-border)", borderRadius: 8, textAlign: "center" }}>
                 <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{c.label}</div>
                 <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3, color: c.color || "inherit", fontVariantNumeric: "tabular-nums" }}>{c.v}</div>
+                {c.sub && (
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{c.sub}</div>
+                )}
               </div>
             ));
           })()}
