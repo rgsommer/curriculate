@@ -387,4 +387,25 @@ router.get("/", requireStocksAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/stocks-trade/:id
+// Removes ONE journal entry the caller owns. Deliberately does NOT undo
+// the leg's effects on positions or cash — the user reconciles those on
+// the Positions tab if needed. Silent no-op if the id doesn't exist or
+// belongs to another user (never leaks existence).
+router.delete("/:id", requireStocksAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!/^[a-f0-9]{24}$/i.test(id)) return res.status(400).json({ error: "Bad id" });
+    const result = await StocksTradeJournal.deleteOne({
+      _id: id,
+      email: req.stocksUser.email,
+    });
+    if (result.deletedCount === 0) return res.status(404).json({ error: "Not found" });
+    res.json({ ok: true, deleted: result.deletedCount });
+  } catch (err) {
+    console.error("stocks-trade DELETE error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
 export default router;

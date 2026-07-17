@@ -7127,6 +7127,21 @@ function TradesView({ sessionToken }) {
   const [busy, setBusy] = useState(true);
   const [err, setErr] = useState(null);
   const [days, setDays] = useState(90);
+  const [deletingId, setDeletingId] = useState(null);
+
+  const load = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-trade?days=${days}`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      setTrades(j.trades || []);
+    } catch (e) { setErr(e?.message || "Failed to load"); }
+    finally { setBusy(false); }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -7148,6 +7163,32 @@ function TradesView({ sessionToken }) {
     })();
     return () => { cancelled = true; };
   }, [sessionToken, days]);
+
+  const deleteTrade = async (t) => {
+    if (deletingId) return;
+    const legsDesc = (t.legs || []).map((l) =>
+      (l.side === "DEPOSIT" || l.side === "WITHDRAW")
+        ? `${l.side} $${Math.round(Number(l.grossValue) || 0).toLocaleString()} ${l.currency}`
+        : `${l.side} ${l.shares} ${l.ticker} @ $${Number(l.pricePerShare).toFixed(2)} ${l.currency}`
+    ).join(" · ");
+    const confirmed = window.confirm(
+      `Delete this journal entry?\n\n` +
+      `${new Date(t.executedAt).toLocaleDateString()}\n${legsDesc}\n\n` +
+      `⚠ This removes the JOURNAL entry only. Position quantities and cash balances are NOT automatically undone — reconcile them on the Positions tab if needed.`
+    );
+    if (!confirmed) return;
+    setDeletingId(t._id);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-trade/${t._id}`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      await load();
+    } catch (e) { alert(`Delete failed: ${e?.message || "network"}`); }
+    finally { setDeletingId(null); }
+  };
 
   // Quick summary stats
   let totalTrades = 0, totalDeposit = 0, totalWithdraw = 0, totalBuyValue = 0, totalSellValue = 0;
@@ -7221,6 +7262,7 @@ function TradesView({ sessionToken }) {
                   <th style={recHeaderCellLeft}>Legs</th>
                   <th style={recHeaderCell}>Net cash (CAD)</th>
                   <th style={recHeaderCellLeft}>Notes</th>
+                  <th style={recHeaderCell}></th>
                 </tr>
               </thead>
               <tbody>
@@ -7260,6 +7302,17 @@ function TradesView({ sessionToken }) {
                     </td>
                     <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, maxWidth: 220, whiteSpace: "normal" }}>
                       {t.notes || "—"}
+                    </td>
+                    <td style={{ ...recCell, textAlign: "right" }}>
+                      <button
+                        className="sa-btn ghost"
+                        style={{ padding: "3px 8px", fontSize: 11 }}
+                        title="Delete this trade journal entry. Positions are not auto-adjusted."
+                        onClick={() => deleteTrade(t)}
+                        disabled={deletingId === t._id}
+                      >
+                        {deletingId === t._id ? "…" : "Delete"}
+                      </button>
                     </td>
                   </tr>
                 ))}
