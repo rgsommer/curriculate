@@ -2912,6 +2912,48 @@ router.post("/daily-picks/generate-now", requireStocksAuth, async (req, res) => 
   }
 });
 
+// One-off dedupe: for every (email, ticker, YMD) bucket, keep the row with
+// the highest deterministicScore (ties broken by earliest createdAt so the
+// original pick wins over later duplicates) and delete the rest. Idempotent.
+// Never deletes rows in the "entered" state to preserve manual trade linkage.
+router.post("/daily-picks/dedupe", requireStocksAuth, async (req, res) => {
+  try {
+    const all = await StocksDailyPick.find({ email: req.stocksUser.email })
+      .sort({ createdAt: 1 })
+      .lean();
+    const buckets = new Map(); // "TICKER|YYYY-MM-DD" → picks[]
+    for (const p of all) {
+      const ymd = new Date(p.pickDate).toISOString().slice(0, 10);
+      const key = `${p.ticker}|${ymd}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(p);
+    }
+    let removed = 0;
+    for (const [, picks] of buckets) {
+      if (picks.length < 2) continue;
+      // Keep the winner: highest score, then earliest createdAt. Never
+      // discard a row where the user has actually entered a position.
+      const enteredWinner = picks.find((p) => p.enteredAt);
+      const winner = enteredWinner || picks
+        .slice()
+        .sort((a, b) => {
+          const sa = a.deterministicScore ?? -Infinity;
+          const sb = b.deterministicScore ?? -Infinity;
+          if (sb !== sa) return sb - sa;
+          return new Date(a.createdAt) - new Date(b.createdAt);
+        })[0];
+      const losers = picks.filter((p) => String(p._id) !== String(winner._id) && !p.enteredAt);
+      if (losers.length === 0) continue;
+      const del = await StocksDailyPick.deleteMany({ _id: { $in: losers.map((l) => l._id) } });
+      removed += del.deletedCount || 0;
+    }
+    res.json({ ok: true, buckets: buckets.size, removed });
+  } catch (err) {
+    console.error("daily-picks dedupe error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 router.post("/daily-picks/sweep-now", requireStocksAuth, async (req, res) => {
   try {
     const result = await sweepOpenPicks();

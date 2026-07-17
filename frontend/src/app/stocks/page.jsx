@@ -7641,6 +7641,31 @@ function DailyPickCard({ sessionToken }) {
     } catch (e) { setMsg({ ok: false, text: e?.message || "Failed" }); }
     finally { setBusy(false); }
   };
+  const dedupeNow = async () => {
+    if (busy) return;
+    if (!window.confirm("Delete duplicate daily-pick rows? For every (ticker, day) bucket, the highest-scoring row is kept (or the one you've entered a position on) — all others deleted.")) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/daily-picks/dedupe`, { method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setMsg({ ok: true, text: `Scanned ${j.buckets} (ticker, day) buckets · removed ${j.removed} duplicate rows` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e?.message || "Failed" }); }
+    finally { setBusy(false); }
+  };
+  const backfillLinks = async () => {
+    if (busy) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-trade/backfill-daily-pick-links`, { method: "POST", credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setMsg({ ok: true, text: `Scanned ${j.scanned} unlinked trades · linked ${j.linked} to matching swing picks` });
+      load();
+    } catch (e) { setMsg({ ok: false, text: e?.message || "Failed" }); }
+    finally { setBusy(false); }
+  };
 
   const items = data?.items || [];
   const s = data?.summary;
@@ -7654,7 +7679,9 @@ function DailyPickCard({ sessionToken }) {
             Cron generates <b>exactly 2 picks/day</b> at 09:15 ET using the deterministic composite score — no cherry-picking, no LLM narrative. Every pick tracked to close. Requires STOCKS_DAILY_PICK_ENABLED=1.
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="sa-btn ghost" onClick={backfillLinks} disabled={busy} title="Retroactively link recorded trades to matching swing picks (e.g. AMZN buy that fulfilled a pick but wasn't linked at record time).">Backfill trade links</button>
+          <button className="sa-btn ghost" onClick={dedupeNow} disabled={busy} title="Delete duplicate rows per (ticker, day). Keeps the highest-scoring row or an entered position; discards the rest.">Dedupe</button>
           <button className="sa-btn ghost" onClick={sweepNow} disabled={busy}>Sweep now</button>
           <button className="sa-btn" onClick={generateNow} disabled={busy}>Generate now</button>
         </div>
