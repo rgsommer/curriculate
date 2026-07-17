@@ -1961,8 +1961,12 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             const maxG = perfIndicators.maxGrowthPct;
             const maxDate = perfIndicators.maxGrowthDate;
             const drawdown = perfIndicators.drawdownFromPeakPct;
+            // hasDollar tags cells whose primary value or sub-line contains
+            // absolute $ amounts. Those get the .sa-amount class so privacy
+            // mode blurs them. Percentage-only cells stay visible even in
+            // privacy mode since a % doesn't reveal absolute wealth.
             const cells = [
-              { label: "Portfolio value", v: `$${Math.round(perfIndicators.current).toLocaleString()} CAD` },
+              { label: "Portfolio value", v: `$${Math.round(perfIndicators.current).toLocaleString()} CAD`, hasDollar: true },
               { label: "Week over week", v: pct(perfIndicators.wowChangePct), color: color(perfIndicators.wowChangePct) },
               { label: `YTD${perfIndicators.ytdAnchorDate && perfIndicators.ytdAnchorDate.slice(0, 4) !== String(new Date().getUTCFullYear()) ? ` (since ${perfIndicators.ytdAnchorDate})` : ""}`, v: pct(perfIndicators.ytdChangePct), color: color(perfIndicators.ytdChangePct) },
               { label: "14d avg daily", v: pct(perfIndicators.avg14dDailyPct), color: color(perfIndicators.avg14dDailyPct) },
@@ -1971,6 +1975,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
                 v: ann == null ? "—" : `${ann >= 0 ? "+" : ""}${ann.toFixed(0)}%`,
                 color: color(ann),
                 sub: projected12mo != null ? `→ $${Math.round(projected12mo).toLocaleString()} in 12mo` : null,
+                subHasDollar: projected12mo != null,
               },
               {
                 label: `Max growth${perfIndicators.oldestSnapshotDate ? ` (since ${perfIndicators.oldestSnapshotDate})` : ""}`,
@@ -1986,9 +1991,9 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             return cells.map((c, i) => (
               <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel)", border: "1px solid var(--sa-border)", borderRadius: 8, textAlign: "center" }}>
                 <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{c.label}</div>
-                <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3, color: c.color || "inherit", fontVariantNumeric: "tabular-nums" }}>{c.v}</div>
+                <div className={c.hasDollar ? "sa-amount" : undefined} style={{ fontSize: 15, fontWeight: 700, marginTop: 3, color: c.color || "inherit", fontVariantNumeric: "tabular-nums" }}>{c.v}</div>
                 {c.sub && (
-                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{c.sub}</div>
+                  <div className={c.subHasDollar ? "sa-amount" : undefined} style={{ fontSize: 10.5, color: "var(--sa-muted)", marginTop: 3, fontVariantNumeric: "tabular-nums" }}>{c.sub}</div>
                 )}
               </div>
             ));
