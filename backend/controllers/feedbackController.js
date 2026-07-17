@@ -35,6 +35,7 @@ export async function createStudentFeedback(req, res) {
       taskTitle, taskType, taskIndex, totalTasks,
       feedbackType, message,
       deviceInfo,
+      isDemo = false, source = null,
     } = req.body || {};
 
     const feedbackTypeStr = String(feedbackType || "").trim();
@@ -54,6 +55,8 @@ export async function createStudentFeedback(req, res) {
       message: `[Student Feedback] ${feedbackTypeStr}:${contextStr} ${String(message || "").trim() || "(no details)"}`,
       meta: {
         source: "student-app",
+        origin: source || (isDemo ? "demo-button" : "class"),
+        isDemo: !!isDemo,
         roomCode, teamName, memberNames: memberNamesList,
         tasksetName, taskTitle, taskType,
         taskIndex, totalTasks, feedbackType: feedbackTypeStr,
@@ -70,12 +73,17 @@ export async function createStudentFeedback(req, res) {
       ? `<tr><td style="padding:6px 12px;color:#64748b">Device</td><td style="padding:6px 12px">${esc(deviceInfo.platform || "?")} &mdash; ${esc(deviceInfo.browser || "?")} (${esc(deviceInfo.screenSize || "?")})</td></tr>`
       : "";
 
+    const demoRow = isDemo
+      ? `<tr style="background:#fff7ed"><td style="padding:6px 12px;color:#9a3412;font-weight:600">Source</td><td style="padding:6px 12px;color:#9a3412;font-weight:600">🦊 Public demo (Try a demo game) — not a real class</td></tr>`
+      : "";
+
     const html = `
       <div style="font-family:system-ui,-apple-system,sans-serif;max-width:560px;margin:0 auto">
         <h2 style="color:#1e293b;margin-bottom:4px">Student Feedback</h2>
         <p style="color:#64748b;margin-top:0">${dateStr} at ${timeStr}</p>
         <table style="width:100%;border-collapse:collapse;font-size:14px">
           <tr style="background:#f1f5f9"><td style="padding:6px 12px;color:#64748b;width:120px">Type</td><td style="padding:6px 12px;font-weight:600">${esc(feedbackTypeStr)}</td></tr>
+          ${demoRow}
           <tr><td style="padding:6px 12px;color:#64748b">Room Code</td><td style="padding:6px 12px">${esc(roomCode)}</td></tr>
           <tr style="background:#f1f5f9"><td style="padding:6px 12px;color:#64748b">Team</td><td style="padding:6px 12px">${esc(teamName)}</td></tr>
           <tr><td style="padding:6px 12px;color:#64748b">Members</td><td style="padding:6px 12px">${memberNamesList.length ? memberNamesList.map(esc).join(", ") : "—"}</td></tr>
@@ -90,7 +98,7 @@ export async function createStudentFeedback(req, res) {
     try {
       await sendSystemEmail({
         to: ADMIN_EMAIL,
-        subject: `[Student Feedback] ${feedbackTypeStr} — Room ${roomCode || "?"}`,
+        subject: `[Student Feedback]${isDemo ? " [DEMO]" : ""} ${feedbackTypeStr} — Room ${roomCode || "?"}`,
         html,
       });
     } catch (emailErr) {

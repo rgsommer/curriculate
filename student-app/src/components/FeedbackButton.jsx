@@ -19,6 +19,7 @@ export default function FeedbackButton({
   currentTask,
   currentTaskIndex,
   totalTasks,
+  isDemo = false,
 }) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState("");
@@ -75,6 +76,8 @@ export default function FeedbackButton({
           feedbackType: type,
           message: message.trim(),
           deviceInfo,
+          isDemo: !!isDemo,
+          source: isDemo ? "demo-button" : "class",
         }),
       });
       clearTimeout(timeout);

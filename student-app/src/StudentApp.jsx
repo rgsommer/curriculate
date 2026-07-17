@@ -247,6 +247,10 @@ function StudentApp() {
 
   const [roomCode, setRoomCode] = useState(() => lsGet(LS_KEYS.roomCode) || "");
   const [teamName, setTeamName] = useState(() => lsGet(LS_KEYS.teamName) || "");
+  // True when the current session was started via the public "Try a demo"
+  // button (guest join to CRUEDEMO). Used to tag feedback/analytics so demo
+  // traffic is distinguishable from real classroom sessions.
+  const [isDemoSession, setIsDemoSession] = useState(false);
   // Members: array of { name, email } objects. Email is optional per member.
   const [members, setMembers] = useState(() => {
     try {
@@ -2214,6 +2218,7 @@ function StudentApp() {
       displayName: memberNames[0] || "",
       maxTeamSize: 8,
       locationSlug: roomLocation || DEFAULT_LOCATION,
+      ...(overrides?.isDemo && { isDemo: true, source: "demo-button" }),
     };
 
     setJoiningRoom(true);
@@ -2367,10 +2372,18 @@ function StudentApp() {
   // full, immediate functionality.
   const handleTryDemo = () => {
     if (joiningRoom) return;
+    // Set state too (not just join overrides) so downstream features —
+    // feedback, analytics, task submission — all carry the demo room code
+    // and guest identity instead of showing "unknown".
+    setIsDemoSession(true);
+    setRoomCode("CRUEDEMO");
+    setTeamName("Demo Team");
+    setMembers([{ name: "Guest", email: "" }]);
     handleJoinRoom({
       roomCode: "CRUEDEMO",
       teamName: "Demo Team",
-      members: [{ name: "Guest" }],
+      members: [{ name: "Guest", email: "" }],
+      isDemo: true,
     });
   };
 
@@ -2425,6 +2438,8 @@ function StudentApp() {
       setRoomCode("");
       setTeamName("");
       setMembers(["", "", ""]);
+      // leaving the demo — subsequent sessions are real unless demo tapped again
+      setIsDemoSession(false);
     };
 
     // ----------------------------------------------------
@@ -5763,9 +5778,14 @@ function StudentApp() {
         try { lsSet(LS_KEYS.emails, JSON.stringify(updated)); } catch {}
       }}
       onSubmit={(payload) => {
-        // send to server if it's listening
+        // send to server if it's listening — tag demo sessions so demo
+        // feedback is distinguishable from real classroom feedback.
         try {
-          socket.emit("feedback:submit", payload);
+          socket.emit("feedback:submit", {
+            ...payload,
+            roomCode: payload?.roomCode || roomCode || (isDemoSession ? "CRUEDEMO" : ""),
+            ...(isDemoSession && { isDemo: true, source: "demo-button" }),
+          });
         } catch {}
         setPostPhase("trophy");
         setTasksetComplete(true);
@@ -7435,6 +7455,7 @@ function StudentApp() {
       currentTask={currentTask}
       currentTaskIndex={currentTaskIndex}
       totalTasks={tasksetTotalTasks}
+      isDemo={isDemoSession}
     />
 
     {/* FOOTER STRIP */}
