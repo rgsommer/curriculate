@@ -7164,6 +7164,60 @@ function TradesView({ sessionToken }) {
     return () => { cancelled = true; };
   }, [sessionToken, days]);
 
+  const editTradeShares = async (t) => {
+    // For each BUY/SELL leg, prompt for the new share count. Enter blank
+    // to keep the leg unchanged. DEPOSIT/WITHDRAW legs are skipped (edit
+    // those via delete + re-add for now).
+    if (deletingId) return;
+    const patch = [];
+    let anyChange = false;
+    for (const leg of t.legs) {
+      if (leg.side === "DEPOSIT" || leg.side === "WITHDRAW") {
+        patch.push({});
+        continue;
+      }
+      const label = `${leg.side} ${leg.shares} ${leg.ticker} @ $${Number(leg.pricePerShare).toFixed(2)} ${leg.currency}`;
+      const input = window.prompt(
+        `Correct share count for:\n${label}\n\nEnter new share count, or leave blank to keep as-is.\nCurrent: ${leg.shares}`,
+        String(leg.shares)
+      );
+      if (input == null) return; // cancel entire edit
+      const trimmed = input.trim();
+      if (trimmed === "" || trimmed === String(leg.shares)) {
+        patch.push({});
+        continue;
+      }
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || n <= 0) {
+        alert(`Invalid share count: ${trimmed}`);
+        return;
+      }
+      patch.push({ shares: n });
+      anyChange = true;
+    }
+    if (!anyChange) return;
+    // Preview and confirm
+    const previewLines = t.legs.map((leg, i) => {
+      const p = patch[i];
+      if (!p?.shares) return null;
+      return `${leg.side} ${leg.ticker}: ${leg.shares} → ${p.shares}`;
+    }).filter(Boolean).join("\n");
+    if (!window.confirm(`Apply these changes?\n\n${previewLines}\n\nPositions and cash will be recomputed to reflect the corrected legs.`)) return;
+    setDeletingId(t._id);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-trade/${t._id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ legs: patch }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      await load();
+    } catch (e) { alert(`Edit failed: ${e?.message || "network"}`); }
+    finally { setDeletingId(null); }
+  };
+
   const deleteTrade = async (t) => {
     if (deletingId) return;
     const legsDesc = (t.legs || []).map((l) =>
@@ -7303,7 +7357,16 @@ function TradesView({ sessionToken }) {
                     <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, maxWidth: 220, whiteSpace: "normal" }}>
                       {t.notes || "—"}
                     </td>
-                    <td style={{ ...recCell, textAlign: "right" }}>
+                    <td style={{ ...recCell, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <button
+                        className="sa-btn ghost"
+                        style={{ padding: "3px 8px", fontSize: 11, marginRight: 4 }}
+                        title="Change the share count on any leg. Positions and cash auto-recompute."
+                        onClick={() => editTradeShares(t)}
+                        disabled={deletingId === t._id}
+                      >
+                        {deletingId === t._id ? "…" : "Edit"}
+                      </button>
                       <button
                         className="sa-btn ghost"
                         style={{ padding: "3px 8px", fontSize: 11 }}
@@ -7311,7 +7374,7 @@ function TradesView({ sessionToken }) {
                         onClick={() => deleteTrade(t)}
                         disabled={deletingId === t._id}
                       >
-                        {deletingId === t._id ? "…" : "Delete"}
+                        Delete
                       </button>
                     </td>
                   </tr>

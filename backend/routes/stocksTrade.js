@@ -416,6 +416,100 @@ router.get("/", requireStocksAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/stocks-trade/:id
+// Body: { legs: [{ shares?, price? }, ...] }
+// One-index-aligned patch — the ith incoming leg patches the ith stored
+// leg. Only shares and pricePerShare are patchable; side/ticker/currency
+// stay locked (change those by deleting + re-recording).
+//
+// Reverses each old leg's effect on positions + cash, then applies the
+// new leg, so the net portfolio state = "what it would have been if the
+// corrected leg had been what was recorded originally." Netcashcad on
+// the journal entry is recomputed.
+router.patch("/:id", express.json({ limit: "16kb" }), requireStocksAuth, async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim();
+    if (!/^[a-f0-9]{24}$/i.test(id)) return res.status(400).json({ error: "Bad id" });
+    const patch = Array.isArray(req.body?.legs) ? req.body.legs : null;
+    if (!patch) return res.status(400).json({ error: "legs[] required" });
+
+    const trade = await StocksTradeJournal.findOne({ _id: id, email: req.stocksUser.email });
+    if (!trade) return res.status(404).json({ error: "Not found" });
+    if (patch.length !== trade.legs.length) return res.status(400).json({ error: "legs length must match" });
+
+    const portfolio = await StocksPortfolio.findOne({ email: req.stocksUser.email });
+    if (!portfolio) return res.status(404).json({ error: "No portfolio" });
+    const fx = portfolio.fxUsdCad || 1.37;
+    const account = trade.account;
+    const acctRow = portfolio.accounts.find((a) => a.id === account);
+    if (!acctRow) return res.status(400).json({ error: "Original account not found on portfolio" });
+
+    // Build the new leg array by folding each patch on top of the stored leg.
+    const newLegs = trade.legs.map((oldLeg, i) => {
+      const p = patch[i] || {};
+      const shares = Number.isFinite(+p.shares) && +p.shares > 0 ? +p.shares : oldLeg.shares;
+      const price = Number.isFinite(+p.price) && +p.price >= 0 ? +p.price : oldLeg.pricePerShare;
+      const grossValue = (oldLeg.side === "DEPOSIT" || oldLeg.side === "WITHDRAW")
+        ? (Number.isFinite(+p.amount) && +p.amount > 0 ? +p.amount : oldLeg.grossValue)
+        : shares * price;
+      return {
+        side: oldLeg.side,
+        ticker: oldLeg.ticker,
+        currency: oldLeg.currency,
+        settleCcy: oldLeg.settleCcy || oldLeg.currency,
+        shares: (oldLeg.side === "DEPOSIT" || oldLeg.side === "WITHDRAW") ? null : shares,
+        pricePerShare: (oldLeg.side === "DEPOSIT" || oldLeg.side === "WITHDRAW") ? null : price,
+        grossValue,
+        account: oldLeg.account || null,
+      };
+    });
+
+    // Reverse each OLD leg's effect on positions + cash.
+    const positions = [...portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }))];
+    try {
+      for (const oldLeg of trade.legs) {
+        if (oldLeg.side === "BUY" || oldLeg.side === "SELL") {
+          const inverse = { ...oldLeg.toObject?.() || oldLeg, side: oldLeg.side === "BUY" ? "SELL" : "BUY", price: oldLeg.pricePerShare };
+          applyLeg(positions, oldLeg.account || account, inverse);
+        }
+        // Cash: flip the sign
+        const targetAcct = portfolio.accounts.find((a) => a.id === (oldLeg.account || account));
+        if (targetAcct) {
+          const inverseLeg = { ...oldLeg.toObject?.() || oldLeg, side: {
+            BUY: "SELL", SELL: "BUY", DEPOSIT: "WITHDRAW", WITHDRAW: "DEPOSIT",
+          }[oldLeg.side] };
+          adjustAccountCash(targetAcct, inverseLeg, fx);
+        }
+      }
+      // Apply each NEW leg.
+      for (const newLeg of newLegs) {
+        if (newLeg.side === "BUY" || newLeg.side === "SELL") {
+          applyLeg(positions, newLeg.account || account, { ...newLeg, price: newLeg.pricePerShare });
+        }
+        const targetAcct = portfolio.accounts.find((a) => a.id === (newLeg.account || account));
+        if (targetAcct) adjustAccountCash(targetAcct, newLeg, fx);
+      }
+    } catch (e) {
+      return res.status(400).json({ error: e.message });
+    }
+
+    // Save the corrected portfolio + journal.
+    portfolio.positions = positions;
+    portfolio.markModified("accounts");
+    portfolio.lastSyncedAt = new Date();
+    await portfolio.save();
+
+    trade.legs = newLegs;
+    trade.netCashCad = netCashCadOfTrade(newLegs, fx);
+    await trade.save();
+
+    res.json({ ok: true, portfolio: portfolio.toObject(), trade: trade.toObject() });
+  } catch (err) {
+    console.error("stocks-trade PATCH error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
 // DELETE /api/stocks-trade/:id
 // Removes ONE journal entry the caller owns. Deliberately does NOT undo
 // the leg's effects on positions or cash — the user reconciles those on
