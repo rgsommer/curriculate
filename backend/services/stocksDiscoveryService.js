@@ -47,6 +47,7 @@ import { getInsiderEdgarSignal } from "./stocksInsiderEdgar.js";
 import { compareTranscriptsQoQ } from "./stocksEarningsTranscripts.js";
 import { getPatentsSignal } from "./stocksPatentsUspto.js";
 import { verifyPicksBatch } from "./stocksAdversarialVerify.js";
+import { getChartVisionAnalysis } from "./stocksChartVision.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -1095,6 +1096,18 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
     }
   } catch (e) {
     console.warn("[high-conviction] adversarial verify failed:", e?.message);
+  }
+
+  // Chart vision enrichment: render each surviving pick's chart, send to
+  // Claude with vision, get pattern/trend-stage/gestalt analysis. One
+  // Haiku vision call per pick — cheap enough for a ~5-10 pick scan.
+  try {
+    await Promise.all(picks.map(async (p) => {
+      const cv = await getChartVisionAnalysis(p.ticker, p.currencyAtDiscovery || "USD");
+      if (cv && p.multiFactor) p.multiFactor.chartVision = cv;
+    }));
+  } catch (e) {
+    console.warn("[high-conviction] chart vision failed:", e?.message);
   }
 
   // Folding Mosaic in may reorder the picks — sort by the final blended score.

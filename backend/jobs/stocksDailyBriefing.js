@@ -31,6 +31,8 @@ import { getShortInterest, formatShortInterestLine } from "../services/stocksSho
 import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
 import { generateDailyPicksForUser } from "../services/stocksDailyPickEngine.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
+import { getSectorRotation, formatSectorRotationBlock } from "../services/stocksSectorRotation.js";
+import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -606,7 +608,7 @@ ${lines.join("\n")}
 `;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -843,6 +845,8 @@ ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${formatRecentTradesBlock(recentTrades)}
 ${formatDailyPicksBlock(dailyPicks)}
+${formatSectorRotationBlock(sectorRotation)}
+${formatCorrelationBlock(correlations)}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -1057,7 +1061,7 @@ export async function generateBriefing(profile) {
     : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -1086,6 +1090,23 @@ export async function generateBriefing(profile) {
       .sort({ executedAt: -1 })
       .lean()
       .catch((e) => { console.warn("[recentTrades] warn:", e?.message); return []; }),
+    // 11-sector rotation ranking — cached 4h across all users.
+    getSectorRotation().catch((e) => { console.warn("[sectorRotation] warn:", e?.message); return null; }),
+    // Pairwise correlation across the user's holdings — flags hidden
+    // concentration ("three names but one bet") that raw diversification-
+    // count metrics miss. Compact: computed off held tickers only.
+    (async () => {
+      const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase()).filter(Boolean);
+      const currencies = {};
+      const weights = {};
+      const fx = profile.fxUsdCad || 1.37;
+      for (const p of profile.positions || []) {
+        currencies[String(p.ticker || "").toUpperCase()] = p.ccy || "USD";
+        const cad = (p.ccy === "USD" ? (p.priceUsd || 0) * fx : (p.priceCad || 0)) * (p.qty || 0);
+        weights[String(p.ticker || "").toUpperCase()] = (weights[String(p.ticker || "").toUpperCase()] || 0) + cad;
+      }
+      return await computeCorrelations({ tickers, currencies, weights });
+    })().catch((e) => { console.warn("[correlations] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   // Idempotently persist daily picks. The daily-pick cron may have already
@@ -1120,7 +1141,7 @@ export async function generateBriefing(profile) {
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations);
 
   // Anthropic call with retry-on-truncation. When the response stops
   // because we hit max_tokens (rather than because the model finished),

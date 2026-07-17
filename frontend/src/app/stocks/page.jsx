@@ -5751,6 +5751,44 @@ function HighConvictionCard({ pick, rank }) {
         </div>
       )}
 
+      {mf.chartVision && (
+        <div style={{ marginTop: 10, fontSize: 12, background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 8, padding: "10px 12px" }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "#6d28d9", marginBottom: 6 }}>👁 Chart vision AI</div>
+          {mf.chartVision.gestalt && <div style={{ marginTop: 3, fontStyle: "italic" }}>"{mf.chartVision.gestalt}"</div>}
+          {mf.chartVision.patterns?.length > 0 && (
+            <div style={{ marginTop: 4 }}><b>Patterns:</b> {mf.chartVision.patterns.join(", ")}</div>
+          )}
+          {mf.chartVision.trendStage && (
+            <div style={{ marginTop: 3 }}><b>Trend stage:</b> {mf.chartVision.trendStage}</div>
+          )}
+          {(mf.chartVision.supportLevels?.length > 0 || mf.chartVision.resistanceLevels?.length > 0) && (
+            <div style={{ marginTop: 3 }}>
+              {mf.chartVision.supportLevels?.length > 0 && <span><b>Support:</b> {mf.chartVision.supportLevels.join(", ")}</span>}
+              {mf.chartVision.supportLevels?.length > 0 && mf.chartVision.resistanceLevels?.length > 0 && " · "}
+              {mf.chartVision.resistanceLevels?.length > 0 && <span><b>Resistance:</b> {mf.chartVision.resistanceLevels.join(", ")}</span>}
+            </div>
+          )}
+          {mf.chartVision.smaRelationship && (
+            <div style={{ marginTop: 3 }}><b>vs SMA50:</b> {mf.chartVision.smaRelationship}</div>
+          )}
+          {mf.chartVision.divergences && mf.chartVision.divergences !== "none material" && (
+            <div style={{ marginTop: 3 }}><b>Divergences:</b> {mf.chartVision.divergences}</div>
+          )}
+          <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10.5, fontWeight: 700, background: mf.chartVision.conviction === "high" ? "#dcfce7" : mf.chartVision.conviction === "low" ? "#fee2e2" : "#fef3c7", color: mf.chartVision.conviction === "high" ? "#166534" : mf.chartVision.conviction === "low" ? "#991b1b" : "#92400e" }}>
+              CHART CONVICTION: {mf.chartVision.conviction?.toUpperCase()}
+            </span>
+            {mf.chartVision.convictionReason && <span style={{ fontSize: 11, color: "var(--sa-muted)" }}>— {mf.chartVision.convictionReason}</span>}
+          </div>
+          {mf.chartVision.chartUrl && (
+            <details style={{ marginTop: 8 }}>
+              <summary style={{ cursor: "pointer", fontSize: 11, color: "#6d28d9", fontWeight: 600 }}>Show the chart Claude analyzed</summary>
+              <img src={mf.chartVision.chartUrl} alt={`${pick.ticker} chart`} style={{ marginTop: 6, maxWidth: "100%", borderRadius: 6, border: "1px solid #ddd6fe" }} />
+            </details>
+          )}
+        </div>
+      )}
+
       {mf.adversarial && (
         <div style={{ marginTop: 10, fontSize: 12, background: mf.adversarial.verdict === "confirmed_long" ? "#f0fdf4" : "#fef3c7", border: `1px solid ${mf.adversarial.verdict === "confirmed_long" ? "#bbf7d0" : "#fde68a"}`, borderRadius: 8, padding: "10px 12px" }}>
           <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--sa-muted)", marginBottom: 4 }}>🎯 Adversarial short-seller stress-test</div>
