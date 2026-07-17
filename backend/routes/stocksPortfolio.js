@@ -491,6 +491,91 @@ router.get("/performance", requireStocksAuth, async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/indicators
+// Aggregate performance stats derived from the daily aggregate snapshots.
+// Returns { current, wowChangePct, ytdChangePct, avg14dDailyPct,
+// annualizedFrom14dPct, oldestSnapshotDate }. Points at accountId
+// "__total__" (portfolio-wide). Silent nulls when the underlying series
+// is too thin — better than misleading numbers.
+router.get("/indicators", requireStocksAuth, async (req, res) => {
+  try {
+    const email = req.stocksUser.email;
+    const snaps = await StocksPortfolioSnapshot.find({ email, accountId: "__total__" })
+      .sort({ date: 1 })
+      .lean();
+    if (snaps.length === 0) return res.json({ ok: false, reason: "No portfolio snapshots yet." });
+    const latest = snaps[snaps.length - 1];
+    const current = latest.totalCad;
+
+    // Helper: find snapshot at-or-before a target YYYY-MM-DD, walking back
+    // from the end of the array. Handles weekends/holidays gracefully.
+    const findAtOrBefore = (targetYmd) => {
+      for (let i = snaps.length - 1; i >= 0; i--) {
+        if (snaps[i].date <= targetYmd) return snaps[i];
+      }
+      return null;
+    };
+    const ymdDaysAgo = (n) => {
+      const d = new Date();
+      d.setDate(d.getDate() - n);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const wowSnap = findAtOrBefore(ymdDaysAgo(7));
+    const wowChangePct = wowSnap && wowSnap.totalCad > 0
+      ? ((current - wowSnap.totalCad) / wowSnap.totalCad) * 100 : null;
+
+    // YTD anchor = last snapshot on or before Jan 1 of this year. If the
+    // series doesn't reach back that far, we can still show the change
+    // vs the oldest snapshot as a fallback.
+    const ytdAnchor = `${new Date().getUTCFullYear()}-01-01`;
+    const ytdSnap = findAtOrBefore(ytdAnchor) || snaps[0];
+    const ytdChangePct = ytdSnap && ytdSnap.totalCad > 0
+      ? ((current - ytdSnap.totalCad) / ytdSnap.totalCad) * 100 : null;
+
+    // 14d avg daily % — average of daily returns over the last 14 snapshots
+    // (or as many as we have if fewer). Excludes today's snapshot from
+    // the denominator so we compute returns pair-wise.
+    let avg14dDailyPct = null;
+    if (snaps.length >= 2) {
+      const window = snaps.slice(-15); // last 15 snaps → 14 daily returns max
+      const returns = [];
+      for (let i = 1; i < window.length; i++) {
+        const a = window[i - 1].totalCad;
+        const b = window[i].totalCad;
+        if (a > 0 && b > 0) returns.push((b - a) / a);
+      }
+      if (returns.length > 0) {
+        const mean = returns.reduce((s, x) => s + x, 0) / returns.length;
+        avg14dDailyPct = mean * 100;
+      }
+    }
+    // Annualized = compound the daily return over 252 trading days.
+    // Uses the arithmetic 14d avg — good enough for a headline stat.
+    const annualizedFrom14dPct = avg14dDailyPct != null
+      ? (Math.pow(1 + avg14dDailyPct / 100, 252) - 1) * 100 : null;
+
+    res.json({
+      ok: true,
+      current,
+      currency: "CAD",
+      wowChangePct,
+      wowAnchorDate: wowSnap?.date || null,
+      ytdChangePct,
+      ytdAnchorDate: ytdSnap?.date || null,
+      avg14dDailyPct,
+      annualizedFrom14dPct,
+      snapshotCount: snaps.length,
+      oldestSnapshotDate: snaps[0].date,
+      latestSnapshotDate: latest.date,
+    });
+  } catch (err) {
+    console.error("stocks-portfolio indicators error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
 // Cron-secret endpoint (used by Cowork scheduled tasks)
 // ──────────────────────────────────────────────────────────────────────
 

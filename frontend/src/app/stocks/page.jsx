@@ -1794,6 +1794,24 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   // during extended-hours windows so the dashboard reflects overnight moves
   // before the regular session opens.
   const [pmData, setPmData] = useState({});
+  // Portfolio performance indicators — fetched from the daily snapshot series.
+  const [perfIndicators, setPerfIndicators] = useState(null);
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/indicators`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled && j.ok) setPerfIndicators(j);
+      } catch { /* ignore */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
   const fx = user.fxUsdCad || 1.37;
   const positionsCad = totalCad(user.positions, fx);
   const cashCad = totalCashCad(user.accounts, fx);
@@ -1929,6 +1947,28 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
               </span>
             </span>
           )}
+        </div>
+      )}
+
+      {perfIndicators && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 12 }}>
+          {(() => {
+            const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+            const color = (v) => v == null ? "inherit" : (v >= 0 ? "#166534" : "#991b1b");
+            const cells = [
+              { label: "Portfolio value", v: `$${Math.round(perfIndicators.current).toLocaleString()} CAD` },
+              { label: "Week over week", v: pct(perfIndicators.wowChangePct), color: color(perfIndicators.wowChangePct) },
+              { label: `YTD${perfIndicators.ytdAnchorDate && perfIndicators.ytdAnchorDate.slice(0, 4) !== String(new Date().getUTCFullYear()) ? ` (since ${perfIndicators.ytdAnchorDate})` : ""}`, v: pct(perfIndicators.ytdChangePct), color: color(perfIndicators.ytdChangePct) },
+              { label: "14d avg daily", v: pct(perfIndicators.avg14dDailyPct), color: color(perfIndicators.avg14dDailyPct) },
+              { label: "Annualized (from 14d)", v: perfIndicators.annualizedFrom14dPct == null ? "—" : `${perfIndicators.annualizedFrom14dPct >= 0 ? "+" : ""}${perfIndicators.annualizedFrom14dPct.toFixed(0)}%`, color: color(perfIndicators.annualizedFrom14dPct) },
+            ];
+            return cells.map((c, i) => (
+              <div key={i} style={{ padding: "8px 10px", background: "var(--sa-panel)", border: "1px solid var(--sa-border)", borderRadius: 8, textAlign: "center" }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{c.label}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3, color: c.color || "inherit", fontVariantNumeric: "tabular-nums" }}>{c.v}</div>
+              </div>
+            ));
+          })()}
         </div>
       )}
 
