@@ -4423,6 +4423,42 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, load
   const loadLabel = loadingLabel || "Generating briefing…";
   const loadDetail = loadingDetail || "Pulling news, fundamentals, technicals, macro context, and earnings signals across your holdings · 20-40s";
 
+  // Estimated-progress bar for the busy state. The backend doesn't stream
+  // real progress from /send-briefing (single POST), so we animate an
+  // exponential-approach curve toward 95% over ~45s. Feels responsive
+  // AND stays honest — the bar never claims to be "done" until the
+  // response actually arrives. Stage labels cycle through the pipeline
+  // in the same order the backend runs it, timed by elapsed seconds.
+  const [progress, setProgress] = useState(0);
+  const [stageLabel, setStageLabel] = useState("Loading portfolio & holdings…");
+  useEffect(() => {
+    if (!busy || html) return;
+    const startedAt = Date.now();
+    const stages = [
+      { after:  0, label: "Loading portfolio & holdings…" },
+      { after:  3, label: "Fetching macro context, Fed liquidity, sector rotation…" },
+      { after:  6, label: "Fetching per-holding technicals, fundamentals, catalysts, options…" },
+      { after: 12, label: "Fetching short interest, insider filings, transcripts, patents…" },
+      { after: 18, label: "Running Anthropic Sonnet with web search — this is the slow part…" },
+      { after: 45, label: "Composing the briefing narrative…" },
+      { after: 75, label: "Still working — long briefings can push past 90s…" },
+    ];
+    const tick = () => {
+      const elapsedSec = (Date.now() - startedAt) / 1000;
+      // Asymptote at 95% — reserve the last 5% for the actual response.
+      const pct = 95 * (1 - Math.exp(-elapsedSec / 20));
+      setProgress(pct);
+      // Pick the deepest stage whose `after` we've passed.
+      const active = stages.filter((s) => elapsedSec >= s.after).slice(-1)[0];
+      if (active) setStageLabel(active.label);
+    };
+    tick();
+    const id = setInterval(tick, 300);
+    return () => clearInterval(id);
+  }, [busy, html]);
+  // When html arrives, snap to 100% briefly before the modal transitions.
+  useEffect(() => { if (html) setProgress(100); }, [html]);
+
   return (
     <div className="sa-modal-bg" onClick={onClose}>
       <div
@@ -4437,9 +4473,26 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, load
 
         {/* Loading */}
         {busy && !html && (
-          <div style={{ padding: "40px 0", textAlign: "center" }}>
-            <div style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 8 }}>{loadLabel}</div>
-            <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>{loadDetail}</div>
+          <div style={{ padding: "40px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 12, fontWeight: 600 }}>{loadLabel}</div>
+            <div style={{
+              width: "100%", height: 10, background: "var(--sa-panel-2)",
+              borderRadius: 999, overflow: "hidden", marginBottom: 10,
+              border: "1px solid var(--sa-border)",
+            }}>
+              <div style={{
+                width: `${progress.toFixed(1)}%`,
+                height: "100%",
+                background: "linear-gradient(90deg, #2563eb, #7c3aed)",
+                transition: "width 300ms ease-out",
+                borderRadius: 999,
+              }} />
+            </div>
+            <div style={{ fontSize: 11, fontFamily: "SF Mono, Menlo, Consolas, monospace", color: "var(--sa-muted)", marginBottom: 6 }}>
+              {progress.toFixed(0)}%
+            </div>
+            <div style={{ fontSize: 12, color: "var(--sa-text-2)", fontStyle: "italic" }}>{stageLabel}</div>
+            <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 10 }}>{loadDetail}</div>
           </div>
         )}
 
