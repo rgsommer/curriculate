@@ -46,6 +46,10 @@ import { getFundamentals, formatFundamentalsLine } from "../services/stocksFunda
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
 import { getShortInterest, formatShortInterestLine } from "../services/stocksShortInterest.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
+import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedLiquidity.js";
+import { getSectorRotation, formatSectorRotationBlock } from "../services/stocksSectorRotation.js";
+import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
+import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
@@ -263,7 +267,7 @@ function formatVerifiedPricesBlock(quantSignals) {
   return `\nVERIFIED LIVE PRICES (fetched seconds ago — use these EXACT figures for these tickers; do NOT restate a different price from memory or search):\n${lines.join("\n")}\n`;
 }
 
-function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null) {
+function buildPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, fedLiquidity = null, sectorRotation = null, correlations = null, congressional = null) {
   const risk = profile.riskTolerance || "aggressive";
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
@@ -525,10 +529,14 @@ ${cashBlock}
 ${alertsBlock}
 ${formatLessonsBlock(lessons)}
 ${formatMacroBlock(macro)}
+${formatFedLiquidityBlock(fedLiquidity)}
+${formatSectorRotationBlock(sectorRotation)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatVerifiedPricesBlock(quantSignals)}
 ${formatQuantSignalsBlock(quantSignals)}
+${formatCorrelationBlock(correlations)}
+${formatCongressionalBlock(congressional)}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -1323,7 +1331,7 @@ function extractJson(text) {
 // ─────────────────────────────────────────────────────────────────────
 async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -1489,8 +1497,10 @@ router.post("/", requireStocksAuth, async (req, res) => {
 
     const summary = portfolioSummary(profile);
 
-    // Compute all upstream signals in parallel
-    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
+    // Compute all upstream signals in parallel — the shared advice pipeline
+    // now runs the same macro/portfolio-layer signals the daily briefing
+    // uses (Fed liquidity, sector rotation, correlation, congressional).
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
@@ -1498,10 +1508,29 @@ router.post("/", requireStocksAuth, async (req, res) => {
       computeFactorTilts(profile).catch(() => null),
       computeLessons(req.stocksUser.email).catch(() => null),
       getTranscriptsForTopHoldings(profile).catch(() => null),
+      getFedLiquidity().catch(() => null),
+      getSectorRotation().catch(() => null),
+      (async () => {
+        const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase()).filter(Boolean);
+        const currencies = {};
+        const weights = {};
+        const fx = profile.fxUsdCad || 1.37;
+        for (const p of profile.positions || []) {
+          const t = String(p.ticker || "").toUpperCase();
+          currencies[t] = p.ccy || "USD";
+          const cad = (p.ccy === "USD" ? (p.priceUsd || 0) * fx : (p.priceCad || 0)) * (p.qty || 0);
+          weights[t] = (weights[t] || 0) + cad;
+        }
+        return await computeCorrelations({ tickers, currencies, weights });
+      })().catch(() => null),
+      (async () => {
+        const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean);
+        return await getCongressionalTradesForTickers(tickers, { maxAgeDays: 45 });
+      })().catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional);
 
     // Anthropic Messages API call with web_search server-side tool
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1605,7 +1634,7 @@ router.post("/stream", requireStocksAuth, async (req, res) => {
       getTranscriptsForTopHoldings(profile).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional);
 
     send("status", { phase: "thinking" });
     const r = await fetch("https://api.anthropic.com/v1/messages", {
