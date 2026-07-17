@@ -528,17 +528,24 @@ export async function getTechnicals(ticker, currency = null, opts = {}) {
         // hit" line in daily position reports.
         ...(function () {
           if (atr14 == null || points.length < 60) {
-            return { recentHigh60d: null, trailingStopPct: null, trailingStopPrice: null };
+            return { recentHigh60d: null, trailingStopPct: null, trailingStopPrice: null, limitOffset: null };
           }
           const last60 = points.slice(-60);
           const high60 = Math.max(...last60.map((p) => p.close));
           // Trail% = 2.5×ATR expressed as a percentage of the watermark high
           const trailPct = (2.5 * atr14 / high60) * 100;
           const trailPrice = high60 * (1 - trailPct / 100);
+          // Recommended broker LIMIT OFFSET for a trailing-stop-limit order.
+          // Base = 1% of current price. High-vol names (annualized > 60%)
+          // widen to 1.5% so a fast down move still fills the limit. Floored
+          // to nearest cent so it matches what a broker input accepts.
+          const isHighVol = vol != null && vol > 60;
+          const limitOffset = Math.max(0.01, Math.round((last * (isHighVol ? 0.015 : 0.01)) * 100) / 100);
           return {
             recentHigh60d: high60,
             trailingStopPct: trailPct,
             trailingStopPrice: trailPrice,
+            limitOffset,
           };
         })(),
         // Fibonacci retracement over a 6-month swing window — pullback /
@@ -602,10 +609,12 @@ export function formatTechnicalsLine(t) {
   if (Number.isFinite(t.trailingStopPrice) && Number.isFinite(t.trailingStopPct) && Number.isFinite(t.recentHigh60d)) {
     // Ratcheting trailing stop anchored to the 60-session watermark high.
     // Distance from current price to the trailing stop shows how much slack
-    // the position has before the stop fires.
+    // the position has before the stop fires. Limit offset is the broker
+    // LIMIT price cushion below the trigger (1% of price, 1.5% for high-vol).
     const slackPct = Number.isFinite(t.last) ? ((t.last - t.trailingStopPrice) / t.last) * 100 : null;
     const slackStr = slackPct != null ? ` · ${slackPct >= 0 ? slackPct.toFixed(1) + "% slack" : "STOP HIT (" + slackPct.toFixed(1) + "%)"}` : "";
-    parts.push(`Trailing stop ${t.trailingStopPct.toFixed(1)}% from 60d high $${t.recentHigh60d.toFixed(2)} → $${t.trailingStopPrice.toFixed(2)}${slackStr}`);
+    const offsetStr = Number.isFinite(t.limitOffset) ? ` · limit offset $${t.limitOffset.toFixed(2)}` : "";
+    parts.push(`Trailing stop ${t.trailingStopPct.toFixed(1)}% from 60d high $${t.recentHigh60d.toFixed(2)} → $${t.trailingStopPrice.toFixed(2)}${slackStr}${offsetStr}`);
   }
   const fibLine = formatFibLine(t.fib);
   if (fibLine) parts.push(fibLine);
