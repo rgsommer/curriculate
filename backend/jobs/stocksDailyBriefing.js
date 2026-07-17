@@ -580,10 +580,14 @@ function formatRecentTradesBlock(recentTrades) {
     const when = new Date(t.executedAt).toISOString().slice(0, 10);
     for (const leg of t.legs || []) {
       if (leg.side !== "BUY" && leg.side !== "SELL") continue;
-      const linked = t.linkedAdviceRecId;
-      const linkedStr = linked && linked.ticker === leg.ticker && linked.action === leg.side
-        ? ` [fulfilled AI rec: entry $${linked.entryPrice}, target $${linked.targetPrice ?? "—"}, stop $${linked.stopPrice ?? "—"}, horizon ${linked.horizonDays ?? "?"}d]`
-        : "";
+      const linkedRec = t.linkedAdviceRecId;
+      const linkedPick = t.linkedDailyPickId;
+      let linkedStr = "";
+      if (linkedRec && linkedRec.ticker === leg.ticker && linkedRec.action === leg.side) {
+        linkedStr = ` [fulfilled AI rec: entry $${linkedRec.entryPrice}, target $${linkedRec.targetPrice ?? "—"}, stop $${linkedRec.stopPrice ?? "—"}, horizon ${linkedRec.horizonDays ?? "?"}d]`;
+      } else if (linkedPick && linkedPick.ticker === leg.ticker && leg.side === "BUY") {
+        linkedStr = ` [fulfilled SWING pick (${linkedPick.setupName || "deterministic"}): entry $${linkedPick.entryPrice}, target $${linkedPick.targetPrice ?? "—"}, stop $${linkedPick.stopPrice ?? "—"}, horizon ${linkedPick.horizonDays ?? "?"}d, score ${linkedPick.deterministicScore ?? "?"}]`;
+      }
       const notesStr = t.notes ? ` — "${String(t.notes).slice(0, 120)}"` : "";
       lines.push(`  ${when}: ${leg.side} ${leg.shares || "?"} sh ${leg.ticker} @ $${leg.pricePerShare?.toFixed?.(2) || leg.pricePerShare} ${leg.currency} in ${t.accountName || t.account}${linkedStr}${notesStr}`);
     }
@@ -1077,6 +1081,7 @@ export async function generateBriefing(profile) {
     // the target/stop of the rec that was taken.
     StocksTradeJournal.find({ email: profile.email, executedAt: { $gte: lastBriefingAt } })
       .populate("linkedAdviceRecId", "ticker action entryPrice targetPrice stopPrice horizonDays")
+      .populate("linkedDailyPickId", "ticker entryPrice targetPrice stopPrice horizonDays setupName deterministicScore")
       .sort({ executedAt: -1 })
       .lean()
       .catch((e) => { console.warn("[recentTrades] warn:", e?.message); return []; }),

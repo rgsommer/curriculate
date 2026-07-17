@@ -353,6 +353,25 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       } catch (e) { console.warn("[stocks-trade] auto-link warn:", e?.message); }
     }
 
+    // Also try to link a matching StocksDailyPick — that's a swing rec too,
+    // just persisted in a different collection. Without this, buying AMZN
+    // after a daily-pick swing rec lands as "no linked AI rec" in the
+    // briefing, which is misleading.
+    let autoLinkedDailyPickId = null;
+    try {
+      const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      for (const leg of normLegs) {
+        if (leg.side !== "BUY" || !leg.ticker) continue;
+        const pick = await StocksDailyPick.findOne({
+          email: req.stocksUser.email,
+          ticker: leg.ticker,
+          status: "open",
+          pickDate: { $gte: cutoff },
+        }).sort({ pickDate: -1 }).select({ _id: 1 }).lean();
+        if (pick) { autoLinkedDailyPickId = pick._id; break; }
+      }
+    } catch (e) { console.warn("[stocks-trade] auto-link daily-pick warn:", e?.message); }
+
     // Journal the trade
     const entry = await StocksTradeJournal.create({
       email: req.stocksUser.email,
@@ -364,6 +383,7 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
       fxUsdCadAtTrade: fx,
       notes: String(notes || "").slice(0, 500),
       linkedAdviceRecId: autoLinkedRecId,
+      linkedDailyPickId: autoLinkedDailyPickId,
     });
 
     // Mark any open DailyPick on the same ticker as ENTERED so the Daily
@@ -412,6 +432,45 @@ router.get("/", requireStocksAuth, async (req, res) => {
     res.json({ trades });
   } catch (err) {
     console.error("stocks-trade GET error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// POST /api/stocks-trade/backfill-daily-pick-links
+// One-off retro-link: for every unlinked recent BUY trade the user has,
+// find a matching open StocksDailyPick and populate linkedDailyPickId.
+// Used to fix trades that were recorded BEFORE auto-link learned about
+// daily picks. Safe to run multiple times — idempotent (skips already-
+// linked rows).
+router.post("/backfill-daily-pick-links", requireStocksAuth, async (req, res) => {
+  try {
+    const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const trades = await StocksTradeJournal.find({
+      email: req.stocksUser.email,
+      executedAt: { $gte: cutoff },
+      linkedDailyPickId: null,
+    }).lean();
+    let linked = 0;
+    for (const t of trades) {
+      const buyLegs = (t.legs || []).filter((l) => l.side === "BUY" && l.ticker);
+      for (const leg of buyLegs) {
+        const pickCutoff = new Date(new Date(t.executedAt).getTime() - 14 * 24 * 60 * 60 * 1000);
+        const pickCap = new Date(new Date(t.executedAt).getTime() + 24 * 60 * 60 * 1000);
+        const pick = await StocksDailyPick.findOne({
+          email: req.stocksUser.email,
+          ticker: leg.ticker,
+          pickDate: { $gte: pickCutoff, $lte: pickCap },
+        }).sort({ pickDate: -1 }).select({ _id: 1 }).lean();
+        if (pick) {
+          await StocksTradeJournal.updateOne({ _id: t._id }, { $set: { linkedDailyPickId: pick._id } });
+          linked++;
+          break; // one link per trade is enough
+        }
+      }
+    }
+    res.json({ ok: true, scanned: trades.length, linked });
+  } catch (err) {
+    console.error("stocks-trade backfill error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

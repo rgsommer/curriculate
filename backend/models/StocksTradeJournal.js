@@ -42,6 +42,11 @@ const StocksTradeJournalSchema = new mongoose.Schema(
 
     // Optional link to the recommendation this trade fulfilled (if any)
     linkedAdviceRecId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksAdviceRec", default: null },
+    // Optional link to the forced daily swing pick this trade fulfilled.
+    // Daily picks live in a separate collection from AI advice recs, so
+    // trades matching a pick need their own linkage — otherwise the
+    // briefing narrates them as "no linked AI rec" which is misleading.
+    linkedDailyPickId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksDailyPick", default: null },
   },
   { timestamps: true }
 );
