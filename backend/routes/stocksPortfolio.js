@@ -555,6 +555,19 @@ router.get("/indicators", requireStocksAuth, async (req, res) => {
     const annualizedFrom14dPct = avg14dDailyPct != null
       ? (Math.pow(1 + avg14dDailyPct / 100, 252) - 1) * 100 : null;
 
+    // Max % growth since start-of-tracking (the earliest snapshot). Useful
+    // as a "high-water mark" — the best gain the portfolio ever hit vs
+    // its inception value. Drawdown-from-peak is a natural sibling stat.
+    const startValue = snaps[0].totalCad;
+    let peakSnap = snaps[0];
+    for (const s of snaps) if (s.totalCad > peakSnap.totalCad) peakSnap = s;
+    const maxGrowthPct = startValue > 0
+      ? ((peakSnap.totalCad - startValue) / startValue) * 100 : null;
+    const currentGrowthPct = startValue > 0
+      ? ((current - startValue) / startValue) * 100 : null;
+    const drawdownFromPeakPct = peakSnap.totalCad > 0
+      ? ((current - peakSnap.totalCad) / peakSnap.totalCad) * 100 : null;
+
     res.json({
       ok: true,
       current,
@@ -565,6 +578,12 @@ router.get("/indicators", requireStocksAuth, async (req, res) => {
       ytdAnchorDate: ytdSnap?.date || null,
       avg14dDailyPct,
       annualizedFrom14dPct,
+      maxGrowthPct,
+      maxGrowthDate: peakSnap.date,
+      maxGrowthValue: peakSnap.totalCad,
+      currentGrowthPct,
+      drawdownFromPeakPct,
+      startValue,
       snapshotCount: snaps.length,
       oldestSnapshotDate: snaps[0].date,
       latestSnapshotDate: latest.date,

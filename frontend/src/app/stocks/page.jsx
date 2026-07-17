@@ -1958,6 +1958,9 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             const ann = perfIndicators.annualizedFrom14dPct;
             const projected12mo = (ann != null && Number.isFinite(perfIndicators.current))
               ? perfIndicators.current * (1 + ann / 100) : null;
+            const maxG = perfIndicators.maxGrowthPct;
+            const maxDate = perfIndicators.maxGrowthDate;
+            const drawdown = perfIndicators.drawdownFromPeakPct;
             const cells = [
               { label: "Portfolio value", v: `$${Math.round(perfIndicators.current).toLocaleString()} CAD` },
               { label: "Week over week", v: pct(perfIndicators.wowChangePct), color: color(perfIndicators.wowChangePct) },
@@ -1968,6 +1971,16 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
                 v: ann == null ? "—" : `${ann >= 0 ? "+" : ""}${ann.toFixed(0)}%`,
                 color: color(ann),
                 sub: projected12mo != null ? `→ $${Math.round(projected12mo).toLocaleString()} in 12mo` : null,
+              },
+              {
+                label: `Max growth${perfIndicators.oldestSnapshotDate ? ` (since ${perfIndicators.oldestSnapshotDate})` : ""}`,
+                v: maxG == null ? "—" : `${maxG >= 0 ? "+" : ""}${maxG.toFixed(1)}%`,
+                color: color(maxG),
+                sub: maxDate
+                  ? (drawdown != null && drawdown < 0
+                    ? `peak ${maxDate} · ${drawdown.toFixed(1)}% off high`
+                    : `peak ${maxDate} · at high`)
+                  : null,
               },
             ];
             return cells.map((c, i) => (
