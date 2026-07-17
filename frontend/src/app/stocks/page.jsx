@@ -1790,6 +1790,10 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   const [busyAi, setBusyAi] = useState(false);
   // Values stat row starts collapsed — privacy + reduces visual noise on load
   const [valuesCollapsed, setValuesCollapsed] = useState(true);
+  // Pre/post-market data per ticker — refreshed on mount and every 60s
+  // during extended-hours windows so the dashboard reflects overnight moves
+  // before the regular session opens.
+  const [pmData, setPmData] = useState({});
   const fx = user.fxUsdCad || 1.37;
   const positionsCad = totalCad(user.positions, fx);
   const cashCad = totalCashCad(user.accounts, fx);
@@ -1811,6 +1815,66 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
     setBusyAi(true);
     try { await onAiAdvice(); } finally { setBusyAi(false); }
   };
+
+  // Batch-fetch pre/post-market quotes for every portfolio ticker + the
+  // three index proxies. Refreshes on load, then every 60s while any of
+  // the results is in an extended-hours state so intraday polling stops
+  // once regular market is open.
+  useEffect(() => {
+    const tickers = [...new Set([
+      "SPY", "QQQ", "IWM",
+      ...user.positions.map((p) => resolveChartTicker(p.ticker, p.ccy)),
+    ])].filter(Boolean);
+    if (tickers.length === 0) return;
+    let cancelled = false;
+    const fetchOnce = async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-prices/premarket`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers }),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled) setPmData(j.data || {});
+      } catch { /* ignore */ }
+    };
+    fetchOnce();
+    const id = setInterval(fetchOnce, 60_000);
+    return () => { cancelled = true; clearInterval(id); };
+  }, [user.positions]);
+
+  // Derive summary chips + biggest mover in user's portfolio during
+  // extended hours. We accept BOTH pre- and post-market data; the
+  // "active" side is picked by marketState.
+  const pmDeriveActive = (row) => {
+    if (!row) return null;
+    if (row.marketState === "PRE" || row.marketState === "PREPRE") {
+      return row.preMarketChangePct != null
+        ? { label: "PRE", price: row.preMarketPrice, changePct: row.preMarketChangePct, at: row.preMarketTime }
+        : null;
+    }
+    if (row.marketState === "POST" || row.marketState === "POSTPOST") {
+      return row.postMarketChangePct != null
+        ? { label: "POST", price: row.postMarketPrice, changePct: row.postMarketChangePct, at: row.postMarketTime }
+        : null;
+    }
+    return null;
+  };
+  const pmSpy = pmDeriveActive(pmData["SPY"]);
+  const pmQqq = pmDeriveActive(pmData["QQQ"]);
+  const pmIwm = pmDeriveActive(pmData["IWM"]);
+  // Biggest mover in the user's own positions (|% move| descending)
+  const pmMovers = user.positions
+    .map((p) => {
+      const sym = resolveChartTicker(p.ticker, p.ccy);
+      const active = pmDeriveActive(pmData[sym]);
+      return active ? { ticker: p.ticker, sym, active } : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => Math.abs(b.active.changePct) - Math.abs(a.active.changePct));
+  const pmTopMover = pmMovers[0] || null;
+  const showPmBanner = pmSpy || pmQqq || pmIwm || pmTopMover;
 
   return (
     <div>
@@ -1840,6 +1904,33 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
       </div>
       <div className="sa-disclaimer">Research and education only. Not licensed investment advice.</div>
+
+      {showPmBanner && (
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "8px 12px", background: "var(--sa-panel-2)", borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>
+            {(pmSpy?.label || pmQqq?.label || pmIwm?.label || pmTopMover?.active?.label || "PRE")}-MARKET
+          </span>
+          {[["SPY", pmSpy], ["QQQ", pmQqq], ["IWM", pmIwm]].map(([sym, pm]) =>
+            pm ? (
+              <span key={sym} style={{ fontVariantNumeric: "tabular-nums" }}>
+                <b>{sym}</b>{" "}
+                <span style={{ color: pm.changePct >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>
+                  {pm.changePct >= 0 ? "+" : ""}{pm.changePct.toFixed(2)}%
+                </span>
+              </span>
+            ) : null
+          )}
+          {pmTopMover && (
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>
+              <span style={{ color: "var(--sa-muted)" }}>biggest in your portfolio:</span>{" "}
+              <b>{pmTopMover.ticker}</b>{" "}
+              <span style={{ color: pmTopMover.active.changePct >= 0 ? "#166534" : "#991b1b", fontWeight: 600 }}>
+                {pmTopMover.active.changePct >= 0 ? "+" : ""}{pmTopMover.active.changePct.toFixed(2)}%
+              </span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Values header — click to toggle the stat-card row */}
       <div
@@ -1910,9 +2001,21 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             <div className="sa-empty">No positions yet.<br /><button className="sa-btn" onClick={() => onTab("positions")}>Add positions</button></div>
           ) : top.map((a) => {
             const pct = (a.cad / total) * 100;
+            // Look up pre/post-market for this allocation-row ticker.
+            // Aggregate row's ticker may be un-suffixed (e.g., ENB) even
+            // when the position is CAD (ENB.TO). Try both keys.
+            const pmRow = pmData[a.ticker] || pmData[`${a.ticker}.TO`] || pmData[`${a.ticker}.V`] || null;
+            const pmActive = pmDeriveActive(pmRow);
             return (
               <div key={a.ticker} className="sa-alloc-row">
-                <div className="tk">{a.ticker}</div>
+                <div className="tk">
+                  {a.ticker}
+                  {pmActive && (
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "1px 5px", borderRadius: 99, background: pmActive.changePct >= 0 ? "#dcfce7" : "#fee2e2", color: pmActive.changePct >= 0 ? "#166534" : "#991b1b", verticalAlign: "middle" }}>
+                      {pmActive.label} {pmActive.changePct >= 0 ? "+" : ""}{pmActive.changePct.toFixed(1)}%
+                    </span>
+                  )}
+                </div>
                 <div className="bar"><div style={{ width: Math.min(100, pct).toFixed(1) + "%" }} /></div>
                 <div className="pct">{pct.toFixed(1)}%</div>
               </div>

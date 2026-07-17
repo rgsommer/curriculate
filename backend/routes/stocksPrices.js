@@ -94,6 +94,100 @@ router.post("/", express.json({ limit: "16kb" }), async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
+// POST /api/stocks-prices/premarket
+//   Body: { tickers: [...] }   (max 50)
+//   Resp: { data: {
+//     TICKER: {
+//       marketState,           // "PRE" | "REGULAR" | "POST" | "CLOSED" | "PREPRE"
+//       regularPrice, regularChange, regularChangePct,
+//       preMarketPrice, preMarketChange, preMarketChangePct, preMarketTime,
+//       postMarketPrice, postMarketChange, postMarketChangePct, postMarketTime,
+//       currency,
+//     }, ...
+//   }, failed: [...] }
+//
+// Yahoo's v7/finance/quote endpoint accepts a comma-separated symbols list
+// and returns pre/post-market fields for tickers that trade extended hours
+// (US-listed names). Cached 30s so a busy dashboard doesn't hammer Yahoo.
+const PM_CACHE = new Map();
+const PM_TTL_MS = 30 * 1000;
+
+async function fetchPremarketBatch(tickers) {
+  const url = `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(tickers.join(","))}`;
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(url, {
+      signal: ctrl.signal,
+      headers: { "User-Agent": "Mozilla/5.0 (Curriculate Stocks Proxy)" },
+    });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const rows = j?.quoteResponse?.result || [];
+    const map = {};
+    for (const q of rows) {
+      const t = String(q.symbol || "").toUpperCase();
+      map[t] = {
+        marketState: q.marketState || "CLOSED",
+        currency: q.currency || "USD",
+        regularPrice: q.regularMarketPrice ?? null,
+        regularChange: q.regularMarketChange ?? null,
+        regularChangePct: q.regularMarketChangePercent ?? null,
+        preMarketPrice: q.preMarketPrice ?? null,
+        preMarketChange: q.preMarketChange ?? null,
+        preMarketChangePct: q.preMarketChangePercent ?? null,
+        preMarketTime: q.preMarketTime ? new Date(q.preMarketTime * 1000).toISOString() : null,
+        postMarketPrice: q.postMarketPrice ?? null,
+        postMarketChange: q.postMarketChange ?? null,
+        postMarketChangePct: q.postMarketChangePercent ?? null,
+        postMarketTime: q.postMarketTime ? new Date(q.postMarketTime * 1000).toISOString() : null,
+      };
+    }
+    return map;
+  } catch { return null; } finally { clearTimeout(tid); }
+}
+
+router.post("/premarket", express.json({ limit: "16kb" }), async (req, res) => {
+  try {
+    const raw = Array.isArray(req.body?.tickers) ? req.body.tickers : null;
+    if (!raw) return res.status(400).json({ error: "tickers[] required" });
+    const tickers = [
+      ...new Set(
+        raw
+          .map((t) => (typeof t === "string" ? t.trim().toUpperCase() : ""))
+          .filter((t) => /^[A-Z0-9.\-]{1,16}$/.test(t))
+      ),
+    ].slice(0, MAX_TICKERS_PER_CALL);
+    if (tickers.length === 0) return res.json({ data: {}, failed: [] });
+
+    const now = Date.now();
+    const data = {};
+    const toFetch = [];
+    for (const t of tickers) {
+      const c = PM_CACHE.get(t);
+      if (c && now - c.fetchedAt < PM_TTL_MS) data[t] = c.data;
+      else toFetch.push(t);
+    }
+    if (toFetch.length > 0) {
+      const fetched = await fetchPremarketBatch(toFetch);
+      if (fetched) {
+        for (const t of toFetch) {
+          if (fetched[t]) {
+            PM_CACHE.set(t, { data: fetched[t], fetchedAt: now });
+            data[t] = fetched[t];
+          }
+        }
+      }
+    }
+    const failed = tickers.filter((t) => !data[t]);
+    res.json({ data, failed, cachedAt: now });
+  } catch (err) {
+    console.error("stocks-prices/premarket error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
 // POST /api/stocks-prices/history
 //   Body: { tickers: [...], range: "1d" | "3d" | "7d" | "30d" }
 //   Resp: { range, data: { TICKER: { points: [{t, price, pct}], currency } }, failed: [...] }
