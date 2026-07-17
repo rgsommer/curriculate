@@ -520,6 +520,27 @@ export async function getTechnicals(ticker, currency = null, opts = {}) {
         priceVsSma200: sma200 ? ((last - sma200) / sma200) * 100 : null,
         // Suggested 2.5-ATR stop level (the senior-analyst default)
         suggested25AtrStop: atr14 != null ? last - 2.5 * atr14 : null,
+        // Trailing stop derived from the 60-session high (the "watermark"),
+        // anchored by 2.5×ATR — this is a real trailing stop that ratchets
+        // up as new highs form and never comes back down. Different from
+        // the fixed suggested25AtrStop above (which uses last close). For a
+        // held position, the trailing stop level is the actionable "sell if
+        // hit" line in daily position reports.
+        ...(function () {
+          if (atr14 == null || points.length < 60) {
+            return { recentHigh60d: null, trailingStopPct: null, trailingStopPrice: null };
+          }
+          const last60 = points.slice(-60);
+          const high60 = Math.max(...last60.map((p) => p.close));
+          // Trail% = 2.5×ATR expressed as a percentage of the watermark high
+          const trailPct = (2.5 * atr14 / high60) * 100;
+          const trailPrice = high60 * (1 - trailPct / 100);
+          return {
+            recentHigh60d: high60,
+            trailingStopPct: trailPct,
+            trailingStopPrice: trailPrice,
+          };
+        })(),
         // Fibonacci retracement over a 6-month swing window — pullback /
         // bounce zones the AI can cite as concrete support/resistance.
         fib: fibonacciRetracement(points, 120),
@@ -577,6 +598,14 @@ export function formatTechnicalsLine(t) {
     const pctStr = Number.isFinite(t.atrPctOfPrice) ? ` (${t.atrPctOfPrice.toFixed(1)}%)` : "";
     const stopStr = Number.isFinite(t.suggested25AtrStop) ? ` → 2.5×ATR stop $${t.suggested25AtrStop.toFixed(2)}` : "";
     parts.push(`ATR $${t.atr14.toFixed(2)}${pctStr}${stopStr}`);
+  }
+  if (Number.isFinite(t.trailingStopPrice) && Number.isFinite(t.trailingStopPct) && Number.isFinite(t.recentHigh60d)) {
+    // Ratcheting trailing stop anchored to the 60-session watermark high.
+    // Distance from current price to the trailing stop shows how much slack
+    // the position has before the stop fires.
+    const slackPct = Number.isFinite(t.last) ? ((t.last - t.trailingStopPrice) / t.last) * 100 : null;
+    const slackStr = slackPct != null ? ` · ${slackPct >= 0 ? slackPct.toFixed(1) + "% slack" : "STOP HIT (" + slackPct.toFixed(1) + "%)"}` : "";
+    parts.push(`Trailing stop ${t.trailingStopPct.toFixed(1)}% from 60d high $${t.recentHigh60d.toFixed(2)} → $${t.trailingStopPrice.toFixed(2)}${slackStr}`);
   }
   const fibLine = formatFibLine(t.fib);
   if (fibLine) parts.push(fibLine);
