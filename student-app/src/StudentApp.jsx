@@ -2127,12 +2127,18 @@ function StudentApp() {
     members.some((m) => (m?.name || m || "").toString().trim().length > 0) &&
     allLinkedHaveEmail;
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = (overrides = null) => {
+    // Demo mode: a public "Try a demo" join that needs no room code or teacher.
+    // Any App Store visitor can tap it to play the self-running CRUEDEMO session,
+    // so the app has full functionality for a general user who just discovered it.
+    const effMembers = overrides?.members || members;
+    const effTeamName = overrides ? (overrides.teamName || "") : teamName;
+    const effRoomCode = overrides?.roomCode || roomCode;
     // Extract names and emails from the per-member objects
-    const memberNames = members
+    const memberNames = effMembers
       .map((m) => (typeof m === "string" ? m : m?.name || "").trim())
       .filter(Boolean);
-    const memberEmails = members
+    const memberEmails = effMembers
       .map((m) => {
         const email = (typeof m === "string" ? "" : m?.email || "").trim().toLowerCase();
         return email && email.includes("@") ? email : "";
@@ -2174,7 +2180,7 @@ function StudentApp() {
     // team record and the report CSV gets Edsby Student IDs out of the box.
     // For linked picks, prefer the stored email (from contactByEdsbyId) and
     // fall back to the just-typed email from memberEmailInputs.
-    const memberDetails = members
+    const memberDetails = effMembers
       .map((m, idx) => {
         const baseName = (typeof m === "string" ? m : m?.name || "").trim();
         const pick = memberRosterPicks[idx];
@@ -2200,8 +2206,8 @@ function StudentApp() {
       .filter(Boolean);
 
     const payload = {
-      roomCode: roomCode.trim().toUpperCase(),
-      teamName: (teamName || "").trim(),
+      roomCode: effRoomCode.trim().toUpperCase(),
+      teamName: effTeamName.trim(),
       members: memberNames,          // backward compat: string[]
       emails: cleanEmails,            // backward compat: string[]
       memberDetails,                  // NEW: per-member {name, email} pairs
@@ -2354,6 +2360,18 @@ function StudentApp() {
     e.preventDefault();
     if (!canJoin || joiningRoom) return;
     handleJoinRoom();
+  };
+
+  // Public "Try a demo" — join the self-running CRUEDEMO session as a guest,
+  // with no room code and no teacher required. Gives any first-time visitor
+  // full, immediate functionality.
+  const handleTryDemo = () => {
+    if (joiningRoom) return;
+    handleJoinRoom({
+      roomCode: "CRUEDEMO",
+      teamName: "Demo Team",
+      members: [{ name: "Guest" }],
+    });
   };
 
   // Explicit user action: drop current room and show the join form.
@@ -3837,6 +3855,32 @@ function StudentApp() {
           color: #9ca3af;
         }
 
+        .demo-cta {
+          margin-top: 12px;
+          padding-top: 12px;
+          border-top: 1px solid rgba(148,163,184,0.25);
+          text-align: center;
+        }
+        .demo-cta .demo-or {
+          display: block;
+          font-size: 0.78rem;
+          color: #9ca3af;
+          margin-bottom: 8px;
+        }
+        .join-card button.demo-btn {
+          width: 100%;
+          background: transparent;
+          color: #fdba74;
+          border: 1.5px solid rgba(249,115,22,0.6);
+          box-shadow: none;
+          font-size: 0.9rem;
+        }
+        .join-card button.demo-btn:hover:not(:disabled) {
+          background: rgba(249,115,22,0.12);
+          transform: translateY(-1px);
+          box-shadow: none;
+        }
+
         .crue-greet {
           display: flex;
           align-items: center;
@@ -5132,6 +5176,18 @@ function StudentApp() {
               <button type="submit" disabled={!canJoin || joiningRoom}>
                 {joiningRoom ? "Joining…" : "Join Room"}
               </button>
+
+              <div className="demo-cta">
+                <span className="demo-or">No code yet? Just exploring?</span>
+                <button
+                  type="button"
+                  className="demo-btn"
+                  onClick={handleTryDemo}
+                  disabled={joiningRoom}
+                >
+                  🦊 Try a demo game
+                </button>
+              </div>
 
               <small>
                 Tip: you can add more members later if your teacher allows.
