@@ -68,7 +68,7 @@ export async function GET(req: Request) {
   const boxH = 88;
   const boxes: [string, string, string][] = [
     ["AUTOMATED",   "Reconciliation done for you",
-      "TB ↔ GL ↔ bank statements ↔ payroll. Discrepancies surfaced for the CPA to review, not for you to chase."],
+      "TB, GL, bank statements and payroll, all reconciled against each other. Discrepancies surfaced for the CPA to review, not for you to chase."],
     ["INTELLIGENT", "Anomaly detection",
       "Round-number transactions, weekend journal entries, duplicate invoices, related-party patterns."],
     ["COMPLIANT",   "PNG-specific checks",

@@ -69,7 +69,7 @@ export async function GET(req: Request) {
   const valY = H - 320;
   const cellW = (W - 48 * 2 - 16) / 2;
   const values: [string, string, string][] = [
-    ["AUTOMATED", "Reconciliations done for you", "TB ↔ GL ↔ bank statements ↔ payroll. Discrepancies surfaced for review, not for chasing."],
+    ["AUTOMATED", "Reconciliations done for you", "TB, GL, bank statements and payroll, all reconciled against each other. Discrepancies surfaced for review, not for chasing."],
     ["INTELLIGENT", "Anomaly detection",          "Round-number transactions, weekend journal entries, duplicate invoices, related-party patterns."],
     ["COMPLIANT",  "PNG-specific checks",         "IRC SWT remittances, NASFund / NCSL contributions, IPA annual returns, late penalties flagged."],
     ["CPA-SIGNED", "Real audit opinion",          "Every audit reviewed and signed by a CPA registered with the PNG Accountants Registration Board."],
