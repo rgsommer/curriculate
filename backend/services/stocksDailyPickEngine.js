@@ -14,15 +14,43 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 
-// A small hand-curated universe of large-cap liquid US names for cases
+// A small hand-curated universe of large-cap liquid names for cases
 // when the user's own portfolio + recent recs give too few candidates.
 // Not "the best stocks" — just "always-tradeable defaults" so the cron
 // never has to skip a day due to empty universe. Overridden by the
 // user's actual portfolio + recent research pool when available.
+//
+// Mix of US mega-caps + major TSX names. TSX names are suffixed .TO so
+// the currency-detection helper picks CAD listings automatically. The
+// user's Canadian book (RY.TO, ENB.TO etc.) has been the only
+// consistent winner per the trade journal AI analysis — extending the
+// universe to include those setups by default so the deterministic
+// engine can find repeat opportunities.
 const DEFAULT_UNIVERSE = [
+  // US mega-caps
   "AAPL", "MSFT", "GOOGL", "AMZN", "META", "NVDA", "AVGO", "TSLA", "AMD", "NFLX",
+  // US index proxies
   "SPY", "QQQ", "IWM",
+  // Canadian banks + insurers (the trader's proven winning template)
+  "RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "CM.TO", "NA.TO", "MFC.TO", "SLF.TO",
+  // Canadian energy + utilities
+  "ENB.TO", "TRP.TO", "CNQ.TO", "SU.TO", "FTS.TO", "H.TO",
+  // Canadian tech + growth
+  "SHOP.TO", "CSU.TO", "BN.TO", "CP.TO",
+  // Canadian index proxies
+  "XIU.TO", "XIC.TO",
 ];
+
+// Detect the native currency from the ticker suffix — TSX / TSXV / NEO
+// / Canadian NEX listings all trade CAD, everything else defaults USD.
+function currencyFromTicker(ticker) {
+  return /\.(TO|V|NE|CN)$/i.test(String(ticker || "")) ? "CAD" : "USD";
+}
+// Compare tickers ignoring exchange suffix so exclude sets built from
+// portfolio positions ("RY") match universe entries ("RY.TO").
+function normalizeTicker(t) {
+  return String(t || "").toUpperCase().replace(/\..*$/, "");
+}
 
 function pctBetween(a, b) {
   if (!Number.isFinite(a) || !Number.isFinite(b) || a === 0) return null;
@@ -110,17 +138,24 @@ async function resolveUniverseForUser(email) {
 // already holds or just executed via a linked rec. Silent filter (no
 // warning) — the pick is simply not a candidate for a NEW entry, though
 // the AI's "Signals per holding" section still manages the position.
-export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = "USD", excludeTickers = [] } = {}) {
+export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = null, excludeTickers = [] } = {}) {
   const rawUniverse = await resolveUniverseForUser(email);
+  // Normalize BOTH sides — exclude sets built from portfolio positions
+  // may hold "RY" while the universe carries "RY.TO". Strip exchange
+  // suffix on both so they match cleanly.
   const excludeSet = new Set(
-    (excludeTickers || []).map((t) => String(t || "").toUpperCase().replace(/\..*$/, ""))
+    (excludeTickers || []).map(normalizeTicker)
   );
-  const universe = rawUniverse.filter((t) => !excludeSet.has(String(t).toUpperCase().replace(/\..*$/, "")));
+  const universe = rawUniverse.filter((t) => !excludeSet.has(normalizeTicker(t)));
   const scored = [];
 
   for (const ticker of universe) {
     try {
-      const tech = await getTechnicals(ticker, currency, { includeMultiTimeframe: true });
+      // Auto-detect currency per ticker so a TSX name like RY.TO fetches
+      // its CAD listing (not the US ADR). Explicit `currency` arg still
+      // overrides when a caller wants to force it.
+      const ccy = currency || currencyFromTicker(ticker);
+      const tech = await getTechnicals(ticker, ccy, { includeMultiTimeframe: true });
       if (!tech?.ok || tech.last == null) continue;
       const { score, contributors } = scoreCandidate(tech);
       if (score < minScore) continue;
@@ -134,6 +169,7 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         : tech.last * 0.94;
       scored.push({
         ticker,
+        currency: ccy,
         entryPrice: tech.last,
         targetPrice: target,
         stopPrice: stop,

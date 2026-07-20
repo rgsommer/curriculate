@@ -1153,7 +1153,7 @@ export async function generateBriefing(profile) {
         email: profile.email,
         pickDate: now,
         ticker: p.ticker,
-        currency: "USD",
+        currency: p.currency || "USD",
         entryPrice: p.entryPrice,
         targetPrice: p.targetPrice,
         stopPrice: p.stopPrice,
