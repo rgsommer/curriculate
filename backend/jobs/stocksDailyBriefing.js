@@ -36,6 +36,7 @@ import { computeCorrelations, formatCorrelationBlock } from "../services/stocksP
 import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedLiquidity.js";
 import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
+import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -858,6 +859,7 @@ ${formatSectorRotationBlock(sectorRotation)}
 ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
+${formatPositionStopBlock(monitorPositionStops(profile.positions || []))}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -876,6 +878,11 @@ Write a markdown briefing with these sections:
    • For a SELL: "**SOLD** N sh TICKER @ $exit_price — [closed the (BUY-rec-date) position / partial trim / rebalance]. Realized ~$Y or ~Z% vs original basis."
    Skip this section entirely if the block is empty (write nothing, do not include a "no trades" placeholder).
    **NO-REPEAT INVARIANT**: any BUY leg in the executed-trades block turns that ticker into a MANAGE-EXISTING-POSITION line item in section 2 for the rest of this briefing. Sections 4 (Today's one action), 7 (Aggressive new ideas), and 8 (Today's Swing-Trade Picks) MUST NOT propose a fresh BUY on that ticker — the user already owns it. If you would have picked the same name again, upgrade the section-2 line for it to an "ADD to position at $X, target $Y" instruction instead. Every ticker in the current portfolio's positions list is subject to the same rule.
+0c. **🚨 Position P&L stop check** — REQUIRED when the "POSITION P&L STOP MONITOR" block above is non-empty. Heading must be exactly "## 🚨 Position P&L stop check". This is the -8% hard-stop rule the trader adopted after their trade journal AI analysis found the DJT-style holding-losers-indefinitely pattern cost them ~$1,800. Write ONE line per position in the block, most severe first:
+   • **HARD STOP HIT** (pnl ≤ -8%): "🚨 **EXIT AT MARKET**: TICKER in ACCOUNT · basis $X, now $Y, pnl -N% · sell N sh unless a specific NEW-INFO reason overrides." Do NOT hedge on hard-stop calls — the -8% rule exists precisely because narrative overrides at this point cost this trader real money before.
+   • **WITHIN 2% OF STOP** (-8% to -6%): "⚠ **TIGHTEN**: TICKER in ACCOUNT · pnl -N% · move stop to break-even at $basis OR trim 50% of the position now — do not let this become another DJT."
+   • **WATCH** (-6% to -5%): "👀 **WATCH**: TICKER · pnl -N% · 3% from hard stop, keep on radar for tomorrow."
+   CORE-exempt tickers (RY, ENB — the trader's proven 7-for-7 setups) may skip the WATCH tier but STILL apply for hard-stop hits. Skip this section entirely if the block is empty (write nothing — that's the intended good day).
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, a 2-3 line block citing specific signals you found via web_search (news + earnings + corporate actions + analyst moves + insider activity + technical setup + applicable macro). Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
 3. **Performance snapshot** — week/month/3M moves on top names
