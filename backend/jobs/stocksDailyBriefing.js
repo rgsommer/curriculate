@@ -37,6 +37,7 @@ import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedL
 import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
+import { computeSleeveBalance, formatSleeveBalanceBlock } from "../services/stocksSleeveEnforcer.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -860,6 +861,7 @@ ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
 ${formatPositionStopBlock(monitorPositionStops(profile.positions || []))}
+${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37))}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}
@@ -878,6 +880,11 @@ Write a markdown briefing with these sections:
    • For a SELL: "**SOLD** N sh TICKER @ $exit_price — [closed the (BUY-rec-date) position / partial trim / rebalance]. Realized ~$Y or ~Z% vs original basis."
    Skip this section entirely if the block is empty (write nothing, do not include a "no trades" placeholder).
    **NO-REPEAT INVARIANT**: any BUY leg in the executed-trades block turns that ticker into a MANAGE-EXISTING-POSITION line item in section 2 for the rest of this briefing. Sections 4 (Today's one action), 7 (Aggressive new ideas), and 8 (Today's Swing-Trade Picks) MUST NOT propose a fresh BUY on that ticker — the user already owns it. If you would have picked the same name again, upgrade the section-2 line for it to an "ADD to position at $X, target $Y" instruction instead. Every ticker in the current portfolio's positions list is subject to the same rule.
+0d. **⚖ Sleeve balance** — REQUIRED any day the "SLEEVE BALANCE" block above shows a 🚨 or ⚠ flag. Heading must be exactly "## ⚖ Sleeve balance". This is the 80/15/5 core/swing/spec structure the trader adopted after their journal analysis showed that ALL prior losses came from the spec sleeve overrun. Rules the whole briefing must obey:
+   • **SPEC OVER LIMIT** (🚨 flag present) → sections 4 (Today's one action), 7 (Aggressive new ideas), and 8 (Swing-Trade Picks) MUST NOT propose any high-vol / meme / unknown US name as a new BUY. Only Canadian large-caps and broad ETFs are eligible. If the deterministic engine's Swing Pick is a spec-classified ticker, replace it with "SPEC sleeve full — no new spec entries today. Trim [largest spec name] first." Trim recommendation counts as an action; propose it in section 4.
+   • **SWING UNDERWEIGHT** (💡 sleeve has room note) → prefer Canadian large-caps in sections 4/7. Frame as "SWING sleeve has $X available for a fresh RY/ENB-template entry."
+   • **CORE UNDERWEIGHT** (⚠ flag) → close section 4 with a "consider $X into XIC/VUN/XEQT to restore the anchor" note. This is boring but the anchor exists for a reason.
+   Write ONE line per active flag with the specific $ amount and action. Skip this section entirely if all three sleeves are within ±5pp of target (that's the intended good day).
 0c. **🚨 Position P&L stop check** — REQUIRED when the "POSITION P&L STOP MONITOR" block above is non-empty. Heading must be exactly "## 🚨 Position P&L stop check". This is the -8% hard-stop rule the trader adopted after their trade journal AI analysis found the DJT-style holding-losers-indefinitely pattern cost them ~$1,800. Write ONE line per position in the block, most severe first:
    • **HARD STOP HIT** (pnl ≤ -8%): "🚨 **EXIT AT MARKET**: TICKER in ACCOUNT · basis $X, now $Y, pnl -N% · sell N sh unless a specific NEW-INFO reason overrides." Do NOT hedge on hard-stop calls — the -8% rule exists precisely because narrative overrides at this point cost this trader real money before.
    • **WITHIN 2% OF STOP** (-8% to -6%): "⚠ **TIGHTEN**: TICKER in ACCOUNT · pnl -N% · move stop to break-even at $basis OR trim 50% of the position now — do not let this become another DJT."
