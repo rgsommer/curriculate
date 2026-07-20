@@ -63,10 +63,26 @@ const SPEC_TICKERS = new Set([
   "NIO", "XPEV", "LI", "BABA", "PDD",
 ]);
 
-const CORE_TARGET_PCT = 80;
-const SWING_TARGET_PCT = 15;
-const SPEC_TARGET_PCT = 5;
+const DEFAULT_TARGETS = { core: 80, swing: 15, spec: 5 };
 const SLEEVE_DRIFT_ALERT_PP = 5; // flag if actual > target ± 5 pp
+
+// Normalize targets to sum to 100 exactly — user-edited values in
+// Settings may not sum cleanly (e.g. 80 / 12 / 5 = 97). Anything
+// missing/negative falls back to the default.
+function normalizeTargets(t) {
+  const raw = {
+    core: Number.isFinite(+t?.core) && +t.core >= 0 ? +t.core : DEFAULT_TARGETS.core,
+    swing: Number.isFinite(+t?.swing) && +t.swing >= 0 ? +t.swing : DEFAULT_TARGETS.swing,
+    spec: Number.isFinite(+t?.spec) && +t.spec >= 0 ? +t.spec : DEFAULT_TARGETS.spec,
+  };
+  const sum = raw.core + raw.swing + raw.spec;
+  if (sum <= 0) return { ...DEFAULT_TARGETS };
+  return {
+    core: (raw.core / sum) * 100,
+    swing: (raw.swing / sum) * 100,
+    spec: (raw.spec / sum) * 100,
+  };
+}
 
 // Base ticker with exchange suffix stripped for lookup.
 function baseTicker(t) {
@@ -89,7 +105,10 @@ export function classifyPosition(position) {
 }
 
 // Compute per-sleeve $ CAD totals + % of book + target deviation.
-export function computeSleeveBalance(positions, fxUsdCad = 1.37) {
+// targets: optional { core, swing, spec } override (from user's
+// profile.sleeveTargets). Falls back to 80/15/5 default.
+export function computeSleeveBalance(positions, fxUsdCad = 1.37, targets = null) {
+  const targetPct = normalizeTargets(targets);
   const totals = { core: 0, swing: 0, spec: 0 };
   const byPosition = [];
   for (const p of positions || []) {
@@ -111,16 +130,15 @@ export function computeSleeveBalance(positions, fxUsdCad = 1.37) {
     swing: (totals.swing / bookTotal) * 100,
     spec: (totals.spec / bookTotal) * 100,
   };
-  const targets = { core: CORE_TARGET_PCT, swing: SWING_TARGET_PCT, spec: SPEC_TARGET_PCT };
   const deviations = {
-    core: actualPct.core - CORE_TARGET_PCT,
-    swing: actualPct.swing - SWING_TARGET_PCT,
-    spec: actualPct.spec - SPEC_TARGET_PCT,
+    core: actualPct.core - targetPct.core,
+    swing: actualPct.swing - targetPct.swing,
+    spec: actualPct.spec - targetPct.spec,
   };
   const targetsCad = {
-    core: bookTotal * CORE_TARGET_PCT / 100,
-    swing: bookTotal * SWING_TARGET_PCT / 100,
-    spec: bookTotal * SPEC_TARGET_PCT / 100,
+    core: bookTotal * targetPct.core / 100,
+    swing: bookTotal * targetPct.swing / 100,
+    spec: bookTotal * targetPct.spec / 100,
   };
   const rebalanceCad = {
     core: targetsCad.core - totals.core,
@@ -131,17 +149,17 @@ export function computeSleeveBalance(positions, fxUsdCad = 1.37) {
     book: bookTotal,
     totals,
     actualPct,
-    targets,
+    targets: targetPct,
+    targetsPct: targetPct,
     deviations,
     targetsCad,
     rebalanceCad,
     byPosition,
     // Flags for the briefing to enforce
-    specOverLimit: actualPct.spec > SPEC_TARGET_PCT,
+    specOverLimit: actualPct.spec > targetPct.spec,
     coreUnderweight: deviations.core < -SLEEVE_DRIFT_ALERT_PP,
     swingUnderweight: deviations.swing < -SLEEVE_DRIFT_ALERT_PP,
     driftAlertPp: SLEEVE_DRIFT_ALERT_PP,
-    targetsPct: targets,
   };
 }
 

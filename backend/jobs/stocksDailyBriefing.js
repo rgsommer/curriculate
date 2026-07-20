@@ -861,7 +861,7 @@ ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
 ${formatPositionStopBlock(monitorPositionStops(profile.positions || []))}
-${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37))}
+${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets))}
 ${formatTranscriptsBlock(transcripts)}
 ${priceCurrencyBlock}
 ${orderTicketBlock}

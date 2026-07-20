@@ -241,6 +241,16 @@ const StocksPortfolioSchema = new mongoose.Schema(
       },
     },
     briefingTz: { type: String, default: "America/New_York" },
+    // Sleeve targets for the auto-enforced 80/15/5 core/swing/spec
+    // structure. Editable in Settings. Percentages must sum to 100 —
+    // the enforcer normalizes if they drift. Default reflects the
+    // "80 buy-and-hold / 15 Canadian large-caps / 5 speculative cap"
+    // recommendation from the journal-analysis follow-up.
+    sleeveTargets: {
+      core: { type: Number, default: 80, min: 0, max: 100 },
+      swing: { type: Number, default: 15, min: 0, max: 100 },
+      spec: { type: Number, default: 5, min: 0, max: 100 },
+    },
     // Idempotency: last time we sent each scheduled brief, keyed by
     // "YYYY-MM-DD|HH:MM" so the tick doesn't double-send when a tick
     // overlaps two ticks (e.g. process restart, clock skew).

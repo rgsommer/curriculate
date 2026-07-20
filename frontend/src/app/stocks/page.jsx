@@ -1342,6 +1342,7 @@ export default function StocksAdvisorPage() {
               onChangeFx={(v) => { updateUser(() => ({ fxUsdCad: v })); showToast("FX updated"); }}
               onChangeCommission={(v) => { updateUser(() => ({ commissionPerTrade: v })); showToast("Commission updated"); }}
               onChangeFxSpread={(v) => { updateUser(() => ({ fxSpreadPct: v })); showToast("FX spread updated"); }}
+              onChangeSleeveTargets={(t) => { updateUser(() => ({ sleeveTargets: t })); showToast("Sleeve targets updated"); }}
               onChangeGoals={(v) => { updateUser(() => ({ goals: v })); }}
               onChangeContributionGoals={(g) => { updateUser(() => ({ annualContributionGoals: g })); showToast("Contribution goals updated"); }}
               onChangeAccountRisk={(accountId, riskLevel) => {
@@ -3390,7 +3391,7 @@ function BriefingScheduleCard({ times = [], tz = "America/New_York", onChangeTim
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeBriefingTimes, onChangeBriefingTz, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -3713,6 +3714,62 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         <h3>FX rate (USD → CAD)</h3>
         <input type="number" step="0.001" defaultValue={user.fxUsdCad} style={{ maxWidth: 200 }} onChange={(e) => onChangeFx(parseFloat(e.target.value) || 1.37)} />
         <div className="sa-muted" style={{ fontSize: 12, marginTop: 6 }}>Used to compute CAD-equivalent of USD positions. Update manually for now; auto-pull TBD.</div>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Sleeve targets (auto-enforced in briefing)</h3>
+        <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
+          Split the book into three disciplinary sleeves. Every morning the briefing checks actual vs target and prevents new speculative BUYs when the SPEC sleeve is full. Values must sum to 100.
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
+          <div>
+            <label>Core (%)</label>
+            <input
+              type="number" step="1" min="0" max="100"
+              defaultValue={user.sleeveTargets?.core ?? 80}
+              onChange={(e) => onChangeSleeveTargets({ ...(user.sleeveTargets || { core: 80, swing: 15, spec: 5 }), core: parseFloat(e.target.value) || 0 })}
+            />
+            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
+              Broad ETFs + bonds (buy-and-hold anchor).
+            </div>
+          </div>
+          <div>
+            <label>Swing (%)</label>
+            <input
+              type="number" step="1" min="0" max="100"
+              defaultValue={user.sleeveTargets?.swing ?? 15}
+              onChange={(e) => onChangeSleeveTargets({ ...(user.sleeveTargets || { core: 80, swing: 15, spec: 5 }), swing: parseFloat(e.target.value) || 0 })}
+            />
+            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
+              Canadian large-caps (your proven template).
+            </div>
+          </div>
+          <div>
+            <label>Spec (% CAP)</label>
+            <input
+              type="number" step="1" min="0" max="100"
+              defaultValue={user.sleeveTargets?.spec ?? 5}
+              onChange={(e) => onChangeSleeveTargets({ ...(user.sleeveTargets || { core: 80, swing: 15, spec: 5 }), spec: parseFloat(e.target.value) || 0 })}
+            />
+            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
+              High-vol / meme US names. Hard cap.
+            </div>
+          </div>
+        </div>
+        {(() => {
+          const t = user.sleeveTargets || { core: 80, swing: 15, spec: 5 };
+          const sum = (t.core || 0) + (t.swing || 0) + (t.spec || 0);
+          const off = Math.abs(sum - 100) > 0.01;
+          return off ? (
+            <div style={{ fontSize: 12, color: "var(--sa-amber)", marginTop: 10, padding: "8px 10px", background: "var(--sa-amber-soft)", borderRadius: 6 }}>
+              ⚠ Current sum: {sum.toFixed(0)}%. Enforcer will normalize to 100% ({((t.core || 0) / sum * 100).toFixed(0)} / {((t.swing || 0) / sum * 100).toFixed(0)} / {((t.spec || 0) / sum * 100).toFixed(0)}). For predictable enforcement, edit so the values sum to 100 exactly.
+            </div>
+          ) : (
+            <div style={{ fontSize: 11.5, color: "var(--sa-muted)", marginTop: 8 }}>
+              ✓ Sums to 100%. Default: 80 / 15 / 5. Journal analysis basis: your Canadian book is 7-for-7; spec sleeve is where all prior losses came from — the SPEC cap is the load-bearing rule.
+            </div>
+          );
+        })()}
       </div>
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Notifications</h3>
