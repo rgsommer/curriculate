@@ -3899,7 +3899,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>AI advice mode</h3>
-        <label style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
+        <label className="sa-toggle-label" style={{ display: "flex", gap: 10, alignItems: "flex-start", cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={!!user.consensusMode}
@@ -3924,7 +3924,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Midday market updates</h3>
-        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+        <label className="sa-toggle-label" style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={!!user.intradayUpdatesEnabled}
@@ -3942,7 +3942,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Options trading</h3>
-        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+        <label className="sa-toggle-label" style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={!!user.optionsTradingEnabled}
@@ -3969,7 +3969,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>No-touch mode</h3>
-        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+        <label className="sa-toggle-label" style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
           <input
             type="checkbox"
             checked={!!user.noTouchMode}
@@ -9621,19 +9621,32 @@ body.stocks-app-mode {
 .stocks-root *, .stocks-root *::before, .stocks-root *::after { box-sizing: border-box; }
 
 /* Form controls */
-.stocks-root input, .stocks-root select, .stocks-root textarea {
+/* Exclude checkbox/radio so they don't get width:100% + border + padding
+   applied — that was making the whole row clickable-as-input and blocking
+   the checkbox itself from receiving pointer events. */
+.stocks-root input:not([type="checkbox"]):not([type="radio"]),
+.stocks-root select, .stocks-root textarea {
   font: inherit; color: var(--sa-text); background: #fff;
   border: 1.5px solid var(--sa-border); border-radius: 10px;
   padding: 11px 13px; outline: none; width: 100%;
   transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
-.stocks-root input:hover, .stocks-root select:hover { border-color: var(--sa-border-strong); }
-.stocks-root input:focus, .stocks-root select:focus, .stocks-root textarea:focus {
+.stocks-root input:not([type="checkbox"]):not([type="radio"]):hover,
+.stocks-root select:hover { border-color: var(--sa-border-strong); }
+.stocks-root input:not([type="checkbox"]):not([type="radio"]):focus,
+.stocks-root select:focus, .stocks-root textarea:focus {
   border-color: var(--sa-accent-2); box-shadow: 0 0 0 4px rgba(29,78,216,.10);
 }
-.stocks-root label {
+/* Legacy field labels ("EMAIL", "PASSWORD") get the uppercase caps
+   treatment. label.sa-toggle-label is the escape hatch for on/off
+   toggle rows where the label wraps a checkbox + body prose. */
+.stocks-root label:not(.sa-toggle-label) {
   font-size: 11px; color: var(--sa-text-2); display: block; margin-bottom: 6px;
   text-transform: uppercase; letter-spacing: .08em; font-weight: 600;
+}
+.stocks-root label.sa-toggle-label {
+  text-transform: none; letter-spacing: normal; font-weight: 400;
+  font-size: inherit; color: inherit; display: flex; margin-bottom: 0;
 }
 .stocks-root h1, .stocks-root h2, .stocks-root h3, .stocks-root h4 { color: var(--sa-text); }
 .stocks-root h2 { margin: 0 0 6px; font-size: 26px; letter-spacing: -.02em; font-weight: 700; }
