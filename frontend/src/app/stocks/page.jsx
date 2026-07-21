@@ -3488,6 +3488,195 @@ function BriefingScheduleCard({ times = [], tz = "America/New_York", onChangeTim
   );
 }
 
+// Settings card for the Gmail-inbox integration used by the broker-alert
+// poller (Phase 2). Displays connection status when configured, and a
+// form to set/rotate the app password when not. The app password is
+// masked and never round-trips to the client after save.
+function EmailIntegrationCard({ sessionToken }) {
+  const [state, setState] = useState({ loading: true });
+  const [mailboxAddress, setMailboxAddress] = useState("rgsommer.junk@gmail.com");
+  const [appPassword, setAppPassword] = useState("");
+  const [imapQuery, setImapQuery] = useState("from:alerts@cibc.com is:unread");
+  const [banner, setBanner] = useState(null); // { kind: "ok"|"err", msg }
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  const load = async () => {
+    if (!sessionToken) return;
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      setState({ loading: false, ...j });
+      if (j.configured) {
+        setMailboxAddress(j.mailboxAddress || "");
+        setImapQuery(j.imapSearchQuery || "from:alerts@cibc.com is:unread");
+      }
+    } catch (e) {
+      setState({ loading: false, configured: false, encryptionReady: false });
+      setBanner({ kind: "err", msg: `Couldn't load status: ${e?.message || "network"}` });
+    }
+  };
+  useEffect(() => { load(); }, [sessionToken]);
+
+  const save = async () => {
+    setBanner(null);
+    setSaving(true);
+    try {
+      const body = { mailboxAddress: mailboxAddress.trim(), imapSearchQuery: imapQuery.trim() };
+      if (appPassword.trim()) body.appPassword = appPassword.trim();
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setAppPassword("");
+      setEditing(false);
+      setBanner({ kind: "ok", msg: j.created ? "Saved. Poller build (Phase 2B) will pick this up." : "Updated." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Save failed" });
+    } finally { setSaving(false); }
+  };
+
+  const test = async () => {
+    setBanner(null);
+    setTesting(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/test`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setBanner({ kind: "ok", msg: `${j.message} (password: ${j.maskedPassword})` });
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Test failed" });
+    } finally { setTesting(false); }
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect the email integration? Stored credentials are deleted.")) return;
+    setBanner(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      setAppPassword("");
+      setEditing(false);
+      setBanner({ kind: "ok", msg: "Integration removed." });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Disconnect failed" });
+    }
+  };
+
+  const showForm = !state.configured || editing;
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 14 }}>
+      <h3>Broker-alert email integration <span className="sa-muted" style={{ fontSize: 11, fontWeight: 500, marginLeft: 6 }}>(Phase 2 — polling live once Phase 2B ships)</span></h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.55 }}>
+        Points the reconciler at the Gmail inbox where CIBC forwards trade confirmations. On each poll, matching messages are parsed, linked to the corresponding rec, and inserted into the trade journal — independently from the &quot;Executed&quot; checkboxes (see Phase 1). The app password is stored AES-256-GCM encrypted, decryption key server-side only.
+      </div>
+
+      {!state.loading && state.encryptionReady === false && (
+        <div style={{ padding: "8px 12px", background: "#fef3c7", color: "#78350f", border: "1px solid #fde68a", borderRadius: 8, fontSize: 12, marginBottom: 12 }}>
+          ⚠ Server encryption key (STOCKS_INTEGRATION_KEY) not set. Ask the deploy owner to generate one and add it to the Render env, otherwise saves will 503.
+        </div>
+      )}
+
+      {banner && (
+        <div style={{
+          padding: "8px 12px", borderRadius: 8, fontSize: 12, marginBottom: 12,
+          background: banner.kind === "ok" ? "#dcfce7" : "#fee2e2",
+          color: banner.kind === "ok" ? "#14532d" : "#7f1d1d",
+          border: `1px solid ${banner.kind === "ok" ? "#86efac" : "#fca5a5"}`,
+        }}>{banner.msg}</div>
+      )}
+
+      {state.loading ? (
+        <div className="sa-muted" style={{ fontSize: 12 }}>Loading integration status…</div>
+      ) : state.configured && !editing ? (
+        <div style={{ display: "grid", gap: 8, fontSize: 13 }}>
+          <div><b>Mailbox:</b> <code>{state.mailboxAddress}</code></div>
+          <div><b>App password:</b> <span style={{ fontFamily: "monospace" }}>{state.passwordMask}</span></div>
+          <div><b>Filter:</b> <code>{state.imapSearchQuery}</code></div>
+          <div><b>Endpoint:</b> <code>{state.imapHost || "imap.gmail.com"}:{state.imapPort || 993}</code> (TLS)</div>
+          <div><b>Status:</b>{" "}
+            {state.enabled === false ? <span style={{ color: "#78350f" }}>paused</span>
+              : state.lastPolledAt ? (
+                state.lastPollSucceeded
+                  ? <span style={{ color: "#14532d" }}>last poll ✓ {new Date(state.lastPolledAt).toLocaleString()}</span>
+                  : <span style={{ color: "#7f1d1d" }}>last poll ✗ {state.lastPollError || "unknown error"}</span>
+              ) : <span className="sa-muted">never polled — poller ships in Phase 2B</span>}
+          </div>
+          <div><b>Reconciled trades:</b> {state.reconciledCount || 0} since {state.configuredAt ? new Date(state.configuredAt).toLocaleDateString() : "setup"}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+            <button className="sa-btn" onClick={() => setEditing(true)}>Edit / rotate password</button>
+            <button className="sa-btn" onClick={test} disabled={testing}>{testing ? "Testing…" : "Test connection"}</button>
+            <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gap: 10 }}>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--sa-muted)" }}>Gmail address the poller reads from</label>
+            <input
+              type="email"
+              value={mailboxAddress}
+              onChange={(e) => setMailboxAddress(e.target.value)}
+              placeholder="e.g. rgsommer.junk@gmail.com"
+              autoComplete="email"
+              style={{ width: "100%" }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--sa-muted)" }}>Gmail app password (16 chars; spaces OK, stripped on save)</label>
+            <input
+              type="password"
+              value={appPassword}
+              onChange={(e) => setAppPassword(e.target.value)}
+              placeholder={state.configured ? "leave blank to keep existing" : "xxxx xxxx xxxx xxxx"}
+              autoComplete="new-password"
+              style={{ width: "100%", fontFamily: "monospace" }}
+            />
+            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
+              Google Account → Security → 2-Step Verification → App passwords. Only this app, only IMAP scope. Not your regular Gmail password.
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: "var(--sa-muted)" }}>Gmail search filter (poller only reads matching messages)</label>
+            <input
+              type="text"
+              value={imapQuery}
+              onChange={(e) => setImapQuery(e.target.value)}
+              placeholder="from:alerts@cibc.com is:unread"
+              style={{ width: "100%", fontFamily: "monospace" }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button className="sa-btn" onClick={save} disabled={saving || !mailboxAddress.trim() || (!state.configured && !appPassword.trim())}>
+              {saving ? "Saving…" : (state.configured ? "Update" : "Save")}
+            </button>
+            {editing && <button className="sa-btn" onClick={() => { setEditing(false); setAppPassword(""); }}>Cancel</button>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
@@ -3775,6 +3964,8 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
           </div>
         </label>
       </div>
+
+      <EmailIntegrationCard sessionToken={sessionToken} />
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Contribution goals</h3>

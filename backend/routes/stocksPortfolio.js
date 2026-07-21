@@ -28,6 +28,8 @@ import { computeBenchmarkReturns } from "../services/stocksBenchmark.js";
 import { computeCompliance } from "../services/stocksCompliance.js";
 import { computeAttribution } from "../services/stocksAttribution.js";
 import StocksRecIntent from "../models/StocksRecIntent.js";
+import StocksEmailIntegration from "../models/StocksEmailIntegration.js";
+import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/stocksEncryption.js";
 
 const router = express.Router();
 
@@ -724,6 +726,154 @@ router.post("/rec-intent", requireStocksAuth, async (req, res) => {
     res.json({ ok: true, intent: doc });
   } catch (err) {
     console.error("stocks-portfolio rec-intent error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/email-integration
+// Returns the (non-secret) config + poller heartbeat for this user, or
+// null if not configured. Never returns the encrypted password blob.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/email-integration", requireStocksAuth, async (req, res) => {
+  try {
+    const doc = await StocksEmailIntegration.findOne({ email: req.stocksUser.email }).lean();
+    if (!doc) {
+      return res.json({
+        ok: true,
+        configured: false,
+        encryptionReady: isEncryptionConfigured(),
+      });
+    }
+    res.json({
+      ok: true,
+      configured: true,
+      encryptionReady: isEncryptionConfigured(),
+      provider: doc.provider,
+      mailboxAddress: doc.mailboxAddress,
+      passwordMask: "••••" + " ••••" + " ••••" + " ••••", // fixed mask; never derived from ciphertext
+      imapSearchQuery: doc.imapSearchQuery,
+      imapHost: doc.imapHost,
+      imapPort: doc.imapPort,
+      enabled: doc.enabled,
+      lastPolledAt: doc.lastPolledAt,
+      lastPollSucceeded: doc.lastPollSucceeded,
+      lastPollError: doc.lastPollError,
+      reconciledCount: doc.reconciledCount,
+      configuredAt: doc.configuredAt,
+    });
+  } catch (err) {
+    console.error("stocks-portfolio email-integration GET error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration
+// Save or update the integration. Body: { mailboxAddress, appPassword,
+// imapSearchQuery?, enabled? }. If appPassword is omitted, keeps the
+// existing one (edit-metadata-only flow).
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration", requireStocksAuth, async (req, res) => {
+  try {
+    if (!isEncryptionConfigured()) {
+      return res.status(503).json({ error: "Server encryption key not configured (STOCKS_INTEGRATION_KEY)." });
+    }
+    const { mailboxAddress, appPassword, imapSearchQuery, enabled } = req.body || {};
+    if (typeof mailboxAddress !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mailboxAddress)) {
+      return res.status(400).json({ error: "mailboxAddress must be a valid email address" });
+    }
+
+    const update = {
+      mailboxAddress: mailboxAddress.trim().toLowerCase(),
+    };
+    if (typeof imapSearchQuery === "string" && imapSearchQuery.trim().length > 0) {
+      update.imapSearchQuery = imapSearchQuery.trim().slice(0, 500);
+    }
+    if (typeof enabled === "boolean") update.enabled = enabled;
+
+    // Only re-encrypt if a new password was submitted. Users editing
+    // just the mailbox address / query don't need to re-enter the pw.
+    if (typeof appPassword === "string" && appPassword.length > 0) {
+      const normalized = appPassword.replace(/\s+/g, "");
+      // Gmail app passwords are 16 chars alphanumeric. Warn but accept
+      // anything reasonably-shaped so we don't lock out edge cases.
+      if (normalized.length < 8 || normalized.length > 64) {
+        return res.status(400).json({ error: "appPassword length looks wrong (expected 16 chars for Gmail app passwords)" });
+      }
+      update.envelopePassword = encryptSecret(normalized);
+      update.lastPollError = "";      // clearing the error on fresh credentials
+      update.lastPollSucceeded = null;
+    }
+
+    const existing = await StocksEmailIntegration.findOne({ email: req.stocksUser.email });
+    if (!existing) {
+      if (!update.envelopePassword) {
+        return res.status(400).json({ error: "appPassword is required on first-time setup" });
+      }
+      update.email = req.stocksUser.email;
+      update.provider = "gmail";
+      update.configuredAt = new Date();
+      const created = await StocksEmailIntegration.create(update);
+      return res.json({ ok: true, created: true, id: created._id.toString() });
+    }
+    await StocksEmailIntegration.updateOne({ _id: existing._id }, { $set: update });
+    res.json({ ok: true, updated: true });
+  } catch (err) {
+    console.error("stocks-portfolio email-integration POST error:", err);
+    if (err?.code === "MISSING_ENCRYPTION_KEY" || err?.code === "INVALID_ENCRYPTION_KEY") {
+      return res.status(503).json({ error: err.message });
+    }
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// DELETE /api/stocks-portfolio/email-integration
+// Removes the integration entirely. Poller state resets.
+// ──────────────────────────────────────────────────────────────────────
+router.delete("/email-integration", requireStocksAuth, async (req, res) => {
+  try {
+    await StocksEmailIntegration.deleteOne({ email: req.stocksUser.email });
+    res.json({ ok: true, deleted: true });
+  } catch (err) {
+    console.error("stocks-portfolio email-integration DELETE error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/test
+// Stub for the "Test connection" button. Reports whether the config
+// looks parseable and the encryption key is present. Full IMAP round-
+// trip lands with the poller service.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/test", requireStocksAuth, async (req, res) => {
+  try {
+    const doc = await StocksEmailIntegration.findOne({ email: req.stocksUser.email }).lean();
+    if (!doc) return res.status(404).json({ error: "No integration configured yet — save credentials first." });
+    if (!isEncryptionConfigured()) {
+      return res.status(503).json({ error: "Server encryption key not configured (STOCKS_INTEGRATION_KEY)." });
+    }
+    // Verify the ciphertext round-trips.
+    try {
+      const { decryptSecret } = await import("../services/stocksEncryption.js");
+      const pt = decryptSecret(doc.envelopePassword);
+      if (!pt) throw new Error("decrypted secret is empty");
+      const mask = maskSecret(pt);
+      return res.json({
+        ok: true,
+        stage: "credential-check",
+        message: "Encrypted credentials round-trip cleanly. Full IMAP login test lands with the poller build (Phase 2B).",
+        maskedPassword: mask,
+        mailboxAddress: doc.mailboxAddress,
+        imapEndpoint: `${doc.imapHost}:${doc.imapPort}`,
+      });
+    } catch (e) {
+      return res.status(500).json({ error: `Credential round-trip failed: ${e.message}` });
+    }
+  } catch (err) {
+    console.error("stocks-portfolio email-integration test error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });
