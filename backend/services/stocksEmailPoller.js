@@ -119,11 +119,13 @@ export async function pollUserMailbox(userEmail) {
       for (const uid of fresh) {
         try {
           const msg = await client.fetchOne(uid, { envelope: true, source: true }, { uid: true });
-          if (!msg?.source) { skipped.push({ uid, reason: "no-source" }); highWater = Math.max(highWater, uid); continue; }
+          const subj = msg?.envelope?.subject || "(no subject)";
+          const from = msg?.envelope?.from?.[0]?.address || "(unknown)";
+          if (!msg?.source) { skipped.push({ uid, reason: "no-source", subject: subj, from }); highWater = Math.max(highWater, uid); continue; }
           const parsed = await simpleParser(msg.source);
           const bodyText = parsed.text || (parsed.html || "").replace(/<[^>]+>/g, " ");
           const alert = parseCibcAlert(bodyText);
-          if (!alert) { skipped.push({ uid, reason: "not-a-cibc-alert" }); highWater = Math.max(highWater, uid); continue; }
+          if (!alert) { skipped.push({ uid, reason: "not-a-cibc-alert", subject: subj, from, bodyPreview: bodyText.slice(0, 200).replace(/\s+/g, " ") }); highWater = Math.max(highWater, uid); continue; }
           const occurredAt = parsed.date || msg.envelope?.date || new Date();
 
           const reconcileKey = makeReconcileKey({

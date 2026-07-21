@@ -3623,7 +3623,17 @@ function EmailIntegrationCard({ sessionToken }) {
       if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
       if (j.fatal) parts.push(`fatal: ${j.fatal}`);
       if (j.skipped && typeof j.skipped === "string") parts.push(`(${j.skipped})`);
-      setBanner({ kind: j.fatal ? "err" : "ok", msg: `Poll complete — ${parts.join(" · ") || "no changes"}` });
+      // If ANYTHING was skipped, surface subject + reason inline so the user
+      // can tell whether the skip is real (missed CIBC alert) or expected
+      // (dividend deposit notice, statement notification — same sender,
+      // wrong body format for parser).
+      const skippedRows = (j.details?.skipped || []).slice(0, 10);
+      let msg = `Poll complete — ${parts.join(" · ") || "no changes"}`;
+      if (skippedRows.length > 0) {
+        const lines = skippedRows.map(s => `  · ${s.reason} · "${(s.subject || "(no subject)").slice(0, 80)}"${s.from ? ` — from ${s.from}` : ""}`);
+        msg += `\nSkipped detail:\n${lines.join("\n")}`;
+      }
+      setBanner({ kind: j.fatal ? "err" : "ok", msg });
       await load();
     } catch (e) {
       setBanner({ kind: "err", msg: e?.message || "Poll failed" });
@@ -3670,6 +3680,8 @@ function EmailIntegrationCard({ sessionToken }) {
           background: banner.kind === "ok" ? "#dcfce7" : "#fee2e2",
           color: banner.kind === "ok" ? "#14532d" : "#7f1d1d",
           border: `1px solid ${banner.kind === "ok" ? "#86efac" : "#fca5a5"}`,
+          whiteSpace: "pre-wrap", // preserve newlines so multi-line skip detail wraps correctly
+          fontFamily: banner.msg?.includes("\n") ? "ui-monospace, Menlo, monospace" : "inherit",
         }}>{banner.msg}</div>
       )}
 

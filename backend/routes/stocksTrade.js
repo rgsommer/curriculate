@@ -334,20 +334,33 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     // First match wins — the linkage is nice-to-have (drives the
     // "trades executed since last briefing" narration), not critical, so
     // we prefer a best-effort single-shot rather than a per-leg fanout.
+    // Base ticker (strip exchange suffix like ".TO") so a trade in SU.TO
+    // still matches an AI rec written as "SU". CIBC alerts send the base
+    // symbol; the AI rec output may include or omit the suffix; users
+    // recording manually often paste one or the other. Every code path
+    // that JOINS a trade to a rec needs the same normalization.
+    const baseTicker = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+
     let autoLinkedRecId = linkedAdviceRecId || null;
     if (!autoLinkedRecId) {
       try {
         const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        // Load recent open recs once; match in JS on base ticker so we
+        // don't have to store a base-ticker index on the collection.
+        const recentRecs = await StocksAdviceRec.find({
+          email: req.stocksUser.email,
+          status: "open",
+          generatedAt: { $gte: cutoff },
+        }).sort({ generatedAt: -1 }).select({ _id: 1, ticker: 1, action: 1, entryCurrency: 1 }).lean();
         for (const leg of normLegs) {
           if (!(leg.side === "BUY" || leg.side === "SELL") || !leg.ticker) continue;
-          const match = await StocksAdviceRec.findOne({
-            email: req.stocksUser.email,
-            ticker: leg.ticker,
-            action: leg.side,
-            entryCurrency: leg.currency || "USD",
-            status: "open",
-            generatedAt: { $gte: cutoff },
-          }).sort({ generatedAt: -1 }).select({ _id: 1 }).lean();
+          const legBase = baseTicker(leg.ticker);
+          const legCcy = leg.currency || "USD";
+          const match = recentRecs.find(r =>
+            baseTicker(r.ticker) === legBase &&
+            r.action === leg.side &&
+            (r.entryCurrency || "USD") === legCcy
+          );
           if (match) { autoLinkedRecId = match._id; break; }
         }
       } catch (e) { console.warn("[stocks-trade] auto-link warn:", e?.message); }
@@ -356,18 +369,19 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     // Also try to link a matching StocksDailyPick — that's a swing rec too,
     // just persisted in a different collection. Without this, buying AMZN
     // after a daily-pick swing rec lands as "no linked AI rec" in the
-    // briefing, which is misleading.
+    // briefing, which is misleading. Same base-ticker normalization.
     let autoLinkedDailyPickId = null;
     try {
       const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const recentPicks = await StocksDailyPick.find({
+        email: req.stocksUser.email,
+        status: "open",
+        pickDate: { $gte: cutoff },
+      }).sort({ pickDate: -1 }).select({ _id: 1, ticker: 1 }).lean();
       for (const leg of normLegs) {
         if (leg.side !== "BUY" || !leg.ticker) continue;
-        const pick = await StocksDailyPick.findOne({
-          email: req.stocksUser.email,
-          ticker: leg.ticker,
-          status: "open",
-          pickDate: { $gte: cutoff },
-        }).sort({ pickDate: -1 }).select({ _id: 1 }).lean();
+        const legBase = baseTicker(leg.ticker);
+        const pick = recentPicks.find(p => baseTicker(p.ticker) === legBase);
         if (pick) { autoLinkedDailyPickId = pick._id; break; }
       }
     } catch (e) { console.warn("[stocks-trade] auto-link daily-pick warn:", e?.message); }
