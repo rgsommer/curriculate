@@ -844,37 +844,51 @@ router.delete("/email-integration", requireStocksAuth, async (req, res) => {
 
 // ──────────────────────────────────────────────────────────────────────
 // POST /api/stocks-portfolio/email-integration/test
-// Stub for the "Test connection" button. Reports whether the config
-// looks parseable and the encryption key is present. Full IMAP round-
-// trip lands with the poller service.
+// Live IMAP round-trip: connect to Gmail with the stored credentials,
+// list the mailbox, count messages matching the configured filter.
+// Returns a definite yes/no + counts so the user knows the poller
+// will actually see mail before waiting for the next cron tick.
 // ──────────────────────────────────────────────────────────────────────
 router.post("/email-integration/test", requireStocksAuth, async (req, res) => {
   try {
-    const doc = await StocksEmailIntegration.findOne({ email: req.stocksUser.email }).lean();
-    if (!doc) return res.status(404).json({ error: "No integration configured yet — save credentials first." });
     if (!isEncryptionConfigured()) {
       return res.status(503).json({ error: "Server encryption key not configured (STOCKS_INTEGRATION_KEY)." });
     }
-    // Verify the ciphertext round-trips.
-    try {
-      const { decryptSecret } = await import("../services/stocksEncryption.js");
-      const pt = decryptSecret(doc.envelopePassword);
-      if (!pt) throw new Error("decrypted secret is empty");
-      const mask = maskSecret(pt);
-      return res.json({
-        ok: true,
-        stage: "credential-check",
-        message: "Encrypted credentials round-trip cleanly. Full IMAP login test lands with the poller build (Phase 2B).",
-        maskedPassword: mask,
-        mailboxAddress: doc.mailboxAddress,
-        imapEndpoint: `${doc.imapHost}:${doc.imapPort}`,
-      });
-    } catch (e) {
-      return res.status(500).json({ error: `Credential round-trip failed: ${e.message}` });
-    }
+    const { testConnection } = await import("../services/stocksEmailPoller.js");
+    const result = await testConnection(req.stocksUser.email);
+    if (!result.ok) return res.status(400).json(result);
+    res.json({
+      ok: true,
+      mailboxPath: result.mailboxPath,
+      exists: result.exists,
+      matchingCount: result.matchingCount,
+      query: result.query,
+      message: `Logged in to ${result.mailboxPath} · ${result.exists} total messages · ${result.matchingCount} match filter "${result.query}".`,
+    });
   } catch (err) {
     console.error("stocks-portfolio email-integration test error:", err);
-    res.status(500).json({ error: "Internal error" });
+    res.status(500).json({ error: `Internal error: ${err?.message || "unknown"}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/poll-now
+// Trigger a poll immediately (bypass the cron schedule). Returns the
+// same summary the cron logs — inserted / skipped / errors counts +
+// per-message detail. Useful right after saving credentials so you
+// don't have to wait 15 min for the first tick.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/poll-now", requireStocksAuth, async (req, res) => {
+  try {
+    if (!isEncryptionConfigured()) {
+      return res.status(503).json({ error: "Server encryption key not configured (STOCKS_INTEGRATION_KEY)." });
+    }
+    const { pollUserMailbox } = await import("../services/stocksEmailPoller.js");
+    const result = await pollUserMailbox(req.stocksUser.email);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("stocks-portfolio email-integration poll-now error:", err);
+    res.status(500).json({ error: `Internal error: ${err?.message || "unknown"}` });
   }
 });
 

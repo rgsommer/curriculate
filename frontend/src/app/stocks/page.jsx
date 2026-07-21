@@ -3556,10 +3556,35 @@ function EmailIntegrationCard({ sessionToken }) {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `${r.status}`);
-      setBanner({ kind: "ok", msg: `${j.message} (password: ${j.maskedPassword})` });
+      setBanner({ kind: "ok", msg: j.message });
     } catch (e) {
       setBanner({ kind: "err", msg: e?.message || "Test failed" });
     } finally { setTesting(false); }
+  };
+
+  const [pollingNow, setPollingNow] = useState(false);
+  const pollNow = async () => {
+    setBanner(null);
+    setPollingNow(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/poll-now`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      const parts = [];
+      if (Number.isFinite(j.inserted)) parts.push(`${j.inserted} inserted`);
+      if (Number.isFinite(j.skipped)) parts.push(`${j.skipped} skipped`);
+      if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
+      if (j.fatal) parts.push(`fatal: ${j.fatal}`);
+      if (j.skipped && typeof j.skipped === "string") parts.push(`(${j.skipped})`);
+      setBanner({ kind: j.fatal ? "err" : "ok", msg: `Poll complete — ${parts.join(" · ") || "no changes"}` });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Poll failed" });
+    } finally { setPollingNow(false); }
   };
 
   const disconnect = async () => {
@@ -3625,6 +3650,7 @@ function EmailIntegrationCard({ sessionToken }) {
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             <button className="sa-btn" onClick={() => setEditing(true)}>Edit / rotate password</button>
             <button className="sa-btn" onClick={test} disabled={testing}>{testing ? "Testing…" : "Test connection"}</button>
+            <button className="sa-btn" onClick={pollNow} disabled={pollingNow}>{pollingNow ? "Polling…" : "Poll now"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
         </div>

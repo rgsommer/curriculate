@@ -47,8 +47,31 @@ const StocksTradeJournalSchema = new mongoose.Schema(
     // trades matching a pick need their own linkage — otherwise the
     // briefing narrates them as "no linked AI rec" which is misleading.
     linkedDailyPickId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksDailyPick", default: null },
+
+    // Populated by the broker-alert email poller (Phase 2). Stable dedup
+    // key derived from (source + broker + ticker + qty + price + minute-
+    // truncated timestamp) so re-polls never double-insert the same
+    // trade. Null for manually-recorded trades. Also used by the
+    // reconciler to mark "needs review" when the account or rec linkage
+    // was ambiguous.
+    brokerReconcileKey: { type: String, default: null, index: true, sparse: true },
+    brokerReconcileSource: { type: String, default: null }, // e.g. "cibc-email"
+    brokerReconcileStatus: {
+      type: String,
+      enum: [null, "auto", "needs-review"],
+      default: null,
+    },
+    brokerReconcileNotes: { type: String, default: "" },
   },
   { timestamps: true }
+);
+
+// Unique on brokerReconcileKey when present so a duplicate insert throws
+// instead of silently double-recording a trade. Sparse so manually-
+// recorded rows (key=null) don't collide with each other.
+StocksTradeJournalSchema.index(
+  { email: 1, brokerReconcileKey: 1 },
+  { unique: true, partialFilterExpression: { brokerReconcileKey: { $type: "string" } } }
 );
 
 const StocksTradeJournal =
