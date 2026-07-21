@@ -39,6 +39,9 @@ import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsM
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
 import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
+import { computeTwrr } from "../services/stocksTwrr.js";
+import { computeBenchmarkReturns, formatBenchmarkBlock } from "../services/stocksBenchmark.js";
+import { computeSizingAdjustments, formatSizingAdjustmentBlock } from "../services/stocksCorrelationSizing.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -635,6 +638,8 @@ SENIOR-ANALYST EXPECTATIONS:
 5k. CONGRESSIONAL TRADES: multiple purchases = potential positive catalyst (committee-derived info); multiple sales = warning. Cite filer + date when strong.
 5l. TICKERS NOT FOUND: never emit "Ticker Not Found" / "UNABLE TO VERIFY" cards for held positions. Ownership IS verification. If web_search fails, use the holdings-table price.
 5m. CALIBRATION: when a CALIBRATION block appears, it summarizes THIS user's closed-pick outcomes bucketed by score band × setup × MTF. Weight recommendations toward the combinations with the highest win rate + avg P/L. A proposed rec that lands in a bucket with sub-baseline win rate should be downgraded or replaced. Cite the specific bucket + n + win rate when making a full-size call (e.g. "this VCP × 70-79 score bucket is 5-of-7 winners at +8.4% for you — full size"). Buckets missing from the block are undertested (n<5), not proven — treat as unknown.
+5n. BENCHMARK ALPHA: when a PORTFOLIO vs BENCHMARK block appears, it compares this user's TWRR to SPY (US sleeve) and XIC (Canadian sleeve) over the same window. Positive alpha = beating the passive alternative; negative alpha over YTD or since-start is the honest signal to trade less and lean on CORE broad ETFs. Cite the specific alpha figure when defending an active swing rec ("YTD alpha +4.1pp vs SPY, so this active trade is earning its keep"). If alpha is deeply negative, propose SPY/XIC/XEQT rotation in section 4 instead of another swing.
+5o. CORRELATION-ADJUSTED SIZING: when a CORRELATION-ADJUSTED SIZING block lists a candidate ticker with a "SIZE X%" tag, respect it. Multiply the recommended share count (and cash allocation) by that fraction so total factor exposure doesn't compound with an already-large correlated holding. Cite the pairing verbatim: "half-size (SIZE 50%) — 0.78 correlated with your ENB position at 22% of book, so full size would double your energy-rates factor exposure." Rows without a size tag are safely independent.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** Holdings table already shows actual P/L. If you write "BBAI down -7.7%" and the app shows BBAI +333%, you mislead. Refer to lifecycle cost-basis for tax reasoning; do NOT narrate "down X%" unless it matches Holdings EXACTLY.
 ${PRICE_CURRENCY_RULES}
 ${ORDER_TICKET_RULES}
@@ -786,7 +791,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -947,6 +952,8 @@ ${formatCongressionalBlock(congressional)}
 ${formatPositionStopBlock(monitorPositionStops(profile.positions || []))}
 ${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets))}
 ${formatCalibrationBlock(calibration)}
+${formatBenchmarkBlock(benchmarkBundle?.userTwrr, benchmarkBundle?.benchmarks)}
+${formatSizingAdjustmentBlock(sizingAdjustments)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
@@ -1158,6 +1165,35 @@ export async function generateBriefing(profile) {
     ? new Date(profile.lastBriefingSuccessAt)
     : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
+  // Compute TWRR + benchmark returns over WoW / YTD / since-start
+  // windows so the briefing can cite alpha vs SPY / XIC. Done as its
+  // own tiny bundle before Promise.all so the benchmark call gets the
+  // TWRR values it compares against.
+  const benchmarkBundle = await (async () => {
+    try {
+      const now = new Date();
+      const wowStart = new Date(now); wowStart.setDate(wowStart.getDate() - 7);
+      const ytdStart = new Date(`${now.getUTCFullYear()}-01-01T00:00:00Z`);
+      const startWindow = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+      const [wow, ytd, all] = await Promise.all([
+        computeTwrr(profile.email, wowStart, now).catch(() => null),
+        computeTwrr(profile.email, ytdStart, now).catch(() => null),
+        computeTwrr(profile.email, startWindow, now).catch(() => null),
+      ]);
+      if (!wow && !ytd && !all) return null;
+      const userTwrr = {
+        wowPct: wow?.twrrPct ?? null,
+        ytdPct: ytd?.twrrPct ?? null,
+        sinceStartPct: all?.twrrPct ?? null,
+      };
+      const bench = await computeBenchmarkReturns({
+        oldestSnapshotDate: all?.startDate || wow?.startDate || ytd?.startDate,
+        latestSnapshotDate: all?.endDate || wow?.endDate || ytd?.endDate,
+      }).catch(() => null);
+      return { userTwrr, benchmarks: bench };
+    } catch { return null; }
+  })();
+
   // Run all upstream signals in parallel
   const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
@@ -1265,7 +1301,24 @@ export async function generateBriefing(profile) {
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration);
+
+  // Correlation-adjusted sizing for today's candidate tickers (Test A
+  // picks + Discovery pool). If the candidate is highly correlated
+  // with a chunky existing position, the sizing multiplier tells the
+  // AI to half-/quarter-size the rec rather than double the exposure.
+  const sizingCandidates = [
+    ...(dailyPicks || []).map(p => ({ ticker: p.ticker, currency: p.currency || "USD" })),
+    ...(discoveryPool || []).map(c => ({ ticker: c.ticker, currency: c.currency || "USD" })),
+  ];
+  const sizingAdjustments = sizingCandidates.length > 0
+    ? await computeSizingAdjustments({
+        candidates: sizingCandidates,
+        positions: profile.positions || [],
+        fxUsdCad: profile.fxUsdCad || 1.37,
+      }).catch(e => { console.warn("[computeSizingAdjustments] warn:", e?.message); return []; })
+    : [];
+
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat

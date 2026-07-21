@@ -1966,11 +1966,29 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             // absolute $ amounts. Those get the .sa-amount class so privacy
             // mode blurs them. Percentage-only cells stay visible even in
             // privacy mode since a % doesn't reveal absolute wealth.
+            const twrr = perfIndicators.twrr || {};
+            const bench = perfIndicators.benchmarks || {};
+            const spySince = bench.spy?.sinceStartPct;
+            const xicSince = bench.xic?.sinceStartPct;
+            const alphaSpy = (twrr.sinceStartPct != null && spySince != null) ? twrr.sinceStartPct - spySince : null;
+            const alphaXic = (twrr.sinceStartPct != null && xicSince != null) ? twrr.sinceStartPct - xicSince : null;
             const cells = [
               { label: "Portfolio value", v: `$${Math.round(perfIndicators.current).toLocaleString()} CAD`, hasDollar: true },
-              { label: "Week over week", v: pct(perfIndicators.wowChangePct), color: color(perfIndicators.wowChangePct) },
-              { label: `YTD${perfIndicators.ytdAnchorDate && perfIndicators.ytdAnchorDate.slice(0, 4) !== String(new Date().getUTCFullYear()) ? ` (since ${perfIndicators.ytdAnchorDate})` : ""}`, v: pct(perfIndicators.ytdChangePct), color: color(perfIndicators.ytdChangePct) },
+              { label: "Week over week", v: pct(perfIndicators.wowChangePct), color: color(perfIndicators.wowChangePct), sub: twrr.wowPct != null ? `TWRR ${pct(twrr.wowPct)}` : null },
+              { label: `YTD${perfIndicators.ytdAnchorDate && perfIndicators.ytdAnchorDate.slice(0, 4) !== String(new Date().getUTCFullYear()) ? ` (since ${perfIndicators.ytdAnchorDate})` : ""}`, v: pct(perfIndicators.ytdChangePct), color: color(perfIndicators.ytdChangePct), sub: twrr.ytdPct != null ? `TWRR ${pct(twrr.ytdPct)}` : null },
               { label: "14d avg daily", v: pct(perfIndicators.avg14dDailyPct), color: color(perfIndicators.avg14dDailyPct) },
+              {
+                label: "Alpha vs SPY (since start)",
+                v: alphaSpy == null ? "—" : `${alphaSpy >= 0 ? "+" : ""}${alphaSpy.toFixed(1)}pp`,
+                color: color(alphaSpy),
+                sub: spySince != null ? `SPY ${pct(spySince)}` : null,
+              },
+              {
+                label: "Alpha vs XIC (since start)",
+                v: alphaXic == null ? "—" : `${alphaXic >= 0 ? "+" : ""}${alphaXic.toFixed(1)}pp`,
+                color: color(alphaXic),
+                sub: xicSince != null ? `XIC ${pct(xicSince)}` : null,
+              },
               {
                 label: "Annualized (from 14d)",
                 v: ann == null ? "—" : `${ann >= 0 ? "+" : ""}${ann.toFixed(0)}%`,

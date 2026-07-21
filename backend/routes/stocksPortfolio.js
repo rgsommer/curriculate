@@ -23,6 +23,8 @@ import express from "express";
 import crypto from "crypto";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksPortfolioSnapshot from "../models/StocksPortfolioSnapshot.js";
+import { computeTwrr, annualizeTwrr } from "../services/stocksTwrr.js";
+import { computeBenchmarkReturns } from "../services/stocksBenchmark.js";
 
 const router = express.Router();
 
@@ -571,6 +573,30 @@ router.get("/indicators", requireStocksAuth, async (req, res) => {
     const drawdownFromPeakPct = peakSnap.totalCad > 0
       ? ((current - peakSnap.totalCad) / peakSnap.totalCad) * 100 : null;
 
+    // TWRR (time-weighted, cash-flow-adjusted). This is the real answer
+    // to "how am I doing on trading?" — deposits and withdrawals don't
+    // distort it the way naive total-value % change does.
+    const now = new Date();
+    const wowStart = new Date(now); wowStart.setDate(wowStart.getDate() - 7);
+    const ytdStart = new Date(`${now.getUTCFullYear()}-01-01T00:00:00Z`);
+    const startWindow = new Date(snaps[0].date + "T00:00:00Z");
+    const [wowTwrr, ytdTwrr, allTwrr] = await Promise.all([
+      computeTwrr(email, wowStart, now).catch(() => null),
+      computeTwrr(email, ytdStart, now).catch(() => null),
+      computeTwrr(email, startWindow, now).catch(() => null),
+    ]);
+    const daysSinceStart = Math.max(1, Math.floor((now - startWindow) / 86400000));
+    const annualizedFromTwrrPct = allTwrr
+      ? annualizeTwrr(allTwrr.twrrPct, daysSinceStart)
+      : null;
+
+    // Benchmark comparison (SPY + XIC) — cached module-level so hitting
+    // this endpoint from a page reload doesn't hammer Yahoo.
+    const benchmarks = await computeBenchmarkReturns({
+      oldestSnapshotDate: snaps[0].date,
+      latestSnapshotDate: latest.date,
+    }).catch(() => null);
+
     res.json({
       ok: true,
       current,
@@ -590,6 +616,17 @@ router.get("/indicators", requireStocksAuth, async (req, res) => {
       snapshotCount: snaps.length,
       oldestSnapshotDate: snaps[0].date,
       latestSnapshotDate: latest.date,
+      // Cash-flow-adjusted returns — deposits/withdrawals from the
+      // trade journal (DEPOSIT/WITHDRAW legs) are subtracted from the
+      // numerator of each sub-period. See services/stocksTwrr.js.
+      twrr: {
+        wowPct: wowTwrr?.twrrPct ?? null,
+        ytdPct: ytdTwrr?.twrrPct ?? null,
+        sinceStartPct: allTwrr?.twrrPct ?? null,
+        annualizedPct: annualizedFromTwrrPct,
+        netExternalFlowCad: allTwrr?.netExternalFlowCad ?? null,
+      },
+      benchmarks,
     });
   } catch (err) {
     console.error("stocks-portfolio indicators error:", err);

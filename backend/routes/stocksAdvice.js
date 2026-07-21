@@ -1331,9 +1331,9 @@ function extractJson(text) {
 // Returns { advice, sources, textOut } where advice is the parsed JSON
 // array of cards and sources are the web_search citations.
 // ─────────────────────────────────────────────────────────────────────
-async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts }) {
+async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional, calibration }) {
   const summary = portfolioSummary(profile);
-  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional);
+  const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional, calibration);
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
@@ -1627,7 +1627,7 @@ router.post("/stream", requireStocksAuth, async (req, res) => {
 
     send("status", { phase: "signals" });
     const summary = portfolioSummary(profile);
-    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional, calibration] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
@@ -1635,9 +1635,29 @@ router.post("/stream", requireStocksAuth, async (req, res) => {
       computeFactorTilts(profile).catch(() => null),
       computeLessons(req.stocksUser.email).catch(() => null),
       getTranscriptsForTopHoldings(profile).catch(() => null),
+      getFedLiquidity().catch(() => null),
+      getSectorRotation().catch(() => null),
+      (async () => {
+        const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase()).filter(Boolean);
+        const currencies = {};
+        const weights = {};
+        const fx = profile.fxUsdCad || 1.37;
+        for (const p of profile.positions || []) {
+          const t = String(p.ticker || "").toUpperCase();
+          currencies[t] = p.ccy || "USD";
+          const cad = (p.ccy === "USD" ? (p.priceUsd || 0) * fx : (p.priceCad || 0)) * (p.qty || 0);
+          weights[t] = (weights[t] || 0) + cad;
+        }
+        return await computeCorrelations({ tickers, currencies, weights });
+      })().catch(() => null),
+      (async () => {
+        const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean);
+        return await getCongressionalTradesForTickers(tickers, { maxAgeDays: 45 });
+      })().catch(() => null),
+      computeCalibration(req.stocksUser.email).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
-    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional);
+    const prompt = buildPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional, calibration);
 
     send("status", { phase: "thinking" });
     const r = await fetch("https://api.anthropic.com/v1/messages", {
@@ -1904,7 +1924,7 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     }
 
     // Compute all upstream signals ONCE — shared across all three consensus runs
-    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts] = await Promise.all([
+    const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional, calibration] = await Promise.all([
       monitorOpenRecs(req.stocksUser.email).catch(() => ({ alerts: [] })),
       computeQuantSignals(profile).catch(() => ({})),
       getMacroContext().catch(() => null),
@@ -1912,13 +1932,33 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
       computeFactorTilts(profile).catch(() => null),
       computeLessons(req.stocksUser.email).catch(() => null),
       getTranscriptsForTopHoldings(profile).catch(() => null),
+      getFedLiquidity().catch(() => null),
+      getSectorRotation().catch(() => null),
+      (async () => {
+        const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase()).filter(Boolean);
+        const currencies = {};
+        const weights = {};
+        const fx = profile.fxUsdCad || 1.37;
+        for (const p of profile.positions || []) {
+          const t = String(p.ticker || "").toUpperCase();
+          currencies[t] = p.ccy || "USD";
+          const cad = (p.ccy === "USD" ? (p.priceUsd || 0) * fx : (p.priceCad || 0)) * (p.qty || 0);
+          weights[t] = (weights[t] || 0) + cad;
+        }
+        return await computeCorrelations({ tickers, currencies, weights });
+      })().catch(() => null),
+      (async () => {
+        const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean);
+        return await getCongressionalTradesForTickers(tickers, { maxAgeDays: 45 });
+      })().catch(() => null),
+      computeCalibration(req.stocksUser.email).catch(() => null),
     ]);
     const monitorAlerts = monitorRes?.alerts || [];
 
     // Fan out 3 parallel generations
     const N = 3;
     const settled = await Promise.allSettled(
-      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts }))
+      Array.from({ length: N }).map(() => runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, fedLiquidity, sectorRotation, correlations, congressional, calibration }))
     );
     const runs = settled.map((s) => s.status === "fulfilled" ? s.value : { error: s.reason?.message || "Failed", advice: [], sources: [] });
     const successful = runs.filter(r => !r.error);
