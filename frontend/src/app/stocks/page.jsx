@@ -1373,6 +1373,18 @@ export default function StocksAdvisorPage() {
                 updateUser(() => ({ consensusMode: v }));
                 showToast(v ? "Consensus mode ON — Update Advice will run 3×" : "Consensus mode OFF — single-run advice");
               }}
+              onChangeIntradayUpdates={(v) => {
+                updateUser(() => ({ intradayUpdatesEnabled: v }));
+                showToast(v ? "Midday updates enabled" : "Midday updates disabled");
+              }}
+              onChangeOptionsTrading={(v) => {
+                updateUser(() => ({ optionsTradingEnabled: v }));
+                showToast(v ? "Options trading enabled" : "Options trading disabled");
+              }}
+              onChangeNoTouchMode={(v) => {
+                updateUser(() => ({ noTouchMode: v }));
+                showToast(v ? "No-touch mode enabled" : "No-touch mode disabled");
+              }}
               onChangeBriefingTimes={(times) => {
                 updateUser(() => ({ briefingTimes: times }));
                 showToast(times.length === 0 ? "Briefings disabled" : `Briefing scheduled at ${times.join(", ")}`);
@@ -3727,7 +3739,7 @@ function EmailIntegrationCard({ sessionToken }) {
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -3946,7 +3958,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         onChangeTz={onChangeBriefingTz}
       />
 
-      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => { const v = !user.intradayUpdatesEnabled; updateUser(() => ({ intradayUpdatesEnabled: v })); showToast(v ? "Midday updates enabled" : "Midday updates disabled"); }}>
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangeIntradayUpdates(!user.intradayUpdatesEnabled)}>
         <h3>Midday market updates</h3>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
           <input
@@ -3964,7 +3976,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         </div>
       </div>
 
-      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => { const v = !user.optionsTradingEnabled; updateUser(() => ({ optionsTradingEnabled: v })); showToast(v ? "Options trading enabled" : "Options trading disabled"); }}>
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangeOptionsTrading(!user.optionsTradingEnabled)}>
         <h3>Options trading</h3>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
           <input
@@ -3991,7 +4003,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
         </div>
       </div>
 
-      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => { const v = !user.noTouchMode; updateUser(() => ({ noTouchMode: v })); showToast(v ? "No-touch mode enabled" : "No-touch mode disabled"); }}>
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangeNoTouchMode(!user.noTouchMode)}>
         <h3>No-touch mode</h3>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
           <input
