@@ -37,7 +37,7 @@ import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedL
 import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
-import { computeSleeveBalance, formatSleeveBalanceBlock } from "../services/stocksSleeveEnforcer.js";
+import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -609,14 +609,40 @@ function formatRecentTradesBlock(recentTrades) {
 function formatDailyPicksBlock(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   const lines = dailyPicks.map((p, i) => {
-    return `Pick ${i + 1}: ${p.ticker} @ $${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · score ${p.deterministicScore}${p.setupName ? ` · setup: ${p.setupName}` : ""}${p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : ""}\n    · ${p.rationale}`;
+    const sleeveTag = classifyPosition({ ticker: p.ticker });
+    return `Pick ${i + 1} [sleeve=${sleeveTag}]: ${p.ticker} @ $${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · score ${p.deterministicScore}${p.setupName ? ` · setup: ${p.setupName}` : ""}${p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : ""}\n    · ${p.rationale}`;
   });
-  return `\nTODAY'S ${dailyPicks.length} SWING-TRADE PICKS (deterministic composite — must appear in briefing under a "## 🎯 Today's Swing-Trade Picks" section, one narrative paragraph per pick, and MUST appear in the trailing <RECS> block):
+  return `\nTODAY'S ${dailyPicks.length} SWING-TRADE PICKS (deterministic composite, sleeve-tagged — must appear in briefing under a "## 🎯 Today's Swing-Trade Picks" section, one narrative paragraph per pick, and MUST appear in the trailing <RECS> block):
 ${lines.join("\n")}
 `;
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null) {
+// Top Discovery candidates — sourcing pool for the SPEC sleeve in
+// section 7. These are the picks that survived the full high-conviction
+// pipeline (deterministic composite → AI thesis → adversarial verify →
+// chart vision). Sleeve-tagged so the AI knows which fit spec vs swing.
+function formatDiscoveryPoolBlock(discoveryPool) {
+  if (!Array.isArray(discoveryPool) || discoveryPool.length === 0) return "";
+  const enriched = discoveryPool.map((c) => ({ ...c, sleeve: classifyPosition({ ticker: c.ticker }) }));
+  const spec = enriched.filter((c) => c.sleeve === "spec").slice(0, 6);
+  const swing = enriched.filter((c) => c.sleeve === "swing").slice(0, 4);
+  if (spec.length === 0 && swing.length === 0) return "";
+  const line = (c) => `  ${c.ticker} [${c.sleeve}] · score ${c.score}${c.multiFactor?.riskRating ? ` · ${c.multiFactor.riskRating}` : ""}${c.priceAtDiscovery ? ` · disc $${c.priceAtDiscovery} ${c.currencyAtDiscovery || "USD"}` : ""}${c.multiFactor?.projection?.entryZone ? ` · entry zone ${c.multiFactor.projection.entryZone}` : ""}${c.multiFactor?.projection?.target ? ` · target $${c.multiFactor.projection.target}` : ""}${c.multiFactor?.projection?.stop ? ` · stop $${c.multiFactor.projection.stop}` : ""}${c.thesis?.bullCase ? ` · "${String(c.thesis.bullCase).slice(0, 140)}"` : ""}`;
+  const lines = [
+    `\nDISCOVERY POOL (last 45d, score ≥ 60, unowned — pre-vetted candidates for sections 7/8):`,
+  ];
+  if (spec.length > 0) {
+    lines.push(`  ${spec.length} SPEC-sleeve candidates (use ONLY these for section 7 aggressive-new-ideas when SPEC sleeve has room):`);
+    lines.push(...spec.map(line));
+  }
+  if (swing.length > 0) {
+    lines.push(`  ${swing.length} SWING-sleeve candidates (use these to supplement Test A daily picks in section 8 when the top daily pick doesn't fit SWING):`);
+    lines.push(...swing.map(line));
+  }
+  return lines.join("\n");
+}
+
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -856,6 +882,7 @@ ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
 ${formatRecentTradesBlock(recentTrades)}
 ${formatDailyPicksBlock(dailyPicks)}
+${formatDiscoveryPoolBlock(discoveryPool)}
 ${formatSectorRotationBlock(sectorRotation)}
 ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
@@ -896,8 +923,8 @@ Write a markdown briefing with these sections:
 4. **Today's one action** — single trade, all four levels (Entry/Target/Stop/Horizon), plus the specific account (Non-Spousal / RRSP / TFSA) per the Canadian tax notes above. This is the SINGLE highest-conviction trade for today. Section 5 must NOT repeat this trade — see rule below.
 ${cashSection}
 6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
-7. **Aggressive new ideas** — 1-2 unowned names with price targets. For each, suggest the optimal account based on Canadian tax treatment (e.g., "US growth name → TFSA"; "Canadian dividend payer → Non-Spousal for the dividend tax credit").
-8. **🎯 Today's Swing-Trade Picks** — REQUIRED section (heading must be exactly "## 🎯 Today's Swing-Trade Picks"). Use the TODAY'S SWING-TRADE PICKS block above as the SOURCE OF TRUTH. Write ONE narrative paragraph per pick that: (a) quotes the exact entry/target/stop from the block verbatim (they are deterministic and already validated), (b) explains the setup name + score in plain English, (c) says how this fits the 10-day horizon. Each pick MUST also appear as its own entry in the trailing <RECS> block with action="BUY". Do NOT invent your own picks here — use the ones listed in the source block. If the block is empty (no picks passed threshold today), write "No deterministic swing picks passed the 40-point threshold today." and skip the section entirely.
+7. **Aggressive new ideas (SPEC sleeve)** — 1-2 unowned names with price targets, SOURCED EXCLUSIVELY from the DISCOVERY POOL block's "SPEC-sleeve candidates" list. Those candidates have already cleared the full high-conviction pipeline (deterministic composite → AI thesis → adversarial verify → chart vision), so quoting them by ticker + entry-zone + target + stop is HONEST — they're pre-vetted, not invented. Do NOT propose a name that isn't in the discovery pool. If the SLEEVE BALANCE block shows SPEC OVER LIMIT (🚨), skip this section entirely — the cap is the point. If the discovery pool has zero spec candidates, write "No pre-vetted SPEC candidates today — pass" and skip. For each pick you DO surface: quote entry/target/stop verbatim, cite the sleeve tag, and suggest the optimal account per Canadian tax treatment.
+8. **🎯 Today's Swing-Trade Picks (SWING sleeve)** — REQUIRED section (heading must be exactly "## 🎯 Today's Swing-Trade Picks"). PRIMARY source: the TODAY'S SWING-TRADE PICKS block (Test A deterministic engine). SECONDARY source: any SWING-sleeve candidates listed in the DISCOVERY POOL block (use them to supplement when Test A produced fewer than 2 swing-classified picks, or when the top Test A pick is spec-classified and thus can't fit the swing sleeve). Write ONE narrative paragraph per pick: quote entry/target/stop verbatim, explain setup + score in plain English, note the 10-day horizon. Every pick MUST also appear in the trailing <RECS> block with action="BUY". Do NOT invent picks that appear in neither source pool. If both pools are empty or all picks are spec-classified and SPEC sleeve is full, write "No SWING-sleeve picks today — Test A produced none and SPEC candidates blocked by sleeve cap" and skip the section entirely.
 
 Length: 700-1100 words. Date-stamp the top.
 
@@ -1086,7 +1113,7 @@ export async function generateBriefing(profile) {
     : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -1139,6 +1166,21 @@ export async function generateBriefing(profile) {
       const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean);
       return await getCongressionalTradesForTickers(tickers, { maxAgeDays: 45 });
     })().catch((e) => { console.warn("[congressional] warn:", e?.message); return null; }),
+    // Top Discovery candidates from the last 45 days (score ≥ 60,
+    // excluding already-held tickers). Feeds the SPEC-sleeve source
+    // pool in section 7 — "aggressive new ideas" now pulls from
+    // adversarially-verified Discovery picks instead of the AI
+    // inventing them cold.
+    (async () => {
+      const heldSet = new Set((profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")));
+      const since = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
+      const cands = await StocksDiscoveryCandidate.find({
+        email: profile.email,
+        scanDate: { $gte: since },
+        score: { $gte: 60 },
+      }).sort({ score: -1, scanDate: -1 }).limit(20).lean();
+      return (cands || []).filter((c) => !heldSet.has(String(c.ticker || "").toUpperCase().replace(/\..*$/, "")));
+    })().catch((e) => { console.warn("[discoveryPool] warn:", e?.message); return []; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   // Idempotently persist daily picks. The daily-pick cron may have already
@@ -1173,7 +1215,7 @@ export async function generateBriefing(profile) {
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
-  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional);
+  const prompt = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool);
 
   // Anthropic call with retry-on-truncation. When the response stops
   // because we hit max_tokens (rather than because the model finished),
