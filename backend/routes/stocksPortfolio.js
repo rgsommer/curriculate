@@ -200,6 +200,9 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.briefingTz === "string" && body.briefingTz.length > 0 && body.briefingTz.length < 64) {
     out.briefingTz = body.briefingTz;
   }
+  if (typeof body.intradayUpdatesEnabled === "boolean") {
+    out.intradayUpdatesEnabled = body.intradayUpdatesEnabled;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }

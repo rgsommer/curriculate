@@ -241,6 +241,19 @@ const StocksPortfolioSchema = new mongoose.Schema(
       },
     },
     briefingTz: { type: String, default: "America/New_York" },
+    // Intraday market-update briefings. When on, a shorter briefing
+    // fires at 11:00 / 13:00 / 15:00 ET on trading days — but only
+    // emails when at least one action-worthy signal (position stop
+    // crossed, fresh 8-K, regime flip, Test A pick entry-zone entry)
+    // shows up. Silent when the intraday tape is quiet.
+    intradayUpdatesEnabled: { type: Boolean, default: false },
+    // Dedup keys per intraday slot (YYYY-MM-DD|HH:MM) so a re-tick
+    // inside the same minute doesn't double-send.
+    lastIntradayUpdateSentKey: { type: String, default: "" },
+    lastIntradayUpdateAt: { type: Date, default: null },
+    // Last Fed-liquidity regime observed on an intraday tick — used to
+    // detect regime flips between the morning briefing and mid-day.
+    lastIntradayRegime: { type: String, default: null },
     // Sleeve targets for the auto-enforced 80/15/5 core/swing/spec
     // structure. Editable in Settings. Percentages must sum to 100 —
     // the enforcer normalizes if they drift. Default reflects the

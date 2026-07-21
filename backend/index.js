@@ -144,6 +144,7 @@ import stocksDiscoverRouter from "./routes/stocksDiscover.js";
 import stocksReconcileRouter from "./routes/stocksReconcile.js";
 import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
+import { scheduleIntradayUpdates } from "./jobs/stocksIntradayUpdate.js";
 import { scheduleStocksAlerts } from "./jobs/stocksAlerts.js";
 import { scheduleEightKPoll } from "./jobs/stocksEightKPoll.js";
 import { scheduleDailyPickCron } from "./jobs/stocksDailyPick.js";
@@ -19477,4 +19478,5 @@ server.listen(PORT, () => {
   scheduleStocksAlerts();
   scheduleEightKPoll();
   scheduleDailyPickCron();
+  scheduleIntradayUpdates();
 })

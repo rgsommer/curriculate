@@ -3611,6 +3611,24 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
       />
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Midday market updates</h3>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={!!user.intradayUpdatesEnabled}
+            onChange={(e) => { updateUser(() => ({ intradayUpdatesEnabled: e.target.checked })); showToast(e.target.checked ? "Midday updates enabled" : "Midday updates disabled"); }}
+            style={{ marginTop: 3 }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Enable intraday tape updates (11:00 · 13:00 · 15:00 ET, weekdays)</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              A short mid-day briefing that emails you <b>only when something actionable has changed</b> since morning: a position P&amp;L stop crossed, a fresh SEC 8-K on a holding, a Fed liquidity regime flip, or a Test A pick that just entered its entry zone. Quiet tape = no email. Uses the same signal pipeline + prompt cache as the morning briefing, so per-update cost is a fraction.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Contribution goals</h3>
         <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
           Target dollar amounts to contribute to each registered account. Choose monthly (steady drip) or yearly (lump sum). Surfaces in briefings as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31). AI prioritizes filling these when new cash arrives and matches your chosen cadence.
