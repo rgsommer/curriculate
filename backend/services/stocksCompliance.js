@@ -31,6 +31,7 @@ import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import StocksPositionStopFire from "../models/StocksPositionStopFire.js";
+import StocksRecIntent from "../models/StocksRecIntent.js";
 
 const LOOKBACK_DAYS = 90;
 const TAKE_WINDOW_DAYS = 5;
@@ -50,7 +51,7 @@ function daysBetween(a, b) {
 async function measureTakeRate(email) {
   const cutoff = since(LOOKBACK_DAYS);
 
-  const [buyRecs, dailyPicks, trades] = await Promise.all([
+  const [buyRecs, dailyPicks, trades, intents] = await Promise.all([
     StocksAdviceRec.find({ email, action: "BUY", generatedAt: { $gte: cutoff } }).lean(),
     StocksDailyPick.find({ email, pickDate: { $gte: cutoff } }).lean(),
     StocksTradeJournal.find({
@@ -58,7 +59,13 @@ async function measureTakeRate(email) {
       executedAt: { $gte: cutoff },
       "legs.side": "BUY",
     }).lean(),
+    // User-stated intents on any rec — used to split "consciously
+    // skipped" (a decision) from "not yet acted on" (drift). Skipping
+    // ISN'T a compliance failure — it's a data point.
+    StocksRecIntent.find({ email, markedAt: { $gte: cutoff } }).lean(),
   ]);
+  const intentByRecId = new Map();
+  for (const i of intents) intentByRecId.set(String(i.recId), i.intent);
 
   // A rec is "taken" if there's a BUY leg on the same ticker within
   // TAKE_WINDOW_DAYS of the rec's generatedAt.
@@ -72,17 +79,28 @@ async function measureTakeRate(email) {
     }
   }
 
+  // Three-way classification per rec:
+  //   • taken       — a broker BUY leg on the same ticker within
+  //                   TAKE_WINDOW_DAYS. Broker truth wins over intent.
+  //   • skipped     — user marked intent="skipped" AND no matching leg.
+  //   • unmarked    — everything else. These are the ones drifting.
+  // "Take rate" excludes skipped from the denominator, since skipping
+  // consciously isn't a compliance failure.
   const check = (items, dateField) => {
-    let taken = 0;
+    let taken = 0, skipped = 0, unmarked = 0;
     for (const it of items) {
       const t = String(it.ticker || "").toUpperCase().replace(/\..*$/, "");
       const legs = buyLegsByTicker.get(t) || [];
       const recDate = new Date(it[dateField]);
-      if (legs.some((legDate) =>
+      const hasLeg = legs.some((legDate) =>
         legDate >= recDate && daysBetween(legDate, recDate) <= TAKE_WINDOW_DAYS
-      )) taken++;
+      );
+      if (hasLeg) { taken++; continue; }
+      const intent = intentByRecId.get(String(it._id));
+      if (intent === "skipped") skipped++;
+      else unmarked++;
     }
-    return { total: items.length, taken };
+    return { total: items.length, taken, skipped, unmarked };
   };
 
   const aiRecStats = check(buyRecs, "generatedAt");
@@ -90,6 +108,9 @@ async function measureTakeRate(email) {
 
   const totalRecs = aiRecStats.total + pickStats.total;
   const totalTaken = aiRecStats.taken + pickStats.taken;
+  const totalSkipped = aiRecStats.skipped + pickStats.skipped;
+  const totalUnmarked = aiRecStats.unmarked + pickStats.unmarked;
+  const decidedDenom = totalTaken + totalUnmarked; // exclude conscious skips
 
   return {
     lookbackDays: LOOKBACK_DAYS,
@@ -99,7 +120,14 @@ async function measureTakeRate(email) {
     dailyPicksTaken: pickStats.taken,
     combinedRecs: totalRecs,
     combinedTaken: totalTaken,
-    takeRatePct: totalRecs > 0 ? (totalTaken / totalRecs) * 100 : null,
+    combinedSkipped: totalSkipped,
+    combinedUnmarked: totalUnmarked,
+    // Take rate over decided-only denominator (broker fills + drifts,
+    // excluding conscious skips). Falls back to raw ratio when we have
+    // no intents so the metric is still populated on cold-start.
+    takeRatePct: decidedDenom > 0 ? (totalTaken / decidedDenom) * 100
+      : (totalRecs > 0 ? (totalTaken / totalRecs) * 100 : null),
+    takeRateRawPct: totalRecs > 0 ? (totalTaken / totalRecs) * 100 : null,
   };
 }
 
@@ -218,7 +246,10 @@ export function formatComplianceBlock(cmp, { weeklyHeartbeat = false } = {}) {
     const rate = cmp.takeRate.takeRatePct != null
       ? `${cmp.takeRate.takeRatePct.toFixed(0)}%`
       : "n/a";
-    lines.push(`  Take rate: ${cmp.takeRate.combinedTaken}/${cmp.takeRate.combinedRecs} recs actioned within ${TAKE_WINDOW_DAYS} trading days (${rate})`);
+    const skipped = cmp.takeRate.combinedSkipped || 0;
+    const unmarked = cmp.takeRate.combinedUnmarked || 0;
+    lines.push(`  Take rate: ${cmp.takeRate.combinedTaken}/${cmp.takeRate.combinedTaken + unmarked} decided recs actioned within ${TAKE_WINDOW_DAYS} trading days (${rate})`);
+    lines.push(`    Breakdown: ${cmp.takeRate.combinedTaken} taken · ${skipped} consciously skipped · ${unmarked} unmarked (drift)`);
     lines.push(`    AI BUY recs: ${cmp.takeRate.aiBuyRecsTaken}/${cmp.takeRate.aiBuyRecs} · Test A daily picks: ${cmp.takeRate.dailyPicksTaken}/${cmp.takeRate.dailyPicks}`);
   }
 

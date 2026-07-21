@@ -2535,7 +2535,67 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
   // app surface the same content as the latest email briefing (cron or
   // on-demand) without spending a fresh Anthropic call.
   const [snapshotAdvice, setSnapshotAdvice] = useState(null); // { generatedAt, source, advice, markdown }
+  // Persisted per-rec intent map (recIdStr → "executed" | "skipped").
+  // Independent from the trade journal — this is what YOU said you meant
+  // to do; the poller / trade journal record what actually happened.
+  const [intentMap, setIntentMap] = useState({});
   const ruleAdvice = useMemo(() => generateAdvice(user), [user]);
+
+  // Load user-stated intents on mount / when session changes. Silent on
+  // failure — the toggles just render as "unmarked" if the fetch drops.
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/rec-intents`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled || !Array.isArray(j.intents)) return;
+        const m = {};
+        for (const it of j.intents) m[String(it.recId)] = it.intent;
+        setIntentMap(m);
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
+  // Set (or clear) an intent for a rec. Optimistically updates local
+  // state, POSTs to backend, rolls back on error.
+  const setIntent = async (recId, recType, nextIntent) => {
+    if (!recId || !sessionToken) return;
+    const prev = intentMap[recId] || null;
+    setIntentMap(m => {
+      const next = { ...m };
+      if (nextIntent == null) delete next[recId];
+      else next[recId] = nextIntent;
+      return next;
+    });
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/rec-intent`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          Authorization: `Bearer ${sessionToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ recId, recType, intent: nextIntent }),
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+    } catch (e) {
+      // rollback — the visible checkbox flip reverting IS the error signal
+      setIntentMap(m => {
+        const next = { ...m };
+        if (prev == null) delete next[recId];
+        else next[recId] = prev;
+        return next;
+      });
+      console.warn("[rec-intent] save failed:", e?.message);
+    }
+  };
 
   useEffect(() => {
     if (!sessionToken) return;
@@ -2822,6 +2882,8 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                   executedRecKeys={executedRecKeys}
                   recKey={recKey}
                   pnlMap={pnlMap}
+                  intentMap={intentMap}
+                  onSetIntent={(rec, nextIntent) => setIntent(rec.recId, "advice", nextIntent)}
                 />
                 {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{renderInlineBold(parsed.outro)}</p>}
               </>
@@ -2858,7 +2920,7 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
                 {hasRecs ? (
                   <>
                     {parsed.intro && renderAdviceBody(parsed.intro, priceLookup, recLookup)}
-                    <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} executedRecKeys={executedRecKeys} recKey={recKey} pnlMap={pnlMap} />
+                    <RecsTable recs={parsed.recs} onExecuteRec={onExecuteRec} executedRecKeys={executedRecKeys} recKey={recKey} pnlMap={pnlMap} intentMap={intentMap} onSetIntent={(rec, nextIntent) => setIntent(rec.recId, "advice", nextIntent)} />
                     {parsed.outro && <p style={{ marginTop: 10, fontStyle: "italic", color: "var(--sa-text-2)" }}>{renderInlineBold(parsed.outro)}</p>}
                   </>
                 ) : (
@@ -4472,7 +4534,35 @@ function PositionModal({ user, idx, onClose, onSave, onDelete }) {
 // table inside an advice card body. Each row has an Execute button that
 // opens the trade modal pre-populated with that rec's details.
 // =============================================================================
-function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey, pnlMap }) {
+// Cycles a rec's user-stated intent through: none → executed → skipped → none.
+// Rendered as a compact chip; independent from the trade-journal execution.
+function RecIntentChip({ intent, onCycle, disabled }) {
+  const styles = intent === "executed"
+    ? { bg: "#dcfce7", fg: "#14532d", label: "✓ Executed", title: "You marked this rec as executed. Click to switch to Skipped." }
+    : intent === "skipped"
+      ? { bg: "#f3f4f6", fg: "#374151", label: "− Skipped", title: "You marked this rec as consciously skipped. Click to clear." }
+      : { bg: "transparent", fg: "var(--sa-muted)", label: "◯ mark", title: "Click to mark this rec Executed (intent — independent from the trade journal / poller)." };
+  const nextIntent = intent === "executed" ? "skipped" : intent === "skipped" ? null : "executed";
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onCycle(nextIntent)}
+      title={styles.title}
+      style={{
+        display: "inline-flex", alignItems: "center",
+        padding: "3px 8px", borderRadius: 999,
+        fontSize: 10.5, fontWeight: 600, textTransform: "none",
+        border: intent ? "1px solid transparent" : "1px dashed var(--sa-border)",
+        background: styles.bg, color: styles.fg,
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.4 : 1,
+      }}
+    >{styles.label}</button>
+  );
+}
+
+function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey, pnlMap, intentMap, onSetIntent }) {
   return (
     <div style={{
       border: "1px solid var(--sa-border)", borderRadius: 10,
@@ -4545,22 +4635,30 @@ function RecsTable({ recs, onExecuteRec, executedRecKeys, recKey, pnlMap }) {
                 <td style={recCell}>{r.horizonText || "—"}</td>
                 <td style={recCell}>{r.usesText || "—"}</td>
                 <td style={recCell}>
-                  {isExecuted ? (
-                    <span style={{
-                      display: "inline-flex", alignItems: "center", gap: 4,
-                      padding: "5px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
-                      background: "var(--sa-green)", color: "#fff",
-                    }}>
-                      ✓ Executed
-                    </span>
-                  ) : onExecuteRec && r.side !== "HOLD" ? (
-                    <button
-                      className="sa-btn"
-                      style={{ padding: "5px 12px", fontSize: 12 }}
-                      onClick={() => onExecuteRec(r)}
-                      title="Open the Record Trade modal with this rec pre-filled"
-                    >Execute →</button>
-                  ) : null}
+                  <div style={{ display: "inline-flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                    {r.recId && onSetIntent && r.side !== "HOLD" && (
+                      <RecIntentChip
+                        intent={intentMap?.[r.recId] || null}
+                        onCycle={(next) => onSetIntent(r, next)}
+                      />
+                    )}
+                    {isExecuted ? (
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: 4,
+                        padding: "5px 10px", borderRadius: 6, fontSize: 12, fontWeight: 600,
+                        background: "var(--sa-green)", color: "#fff",
+                      }}>
+                        ✓ Recorded
+                      </span>
+                    ) : onExecuteRec && r.side !== "HOLD" ? (
+                      <button
+                        className="sa-btn"
+                        style={{ padding: "5px 12px", fontSize: 12 }}
+                        onClick={() => onExecuteRec(r)}
+                        title="Open the Record Trade modal with this rec pre-filled"
+                      >Record →</button>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             );

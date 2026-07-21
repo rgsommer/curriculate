@@ -27,6 +27,7 @@ import { computeTwrr, annualizeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns } from "../services/stocksBenchmark.js";
 import { computeCompliance } from "../services/stocksCompliance.js";
 import { computeAttribution } from "../services/stocksAttribution.js";
+import StocksRecIntent from "../models/StocksRecIntent.js";
 
 const router = express.Router();
 
@@ -669,6 +670,60 @@ router.get("/attribution", requireStocksAuth, async (req, res) => {
     res.json({ ok: true, attribution: att });
   } catch (err) {
     console.error("stocks-portfolio attribution error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/rec-intents
+// Returns the user's marked intent per rec (executed / skipped) so the
+// UI can render checkbox state. Optional `since` filter for freshness.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/rec-intents", requireStocksAuth, async (req, res) => {
+  try {
+    const since = req.query.since ? new Date(req.query.since) : new Date(Date.now() - 90 * 86400000);
+    const rows = await StocksRecIntent.find({
+      email: req.stocksUser.email,
+      markedAt: { $gte: since },
+    }).lean();
+    res.json({ ok: true, intents: rows });
+  } catch (err) {
+    console.error("stocks-portfolio rec-intents error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/rec-intent
+// Upsert an intent for a rec. Body: { recType, recId, intent, notes? }.
+// Passing intent=null clears the mark. Never gates or affects the trade
+// journal — intents and executions are independent stores.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/rec-intent", requireStocksAuth, async (req, res) => {
+  try {
+    const { recType, recId, intent, notes } = req.body || {};
+    if (!["advice", "daily-pick"].includes(recType)) {
+      return res.status(400).json({ error: "recType must be 'advice' or 'daily-pick'" });
+    }
+    if (!recId || typeof recId !== "string" || !/^[a-f0-9]{24}$/i.test(recId)) {
+      return res.status(400).json({ error: "recId must be a 24-char hex ObjectId" });
+    }
+    if (intent != null && !["executed", "skipped"].includes(intent)) {
+      return res.status(400).json({ error: "intent must be 'executed', 'skipped', or null (to clear)" });
+    }
+    const filter = { email: req.stocksUser.email, recType, recId };
+    if (intent == null) {
+      await StocksRecIntent.deleteOne(filter);
+      return res.json({ ok: true, cleared: true });
+    }
+    const doc = await StocksRecIntent.findOneAndUpdate(
+      filter,
+      { $set: { intent, markedAt: new Date(), notes: notes ? String(notes).slice(0, 500) : "" } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ ok: true, intent: doc });
+  } catch (err) {
+    console.error("stocks-portfolio rec-intent error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });
