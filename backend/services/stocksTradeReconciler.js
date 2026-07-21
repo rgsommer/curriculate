@@ -14,6 +14,7 @@
 
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
+import StocksTradeJournal from "../models/StocksTradeJournal.js";
 
 const REC_LOOKBACK_DAYS = 30;
 const PRICE_MATCH_TOLERANCE = 0.05; // ±5%
@@ -102,6 +103,32 @@ async function findMatchingOpenRec(email, alert) {
   return null;
 }
 
+// For an ambiguous SELL (multiple accounts hold the ticker, none matches
+// alert qty exactly), find the account with the most recent BUY of the
+// same base ticker within the last 90 days. That's where the tax lots
+// being sold most likely came from — swing traders sell OUT of the same
+// account they bought INTO. Returns { id, name } or null.
+async function inferAccountFromRecentBuys(email, profile, ticker) {
+  const base = baseTicker(ticker);
+  const cutoff = new Date(Date.now() - 90 * 86400000);
+  const trades = await StocksTradeJournal.find({
+    email,
+    executedAt: { $gte: cutoff },
+    "legs.side": "BUY",
+    account: { $ne: "" },
+  }).sort({ executedAt: -1 }).lean();
+  for (const t of trades) {
+    const hasTicker = (t.legs || []).some(leg =>
+      leg.side === "BUY" && baseTicker(leg.ticker) === base
+    );
+    if (hasTicker && t.account) {
+      const acct = (profile.accounts || []).find(a => a.id === t.account);
+      if (acct) return { id: acct.id, name: acct.name, recentBuyAt: t.executedAt };
+    }
+  }
+  return null;
+}
+
 // Build the reconciliation plan. Never touches the DB — caller applies.
 export async function planReconciliation({ email, profile, alert, occurredAt }) {
   if (!alert) return null;
@@ -116,14 +143,29 @@ export async function planReconciliation({ email, profile, alert, occurredAt }) 
     } else if (holders.length === 0) {
       accountReason = "no account holds this ticker — needs review (short? typo? outside portfolio?)";
     } else {
-      // Multiple accounts hold it. Auto-match if the alert qty matches
-      // exactly ONE account's holding; else needs review.
+      // Multiple accounts hold it. Try three fallbacks in order:
+      //   1. Exactly one holds the alert qty → that account
+      //   2. Only one has enough shares to cover the alert → that account
+      //   3. Look at recent BUY history — the account with the most
+      //      recent BUY on this ticker is where the tax lots being sold
+      //      most likely originated (swing pattern: SELL out of the same
+      //      account we bought INTO)
       const exact = holders.filter(h => h.sharesHeld === alert.qty);
+      const enough = holders.filter(h => h.sharesHeld >= alert.qty);
       if (exact.length === 1) {
         account = { id: exact[0].id, name: exact[0].name };
         accountReason = `only ${exact[0].name} holds exactly ${alert.qty} sh`;
+      } else if (enough.length === 1) {
+        account = { id: enough[0].id, name: enough[0].name };
+        accountReason = `only ${enough[0].name} has enough (${enough[0].sharesHeld} sh) to cover the ${alert.qty}-sh SELL`;
       } else {
-        accountReason = `${holders.length} accounts hold this ticker (${holders.map(h => `${h.name}=${h.sharesHeld}`).join(", ")}) — needs review`;
+        const buyMatch = await inferAccountFromRecentBuys(email, profile, alert.ticker).catch(() => null);
+        if (buyMatch && holders.some(h => h.id === buyMatch.id)) {
+          account = { id: buyMatch.id, name: buyMatch.name };
+          accountReason = `most recent BUY of ${alert.ticker} was in ${buyMatch.name} on ${new Date(buyMatch.recentBuyAt).toISOString().slice(0, 10)} — swing exit`;
+        } else {
+          accountReason = `${holders.length} accounts hold this ticker (${holders.map(h => `${h.name}=${h.sharesHeld}`).join(", ")}) — needs review`;
+        }
       }
     }
   } else if (alert.action === "BUY") {
