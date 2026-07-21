@@ -546,7 +546,7 @@ Required addition per rec body (EVERY BUY/SELL/TRIM rec, no exceptions):
   Order ticket: LIMIT BUY/SELL <N> <TICKER> @ $<limit> <CCY> <max/min>, Day/GTC.
   Order timing: pre-market | at-open | post-10am | gtc.
   After fill: GTC STOP-LIMIT SELL <N> <TICKER>, stop $<stop> / limit $<stop-1%> <CCY>.
-  Account: <Non-Spousal | RRSP | TFSA | RESP | FHSA> · uses $<X> of $<Y> <CCY> available · leaves $<Z>.
+  Account: <Non-Spousal | RRSP | TFSA | RESP | FHSA> · uses $<X> of $<Y> pro-forma <CCY> · leaves $<Z>.
 
 Order timing guidance (default to "post-10am" unless the setup calls for something else):
   pre-market  → Only when the thesis is a gap-and-go / earnings-morning move and a missed open kills the setup.
@@ -555,7 +555,19 @@ Order timing guidance (default to "post-10am" unless the setup calls for somethi
   gtc         → Use for pullback / mean-reversion setups where the level may not trigger today. Order works until filled or cancelled.
 Cite the choice in the rec's narrative rationale ONE short sentence (e.g. "Timing: post-10am — spreads at open are 3× normal on this small-cap; letting the auction clear protects the entry price.").
 
-The "Account:" line is MANDATORY. If you omit it the rec is invalid. The account named MUST be one that holds enough cash in the trade's currency to cover the size you proposed — verify against the per-account cash inventory below before writing the rec.
+The "Account:" line is MANDATORY. If you omit it the rec is invalid. The account named MUST have enough PRO-FORMA cash in the trade's currency to cover the size you proposed — see the CASH PRO-FORMA rule below for how to compute pro-forma. Verify against the per-account cash inventory + your own SELL recs for the same account/currency before writing the rec.
+
+CASH PRO-FORMA (mandatory — apply this before sizing any BUY rec):
+- Treat every SELL / TRIM you're recommending as if it EXECUTES and releases proceeds to the account it's coming from, in the trade's currency (US-listed → USD bucket, TSX → CAD bucket).
+- For each (account, currency) pair, compute a running pro-forma balance in this order:
+    1. Start with the current balance from the per-account cash inventory below.
+    2. Add: sum of gross proceeds from your recommended SELL/TRIM recs in that (account, currency).
+    3. Subtract: sum of gross cost from your recommended BUY recs already sized in that (account, currency).
+- Every BUY rec's "Account:" line must reference PRO-FORMA cash — the "uses $X of $Y pro-forma <CCY>" figure is that running balance right BEFORE this BUY is sized, and "leaves $Z" is the balance right AFTER.
+- In the BUY's Rationale (or a dedicated "Cash source:" line), explicitly cite what makes the cash available: "Cash source: $8,200 CAD current + $3,500 CAD from ENB SELL rec above". If a BUY relies entirely on current cash (no SELL prerequisite), say so: "Cash source: existing $Y CAD balance."
+- If the pro-forma balance would go negative after all recommended trades in ANY (account, currency), DOWNSIZE BUYs (or add a further TRIM) so nothing lands short. Never propose a BUY that exceeds pro-forma cash — the account will refuse to settle it.
+- SELL proceeds fund BUYs ONLY WITHIN THE SAME ACCOUNT + CURRENCY. A SELL in RRSP-CAD does not fund a BUY in Non-Spousal-USD. If the user needs cross-account cash movement, propose an explicit WITHDRAW→DEPOSIT transfer rec (both legs recorded).
+- Order the recs in the narrative so that same-account SELLs appear BEFORE the BUYs whose pro-forma cash they enable — a reader scanning the briefing should see the source of funds before the destination.
 
 MANDATORY MACHINE-READABLE REC BLOCK — at the very end of your briefing, emit an exact block for automated parsing. Format:
 
@@ -882,10 +894,10 @@ ${contributionGoalsBlock}${plannedWithdrawalsBlock}${watchListBlock}
 
 ACCOUNT-SOURCE RULE (mandatory):
 - Every BUY rec names ONE source account (Non-Spousal / RRSP / TFSA).
-- The trade size MUST fit within that account's cash balance in the trade's currency.
-- NO cross-account transfers, NO splits across multiple accounts.
-- If the tax-optimal account is short on cash, either: (a) downsize to fit, (b) use a different account and note the tax tradeoff, or (c) recommend depositing first.
-- Every BUY rec includes a "Source: <account> · uses $X of $Y available" line and a "Cost note: commission ~$${commission.toFixed(2)}, FX: <impact>" line.
+- The trade size MUST fit within that account's PRO-FORMA cash — the current balance PLUS proceeds from any SELL/TRIM recs you're recommending in the SAME (account, currency), MINUS any prior BUYs you've already sized in that same bucket in this briefing. See the CASH PRO-FORMA rule in the system prompt for the computation.
+- NO cross-account transfers implicit in a rec; a transfer must be its own explicit WITHDRAW→DEPOSIT rec pair (both legs recorded).
+- If the tax-optimal account is short on pro-forma cash even after your recommended SELLs, either: (a) downsize to fit, (b) recommend an ADDITIONAL trim in that account first, (c) use a different account and note the tax tradeoff, or (d) recommend depositing first.
+- Every BUY rec includes a "Source: <account> · uses $X of $Y pro-forma available" line, a "Cash source: existing $A + $B from <TICKER> SELL rec above" line when SELL proceeds are being relied on, and a "Cost note: commission ~$${commission.toFixed(2)}, FX: <impact>" line.
 `;
 
   const alertsBlock = monitorAlerts.length
@@ -916,7 +928,7 @@ ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join
 
   // Section 5 changes based on whether cash is on hand
   const cashSection = hasCash
-    ? `5. **💵 Cash deployment — PER ACCOUNT** — REQUIRED. Generate EXACTLY ONE sub-section per account below that has free cash. Do NOT emit two separate "Cash deployment — RRSP" blocks (one for ENB, one for RY) — combine them into a SINGLE RRSP block with multiple recs inside it. Each account's recs must fit that account's own cash bucket — no cross-account pooling.
+    ? `5. **💵 Cash deployment — PER ACCOUNT** — REQUIRED. Generate EXACTLY ONE sub-section per account below that has free cash OR whose PRO-FORMA cash (current + proceeds from your recommended SELL/TRIM recs in the same account) is > $0. Do NOT emit two separate "Cash deployment — RRSP" blocks (one for ENB, one for RY) — combine them into a SINGLE RRSP block with multiple recs inside it. Each account's recs must fit that account's own PRO-FORMA cash bucket — no cross-account pooling. When a BUY in this section is funded partly or wholly by a SELL rec above, cite the source explicitly: "Uses $2,244 of $2,300 CAD pro-forma (current $500 + $1,800 from ENB SELL rec above)."
 
    Accounts with cash to deploy (EMIT ONE BLOCK FOR EACH, no more, no fewer):
 ${fundedAccountLines}
@@ -937,7 +949,7 @@ ${fundedAccountLines}
    - No fractional shares; do not exceed that account's cash.
    - If an account has very small cash (<$200 in either currency), either say "wait for more cash" or suggest depositing more — don't force a tiny trade that's all commission.
    - Tilt AWAY from current concentration (DJT/DJTWW/RUM) regardless of which account you're deploying to.`
-    : `5. **💵 Cash deployment** — He has $0 cash across all accounts. Either (a) skip this section, or (b) for ONE specific account, recommend a TRIM that would FREE UP cash for redeployment in THAT same account, with both legs spec'd in the rec format and the Account tag.`;
+    : `5. **💵 Cash deployment** — He has $0 cash across all accounts. Options: (a) skip this section, (b) for ONE specific account, recommend a TRIM/SELL first and then a BUY sized against the trim's PRO-FORMA proceeds in the SAME account/currency (both legs spec'd, SELL rec appears before the BUY, "Cash source: $X from <TICKER> SELL above" cited on the BUY), or (c) recommend a deposit first. Cross-account pooling still forbidden.`;
 
   const goalsBlock = profile.goals && profile.goals.trim().length > 0
     ? `\n🎯 USER GOALS & CONSTRAINTS (read FIRST — every rec must be coherent with these):\n${profile.goals.trim()}\n\nHow to factor goals into recs:\n- Recommendations conflicting with goals must be REJECTED or modified — don't silently override.\n- If a goal implies a withdrawal date, size positions and stops to make cash available by that date.\n- If a goal designates capital as long-term, don't redeploy it for short-horizon trades.\n- If a goal sets an account limit ("RRSP limit X"), prioritize filling that account when new cash is available.\n- Surface goal/opportunity tradeoffs explicitly; reference goals by name in rec rationale.\n`
