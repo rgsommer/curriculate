@@ -3587,9 +3587,17 @@ function EmailIntegrationCard({ sessionToken }) {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `${r.status}`);
-      const msg = j.appliedCount === 0 && j.failedCount === 0
-        ? "No trades needed backfill — nothing to apply."
-        : `Backfill: ${j.appliedCount} applied · ${j.failedCount} failed${j.failedCount ? " (see server logs for detail — likely over-sell against current holdings)" : ""}`;
+      let msg;
+      if (j.appliedCount === 0 && j.failedCount === 0) {
+        const d = j.diagnostic;
+        if (d) {
+          msg = `${d.interpretation} · Journal: ${d.totalInJournal} total · ${d.cibcEmailTrades} poller-sourced (${d.cibcEmailAlreadyApplied} already applied, ${d.cibcEmailAutoStillUnapplied} auto/unapplied, ${d.cibcEmailNeedsReview} needs-review) · ${d.tradesWithNoBrokerSource} manual`;
+        } else {
+          msg = "No trades needed backfill — nothing to apply.";
+        }
+      } else {
+        msg = `Backfill: ${j.appliedCount} applied · ${j.failedCount} failed${j.failedCount ? " (see server logs — likely over-sell against current holdings)" : ""}`;
+      }
       setBanner({ kind: j.failedCount > 0 ? "err" : "ok", msg });
       await load();
     } catch (e) {

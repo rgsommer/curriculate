@@ -892,6 +892,54 @@ router.post("/email-integration/backfill-positions", requireStocksAuth, async (r
       brokerReconcileStatus: "auto",
     }).sort({ executedAt: 1 }).lean();
 
+    // If no candidates, compute a diagnostic so the caller can see WHY
+    // backfill is a no-op. Three common shapes:
+    //   1. Journal has zero poller trades → poller never ingested; probably
+    //      all these trades came from Record Trade modal (already applied
+    //      inline by routes/stocksTrade.js). Backfill correctly does nothing.
+    //   2. Journal has poller trades but all positionApplied=true → poller
+    //      landed AFTER the position-update fix. Backfill correctly does nothing.
+    //   3. Journal has poller trades with positionApplied=false BUT status is
+    //      "needs-review" → those need manual account/rec resolution first.
+    const shapedDiagnostic = candidates.length === 0 ? await (async () => {
+      const [total, cibcAll, cibcApplied, cibcAutoUnapplied, cibcNeedsReview, noSource] = await Promise.all([
+        StocksTradeJournal.countDocuments({ email }),
+        StocksTradeJournal.countDocuments({ email, brokerReconcileSource: "cibc-email" }),
+        StocksTradeJournal.countDocuments({ email, brokerReconcileSource: "cibc-email", positionApplied: true }),
+        StocksTradeJournal.countDocuments({ email, brokerReconcileSource: "cibc-email", positionApplied: { $ne: true }, brokerReconcileStatus: "auto" }),
+        StocksTradeJournal.countDocuments({ email, brokerReconcileSource: "cibc-email", brokerReconcileStatus: "needs-review" }),
+        StocksTradeJournal.countDocuments({ email, $or: [{ brokerReconcileSource: null }, { brokerReconcileSource: { $exists: false } }] }),
+      ]);
+      // If poller trades exist that are needs-review + unapplied, list a
+      // few so the caller can act on them via Trades tab.
+      const needsReviewSamples = cibcNeedsReview > 0 ? await StocksTradeJournal.find({
+        email, brokerReconcileSource: "cibc-email", brokerReconcileStatus: "needs-review",
+        positionApplied: { $ne: true },
+      }).sort({ executedAt: -1 }).limit(5).lean() : [];
+      return {
+        totalInJournal: total,
+        cibcEmailTrades: cibcAll,
+        cibcEmailAlreadyApplied: cibcApplied,
+        cibcEmailAutoStillUnapplied: cibcAutoUnapplied,
+        cibcEmailNeedsReview: cibcNeedsReview,
+        tradesWithNoBrokerSource: noSource,
+        needsReviewSamples: needsReviewSamples.map(t => ({
+          _id: String(t._id),
+          executedAt: t.executedAt,
+          leg: t.legs?.[0] ? `${t.legs[0].side} ${t.legs[0].shares} ${t.legs[0].ticker} @ $${t.legs[0].pricePerShare} ${t.legs[0].currency}` : null,
+          account: t.accountName || t.account,
+          reason: t.brokerReconcileNotes,
+        })),
+        interpretation: cibcAll === 0
+          ? `Nothing in journal from the poller — all ${noSource} trades appear to be manually recorded via Record Trade (which applies positions inline, no backfill needed).`
+          : cibcApplied === cibcAll
+            ? `All ${cibcAll} poller trades already have positions applied. Backfill correctly does nothing.`
+            : cibcNeedsReview > 0
+              ? `${cibcNeedsReview} poller trades are "needs-review" — resolve them in the Trades tab (accept account, fix qty, etc.) before backfill can apply them.`
+              : `No obvious blocker — but no auto trades are backfill-eligible.`,
+      };
+    })() : null;
+
     if (dryRun) {
       return res.json({
         ok: true,
@@ -903,6 +951,7 @@ router.post("/email-integration/backfill-positions", requireStocksAuth, async (r
           account: c.accountName || c.account,
           leg: c.legs?.[0] ? `${c.legs[0].side} ${c.legs[0].shares} ${c.legs[0].ticker} @ $${c.legs[0].pricePerShare}` : null,
         })),
+        diagnostic: shapedDiagnostic,
       });
     }
 
@@ -931,6 +980,7 @@ router.post("/email-integration/backfill-positions", requireStocksAuth, async (r
       failedCount: failed.length,
       applied,
       failed,
+      diagnostic: shapedDiagnostic,
     });
   } catch (err) {
     console.error("stocks-portfolio backfill-positions error:", err);
