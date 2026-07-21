@@ -138,7 +138,66 @@ export async function pollUserMailbox(userEmail) {
             occurredAtIso: new Date(occurredAt).toISOString(),
           });
           const dupe = await StocksTradeJournal.exists({ email: userEmail, brokerReconcileKey: reconcileKey });
-          if (dupe) { skipped.push({ uid, reason: "duplicate", key: reconcileKey }); highWater = Math.max(highWater, uid); await client.messageFlagsAdd({ uid }, ["\\Seen"], { uid: true }).catch(() => {}); continue; }
+          if (dupe) { skipped.push({ uid, reason: "duplicate-poller", key: reconcileKey, subject: subj }); highWater = Math.max(highWater, uid); await client.messageFlagsAdd({ uid }, ["\\Seen"], { uid: true }).catch(() => {}); continue; }
+
+          // Fuzzy-match against ANY existing trade in the journal (manual
+          // Record Trade, CSV import, previous poll under an old key
+          // format). Same trade recorded through any channel must not
+          // double-insert. Match criteria:
+          //   • executedAt within ±3 days (broker timing vs user typing)
+          //   • at least one leg whose base ticker == alert base ticker
+          //   • same side (BUY/SELL)
+          //   • same shares (exact)
+          //   • price within ±0.5% (accommodates FX rounding differences
+          //     if the user typed the CAD equivalent instead of the
+          //     native quote)
+          try {
+            const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+            const alertBase = baseOf(alert.ticker);
+            const occurredMs = new Date(occurredAt).getTime();
+            const candidates = await StocksTradeJournal.find({
+              email: userEmail,
+              executedAt: {
+                $gte: new Date(occurredMs - 3 * 86400000),
+                $lte: new Date(occurredMs + 3 * 86400000),
+              },
+              "legs.side": alert.action,
+              "legs.shares": alert.qty,
+            }).lean();
+            const fuzzyMatch = candidates.find(t =>
+              (t.legs || []).some(leg =>
+                leg.side === alert.action &&
+                leg.shares === alert.qty &&
+                baseOf(leg.ticker) === alertBase &&
+                Number.isFinite(leg.pricePerShare) &&
+                Math.abs(leg.pricePerShare - alert.pricePerShare) / alert.pricePerShare <= 0.005
+              )
+            );
+            if (fuzzyMatch) {
+              // Stamp the reconcile key on the pre-existing trade doc so
+              // future polls skip it via the fast unique-index path
+              // instead of re-scanning by fuzzy match. Best-effort — an
+              // index conflict just means another concurrent poll got
+              // there first.
+              try {
+                await StocksTradeJournal.updateOne(
+                  { _id: fuzzyMatch._id, brokerReconcileKey: { $exists: false } },
+                  { $set: {
+                      brokerReconcileKey: reconcileKey,
+                      brokerReconcileSource: "cibc-email-matched-existing",
+                      brokerReconcileNotes: `Fuzzy-matched to pre-existing trade (${fuzzyMatch.brokerReconcileSource || "manual/CSV"}) at poll time ${new Date().toISOString()}.`,
+                    } }
+                );
+              } catch { /* non-fatal — future polls will still match via fuzzy path */ }
+              skipped.push({ uid, reason: "matches-existing-trade", matchedTradeId: String(fuzzyMatch._id), subject: subj });
+              highWater = Math.max(highWater, uid);
+              await client.messageFlagsAdd({ uid }, ["\\Seen"], { uid: true }).catch(() => {});
+              continue;
+            }
+          } catch (e) {
+            console.warn("[stocks-email-poller] fuzzy dedup check failed:", e?.message);
+            // fall through — if the check errors, prefer to insert than to skip
+          }
 
           const plan = await planReconciliation({ email: userEmail, profile, alert, occurredAt });
           const currency = alert.currency;
