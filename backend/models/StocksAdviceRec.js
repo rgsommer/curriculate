@@ -28,6 +28,18 @@ const StocksAdviceRecSchema = new mongoose.Schema(
     targetPrice: { type: Number, default: null },
     stopPrice: { type: Number, default: null },
     horizonDays: { type: Number, default: 30 },
+    // Preferred execution window per market-microstructure realities.
+    //   pre-market     — queue for the 9:30 opening auction; use for gap-and-go
+    //                    setups where a missed open kills the thesis
+    //   at-open        — first 15 min; use rarely, only when volatility itself is the setup
+    //   post-10am      — wait for spreads to tighten after opening chaos; the default
+    //   gtc           — no timing preference; leave order working until filled/cancelled
+    // Populated by the AI from the <RECS> JSON block; null when unspecified.
+    orderTiming: {
+      type: String,
+      enum: [null, "pre-market", "at-open", "post-10am", "gtc"],
+      default: null,
+    },
 
     // Optional: the raw body of the card the rec came from (for display)
     rationale: { type: String, default: "" },

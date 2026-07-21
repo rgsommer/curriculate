@@ -541,8 +541,16 @@ FIELD FORMATTING — every named field (Entry, Target, Stop, Horizon, Account, O
 
 Required addition per rec body (EVERY BUY/SELL/TRIM rec, no exceptions):
   Order ticket: LIMIT BUY/SELL <N> <TICKER> @ $<limit> <CCY> <max/min>, Day/GTC.
+  Order timing: pre-market | at-open | post-10am | gtc.
   After fill: GTC STOP-LIMIT SELL <N> <TICKER>, stop $<stop> / limit $<stop-1%> <CCY>.
   Account: <Non-Spousal | RRSP | TFSA | RESP | FHSA> · uses $<X> of $<Y> <CCY> available · leaves $<Z>.
+
+Order timing guidance (default to "post-10am" unless the setup calls for something else):
+  pre-market  → Only when the thesis is a gap-and-go / earnings-morning move and a missed open kills the setup.
+  at-open     → Only when opening-auction volatility IS the setup (climax reversal, earnings-day gap fill).
+  post-10am   → The default. Waits for 9:30-9:45 spreads to tighten. Reduces slippage on swing entries.
+  gtc         → Use for pullback / mean-reversion setups where the level may not trigger today. Order works until filled or cancelled.
+Cite the choice in the rec's narrative rationale ONE short sentence (e.g. "Timing: post-10am — spreads at open are 3× normal on this small-cap; letting the auction clear protects the entry price.").
 
 The "Account:" line is MANDATORY. If you omit it the rec is invalid. The account named MUST be one that holds enough cash in the trade's currency to cover the size you proposed — verify against the per-account cash inventory below before writing the rec.
 
@@ -550,8 +558,8 @@ MANDATORY MACHINE-READABLE REC BLOCK — at the very end of your briefing, emit 
 
 <RECS>
 [
-  {"action":"BUY","ticker":"NVDA","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100},
-  {"action":"SELL","ticker":"ENB","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500}
+  {"action":"BUY","ticker":"NVDA","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100,"orderTiming":"post-10am"},
+  {"action":"SELL","ticker":"ENB","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500,"orderTiming":"gtc"}
 ]
 </RECS>
 
@@ -562,6 +570,12 @@ Rules for the block:
 - target and stop are REQUIRED numbers for every BUY (not null). Use the same values you cited in the narrative.
 - currency is "USD" or "CAD" — must match the security's native listing.
 - horizonDays is an integer (days). Convert weeks→×7, months→×30.
+- orderTiming is REQUIRED. One of:
+    "pre-market"  — queue for the 9:30 opening auction; ONLY when the thesis is a gap-and-go / earnings-morning move where a missed open kills the setup
+    "at-open"     — first 15 min of trading; use RARELY, only when opening volatility itself is the setup (volume climax, earnings-day gap fill, etc.)
+    "post-10am"   — wait until ~10:00-10:30 ET so opening-auction spreads tighten first; THIS IS THE DEFAULT for most swing entries
+    "gtc"         — no timing urgency; leave the LIMIT order working until filled or cancelled; use for pullback-entry setups where the level might not hit today
+  When in doubt, choose "post-10am". Cite the timing choice in the narrative rationale (one short sentence) so the user understands WHY.
 - Do not wrap the block in code fences. No prose inside <RECS>...</RECS>. Nothing else after </RECS>.
 - If there are ZERO actionable recs, emit "<RECS>[]</RECS>" — never omit the block.
 `;
@@ -1086,6 +1100,9 @@ function extractRecsFromJsonBlock(text) {
     const entryPrice = Number.isFinite(+r.entry) ? +r.entry
       : Number.isFinite(+r.entryPrice) ? +r.entryPrice : null;
     if (!(entryPrice > 0)) continue;
+    const rawTiming = String(r.orderTiming || "").toLowerCase().trim();
+    const orderTiming = ["pre-market", "at-open", "post-10am", "gtc"].includes(rawTiming)
+      ? rawTiming : null;
     out.push({
       action,
       ticker,
@@ -1099,6 +1116,7 @@ function extractRecsFromJsonBlock(text) {
       entryCurrency: ["USD", "CAD"].includes(String(r.currency || r.entryCurrency || "").toUpperCase())
         ? String(r.currency || r.entryCurrency).toUpperCase()
         : "USD",
+      orderTiming,
     });
   }
   return out;

@@ -641,6 +641,10 @@ function parseRec(body) {
     else if (h.includes("year")) horizonDays = num * 365;
   }
   const entryCurrency = detectRecCurrency(body, ticker);
+  // Optional "Order timing:" line the AI may include in the narrative card,
+  // matching the same enum the RECS JSON block uses.
+  const timingMatch = body.match(/Order timing:\s*(pre-market|at-open|post-10am|gtc)\b/i);
+  const orderTiming = timingMatch ? timingMatch[1].toLowerCase() : null;
   return {
     action: action.toUpperCase(),
     shares,
@@ -650,6 +654,7 @@ function parseRec(body) {
     stopPrice: stop ? parseFloat(stop) : null,
     horizonDays,
     ...(entryCurrency ? { entryCurrency } : {}),
+    ...(orderTiming ? { orderTiming } : {}),
   };
 }
 

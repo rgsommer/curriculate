@@ -2439,6 +2439,22 @@ function renderAdviceBody(body, priceLookup = null, recLookup = null) {
                 const h = Number.isFinite(rec.horizonDays) && rec.horizonDays > 0 ? rec.horizonDays : null;
                 const annualized = (roiPct != null && h != null)
                   ? (Math.pow(1 + roiPct / 100, 365 / h) - 1) * 100 : null;
+                const timingChip = (() => {
+                  const t = rec.orderTiming;
+                  if (!t) return null;
+                  const styles = {
+                    "pre-market":  { bg: "#fef3c7", fg: "#78350f", label: "pre-market" },
+                    "at-open":     { bg: "#fee2e2", fg: "#7f1d1d", label: "at open (9:30)" },
+                    "post-10am":   { bg: "#dcfce7", fg: "#14532d", label: "wait ≥10:00 ET" },
+                    "gtc":         { bg: "#e0e7ff", fg: "#1e3a8a", label: "GTC" },
+                  };
+                  const s = styles[t] || { bg: "#e5e7eb", fg: "#111827", label: t };
+                  return (
+                    <span title="AI-suggested order timing (per market microstructure)" style={{ display: "inline-block", background: s.bg, color: s.fg, padding: "1px 7px", borderRadius: 999, fontSize: 10, fontWeight: 600, marginLeft: 6, textTransform: "uppercase", letterSpacing: ".04em" }}>
+                      ⏱ {s.label}
+                    </span>
+                  );
+                })();
                 return (
                   <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 6, fontVariantNumeric: "tabular-nums" }}>
                     entry ${rec.entryPrice.toFixed(2)}
@@ -2452,6 +2468,7 @@ function renderAdviceBody(body, priceLookup = null, recLookup = null) {
                     {annualized != null && (
                       <> · <b style={{ color: "#166534" }}>ann. {annualized >= 0 ? "+" : ""}{annualized.toFixed(0)}%</b></>
                     )}
+                    {timingChip}
                   </div>
                 );
               })()}
