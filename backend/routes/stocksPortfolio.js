@@ -25,6 +25,8 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksPortfolioSnapshot from "../models/StocksPortfolioSnapshot.js";
 import { computeTwrr, annualizeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns } from "../services/stocksBenchmark.js";
+import { computeCompliance } from "../services/stocksCompliance.js";
+import { computeAttribution } from "../services/stocksAttribution.js";
 
 const router = express.Router();
 
@@ -630,6 +632,37 @@ router.get("/indicators", requireStocksAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("stocks-portfolio indicators error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/compliance
+// Discipline compliance report for the last 90 days: take rate, hard-
+// stop compliance, no-repeat pattern. Silent metrics on quiet weeks.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/compliance", requireStocksAuth, async (req, res) => {
+  try {
+    const cmp = await computeCompliance(req.stocksUser.email);
+    res.json({ ok: true, compliance: cmp });
+  } catch (err) {
+    console.error("stocks-portfolio compliance error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/attribution
+// Return attribution: closed trade P&L bucketed by sleeve / setup /
+// score band / AI-vs-manual. Complements calibration by showing the
+// actual dollar impact of each dimension, not just win rate.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/attribution", requireStocksAuth, async (req, res) => {
+  try {
+    const att = await computeAttribution(req.stocksUser.email);
+    res.json({ ok: true, attribution: att });
+  } catch (err) {
+    console.error("stocks-portfolio attribution error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

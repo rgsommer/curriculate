@@ -42,6 +42,9 @@ import { computeCalibration, formatCalibrationBlock } from "../services/stocksSc
 import { computeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns, formatBenchmarkBlock } from "../services/stocksBenchmark.js";
 import { computeSizingAdjustments, formatSizingAdjustmentBlock } from "../services/stocksCorrelationSizing.js";
+import { computeOverlaySuggestions, formatOverlayBlock } from "../services/stocksOptionsOverlay.js";
+import { computeCompliance, formatComplianceBlock } from "../services/stocksCompliance.js";
+import { computeAttribution, formatAttributionBlock } from "../services/stocksAttribution.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -654,6 +657,9 @@ SENIOR-ANALYST EXPECTATIONS:
 5m. CALIBRATION: when a CALIBRATION block appears, it summarizes THIS user's closed-pick outcomes bucketed by score band × setup × MTF. Weight recommendations toward the combinations with the highest win rate + avg P/L. A proposed rec that lands in a bucket with sub-baseline win rate should be downgraded or replaced. Cite the specific bucket + n + win rate when making a full-size call (e.g. "this VCP × 70-79 score bucket is 5-of-7 winners at +8.4% for you — full size"). Buckets missing from the block are undertested (n<5), not proven — treat as unknown.
 5n. BENCHMARK ALPHA: when a PORTFOLIO vs BENCHMARK block appears, it compares this user's TWRR to SPY (US sleeve) and XIC (Canadian sleeve) over the same window. Positive alpha = beating the passive alternative; negative alpha over YTD or since-start is the honest signal to trade less and lean on CORE broad ETFs. Cite the specific alpha figure when defending an active swing rec ("YTD alpha +4.1pp vs SPY, so this active trade is earning its keep"). If alpha is deeply negative, propose SPY/XIC/XEQT rotation in section 4 instead of another swing.
 5o. CORRELATION-ADJUSTED SIZING: when a CORRELATION-ADJUSTED SIZING block lists a candidate ticker with a "SIZE X%" tag, respect it. Multiply the recommended share count (and cash allocation) by that fraction so total factor exposure doesn't compound with an already-large correlated holding. Cite the pairing verbatim: "half-size (SIZE 50%) — 0.78 correlated with your ENB position at 22% of book, so full size would double your energy-rates factor exposure." Rows without a size tag are safely independent.
+5p. OPTIONS OVERLAY (covered calls): when an OPTIONS OVERLAY block lists suggestions, emit a section-6a "Options overlay" heading with the top 1-2 suggestions verbatim (strike, expiration, mid premium, monthly yield %). Rec format: "SELL to open <N> <TICKER> <exp> $<K> CALL @ limit $<mid>" plus a one-line justification citing IV rank + delta approx + upside cap. If the underlying has an earnings date inside the expiration window (visible in the CATALYSTS line), SKIP the overlay — IV crush post-earnings is the specific case where "sell rich premium" reverses. Overlay recs also belong in the <RECS> block with action="SELL", orderTiming="gtc", and a currency matching the underlying; ticker should carry the underlying symbol (the option-specific fields go in the narrative).
+5q. DISCIPLINE COMPLIANCE: when a DISCIPLINE COMPLIANCE block appears, it summarizes THIS user's rule-following over the last 90 days. Emit a "## ⚖ Discipline check" section (numbered 0e in the layout) only when the block shows any 🚨 or ⚠ item, or when it's the weekly heartbeat (Monday). Cite specific numbers matter-of-factly ("acted on 4 of 12 setups this month"). If any hard-stop violation is STILL HELD past the exit window, elevate it into section 0c (Position P&L stop check) with an EXIT AT MARKET instruction and reference the compliance metric. Do not moralize or lecture — one line, then move on.
+5r. RETURN ATTRIBUTION: when a RETURN ATTRIBUTION block appears, it's the Monday retrospective showing where actual $ P&L has come from. Use it to defend or cut specific bucket types. "This setup has printed +$3,400 CAD YTD in your book, so full size on the pattern" or "This bucket has bled -$1,200 CAD; downgrading to half-size or skipping." Compare AI-sourced vs manual $ totals honestly — the operator is often the source of the edge; the AI is a check. Attribution belongs in an optional "## 💰 Attribution snapshot" section, ONE paragraph max, cited from the block verbatim.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** Holdings table already shows actual P/L. If you write "BBAI down -7.7%" and the app shows BBAI +333%, you mislead. Refer to lifecycle cost-basis for tax reasoning; do NOT narrate "down X%" unless it matches Holdings EXACTLY.
 ${PRICE_CURRENCY_RULES}
 ${ORDER_TICKET_RULES}
@@ -805,7 +811,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -968,6 +974,9 @@ ${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile
 ${formatCalibrationBlock(calibration)}
 ${formatBenchmarkBlock(benchmarkBundle?.userTwrr, benchmarkBundle?.benchmarks)}
 ${formatSizingAdjustmentBlock(sizingAdjustments)}
+${formatOverlayBlock(overlaySuggestions)}
+${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
+${formatAttributionBlock(attribution)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
@@ -1336,7 +1345,30 @@ export async function generateBriefing(profile) {
       }).catch(e => { console.warn("[computeSizingAdjustments] warn:", e?.message); return []; })
     : [];
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments);
+  // Options overlay — concrete covered-call suggestions on held names
+  // whose IV rank ≥ 70. Silent when nothing qualifies.
+  const overlaySuggestions = await computeOverlaySuggestions({
+    positions: profile.positions || [],
+    fxUsdCad: profile.fxUsdCad || 1.37,
+  }).catch(e => { console.warn("[computeOverlaySuggestions] warn:", e?.message); return []; });
+
+  // Discipline compliance + return attribution — the weekly-Monday
+  // pair. Compliance always runs but silences unless there's a hit;
+  // attribution runs only on Mondays (once/week is plenty).
+  const isMondayEt = (() => {
+    try {
+      const fmt = new Intl.DateTimeFormat("en-US", { timeZone: profile.briefingTz || "America/New_York", weekday: "short" });
+      return fmt.format(new Date()) === "Mon";
+    } catch { return false; }
+  })();
+  const [compliance, attribution] = await Promise.all([
+    computeCompliance(profile.email).catch(e => { console.warn("[computeCompliance] warn:", e?.message); return null; }),
+    isMondayEt
+      ? computeAttribution(profile.email).catch(e => { console.warn("[computeAttribution] warn:", e?.message); return null; })
+      : Promise.resolve(null),
+  ]);
+
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
