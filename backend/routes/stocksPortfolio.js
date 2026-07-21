@@ -889,6 +889,100 @@ router.post("/email-integration/test", requireStocksAuth, async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/retry-needs-review
+// Walk every needs-review poller trade, re-run the reconciler with
+// current logic + current portfolio state, and promote+apply whichever
+// ones now resolve to "auto". Trades that still can't be resolved are
+// left as-is with an updated brokerReconcileNotes reason.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/retry-needs-review", requireStocksAuth, async (req, res) => {
+  try {
+    if (!isEncryptionConfigured()) {
+      return res.status(503).json({ error: "Server encryption key not configured (STOCKS_INTEGRATION_KEY)." });
+    }
+    const email = req.stocksUser.email;
+    const stuck = await StocksTradeJournal.find({
+      email,
+      brokerReconcileSource: "cibc-email",
+      brokerReconcileStatus: "needs-review",
+      positionApplied: { $ne: true },
+    }).sort({ executedAt: 1 }).lean();
+
+    if (stuck.length === 0) {
+      return res.json({ ok: true, promoted: 0, stillReview: 0, failed: 0 });
+    }
+
+    const { planReconciliation } = await import("../services/stocksTradeReconciler.js");
+    const { backfillTradeToPortfolio } = await import("../services/stocksTradeApplier.js");
+    const profile = await StocksPortfolio.findOne({ email }).lean();
+    if (!profile) return res.status(404).json({ error: "No portfolio for this email." });
+
+    const promoted = [];
+    const stillReview = [];
+    const failed = [];
+
+    for (const doc of stuck) {
+      const leg = doc.legs?.[0];
+      if (!leg) { stillReview.push({ _id: String(doc._id), reason: "no-leg" }); continue; }
+      // Reconstruct the alert shape from the persisted leg.
+      const alert = {
+        action: leg.side,
+        ticker: leg.ticker,
+        qty: leg.shares,
+        pricePerShare: leg.pricePerShare,
+        currency: leg.currency,
+        exchange: null,
+      };
+      try {
+        const plan = await planReconciliation({ email, profile, alert, occurredAt: doc.executedAt });
+        if (plan?.status === "auto" && plan.account?.id) {
+          // Promote the trade doc: fill in the account/name, upgrade
+          // status, then apply positions + cash via the shared applier.
+          await StocksTradeJournal.updateOne(
+            { _id: doc._id },
+            {
+              $set: {
+                account: plan.account.id,
+                accountName: plan.account.name,
+                brokerReconcileStatus: "auto",
+                brokerReconcileNotes: `Retried ${new Date().toISOString().slice(0, 16)} — ${plan.accountReason}${plan.linked ? ` · linked ${plan.linked.kind} (${plan.linked.reason})` : ""}`,
+                ...(plan.linked?.kind === "advice" ? { linkedAdviceRecId: plan.linked.rec._id } : {}),
+                ...(plan.linked?.kind === "daily-pick" ? { linkedDailyPickId: plan.linked.rec._id } : {}),
+              },
+            }
+          );
+          // Re-fetch the doc so backfill sees the account + upgraded fields
+          const refreshed = await StocksTradeJournal.findById(doc._id).lean();
+          await backfillTradeToPortfolio(refreshed);
+          promoted.push({ _id: String(doc._id), ticker: leg.ticker, side: leg.side, shares: leg.shares, account: plan.account.name });
+        } else {
+          await StocksTradeJournal.updateOne(
+            { _id: doc._id },
+            { $set: { brokerReconcileNotes: `Retried ${new Date().toISOString().slice(0, 16)} — still needs review: ${plan?.reviewReasons?.join("; ") || plan?.accountReason || "unresolved"}` } }
+          );
+          stillReview.push({ _id: String(doc._id), ticker: leg.ticker, reason: plan?.accountReason || "unresolved" });
+        }
+      } catch (e) {
+        failed.push({ _id: String(doc._id), ticker: leg.ticker, error: e?.message || String(e) });
+      }
+    }
+
+    res.json({
+      ok: true,
+      promotedCount: promoted.length,
+      stillReviewCount: stillReview.length,
+      failedCount: failed.length,
+      promoted,
+      stillReview: stillReview.slice(0, 10),
+      failed: failed.slice(0, 10),
+    });
+  } catch (err) {
+    console.error("stocks-portfolio retry-needs-review error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
 // POST /api/stocks-portfolio/email-integration/backfill-positions
 // Retroactively apply legs of previously-reconciled poller trades whose
 // positions never got updated (pre-Phase-2B-fix rows). Dry-run mode

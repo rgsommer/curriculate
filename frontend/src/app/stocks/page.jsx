@@ -3772,6 +3772,33 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setBackfilling(false); }
   };
 
+  const [retrying, setRetrying] = useState(false);
+  const retryNeedsReview = async () => {
+    if (!window.confirm("Re-run the reconciler over every needs-review poller trade using the current (improved) account-inference logic. Trades that now resolve to 'auto' get positions + cash applied; the rest stay needs-review with an updated reason. Continue?")) return;
+    setBanner(null);
+    setRetrying(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/retry-needs-review`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      let msg = `Retry complete — ${j.promotedCount || 0} promoted (positions applied) · ${j.stillReviewCount || 0} still need review · ${j.failedCount || 0} failed`;
+      if (j.promoted?.length > 0) {
+        msg += `\nPromoted:\n${j.promoted.slice(0, 6).map(p => `  · ${p.side} ${p.shares} ${p.ticker} → ${p.account}`).join("\n")}`;
+      }
+      if (j.stillReview?.length > 0) {
+        msg += `\nStill need review:\n${j.stillReview.map(p => `  · ${p.ticker} — ${p.reason}`).join("\n")}`;
+      }
+      setBanner({ kind: j.failedCount > 0 ? "err" : "ok", msg });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Retry failed" });
+    } finally { setRetrying(false); }
+  };
+
   const [rescanning, setRescanning] = useState(false);
   const rescanMailbox = async () => {
     if (!window.confirm("Reset the mailbox scan pointer and re-poll from the earliest matching message. Uses the same dedup key as normal polls, so it cannot double-insert anything. Use this when the Test connection button reports matching messages but Poll now finds 0.")) return;
@@ -3931,6 +3958,7 @@ function EmailIntegrationCard({ sessionToken }) {
             <button className="sa-btn" onClick={pollNow} disabled={pollingNow}>{pollingNow ? "Polling…" : "Poll now"}</button>
             <button className="sa-btn" onClick={rescanMailbox} disabled={rescanning} title="Reset the UID high-water mark and re-poll from the earliest matching message. Use when Test connection reports N matches but Poll now finds 0.">{rescanning ? "Rescanning…" : "Rescan mailbox"}</button>
             <button className="sa-btn" onClick={backfillPositions} disabled={backfilling}>{backfilling ? "Backfilling…" : "Backfill positions"}</button>
+            <button className="sa-btn" onClick={retryNeedsReview} disabled={retrying} title="Re-run reconciler over stuck needs-review trades using improved account-inference. Promotes to auto + applies positions when it can now resolve them.">{retrying ? "Retrying…" : "Retry needs-review"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
         </div>
