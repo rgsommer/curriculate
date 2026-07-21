@@ -3611,6 +3611,36 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setBackfilling(false); }
   };
 
+  const [rescanning, setRescanning] = useState(false);
+  const rescanMailbox = async () => {
+    if (!window.confirm("Reset the mailbox scan pointer and re-poll from the earliest matching message. Uses the same dedup key as normal polls, so it cannot double-insert anything. Use this when the Test connection button reports matching messages but Poll now finds 0.")) return;
+    setBanner(null);
+    setRescanning(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/rescan-mailbox`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      const parts = [];
+      if (Number.isFinite(j.inserted)) parts.push(`${j.inserted} inserted`);
+      if (Number.isFinite(j.skipped)) parts.push(`${j.skipped} skipped`);
+      if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
+      let msg = `Rescan complete — ${parts.join(" · ") || "no matches"}`;
+      const skippedRows = (j.details?.skipped || []).slice(0, 10);
+      if (skippedRows.length > 0) {
+        const lines = skippedRows.map(s => `  · ${s.reason} · "${(s.subject || "(no subject)").slice(0, 80)}"${s.from ? ` — from ${s.from}` : ""}`);
+        msg += `\nSkipped detail:\n${lines.join("\n")}`;
+      }
+      setBanner({ kind: j.fatal ? "err" : "ok", msg });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Rescan failed" });
+    } finally { setRescanning(false); }
+  };
+
   const [pollingNow, setPollingNow] = useState(false);
   const pollNow = async () => {
     setBanner(null);
@@ -3738,6 +3768,7 @@ function EmailIntegrationCard({ sessionToken }) {
             <button className="sa-btn" onClick={() => setEditing(true)}>Edit / rotate password</button>
             <button className="sa-btn" onClick={test} disabled={testing}>{testing ? "Testing…" : "Test connection"}</button>
             <button className="sa-btn" onClick={pollNow} disabled={pollingNow}>{pollingNow ? "Polling…" : "Poll now"}</button>
+            <button className="sa-btn" onClick={rescanMailbox} disabled={rescanning} title="Reset the UID high-water mark and re-poll from the earliest matching message. Use when Test connection reports N matches but Poll now finds 0.">{rescanning ? "Rescanning…" : "Rescan mailbox"}</button>
             <button className="sa-btn" onClick={backfillPositions} disabled={backfilling}>{backfilling ? "Backfilling…" : "Backfill positions"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
