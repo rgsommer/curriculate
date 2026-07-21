@@ -23,6 +23,7 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import { decryptSecret } from "./stocksEncryption.js";
 import { parseCibcAlert, makeReconcileKey } from "./stocksCibcParser.js";
 import { planReconciliation } from "./stocksTradeReconciler.js";
+import { applyReconciledTrade } from "./stocksTradeApplier.js";
 
 const MAX_MESSAGES_PER_TICK = 25;
 
@@ -77,7 +78,7 @@ export async function pollUserMailbox(userEmail) {
   if (!integration) return { skipped: "not-configured" };
   if (integration.enabled === false) return { skipped: "disabled" };
 
-  const profile = await StocksPortfolio.findOne({ email: userEmail }).lean();
+  let profile = await StocksPortfolio.findOne({ email: userEmail }).lean();
   if (!profile) return { skipped: "no-profile" };
 
   const query = integration.imapSearchQuery || "from:alerts@cibc.com is:unread";
@@ -121,45 +122,100 @@ export async function pollUserMailbox(userEmail) {
           const plan = await planReconciliation({ email: userEmail, profile, alert, occurredAt });
           const currency = alert.currency;
           const gross = alert.qty * alert.pricePerShare;
-          const fx = profile.fxUsdCad || 1.37;
-          const netCadSign = alert.action === "SELL" ? +1 : -1;
-          const netCashCad = netCadSign * (currency === "USD" ? gross * fx : gross);
 
-          const doc = {
-            email: userEmail,
-            executedAt: occurredAt,
-            account: plan.account?.id || "",
-            accountName: plan.account?.name || "",
-            legs: [{
-              side: alert.action,
-              ticker: alert.ticker,
-              shares: alert.qty,
-              pricePerShare: alert.pricePerShare,
-              currency,
-              grossValue: gross,
-            }],
-            netCashCad,
-            fxUsdCadAtTrade: fx,
-            notes: `Auto-reconciled from CIBC alert · ${plan.status}${plan.reviewReasons?.length ? " · " + plan.reviewReasons.join("; ") : ""}`,
-            brokerReconcileKey: reconcileKey,
-            brokerReconcileSource: "cibc-email",
-            brokerReconcileStatus: plan.status,
-            brokerReconcileNotes: [plan.accountReason, plan.linked ? `linked ${plan.linked.kind} (${plan.linked.reason})` : "no linked rec"].filter(Boolean).join(" · "),
-            ...(plan.linked?.kind === "advice" ? { linkedAdviceRecId: plan.linked.rec._id } : {}),
-            ...(plan.linked?.kind === "daily-pick" ? { linkedDailyPickId: plan.linked.rec._id } : {}),
+          const leg = {
+            side: alert.action,
+            ticker: alert.ticker,
+            shares: alert.qty,
+            pricePerShare: alert.pricePerShare,
+            currency,
+            grossValue: gross,
           };
-          const created = await StocksTradeJournal.create(doc);
-          inserted.push({ uid, tradeId: String(created._id), status: plan.status, ticker: alert.ticker, action: alert.action });
+          const notesLine = `Auto-reconciled from CIBC alert · ${plan.status}${plan.reviewReasons?.length ? " · " + plan.reviewReasons.join("; ") : ""}`;
+          const reconcileNotes = [plan.accountReason, plan.linked ? `linked ${plan.linked.kind} (${plan.linked.reason})` : "no linked rec"].filter(Boolean).join(" · ");
 
-          // Best-effort: mark the linked AdviceRec's exit-filled marker
-          // so the "which recs are still open" query stops surfacing it.
-          if (plan.linked?.kind === "advice" && plan.linked.rec._id) {
+          // Auto plans → apply through the shared trade-applier so
+          // positions + cash + daily-pick "ENTERED" all update, matching
+          // the manual "Record trade" flow.
+          //
+          // Needs-review plans → journal only (no position/cash mutation).
+          // The Dashboard shouldn't move on an ambiguous alert; the trader
+          // resolves account/rec linkage manually via the Trades tab first.
+          if (plan.status === "auto" && plan.account?.id) {
             try {
-              await StocksAdviceRec.updateOne(
-                { _id: plan.linked.rec._id, exitLevelsFilledBy: { $exists: false } },
-                { $set: { exitLevelsFilledBy: new Date() } }
-              );
-            } catch { /* non-fatal */ }
+              const { trade } = await applyReconciledTrade({
+                email: userEmail,
+                legs: [leg],
+                accountId: plan.account.id,
+                executedAt: occurredAt,
+                notes: notesLine,
+                linkedAdviceRecId: plan.linked?.kind === "advice" ? plan.linked.rec._id : null,
+                linkedDailyPickId: plan.linked?.kind === "daily-pick" ? plan.linked.rec._id : null,
+                brokerReconcileKey: reconcileKey,
+                brokerReconcileSource: "cibc-email",
+                brokerReconcileStatus: "auto",
+                brokerReconcileNotes: reconcileNotes,
+              });
+              // Refresh cached profile so subsequent alerts in this
+              // poll see the updated positions/cash. Without this, two
+              // SELLs of the same ticker in one poll would both plan
+              // against pre-first-SELL holdings and mis-attribute the
+              // second one.
+              profile = await StocksPortfolio.findOne({ email: userEmail }).lean();
+              inserted.push({ uid, tradeId: String(trade._id), status: "auto", ticker: alert.ticker, action: alert.action });
+            } catch (applyErr) {
+              // Applier failed the position math (over-sell, unknown
+              // account, etc). Downgrade to needs-review + journal only
+              // so the trade is still visible, then keep going.
+              const fallbackNotes = `${reconcileNotes} · applier-failed: ${applyErr.message}`;
+              const fallbackDoc = await StocksTradeJournal.create({
+                email: userEmail,
+                executedAt: occurredAt,
+                account: plan.account?.id || "",
+                accountName: plan.account?.name || "",
+                legs: [leg],
+                netCashCad: 0,
+                fxUsdCadAtTrade: profile.fxUsdCad || 1.37,
+                notes: `${notesLine} · applier-failed: ${applyErr.message}`,
+                brokerReconcileKey: reconcileKey,
+                brokerReconcileSource: "cibc-email",
+                brokerReconcileStatus: "needs-review",
+                brokerReconcileNotes: fallbackNotes,
+              });
+              inserted.push({ uid, tradeId: String(fallbackDoc._id), status: "needs-review-applier-failed", ticker: alert.ticker, action: alert.action });
+            }
+          } else {
+            // Needs-review: journal, but do NOT touch positions/cash.
+            const fx = profile.fxUsdCad || 1.37;
+            const netCadSign = alert.action === "SELL" ? +1 : -1;
+            const netCashCad = netCadSign * (currency === "USD" ? gross * fx : gross);
+            const doc = {
+              email: userEmail,
+              executedAt: occurredAt,
+              account: plan.account?.id || "",
+              accountName: plan.account?.name || "",
+              legs: [leg],
+              netCashCad,
+              fxUsdCadAtTrade: fx,
+              notes: notesLine,
+              brokerReconcileKey: reconcileKey,
+              brokerReconcileSource: "cibc-email",
+              brokerReconcileStatus: plan.status,
+              brokerReconcileNotes: reconcileNotes,
+              ...(plan.linked?.kind === "advice" ? { linkedAdviceRecId: plan.linked.rec._id } : {}),
+              ...(plan.linked?.kind === "daily-pick" ? { linkedDailyPickId: plan.linked.rec._id } : {}),
+            };
+            const created = await StocksTradeJournal.create(doc);
+            inserted.push({ uid, tradeId: String(created._id), status: plan.status, ticker: alert.ticker, action: alert.action });
+
+            if (plan.linked?.kind === "advice" && plan.linked.rec._id) {
+              try {
+                await StocksAdviceRec.updateOne(
+                  { _id: plan.linked.rec._id, exitLevelsFilledBy: { $exists: false } },
+                  { $set: { exitLevelsFilledBy: new Date() } }
+                );
+              } catch { /* non-fatal */ }
+            }
           }
 
           await client.messageFlagsAdd({ uid }, ["\\Seen"], { uid: true }).catch(() => {});
