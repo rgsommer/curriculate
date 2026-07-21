@@ -124,8 +124,16 @@ export async function pollUserMailbox(userEmail) {
           if (!msg?.source) { skipped.push({ uid, reason: "no-source", subject: subj, from }); highWater = Math.max(highWater, uid); continue; }
           const parsed = await simpleParser(msg.source);
           const bodyText = parsed.text || (parsed.html || "").replace(/<[^>]+>/g, " ");
-          const alert = parseCibcAlert(bodyText);
+          const alert = parseCibcAlert(bodyText, subj);
           if (!alert) { skipped.push({ uid, reason: "not-a-cibc-alert", subject: subj, from, bodyPreview: bodyText.slice(0, 200).replace(/\s+/g, " ") }); highWater = Math.max(highWater, uid); continue; }
+          // Subject-only parse returns currency=null; infer from held
+          // position (a ticker held with ccy=CAD/USD is the ground truth).
+          // Falls back to USD when the ticker isn't held anywhere.
+          if (alert.currency == null) {
+            const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+            const held = (profile.positions || []).find(p => baseOf(p.ticker) === baseOf(alert.ticker));
+            alert.currency = held?.ccy || "USD";
+          }
           const occurredAt = parsed.date || msg.envelope?.date || new Date();
 
           const reconcileKey = makeReconcileKey({
