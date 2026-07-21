@@ -3664,6 +3664,30 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
       </div>
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>No-touch mode</h3>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={!!user.noTouchMode}
+            onChange={(e) => { updateUser(() => ({ noTouchMode: e.target.checked })); showToast(e.target.checked ? "No-touch mode enabled" : "No-touch mode disabled"); }}
+            style={{ marginTop: 3 }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>I queue all orders before ~8:45 AM ET and don&apos;t touch them during the day</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Assumes you set every order before the market opens (limit + GTC) and can&apos;t adjust during the session. When on:
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                <li>Every briefing opens with a <b>🕗 QUEUE BEFORE 8:45 AM ET</b> copy-paste block — the exact ticket text to type into your broker</li>
+                <li>orderTiming defaults shift to <b>GTC</b> (or <b>pre-market</b> for gap-and-go); the AI is told to never emit <code>post-10am</code> or <code>at-open</code></li>
+                <li>Intraday briefings (if enabled) quiet down to <b>hard-stop hits only</b> — informational signals aren&apos;t actionable when you can&apos;t touch orders</li>
+                <li>A short <b>EOD recap</b> emails at 4:15 PM ET Mon–Fri: what filled today, what stopped, what to queue tomorrow</li>
+              </ul>
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Contribution goals</h3>
         <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
           Target dollar amounts to contribute to each registered account. Choose monthly (steady drip) or yearly (lump sum). Surfaces in briefings as deadlines approach (RRSP: Mar 1, TFSA: Jan 1 reset, RESP: Dec 31). AI prioritizes filling these when new cash arrives and matches your chosen cadence.

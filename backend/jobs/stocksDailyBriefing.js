@@ -943,13 +943,41 @@ ${fundedAccountLines}
     ? `\n🎯 USER GOALS & CONSTRAINTS (read FIRST — every rec must be coherent with these):\n${profile.goals.trim()}\n\nHow to factor goals into recs:\n- Recommendations conflicting with goals must be REJECTED or modified — don't silently override.\n- If a goal implies a withdrawal date, size positions and stops to make cash available by that date.\n- If a goal designates capital as long-term, don't redeploy it for short-horizon trades.\n- If a goal sets an account limit ("RRSP limit X"), prioritize filling that account when new cash is available.\n- Surface goal/opportunity tradeoffs explicitly; reference goals by name in rec rationale.\n`
     : "";
 
+  const noTouchBlock = profile.noTouchMode
+    ? `\n🕗 NO-TOUCH MODE (mandatory — this user queues every order before ~8:45 AM ET and cannot adjust during the session):
+- orderTiming rules OVERRIDE the general defaults below:
+    • DEFAULT for BUY/SELL recs: "gtc" (limit order works until filled or manually cancelled, survives multiple sessions).
+    • Only use "pre-market" when the thesis is a gap-and-go / earnings-morning trade where a missed open kills the setup.
+    • NEVER emit orderTiming="post-10am" or orderTiming="at-open" — those windows are non-actionable for this user.
+- ADD A REQUIRED SECTION AT THE VERY TOP OF THE BRIEFING (before section 0), heading exactly "## 🕗 Queue before 8:45 AM ET":
+    Write a compact, copy-paste-ready order list. One numbered line per queued order plus its after-fill stop, in this exact format:
+
+    1. LIMIT BUY 40 sh NVDA @ $145.20 USD · GTC (Non-Spousal)
+       After fill: GTC STOP-LIMIT SELL 40 sh NVDA, stop $138.50 / limit $137.10
+    2. LIMIT SELL 500 sh ENB @ $75.80 CAD · GTC (RRSP)
+       (no after-fill line — this is a closing SELL)
+    3. SELL to open 2 × 2026-08-15 $85 CALL @ $1.85 USD · GTC (Non-Spousal covered call over 200 NVDA sh)
+
+    Rules for this section:
+    - Include ONE numbered entry per actionable rec that appears in sections 4 / 5 / 7 / 8 / 6a of the briefing. Skip HOLD entries and skip anything not orderable via a broker ticket.
+    - LIMIT price = the exact numeric limit from the rec's Order ticket line, in native currency.
+    - Duration = Day OR GTC — pick whichever matches the rec's orderTiming ("pre-market" → Day, "gtc" → GTC).
+    - Account tag in parentheses at the end (Non-Spousal | RRSP | TFSA | RESP | FHSA).
+    - After-fill line ONLY for BUY orders (open a new position or scale in). SELL that closes an existing position needs no after-fill line.
+    - If there are zero actionable orders today, write ONE line: "No orders to queue today — hold current positions." then move to section 0.
+    - Do not add explanation/prose inside this section; explanation belongs in the narrative sections below.
+- Intraday briefings for this user are already downgraded to hard-stop-only alerts server-side, so DO NOT include "monitor for entry zone" or "watch for intraday breakout" instructions in the morning briefing — those are dead letters.
+- Section 6 "Watch list" should be reframed as "GTC alerts to consider" — levels the user might want a GTC alert set at, not intraday triggers to monitor.
+`
+    : "";
+
   // The static senior-analyst rubric, PRICE/ORDER/MULTI-DAY/TAX/SIGNALS
   // blocks and OUTPUT FORMAT rules now live in STATIC_SYSTEM_PROMPT
   // (Anthropic prompt cache). Only per-call dynamic context is below.
   const userMessage = `Today's morning briefing for ${profile.email}.
 
 Today: ${today}
-Risk tolerance: ${profile.riskTolerance}${goalsBlock}
+Risk tolerance: ${profile.riskTolerance}${goalsBlock}${noTouchBlock}
 
 Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR YOUR REFERENCE ONLY. DO NOT INCLUDE this aggregate dollar figure in the briefing output.
 

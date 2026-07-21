@@ -247,6 +247,21 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // crossed, fresh 8-K, regime flip, Test A pick entry-zone entry)
     // shows up. Silent when the intraday tape is quiet.
     intradayUpdatesEnabled: { type: Boolean, default: false },
+    // No-touch mode: assumes the trader queues every order before
+    // ~8:45 AM ET and can't monitor / adjust during the session.
+    // When on:
+    //   - Briefing must open with a copy-paste-ready "🕗 QUEUE BEFORE
+    //     8:45 AM ET" order block
+    //   - orderTiming NEVER "post-10am" or "at-open" — only "gtc" or
+    //     "pre-market"; the AI is told to bias toward "gtc"
+    //   - Intraday briefings quiet down to hard-stop-only (informational
+    //     signals aren't actionable when the user can't touch orders)
+    //   - EOD recap (4:15 PM ET) closes the loop each day
+    noTouchMode: { type: Boolean, default: false },
+    // Last day's EOD recap key (YYYY-MM-DD in ET) so the recap cron
+    // doesn't double-fire when it ticks across two minutes.
+    lastEodRecapSentKey: { type: String, default: "" },
+    lastEodRecapAt: { type: Date, default: null },
     // Dedup keys per intraday slot (YYYY-MM-DD|HH:MM) so a re-tick
     // inside the same minute doesn't double-send.
     lastIntradayUpdateSentKey: { type: String, default: "" },

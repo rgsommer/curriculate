@@ -207,6 +207,9 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.intradayUpdatesEnabled === "boolean") {
     out.intradayUpdatesEnabled = body.intradayUpdatesEnabled;
   }
+  if (typeof body.noTouchMode === "boolean") {
+    out.noTouchMode = body.noTouchMode;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }

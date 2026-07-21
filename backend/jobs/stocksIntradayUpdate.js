@@ -67,15 +67,22 @@ OUTPUT FORMAT:
 - HELD tickers ARE pre-verified — never write "Ticker Not Found" for a held ticker.`;
 
 // Format the intraday context block. Returns { userMessage, hasActionable }.
-function buildIntradayUserMessage({ profile, slot, ymd, stops, freshEightKs, regimeFlip, picksEnteringZone, recsEnteringZone }) {
-  const hasActionable =
-    (stops?.hardStopHit?.length || 0) > 0 ||
-    (stops?.withinStop?.length || 0) > 0 ||
-    (stops?.watch?.length || 0) > 0 ||
-    (freshEightKs?.length || 0) > 0 ||
-    !!regimeFlip ||
-    (picksEnteringZone?.length || 0) > 0 ||
-    (recsEnteringZone?.length || 0) > 0;
+// noTouchMode narrows "actionable" to hard-stop-hit only, since the trader
+// can't touch orders during the session anyway — informational signals
+// (regime flips, zone entries, informational 8-Ks) become dead letters
+// and shouldn't trigger an email.
+function buildIntradayUserMessage({ profile, slot, ymd, stops, freshEightKs, regimeFlip, picksEnteringZone, recsEnteringZone, noTouchMode = false }) {
+  const hasActionable = noTouchMode
+    ? (stops?.hardStopHit?.length || 0) > 0
+    : (
+        (stops?.hardStopHit?.length || 0) > 0 ||
+        (stops?.withinStop?.length || 0) > 0 ||
+        (stops?.watch?.length || 0) > 0 ||
+        (freshEightKs?.length || 0) > 0 ||
+        !!regimeFlip ||
+        (picksEnteringZone?.length || 0) > 0 ||
+        (recsEnteringZone?.length || 0) > 0
+      );
 
   const stopsBlock = formatPositionStopBlock(stops) || "No position P&L stops crossed.";
 
@@ -102,8 +109,11 @@ function buildIntradayUserMessage({ profile, slot, ymd, stops, freshEightKs, reg
       ).join("\n")}`;
 
   const summary = portfolioSummary(profile);
+  const noTouchNote = noTouchMode
+    ? `\nNO-TOUCH MODE: this user cannot adjust orders during the session. Frame any action item as "queue for tomorrow morning before 8:45 AM ET" rather than "act now." The only intraday item worth flagging is a HARD-STOP hit — everything else should be brief and framed as tomorrow's queue.\n`
+    : "";
   const userMessage = `Intraday update slot: ${slot} ET on ${ymd}.
-
+${noTouchNote}
 Holdings (for reference — do NOT restate the whole book, only tickers that show up in the blocks below):
 ${summary.table}
 
@@ -323,6 +333,7 @@ export async function runIntradayUpdateForUser(profile, slot, ymd) {
     regimeFlip: flip,
     picksEnteringZone,
     recsEnteringZone,
+    noTouchMode: !!profile.noTouchMode,
   });
 
   // Persist dedup + regime state even if we skip email.
