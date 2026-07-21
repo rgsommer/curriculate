@@ -125,7 +125,9 @@ async function apiPutPortfolio(sessionToken, profile) {
   // ignores fields it doesn't recognize, but it cannot recover fields the
   // client never sent — and the doc-level $set will leave them untouched.
   // (Bug history: goals + contribution goals silently dropped because the
-  // body picked only 4 fields.)
+  // body picked only 4 fields. Then AGAIN with intraday/options/no-touch/
+  // sleeveTargets — Settings toggles appeared to not persist because
+  // this whitelist wasn't updated when the schema was.)
   const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio`, {
     method: "PUT",
     credentials: "include",
@@ -138,6 +140,10 @@ async function apiPutPortfolio(sessionToken, profile) {
       consensusMode: profile.consensusMode,
       briefingTimes: profile.briefingTimes,
       briefingTz: profile.briefingTz,
+      intradayUpdatesEnabled: profile.intradayUpdatesEnabled,
+      optionsTradingEnabled: profile.optionsTradingEnabled,
+      noTouchMode: profile.noTouchMode,
+      sleeveTargets: profile.sleeveTargets,
       goals: profile.goals,
       annualContributionGoals: profile.annualContributionGoals,
       accounts: profile.accounts,
