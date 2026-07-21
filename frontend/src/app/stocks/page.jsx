@@ -3671,6 +3671,59 @@ function BriefingScheduleCard({ times = [], tz = "America/New_York", onChangeTim
 // poller (Phase 2). Displays connection status when configured, and a
 // form to set/rotate the app password when not. The app password is
 // masked and never round-trips to the client after save.
+// One row in the "needs manual review" panel: shows the trade summary,
+// current holders of the ticker, and lets the user pick an account
+// from a dropdown to resolve the row. Clicking Resolve fires the
+// server-side resolve endpoint which updates + applies positions.
+function PendingReviewRow({ row, allAccounts, onResolve }) {
+  const leg = row.leg;
+  // Default the picker to the account with the most matching shares
+  // (typically the right one for a SELL). Falls back to the first
+  // holder, then any account, then empty.
+  const preferred = (row.holdersOfTicker || [])
+    .slice()
+    .sort((a, b) => b.qty - a.qty)[0];
+  const [pickedAcct, setPickedAcct] = React.useState(preferred?.acctId || allAccounts?.[0]?.id || "");
+  const [resolving, setResolving] = React.useState(false);
+  const submit = async () => {
+    if (!pickedAcct) return;
+    setResolving(true);
+    try { await onResolve(pickedAcct); }
+    finally { setResolving(false); }
+  };
+  return (
+    <div style={{
+      display: "grid", gridTemplateColumns: "1fr 200px 120px", gap: 10,
+      alignItems: "center", padding: "8px 10px", background: "#fff",
+      border: "1px solid #fecaca", borderRadius: 6,
+    }}>
+      <div>
+        <div style={{ fontWeight: 600 }}>
+          {leg.side} {leg.shares} {leg.ticker} @ ${leg.pricePerShare?.toFixed?.(2)} {leg.currency}
+        </div>
+        <div style={{ fontSize: 11, color: "#7f1d1d", marginTop: 2 }}>
+          {new Date(row.executedAt).toLocaleDateString()} · {row.reason || "no reason recorded"}
+        </div>
+        {row.holdersOfTicker?.length > 0 && (
+          <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 3 }}>
+            Currently held: {row.holdersOfTicker.map(h => `${h.name}=${h.qty}`).join(" · ")}
+          </div>
+        )}
+      </div>
+      <select value={pickedAcct} onChange={(e) => setPickedAcct(e.target.value)} style={{ width: "100%" }}>
+        {(allAccounts || []).map(a => (
+          <option key={a.id} value={a.id}>
+            {a.name}{(row.holdersOfTicker || []).find(h => h.acctId === a.id) ? " ✓" : ""}
+          </option>
+        ))}
+      </select>
+      <button className="sa-btn" onClick={submit} disabled={resolving || !pickedAcct} style={{ padding: "8px 12px", fontSize: 12 }}>
+        {resolving ? "Applying…" : "Resolve"}
+      </button>
+    </div>
+  );
+}
+
 function EmailIntegrationCard({ sessionToken }) {
   const [state, setState] = useState({ loading: true });
   const [mailboxAddress, setMailboxAddress] = useState("rgsommer.junk@gmail.com");
@@ -3772,6 +3825,44 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setBackfilling(false); }
   };
 
+  // Needs-review list for the inline resolution panel.
+  const [pendingReview, setPendingReview] = useState({ loading: false, rows: [], allAccounts: [] });
+  const loadPendingReview = async () => {
+    if (!sessionToken) return;
+    setPendingReview(p => ({ ...p, loading: true }));
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/pending-review`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      setPendingReview({
+        loading: false,
+        rows: Array.isArray(j.rows) ? j.rows : [],
+        allAccounts: Array.isArray(j.allAccounts) ? j.allAccounts : [],
+      });
+    } catch { setPendingReview(p => ({ ...p, loading: false })); }
+  };
+  useEffect(() => { if (state?.configured) loadPendingReview(); }, [state?.configured, sessionToken]);
+
+  const resolveTrade = async (tradeId, accountId) => {
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/resolve-trade`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeId, accountId }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setBanner({ kind: "ok", msg: `Resolved: applied to ${j.account}. Positions + cash updated.` });
+      await loadPendingReview();
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Resolve failed: ${e?.message || "unknown"}` });
+    }
+  };
+
   const [retrying, setRetrying] = useState(false);
   const retryNeedsReview = async () => {
     if (!window.confirm("Re-run the reconciler over every needs-review poller trade using the current (improved) account-inference logic. Trades that now resolve to 'auto' get positions + cash applied; the rest stay needs-review with an updated reason. Continue?")) return;
@@ -3794,6 +3885,7 @@ function EmailIntegrationCard({ sessionToken }) {
       }
       setBanner({ kind: j.failedCount > 0 ? "err" : "ok", msg });
       await load();
+      await loadPendingReview();
     } catch (e) {
       setBanner({ kind: "err", msg: e?.message || "Retry failed" });
     } finally { setRetrying(false); }
@@ -3950,6 +4042,26 @@ function EmailIntegrationCard({ sessionToken }) {
                   ))}
                 </ul>
               )}
+            </div>
+          )}
+          {pendingReview.rows?.length > 0 && (
+            <div style={{ marginTop: 10, padding: "10px 12px", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 8, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 6, color: "#7f1d1d" }}>
+                🔍 {pendingReview.rows.length} trade{pendingReview.rows.length === 1 ? "" : "s"} need{pendingReview.rows.length === 1 ? "s" : ""} manual review
+              </div>
+              <div style={{ marginBottom: 8, color: "#7f1d1d" }}>
+                For each row, pick the account it should be charged to, then click Resolve. Positions + cash will update immediately.
+              </div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {pendingReview.rows.map(row => (
+                  <PendingReviewRow
+                    key={row._id}
+                    row={row}
+                    allAccounts={pendingReview.allAccounts}
+                    onResolve={(acctId) => resolveTrade(row._id, acctId)}
+                  />
+                ))}
+              </div>
             </div>
           )}
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>

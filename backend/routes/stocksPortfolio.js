@@ -889,6 +889,109 @@ router.post("/email-integration/test", requireStocksAuth, async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/email-integration/pending-review
+// List every stuck needs-review poller trade with the info the UI
+// needs to render an inline resolution row (reason, accounts holding
+// the ticker, current holdings per account).
+// ──────────────────────────────────────────────────────────────────────
+router.get("/email-integration/pending-review", requireStocksAuth, async (req, res) => {
+  try {
+    const email = req.stocksUser.email;
+    const [stuck, profile] = await Promise.all([
+      StocksTradeJournal.find({
+        email,
+        brokerReconcileSource: "cibc-email",
+        brokerReconcileStatus: "needs-review",
+        positionApplied: { $ne: true },
+      }).sort({ executedAt: -1 }).lean(),
+      StocksPortfolio.findOne({ email }).lean(),
+    ]);
+    if (!profile) return res.json({ ok: true, rows: [] });
+    const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    const rows = stuck.map((t) => {
+      const leg = t.legs?.[0];
+      if (!leg) return null;
+      const legBase = baseOf(leg.ticker);
+      const holders = (profile.positions || []).reduce((acc, p) => {
+        if (baseOf(p.ticker) !== legBase || !(p.qty > 0)) return acc;
+        const key = p.acct;
+        acc[key] = (acc[key] || 0) + p.qty;
+        return acc;
+      }, {});
+      const holderRows = Object.entries(holders).map(([acctId, qty]) => {
+        const acct = (profile.accounts || []).find(a => a.id === acctId);
+        return { acctId, name: acct?.name || acctId, qty };
+      });
+      return {
+        _id: String(t._id),
+        executedAt: t.executedAt,
+        leg: {
+          side: leg.side,
+          shares: leg.shares,
+          ticker: leg.ticker,
+          pricePerShare: leg.pricePerShare,
+          currency: leg.currency,
+        },
+        currentAccount: t.accountName || "",
+        reason: t.brokerReconcileNotes || t.notes || "",
+        holdersOfTicker: holderRows,
+      };
+    }).filter(Boolean);
+    res.json({
+      ok: true,
+      rows,
+      allAccounts: (profile.accounts || []).map(a => ({ id: a.id, name: a.name })),
+    });
+  } catch (err) {
+    console.error("stocks-portfolio pending-review error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/resolve-trade
+// Body: { tradeId, accountId }. Assign the specified account to a
+// needs-review trade, mark it auto, and apply legs to positions + cash.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/resolve-trade", requireStocksAuth, async (req, res) => {
+  try {
+    const { tradeId, accountId } = req.body || {};
+    if (!tradeId || !/^[a-f0-9]{24}$/i.test(tradeId)) {
+      return res.status(400).json({ error: "tradeId must be a 24-char hex ObjectId" });
+    }
+    if (!accountId || typeof accountId !== "string") {
+      return res.status(400).json({ error: "accountId required" });
+    }
+    const doc = await StocksTradeJournal.findOne({ _id: tradeId, email: req.stocksUser.email });
+    if (!doc) return res.status(404).json({ error: "Trade not found" });
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    const acct = (profile?.accounts || []).find(a => a.id === accountId);
+    if (!acct) return res.status(400).json({ error: `Unknown account: ${accountId}` });
+
+    const { backfillTradeToPortfolio } = await import("../services/stocksTradeApplier.js");
+    doc.account = accountId;
+    doc.accountName = acct.name;
+    doc.brokerReconcileStatus = "auto";
+    doc.brokerReconcileNotes = `Resolved manually ${new Date().toISOString().slice(0, 16)} — user picked ${acct.name}`;
+    await doc.save();
+
+    try {
+      await backfillTradeToPortfolio(await StocksTradeJournal.findById(doc._id).lean());
+      res.json({ ok: true, resolved: true, account: acct.name });
+    } catch (applyErr) {
+      // Revert status if apply failed (e.g. over-sell against current position)
+      doc.brokerReconcileStatus = "needs-review";
+      doc.brokerReconcileNotes = `Manual resolve to ${acct.name} failed: ${applyErr.message}`;
+      await doc.save();
+      res.status(400).json({ error: applyErr.message });
+    }
+  } catch (err) {
+    console.error("stocks-portfolio resolve-trade error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
 // POST /api/stocks-portfolio/email-integration/retry-needs-review
 // Walk every needs-review poller trade, re-run the reconciler with
 // current logic + current portfolio state, and promote+apply whichever
