@@ -2741,22 +2741,24 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
     //     ticker mismatch, since fixed but historical trades are stuck)
     //   - poller ingested a trade before the position-update fix
     //   - CSV import didn't carry the rec id
-    // Without this, the follow-rate metric grossly understates what
-    // the user actually did — 14% when reality is 60-80%.
     //
     // Match criteria: base ticker + action side + trade date within
-    // [rec.generatedAt, rec.generatedAt + 21d]. First match wins per
-    // rec; first-come-first-served on trades so one trade can't cover
-    // multiple recs.
+    // [rec.generatedAt, rec.generatedAt + 21d].
+    //
+    // IMPORTANT — one trade CAN satisfy multiple recs. If the AI
+    // recommended SELL NVDA Mon, Tue, Wed and the user finally sold
+    // Wednesday, that single SELL fulfills all three recs — the trader
+    // followed the guidance, just on a delayed timeline. Only trades
+    // that ALREADY had an explicit linkedAdviceRecId (from Execute-
+    // click) are reserved to their original rec so we don't
+    // double-count the same rec.
     const baseTicker = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
-    const claimedTradeIds = new Set(Array.from(tradesByRecId.values()).map(t => String(t._id)));
     for (const rec of recs) {
       if (tradesByRecId.has(String(rec._id))) continue; // already linked
       const recBase = baseTicker(rec.ticker);
       const recDate = new Date(rec.generatedAt);
       const cutoffDate = new Date(recDate.getTime() + 21 * 86400000);
       const fuzzyMatch = trades.find(t => {
-        if (claimedTradeIds.has(String(t._id))) return false;
         const executedAt = new Date(t.executedAt);
         if (executedAt < recDate || executedAt > cutoffDate) return false;
         return (t.legs || []).some(leg =>
@@ -2766,7 +2768,6 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
       });
       if (fuzzyMatch) {
         tradesByRecId.set(String(rec._id), fuzzyMatch);
-        claimedTradeIds.add(String(fuzzyMatch._id));
       }
     }
 
