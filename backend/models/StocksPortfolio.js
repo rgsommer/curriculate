@@ -247,6 +247,16 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // crossed, fresh 8-K, regime flip, Test A pick entry-zone entry)
     // shows up. Silent when the intraday tape is quiet.
     intradayUpdatesEnabled: { type: Boolean, default: false },
+    // Options overlay opt-in. When off (default), the briefing's OPTIONS
+    // OVERLAY block is skipped entirely — no covered-call suggestions
+    // surface. When on, the overlay is narrowed to the specific
+    // no-touch-friendly subset the trader agreed to:
+    //   • covered calls only
+    //   • held Canadian large-caps only (SWING sleeve set)
+    //   • Non-Spousal account only (avoids TFSA CRA-audit risk and
+    //     RRSP broker-restriction issues)
+    //   • IV rank ≥ 70 (already enforced by the overlay itself)
+    optionsTradingEnabled: { type: Boolean, default: false },
     // No-touch mode: assumes the trader queues every order before
     // ~8:45 AM ET and can't monitor / adjust during the session.
     // When on:

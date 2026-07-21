@@ -3664,6 +3664,33 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
       </div>
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
+        <h3>Options trading</h3>
+        <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={!!user.optionsTradingEnabled}
+            onChange={(e) => { updateUser(() => ({ optionsTradingEnabled: e.target.checked })); showToast(e.target.checked ? "Options trading enabled" : "Options trading disabled"); }}
+            style={{ marginTop: 3 }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Include covered-call overlay suggestions in briefings</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              When on, the daily briefing may include a compact <b>section 6a &quot;Options overlay&quot;</b> with concrete covered-call recs (strike, expiration, mid premium, monthly yield, ~delta). Deliberately narrow to reduce mistakes:
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                <li><b>Covered calls only</b> — no long options, no spreads, no naked positions</li>
+                <li><b>Canadian large-caps (SWING sleeve) only</b> — RY, TD, ENB, BMO, etc.</li>
+                <li><b>Non-Spousal account only</b> — TFSA/RRSP excluded (CRA business-income risk in TFSA; broker restrictions in RRSP)</li>
+                <li><b>IV rank ≥ 70</b> — only when premium is genuinely rich</li>
+                <li><b>Only when the position is in an unrealized gain</b> — capping upside on a losing position piles risk on risk</li>
+                <li><b>Skips</b> if an earnings date falls inside the expiration window (IV crush inverts the trade)</li>
+              </ul>
+              Confirm options approval with your broker before enabling. Talk to an accountant about T5008 implications if you plan to run this frequently.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>No-touch mode</h3>
         <label style={{ display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer" }}>
           <input

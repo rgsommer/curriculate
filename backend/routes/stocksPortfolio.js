@@ -210,6 +210,9 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.noTouchMode === "boolean") {
     out.noTouchMode = body.noTouchMode;
   }
+  if (typeof body.optionsTradingEnabled === "boolean") {
+    out.optionsTradingEnabled = body.optionsTradingEnabled;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }

@@ -22,6 +22,18 @@
 // but out of scope for this pass — the "held" gate keeps this MVP tight.
 
 import { getOptionsMetrics } from "./stocksOptionsMetrics.js";
+import { classifyPosition } from "./stocksSleeveEnforcer.js";
+
+// Regex that identifies the user's Non-Spousal-type account by name.
+// Matches "Non-Spousal", "Non Spousal", "Cash", "Margin", "Taxable" —
+// anything that ISN'T RRSP / TFSA / RESP / FHSA / LIRA / LIF. Both
+// TFSA (CRA options-trading audit risk) and RRSP (broker-restricted)
+// are deliberately excluded per the trader's operating agreement.
+const REGISTERED_ACCOUNT_NAME_RE = /rrsp|tfsa|resp|fhsa|lira|lif|rrif|rdsp/i;
+function isNonSpousalAccount(account) {
+  if (!account?.name) return false;
+  return !REGISTERED_ACCOUNT_NAME_RE.test(account.name);
+}
 
 const YAHOO_OPT = "https://query2.finance.yahoo.com/v7/finance/options";
 
@@ -100,45 +112,80 @@ function approxCallDelta(spot, strike, ivPct, dteDays) {
   return 0.5 * (1 + erf(d1 / Math.sqrt(2)));
 }
 
-// Compute avg cost basis per share for the ticker across all lots so we
-// can gate the overlay behind "in an unrealized gain."
-function avgBasis(positions, ticker) {
-  const lots = positions.filter((p) => String(p.ticker || "").toUpperCase() === ticker && (p.qty || 0) > 0);
-  if (lots.length === 0) return null;
+// Weighted-avg cost basis per share for the ticker across the given
+// lot set. Uses costBasisCad / costBasisUsd (whichever matches the
+// position's ccy) — those are TOTAL cost fields, so per-share = total
+// divided by qty. Returns null if no lots carry a basis.
+function avgBasis(lots) {
+  if (!lots || lots.length === 0) return null;
   let cost = 0, qty = 0;
   for (const l of lots) {
-    if (!Number.isFinite(l.avgCost) || !(l.qty > 0)) continue;
-    cost += l.avgCost * l.qty;
+    if (!(l.qty > 0)) continue;
+    const totalCost = l.ccy === "USD" ? l.costBasisUsd : l.costBasisCad;
+    if (!Number.isFinite(totalCost)) continue;
+    cost += totalCost;
     qty += l.qty;
   }
   return qty > 0 ? cost / qty : null;
 }
 
-// Total shares held for a ticker across all lots/accounts.
-function totalShares(positions, ticker) {
-  return positions
-    .filter((p) => String(p.ticker || "").toUpperCase() === ticker)
-    .reduce((s, p) => s + (p.qty || 0), 0);
+// Total shares of a ticker within the given lot set.
+function sumShares(lots) {
+  return (lots || []).reduce((s, p) => s + (p.qty || 0), 0);
 }
 
 // Build overlay suggestions for every held ticker that meets the gate.
 // Returns [] on any failure so the caller never has to null-check.
-export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37 }) {
+//
+// Options:
+//   enabled            — global opt-in. When false, returns [] (no overlay).
+//                         Default true (backwards-compatible).
+//   accounts           — user's accounts array; needed to identify
+//                         Non-Spousal-type accounts when narrowSubset is on.
+//   narrowSubset       — when true, applies the narrow subset agreed with
+//                         the trader: only SWING-sleeve (Canadian large-cap)
+//                         holdings inside a Non-Spousal-type account. Default
+//                         true when accounts is passed.
+export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37, enabled = true, accounts = [], narrowSubset = null }) {
+  if (!enabled) return [];
   if (!positions || positions.length === 0) return [];
-  const heldTickers = [...new Set(positions.map((p) => String(p.ticker || "").toUpperCase()))].filter(Boolean);
+
+  const applyNarrow = narrowSubset === null ? (accounts && accounts.length > 0) : !!narrowSubset;
+  const nonSpousalIds = new Set(
+    (accounts || []).filter(isNonSpousalAccount).map((a) => a.id)
+  );
+
+  // Build the (ticker → eligible lots) map after filtering. Narrow
+  // subset drops registered-account lots and non-swing-sleeve names
+  // BEFORE checking gates so the same ticker held in RRSP and
+  // Non-Spousal only "counts" from Non-Spousal shares.
+  const lotsByTicker = new Map();
+  for (const p of positions) {
+    const t = String(p.ticker || "").toUpperCase();
+    if (!t) continue;
+    if (applyNarrow) {
+      if (!nonSpousalIds.has(p.acct)) continue;
+      if (classifyPosition(p) !== "swing") continue;
+    }
+    if (!lotsByTicker.has(t)) lotsByTicker.set(t, []);
+    lotsByTicker.get(t).push(p);
+  }
+  const heldTickers = [...lotsByTicker.keys()];
 
   const out = [];
   await Promise.all(heldTickers.map(async (ticker) => {
     try {
-      // Gate 1: enough shares for 1 contract (100 sh).
-      const shares = totalShares(positions, ticker);
+      const lots = lotsByTicker.get(ticker) || [];
+      // Gate 1: enough shares for 1 contract (100 sh) within the
+      // eligible lot set — not across the whole book.
+      const shares = sumShares(lots);
       if (shares < 100) return;
       // Gate 2: IV rank ≥ 70 (options are relatively rich).
       const opt = await getOptionsMetrics(ticker).catch(() => null);
       if (!opt || !(opt.ivRankPct >= 70) || !Number.isFinite(opt.currentIVPct) || !Number.isFinite(opt.spot)) return;
       // Gate 3: position is in an unrealized gain (avg basis exists and
       // spot > basis). If basis unknown, allow with a note.
-      const basis = avgBasis(positions, ticker);
+      const basis = avgBasis(lots);
       const inGain = basis == null ? null : opt.spot > basis;
       if (basis != null && !inGain) return;
 
