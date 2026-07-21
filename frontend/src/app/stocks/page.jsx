@@ -3708,6 +3708,32 @@ function EmailIntegrationCard({ sessionToken }) {
               ) : <span className="sa-muted">never polled — poller ships in Phase 2B</span>}
           </div>
           <div><b>Reconciled trades:</b> {state.reconciledCount || 0} since {state.configuredAt ? new Date(state.configuredAt).toLocaleDateString() : "setup"}</div>
+          {Array.isArray(state.recentTrades) && (
+            <div style={{ marginTop: 8, padding: "8px 10px", background: state.recentTrades.length === 0 ? "#fef3c7" : "#f1f5f9", border: `1px solid ${state.recentTrades.length === 0 ? "#fde68a" : "#e2e8f0"}`, borderRadius: 6, fontSize: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>
+                {state.recentTrades.length === 0
+                  ? "⚠ No trades ingested from the poller yet"
+                  : `Last ${state.recentTrades.length} poller-ingested trade${state.recentTrades.length === 1 ? "" : "s"}:`}
+              </div>
+              {state.recentTrades.length === 0 ? (
+                <div style={{ color: "#78350f" }}>
+                  The poller has run but no CIBC alerts have been parsed and journalled. Either alerts aren&apos;t yet reaching Gmail (check forwarding), or all matching messages have been skipped (click <b>Poll now</b> to see skip detail).
+                </div>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.6 }}>
+                  {state.recentTrades.map(t => (
+                    <li key={t._id}>
+                      <code style={{ fontSize: 11 }}>{new Date(t.executedAt).toISOString().slice(0, 10)}</code> · {t.leg} · <i>{t.account}</i>
+                      {" · "}
+                      <span style={{ color: t.status === "auto" ? "#14532d" : "#78350f" }}>{t.status}</span>
+                      {" · "}
+                      <span style={{ color: t.positionApplied ? "#14532d" : "#7f1d1d" }}>{t.positionApplied ? "positions applied" : "positions NOT applied"}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
             <button className="sa-btn" onClick={() => setEditing(true)}>Edit / rotate password</button>
             <button className="sa-btn" onClick={test} disabled={testing}>{testing ? "Testing…" : "Test connection"}</button>

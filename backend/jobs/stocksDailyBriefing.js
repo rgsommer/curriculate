@@ -179,15 +179,65 @@ export async function monitorOpenRecs(email) {
   const priceMap = {};
   await Promise.all(symbols.map(async sym => { priceMap[sym] = await fetchCurrentPrice(sym); }));
 
+  // Load recent BUY trade legs so we can silence recs superseded by a
+  // fresh purchase. Common case: an old MSFT rec's stop of $370 was hit
+  // weeks ago (rec correctly went "stop-hit"). Then the user re-entered
+  // MSFT at $398 on a fresh rec. Or the rec somehow stayed "open" while
+  // a fresh position was taken. Either way, alerting "MSFT hit stop"
+  // when the trader just bought is nonsense — the old stop is stale
+  // relative to the current position.
+  const recentBuysByBase = new Map();
+  try {
+    const cutoff = new Date(Date.now() - 90 * 86400000);
+    const journal = await StocksTradeJournal.find({
+      email,
+      executedAt: { $gte: cutoff },
+      "legs.side": "BUY",
+    }).select({ executedAt: 1, legs: 1 }).lean();
+    const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    for (const t of journal) {
+      for (const leg of t.legs || []) {
+        if (leg.side !== "BUY" || !leg.ticker) continue;
+        const k = baseOf(leg.ticker);
+        const prior = recentBuysByBase.get(k);
+        if (!prior || new Date(t.executedAt) > prior.date) {
+          recentBuysByBase.set(k, { date: new Date(t.executedAt), price: leg.pricePerShare, currency: leg.currency });
+        }
+      }
+    }
+  } catch (e) { console.warn("[monitorOpenRecs] journal load warn:", e?.message); }
+
   const targetAlerts = [];
   const stopAlerts = [];
   const updates = [];
+  const supersededIds = [];
   let inRangeCount = 0;
   const now = new Date();
+  const baseTicker = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
 
   for (const rec of openRecs) {
     const px = priceMap[recSymbol(rec)];
     if (px == null) continue;
+
+    // Supersession check — only applies to BUY-side recs. If a fresh
+    // BUY on the same base ticker executed AFTER this rec was
+    // generated AT A PRICE ABOVE this rec's stop, this rec's stop is
+    // definitionally stale: the trader has already bought back higher.
+    if (rec.action === "BUY") {
+      const freshBuy = recentBuysByBase.get(baseTicker(rec.ticker));
+      const recDate = rec.generatedAt ? new Date(rec.generatedAt) : null;
+      if (
+        freshBuy && recDate &&
+        freshBuy.date > recDate &&
+        rec.stopPrice != null &&
+        Number.isFinite(freshBuy.price) &&
+        freshBuy.price > rec.stopPrice
+      ) {
+        supersededIds.push(rec._id);
+        updates.push({ id: rec._id, set: { status: "expired", hitAt: now, lastCheckedAt: now, lastCheckedPrice: px, exitLevelsFilledBy: "atr-defaults" } });
+        continue; // no alert
+      }
+    }
 
     let targetHit = false;
     let stopHit = false;

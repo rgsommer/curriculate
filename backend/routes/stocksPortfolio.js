@@ -747,6 +747,13 @@ router.get("/email-integration", requireStocksAuth, async (req, res) => {
         encryptionReady: isEncryptionConfigured(),
       });
     }
+    // The last 5 broker-alert trades the poller actually inserted, so the
+    // user has a visible confirmation that ingestion is working
+    // end-to-end (or a visible signal that it isn't).
+    const recent = await StocksTradeJournal.find({
+      email: req.stocksUser.email,
+      brokerReconcileSource: "cibc-email",
+    }).sort({ executedAt: -1 }).limit(5).lean().catch(() => []);
     res.json({
       ok: true,
       configured: true,
@@ -763,6 +770,14 @@ router.get("/email-integration", requireStocksAuth, async (req, res) => {
       lastPollError: doc.lastPollError,
       reconciledCount: doc.reconciledCount,
       configuredAt: doc.configuredAt,
+      recentTrades: recent.map(t => ({
+        _id: String(t._id),
+        executedAt: t.executedAt,
+        account: t.accountName || t.account || "",
+        leg: t.legs?.[0] ? `${t.legs[0].side} ${t.legs[0].shares} ${t.legs[0].ticker} @ $${t.legs[0].pricePerShare} ${t.legs[0].currency}` : null,
+        status: t.brokerReconcileStatus,
+        positionApplied: !!t.positionApplied,
+      })),
     });
   } catch (err) {
     console.error("stocks-portfolio email-integration GET error:", err);
@@ -985,6 +1000,35 @@ router.post("/email-integration/backfill-positions", requireStocksAuth, async (r
   } catch (err) {
     console.error("stocks-portfolio backfill-positions error:", err);
     res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/rescan-mailbox
+// Reset the IMAP UID high-water mark to zero and run a poll. Every
+// message matching the configured filter is re-fetched and re-parsed.
+// The brokerReconcileKey unique index prevents duplicate inserts,
+// so a rescan cannot double-record a trade — safe to run any time.
+// Use this when: alerts sit in Gmail but the poller already advanced
+// past them (parser variant, transient failure, poll during a moment
+// when the parser was broken, etc).
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/rescan-mailbox", requireStocksAuth, async (req, res) => {
+  try {
+    if (!isEncryptionConfigured()) {
+      return res.status(503).json({ error: "Server encryption key not configured (STOCKS_INTEGRATION_KEY)." });
+    }
+    const integ = await StocksEmailIntegration.findOne({ email: req.stocksUser.email });
+    if (!integ) return res.status(404).json({ error: "No integration configured yet." });
+    integ.lastProcessedUid = null;
+    integ.lastPollError = "";
+    await integ.save();
+    const { pollUserMailbox } = await import("../services/stocksEmailPoller.js");
+    const result = await pollUserMailbox(req.stocksUser.email);
+    res.json({ ok: true, resetUid: true, ...result });
+  } catch (err) {
+    console.error("stocks-portfolio email-integration rescan error:", err);
+    res.status(500).json({ error: `Internal error: ${err?.message || "unknown"}` });
   }
 });
 
