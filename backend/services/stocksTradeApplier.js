@@ -169,7 +169,9 @@ export async function applyReconciledTrade({
   portfolio.lastSyncedAt = new Date();
   await portfolio.save();
 
-  // Journal the trade (with dedup fields populated for poller-sourced rows).
+  // Journal the trade (with dedup fields populated for poller-sourced
+  // rows). positionApplied=true because we just applied above — this
+  // is how backfill knows which pre-fix rows still need mutation.
   const tradeDoc = {
     email,
     executedAt: executedAt ? new Date(executedAt) : new Date(),
@@ -179,6 +181,7 @@ export async function applyReconciledTrade({
     netCashCad: netCashCadOfTrade(legs, fx),
     fxUsdCadAtTrade: fx,
     notes: String(notes || "").slice(0, 500),
+    positionApplied: true,
     ...(linkedAdviceRecId ? { linkedAdviceRecId } : {}),
     ...(linkedDailyPickId ? { linkedDailyPickId } : {}),
     ...(brokerReconcileKey ? { brokerReconcileKey } : {}),
@@ -224,4 +227,67 @@ export async function applyReconciledTrade({
   }
 
   return { trade, portfolio };
+}
+
+// Retroactively apply an already-journalled trade's legs to the
+// portfolio (positions + account cash), then flip positionApplied on
+// the trade doc so it doesn't get applied twice. Used by the
+// backfill endpoint after the Phase 2B fix — pre-fix poller rows
+// were journalled but never mutated the portfolio.
+//
+// Returns { applied: true } on success, or throws — caller decides
+// how to surface failures (usually: leave positionApplied=false so
+// the user can fix the account/qty manually and re-run backfill).
+export async function backfillTradeToPortfolio(tradeDoc) {
+  if (!tradeDoc) throw new Error("tradeDoc required");
+  if (tradeDoc.positionApplied) return { applied: false, reason: "already-applied" };
+  if (!tradeDoc.account) throw new Error("trade has no account — resolve manually first");
+  if (!Array.isArray(tradeDoc.legs) || tradeDoc.legs.length === 0) throw new Error("trade has no legs");
+
+  const portfolio = await StocksPortfolio.findOne({ email: tradeDoc.email });
+  if (!portfolio) throw new Error("no portfolio for this trade's email");
+  const acctRow = portfolio.accounts.find((a) => a.id === tradeDoc.account);
+  if (!acctRow) throw new Error(`unknown account id ${tradeDoc.account}`);
+  const fx = tradeDoc.fxUsdCadAtTrade || portfolio.fxUsdCad || 1.37;
+
+  const newPositions = portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }));
+  for (const leg of tradeDoc.legs) {
+    if (leg.side === "BUY" || leg.side === "SELL") {
+      applyLeg(newPositions, tradeDoc.account, {
+        side: leg.side, ticker: leg.ticker, shares: leg.shares,
+        price: leg.pricePerShare, currency: leg.currency, settleCcy: leg.settleCcy,
+      });
+    }
+    adjustAccountCash(acctRow, leg, fx);
+  }
+  portfolio.positions = newPositions;
+  portfolio.markModified("accounts");
+  portfolio.lastSyncedAt = new Date();
+  await portfolio.save();
+
+  // Mark this trade doc so a second backfill run skips it. Also
+  // re-stamp daily-pick "ENTERED" for BUY legs — matches the
+  // apply-through-manual-flow behavior.
+  await StocksTradeJournal.updateOne(
+    { _id: tradeDoc._id },
+    { $set: { positionApplied: true } }
+  );
+  try {
+    const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    for (const leg of tradeDoc.legs) {
+      if (leg.side !== "BUY" || !leg.ticker) continue;
+      await StocksDailyPick.updateOne(
+        { email: tradeDoc.email, ticker: leg.ticker, status: "open",
+          enteredAt: null, pickDate: { $gte: cutoff } },
+        { $set: {
+            enteredAt: tradeDoc.executedAt,
+            enteredPrice: leg.pricePerShare,
+            enteredShares: leg.shares,
+            enteredTradeId: tradeDoc._id,
+          } }
+      );
+    }
+  } catch (e) { console.warn("[trade-applier/backfill] daily-pick stamp warn:", e?.message); }
+
+  return { applied: true };
 }

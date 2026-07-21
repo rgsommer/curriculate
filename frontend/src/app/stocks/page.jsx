@@ -3562,6 +3562,29 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setTesting(false); }
   };
 
+  const [backfilling, setBackfilling] = useState(false);
+  const backfillPositions = async () => {
+    if (!window.confirm("Retroactively apply positions + cash for any poller-reconciled trades that were journalled BEFORE the position-update fix landed. Skip trades that fail (e.g. over-sell against current portfolio). Continue?")) return;
+    setBanner(null);
+    setBackfilling(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/backfill-positions`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      const msg = j.appliedCount === 0 && j.failedCount === 0
+        ? "No trades needed backfill — nothing to apply."
+        : `Backfill: ${j.appliedCount} applied · ${j.failedCount} failed${j.failedCount ? " (see server logs for detail — likely over-sell against current holdings)" : ""}`;
+      setBanner({ kind: j.failedCount > 0 ? "err" : "ok", msg });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: e?.message || "Backfill failed" });
+    } finally { setBackfilling(false); }
+  };
+
   const [pollingNow, setPollingNow] = useState(false);
   const pollNow = async () => {
     setBanner(null);
@@ -3651,6 +3674,7 @@ function EmailIntegrationCard({ sessionToken }) {
             <button className="sa-btn" onClick={() => setEditing(true)}>Edit / rotate password</button>
             <button className="sa-btn" onClick={test} disabled={testing}>{testing ? "Testing…" : "Test connection"}</button>
             <button className="sa-btn" onClick={pollNow} disabled={pollingNow}>{pollingNow ? "Polling…" : "Poll now"}</button>
+            <button className="sa-btn" onClick={backfillPositions} disabled={backfilling}>{backfilling ? "Backfilling…" : "Backfill positions"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
         </div>
@@ -3904,7 +3928,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
             type="checkbox"
             checked={!!user.consensusMode}
             onChange={(e) => onChangeConsensusMode(e.target.checked)}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}
           />
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>Consensus mode</div>
@@ -3929,7 +3953,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
             type="checkbox"
             checked={!!user.intradayUpdatesEnabled}
             onChange={(e) => { updateUser(() => ({ intradayUpdatesEnabled: e.target.checked })); showToast(e.target.checked ? "Midday updates enabled" : "Midday updates disabled"); }}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}
           />
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>Enable intraday tape updates (11:00 · 13:00 · 15:00 ET, weekdays)</div>
@@ -3947,7 +3971,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
             type="checkbox"
             checked={!!user.optionsTradingEnabled}
             onChange={(e) => { updateUser(() => ({ optionsTradingEnabled: e.target.checked })); showToast(e.target.checked ? "Options trading enabled" : "Options trading disabled"); }}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}
           />
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>Include covered-call overlay suggestions in briefings</div>
@@ -3974,7 +3998,7 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
             type="checkbox"
             checked={!!user.noTouchMode}
             onChange={(e) => { updateUser(() => ({ noTouchMode: e.target.checked })); showToast(e.target.checked ? "No-touch mode enabled" : "No-touch mode disabled"); }}
-            style={{ marginTop: 3 }}
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}
           />
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>I queue all orders before ~8:45 AM ET and don&apos;t touch them during the day</div>
@@ -5883,7 +5907,7 @@ function MoonshotCard({ pick, rank }) {
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
             {pick.priceAtDiscovery != null ? `$${pick.priceAtDiscovery} ${ccy}` : "—"} · {cap} · {market} · {pick.sector || "—"} · {m.timeHorizon || "long-term"}
           </div>
-          <div style={{ marginTop: 3 }}><ConvictionTrendBadge history={pick.scoreHistory} /></div>
+          <div style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}><ConvictionTrendBadge history={pick.scoreHistory} /></div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 24, fontWeight: 800 }}>{m.compositeScore ?? "—"}</div>
@@ -6119,7 +6143,7 @@ function HighConvictionCard({ pick, rank }) {
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
             {price} · {cap} · {market} · {pick.sector || "—"} · {mf.timeHorizon || "medium-term"}
           </div>
-          <div style={{ marginTop: 3 }}><ConvictionTrendBadge history={pick.scoreHistory} /></div>
+          <div style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}><ConvictionTrendBadge history={pick.scoreHistory} /></div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <div style={{ textAlign: "center" }}>
@@ -6293,20 +6317,20 @@ function HighConvictionCard({ pick, rank }) {
             <div style={{ marginTop: 4 }}><b>Patterns:</b> {mf.chartVision.patterns.join(", ")}</div>
           )}
           {mf.chartVision.trendStage && (
-            <div style={{ marginTop: 3 }}><b>Trend stage:</b> {mf.chartVision.trendStage}</div>
+            <div style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}><b>Trend stage:</b> {mf.chartVision.trendStage}</div>
           )}
           {(mf.chartVision.supportLevels?.length > 0 || mf.chartVision.resistanceLevels?.length > 0) && (
-            <div style={{ marginTop: 3 }}>
+            <div style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}>
               {mf.chartVision.supportLevels?.length > 0 && <span><b>Support:</b> {mf.chartVision.supportLevels.join(", ")}</span>}
               {mf.chartVision.supportLevels?.length > 0 && mf.chartVision.resistanceLevels?.length > 0 && " · "}
               {mf.chartVision.resistanceLevels?.length > 0 && <span><b>Resistance:</b> {mf.chartVision.resistanceLevels.join(", ")}</span>}
             </div>
           )}
           {mf.chartVision.smaRelationship && (
-            <div style={{ marginTop: 3 }}><b>vs SMA50:</b> {mf.chartVision.smaRelationship}</div>
+            <div style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}><b>vs SMA50:</b> {mf.chartVision.smaRelationship}</div>
           )}
           {mf.chartVision.divergences && mf.chartVision.divergences !== "none material" && (
-            <div style={{ marginTop: 3 }}><b>Divergences:</b> {mf.chartVision.divergences}</div>
+            <div style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", cursor: "pointer" }}><b>Divergences:</b> {mf.chartVision.divergences}</div>
           )}
           <div style={{ marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
             <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10.5, fontWeight: 700, background: mf.chartVision.conviction === "high" ? "#dcfce7" : mf.chartVision.conviction === "low" ? "#fee2e2" : "#fef3c7", color: mf.chartVision.conviction === "high" ? "#166534" : mf.chartVision.conviction === "low" ? "#991b1b" : "#92400e" }}>

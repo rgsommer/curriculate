@@ -62,6 +62,14 @@ const StocksTradeJournalSchema = new mongoose.Schema(
       default: null,
     },
     brokerReconcileNotes: { type: String, default: "" },
+    // True when the trade's legs have been applied to portfolio.positions
+    // and account cash — either via the manual "Record trade" flow or the
+    // Phase 2B poller's applier. Pre-fix poller inserts have this false
+    // and get retroactively applied by the /email-integration/backfill-
+    // positions endpoint. Manual-flow trades apply positions inline in
+    // the route, so backfill leaves them alone (they carry no
+    // brokerReconcileSource anyway).
+    positionApplied: { type: Boolean, default: false, index: true },
   },
   { timestamps: true }
 );

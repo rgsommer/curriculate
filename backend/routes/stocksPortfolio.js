@@ -29,7 +29,9 @@ import { computeCompliance } from "../services/stocksCompliance.js";
 import { computeAttribution } from "../services/stocksAttribution.js";
 import StocksRecIntent from "../models/StocksRecIntent.js";
 import StocksEmailIntegration from "../models/StocksEmailIntegration.js";
+import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/stocksEncryption.js";
+import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
 
 const router = express.Router();
 
@@ -868,6 +870,71 @@ router.post("/email-integration/test", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("stocks-portfolio email-integration test error:", err);
     res.status(500).json({ error: `Internal error: ${err?.message || "unknown"}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/backfill-positions
+// Retroactively apply legs of previously-reconciled poller trades whose
+// positions never got updated (pre-Phase-2B-fix rows). Dry-run mode
+// available via ?dryRun=1 to preview counts without mutating.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/backfill-positions", requireStocksAuth, async (req, res) => {
+  try {
+    const dryRun = req.query.dryRun === "1" || req.body?.dryRun === true;
+    const email = req.stocksUser.email;
+    const candidates = await StocksTradeJournal.find({
+      email,
+      brokerReconcileSource: "cibc-email",
+      positionApplied: { $ne: true },
+      // Only apply "auto" status — needs-review trades still need
+      // manual account/rec resolution before their positions can move.
+      brokerReconcileStatus: "auto",
+    }).sort({ executedAt: 1 }).lean();
+
+    if (dryRun) {
+      return res.json({
+        ok: true,
+        dryRun: true,
+        candidateCount: candidates.length,
+        candidates: candidates.map(c => ({
+          _id: String(c._id),
+          executedAt: c.executedAt,
+          account: c.accountName || c.account,
+          leg: c.legs?.[0] ? `${c.legs[0].side} ${c.legs[0].shares} ${c.legs[0].ticker} @ $${c.legs[0].pricePerShare}` : null,
+        })),
+      });
+    }
+
+    // Apply in date order so multi-alert sequences on the same ticker
+    // (e.g. SELL 100 then SELL 200) mutate in the order they hit the
+    // broker. Skip failures — they might be over-sells against a
+    // portfolio state that no longer reflects reality, and we don't
+    // want one bad apple to stall the whole backfill.
+    const applied = [];
+    const failed = [];
+    for (const doc of candidates) {
+      // Re-fetch the mongoose doc so save() persists — the applier
+      // does its own findOne on portfolio, so we only need the doc
+      // shape here for legs/account/executedAt.
+      try {
+        await backfillTradeToPortfolio(doc);
+        applied.push({ _id: String(doc._id), ticker: doc.legs?.[0]?.ticker, side: doc.legs?.[0]?.side, shares: doc.legs?.[0]?.shares });
+      } catch (e) {
+        failed.push({ _id: String(doc._id), ticker: doc.legs?.[0]?.ticker, error: e?.message || String(e) });
+      }
+    }
+    res.json({
+      ok: true,
+      dryRun: false,
+      appliedCount: applied.length,
+      failedCount: failed.length,
+      applied,
+      failed,
+    });
+  } catch (err) {
+    console.error("stocks-portfolio backfill-positions error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
   }
 });
 
