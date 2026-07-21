@@ -38,6 +38,7 @@ import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../s
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
+import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
@@ -633,6 +634,7 @@ SENIOR-ANALYST EXPECTATIONS:
 5j. FED LIQUIDITY REGIME: 🔴 RISK-OFF OVERRULES individual signals — trim size, tighten stops, no new spec. 🟢 RISK-ON = full size, take breakouts. Cite regime + top contributor when calling full size.
 5k. CONGRESSIONAL TRADES: multiple purchases = potential positive catalyst (committee-derived info); multiple sales = warning. Cite filer + date when strong.
 5l. TICKERS NOT FOUND: never emit "Ticker Not Found" / "UNABLE TO VERIFY" cards for held positions. Ownership IS verification. If web_search fails, use the holdings-table price.
+5m. CALIBRATION: when a CALIBRATION block appears, it summarizes THIS user's closed-pick outcomes bucketed by score band × setup × MTF. Weight recommendations toward the combinations with the highest win rate + avg P/L. A proposed rec that lands in a bucket with sub-baseline win rate should be downgraded or replaced. Cite the specific bucket + n + win rate when making a full-size call (e.g. "this VCP × 70-79 score bucket is 5-of-7 winners at +8.4% for you — full size"). Buckets missing from the block are undertested (n<5), not proven — treat as unknown.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** Holdings table already shows actual P/L. If you write "BBAI down -7.7%" and the app shows BBAI +333%, you mislead. Refer to lifecycle cost-basis for tax reasoning; do NOT narrate "down X%" unless it matches Holdings EXACTLY.
 ${PRICE_CURRENCY_RULES}
 ${ORDER_TICKET_RULES}
@@ -784,7 +786,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -944,6 +946,7 @@ ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
 ${formatPositionStopBlock(monitorPositionStops(profile.positions || []))}
 ${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets))}
+${formatCalibrationBlock(calibration)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
@@ -1156,7 +1159,7 @@ export async function generateBriefing(profile) {
     : new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -1224,6 +1227,10 @@ export async function generateBriefing(profile) {
       }).sort({ score: -1, scanDate: -1 }).limit(20).lean();
       return (cands || []).filter((c) => !heldSet.has(String(c.ticker || "").toUpperCase().replace(/\..*$/, "")));
     })().catch((e) => { console.warn("[discoveryPool] warn:", e?.message); return []; }),
+    // Score → outcome calibration — buckets THIS user's closed picks by
+    // score band + setup + MTF confluence so the AI can tilt toward
+    // combinations that have historically paid off for them.
+    computeCalibration(profile.email).catch((e) => { console.warn("[computeCalibration] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   // Idempotently persist daily picks. The daily-pick cron may have already
@@ -1258,7 +1265,7 @@ export async function generateBriefing(profile) {
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool);
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
