@@ -3496,7 +3496,7 @@ function EmailIntegrationCard({ sessionToken }) {
   const [state, setState] = useState({ loading: true });
   const [mailboxAddress, setMailboxAddress] = useState("rgsommer.junk@gmail.com");
   const [appPassword, setAppPassword] = useState("");
-  const [imapQuery, setImapQuery] = useState("from:alerts@cibc.com is:unread");
+  const [imapQuery, setImapQuery] = useState("from:alerts@cibc.com newer_than:30d");
   const [banner, setBanner] = useState(null); // { kind: "ok"|"err", msg }
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -3513,7 +3513,7 @@ function EmailIntegrationCard({ sessionToken }) {
       setState({ loading: false, ...j });
       if (j.configured) {
         setMailboxAddress(j.mailboxAddress || "");
-        setImapQuery(j.imapSearchQuery || "from:alerts@cibc.com is:unread");
+        setImapQuery(j.imapSearchQuery || "from:alerts@cibc.com newer_than:30d");
       }
     } catch (e) {
       setState({ loading: false, configured: false, encryptionReady: false });
@@ -3711,7 +3711,7 @@ function EmailIntegrationCard({ sessionToken }) {
               type="text"
               value={imapQuery}
               onChange={(e) => setImapQuery(e.target.value)}
-              placeholder="from:alerts@cibc.com is:unread"
+              placeholder="from:alerts@cibc.com newer_than:30d"
               style={{ width: "100%", fontFamily: "monospace" }}
             />
           </div>

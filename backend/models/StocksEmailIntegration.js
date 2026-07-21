@@ -55,11 +55,18 @@ const StocksEmailIntegrationSchema = new mongoose.Schema(
       required: true,
       maxlength: 4096,
     },
-    // Optional Gmail search filter to narrow what the poller fetches.
-    // Default only reads mail from CIBC's alerts address.
+    // Gmail search filter to narrow what the poller fetches.
+    //
+    // Deliberately NOT using is:unread: if the user opens a CIBC alert
+    // on their phone before the poller runs, Gmail auto-marks it read
+    // and the is:unread filter would silently drop that trade. UID
+    // high-water mark (below) + brokerReconcileKey dedup already
+    // prevent re-processing — the read/unread state was redundant.
+    // newer_than:30d bounds the initial search so a fresh integration
+    // doesn't scan years of history on the first poll.
     imapSearchQuery: {
       type: String,
-      default: "from:alerts@cibc.com is:unread",
+      default: "from:alerts@cibc.com newer_than:30d",
       maxlength: 500,
     },
     // IMAP connection endpoint. Defaults are Gmail's official values;

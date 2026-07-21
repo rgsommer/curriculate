@@ -71,12 +71,31 @@ export async function testConnection(email) {
   }
 }
 
+// Filters that predate the 2026-07-22 fragility fix. Anyone whose
+// stored filter EXACTLY equals one of these gets silently upgraded
+// to the new default on next poll — a customized filter (e.g. one
+// that adds a label restriction) is left alone.
+const LEGACY_FILTER_DEFAULTS = new Set([
+  "from:alerts@cibc.com is:unread",
+]);
+const CURRENT_FILTER_DEFAULT = "from:alerts@cibc.com newer_than:30d";
+
 // Poll one user's mailbox and reconcile any new alerts. Returns a
 // summary; also stamps the integration doc with heartbeat + counters.
 export async function pollUserMailbox(userEmail) {
   const integration = await StocksEmailIntegration.findOne({ email: userEmail });
   if (!integration) return { skipped: "not-configured" };
   if (integration.enabled === false) return { skipped: "disabled" };
+
+  // Silently upgrade a legacy default filter. The old "is:unread"
+  // filter dropped alerts the user read on their phone before the
+  // poller ran; UID high-water + reconcile-key dedup already prevent
+  // duplicates, so the read/unread state was redundant AND fragile.
+  if (LEGACY_FILTER_DEFAULTS.has(integration.imapSearchQuery)) {
+    console.log(`[stocks-email-poller] upgrading ${userEmail} filter from "${integration.imapSearchQuery}" → "${CURRENT_FILTER_DEFAULT}"`);
+    integration.imapSearchQuery = CURRENT_FILTER_DEFAULT;
+    await integration.save();
+  }
 
   let profile = await StocksPortfolio.findOne({ email: userEmail }).lean();
   if (!profile) return { skipped: "no-profile" };
