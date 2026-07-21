@@ -3610,9 +3610,9 @@ function EmailIntegrationCard({ sessionToken }) {
 
   return (
     <div className="sa-card" style={{ marginBottom: 14 }}>
-      <h3>Broker-alert email integration <span className="sa-muted" style={{ fontSize: 11, fontWeight: 500, marginLeft: 6 }}>(Phase 2 — polling live once Phase 2B ships)</span></h3>
+      <h3>Broker-alert email integration <span className="sa-muted" style={{ fontSize: 11, fontWeight: 500, marginLeft: 6 }}>(polls every 15 min)</span></h3>
       <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12, lineHeight: 1.55 }}>
-        Points the reconciler at the Gmail inbox where CIBC forwards trade confirmations. On each poll, matching messages are parsed, linked to the corresponding rec, and inserted into the trade journal — independently from the &quot;Executed&quot; checkboxes (see Phase 1). The app password is stored AES-256-GCM encrypted, decryption key server-side only.
+        Points the reconciler at the Gmail inbox where CIBC forwards trade confirmations. On each poll, matching messages are parsed, linked to the corresponding rec, and inserted into the trade journal — independently from the &quot;Executed&quot; checkboxes. The app password is stored AES-256-GCM encrypted, decryption key server-side only.
       </div>
 
       {!state.loading && state.encryptionReady === false && (
