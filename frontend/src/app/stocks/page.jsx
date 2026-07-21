@@ -9819,6 +9819,21 @@ function AdviceScorecardCard({ scorecard, days, onChangeDays }) {
               <div className="sa-muted" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>Verdict</div>
               <div style={{ fontSize: 14, fontWeight: 600, marginTop: 4 }}>
                 {(() => {
+                  // Prefer the server-computed time-aware verdict when present;
+                  // fall back to the old net-only labels for cold-start clients.
+                  const v = summary.verdict;
+                  if (v?.slug) {
+                    const label = {
+                      "too-early": "🕒 Too early to grade",
+                      "mid-cycle-drawdown": "🟡 Mid-cycle drawdown",
+                      "followed-outperforming": "✅ Your picks are winning",
+                      "cohort-green": "🟢 Whole cohort profitable",
+                      "adverse-selection": "⚠ Skipped winners, took losers",
+                      "underperforming": "🔴 Underperforming signal",
+                      "insufficient-data": "— Not enough data yet",
+                    }[v.slug] || v.slug;
+                    return label;
+                  }
                   const f = summary.netDollarsFromFollowed;
                   const s = summary.netDollarsFromSkipped;
                   if (f > 0 && s < 0) return "✅ Good calls + good skips";
@@ -9828,9 +9843,49 @@ function AdviceScorecardCard({ scorecard, days, onChangeDays }) {
                   return "—";
                 })()}
               </div>
-              <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>{summary.skipped} skipped · {summary.followed} taken</div>
+              {summary.verdict?.message && (
+                <div style={{ fontSize: 11, color: "var(--sa-text-2)", marginTop: 6, lineHeight: 1.5 }}>{summary.verdict.message}</div>
+              )}
+              <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>{summary.skipped} skipped · {summary.followed} taken{Number.isFinite(summary.avgHorizonPctElapsed) && ` · avg ${summary.avgHorizonPctElapsed.toFixed(0)}% into horizon`}</div>
             </div>
           </div>
+
+          {/* Positions taken from advice — acknowledges what the user actually did.
+              Filters to followed recs and shows them with current status. */}
+          {(() => {
+            const taken = items.filter(i => i.followed).slice(0, 6);
+            if (taken.length === 0) return null;
+            return (
+              <div style={{ marginTop: 14, marginBottom: 14, padding: "14px 16px", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#14532d", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>
+                  ✓ You took {summary.followed} of the last {summary.total} recs — positions on the board
+                </div>
+                <div style={{ display: "grid", gap: 6 }}>
+                  {taken.map((it) => {
+                    const pnl = it.actualPnlPct;
+                    const pnlColor = pnl == null ? "var(--sa-muted)" : pnl >= 0 ? "#166534" : "#991b1b";
+                    return (
+                      <div key={it.recId} style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: 10, alignItems: "center", padding: "6px 10px", background: "#fff", border: "1px solid #bbf7d0", borderRadius: 6, fontSize: 12 }}>
+                        <span style={{ padding: "1px 8px", borderRadius: 999, fontSize: 10, fontWeight: 700, background: it.action === "BUY" ? "#dcfce7" : "#fee2e2", color: it.action === "BUY" ? "#14532d" : "#991b1b" }}>{it.action}</span>
+                        <div>
+                          <b>{it.ticker}</b> · fill ${it.tradeFillPrice?.toFixed?.(2)} → now ${it.currentPrice?.toFixed?.(2)}
+                          {it.horizonDays && (
+                            <span className="sa-muted" style={{ marginLeft: 8, fontSize: 11 }}>
+                              day {it.daysElapsed} of {it.horizonDays} ({it.horizonPct?.toFixed?.(0)}%)
+                            </span>
+                          )}
+                          {it.followedVia === "fuzzy-base-ticker" && <span className="sa-muted" style={{ marginLeft: 6, fontSize: 10, fontStyle: "italic" }}>· auto-linked</span>}
+                        </div>
+                        <div style={{ color: pnlColor, fontWeight: 700, fontSize: 13, fontVariantNumeric: "tabular-nums" }}>
+                          {pnl != null ? `${pnl >= 0 ? "+" : ""}${pnl.toFixed(1)}%` : "—"}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Per-rec table */}
           <div style={{ border: "1px solid var(--sa-border)", borderRadius: 10, overflow: "hidden", overflowX: "auto" }}>

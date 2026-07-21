@@ -2728,10 +2728,46 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
       });
     }
 
-    // Build a quick lookup: rec _id (string) → trade journal entry
+    // Build a quick lookup: rec _id (string) → trade journal entry.
+    // Primary pass: explicit linkedAdviceRecId (the ID auto-link path).
     const tradesByRecId = new Map();
     for (const t of trades) {
       if (t.linkedAdviceRecId) tradesByRecId.set(String(t.linkedAdviceRecId), t);
+    }
+
+    // Secondary pass — fuzzy-link recs to trades that DIDN'T get the
+    // explicit linkedAdviceRecId set. Common when:
+    //   - user manually entered a SU.TO trade for a "SU" rec (base
+    //     ticker mismatch, since fixed but historical trades are stuck)
+    //   - poller ingested a trade before the position-update fix
+    //   - CSV import didn't carry the rec id
+    // Without this, the follow-rate metric grossly understates what
+    // the user actually did — 14% when reality is 60-80%.
+    //
+    // Match criteria: base ticker + action side + trade date within
+    // [rec.generatedAt, rec.generatedAt + 21d]. First match wins per
+    // rec; first-come-first-served on trades so one trade can't cover
+    // multiple recs.
+    const baseTicker = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    const claimedTradeIds = new Set(Array.from(tradesByRecId.values()).map(t => String(t._id)));
+    for (const rec of recs) {
+      if (tradesByRecId.has(String(rec._id))) continue; // already linked
+      const recBase = baseTicker(rec.ticker);
+      const recDate = new Date(rec.generatedAt);
+      const cutoffDate = new Date(recDate.getTime() + 21 * 86400000);
+      const fuzzyMatch = trades.find(t => {
+        if (claimedTradeIds.has(String(t._id))) return false;
+        const executedAt = new Date(t.executedAt);
+        if (executedAt < recDate || executedAt > cutoffDate) return false;
+        return (t.legs || []).some(leg =>
+          leg.side === rec.action &&
+          baseTicker(leg.ticker) === recBase
+        );
+      });
+      if (fuzzyMatch) {
+        tradesByRecId.set(String(rec._id), fuzzyMatch);
+        claimedTradeIds.add(String(fuzzyMatch._id));
+      }
     }
 
     // Fetch current prices once per unique resolved symbol (CAD recs → .TO)
@@ -2790,6 +2826,13 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         }
       }
 
+      // Time-context: how much of the rec's horizon has elapsed. Many
+      // recs are 1-4 days old with 14-30d horizons; judging their
+      // outcome as "underwater" today is premature by construction.
+      const daysElapsed = Math.max(0, Math.round((Date.now() - new Date(rec.generatedAt).getTime()) / 86400000));
+      const horizonDays = rec.horizonDays || 30;
+      const horizonPct = horizonDays > 0 ? Math.min(100, (daysElapsed / horizonDays) * 100) : null;
+
       items.push({
         recId: String(rec._id),
         generatedAt: rec.generatedAt,
@@ -2799,9 +2842,14 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         entryPrice: rec.entryPrice,
         targetPrice: rec.targetPrice,
         stopPrice: rec.stopPrice,
+        horizonDays,
         currentPrice,
         status: rec.status || "open",
         followed,
+        // Whether the followed link came from explicit recId (strong) or
+        // fuzzy fallback (weaker). Lets the UI note "auto-linked" for
+        // trades that lacked the explicit ID but still fulfilled the rec.
+        followedVia: followed ? (linkedTrade.linkedAdviceRecId ? "explicit-recId" : "fuzzy-base-ticker") : null,
         hypoPnlPct,
         hypoDollars,
         actualPnlPct,
@@ -2809,10 +2857,47 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         tradeFillPrice: followed ? (linkedTrade.legs?.[0]?.pricePerShare || null) : null,
         tradeShares: followed ? (linkedTrade.legs?.[0]?.shares || null) : null,
         tradeExecutedAt: followed ? linkedTrade.executedAt : null,
+        daysElapsed,
+        horizonPct,
       });
     }
 
     items.sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+
+    // Time-aware verdict — the old "underwater" label fired even when
+    // every rec was 1-5 days old with 14-30d horizons, which is a
+    // punitive frame that doesn't match the actual signal:strength
+    // question. Replace with a nuanced take that separates:
+    //   • Prematurity: too early to judge (avg horizon % low)
+    //   • Split narrative: followed vs skipped may tell different stories
+    //   • Genuine underperformance: only when a majority is well into
+    //     horizon (>60%) AND net negative
+    const avgHorizonPctElapsed = items.length > 0
+      ? items.reduce((s, i) => s + (i.horizonPct || 0), 0) / items.length
+      : 0;
+    const followedNet = followedDollars;
+    const skippedNet = skippedDollars;
+    let verdictSlug = "insufficient-data";
+    let verdictMessage = "Not enough closed cycles to grade the strategy yet.";
+    if (avgHorizonPctElapsed < 30) {
+      verdictSlug = "too-early";
+      verdictMessage = `Most recs are ${Math.round(avgHorizonPctElapsed)}% into their stated horizon — outcomes are unrealized. Check back once the average rec is past its horizon midpoint.`;
+    } else if (followedNet >= 0 && skippedNet < 0) {
+      verdictSlug = "followed-outperforming";
+      verdictMessage = "Followed recs are net positive; skipped ones would have lost money. This is the intended signal quality.";
+    } else if (followedNet >= 0 && skippedNet >= 0) {
+      verdictSlug = "cohort-green";
+      verdictMessage = "Whole cohort is net positive — both followed and skipped recs would have made money.";
+    } else if (followedNet < 0 && skippedNet >= 0) {
+      verdictSlug = "adverse-selection";
+      verdictMessage = "The recs you took underperformed the ones you skipped. Consider what filter you're applying at the Execute step.";
+    } else if (avgHorizonPctElapsed >= 60) {
+      verdictSlug = "underperforming";
+      verdictMessage = "Cohort is well into horizon and net negative on both followed + skipped. This is the honest bad-signal read.";
+    } else {
+      verdictSlug = "mid-cycle-drawdown";
+      verdictMessage = `Currently down but cohort is only ${Math.round(avgHorizonPctElapsed)}% through horizon on average — several positions still have time to work.`;
+    }
 
     res.json({
       days,
@@ -2826,6 +2911,8 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         avgSkippedPnlPct: skippedCount > 0 ? skippedPnlAcc / skippedCount : null,
         netDollarsFromFollowed: followedDollars,
         netDollarsFromSkipped: skippedDollars,
+        avgHorizonPctElapsed,
+        verdict: { slug: verdictSlug, message: verdictMessage },
       },
       items,
     });
