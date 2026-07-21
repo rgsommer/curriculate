@@ -701,6 +701,9 @@ export default function StocksAdvisorPage() {
   const [tradeModalOpen, setTradeModalOpen] = useState(false);
   const [tradePrefill, setTradePrefill] = useState(null); // optional prefill for TradeModal
   const [executedRecKeys, setExecutedRecKeys] = useState(new Set()); // recs the user has executed in this session
+  // Celebration modal — shown after a BUY trade linked to a rec lands.
+  // Payload: { side, ticker, shares, price, currency, target, stop, horizonDays, orderTiming, account, thesis }
+  const [positionEnteredCelebration, setPositionEnteredCelebration] = useState(null);
   const [briefingPreview, setBriefingPreview] = useState(null); // { html, sent, error, busy }
   const [monthlyPreview, setMonthlyPreview] = useState(null);   // { html, markdown, subject, sent, error, busy }
   const [pendingOrders, setPendingOrders] = useState([]);
@@ -1049,7 +1052,27 @@ export default function StocksAdvisorPage() {
     if (typeof tradePrefill?._onTradeRecordedForRectify === "function") {
       try { tradePrefill._onTradeRecordedForRectify(); } catch (e) { /* noop */ }
     }
-    showToast(`Trade recorded — ${trade.legs.map(l => `${l.side || ""} ${l.shares || ""} ${l.ticker || ""}`.trim()).join(", ")}`);
+    // If this trade fulfills a BUY rec (Execute-clicked from Advice tab),
+    // surface a celebration modal with target/stop/next-step guidance.
+    // Falls back to the simple toast when it's a plain manual entry.
+    const buyLeg = (trade.legs || []).find(l => l.side === "BUY");
+    if (buyLeg && tradePrefill && (tradePrefill.targetPrice != null || tradePrefill.stopPrice != null)) {
+      setPositionEnteredCelebration({
+        side: "BUY",
+        ticker: buyLeg.ticker,
+        shares: buyLeg.shares,
+        price: buyLeg.price,
+        currency: buyLeg.currency,
+        target: tradePrefill.targetPrice,
+        stop: tradePrefill.stopPrice,
+        horizonDays: tradePrefill.horizonDays,
+        orderTiming: tradePrefill.orderTiming || null,
+        accountName: trade.legs?.[0] ? (nextProfile.accounts || []).find(a => a.id === trade.account)?.name : null,
+        thesis: tradePrefill.rationale || null,
+      });
+    } else {
+      showToast(`Trade recorded — ${trade.legs.map(l => `${l.side || ""} ${l.shares || ""} ${l.ticker || ""}`.trim()).join(", ")}`);
+    }
     return result;
   };
 
@@ -1611,10 +1634,148 @@ export default function StocksAdvisorPage() {
             }}
           />
         )}
+        {positionEnteredCelebration && (
+          <PositionEnteredModal
+            payload={positionEnteredCelebration}
+            onClose={() => setPositionEnteredCelebration(null)}
+          />
+        )}
         {toast && <div className="sa-toast">{toast}</div>}
       </div>
       <StocksCSS />
     </FullscreenShell>
+  );
+}
+
+// Post-action affirmation shown right after a BUY trade that fulfilled
+// an AI rec lands. Reinforces the discipline loop: (1) confirm the
+// entry, (2) name the exact GTC stop-limit ticket that should be queued
+// next, (3) set expectation for what emails the app will send if
+// target/stop hit or horizon expires.
+function PositionEnteredModal({ payload, onClose }) {
+  const p = payload;
+  const isCad = p.currency === "CAD";
+  const ccyLabel = isCad ? "CAD" : "USD";
+  const pct = (from, to) => (from && to) ? ((to - from) / from) * 100 : null;
+  const upside = pct(p.price, p.target);
+  const downside = pct(p.price, p.stop);
+  const rr = (upside != null && downside != null && downside < 0)
+    ? Math.abs(upside / downside) : null;
+  // The GTC stop-limit's limit price sits 1% below the stop trigger
+  // (1.5% for lower-priced names) — same rule the briefing prompt teaches.
+  const limitOffsetPct = p.stop != null && p.stop < 20 ? 0.015 : 0.01;
+  const stopLimitPrice = p.stop != null ? p.stop * (1 - limitOffsetPct) : null;
+  const horizonExit = p.horizonDays
+    ? new Date(Date.now() + p.horizonDays * 86400000).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    : null;
+  const affirmations = [
+    "Nice — you took the setup.",
+    "Discipline shows up here.",
+    "Good — that's the rec landing exactly as designed.",
+    "Position on the board.",
+    "Trade recorded — thesis in play now.",
+  ];
+  // Stable "random" pick based on ticker so refreshes don't flicker.
+  const affirmIdx = String(p.ticker || "").split("").reduce((s, c) => s + c.charCodeAt(0), 0) % affirmations.length;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0,
+        background: "rgba(15, 23, 42, 0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 10000, padding: 20,
+        animation: "fadeIn .18s ease-out",
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: "#fff", borderRadius: 16, maxWidth: 560, width: "100%",
+          padding: "26px 28px 22px", boxShadow: "0 24px 60px rgba(15,23,42,0.30)",
+          border: "1px solid var(--sa-border)",
+        }}
+      >
+        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: ".12em", color: "#166534", textTransform: "uppercase", marginBottom: 4 }}>
+          🎯 Position entered
+        </div>
+        <div style={{ fontSize: 22, fontWeight: 700, color: "#0b1220", letterSpacing: "-.01em", marginBottom: 4 }}>
+          {affirmations[affirmIdx]}
+        </div>
+        <div style={{ fontSize: 14, color: "var(--sa-text-2)", marginBottom: 16 }}>
+          BUY <b>{p.shares?.toLocaleString?.()}</b> sh <b>{p.ticker}</b> @ <b>${p.price?.toFixed?.(2)}</b> {ccyLabel}
+          {p.accountName && <> · in <b>{p.accountName}</b></>}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 18 }}>
+          <div style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, color: "#14532d", textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600 }}>Target</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#166534", fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+              ${p.target?.toFixed?.(2)}
+            </div>
+            {upside != null && (
+              <div style={{ fontSize: 11, color: "#166534", marginTop: 1 }}>+{upside.toFixed(1)}%</div>
+            )}
+          </div>
+          <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, color: "#7f1d1d", textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600 }}>Stop</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#991b1b", fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+              ${p.stop?.toFixed?.(2)}
+            </div>
+            {downside != null && (
+              <div style={{ fontSize: 11, color: "#991b1b", marginTop: 1 }}>{downside.toFixed(1)}%</div>
+            )}
+          </div>
+          <div style={{ background: "#f1f5f9", border: "1px solid #cbd5e1", borderRadius: 10, padding: "10px 12px" }}>
+            <div style={{ fontSize: 10.5, color: "#334155", textTransform: "uppercase", letterSpacing: ".08em", fontWeight: 600 }}>R:R</div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", fontVariantNumeric: "tabular-nums", marginTop: 2 }}>
+              {rr != null ? `1:${rr.toFixed(1)}` : "—"}
+            </div>
+            {p.horizonDays && (
+              <div style={{ fontSize: 11, color: "#334155", marginTop: 1 }}>{p.horizonDays}d horizon</div>
+            )}
+          </div>
+        </div>
+
+        {p.stop != null && (
+          <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 10, padding: "12px 14px", marginBottom: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#78350f", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>
+              🕗 Queue this next in your broker
+            </div>
+            <div style={{ fontSize: 13, color: "#0b1220", fontFamily: "ui-monospace, Menlo, monospace", lineHeight: 1.5 }}>
+              GTC STOP-LIMIT SELL {p.shares} {p.ticker},<br/>
+              stop <b>${p.stop.toFixed(2)}</b> / limit <b>${stopLimitPrice.toFixed(2)}</b> {ccyLabel}
+            </div>
+            <div style={{ fontSize: 11, color: "#78350f", marginTop: 6 }}>
+              The limit sits {(limitOffsetPct * 100).toFixed(1)}% below the stop trigger so a fast gap-down still fills.
+            </div>
+          </div>
+        )}
+
+        <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 14px", marginBottom: 18 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "#1e3a8a", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 6 }}>
+            What triggers the next email
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "#0f172a", lineHeight: 1.55 }}>
+            {p.target != null && <li><b>Target hit</b> (${p.target.toFixed(2)}): &ldquo;Consider TRIMming to lock in gains.&rdquo;</li>}
+            {p.stop != null && <li><b>Stop hit</b> (${p.stop.toFixed(2)}): &ldquo;SELL at market — thesis invalidated.&rdquo;</li>}
+            {horizonExit && <li><b>Horizon expires</b> ({horizonExit}, {p.horizonDays}d out): reassess whether to hold, roll, or exit.</li>}
+            <li><b>-8% hard-stop</b> from cost basis: real-time email + next briefing flags it in section 0c.</li>
+          </ul>
+          <div style={{ fontSize: 11, color: "#334155", marginTop: 8, fontStyle: "italic" }}>
+            Otherwise, no action needed until the morning briefing.
+          </div>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button className="sa-btn" onClick={onClose} style={{ padding: "10px 22px", fontSize: 14 }}>
+            Nice, got it
+          </button>
+        </div>
+      </div>
+      <style>{`@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }`}</style>
+    </div>
   );
 }
 
