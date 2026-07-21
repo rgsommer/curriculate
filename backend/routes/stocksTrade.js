@@ -403,19 +403,24 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
     // Mark any open DailyPick on the same ticker as ENTERED so the Daily
     // Picks card visually acknowledges that the user acted on the pick.
     // Pick stays status="open" — target/stop monitoring continues from
-    // the actual fill. First matching open pick per BUY leg wins.
+    // the actual fill. Matches on BASE ticker so a leg for "SU" matches
+    // a pick for "SU.TO" and vice versa. First matching open pick per
+    // BUY leg wins.
     try {
       const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+      const openPicks = await StocksDailyPick.find({
+        email: req.stocksUser.email,
+        status: "open",
+        enteredAt: null,
+        pickDate: { $gte: cutoff },
+      }).select({ _id: 1, ticker: 1 }).lean();
       for (const leg of normLegs) {
         if (leg.side !== "BUY" || !leg.ticker) continue;
+        const legBase = baseTicker(leg.ticker);
+        const match = openPicks.find(p => baseTicker(p.ticker) === legBase);
+        if (!match) continue;
         await StocksDailyPick.updateOne(
-          {
-            email: req.stocksUser.email,
-            ticker: leg.ticker,
-            status: "open",
-            enteredAt: null,
-            pickDate: { $gte: cutoff },
-          },
+          { _id: match._id, enteredAt: null }, // guard against races
           {
             $set: {
               enteredAt: entry.executedAt,

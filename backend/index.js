@@ -147,6 +147,7 @@ import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, 
 import { scheduleIntradayUpdates } from "./jobs/stocksIntradayUpdate.js";
 import { scheduleEodRecap } from "./jobs/stocksEodRecap.js";
 import { scheduleEmailPoller } from "./jobs/stocksEmailPollerCron.js";
+import { scheduleHorizonExpiry } from "./jobs/stocksHorizonExpiryCron.js";
 import { scheduleStocksAlerts } from "./jobs/stocksAlerts.js";
 import { scheduleEightKPoll } from "./jobs/stocksEightKPoll.js";
 import { scheduleDailyPickCron } from "./jobs/stocksDailyPick.js";
@@ -19483,4 +19484,5 @@ server.listen(PORT, () => {
   scheduleIntradayUpdates();
   scheduleEodRecap();
   scheduleEmailPoller();
+  scheduleHorizonExpiry();
 })

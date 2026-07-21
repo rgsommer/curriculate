@@ -192,17 +192,22 @@ export async function applyReconciledTrade({
   const trade = await StocksTradeJournal.create(tradeDoc);
 
   // Mark any open DailyPick on a BUY leg's ticker as ENTERED so the
-  // Daily Picks UI stops treating it as a fresh idea (mirrors the
-  // manual flow's behavior).
+  // Daily Picks UI stops treating it as a fresh idea. Matches on
+  // BASE ticker (SU vs SU.TO both normalize to SU) so a US-listed
+  // leg matches a TSX pick and vice versa.
   try {
     const cutoff = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    const openPicks = await StocksDailyPick.find({
+      email, status: "open", enteredAt: null, pickDate: { $gte: cutoff },
+    }).select({ _id: 1, ticker: 1 }).lean();
     for (const leg of legs) {
       if (leg.side !== "BUY" || !leg.ticker) continue;
+      const legBase = baseOf(leg.ticker);
+      const match = openPicks.find(p => baseOf(p.ticker) === legBase);
+      if (!match) continue;
       await StocksDailyPick.updateOne(
-        {
-          email, ticker: leg.ticker, status: "open",
-          enteredAt: null, pickDate: { $gte: cutoff },
-        },
+        { _id: match._id, enteredAt: null },
         {
           $set: {
             enteredAt: trade.executedAt,
@@ -274,11 +279,17 @@ export async function backfillTradeToPortfolio(tradeDoc) {
   );
   try {
     const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    const openPicks = await StocksDailyPick.find({
+      email: tradeDoc.email, status: "open", enteredAt: null, pickDate: { $gte: cutoff },
+    }).select({ _id: 1, ticker: 1 }).lean();
     for (const leg of tradeDoc.legs) {
       if (leg.side !== "BUY" || !leg.ticker) continue;
+      const legBase = baseOf(leg.ticker);
+      const match = openPicks.find(p => baseOf(p.ticker) === legBase);
+      if (!match) continue;
       await StocksDailyPick.updateOne(
-        { email: tradeDoc.email, ticker: leg.ticker, status: "open",
-          enteredAt: null, pickDate: { $gte: cutoff } },
+        { _id: match._id, enteredAt: null },
         { $set: {
             enteredAt: tradeDoc.executedAt,
             enteredPrice: leg.pricePerShare,

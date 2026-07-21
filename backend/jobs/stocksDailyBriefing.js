@@ -39,6 +39,7 @@ import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsM
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
 import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
+import { computeHorizonReview, formatHorizonReviewBlock } from "../services/stocksHorizonReview.js";
 import { computeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns, formatBenchmarkBlock } from "../services/stocksBenchmark.js";
 import { computeSizingAdjustments, formatSizingAdjustmentBlock } from "../services/stocksCorrelationSizing.js";
@@ -722,6 +723,13 @@ SENIOR-ANALYST EXPECTATIONS:
 5p. OPTIONS OVERLAY (covered calls — narrow subset only): when an OPTIONS OVERLAY block lists suggestions, emit a section-6a "Options overlay" heading with the top 1-2 suggestions verbatim (strike, expiration, mid premium, monthly yield %). The block is pre-filtered to the trader's agreed narrow subset — covered calls only, on Canadian large-cap (SWING-sleeve) holdings inside a Non-Spousal account (TFSA / RRSP / RESP / FHSA are deliberately excluded for CRA / broker-restriction reasons). Never propose overlays outside this subset even if you think you see one; the pipeline handles filtering. Rec format: "SELL to open <N> <TICKER> <exp> $<K> CALL @ limit $<mid>" plus a one-line justification citing IV rank + delta approx + upside cap. If the underlying has an earnings date inside the expiration window (visible in the CATALYSTS line), SKIP the overlay — IV crush post-earnings is the specific case where "sell rich premium" reverses. Overlay recs also belong in the <RECS> block with action="SELL", orderTiming="gtc", and a currency matching the underlying; ticker should carry the underlying symbol (the option-specific fields go in the narrative). If the OPTIONS OVERLAY block is EMPTY (either the user hasn't enabled options trading, or nothing meets the narrow subset today), SKIP section 6a entirely — do NOT invent covered-call ideas outside the block.
 5q. DISCIPLINE COMPLIANCE: when a DISCIPLINE COMPLIANCE block appears, it summarizes THIS user's rule-following over the last 90 days. Emit a "## ⚖ Discipline check" section (numbered 0e in the layout) only when the block shows any 🚨 or ⚠ item, or when it's the weekly heartbeat (Monday). Cite specific numbers matter-of-factly ("acted on 4 of 12 setups this month"). If any hard-stop violation is STILL HELD past the exit window, elevate it into section 0c (Position P&L stop check) with an EXIT AT MARKET instruction and reference the compliance metric. Do not moralize or lecture — one line, then move on.
 5r. RETURN ATTRIBUTION: when a RETURN ATTRIBUTION block appears, it's the Monday retrospective showing where actual $ P&L has come from. Use it to defend or cut specific bucket types. "This setup has printed +$3,400 CAD YTD in your book, so full size on the pattern" or "This bucket has bled -$1,200 CAD; downgrading to half-size or skipping." Compare AI-sourced vs manual $ totals honestly — the operator is often the source of the edge; the AI is a check. Attribution belongs in an optional "## 💰 Attribution snapshot" section, ONE paragraph max, cited from the block verbatim.
+5t. HORIZON REVIEW: when a HORIZON REVIEW block appears, emit a "## 📅 Horizon review" section (numbered 0f in the layout, before section 1). The review shows every open BUY rec's status vs its stated window. Rules:
+   - ⌛ EXPIRED — one-line recommendation per row: EXIT, ROLL (state the specific new-evidence reason, no defaults), or TRIM. NEVER say "hold" without justification — doing nothing on an expired rec is a passive ROLL, and passive ROLL is what the horizon window was designed to prevent. "Hold because I like it" is not a reason; "Hold because MSFT reported an earnings beat yesterday and analyst PTs revised +5%" is.
+   - 🔴 WELL-BEHIND — one-line assessment: has the thesis broken (exit signal), or is time still on our side (patience)? Cite distance-to-target vs distance-to-stop.
+   - 🟡 LAGGING — one-line noted-no-action; still within window, within stop.
+   - 🟢 ON-PACE / ✅ HIT-TARGET — one-line acknowledgement; ✅ triggers auto-sell-trail elsewhere so just mention it.
+   - Cite numbers verbatim from the block (day X/Y, entry, current, target, delta, required-daily). Do NOT paraphrase or round.
+   - If ALL open recs are 🟢/🟡 with no ⌛/🔴, output a single line: "All open positions on-pace within their horizons — no exits or rolls needed today." Skip the section otherwise.
 5s. SUB-CURRENCY BUCKETS (mandatory — accounts hold CAD and USD cash SEPARATELY, not as a single pool): the per-account cash inventory shows BOTH cashCad and cashUsd for every account. A trade in the security's native currency MUST settle out of the SAME-CURRENCY bucket. A TSX-listed CAD stock (e.g. ENB.TO, RY.TO, XIC) can only be bought from that account's cashCad bucket — even if the account has plentiful cashUsd, that USD cash is INELIGIBLE without an explicit FX conversion. Same in reverse: a US-listed USD stock (NVDA, AAPL) can only be bought from cashUsd. NEVER propose a BUY whose currency doesn't match the settle bucket you're drawing from. If the tax-optimal account has cash in the wrong currency, options: (a) pick a different currency-matched name in that account, (b) use a different account that has the right currency, (c) propose an explicit FX conversion first (WITHDRAW from wrong-currency bucket + DEPOSIT to right-currency bucket, both legs recorded), noting the FX friction cost. The pro-forma cash computation from rule 5 also runs PER (account, currency), never pooled across currencies.
 6. **DO NOT RESTATE P/L PERCENTAGES OR DOLLAR GAINS/LOSSES IN PROSE.** Holdings table already shows actual P/L. If you write "BBAI down -7.7%" and the app shows BBAI +333%, you mislead. Refer to lifecycle cost-basis for tax reasoning; do NOT narrate "down X%" unless it matches Holdings EXACTLY.
 ${PRICE_CURRENCY_RULES}
@@ -874,7 +882,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -1068,6 +1076,7 @@ ${formatSizingAdjustmentBlock(sizingAdjustments)}
 ${formatOverlayBlock(overlaySuggestions)}
 ${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
 ${formatAttributionBlock(attribution)}
+${formatHorizonReviewBlock(horizonRows)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
@@ -1387,6 +1396,14 @@ export async function generateBriefing(profile) {
     computeCalibration(profile.email).catch((e) => { console.warn("[computeCalibration] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
+  // Horizon review — per-open-rec status against its stated window.
+  // Runs in a separate step because it fetches prices per rec symbol
+  // and benefits from the priceMap that monitorOpenRecs already
+  // computed; we recompute here for isolation.
+  const horizonRows = await computeHorizonReview(profile.email).catch((e) => {
+    console.warn("[computeHorizonReview] warn:", e?.message);
+    return [];
+  });
   // Idempotently persist daily picks. The daily-pick cron may have already
   // written today's rows, and briefing preview may fire multiple times
   // per day — dedupe by (email, ticker, ymd) so a scanning user doesn't
@@ -1465,7 +1482,7 @@ export async function generateBriefing(profile) {
       : Promise.resolve(null),
   ]);
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution);
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat

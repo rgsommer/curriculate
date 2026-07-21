@@ -32,6 +32,7 @@ import StocksEmailIntegration from "../models/StocksEmailIntegration.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/stocksEncryption.js";
 import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
+import { computeHorizonReview } from "../services/stocksHorizonReview.js";
 
 const router = express.Router();
 
@@ -885,6 +886,21 @@ router.post("/email-integration/test", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("stocks-portfolio email-integration test error:", err);
     res.status(500).json({ error: `Internal error: ${err?.message || "unknown"}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/horizon-review
+// Returns per-open-rec status vs stated horizon window. Feeds the
+// Dashboard's amber-dot flag on positions past horizon.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/horizon-review", requireStocksAuth, async (req, res) => {
+  try {
+    const rows = await computeHorizonReview(req.stocksUser.email);
+    res.json({ ok: true, rows });
+  } catch (err) {
+    console.error("stocks-portfolio horizon-review error:", err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
 
