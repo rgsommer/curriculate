@@ -1093,13 +1093,14 @@ Section-specific per-call rules (system prompt has the general shape 0–8; the 
    • **SWING UNDERWEIGHT** (💡 sleeve has room note) → prefer Canadian large-caps in sections 4/7. Frame as "SWING sleeve has $X available for a fresh RY/ENB-template entry."
    • **CORE UNDERWEIGHT** (⚠ flag) → close section 4 with a "consider $X into XIC/VUN/XEQT to restore the anchor" note.
    Write ONE line per active flag with the specific $ amount and action. Skip section if all three sleeves within ±5pp of target.
-0c. **🚨 Position P&L stop check** — REQUIRED when the "POSITION P&L STOP MONITOR" block above is non-empty. Heading exactly "## 🚨 Position P&L stop check". Write ONE line per position in the block, most severe first:
-   • **HARD STOP HIT** (pnl ≤ -8%): "🚨 **EXIT AT MARKET**: TICKER in ACCOUNT · basis $X, now $Y, pnl -N% · sell N sh unless a specific NEW-INFO reason overrides." Do NOT hedge on hard-stop calls.
-   • **WITHIN 2% OF STOP** (-8% to -6%): "⚠ **TIGHTEN**: TICKER in ACCOUNT · pnl -N% · move stop to break-even at $basis OR trim 50% of the position now."
-   • **WATCH** (-6% to -5%): "👀 **WATCH**: TICKER · pnl -N% · 3% from hard stop."
+0c. **🚨 Position P&L stop check** — REQUIRED when the "POSITION P&L STOP MONITOR" block above is non-empty. Heading exactly "## 🚨 Position P&L stop check". Write ONE line per position in the block, most severe first. **The ticker string you write MUST appear verbatim on one of the raw block's lines above; if you cannot find the ticker there, do not write the line — the section is a formatting pass over that block, not a place to invent positions.**
+   • **HARD STOP TRIGGERED** (pnl ≤ -8%): "🚨 **EXIT AT MARKET**: <ticker-from-block> in <account> · basis $X, now $Y, pnl -N% · sell N sh unless a specific NEW-INFO reason overrides." Do NOT hedge on hard-stop calls.
+   • **WITHIN 2% OF STOP** (-8% to -6%): "⚠ **TIGHTEN**: <ticker-from-block> in <account> · pnl -N% · move stop to break-even at $basis OR trim 50% of the position now."
+   • **WATCH** (-6% to -5%): "👀 **WATCH**: <ticker-from-block> · pnl -N% · 3% from hard stop."
    CORE-exempt tickers (RY, ENB) may skip WATCH but STILL apply for hard-stop hits. Skip section if block empty.
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, 2-3 line block. Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
+   **THEN** — after the top-7 blocks, add a "### Quiet holdings" subsection that emits ONE line for EVERY remaining held ticker from the current-holdings table that hasn't been named elsewhere in the briefing (not in top-7, not in stop check, not in trades-executed, not in horizon review). Format: "**TICKER** (N sh @ $basis, current $X, W% of book) — [HOLD / TRIM / EXIT / ADD $Y] · one-sentence reason (fundamental note, technical setup, or sleeve rationale)". Do not skip any held ticker — small weights and sleepy defensives (utilities ETFs, precious-metal juniors, cash-like bond funds) still deserve a one-line disposition so the trader knows the model saw them.
 3. **Performance snapshot** — week/month/3M moves on top names
 4. **Today's one action** — single highest-conviction trade, all four levels + specific account (per Canadian tax notes). Section 5 must NOT repeat this trade.
 ${cashSection}
