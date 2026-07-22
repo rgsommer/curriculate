@@ -6879,12 +6879,13 @@ if (!isMultiPack && task.taskType === "what-am-i") {
     }
   });
 
-  // ── Device Mode Support (Phase 1a) ──────────────────────────────────────
+  // ── Device Mode Support ────────────────────────────────────────────────
   // Teacher picks Tablet Only / Laptop Only / Mixed before launch. Persisted
-  // on the room object and rebroadcast via full room:state so both teacher
-  // and student clients pick it up. Phase 1b will hook this into launch to
-  // silently substitute motion-required tasks when mode isn't tablet_only.
-  socket.on("teacher:setDeviceMode", ({ roomCode, deviceMode } = {}, ack) => {
+  // on the room object and rebroadcast via full room:state so teacher and
+  // student clients pick it up. If a taskset is already loaded when the
+  // mode changes, silent substitution re-runs so the sequence stays valid
+  // for the new mode.
+  socket.on("teacher:setDeviceMode", async ({ roomCode, deviceMode } = {}, ack) => {
     try {
       const code = String(roomCode || "").toUpperCase();
       const room = rooms[code];
@@ -6894,11 +6895,37 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       }
       const VALID = new Set(["tablet_only", "laptop_only", "mixed"]);
       const next = VALID.has(deviceMode) ? deviceMode : "tablet_only";
+      const prev = room.deviceMode || "tablet_only";
       room.deviceMode = next;
+
+      let substitutionCount = 0;
+      // Re-run substitution only when we already have a taskset AND the mode
+      // actually changed. Fresh rooms without a taskset are a no-op.
+      if (next !== prev && room.taskset && Array.isArray(room.taskset.tasks)) {
+        try {
+          const [{ substituteTasksForRoom }, { regenerateSingleTask }] = await Promise.all([
+            import("./services/deviceModeSubstitute.js"),
+            import("./controllers/sharedTasksetController.js"),
+          ]);
+          const result = await substituteTasksForRoom(room, { regenerateSingleTask });
+          substitutionCount = result.substitutionCount;
+          if (substitutionCount > 0) {
+            console.log(
+              `[device-mode] room ${code}: mode ${prev} → ${next}, adapted ${substitutionCount} task(s)`,
+            );
+          }
+        } catch (subErr) {
+          console.error(
+            `[device-mode] re-substitution failed for room ${code}:`,
+            subErr?.message || subErr
+          );
+        }
+      }
+
       const state = buildRoomState(room);
       io.to(code).emit("room:state", state);
       io.to(code).emit("roomState", state);
-      if (typeof ack === "function") ack({ ok: true, deviceMode: next });
+      if (typeof ack === "function") ack({ ok: true, deviceMode: next, substitutionCount });
     } catch (err) {
       console.error("[teacher:setDeviceMode] error:", err?.message || err);
       if (typeof ack === "function") ack({ ok: false, error: "server-error" });
@@ -8929,6 +8956,33 @@ socket.on("tod:requestState", async (payload = {}, ack) => {
       room.isActive = false;
       room.startedAt = null;
       room.navigationMode = navigationMode === "mystery" ? "mystery" : "linear";
+
+      // ── Device Mode substitution (Phase 1b) ──
+      // If the teacher picked laptop_only or mixed, silently swap any
+      // motion-required task for a same-topic, same-vocab compatible
+      // alternative. Fast no-op path when mode is tablet_only. See
+      // docs/device-mode-architecture.md.
+      try {
+        const [{ substituteTasksForRoom }, { regenerateSingleTask }] = await Promise.all([
+          import("./services/deviceModeSubstitute.js"),
+          import("./controllers/sharedTasksetController.js"),
+        ]);
+        const { substitutionCount, log } = await substituteTasksForRoom(room, {
+          regenerateSingleTask,
+        });
+        if (substitutionCount > 0) {
+          console.log(
+            `[device-mode] room ${code}: adapted ${substitutionCount} task(s) for mode "${room.deviceMode || "tablet_only"}"`,
+            log
+          );
+        }
+      } catch (err) {
+        console.error(
+          `[device-mode] substitution failed for room ${code}:`,
+          err?.message || err
+        );
+        // Fail open — session still launches with the original taskset.
+      }
 
       // Initialise mystery box state if in mystery mode
       if (room.navigationMode === "mystery") {

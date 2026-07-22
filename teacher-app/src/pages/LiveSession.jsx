@@ -22,6 +22,7 @@ import CelebrationLayer from "../components/CelebrationLayer";
 import ThemePicker, { useTheme } from "../components/ThemePicker";
 import StageTimeline from "../components/StageTimeline";
 import GMQuickControls from "../components/GMQuickControls";
+import DeviceModeSelector from "../components/DeviceModeSelector";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
 
 const API_BASE = API_BASE_URL || "";
@@ -4323,6 +4324,36 @@ if (
               </div>
 
               {/* Auto-start mode picker */}
+              {/* Device Mode selector — Phase 1b. Chooses which task types
+                  are compatible with the class's devices. Silent substitution
+                  runs on the backend at load + on mode change. */}
+              {activeTasksetMeta && !taskFlowActive && !tasksetArmed && (
+                <div style={{ marginTop: 4, marginBottom: 8 }}>
+                  <DeviceModeSelector
+                    mode={roomState?.deviceMode || "tablet_only"}
+                    onChange={(nextMode) => {
+                      if (!roomCode) return;
+                      const code = roomCode.toUpperCase();
+                      socket.emit(
+                        "teacher:setDeviceMode",
+                        { roomCode: code, deviceMode: nextMode },
+                        (resp) => {
+                          if (resp?.ok && resp.substitutionCount > 0) {
+                            console.log(
+                              `[device-mode] ${resp.substitutionCount} task(s) adapted for ${nextMode}`
+                            );
+                          } else if (resp && !resp.ok) {
+                            console.warn("[device-mode] set failed:", resp.error);
+                          }
+                        }
+                      );
+                    }}
+                    locked={!!roomState?.isActive}
+                    compact
+                  />
+                </div>
+              )}
+
               {activeTasksetMeta && !taskFlowActive && !tasksetArmed && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", flexWrap: "wrap" }}>
                   <span style={{ color: "#6b7280" }}>Start:</span>

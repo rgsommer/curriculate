@@ -1,6 +1,6 @@
 # Device Mode Support — Architecture
 
-**Status:** Decisions locked (see §4). Phase 1a in progress.
+**Status:** Phase 1a + 1b shipped. Phase 2 (laptop webcam scanning + device detection) next.
 **Owner:** Richard
 **Author of this doc:** Claude
 **Date:** 2026-07-21
@@ -173,7 +173,8 @@ Included in every `room:state` broadcast so teacher-app + student-app can read i
 
 ### 3.5 Phase-by-phase file changes
 
-**Phase 1 — Data model + selector + filter + launch validation (this turn's scope after sign-off).**
+**Phase 1a — Data model + selector + filter (SHIPPED in commit 2a5c6566).**
+**Phase 1b — Launch-time silent substitution + LiveSession wiring (SHIPPED — this commit).**
 
 Files to create:
 - `shared/deviceModeFilter.js` — pure filter + reason strings
