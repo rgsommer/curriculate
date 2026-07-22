@@ -342,6 +342,7 @@ function StudentApp() {
   const [fortuneRevealed, setFortuneRevealed] = useState(false);
   const [timeWarpFreezeUntil, setTimeWarpFreezeUntil] = useState(null);
   const [superpowerTriggered, setSuperpowerTriggered] = useState(null); // { powerId, pointsOut, revealText? }
+  const [xrayArmed, setXrayArmed] = useState(false); // set true on activate; TaskRunner reads and forwards to MC
 
   // Mode B (join): result of room:peek — populated when the student types
   // a class-bound room code. Drives the roster name dropdown in the join UI.
@@ -4609,6 +4610,15 @@ function StudentApp() {
                 setTimeout(() => setTimeWarpFreezeUntil(null), 15000);
                 return;
               }
+              if (sp.id === "xray") {
+                setXrayArmed(true);
+                setSuperpowerUsedAt(stamp);
+                // TaskRunner forwards to MultipleChoiceTask; the MC
+                // component will call onXrayConsumed once it picks a
+                // wrong option to grey out. If the current task isn't
+                // MC, the flag stays armed until an MC task shows up.
+                return;
+              }
               // Server-effect powers ask the backend to arm — the effect
               // fires the next time the team submits (booster / shield) or
               // scans a station (mystery gift). We optimistically flip
@@ -7060,6 +7070,8 @@ function StudentApp() {
           reply: replyText,
         });
         }}
+        xrayActive={xrayArmed}
+        onXrayConsumed={() => setXrayArmed(false)}
       />
       </TaskErrorBoundary>
     </div>

@@ -52,7 +52,7 @@ export const SUPERPOWERS = {
     description: "On the next multiple choice question, one wrong option is greyed out for your team.",
     flavor: SUPERPOWER_FLAVORS.HELP,
     weight: 3,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   SLOW_TIME: {
     id: "slow_time",

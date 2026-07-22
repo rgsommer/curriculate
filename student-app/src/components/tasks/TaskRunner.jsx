@@ -1877,6 +1877,12 @@ export default function TaskRunner({
   // at our booth, so scan-simulator panels and click-color fallbacks
   // should be hidden — they have to actually scan.
   requireRealScans = false,
+
+  // Superpower plumbing — 👀 X-Ray. When true and the current task is
+  // MC, the MC component picks a random wrong option and greys it out.
+  // onXrayConsumed lets the parent clear its armed flag once fired.
+  xrayActive = false,
+  onXrayConsumed,
 }) {
   if (!task) return null;
 
@@ -2452,6 +2458,8 @@ export default function TaskRunner({
           mode={isReview ? "review" : "play"}
           review={isReview ? review : null}
           memberNames={memberNames}
+          xrayActive={xrayActive}
+          onXrayConsumed={onXrayConsumed}
         />
       );
       break;

@@ -27,7 +27,7 @@ function getCacheKey(task) {
   return `mc:${id || `${type}:${title}:${itemCount}`}`;
 }
 
-export default function MultipleChoiceTask({ task, onComplete, memberNames = [] }) {
+export default function MultipleChoiceTask({ task, onComplete, memberNames = [], xrayActive = false, onXrayConsumed }) {
   const items = Array.isArray(task?.items) ? task.items : [];
   const cacheKey = useMemo(() => getCacheKey(task), [task]);
 
@@ -63,6 +63,27 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
 
   const selectedIdx = selectedByIndex[qIndex];
   const canSubmit = Number.isFinite(selectedIdx) && selectedIdx >= 0 && selectedIdx < choices.length && !submitLocked;
+
+  // Superpower — 👀 X-Ray. When the parent activates X-Ray and the current
+  // question has a knowable correctIndex, pick a random WRONG option and
+  // remember it per qIndex. The choice below greys+disables that option
+  // and calls onXrayConsumed so the parent can clear the armed flag.
+  // Stored per-qIndex so switching questions doesn't leak the elimination
+  // and a re-visit to the same question shows the same greyed option.
+  const [xrayHiddenByQIndex, setXrayHiddenByQIndex] = useState({});
+  useEffect(() => {
+    if (!xrayActive) return;
+    if (xrayHiddenByQIndex[qIndex] !== undefined) return; // already computed
+    if (correctIndex == null) return; // can't pick a wrong answer without knowing the right one
+    const wrongIndices = choices
+      .map((_, i) => i)
+      .filter((i) => i !== correctIndex);
+    if (wrongIndices.length === 0) return;
+    const pick = wrongIndices[Math.floor(Math.random() * wrongIndices.length)];
+    setXrayHiddenByQIndex((prev) => ({ ...prev, [qIndex]: pick }));
+    if (typeof onXrayConsumed === "function") onXrayConsumed();
+  }, [xrayActive, qIndex, correctIndex, choices.length, xrayHiddenByQIndex, onXrayConsumed]);
+  const xrayHiddenIdx = xrayHiddenByQIndex[qIndex];
 
   // Persist to cache on every relevant change.
   useEffect(() => {
@@ -209,6 +230,7 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
             const isCorrectChoice = correctIndex != null && idx === correctIndex;
             const isWrongPick = submitLocked && selected && correctIndex != null && idx !== correctIndex;
             const showCorrect = submitLocked && isCorrectChoice;
+            const isXrayed = !submitLocked && xrayHiddenIdx === idx;
 
             let bg = selected ? "rgba(59,130,246,0.22)" : "rgba(0,0,0,0.22)";
             let border = selected ? "1px solid rgba(59,130,246,0.55)" : "1px solid rgba(255,255,255,0.14)";
@@ -222,24 +244,31 @@ export default function MultipleChoiceTask({ task, onComplete, memberNames = [] 
               bg = "rgba(239,68,68,0.25)";
               border = "2px solid rgba(239,68,68,0.7)";
               badgeBg = "rgba(239,68,68,0.75)";
+            } else if (isXrayed) {
+              bg = "rgba(148,163,184,0.10)";
+              border = "1px dashed rgba(148,163,184,0.55)";
+              badgeBg = "rgba(148,163,184,0.30)";
             }
 
             return (
               <button
                 key={idx}
                 type="button"
+                data-testid={isXrayed ? `mc-xrayed-${idx}` : undefined}
                 onClick={() => selectChoice(idx)}
-                disabled={submitLocked}
+                disabled={submitLocked || isXrayed}
+                title={isXrayed ? "👀 X-Ray eliminated this option" : undefined}
                 style={{
                   textAlign: "left",
                   padding: "14px 14px",
                   borderRadius: 18,
-                  cursor: submitLocked ? "not-allowed" : "pointer",
+                  cursor: submitLocked || isXrayed ? "not-allowed" : "pointer",
                   background: bg,
                   border,
-                  color: "rgba(255,255,255,0.92)",
+                  color: isXrayed ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.92)",
                   fontWeight: 900,
                   lineHeight: 1.25,
+                  textDecoration: isXrayed ? "line-through" : "none",
                   display: "flex",
                   alignItems: "flex-start",
                   gap: 12,
