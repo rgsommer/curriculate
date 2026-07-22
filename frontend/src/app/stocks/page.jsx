@@ -1974,6 +1974,40 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   // during extended-hours windows so the dashboard reflects overnight moves
   // before the regular session opens.
   const [pmData, setPmData] = useState({});
+  // Horizon review — per-open-rec status vs stated window. Used to flag
+  // held tickers whose linked rec has ⌛ expired or gone 🔴 well-behind
+  // so the trader sees the review-needed cue directly on Holdings.
+  // Keyed by BASE ticker (SU vs SU.TO stripped) — see stocksHorizonReview.
+  const [horizonByBase, setHorizonByBase] = useState({});
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/horizon-review`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled || !Array.isArray(j.rows)) return;
+        const map = {};
+        const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+        for (const row of j.rows) {
+          const base = baseOf(row.ticker);
+          // Prefer the worst-status row when a ticker has multiple open recs.
+          const priority = { expired: 5, "hit-stop": 4, "well-behind": 3, lagging: 2, "on-pace": 1, "hit-target": 0, unknown: -1 };
+          const cur = map[base];
+          if (!cur || (priority[row.status] || 0) > (priority[cur.status] || 0)) {
+            map[base] = row;
+          }
+        }
+        setHorizonByBase(map);
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
   // Portfolio performance indicators — fetched from the daily snapshot series.
   const [perfIndicators, setPerfIndicators] = useState(null);
   useEffect(() => {
@@ -2249,7 +2283,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
       )}
 
       {/* Holdings breakdown — one row per ticker, split by USD-sub vs CAD-sub */}
-      <HoldingsBreakdownCard user={user} fx={fx} onEditPosition={onEditPosition} />
+      <HoldingsBreakdownCard user={user} fx={fx} onEditPosition={onEditPosition} horizonByBase={horizonByBase} />
 
       {/* Per-ticker performance — multi-line chart, range tabs.
           Use chartTicker (e.g. "ENB.TO" for CAD-held Enbridge) so the
@@ -7568,7 +7602,31 @@ function PendingOrdersCard({ orders, accounts, onFill, onCancel }) {
 // the position is parked in (USD-sub vs CAD-sub). Shows total CAD equivalent.
 // Plus a CASH row at the bottom. Plus totals.
 // =============================================================================
-function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
+// Small colored dot + tooltip indicating a linked open rec's horizon
+// status. Renders NOTHING when the ticker has no matching horizon row
+// or the linked rec is on-pace (green) — silence is the good state.
+function HorizonDot({ row }) {
+  if (!row) return null;
+  const style = {
+    expired:      { bg: "#f59e0b", text: "⌛ Horizon expired — needs EXIT / ROLL / TRIM decision" },
+    "hit-stop":   { bg: "#dc2626", text: "🛑 Rec's stop was hit — thesis invalidated" },
+    "well-behind":{ bg: "#ef4444", text: "🔴 Well behind pace — thesis may have broken" },
+    lagging:      { bg: "#eab308", text: "🟡 Lagging expected pace — no action yet" },
+  }[row.status];
+  if (!style) return null; // on-pace / hit-target / unknown → no dot
+  return (
+    <span
+      title={`${style.text} · day ${row.daysElapsed}/${row.horizonDays} · entry $${row.entry?.toFixed?.(2)} → now ${row.current != null ? `$${row.current.toFixed(2)}` : "n/a"} · target $${row.target?.toFixed?.(2)}`}
+      style={{
+        display: "inline-block", width: 8, height: 8, borderRadius: "50%",
+        background: style.bg, marginLeft: 6, verticalAlign: "middle",
+        boxShadow: `0 0 0 2px ${style.bg}33`,
+      }}
+    />
+  );
+}
+
+function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} }) {
   const [expandedTicker, setExpandedTicker] = useState(null);
   const [cashExpanded, setCashExpanded] = useState(false); // per-account cash breakdown
   const [collapsed, setCollapsed] = useState(true); // whole card starts collapsed
@@ -7670,6 +7728,7 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition }) {
                   <td style={{ ...recCellLeft, fontWeight: 600 }}>
                     <span style={{ display: "inline-block", width: 14, color: "var(--sa-muted)", fontSize: 10, transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
                     {r.ticker}
+                    <HorizonDot row={horizonByBase[String(r.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "")]} />
                     {split && <span title="Held in both USD and CAD subs — consider consolidating to avoid FX friction" style={{ marginLeft: 6, padding: "1px 6px", fontSize: 10, fontWeight: 700, background: "var(--sa-amber-soft)", color: "var(--sa-amber)", borderRadius: 4 }}>SPLIT</span>}
                   </td>
                   <td style={recCell}>{fmtQ(r.qtyUsdSub)}</td>
