@@ -1113,6 +1113,47 @@ router.post("/email-integration/retry-needs-review", requireStocksAuth, async (r
 });
 
 // ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/email-integration/reapply-trade
+// Force-reapply a specific journal trade that is marked
+// positionApplied=true but whose position never actually persisted
+// (the silent Mongoose write-tracking bug fixed in the tradeApplier
+// commit). Flips positionApplied to false, then calls the backfill
+// applier so the new markModified pass persists the change.
+//
+// Risk: if positions ALREADY reflect this trade (i.e. the flag is
+// honest), reapply will double-apply. Caller must verify — the UI
+// button shows current qty vs expected-after-reapply qty before
+// confirming.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/email-integration/reapply-trade", requireStocksAuth, async (req, res) => {
+  try {
+    const { tradeId } = req.body || {};
+    if (!tradeId || !/^[a-f0-9]{24}$/i.test(tradeId)) {
+      return res.status(400).json({ error: "tradeId must be a 24-char hex ObjectId" });
+    }
+    const doc = await StocksTradeJournal.findOne({ _id: tradeId, email: req.stocksUser.email });
+    if (!doc) return res.status(404).json({ error: "Trade not found" });
+    if (!doc.account) return res.status(400).json({ error: "Trade has no account — resolve via Review panel first" });
+    // Flip the flag so backfillTradeToPortfolio doesn't short-circuit.
+    doc.positionApplied = false;
+    await doc.save();
+    const refreshed = await StocksTradeJournal.findById(doc._id).lean();
+    try {
+      await backfillTradeToPortfolio(refreshed);
+      res.json({ ok: true, reapplied: true });
+    } catch (applyErr) {
+      // Restore the flag so the trade doesn't appear "needs backfill"
+      // if the applier decided it can't safely apply (over-sell, etc.).
+      await StocksTradeJournal.updateOne({ _id: doc._id }, { $set: { positionApplied: true } });
+      res.status(400).json({ error: applyErr.message });
+    }
+  } catch (err) {
+    console.error("stocks-portfolio reapply-trade error:", err);
+    res.status(500).json({ error: `Internal: ${err?.message || err}` });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
 // POST /api/stocks-portfolio/email-integration/backfill-positions
 // Retroactively apply legs of previously-reconciled poller trades whose
 // positions never got updated (pre-Phase-2B-fix rows). Dry-run mode

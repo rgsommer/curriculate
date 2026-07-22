@@ -208,6 +208,14 @@ export async function applyReconciledTrade({
     adjustAccountCash(acctRow, leg, fx);
   }
   portfolio.positions = newPositions;
+  // markModified is required here even though we're assigning a new
+  // array to portfolio.positions. Mongoose's setter recasts the array
+  // but does NOT reliably flag the path as modified when the elements
+  // are plain objects produced by .toObject()/spread. Without this the
+  // save() below returns clean but the positions field never hits
+  // Mongo — the exact silent-no-op we saw with ROKU 29 → SELL 10
+  // journaled as "positions applied" but the row still showed 29.
+  portfolio.markModified("positions");
   portfolio.markModified("accounts");
   portfolio.lastSyncedAt = new Date();
   await portfolio.save();
@@ -315,6 +323,10 @@ export async function backfillTradeToPortfolio(tradeDoc) {
     adjustAccountCash(acctRow, leg, fx);
   }
   portfolio.positions = newPositions;
+  // Same markModified pairing as applyReconciledTrade above — Mongoose
+  // will not flag positions as dirty on plain-object assignment on its
+  // own, and save() would silently persist nothing.
+  portfolio.markModified("positions");
   portfolio.markModified("accounts");
   portfolio.lastSyncedAt = new Date();
   await portfolio.save();

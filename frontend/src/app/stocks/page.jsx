@@ -4138,6 +4138,28 @@ function EmailIntegrationCard({ sessionToken }) {
                       <span style={{ color: t.status === "auto" ? "#14532d" : "#78350f" }}>{t.status}</span>
                       {" · "}
                       <span style={{ color: t.positionApplied ? "#14532d" : "#7f1d1d" }}>{t.positionApplied ? "positions applied" : "positions NOT applied"}</span>
+                      {" · "}
+                      <button
+                        className="sa-btn ghost"
+                        style={{ fontSize: 11, padding: "1px 6px" }}
+                        onClick={async () => {
+                          if (!window.confirm(`Reapply this trade to positions + cash?\n\n${t.leg}\n\nOnly click if the current position DOES NOT already reflect this trade. If it does, reapply will double-apply.`)) return;
+                          try {
+                            const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/reapply-trade`, {
+                              method: "POST", credentials: "include",
+                              headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/json" },
+                              body: JSON.stringify({ tradeId: t._id }),
+                            });
+                            const j = await r.json();
+                            if (!r.ok) throw new Error(j.error || `${r.status}`);
+                            setBanner({ kind: "ok", msg: `Reapplied ${t.leg} to positions + cash.` });
+                            await load();
+                          } catch (e) {
+                            setBanner({ kind: "err", msg: `Reapply failed: ${e?.message || "unknown"}` });
+                          }
+                        }}
+                        title="Force-reapply this trade's legs to positions + cash. Use ONLY if the position still shows the pre-trade quantity (i.e. the earlier apply was a silent no-op)."
+                      >Reapply</button>
                     </li>
                   ))}
                 </ul>
