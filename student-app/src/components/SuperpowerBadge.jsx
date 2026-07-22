@@ -35,7 +35,9 @@ export default function SuperpowerBadge({
   if (!superpower) return null;
 
   const alreadyUsed = !!usedAt;
-  const activationImplemented = superpower.id === "free_clue";
+  // Read the catalog flag — the catalog is the single source of truth
+  // for which powers actually do something when tapped.
+  const activationImplemented = superpower.activationImplemented === true;
 
   return (
     <div

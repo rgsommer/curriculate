@@ -62,7 +62,7 @@ export const SUPERPOWERS = {
     description: "Add 30 seconds to the next timed task before the countdown starts.",
     flavor: SUPERPOWER_FLAVORS.HELP,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   FORTUNE_TELLER: {
     id: "fortune_teller",
@@ -72,7 +72,7 @@ export const SUPERPOWERS = {
     description: "See the type and title of the next task before your team submits this one.",
     flavor: SUPERPOWER_FLAVORS.HELP,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   SECOND_CHANCE: {
     id: "second_chance",
@@ -94,7 +94,7 @@ export const SUPERPOWERS = {
     description: "Tap before you submit any task — you'll earn double points on that one.",
     flavor: SUPERPOWER_FLAVORS.POINTS,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   POINT_SHIELD: {
     id: "point_shield",
@@ -104,7 +104,7 @@ export const SUPERPOWERS = {
     description: "Absorbs the next point-reduction from a wrong answer or opposing bonus.",
     flavor: SUPERPOWER_FLAVORS.POINTS,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   BLUFF: {
     id: "bluff",
@@ -166,7 +166,7 @@ export const SUPERPOWERS = {
     description: "The next time your team scans a station, a random bonus reveals itself — could be points, could be a clue.",
     flavor: SUPERPOWER_FLAVORS.MECHANICS,
     weight: 1,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   TIME_WARP: {
     id: "time_warp",
@@ -176,7 +176,7 @@ export const SUPERPOWERS = {
     description: "One shot — pauses the session countdown for 15 seconds while you think.",
     flavor: SUPERPOWER_FLAVORS.MECHANICS,
     weight: 1,
-    activationImplemented: false,
+    activationImplemented: true,
   },
 
   // ────────────── Wildcards ──────────────

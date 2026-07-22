@@ -3981,7 +3981,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
       return null;
     }
 
-  const handleStationScan = (payload = {}, ack) => {
+  const handleStationScan = async (payload = {}, ack) => {
     try {
       const { roomCode, teamId, stationId, locationSlug } = payload || {};
       const code = normalizeRoomCode(roomCode);
@@ -4037,9 +4037,42 @@ socket.on("task:force-advance", ({ roomCode }) => {
 
         team.currentStationId = canonicalId;
         team.lastScannedStationId = canonicalId;
-      
+
         // (optional) also store color for convenience
         team.assignedColor = scanned?.color || null;
+
+        // Mystery Gift (Tier 1 superpower). Fire ONLY on the initial
+        // scan arrival — the "welcome to your station" moment is the
+        // most satisfying reveal beat. Adds +50 to the running score
+        // via a synthetic submission and emits a targeted reveal so
+        // the student's UI can celebrate.
+        let mysteryGift = null;
+        try {
+          const { applyMysteryGift } = await import(
+            "./services/superpowerEffects.js"
+          );
+          mysteryGift = applyMysteryGift(team);
+          if (mysteryGift.triggered) {
+            room.submissions.push({
+              roomCode: code,
+              teamId,
+              teamName: team.teamName || null,
+              taskIndex: -1,
+              answer: { source: "superpower:mystery_gift" },
+              correct: null,
+              points: mysteryGift.bonus,
+              submittedAt: new Date().toISOString(),
+              superpowerTriggered: "mystery_gift",
+            });
+            socket.emit("superpower:triggered", {
+              powerId: "mystery_gift",
+              pointsOut: mysteryGift.bonus,
+              revealText: mysteryGift.revealText,
+            });
+          }
+        } catch (spErr) {
+          console.warn("[superpower] mystery gift non-fatal:", spErr?.message || spErr);
+        }
 
         if (typeof ack === "function") {
           ack({
@@ -4048,6 +4081,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
             stationId,
             assignedStationId: stationId,
             assignedColor: scanned?.color || null,
+            ...(mysteryGift?.triggered && { superpowerTriggered: "mystery_gift", superpowerBonus: mysteryGift.bonus }),
           });
         }
 
@@ -6224,6 +6258,30 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       return;
     }
 
+    // ── Superpower scoring hook (Tier 1) ────────────────────────────────
+    // Bonus Booster: 2× positive points on this submission, then clears.
+    // Point Shield:  absorbs negative points to 0, then clears.
+    // See backend/services/superpowerEffects.js — pure fn, mutates the
+    // team's pendingSuperpower flag when it triggers.
+    let superpowerTriggered = null;
+    try {
+      const { applyBonusOrShield } = await import(
+        "./services/superpowerEffects.js"
+      );
+      const result = applyBonusOrShield(team, pointsEarned);
+      pointsEarned = result.pointsOut;
+      superpowerTriggered = result.triggered;
+      if (superpowerTriggered) {
+        socket.emit("superpower:triggered", {
+          powerId: superpowerTriggered,
+          pointsOut: pointsEarned,
+          taskIndex: idx,
+        });
+      }
+    } catch (spErr) {
+      console.warn("[superpower] scoring hook non-fatal:", spErr?.message || spErr);
+    }
+
     const submissionDoc = {
       roomCode: code,
       teamId: effectiveTeamId,
@@ -6241,6 +6299,7 @@ if (!isMultiPack && task.taskType === "what-am-i") {
         handwritingBonus,
         handwritingPhotoUrl: answer?.handwritingPhotoUrl || null,
       }),
+      ...(superpowerTriggered && { superpowerTriggered }),
     };
     room.submissions.push(submissionDoc);
 
@@ -7003,6 +7062,35 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       if (typeof ack === "function") ack({ ok: true, deviceMode: next, substitutionCount });
     } catch (err) {
       console.error("[teacher:setDeviceMode] error:", err?.message || err);
+      if (typeof ack === "function") ack({ ok: false, error: "server-error" });
+    }
+  });
+
+  // ── Superpowers — activation handler (Tier 1) ───────────────────────────
+  // Client emits this when a student taps "Use my superpower". Server-side
+  // effect powers (Bonus Booster, Point Shield, Mystery Gift) arm a pending
+  // flag on the team record that the scoring / scan handlers later
+  // consume. Client-owned powers (Slow Time, Fortune Teller, Time Warp)
+  // route through the same handler so we can enforce single-use, but the
+  // actual effect is client-side.
+  socket.on("superpower:activate", async ({ roomCode, teamId, powerId } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") ack({ ok: false, error: "room-not-found" });
+        return;
+      }
+      const team = room.teams?.[teamId];
+      if (!team) {
+        if (typeof ack === "function") ack({ ok: false, error: "team-not-found" });
+        return;
+      }
+      const { armSuperpower } = await import("./services/superpowerEffects.js");
+      const result = armSuperpower(team, String(powerId || ""));
+      if (typeof ack === "function") ack(result);
+    } catch (err) {
+      console.error("[superpower:activate] error:", err?.message || err);
       if (typeof ack === "function") ack({ ok: false, error: "server-error" });
     }
   });

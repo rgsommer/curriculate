@@ -99,6 +99,22 @@ function collapseTripleLetters(str) {
 }
 
 // Combined name sanitiser: caps emojis + collapses triple letters
+// Shared style for the small "reveal" panels that pop below a
+// superpower badge when its effect fires client-side. Kept tiny so
+// call sites read cleanly.
+function superpowerPanel(bg, border, ink) {
+  return {
+    margin: "6px 0 12px",
+    padding: "12px 14px",
+    borderRadius: 14,
+    background: bg,
+    border: `1px solid ${border}`,
+    color: ink,
+    fontSize: "0.9rem",
+    lineHeight: 1.5,
+  };
+}
+
 function sanitizeName(str) {
   return collapseTripleLetters(capEmojis(str));
 }
@@ -320,7 +336,12 @@ function StudentApp() {
   // server-side on join, delivered secretly to this socket only.
   const [superpower, setSuperpower] = useState(null);
   const [superpowerUsedAt, setSuperpowerUsedAt] = useState(null);
+  // Client-side reveal flags — Tier 1 activations.
   const [freeClueRevealed, setFreeClueRevealed] = useState(false);
+  const [slowTimeBonusSec, setSlowTimeBonusSec] = useState(0); // consumed by countdown UI
+  const [fortuneRevealed, setFortuneRevealed] = useState(false);
+  const [timeWarpFreezeUntil, setTimeWarpFreezeUntil] = useState(null);
+  const [superpowerTriggered, setSuperpowerTriggered] = useState(null); // { powerId, pointsOut, revealText? }
 
   // Mode B (join): result of room:peek — populated when the student types
   // a class-bound room code. Drives the roster name dropdown in the join UI.
@@ -1657,6 +1678,16 @@ function StudentApp() {
     };
     socket.on("superpower:assigned", handleSuperpowerAssigned);
 
+    // Server-effect powers (Bonus Booster, Point Shield, Mystery Gift)
+    // emit this when the effect fires. Purely for celebration UI.
+    const handleSuperpowerTriggered = (payload) => {
+      if (!payload || !payload.powerId) return;
+      setSuperpowerTriggered(payload);
+      // Auto-clear the reveal after a beat.
+      setTimeout(() => setSuperpowerTriggered(null), 3500);
+    };
+    socket.on("superpower:triggered", handleSuperpowerTriggered);
+
     // ── LevelUp: server pushed a new task to play (after we accepted) ──
     const handleLevelUpTaskReady = (payload) => {
       if (!payload || String(payload.teamId) !== String(teamId)) return;
@@ -1779,6 +1810,7 @@ function StudentApp() {
       socket.off("team:pacing-released", handlePacingRelease);
       socket.off("session:complete", handleSessionComplete);
       socket.off("superpower:assigned", handleSuperpowerAssigned);
+      socket.off("superpower:triggered", handleSuperpowerTriggered);
       socket.off("levelUp:taskReady", handleLevelUpTaskReady);
       socket.off("levelUp:resolved", handleLevelUpResolved);
       socket.off("team:bumped", handleBumped);
@@ -4553,36 +4585,121 @@ function StudentApp() {
             superpower={superpower}
             usedAt={superpowerUsedAt}
             onActivate={(sp) => {
+              const stamp = new Date().toISOString();
+              // Client-owned powers fire immediately with local flag flips.
               if (sp.id === "free_clue") {
                 setFreeClueRevealed(true);
-                setSuperpowerUsedAt(new Date().toISOString());
+                setSuperpowerUsedAt(stamp);
+                return;
+              }
+              if (sp.id === "slow_time") {
+                setSlowTimeBonusSec(30);
+                setSuperpowerUsedAt(stamp);
+                return;
+              }
+              if (sp.id === "fortune_teller") {
+                setFortuneRevealed(true);
+                setSuperpowerUsedAt(stamp);
+                return;
+              }
+              if (sp.id === "time_warp") {
+                setTimeWarpFreezeUntil(Date.now() + 15000);
+                setSuperpowerUsedAt(stamp);
+                // Auto-clear so any countdown-freeze consumers can revert.
+                setTimeout(() => setTimeWarpFreezeUntil(null), 15000);
+                return;
+              }
+              // Server-effect powers ask the backend to arm — the effect
+              // fires the next time the team submits (booster / shield) or
+              // scans a station (mystery gift). We optimistically flip
+              // usedAt so the button locks; if the server rejects (rare)
+              // we surface it as an error banner via superpowerTriggered.
+              if (sp.id === "bonus_booster" || sp.id === "point_shield" || sp.id === "mystery_gift") {
+                socket.emit(
+                  "superpower:activate",
+                  { roomCode, teamId, powerId: sp.id },
+                  (resp) => {
+                    if (resp?.ok) {
+                      setSuperpowerUsedAt(stamp);
+                    } else {
+                      console.warn("[superpower] server refused:", resp?.error);
+                    }
+                  }
+                );
+                return;
               }
             }}
           />
+
+          {/* Free Clue reveal */}
           {freeClueRevealed && (
             <div
               data-testid="free-clue-panel"
-              style={{
-                margin: "6px 0 12px",
-                padding: "12px 14px",
-                borderRadius: 14,
-                background: "#ecfeff",
-                border: "1px solid #a5f3fc",
-                color: "#164e63",
-                fontSize: "0.9rem",
-                lineHeight: 1.5,
-              }}
+              style={superpowerPanel("#ecfeff", "#a5f3fc", "#164e63")}
             >
               <div style={{ fontWeight: 900, marginBottom: 4 }}>🔍 Hint</div>
               {(() => {
                 const t = currentTaskRef?.current || {};
-                const hint =
+                return (
                   t?.hint ||
                   t?.config?.hint ||
                   (Array.isArray(t?.hints) && t.hints[0]) ||
-                  "Look for the keywords in the prompt and match them to what you already know about the topic. Talk it out with your team.";
-                return hint;
+                  "Look for the keywords in the prompt and match them to what you already know about the topic. Talk it out with your team."
+                );
               })()}
+            </div>
+          )}
+
+          {/* Slow Time reveal — chip stays visible until the next task starts */}
+          {slowTimeBonusSec > 0 && (
+            <div data-testid="slow-time-panel" style={superpowerPanel("#fef9c3", "#fde047", "#713f12")}>
+              <strong>⏱️ Slow Time armed.</strong> +{slowTimeBonusSec} seconds added
+              to your next countdown. Take your time.
+            </div>
+          )}
+
+          {/* Fortune Teller reveal — peek at the next task in the taskset */}
+          {fortuneRevealed && (
+            <div data-testid="fortune-panel" style={superpowerPanel("#faf5ff", "#e9d5ff", "#581c87")}>
+              <div style={{ fontWeight: 900, marginBottom: 4 }}>🔮 Vision of what's next</div>
+              {(() => {
+                const tasks = Array.isArray(roomState?.taskset?.tasks) ? roomState.taskset.tasks : [];
+                const idx = typeof roomState?.taskIndex === "number" ? roomState.taskIndex : -1;
+                const next = tasks[idx + 1];
+                if (!next) return <em>No more tasks queued after this one.</em>;
+                const type = next.taskType || next.type || "task";
+                const title = next.title || next.name || "";
+                return (
+                  <span>
+                    Next: <strong>{title || type}</strong> (<code>{type}</code>).
+                  </span>
+                );
+              })()}
+            </div>
+          )}
+
+          {/* Time Warp reveal — banner while the freeze is active */}
+          {timeWarpFreezeUntil && Date.now() < timeWarpFreezeUntil && (
+            <div data-testid="time-warp-panel" style={superpowerPanel("#eef2ff", "#c7d2fe", "#312e81")}>
+              <strong>💫 Time frozen for {Math.max(0, Math.ceil((timeWarpFreezeUntil - Date.now()) / 1000))}s.</strong>{" "}
+              Take a breath and think — no countdown pressure for the next few seconds.
+            </div>
+          )}
+
+          {/* Server-effect celebration overlay (Bonus Booster / Point Shield / Mystery Gift) */}
+          {superpowerTriggered && (
+            <div
+              data-testid="superpower-triggered-panel"
+              style={superpowerPanel("#ecfdf5", "#6ee7b7", "#065f46")}
+            >
+              <strong>
+                {superpowerTriggered.powerId === "bonus_booster" && "🎁 Bonus Booster fired! "}
+                {superpowerTriggered.powerId === "point_shield" && "🛡️ Point Shield absorbed the hit! "}
+                {superpowerTriggered.powerId === "mystery_gift" && "🎁 Mystery Gift revealed! "}
+              </strong>
+              {superpowerTriggered.revealText
+                ? superpowerTriggered.revealText
+                : `Your team just netted ${superpowerTriggered.pointsOut} points from that one.`}
             </div>
           )}
         </div>
