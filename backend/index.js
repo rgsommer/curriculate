@@ -519,6 +519,15 @@ app.get("/health", async (_req, res) => {
   }
 });
 
+// Keep-alive ping — deliberately lighter than /health. No DB call, no
+// auth. Used by an external cron (GitHub Actions workflow) to hit the
+// dyno every 5 min so Render's autosleep doesn't kick in and drop the
+// stocks-email-poller / stocks-briefing crons on the floor. Never used
+// by any load balancer — this is purely to keep the process warm.
+app.get("/keep-alive", (_req, res) => {
+  res.status(200).json({ ok: true, uptime: process.uptime(), ts: Date.now() });
+});
+
 // 2) Auth + misc routes that don't depend on tasksets
 app.use("/api/auth", authLimiter, authRoutes);
 
@@ -3229,6 +3238,43 @@ socket.on("task:force-advance", ({ roomCode }) => {
         console.warn("[skins] StudentProfile lookup failed (non-critical):", skinErr.message);
       }
 
+      // ── Superpowers (shared/superpowers.js) ────────────────────────
+      // Roll a rare (~1 in 4) hidden superpower for this team on join.
+      // Server-authoritative + fingerprint-deduped so a refresh /
+      // team-rename / socket-reconnect on the same device in this
+      // room ALWAYS yields the same result — no farming. A new room
+      // means a fresh roll (different class period on the same
+      // device is still eligible). Result is emitted to the joining
+      // socket ONLY; not surfaced in room:state to teacher/projector.
+      let superpowerForAck = null;
+      try {
+        const { computeFingerprint, assignSuperpower } = await import(
+          "./services/superpowerAssignment.js"
+        );
+        const fingerprint = computeFingerprint({
+          clientDeviceInfo: sanitizedDeviceInfo,
+          roomCode: code,
+          userAgent: socket.handshake?.headers?.["user-agent"] || "",
+        });
+        const power = assignSuperpower({ fingerprint, roomCode: code });
+        if (power) {
+          // Attach the id server-side so downstream activation handlers
+          // can look up the team's power without a client round-trip.
+          if (room.teams[teamId]) {
+            room.teams[teamId].superpower = power.id;
+            room.teams[teamId].superpowerUsedAt = null;
+          }
+          superpowerForAck = power;
+          // Targeted event (in addition to the ack payload) so late
+          // student-app listeners get the reveal even if they missed
+          // the ack race.
+          socket.emit("superpower:assigned", { superpower: power });
+        }
+      } catch (spErr) {
+        // Never let a superpower crash block the join.
+        console.warn("[superpower] roll failed (non-fatal):", spErr?.message || spErr);
+      }
+
       if (typeof ack === "function") {
         ack({
           ok: true,
@@ -3239,6 +3285,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
           assignedColor: normalizeStationId(room?.teams?.[teamId]?.currentStationId || room?.teams?.[teamId]?.stationId || null)?.color || null,
           roomState: state,
           memberSkins,
+          superpower: superpowerForAck,
         });
       }
     } catch (err) {

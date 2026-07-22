@@ -1,0 +1,34 @@
+name: Backend keep-alive
+
+# Hits the backend's /keep-alive endpoint every 5 minutes so Render's
+# autosleep never triggers. Without this the in-process node-cron jobs
+# (email poller every 15 min, daily briefing every minute) go silent
+# whenever the dyno idles out — which is why the 10:15 poll missed the
+# 10:09 CIBC alerts.
+#
+# GitHub-hosted schedules are best-effort and can drift by a few minutes
+# during high load. That's fine for keep-warm — anything under 15 min
+# average cadence prevents Render's ~15-min idle sleep.
+#
+# The endpoint has no auth and does no DB call. Safe to hammer.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Curl /keep-alive
+        run: |
+          set -e
+          URL="${KEEP_ALIVE_URL:-https://api.curriculate.net/keep-alive}"
+          echo "Pinging $URL"
+          RESP=$(curl -sS --max-time 30 --retry 2 --retry-delay 5 -w "\nHTTP_STATUS:%{http_code}\n" "$URL")
+          echo "$RESP"
+          echo "$RESP" | grep -q "HTTP_STATUS:200"
+        env:
+          KEEP_ALIVE_URL: ${{ vars.KEEP_ALIVE_URL }}
