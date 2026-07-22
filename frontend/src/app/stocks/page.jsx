@@ -5144,28 +5144,35 @@ function ReconcileCard({ sessionToken, accounts, onSaveBrokerAccountId, onRectif
                       };
                       const isPosIssue = issue.type === "position";
                       const isExtra = isPosIssue && issue.kind === "extra_in_app";
+                      const adjustLabel = !isPosIssue
+                        ? `Set ${a.accountName} ${issue.currency} cash to ${fmt$(issue.csvValue)}`
+                        : issue.kind === "extra_in_app"
+                          ? `Delete ${issue.appQty} sh ${issue.csvTicker || issue.ticker} from ${a.accountName} (no trade recorded)`
+                          : issue.kind === "missing_in_app"
+                            ? `Add ${issue.csvQty} sh ${issue.csvTicker || issue.ticker} to ${a.accountName} at cost basis $${issue.csvPrice} (no trade recorded)`
+                            : `Set ${issue.csvTicker || issue.ticker} qty in ${a.accountName} to ${issue.csvQty} (no trade recorded — current ${issue.appQty})`;
                       const rectifyBtn = !isResolved && (
                         <div style={{ display: "inline-flex", gap: 4 }}>
+                          {isPosIssue && (
+                            <button
+                              className="sa-btn"
+                              onClick={() => handleRectify(a, issue)}
+                              style={{ fontSize: 11, padding: "3px 10px" }}
+                              title="Opens trade modal — enter your actual fill price and record as a journal trade. Use when this represents a real BUY/SELL that isn't in the app yet."
+                            >Trade</button>
+                          )}
                           <button
-                            className="sa-btn"
-                            onClick={() => handleRectify(a, issue)}
+                            className="sa-btn ghost"
+                            onClick={() => {
+                              if (confirm(`${adjustLabel}.\n\nUse Adjust only when this is a data-hygiene fix — dividends, corporate actions, prior manual entries, or trades already recorded elsewhere. No trade will be journaled and no P&L will be attributed.`)) {
+                                handleRectify(a, issue, { silent: true });
+                              }
+                            }}
                             style={{ fontSize: 11, padding: "3px 10px" }}
                             title={isPosIssue
-                              ? "Opens trade modal — enter your actual fill price and record as a journal trade"
-                              : "Update the app to match CIBC for this row"}
-                          >{isPosIssue ? "Rectify as trade" : "Rectify"}</button>
-                          {isExtra && (
-                            <button
-                              className="sa-btn ghost"
-                              onClick={() => {
-                                if (confirm(`Delete ${issue.appQty} sh ${issue.csvTicker || issue.ticker} from ${a.accountName} without recording a trade?\n\nUse this only if the trade was already recorded in a different account.`)) {
-                                  handleRectify(a, issue, { silent: true });
-                                }
-                              }}
-                              style={{ fontSize: 11, padding: "3px 10px" }}
-                              title="Just delete this position from the app — no SELL recorded. Use when the trade was already booked in another account."
-                            >Delete</button>
-                          )}
+                              ? "Directly set the position qty to CIBC's number. No trade recorded. Use for dividends, corporate actions, or when the trade was booked elsewhere."
+                              : "Directly set the cash balance to CIBC's number. No trade recorded. Use for dividends, interest, FX conversions."}
+                          >Adjust</button>
                         </div>
                       );
                       const resolvedBadge = isResolved && (
