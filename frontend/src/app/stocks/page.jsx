@@ -8189,7 +8189,9 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
 }
 
 function MultiLineChart({ series, range, mode = "pct" }) {
-  const W = 720, H = 280, PADL = 56, PADR = 14, PADT = 14, PADB = 30;
+  // PADR widened to make room for right-edge ticker labels (5-7 chars,
+  // ~9px font ⇒ ~50-60px band).
+  const W = 720, H = 280, PADL = 56, PADR = 66, PADT = 14, PADB = 30;
 
   // In % mode all lines share one normalized Y axis (% change from start).
   // In price mode each line has its own scale (TSLA at $400 and RUM at $5
@@ -8293,15 +8295,63 @@ function MultiLineChart({ series, range, mode = "pct" }) {
           <g key={s.ticker}>
             <path d={d} fill="none" stroke={s.color} strokeWidth="1.8" strokeLinejoin="round" strokeLinecap="round" />
             <circle cx={xOf(last.t)} cy={lastY} r="3" fill={s.color} />
-            {/* In price mode, render per-line price label at the right edge */}
-            {mode === "price" && (
-              <text x={xOf(last.t) + 6} y={lastY + 3} fontSize="9" fill={s.color} fontWeight="600">
-                ${last.price.toFixed(last.price > 100 ? 0 : 2)}
-              </text>
-            )}
           </g>
         );
       })}
+
+      {/* Right-edge ticker labels — compute native end-Y per series,
+          then greedily spread overlapping labels vertically so each is
+          readable next to its color. In price mode append the last
+          price; in pct mode we already show the value in the axis grid
+          plus the color-coded legend rows below the chart. */}
+      {(() => {
+        const labelH = 11;
+        const items = series
+          .filter((s) => s.points.length >= 2)
+          .map((s) => {
+            const yFn = mode === "pct" ? (v) => yOfShared(v) : (v) => yOfSeries(s, v);
+            const last = s.points[s.points.length - 1];
+            return {
+              ticker: s.ticker,
+              color: s.color,
+              nativeY: yFn(last[valueKey]),
+              endX: xOf(last.t),
+              last,
+            };
+          })
+          .sort((a, b) => a.nativeY - b.nativeY);
+        // Greedy vertical spread: for each item, push its label down if
+        // it would collide with the previous label's bottom.
+        let cursor = PADT;
+        for (const it of items) {
+          it.labelY = Math.max(it.nativeY, cursor + labelH * 0.7);
+          cursor = it.labelY;
+        }
+        // Clamp any labels that spilled past the plot bottom by
+        // squeezing the tail up.
+        const maxY = H - PADB;
+        for (let i = items.length - 1; i >= 0; i--) {
+          if (items[i].labelY > maxY) items[i].labelY = maxY;
+          if (i > 0 && items[i].labelY - items[i - 1].labelY < labelH) {
+            items[i - 1].labelY = items[i].labelY - labelH;
+          }
+        }
+        return items.map((it) => (
+          <g key={"lbl-" + it.ticker}>
+            {/* Leader line when the label had to be moved off the true endpoint */}
+            {Math.abs(it.labelY - it.nativeY) > 2 && (
+              <line
+                x1={it.endX + 3} y1={it.nativeY}
+                x2={W - PADR + 2} y2={it.labelY}
+                stroke={it.color} strokeWidth="0.6" strokeDasharray="2,2" opacity="0.6"
+              />
+            )}
+            <text x={W - PADR + 4} y={it.labelY + 3} fontSize="9" fill={it.color} fontWeight="600">
+              {it.ticker}{mode === "price" ? ` $${it.last.price.toFixed(it.last.price > 100 ? 0 : 2)}` : ""}
+            </text>
+          </g>
+        ));
+      })()}
 
       {/* X-axis ticks */}
       {tickTs.map((t, i) => (
