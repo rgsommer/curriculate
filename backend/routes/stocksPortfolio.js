@@ -29,6 +29,7 @@ import { computeCompliance } from "../services/stocksCompliance.js";
 import { computeAttribution } from "../services/stocksAttribution.js";
 import StocksRecIntent from "../models/StocksRecIntent.js";
 import StocksEmailIntegration from "../models/StocksEmailIntegration.js";
+import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/stocksEncryption.js";
 import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
@@ -779,6 +780,16 @@ router.get("/email-integration", requireStocksAuth, async (req, res) => {
         status: t.brokerReconcileStatus,
         positionApplied: !!t.positionApplied,
       })),
+      // Cron heartbeat — proves the scheduled tick fired (or didn't).
+      // The email-poller-tick heartbeat is stamped at the top of every
+      // */15 cron fire, before any per-user IMAP work.
+      pollerHeartbeat: await (async () => {
+        try {
+          const hb = await StocksSystemHeartbeat.findOne({ name: "email-poller-tick" }).lean();
+          if (!hb) return { lastTickAt: null, lastTickDueCount: null };
+          return { lastTickAt: hb.lastTickAt, lastTickDueCount: hb.lastTickDueCount };
+        } catch { return null; }
+      })(),
     });
   } catch (err) {
     console.error("stocks-portfolio email-integration GET error:", err);

@@ -4101,6 +4101,23 @@ function EmailIntegrationCard({ sessionToken }) {
               ) : <span className="sa-muted">never polled — poller ships in Phase 2B</span>}
           </div>
           <div><b>Reconciled trades:</b> {state.reconciledCount || 0} since {state.configuredAt ? new Date(state.configuredAt).toLocaleDateString() : "setup"}</div>
+          {state.pollerHeartbeat && (() => {
+            const hb = state.pollerHeartbeat.lastTickAt ? new Date(state.pollerHeartbeat.lastTickAt) : null;
+            const ageMin = hb ? Math.round((Date.now() - hb.getTime()) / 60000) : null;
+            const stale = ageMin != null && ageMin > 30;
+            return (
+              <div style={{ fontSize: 12 }}>
+                <b>Cron heartbeat:</b>{" "}
+                {hb ? (
+                  <span style={{ color: stale ? "#7f1d1d" : "#14532d" }}>
+                    last */15 tick fired {hb.toLocaleString()} ({ageMin} min ago{stale ? " — STALE, likely the dyno was asleep at the scheduled minute" : ""})
+                  </span>
+                ) : (
+                  <span style={{ color: "#78350f" }}>no tick recorded yet — cron may not be running (STOCKS_BRIEFING_ENABLED=1?)</span>
+                )}
+              </div>
+            );
+          })()}
           {Array.isArray(state.recentTrades) && (
             <div style={{ marginTop: 8, padding: "8px 10px", background: state.recentTrades.length === 0 ? "#fef3c7" : "#f1f5f9", border: `1px solid ${state.recentTrades.length === 0 ? "#fde68a" : "#e2e8f0"}`, borderRadius: 6, fontSize: 12 }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>
