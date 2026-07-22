@@ -2801,10 +2801,24 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
       }
     }
 
-    // Fetch current prices once per unique resolved symbol (CAD recs → .TO)
-    const symbols = [...new Set(recs.map(r => recSymbol(r)).filter(Boolean))];
+    // Fetch current prices once per unique resolved symbol (CAD recs → .TO).
+    // We also collect the extra listings implied by any actually-executed
+    // trade leg, so a rec that got journaled as CAD-listing can still be
+    // graded against its true USD-listing fill price (or vice versa).
+    // Without this, an ENB BUY filled on NYSE at $55.49 USD but journaled
+    // as CAD would grade against ENB.TO $79 CAD → phantom +42% gain.
+    const symbols = new Set(recs.map(r => recSymbol(r)).filter(Boolean));
+    const baseOfSym = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    for (const t of trades) {
+      for (const leg of t.legs || []) {
+        const base = baseOfSym(leg.ticker);
+        if (!base) continue;
+        if (leg.currency === "CAD") symbols.add(`${base}.TO`);
+        else symbols.add(base);
+      }
+    }
     const priceMap = {};
-    await Promise.all(symbols.map(async sym => { priceMap[sym] = await fetchCurrentPrice(sym); }));
+    await Promise.all([...symbols].map(async sym => { priceMap[sym] = await fetchCurrentPrice(sym); }));
 
     const items = [];
     let followedCount = 0, skippedCount = 0, pendingCount = 0;
@@ -2813,32 +2827,53 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
 
     for (const rec of recs) {
       const linkedTrade = tradesByRecId.get(String(rec._id));
-      const currentPrice = priceMap[recSymbol(rec)];
       const followed = !!linkedTrade;
+      const recBase = baseTicker(rec.ticker);
+
+      // Find the matching leg by BASE ticker so an "ENB" rec pairs with
+      // an "ENB.TO" leg (and vice versa). The old exact-match version
+      // silently fell through and let the rec.entryPrice/entryCurrency
+      // pair drive P&L math — which was a phantom-gain generator when
+      // rec.entryCurrency and the actual fill currency disagreed.
+      const followedLeg = followed
+        ? (linkedTrade.legs || []).find(l => baseTicker(l.ticker) === recBase && (l.side === rec.action || (rec.action === "TRIM" && l.side === "SELL")))
+          || (linkedTrade.legs || []).find(l => baseTicker(l.ticker) === recBase)
+        : null;
+
+      // Pick the current-price listing that matches the *actual fill*
+      // currency, not the rec's saved entryCurrency. This is the fix for
+      // the ENB "+42%" scorecard row: a NYSE-USD fill was being graded
+      // against the TSX-CAD current price because the rec had been
+      // journaled with entryCurrency="CAD".
+      const priceLookupSym = followedLeg
+        ? (followedLeg.currency === "CAD" ? `${recBase}.TO` : recBase)
+        : recSymbol(rec);
+      const currentPrice = priceMap[priceLookupSym];
 
       // Hypothetical P&L: how the rec WOULD have performed (entry → current)
       // - BUY rec: gain if price went UP from entry
       // - SELL/TRIM rec: gain if price went DOWN from entry (sell was right)
+      // Uses recSymbol-based current price so the hypo lookup matches the
+      // currency the rec was WRITTEN in, even when no leg was followed.
       let hypoPnlPct = null, hypoDollars = null;
-      if (rec.entryPrice && currentPrice) {
-        const raw = (currentPrice - rec.entryPrice) / rec.entryPrice;
+      const hypoCurrent = priceMap[recSymbol(rec)];
+      if (rec.entryPrice && hypoCurrent) {
+        const raw = (hypoCurrent - rec.entryPrice) / rec.entryPrice;
         const dir = (rec.action === "BUY") ? 1 : (rec.action === "SELL" || rec.action === "TRIM") ? -1 : 0;
         hypoPnlPct = dir * raw * 100;
         if (rec.shares) {
-          hypoDollars = dir * (currentPrice - rec.entryPrice) * rec.shares;
+          hypoDollars = dir * (hypoCurrent - rec.entryPrice) * rec.shares;
         }
       }
 
-      // Actual P&L if followed: use the actual fill price from the trade
+      // Actual P&L if followed: use the actual fill price from the trade,
+      // compared against the current price in that SAME currency listing.
       let actualPnlPct = null, actualDollars = null;
-      if (followed && currentPrice) {
-        const leg = (linkedTrade.legs || []).find(l => l.ticker === rec.ticker);
-        if (leg && leg.pricePerShare) {
-          const raw = (currentPrice - leg.pricePerShare) / leg.pricePerShare;
-          const dir = (leg.side === "BUY") ? 1 : -1;
-          actualPnlPct = dir * raw * 100;
-          actualDollars = dir * (currentPrice - leg.pricePerShare) * (leg.shares || 0);
-        }
+      if (followed && currentPrice && followedLeg && followedLeg.pricePerShare) {
+        const raw = (currentPrice - followedLeg.pricePerShare) / followedLeg.pricePerShare;
+        const dir = (followedLeg.side === "BUY") ? 1 : -1;
+        actualPnlPct = dir * raw * 100;
+        actualDollars = dir * (currentPrice - followedLeg.pricePerShare) * (followedLeg.shares || 0);
       }
 
       // Categorize
@@ -2885,8 +2920,9 @@ router.get("/scorecard", requireStocksAuth, async (req, res) => {
         hypoDollars,
         actualPnlPct,
         actualDollars,
-        tradeFillPrice: followed ? (linkedTrade.legs?.[0]?.pricePerShare || null) : null,
-        tradeShares: followed ? (linkedTrade.legs?.[0]?.shares || null) : null,
+        tradeFillPrice: followed && followedLeg ? (followedLeg.pricePerShare || null) : null,
+        tradeFillCurrency: followed && followedLeg ? (followedLeg.currency || null) : null,
+        tradeShares: followed && followedLeg ? (followedLeg.shares || null) : null,
         tradeExecutedAt: followed ? linkedTrade.executedAt : null,
         daysElapsed,
         horizonPct,
