@@ -64,11 +64,11 @@ export const SUPERPOWERS = {
     weight: 2,
     activationImplemented: true,
   },
-  FORTUNE_TELLER: {
-    id: "fortune_teller",
+  TRUTH_SEEKER: {
+    id: "truth_seeker",
     emoji: "🔮",
-    name: "Fortune Teller",
-    tagline: "Peek at the next task.",
+    name: "Truth Seeker",
+    tagline: "Uncover what's next.",
     description: "See the type and title of the next task before your team submits this one.",
     flavor: SUPERPOWER_FLAVORS.HELP,
     weight: 2,
@@ -180,16 +180,6 @@ export const SUPERPOWERS = {
   },
 
   // ────────────── Wildcards ──────────────
-  DJ: {
-    id: "dj",
-    emoji: "🎵",
-    name: "DJ",
-    tagline: "Pick the finale music.",
-    description: "Choose the celebration track that plays during the final round — the whole class hears your pick.",
-    flavor: SUPERPOWER_FLAVORS.WILD,
-    weight: 1,
-    activationImplemented: false,
-  },
   COMEDIAN: {
     id: "comedian",
     emoji: "🎪",

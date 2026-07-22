@@ -4597,7 +4597,7 @@ function StudentApp() {
                 setSuperpowerUsedAt(stamp);
                 return;
               }
-              if (sp.id === "fortune_teller") {
+              if (sp.id === "truth_seeker") {
                 setFortuneRevealed(true);
                 setSuperpowerUsedAt(stamp);
                 return;
@@ -4658,7 +4658,7 @@ function StudentApp() {
             </div>
           )}
 
-          {/* Fortune Teller reveal — peek at the next task in the taskset */}
+          {/* Truth Seeker reveal — peek at the next task in the taskset */}
           {fortuneRevealed && (
             <div data-testid="fortune-panel" style={superpowerPanel("#faf5ff", "#e9d5ff", "#581c87")}>
               <div style={{ fontWeight: 900, marginBottom: 4 }}>🔮 Vision of what's next</div>

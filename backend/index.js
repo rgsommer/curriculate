@@ -7070,7 +7070,7 @@ if (!isMultiPack && task.taskType === "what-am-i") {
   // Client emits this when a student taps "Use my superpower". Server-side
   // effect powers (Bonus Booster, Point Shield, Mystery Gift) arm a pending
   // flag on the team record that the scoring / scan handlers later
-  // consume. Client-owned powers (Slow Time, Fortune Teller, Time Warp)
+  // consume. Client-owned powers (Slow Time, Truth Seeker, Time Warp)
   // route through the same handler so we can enforce single-use, but the
   // actual effect is client-side.
   socket.on("superpower:activate", async ({ roomCode, teamId, powerId } = {}, ack) => {

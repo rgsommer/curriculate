@@ -2,7 +2,7 @@
 //
 // Server-side activation logic for the superpowers whose effect is
 // enforced by the backend (Bonus Booster, Point Shield, Mystery Gift).
-// Client-side powers (Slow Time, Fortune Teller, Time Warp) don't
+// Client-side powers (Slow Time, Truth Seeker, Time Warp) don't
 // route through here — they're purely display-side flags the student
 // app owns.
 //
