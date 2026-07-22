@@ -2344,6 +2344,12 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
     (s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0
   );
 
+  // Ticker filter — when set, only rows whose ticker matches (case-
+  // insensitive substring) are rendered. Handy for hunting a mystery
+  // symbol the briefing referenced but you can't spot in the list.
+  const [tickerFilter, setTickerFilter] = useState("");
+  const [dumpOpen, setDumpOpen] = useState(false);
+
   // Group positions by account, preserving the original index so edit/delete
   // callbacks still route correctly to user.positions[i].
   const positionsByAcct = new Map();
@@ -2374,11 +2380,29 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
         {user.positions.length} position{user.positions.length === 1 ? "" : "s"} across {accountSummaries.length} account{accountSummaries.length === 1 ? "" : "s"}
         {unassigned.length > 0 && ` · ${unassigned.length} unassigned`}
       </div>
-      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <button className="sa-btn" onClick={() => onOpenModal(null)}>+ Add position</button>
         <button className="sa-btn secondary" onClick={onAddAccount}>+ Add account</button>
         <button className="sa-btn secondary" onClick={onRefreshPrices} title="Try fetch latest prices from Yahoo Finance">↻ Refresh prices</button>
+        <input
+          type="search"
+          placeholder="Filter by ticker (e.g. HIT)"
+          value={tickerFilter}
+          onChange={(e) => setTickerFilter(e.target.value)}
+          style={{ padding: "6px 10px", minWidth: 180, fontFamily: "monospace" }}
+        />
+        <button className="sa-btn secondary" onClick={() => setDumpOpen(o => !o)} title="Show every row in the raw positions array — ticker, acct, qty, ccy, prices, cost basis. Use to hunt phantom lots the briefing referenced but you can't see in the account cards.">{dumpOpen ? "Hide raw" : "Dump raw JSON"}</button>
       </div>
+      {dumpOpen && (
+        <div className="sa-card" style={{ padding: 12, marginBottom: 14, background: "var(--sa-panel-2)", overflowX: "auto" }}>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 6 }}>
+            {user.positions.length} row{user.positions.length === 1 ? "" : "s"} in positions array. Ctrl-F for the ticker you're hunting.
+          </div>
+          <pre style={{ margin: 0, fontSize: 11, fontFamily: "monospace", whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+{user.positions.map((p, i) => `${String(i).padStart(3, " ")}  ${String(p.ticker || "").padEnd(10)}  acct=${String(p.acct || "").padEnd(14)}  qty=${String(p.qty ?? 0).padEnd(6)}  ccy=${p.ccy || "?"}  sub=${p.subCcy || p.ccy || "?"}  pxUsd=${p.priceUsd ?? "-"}  pxCad=${p.priceCad ?? "-"}  basisUsd=${p.costBasisUsd ?? "-"}  basisCad=${p.costBasisCad ?? "-"}`).join("\n")}
+          </pre>
+        </div>
+      )}
 
       {user.positions.length === 0 && accountSummaries.length === 0 && (
         <div className="sa-card" style={{ textAlign: "center", padding: 40, color: "var(--sa-muted)" }}>
@@ -2415,8 +2439,11 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
                 {items.map((p) => {
                   const v = valueOfPosition(p, fx);
                   const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+                  const q = tickerFilter.trim().toLowerCase();
+                  const matches = q && String(p.ticker || "").toLowerCase().includes(q);
+                  if (q && !matches) return null;
                   return (
-                    <tr key={p._origIdx}>
+                    <tr key={p._origIdx} style={matches ? { background: "var(--sa-amber-soft)" } : undefined}>
                       <td className="tk">{p.ticker}<span className="sub">{p.name || ""}</span></td>
                       <td>{p.qty.toLocaleString()}</td>
                       <td>{price != null ? price.toFixed(4) : "—"}</td>
