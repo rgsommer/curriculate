@@ -1,6 +1,6 @@
 # Device Mode Support — Architecture
 
-**Status:** Phase 1a + 1b + 2a + 2b shipped. Phase 3 (hidden-QR print pipeline, gated on pilot) next.
+**Status:** Phase 1a + 1b + 2a + 2b + 3 shipped. Phase 4 (analytics events + accessibility fallback + persist to Mongo + e2e) next.
 **Owner:** Richard
 **Author of this doc:** Claude
 **Date:** 2026-07-21

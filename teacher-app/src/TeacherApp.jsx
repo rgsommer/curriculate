@@ -12,6 +12,7 @@ import AiTasksetGenerator from "./pages/AiTasksetGenerator.jsx";
 import Signup from "./pages/Signup.jsx";
 
 import StationPosters from "./pages/StationPosters.jsx";
+import SessionStationPosters from "./pages/SessionStationPosters.jsx";
 import AnalyticsOverview from "./pages/AnalyticsOverview.jsx";
 import SessionAnalyticsPage from "./pages/SessionAnalyticsPage.jsx";
 import MyPlanPage from "./pages/MyPlan.jsx";
@@ -527,6 +528,12 @@ function TeacherApp() {
           <Route
             path="/station-posters"
             element={requireAuth(requireRoom(<StationPosters roomCode={roomCode} />))}
+          />
+
+          {/* Session-aware QR cards (Phase 3 — hidden cards for laptops) */}
+          <Route
+            path="/session-posters"
+            element={requireAuth(<SessionStationPosters />)}
           />
 
           {/* Admin */}

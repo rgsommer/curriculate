@@ -1160,6 +1160,26 @@ useEffect(() => {
     window.open(url, "_blank", "noopener,noreferrer");
   };
 
+  // Phase 3 — Session-aware QR cards (supports Laptop Hidden format).
+  // Hands the current room's stations + tokens to the print page via
+  // a short-lived localStorage payload so it can render token-based
+  // QRs without opening a new socket connection.
+  const handleOpenSessionQrCards = () => {
+    try {
+      const payload = {
+        roomCode: (roomCode || "").toUpperCase(),
+        locationCode: roomState?.locationCode || selectedLocation || "Classroom",
+        stations: Array.isArray(roomState?.stations) ? roomState.stations : [],
+        at: Date.now(),
+      };
+      window.localStorage.setItem("curriculate.printPayload", JSON.stringify(payload));
+    } catch (err) {
+      console.warn("[LiveSession] Failed to write print payload:", err);
+    }
+    const base = window.location.origin.replace(/\/$/, "");
+    window.open(`${base}/session-posters`, "_blank", "noopener,noreferrer");
+  };
+
   const handleOpenKiosk = () => {
     const code = (roomCode || "").trim().toUpperCase();
     if (!code) return;
@@ -5268,6 +5288,26 @@ Precipitation — rain, snow, hail`}
                 }}
               >
                 Print CurricQR Station Sheets
+              </button>
+
+              {/* Phase 3 — Laptop hidden cards + token-based QRs */}
+              <button
+                type="button"
+                onClick={handleOpenSessionQrCards}
+                disabled={!roomCode}
+                data-testid="open-session-qr-cards"
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: 999,
+                  border: "1px solid #a855f7",
+                  background: roomCode ? "#f5f3ff" : "#f3f4f6",
+                  color: roomCode ? "#5b21b6" : "#9ca3af",
+                  fontSize: "0.8rem",
+                  fontWeight: 700,
+                  cursor: roomCode ? "pointer" : "not-allowed",
+                }}
+              >
+                🃏 Print Laptop Hidden Cards
               </button>
 
               <button
