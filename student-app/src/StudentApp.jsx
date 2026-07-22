@@ -32,6 +32,7 @@ import {
   getStationBubbleStyles,
 } from "./utils/stationHelpers.js";
 import { detectClientDeviceInfo, preferredFacingModeFor } from "./utils/deviceDetection.js";
+import SuperpowerBadge from "./components/SuperpowerBadge.jsx";
 import {
   LS_KEYS,
   lsGet,
@@ -314,6 +315,12 @@ function StudentApp() {
     roomState?.deviceMode || "tablet_only",
     clientDeviceInfo,
   );
+
+  // Superpower state (shared/superpowers.js). Rare (~1 in 4), assigned
+  // server-side on join, delivered secretly to this socket only.
+  const [superpower, setSuperpower] = useState(null);
+  const [superpowerUsedAt, setSuperpowerUsedAt] = useState(null);
+  const [freeClueRevealed, setFreeClueRevealed] = useState(false);
 
   // Mode B (join): result of room:peek — populated when the student types
   // a class-bound room code. Drives the roster name dropdown in the join UI.
@@ -1641,6 +1648,15 @@ function StudentApp() {
     socket.on("team:pacing-released", handlePacingRelease);
     socket.on("session:complete", handleSessionComplete);
 
+    // ── Superpowers ─────────────────────────────────────────────
+    // Late-arrival fallback in case the join ack raced and the
+    // student-side didn't pick up the assignment from the response.
+    const handleSuperpowerAssigned = (payload) => {
+      if (!payload || !payload.superpower) return;
+      setSuperpower((prev) => (prev?.id === payload.superpower.id ? prev : payload.superpower));
+    };
+    socket.on("superpower:assigned", handleSuperpowerAssigned);
+
     // ── LevelUp: server pushed a new task to play (after we accepted) ──
     const handleLevelUpTaskReady = (payload) => {
       if (!payload || String(payload.teamId) !== String(teamId)) return;
@@ -1762,6 +1778,7 @@ function StudentApp() {
       socket.off("team:pacing-hold", handlePacingHold);
       socket.off("team:pacing-released", handlePacingRelease);
       socket.off("session:complete", handleSessionComplete);
+      socket.off("superpower:assigned", handleSuperpowerAssigned);
       socket.off("levelUp:taskReady", handleLevelUpTaskReady);
       socket.off("levelUp:resolved", handleLevelUpResolved);
       socket.off("team:bumped", handleBumped);
@@ -2277,6 +2294,16 @@ function StudentApp() {
       // If the server auto-assigned your team, update the UI to match
       if (response?.teamName) {
         setTeamName(String(response.teamName));
+      }
+
+      // Superpower — server may have rolled one in the ack. Set eagerly
+      // so the reveal fires as soon as the join screen closes. The
+      // socket also emits "superpower:assigned" as a follow-up in case
+      // the ack race dropped this.
+      if (response?.superpower && response.superpower.id) {
+        setSuperpower(response.superpower);
+        setSuperpowerUsedAt(null);
+        setFreeClueRevealed(false);
       }
 
       // ✅ Persist this join so refresh/reconnect can auto-resume.
@@ -4518,6 +4545,47 @@ function StudentApp() {
           showConfetti={recentlyScoredBig} // Trigger on big points
           currentTeamName={yourTeamName}
         />
+      )}
+
+      {joined && superpower && (
+        <div style={{ maxWidth: 640, margin: "0 auto", padding: "0 12px" }}>
+          <SuperpowerBadge
+            superpower={superpower}
+            usedAt={superpowerUsedAt}
+            onActivate={(sp) => {
+              if (sp.id === "free_clue") {
+                setFreeClueRevealed(true);
+                setSuperpowerUsedAt(new Date().toISOString());
+              }
+            }}
+          />
+          {freeClueRevealed && (
+            <div
+              data-testid="free-clue-panel"
+              style={{
+                margin: "6px 0 12px",
+                padding: "12px 14px",
+                borderRadius: 14,
+                background: "#ecfeff",
+                border: "1px solid #a5f3fc",
+                color: "#164e63",
+                fontSize: "0.9rem",
+                lineHeight: 1.5,
+              }}
+            >
+              <div style={{ fontWeight: 900, marginBottom: 4 }}>🔍 Hint</div>
+              {(() => {
+                const t = currentTaskRef?.current || {};
+                const hint =
+                  t?.hint ||
+                  t?.config?.hint ||
+                  (Array.isArray(t?.hints) && t.hints[0]) ||
+                  "Look for the keywords in the prompt and match them to what you already know about the topic. Talk it out with your team.";
+                return hint;
+              })()}
+            </div>
+          )}
+        </div>
       )}
       {/* ── Sticky game-essentials banner ── */}
       {joined && postPhase === "tasks" && !tasksetComplete && (
