@@ -3,6 +3,7 @@
 //  Handles all room state, team management, task sequencing, and scoring
 // ====================================================================
 
+import crypto from "crypto";
 import Session from "../models/Session.js";
 import TeamSession from "../models/TeamSession.js";
 import { TASK_TYPE_META, TASK_TYPES } from "../../shared/taskTypes.js";
@@ -141,6 +142,13 @@ export function createRoomEngine(io, deps = {}) {
         id,
         assignedTeamId: null,
         color: shuffledColors[i - 1] || null,
+        // Device Mode Support — Phase 2b (QR payload token hardening).
+        // Per-room, per-station opaque token that lets a scanned QR
+        // resolve to a station without exposing the visible color in
+        // the payload URL. Session-scoped: rotates every createRoom
+        // so a photo of a poster is only useful for that session.
+        // See docs/device-mode-architecture.md §4.5.
+        qrToken: crypto.randomBytes(6).toString("hex"),
       };
     }
 

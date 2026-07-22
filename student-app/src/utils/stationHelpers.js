@@ -14,15 +14,62 @@ export function normalizeLocationSlug(raw) {
 }
 
 /**
- * Parse a station ID in various formats and return normalized info
+ * Parse a station ID in various formats and return normalized info.
+ *
+ * When `roomStations` is provided (array or object of station records
+ * from `roomState.stations`), token-based QRs are honored: a scanned
+ * payload containing `?t=<hex>` (or a raw 6–16-char hex token) is
+ * resolved to the matching station by qrToken. This is Phase 2b of the
+ * Device Mode Support feature — see docs/device-mode-architecture.md
+ * §4.5. Legacy color URLs and plain color names still work so already-
+ * printed classroom posters keep functioning.
  */
-export function normalizeStationId(raw) {
+export function normalizeStationId(raw, roomStations = null) {
   if (!raw) {
     return { id: null, color: null, label: "Not assigned yet" };
   }
 
   const s = String(raw).trim();
   let lower = s.toLowerCase();
+
+  // Phase 2b — token-based QR payload (opaque per-station token).
+  // Two accepted shapes:
+  //   • URL with ?t=<hex>   e.g. https://play.curriculate.net/scan?t=ab12cd34
+  //   • bare hex string     e.g. "ab12cd34ef56"
+  // Both cases require roomStations context to resolve; without it we
+  // fall through and let the legacy color/URL parsers try.
+  if (roomStations) {
+    const stationList = Array.isArray(roomStations)
+      ? roomStations
+      : Object.values(roomStations);
+
+    // Case: ?t=<token> or &t=<token>
+    let token = null;
+    const urlToken = s.match(/[?&]t=([a-f0-9]{6,32})\b/i);
+    if (urlToken) token = urlToken[1].toLowerCase();
+    // Case: bare hex string of a plausible token length
+    else if (/^[a-f0-9]{6,32}$/i.test(s)) token = s.toLowerCase();
+
+    if (token) {
+      const match = stationList.find(
+        (st) => String(st?.qrToken || "").toLowerCase() === token
+      );
+      if (match) {
+        const numMatch = String(match.id || "").match(/^station-(\d+)$/);
+        const num = numMatch ? numMatch[1] : null;
+        const color = match.color || (num ? COLOR_NAMES[parseInt(num, 10) - 1] : null);
+        return {
+          id: match.id || (num ? `station-${num}` : s),
+          color: color || null,
+          label: color
+            ? `Station-${color[0].toUpperCase()}${color.slice(1)}`
+            : String(match.id || s).toUpperCase(),
+        };
+      }
+      // Token-shaped but no match — keep going so a legacy-colour URL
+      // with a token-shaped path segment still resolves.
+    }
+  }
 
   // Case 1: full numeric id: "station-1", "station-2", ...
   let m = /^station-(\d+)$/.exec(lower);

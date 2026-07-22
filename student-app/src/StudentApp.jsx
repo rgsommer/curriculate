@@ -3107,7 +3107,7 @@ function StudentApp() {
     // Use normalized station id when possible so URLs/colors collapse to a single key.
     const scanKey = (() => {
       try {
-        const n = normalizeStationId(data);
+        const n = normalizeStationId(data, roomState?.stations);
         return String(n?.id || data).trim().toLowerCase();
       } catch {
         return String(data).trim().toLowerCase();
@@ -3234,7 +3234,7 @@ function StudentApp() {
       return false;
     }
 
-    const norm = normalizeStationId(data);
+    const norm = normalizeStationId(data, roomState?.stations);
     if (!norm?.id) {
       setScanError("Unrecognized station CurricQR code.");
       return false;
