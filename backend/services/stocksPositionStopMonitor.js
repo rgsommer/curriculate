@@ -87,7 +87,7 @@ export function formatPositionStopBlock(monitor) {
   if (hardStopHit.length === 0 && withinStop.length === 0 && watch.length === 0) return "";
   const lines = [`\nPOSITION P&L STOP MONITOR (-8% hard-stop rule from journal analysis):`];
   if (hardStopHit.length > 0) {
-    lines.push(`  🚨 HARD STOP HIT (pnl ≤ -8%) — EXIT AT MARKET unless there is a specific new-info reason to override:`);
+    lines.push(`  🚨 HARD STOP TRIGGERED (pnl ≤ -8%) — EXIT AT MARKET unless there is a specific new-info reason to override. When you reformat this block for the email, ONLY the ticker string at the START of each line below is a ticker; every word in this header is prose:`);
     for (const r of hardStopHit) {
       lines.push(`     ${r.ticker} in ${r.account}: ${r.qty} sh @ basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} = ${r.pnlPct.toFixed(1)}%${r.isCoreExempt ? " (CORE ticker — unusual, verify basis)" : ""}`);
     }
