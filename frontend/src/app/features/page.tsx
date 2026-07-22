@@ -80,10 +80,23 @@ export default function FeaturesPage() {
                 time-fit pacing, grade-appropriate task selection, intentional movement breaks, and station-ready delivery —
                 then it generates tasks to match that plan.
               </p>
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-sm font-semibold text-emerald-800 ring-1 ring-emerald-200">
+                <span aria-hidden>✨</span>
+                <span>Beta is open — free while we polish</span>
+                <Link href="/beta" className="ml-1 underline underline-offset-2 hover:text-emerald-900">
+                  Claim a seat →
+                </Link>
+              </div>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link
-                  href="/how-it-works"
+                  href="/beta"
                   className="rounded-full bg-blue-600 px-5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-blue-700"
+                >
+                  Try the beta
+                </Link>
+                <Link
+                  href="/how-it-works"
+                  className="rounded-full border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-900 shadow-sm hover:bg-slate-50"
                 >
                   See how it works
                 </Link>
@@ -132,6 +145,37 @@ export default function FeaturesPage() {
                   "At least one movement break when appropriate",
                   "Capped percentage (teacher-adjustable)",
                   "Never back-to-back movement tasks",
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
+              eyebrow="Onboarding"
+              title="One-click Quick Start — from sign-up to live in eight minutes"
+              desc="New teachers don't have to learn the taskset builder to see the magic. Pick a grade band, pick a subject, hit launch. Curriculate loads a hand-crafted eight-task preset built for real classrooms and you're running."
+              mascot="/images/mascot/thinking/1.png"
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <FeatureCard
+                title="⚡ Hand-crafted preset tasksets"
+                body="Not AI-generated on first launch — real preset sets built and quality-checked by teachers, so a first session never opens with a broken task."
+                bullets={[
+                  "8 tasks per preset, tuned for a 30–40 min session",
+                  "Presets per grade band (K–2, 3–5, 6–8, 9–12)",
+                  "Mix of retrieval, reasoning, movement, and reflection",
+                  "Every preset passes the same playability audit as AI-generated sets",
+                ]}
+              />
+              <FeatureCard
+                title="🎯 No taskset editor required first time"
+                body="Teachers who haven't used AI classroom tools before shouldn't have to build a rubric or pick task types on day one. Quick Start makes their first live session zero-prep."
+                bullets={[
+                  "Grade band picker + subject picker + launch",
+                  "Total setup: under a minute before class arrives",
+                  "The full task library + custom builder stays available for later",
+                  "Beta teachers can request presets for their subject in feedback",
                 ]}
               />
             </div>
@@ -193,6 +237,57 @@ export default function FeaturesPage() {
                   "Keeps all 50+ cognitive, creative, and discussion-based tasks",
                   "At-desk movement breaks (Body Break, Motion Mission) still play",
                   "Zero printer setup required — no QR posters needed",
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
+              eyebrow="Device Mode Support"
+              title="Tablets, laptops, or a mix — Curriculate adapts silently"
+              desc="Pick your class's devices before you launch: Tablet Only, Laptop Only, or Mixed. Curriculate keeps movement-based pedagogy either way — students still travel to a station, they just scan the QR with whatever device their team has."
+              mascot="/images/mascot/promo/1.png"
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <FeatureCard
+                title="📱💻 One picker before launch"
+                body="Three visual mode cards — Tablet Only, Laptop Only, Mixed — persist across sessions. If a room already ran, the mode is locked to prevent accidental mid-session changes."
+                bullets={[
+                  "Explicit visual cards, not a dropdown",
+                  "Default is Tablet Only (preserves classic behaviour)",
+                  "Live session shows the mode plainly on the teacher's dashboard",
+                  "Per-team device chip shows what each team actually joined from",
+                ]}
+              />
+              <FeatureCard
+                title="🃏 Laptop hidden QR cards"
+                body="A print format designed for laptops. Front of the card shows the station name + a dashed 'attach along this edge' strip. QR sits on the reverse. Teacher tapes only the top edge, keeping the code invisible from across the room — students still lift the card and scan with the webcam."
+                bullets={[
+                  "Double-sided print with duplex-aware layout (long-edge or short-edge binding)",
+                  "One-page-per-card, sized exactly to Letter or A4 — no phantom blank pages",
+                  "QR encoded as a per-session opaque token, not a visible color name",
+                  "Setup diagram on the print page so teachers see the plan before printing",
+                ]}
+              />
+              <FeatureCard
+                title="🤫 Silent activity substitution"
+                body="Choose Laptop Only and a taskset that includes motion-based tasks? Curriculate swaps the incompatible ones for same-topic, same-vocab alternatives at launch time. No modal, no launch blocker, no lost weekend rebuilding the lesson."
+                bullets={[
+                  "Substitutions run through the same generator that built the original taskset",
+                  "Original taskset is snapshotted so mode flips restore-then-resubstitute cleanly",
+                  "Only motion-required tasks (body-break, motion-mission, hole-in-one) actually substitute — the vast majority of tasks work on both device classes",
+                  "Substituted rounds are tagged for later analytics without changing the lesson feel",
+                ]}
+              />
+              <FeatureCard
+                title="🔒 Codes off the wall"
+                body="Every printed QR card encodes an opaque per-session token generated at room-create. Nothing about the payload gives the color away, so students who photograph a poster from across the room can't decode a shortcut."
+                bullets={[
+                  "Session-scoped tokens rotate every room",
+                  "Front of the card carries the color as a visual cue for the room — but the URL underneath doesn't",
+                  "Legacy color-URL cards keep working for classes that already have posters up",
+                  "Bigger QR quiet zone (4 modules) for laptop webcams at oblique angles",
                 ]}
               />
             </div>
@@ -345,6 +440,77 @@ export default function FeaturesPage() {
                   "Point wedges (+50 to +200), fun perks, and a jackpot (+500)",
                   "Perks like 'Team High Five!' and 'Pick the next song'",
                   "Builds anticipation and energy between tasks",
+                ]}
+              />
+            </div>
+          </div>
+
+          <div className="mt-12">
+            <SectionHeader
+              eyebrow="Game Master Mode"
+              title="Kahoot meets Amazing Race — the projector becomes the show"
+              desc="One toggle turns the teacher's laptop into a Game Master broadcast for the whole room. Same session, same tasks — but the whole class sees a live scoreboard, animated team cards, streak banners, and a stage timeline arc from Warm-up to Final Challenge."
+              mascot="/images/mascot/treat/2.png"
+            />
+            <div className="grid gap-4 md:grid-cols-2">
+              <FeatureCard
+                title="🎬 Two explicit modes"
+                body="Command Center for setup and diagnostics; Game Master Mode for the show. One toggle, saved per teacher. Existing controls stay reachable in a slim chip toolbar (Pause / Next Round / Reveal / Award Treat / End)."
+                bullets={[
+                  "Command Center: dense controls for pre-launch and troubleshooting",
+                  "Game Master Mode: broadcast surface designed for the projector",
+                  "GM quick-controls: pause, next round, reveal, treat, end — all one tap",
+                  "Auto-locks the device mode picker once the session goes live",
+                ]}
+              />
+              <FeatureCard
+                title="🏆 Team Constellation + live leaderboard"
+                body="Teams render as a rank-sorted card grid — gold/silver/bronze medals for the podium, mascot emojis derived from team ID, mini progress rings, and a live sparkline of scoring history per team."
+                bullets={[
+                  "Rank badges (1st/2nd/3rd bronze/silver/gold, ribbon for 4-6)",
+                  "Floating +N chip and score-flash when a team scores",
+                  "Per-team device chip (📱 tablet / 💻 laptop / 📞 phone) with soft warning on mismatch",
+                  "Sparkline of the team's recent submission points",
+                ]}
+              />
+              <FeatureCard
+                title="🎨 Five broadcast themes"
+                body="Pick the world the session dresses itself in. Same activities, different atmosphere — students remember Friday's Ancient Egypt review long after they'd have forgotten a slide deck."
+                bullets={[
+                  "Neon Night (default), Ancient Egypt, Mission Control, Game Show, Dragon Realm",
+                  "Each theme retunes backdrop, accent, streak glow, and round labels (Scroll N, T-N, Trial N)",
+                  "Live-swap mid-session — students see the theme change on the projector",
+                  "Theme persists per teacher via localStorage",
+                ]}
+              />
+              <FeatureCard
+                title="🎉 Celebration moments + finale"
+                body="Curriculate watches state changes and fires tasteful banner + confetti moments — a lead flip, a round advance, a treat awarded, a session-complete crown."
+                bullets={[
+                  "\"NEW LEAD\" banner + 36-spark confetti when a team takes #1",
+                  "Round-advance chip + shorter confetti between rounds",
+                  "200-spark finale cascade + \"Team X take the crown\" banner at session end",
+                  "Streak banner across the bottom during hot-streak runs (correct-streak, speed, comeback, accuracy)",
+                ]}
+              />
+              <FeatureCard
+                title="📐 Stage timeline arc"
+                body="Warm-up → Round 1 → Round 2 → … → Final Challenge, rendered as a horizontal stepper along the top of the projector. Teachers know at a glance where the session is; students see the arc of the class."
+                bullets={[
+                  "Theme-aware labels (Caravan / Scroll N / Pharaoh's Test, etc.)",
+                  "Current round pulses; done rounds fill; upcoming rounds dim",
+                  "Collapses middle rounds into \"+N more\" when totalTasks > 7 so projector density stays glanceable",
+                  "Session status inlines into the timeline header (Live, Ending, etc.)",
+                ]}
+              />
+              <FeatureCard
+                title="📊 Now-Showing broadcast dashboard"
+                body="The top of the projector always shows the current round title, active session state, taskset owner, and time-of-day context — with animated numbers so the score reveal feels earned."
+                bullets={[
+                  "Phase-aware gradient palette (awaiting → warming-up → in-flight → final)",
+                  "Animated tabular-numeric score ticker",
+                  "Live activity feed shows the last five submissions with relative timestamps",
+                  "Auto-refreshing timestamps so the feed feels alive without a wall clock",
                 ]}
               />
             </div>
