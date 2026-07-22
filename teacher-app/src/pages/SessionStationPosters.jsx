@@ -37,11 +37,16 @@ import QRCode from "qrcode";
 import { COPY } from "@shared/config/copy";
 import { PageHeader, Button } from "../components/ui";
 
-const LEGACY_COLORS = [
+// Canonical 8 station colors, always in this order. Matches
+// backend/socket/roomEngine.js `NUM_STATIONS = 8` and the
+// hardcoded index → color mapping the client-side normalizer
+// depends on. If we ever grow beyond 8, extend this list AND
+// bump NUM_STATIONS to match.
+const CANONICAL_COLORS = [
   "red", "blue", "green", "yellow",
   "purple", "orange", "teal", "pink",
-  "lime", "navy", "brown", "gray",
 ];
+const STATION_TARGET = 8;
 
 const FORMATS = {
   STANDARD: "standard",
@@ -92,48 +97,47 @@ function readPrintPayload() {
 }
 
 /**
- * Build the list of cards to render, given room state (session-aware) OR
- * legacy inputs (location + station count).
+ * Build EXACTLY 8 cards in canonical color order. Rules:
+ *   - The 8 slots come from CANONICAL_COLORS. Never fewer, never more.
+ *   - If a live session provided per-color tokens, use them so the QR
+ *     payload contains the opaque token rather than the visible color
+ *     name. Missing slots (e.g. room somehow returned only 5 stations,
+ *     or we're in legacy no-session mode) fall back to the color URL
+ *     the old StationPosters page has always printed.
+ *   - This is the "always 8, always same colors, always same order"
+ *     guarantee — teachers who print a fresh set can drop it straight
+ *     into their existing station layout without renumbering.
  */
-function buildCards({ stations, locationCode, roomCode, legacyLocation, legacyCount }) {
-  const hasSessionStations = Array.isArray(stations) && stations.length > 0;
-  if (hasSessionStations) {
-    const cards = [];
-    const displayLocation = locationCode || "Classroom";
+function buildCards({ stations, locationCode, legacyLocation }) {
+  const displayLocation = locationCode || legacyLocation || "Classroom";
+
+  // Index the session's stations by color so we can look up tokens by
+  // canonical color slot below.
+  const tokenByColor = {};
+  const stationIdByColor = {};
+  if (Array.isArray(stations)) {
     for (const st of stations) {
-      const color = String(st?.color || "").toLowerCase() || "gray";
-      const token = String(st?.qrToken || "").toLowerCase();
-      // Prefer token payload so the printed URL contains no visible
-      // color name. Fall back to legacy color URL if a station somehow
-      // has no token (e.g. very old room state).
-      const qrPayload = token
-        ? `https://${COPY.DOMAIN}/${encodeURIComponent(displayLocation)}/scan?t=${token}`
-        : `https://${COPY.DOMAIN}/${encodeURIComponent(displayLocation)}/${color}`;
-      cards.push({
-        stationId: st.id,
-        color,
-        upper: color.toUpperCase(),
-        location: displayLocation,
-        qrPayload,
-        roomCode,
-        tokenized: !!token,
-      });
+      const c = String(st?.color || "").toLowerCase();
+      const t = String(st?.qrToken || "").toLowerCase();
+      if (c && t) tokenByColor[c] = t;
+      if (c && st?.id) stationIdByColor[c] = st.id;
     }
-    return cards;
   }
-  // Legacy — no session state. Use the same color-URL scheme the old
-  // StationPosters page prints, so the URL matches every currently-
-  // printed poster.
-  const displayLocation = legacyLocation || "Classroom";
-  const colors = LEGACY_COLORS.slice(0, legacyCount);
-  return colors.map((color) => ({
-    color,
-    upper: color.toUpperCase(),
-    location: displayLocation,
-    qrPayload: `https://${COPY.DOMAIN}/${encodeURIComponent(displayLocation)}/${color}`,
-    roomCode: null,
-    tokenized: false,
-  }));
+
+  return CANONICAL_COLORS.map((color) => {
+    const token = tokenByColor[color] || null;
+    const qrPayload = token
+      ? `https://${COPY.DOMAIN}/${encodeURIComponent(displayLocation)}/scan?t=${token}`
+      : `https://${COPY.DOMAIN}/${encodeURIComponent(displayLocation)}/${color}`;
+    return {
+      stationId: stationIdByColor[color] || null,
+      color,
+      upper: color.toUpperCase(),
+      location: displayLocation,
+      qrPayload,
+      tokenized: !!token,
+    };
+  });
 }
 
 /** Generate all QR SVGs up front and cache in state. */
@@ -147,7 +151,10 @@ function useQrSvgs(cards) {
         try {
           const svg = await QRCode.toString(c.qrPayload, {
             type: "svg",
-            margin: 2,
+            // Bigger quiet zone helps laptop webcams at oblique angles
+            // where the QR sits ~10cm from the lens and lighting is
+            // uneven — 4 modules of white padding vs the classic 2.
+            margin: 4,
             errorCorrectionLevel: "M",
             width: 620,
           });
@@ -178,24 +185,20 @@ export default function SessionStationPosters() {
   const [paper, setPaper] = useState(PAPER.LETTER.key);
   const [flip, setFlip] = useState(FLIP.LONG.key);
 
-  // Legacy fallback inputs
+  // Legacy fallback — teacher can edit the physical-room label when
+  // there's no live session (e.g. printing ahead of time). Always 8
+  // stations regardless.
   const [legacyLocation, setLegacyLocation] = useState(
     query.get("location") || session?.locationCode || "Classroom",
   );
-  const [legacyCount, setLegacyCount] = useState(() => {
-    const raw = Number(query.get("stations") || 8);
-    return Math.min(12, Math.max(4, Number.isFinite(raw) ? raw : 8));
-  });
 
   const cards = useMemo(
     () => buildCards({
       stations: session?.stations,
       locationCode: session?.locationCode,
-      roomCode: session?.roomCode,
       legacyLocation,
-      legacyCount,
     }),
-    [session, legacyLocation, legacyCount],
+    [session, legacyLocation],
   );
 
   const qrSvgs = useQrSvgs(cards);
@@ -211,17 +214,16 @@ export default function SessionStationPosters() {
       <div className="no-print">
         <PageHeader
           title="Session QR Cards"
-          subtitle={sessionAware
-            ? `Room ${session.roomCode || ""} · ${cards.length} stations`
-            : "Legacy mode — printing color-based posters (no active session)"}
+          subtitle={`${sessionAware ? session.locationCode || "Classroom" : legacyLocation} · ${STATION_TARGET} stations`}
         />
 
         {!sessionAware && (
           <div style={legacyBanner}>
             <strong>Not linked to a live session.</strong>{" "}
-            To print token-based cards, click <em>Print QR Cards</em> from a Live
-            Session page. This page fell back to legacy color URLs, which still
-            work with every already-printed classroom poster.
+            To print token-based cards (recommended), click <em>Print Laptop
+            Hidden Cards</em> from a Live Session page. This page fell back
+            to color-URL cards, which still work with every already-printed
+            classroom poster.
           </div>
         )}
 
@@ -263,17 +265,24 @@ export default function SessionStationPosters() {
               options={Object.values(FLIP).map((f) => ({ value: f.key, label: f.label }))} />
           )}
           {!sessionAware && (
-            <>
-              <SmallText label="Location label" value={legacyLocation}
-                onChange={(v) => setLegacyLocation(v)} placeholder="Classroom" />
-              <SmallNum label="Stations" value={legacyCount} min={4} max={12}
-                onChange={(v) => setLegacyCount(v)} />
-            </>
+            <SmallText label="Room label (front of card)" value={legacyLocation}
+              onChange={(v) => setLegacyLocation(v)} placeholder="Room 112" />
           )}
         </div>
 
+        {format === FORMATS.STANDARD && (
+          <div data-testid="standard-simplex-note" style={softNote}>
+            <strong>Single-sided format.</strong> Turn duplex OFF in your
+            printer dialog — otherwise every second card will land on the
+            back of the previous one.
+          </div>
+        )}
+
         {format !== FORMATS.STANDARD && (
-          <HiddenCardInstructions />
+          <>
+            <HiddenCardInstructions flip={flip} />
+            <SetupMockup flip={flip} />
+          </>
         )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 24 }}>
@@ -295,22 +304,36 @@ export default function SessionStationPosters() {
           format={format}
           flip={flip}
         />
+        {/* Force a leading page to burn — some duplex printers pair
+            odd-page-front-with-even-page-back automatically. Keeping
+            an even page count when we have an odd count of physical
+            cards helps sheets stay right-side-up. Not needed at 8
+            stations × 2 sides = 16 pages (even) but harmless. */}
       </div>
 
-      {/* Print-only CSS */}
+      {/* Print-only CSS.
+          .card-page HEIGHT is set explicitly per paper size so the
+          card fills its sheet exactly with 0.35in margins:
+             Letter (11in) - 0.7in margins = 10.3in
+             A4     (11.69in) - 0.7in margins ≈ 10.99in
+          Any smaller and duplex printers leave a blank strip; any
+          larger and the browser splits the card across two pages. */}
       <style>{`
         .no-print { break-inside: avoid; }
         .card-page {
           box-sizing: border-box;
           width: 100%;
-          height: 10.2in;
+          height: ${paper === "a4" ? "10.99in" : "10.3in"};
+          position: relative;
           display: flex;
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          padding: 0.6in;
+          padding: 0.55in 0.5in;
           break-after: page;
           page-break-after: always;
+          break-inside: avoid;
+          page-break-inside: avoid;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
           background: #fff;
@@ -350,17 +373,31 @@ export default function SessionStationPosters() {
           box-shadow: inset 0 0 0 3px rgba(0,0,0,0.08), 0 3px 6px rgba(0,0,0,0.15);
         }
         .card-orientation {
-          margin-top: 22px;
+          margin-top: 18px;
           font-size: 0.9rem;
           color: #64748b;
         }
         .card-orientation-marker {
-          margin-top: 22px;
           font-size: 3rem;
           color: #0f172a;
         }
-        .card-back .card-orientation-marker {
-          transform: rotate(180deg);
+        /* Explicit "tape here" strip on the physical top edge of the
+           front side. Reserves space above the title so the ▲ marker
+           and station name are never obscured by whatever adhesive
+           the teacher uses. */
+        .card-tape-strip {
+          position: absolute;
+          top: 0.28in;
+          left: 0.5in;
+          right: 0.5in;
+          padding: 6px 0;
+          text-align: center;
+          font-size: 0.66rem;
+          font-weight: 800;
+          letter-spacing: 0.35em;
+          color: #b45309;
+          border-top: 2px dashed #b45309;
+          border-bottom: 2px dashed #b45309;
         }
 
         @media screen {
@@ -374,15 +411,22 @@ export default function SessionStationPosters() {
             border-radius: 14px;
             height: auto;
             min-height: 340px;
-            padding: 20px 12px;
+            padding: 44px 12px 20px;
             break-after: auto;
             page-break-after: auto;
+          }
+          .card-tape-strip {
+            top: 8px;
+            left: 8px;
+            right: 8px;
+            font-size: 0.52rem;
+            padding: 3px 0;
           }
           .card-face-title { font-size: 2rem; }
           .card-face-sub { font-size: 0.95rem; }
           .card-face-lift { font-size: 0.85rem; padding: 6px 14px; margin-top: 20px; }
           .card-swatch { width: 44px; height: 44px; margin-top: 14px; }
-          .card-orientation-marker { font-size: 1.6rem; margin-top: 10px; }
+          .card-orientation-marker { font-size: 1.6rem; }
           .card-page.qr-page svg { width: 60% !important; height: auto !important; }
         }
 
@@ -397,7 +441,7 @@ export default function SessionStationPosters() {
 
 /* ─────────────────────── PRINT LAYOUT ─────────────────────── */
 
-function PrintSheets({ cards, qrSvgs, format }) {
+function PrintSheets({ cards, qrSvgs, format, flip }) {
   // For hidden and mixed formats, the layout is one card per page:
   //   Standard: Face page only
   //   Hidden:   Face page + QR back page (two pages per station)
@@ -430,7 +474,7 @@ function PrintSheets({ cards, qrSvgs, format }) {
           return <HiddenFaceCard key={key} card={card} />;
         }
         if (kind === "hidden-back") {
-          return <HiddenBackCard key={key} card={card} qrSvg={qrSvgs[card.qrPayload]} />;
+          return <HiddenBackCard key={key} card={card} qrSvg={qrSvgs[card.qrPayload]} flip={flip} />;
         }
         return null;
       })}
@@ -452,8 +496,13 @@ function StandardCard({ card, qrSvg }) {
 
 function HiddenFaceCard({ card }) {
   return (
-    <div className="card-page" data-testid={`hidden-face-${card.color}`}>
-      <div className="card-orientation-marker">▲</div>
+    <div className="card-page hidden-face" data-testid={`hidden-face-${card.color}`}>
+      {/* Explicit "Tape or pin along this edge" strip so the teacher
+          doesn't have to interpret the ▲ marker on its own. Same
+          strip prints regardless of flip direction because the front
+          side always faces the room right-side-up. */}
+      <div className="card-tape-strip">✂ ATTACH ALONG THIS EDGE ✂</div>
+      <div className="card-orientation-marker" aria-hidden="true">▲</div>
       <h1 className="card-face-title" style={{ marginTop: 30 }}>{card.upper} STATION</h1>
       <div className="card-face-sub">{card.location}</div>
       <div className="card-swatch" style={{ background: swatchColor(card.color) }} />
@@ -462,16 +511,44 @@ function HiddenFaceCard({ card }) {
   );
 }
 
-function HiddenBackCard({ card, qrSvg }) {
+/**
+ * Back-side card. The orientation marker MUST end up at the FREE
+ * (bottom, un-taped) edge of the physical sheet no matter which
+ * duplex flip direction the teacher chose.
+ *
+ *   Long-edge flip (portrait, book-style): the sheet flips around
+ *   its vertical axis. DOM top of the back stays at physical top of
+ *   the sheet. Marker at DOM top ends up at physical BOTTOM after the
+ *   card hangs from the wall — WRONG in isolation, so we push the
+ *   marker to the DOM BOTTOM here (via column-reverse below) so it
+ *   ends up at the physical top — the taped edge — meaning it points
+ *   AT the tape. But we want it to point AT the free (lift) edge…
+ *
+ * Rethink: the marker is a cue for the STUDENT lifting the card. It
+ * should be at the free edge, pointing "lift here." That edge is:
+ *   long-edge flip  → DOM bottom of the back page = physical bottom
+ *                     = free edge
+ *   short-edge flip → DOM top of the back page = physical bottom
+ *                     = free edge (because the whole page flipped
+ *                     upside down during the short-edge fold)
+ *
+ * Concretely: put the marker at the "free edge" of the physical
+ * sheet in both cases by using flex column vs column-reverse.
+ */
+function HiddenBackCard({ card, qrSvg, flip }) {
+  const isShort = flip === "short";
   return (
-    <div className="card-page card-back qr-page" data-testid={`hidden-back-${card.color}`}>
-      {/* On the REVERSE side the orientation marker points DOWN so
-          when the card is taped by its top edge, the QR reads right-
-          side-up to the laptop camera lifted underneath. */}
-      <div className="card-orientation-marker">▼</div>
-      <div style={{ marginTop: 24 }} dangerouslySetInnerHTML={{ __html: qrSvg || "" }} />
-      <div className="card-orientation" style={{ marginTop: 30 }}>
-        Position the laptop camera below the card
+    <div
+      className="card-page card-back qr-page hidden-back"
+      data-testid={`hidden-back-${card.color}`}
+      style={{ flexDirection: isShort ? "column" : "column-reverse" }}
+    >
+      {/* At the FREE (lift) edge — student sees this when they lift
+          the bottom of the card up to reveal the QR. */}
+      <div className="card-orientation-marker" aria-hidden="true">▲</div>
+      <div style={{ marginTop: 24, marginBottom: 24 }} dangerouslySetInnerHTML={{ __html: qrSvg || "" }} />
+      <div className="card-orientation">
+        Hidden QR — {card.upper} station
       </div>
     </div>
   );
@@ -551,7 +628,7 @@ function SmallNum({ label, value, onChange, min, max }) {
   );
 }
 
-function HiddenCardInstructions() {
+function HiddenCardInstructions({ flip = "long" }) {
   return (
     <div data-testid="hidden-instructions" style={{
       marginTop: 22,
@@ -565,15 +642,126 @@ function HiddenCardInstructions() {
         🃏 How to hang & use the hidden cards
       </div>
       <ol style={{ margin: 0, paddingLeft: 22, lineHeight: 1.7 }}>
-        <li>Print double-sided — the QR sits on the reverse of each card.</li>
+        <li>
+          Set your printer to <strong>double-sided (duplex)</strong>{" "}
+          with <strong>{flip === "short" ? "short-edge" : "long-edge"} binding</strong>{" "}
+          — matches the picker above.
+        </li>
         <li>Cut / separate the cards.</li>
-        <li>Attach ONLY the top edge to the wall (tape or a single pushpin).</li>
+        <li>Attach ONLY the top edge to the wall (tape or a single pushpin) — a dashed strip on the front shows exactly where.</li>
         <li>Keep the QR side facing the wall so students can't see the code from a distance.</li>
         <li>Team lifts the lower edge of the card and holds the laptop camera underneath — the webcam reads the QR from below.</li>
       </ol>
       <div style={{ marginTop: 10, fontSize: "0.85rem", opacity: 0.85 }}>
         This preserves movement-based pedagogy — a student still has to physically
         travel to the station to scan, even on a laptop.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * SetupMockup — small SVG illustration showing the physical setup so
+ * teachers can see the intended layout without printing first. Two
+ * scenes side-by-side: hung against a wall (QR hidden) and lifted
+ * (QR visible to camera below). Pure SVG, no external assets.
+ */
+function SetupMockup({ flip }) {
+  return (
+    <div data-testid="setup-mockup" style={{
+      marginTop: 14,
+      padding: 18,
+      borderRadius: 16,
+      background: "#f5f3ff",
+      border: "1px solid #ddd6fe",
+      color: "#4c1d95",
+    }}>
+      <div style={{ fontWeight: 900, marginBottom: 8, fontSize: "0.92rem" }}>
+        📐 What it looks like on the wall
+      </div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "1fr 1fr",
+        gap: 14,
+      }}>
+        {/* Panel 1 — card hung, QR hidden */}
+        <MockupPanel label="1. Hung (QR hidden)">
+          <svg viewBox="0 0 240 170" width="100%" aria-hidden="true">
+            {/* wall */}
+            <rect x="0" y="0" width="240" height="170" fill="#faf5ff" />
+            {/* card */}
+            <g>
+              <rect x="70" y="20" width="100" height="130" rx="4" fill="#fff" stroke="#a855f7" strokeWidth="1.5" />
+              {/* tape strip */}
+              <line x1="72" y1="30" x2="168" y2="30" stroke="#b45309" strokeWidth="1.5" strokeDasharray="3 3" />
+              <text x="120" y="40" fontSize="7" textAnchor="middle" fill="#b45309" fontWeight="700">ATTACH EDGE</text>
+              {/* station label */}
+              <text x="120" y="80" fontSize="12" textAnchor="middle" fill="#0f172a" fontWeight="900">STATION</text>
+              <circle cx="120" cy="95" r="7" fill="#ef4444" />
+              <text x="120" y="122" fontSize="7" textAnchor="middle" fill="#78350f">🖐 Lift to scan</text>
+            </g>
+            {/* pin */}
+            <circle cx="120" cy="18" r="3" fill="#0f172a" />
+          </svg>
+        </MockupPanel>
+
+        {/* Panel 2 — card lifted, camera below */}
+        <MockupPanel label="2. Lifted (QR visible to webcam below)">
+          <svg viewBox="0 0 240 170" width="100%" aria-hidden="true">
+            <rect x="0" y="0" width="240" height="170" fill="#faf5ff" />
+            {/* pin at top */}
+            <circle cx="120" cy="16" r="3" fill="#0f172a" />
+            {/* card lifted — hinges at top, back visible */}
+            <g transform="translate(120,20) rotate(-45)">
+              <rect x="-50" y="0" width="100" height="130" rx="4" fill="#fafafa" stroke="#a855f7" strokeWidth="1.5" />
+              {/* QR grid stub */}
+              <g transform={`translate(-30, ${flip === "short" ? 20 : 50})`}>
+                {[0,1,2,3,4,5].flatMap((r) =>
+                  [0,1,2,3,4,5].map((c) => (
+                    <rect key={`${r}-${c}`} x={c*10} y={r*10} width="8" height="8"
+                      fill={(r+c) % 2 === 0 ? "#0f172a" : "#fff"} />
+                  ))
+                )}
+              </g>
+              <text x="0" y="115" fontSize="6" textAnchor="middle" fill="#64748b">Hidden QR</text>
+            </g>
+            {/* laptop below */}
+            <g transform="translate(70,130)">
+              <rect x="0" y="0" width="100" height="4" rx="1" fill="#0f172a" />
+              <polygon points="10,0 90,0 80,-24 20,-24" fill="#1e293b" stroke="#334155" />
+              <circle cx="50" cy="-14" r="3" fill="#38bdf8" />
+              <text x="50" y="-4" fontSize="5" textAnchor="middle" fill="#38bdf8">webcam</text>
+            </g>
+          </svg>
+        </MockupPanel>
+      </div>
+      <div style={{
+        marginTop: 10,
+        fontSize: "0.78rem",
+        color: "#5b21b6",
+        opacity: 0.85,
+      }}>
+        The QR reads whichever way up jsQR sees it — but the {flip === "short" ? "short-edge" : "long-edge"}{" "}
+        flip picker below tunes the back-page markers to point at the free (lift) edge.
+      </div>
+    </div>
+  );
+}
+
+function MockupPanel({ label, children }) {
+  return (
+    <div style={{
+      display: "flex",
+      flexDirection: "column",
+      gap: 6,
+      padding: 10,
+      background: "#fff",
+      borderRadius: 12,
+      border: "1px solid #ede9fe",
+    }}>
+      {children}
+      <div style={{ fontSize: "0.7rem", fontWeight: 700, textAlign: "center", color: "#5b21b6" }}>
+        {label}
       </div>
     </div>
   );
@@ -589,6 +777,16 @@ const legacyBanner = {
   border: "1px solid #fcd34d",
   fontSize: "0.9rem",
   marginBottom: 18,
+};
+
+const softNote = {
+  marginTop: 18,
+  padding: "10px 14px",
+  borderRadius: 12,
+  background: "#f0f9ff",
+  color: "#0c4a6e",
+  border: "1px solid #bae6fd",
+  fontSize: "0.86rem",
 };
 
 const pickerRow = {
