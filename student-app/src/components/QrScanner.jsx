@@ -9,12 +9,24 @@ import jsQR from "jsqr";
  *        • If handler returns true, we stop scanning
  *        • If handler returns false, we keep scanning
  *   - onError?: (msg: string) => void
+ *   - preferredFacingMode?: "environment" | "user" | null
+ *        Device Mode Support (Phase 2a). Callers who know the room's
+ *        device mode can steer the primary camera pick. Regardless of
+ *        the primary, we fall back through the alternate facing mode
+ *        and finally to any camera — a laptop with only a webcam will
+ *        still scan.
  *
  * IMPORTANT: The camera stream stays alive across active/inactive cycles to
  * avoid the black flash / cycling on slower tablets. The stream is only stopped
  * when the component fully unmounts.
  */
-export default function QrScanner({ active = true, onCode, onScan, onError }) {
+export default function QrScanner({
+  active = true,
+  onCode,
+  onScan,
+  onError,
+  preferredFacingMode = null,
+}) {
   const videoRef = useRef(null);
 
   // Keep latest handler without re-starting camera
@@ -48,12 +60,37 @@ export default function QrScanner({ active = true, onCode, onScan, onError }) {
         return;
       }
 
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "environment" },
-          audio: false,
-        });
+      // Device Mode Support (Phase 2a): prefer rear camera by default,
+      // but fall back to whatever camera the device has (laptops with
+      // only a webcam, tablets with a broken rear cam, etc.). The
+      // `preferredFacingMode` prop can override the default when the
+      // caller knows the room's device mode.
+      const primaryFacing = preferredFacingMode || "environment";
+      const attempts = [
+        { video: { facingMode: { ideal: primaryFacing } }, audio: false },
+        { video: { facingMode: primaryFacing === "environment" ? "user" : "environment" }, audio: false },
+        { video: true, audio: false }, // last resort: any camera
+      ];
+      let stream = null;
+      let lastErr = null;
+      for (const constraints of attempts) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia(constraints);
+          break;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      if (!stream) {
+        console.error("[QrScanner] getUserMedia error:", lastErr);
+        if (!mountedRef.current) return;
+        setCameraError(
+          "We couldn't access the camera. Check permissions and try again, or type the code instead."
+        );
+        return;
+      }
 
+      try {
         if (!mountedRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;

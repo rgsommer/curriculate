@@ -31,6 +31,7 @@ import {
   displayRoomFromSlugOrLabel,
   getStationBubbleStyles,
 } from "./utils/stationHelpers.js";
+import { detectClientDeviceInfo, preferredFacingModeFor } from "./utils/deviceDetection.js";
 import {
   LS_KEYS,
   lsGet,
@@ -296,6 +297,23 @@ function StudentApp() {
   const [roomIsActive, setRoomIsActive] = useState(false);
   const [wantStreak, setWantStreak] = useState(false);
   const [roomState, setRoomState] = useState(null);
+
+  // Device Mode Support (Phase 2a). Sniff the device on mount so the join
+  // payload can carry a clientDeviceInfo object AND the QrScanner can pick
+  // the right facingMode based on room deviceMode + local cameras. All
+  // fields are advisory — the spec is explicit that this is NOT a gate.
+  const [clientDeviceInfo, setClientDeviceInfo] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    detectClientDeviceInfo().then((info) => {
+      if (!cancelled) setClientDeviceInfo(info);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const preferredFacingMode = preferredFacingModeFor(
+    roomState?.deviceMode || "tablet_only",
+    clientDeviceInfo,
+  );
 
   // Mode B (join): result of room:peek — populated when the student types
   // a class-bound room code. Drives the roster name dropdown in the join UI.
@@ -2218,6 +2236,9 @@ function StudentApp() {
       displayName: memberNames[0] || "",
       maxTeamSize: 8,
       locationSlug: roomLocation || DEFAULT_LOCATION,
+      // Device Mode Support (Phase 2a). Backend attaches this to the team
+      // record so the teacher's dashboard shows a per-team device chip.
+      clientDeviceInfo: clientDeviceInfo || null,
       ...(overrides?.isDemo && { isDemo: true, source: "demo-button" }),
     };
 
@@ -6247,6 +6268,7 @@ function StudentApp() {
               active={scannerActive}
               onScan={(d) => { console.log("[QrScanner] onScan fired", d); return handleScan(d); }}
               onError={(e) => { console.log("[QrScanner] error", e); setScanError(e); }}
+              preferredFacingMode={preferredFacingMode}
             />
           {waitingForLaunch && (
             <div
@@ -6820,6 +6842,7 @@ function StudentApp() {
             ? <QrScanner
                 onScan={(d) => { console.log("[QrScanner/PMC] onScan fired", d); return handleScan(d); }}
                 onError={(e) => { console.log("[QrScanner/PMC] error", e); setScanError(e); }}
+                preferredFacingMode={preferredFacingMode}
               />
             : null
         }

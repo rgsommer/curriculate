@@ -768,6 +768,11 @@ export function createRoomEngine(io, deps = {}) {
             // team selfie (for banner display)
             selfieUrl: t.selfieUrl || null,
             themedSelfieUrl: t.themedSelfieUrl || null,
+
+            // Device Mode Support (Phase 2a). Advisory device profile
+            // reported by the student at join. Used by the teacher's
+            // dashboard chip; safe to be null.
+            clientDeviceInfo: t.clientDeviceInfo || null,
           };
         }
         return out;

@@ -4010,6 +4010,7 @@ if (
                 totalTasks={totalForRing}
                 taskIndex={typeof roomState?.taskIndex === "number" ? roomState.taskIndex : -1}
                 stationIdToColor={stationIdToColor}
+                deviceMode={roomState?.deviceMode || "tablet_only"}
               />
               <LiveActivityFeed events={events} maxRows={5} />
             </div>

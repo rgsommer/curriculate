@@ -2750,7 +2750,26 @@ socket.on("task:force-advance", ({ roomCode }) => {
   // ----------------------------------------------------
   const handleStudentJoinRoom = async (payload = {}, ack) => {
     try {
-      const { roomCode, teamName, members, emails, displayName, maxTeamSize, memberDetails } = payload || {};
+      const { roomCode, teamName, members, emails, displayName, maxTeamSize, memberDetails, clientDeviceInfo } = payload || {};
+
+      // Device Mode Support (Phase 2a). Sanitize the reported device info
+      // before persisting — the shape is fuzzy (UA sniffing + camera
+      // enumeration) so we only keep a fixed whitelist of fields.
+      const sanitizedDeviceInfo = (() => {
+        if (!clientDeviceInfo || typeof clientDeviceInfo !== "object") return null;
+        const ALLOWED_TYPES = new Set(["tablet", "laptop", "phone", "unknown"]);
+        const rawType = String(clientDeviceInfo.deviceType || "").toLowerCase();
+        return {
+          deviceType: ALLOWED_TYPES.has(rawType) ? rawType : "unknown",
+          hasCamera: !!clientDeviceInfo.hasCamera,
+          cameraFacingModes: Array.isArray(clientDeviceInfo.cameraFacingModes)
+            ? clientDeviceInfo.cameraFacingModes.map((m) => String(m).slice(0, 20)).slice(0, 4)
+            : [],
+          supportsTouch: !!clientDeviceInfo.supportsTouch,
+          userAgent: String(clientDeviceInfo.userAgent || "").slice(0, 300),
+          reportedAt: new Date().toISOString(),
+        };
+      })();
       const code = (roomCode || "").toUpperCase().trim();
 
       // Cap emoji/symbol usage in names (allow up to 2)
@@ -2974,6 +2993,9 @@ socket.on("task:force-advance", ({ roomCode }) => {
           currentStationId: null,
           lastScannedStationId: null,
           taskIndex: -1,
+          // Device Mode Support (Phase 2a). Reported by the student at join
+          // time. Advisory only — see docs/device-mode-architecture.md §10.
+          clientDeviceInfo: sanitizedDeviceInfo,
         };
         room.teams[teamId].connected = true;
         room.teams[teamId].stale = false;
@@ -2982,6 +3004,12 @@ socket.on("task:force-advance", ({ roomCode }) => {
         assignTeamRoomLocation(room, room.teams[teamId]);
       } else {
         room.teams[teamId].teamName = resolvedTeamName;
+        // Device Mode Support (Phase 2a) — refresh device info on rejoin
+        // so a team that reconnected from a different device is reported
+        // accurately in the dashboard.
+        if (sanitizedDeviceInfo) {
+          room.teams[teamId].clientDeviceInfo = sanitizedDeviceInfo;
+        }
         // Backfill a room for teams that joined before multi-room was enabled.
         assignTeamRoomLocation(room, room.teams[teamId]);
         const prevMembers = Array.isArray(room.teams[teamId].members) ? room.teams[teamId].members : [];

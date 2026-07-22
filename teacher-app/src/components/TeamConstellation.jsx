@@ -158,6 +158,70 @@ function MiniRing({ percent, color, size = 56, stroke = 6 }) {
  *   taskIndex        number — current task index, used to scope progress
  *   stationIdToColor function returning a fallback hex for the station color
  */
+/**
+ * Device chip helper — Phase 2a. Small glanceable pill on each team card
+ * showing which device class the team joined from. Soft warning icon when
+ * the reported device doesn't match the room's device mode (e.g. team
+ * joined from a laptop in a tablet_only session).
+ *
+ * The rule mirrors the compat model:
+ *   - tablet_only: warn on laptop or phone (only tablet is a clean match)
+ *   - laptop_only: warn on tablet or phone
+ *   - mixed:       never warn (any device is fine)
+ *   - unknown device type: never warn (no ground truth to compare)
+ */
+const DEVICE_LOOK = {
+  tablet:  { icon: "📱", label: "Tablet" },
+  laptop:  { icon: "💻", label: "Laptop" },
+  phone:   { icon: "📞", label: "Phone" },
+  unknown: { icon: "❓", label: "Unknown" },
+};
+
+function deviceMatchesMode(deviceType, deviceMode) {
+  if (!deviceType || deviceType === "unknown") return true; // no ground truth
+  if (!deviceMode || deviceMode === "mixed") return true;
+  if (deviceMode === "tablet_only") return deviceType === "tablet";
+  if (deviceMode === "laptop_only") return deviceType === "laptop";
+  return true;
+}
+
+function DeviceChip({ clientDeviceInfo, deviceMode }) {
+  if (!clientDeviceInfo) return null;
+  const type = clientDeviceInfo.deviceType || "unknown";
+  const look = DEVICE_LOOK[type] || DEVICE_LOOK.unknown;
+  const matches = deviceMatchesMode(type, deviceMode);
+  return (
+    <span
+      title={
+        matches
+          ? `Team joined from a ${look.label.toLowerCase()}`
+          : `Team joined from a ${look.label.toLowerCase()} — session mode expected ${
+              deviceMode === "tablet_only" ? "tablets" : "laptops"
+            }`
+      }
+      data-testid={`device-chip-${type}`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "3px 8px",
+        borderRadius: 999,
+        background: matches ? "rgba(148,163,184,0.15)" : "rgba(251,191,36,0.18)",
+        border: matches ? "1px solid rgba(148,163,184,0.28)" : "1px solid #f59e0b",
+        color: matches ? "#cbd5e1" : "#fbbf24",
+        fontSize: "0.68rem",
+        fontWeight: 800,
+        letterSpacing: 0.3,
+        whiteSpace: "nowrap",
+      }}
+    >
+      <span aria-hidden="true">{look.icon}</span>
+      <span>{look.label}</span>
+      {!matches && <span aria-hidden="true" style={{ marginLeft: 2 }}>⚠</span>}
+    </span>
+  );
+}
+
 export default function TeamConstellation({
   teams,
   scores,
@@ -166,6 +230,7 @@ export default function TeamConstellation({
   totalTasks = 0,
   taskIndex = -1,
   stationIdToColor,
+  deviceMode = "tablet_only",
 }) {
   // Pass-4 score-change micro-animations. Diff prev-vs-current
   // scores; for any team whose score rose, drop a transient "+N"
@@ -346,18 +411,26 @@ export default function TeamConstellation({
                   {palette.mascot}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div
-                    style={{
-                      fontSize: "0.96rem",
-                      fontWeight: 900,
-                      letterSpacing: 0.2,
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      color: "#fff",
-                    }}
-                  >
-                    {team?.teamName || palette.name}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <div
+                      style={{
+                        fontSize: "0.96rem",
+                        fontWeight: 900,
+                        letterSpacing: 0.2,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        color: "#fff",
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    >
+                      {team?.teamName || palette.name}
+                    </div>
+                    <DeviceChip
+                      clientDeviceInfo={team?.clientDeviceInfo}
+                      deviceMode={deviceMode}
+                    />
                   </div>
                   <div style={{ marginTop: 4, display: "flex", alignItems: "baseline", gap: 6, position: "relative" }}>
                     <span
