@@ -862,20 +862,50 @@ async function resolveValidationPrice(ticker, currencyHint = null) {
   return await fetchYahooQuote(ticker);
 }
 
-// Pull (ticker, quoted-price) pairs from card text. The price token must
-// follow within ~40 chars of the ticker, with $ anchor before the digits.
+// Pull (ticker, quoted-price) pairs from card text.
+//
+// Older version used a single regex that greedily matched TICKER + first-$
+// within 35 chars, then advanced past both. That silently missed follow-on
+// prices for the same ticker — "AMZN … entries $248 … current $28.10" only
+// yielded (AMZN, 248) and the phantom $28.10 slipped through. We now index
+// every ticker mention AND every $ price independently, then attribute each
+// $ to the NEAREST preceding ticker mention within the same paragraph.
 function extractTickerQuotes(text) {
   const out = [];
-  // Pattern: TICKER (bridge up to 35 chars, no newline) $price (optional USD/CAD)
-  const pat = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b[^.\n]{0,35}?\$\s*([\d,]+(?:\.\d+)?)\s*(USD|CAD)?/g;
-  let m;
-  while ((m = pat.exec(text)) !== null) {
-    const ticker = m[1];
+  const tickerPat = /\b([A-Z]{2,5}(?:\.[A-Z]{1,3})?)\b/g;
+  const pricePat = /\$\s*([\d,]+(?:\.\d+)?)\s*(USD|CAD)?/g;
+  // Index every valid ticker mention with its position + name.
+  const tickerMentions = [];
+  let tm;
+  while ((tm = tickerPat.exec(text)) !== null) {
+    const ticker = tm[1];
     if (NON_TICKER_TOKENS.has(ticker)) continue;
     if (/^\d/.test(ticker)) continue;
-    const price = parseFloat(m[2].replace(/,/g, ""));
+    tickerMentions.push({ ticker, pos: tm.index });
+  }
+  if (tickerMentions.length === 0) return out;
+  // Attribute each $price to the nearest preceding ticker within the
+  // same paragraph (≤ 400 chars back). A paragraph break disqualifies
+  // attribution — we don't want the price from one section stapled onto
+  // the ticker mention above it.
+  let pm;
+  while ((pm = pricePat.exec(text)) !== null) {
+    const price = parseFloat(pm[1].replace(/,/g, ""));
     if (!Number.isFinite(price) || price <= 0 || price > 100000) continue;
-    out.push({ ticker, quotedPrice: price, currency: m[3] || null });
+    const pricePos = pm.index;
+    let best = null;
+    for (let i = tickerMentions.length - 1; i >= 0; i--) {
+      const t = tickerMentions[i];
+      if (t.pos > pricePos) continue;
+      const dist = pricePos - t.pos;
+      if (dist > 400) break;
+      const between = text.slice(t.pos, pricePos);
+      if (/\n\s*\n/.test(between)) break; // paragraph break disqualifies
+      best = t;
+      break;
+    }
+    if (!best) continue;
+    out.push({ ticker: best.ticker, quotedPrice: price, currency: pm[2] || null });
   }
   return out;
 }
