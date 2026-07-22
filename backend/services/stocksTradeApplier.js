@@ -36,6 +36,43 @@ import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 
+// Base-ticker normalization: SU vs SU.TO both → SU. Used to reconcile
+// broker alerts (which come in bare) with position rows (which may
+// carry the exchange suffix).
+function baseTicker(t) {
+  return String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+}
+
+// Given a leg the poller/reconciler built and an account, look for the
+// account's existing position row that this leg *should* aggregate into
+// (same base ticker). When found, rewrite the leg to use that row's
+// exact ticker + currency + subCcy so applyLeg's strict-equality match
+// merges cleanly instead of orphaning a new bare-ticker row. Also
+// defensively coerces null/undefined currency to the row's ccy — a
+// subject-line-only CIBC parse leaves currency=null, and the poller's
+// fresh-BUY fallback picks a wrong USD default for Canadian names when
+// no matching row exists in that account. Returns a NEW leg object.
+function normalizeLegToPortfolioRow(positions, accountId, leg) {
+  const wantBase = baseTicker(leg.ticker);
+  if (!wantBase) return leg;
+  const rows = (positions || []).filter(p =>
+    p.acct === accountId && baseTicker(p.ticker) === wantBase && (p.qty || 0) > 0
+  );
+  if (rows.length === 0) return leg;
+  // If multiple rows match (SU.TO CAD sub + SU USD sub in the same
+  // account, edge case), prefer the row whose (subCcy || ccy) matches
+  // the leg's settleCcy/currency; else fall back to the fattest lot.
+  const prefer = leg.settleCcy || leg.currency;
+  let chosen = rows.find(p => (p.subCcy || p.ccy) === prefer);
+  if (!chosen) chosen = rows.sort((a, b) => (b.qty || 0) - (a.qty || 0))[0];
+  return {
+    ...leg,
+    ticker: chosen.ticker,
+    currency: leg.currency || chosen.ccy,
+    settleCcy: leg.settleCcy || chosen.subCcy || chosen.ccy,
+  };
+}
+
 // Apply a single BUY/SELL leg to the positions array (mutates). Same
 // semantics as routes/stocksTrade.js:applyLeg — kept in sync manually.
 // Duplicated deliberately: the route file is legacy and untangling it
@@ -154,7 +191,13 @@ export async function applyReconciledTrade({
 
   // Apply legs to a copy of the positions array + adjust cash.
   const newPositions = portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }));
-  for (const leg of legs) {
+  // Normalize each leg so a bare "SU" merges into an existing "SU.TO"
+  // row (and inherits its ccy/subCcy). Without this a poller alert for
+  // "SU" with currency=null/USD would either fail SELL match or push
+  // an orphan bare-ticker row — the exact silent-reconcile bug we're
+  // chasing.
+  const normalizedLegs = legs.map(l => normalizeLegToPortfolioRow(newPositions, accountId, l));
+  for (const leg of normalizedLegs) {
     if (leg.side === "BUY" || leg.side === "SELL") {
       applyLeg(newPositions, accountId, {
         side: leg.side, ticker: leg.ticker, shares: leg.shares,
@@ -177,8 +220,8 @@ export async function applyReconciledTrade({
     executedAt: executedAt ? new Date(executedAt) : new Date(),
     account: accountId,
     accountName: acctRow.name,
-    legs,
-    netCashCad: netCashCadOfTrade(legs, fx),
+    legs: normalizedLegs,
+    netCashCad: netCashCadOfTrade(normalizedLegs, fx),
     fxUsdCadAtTrade: fx,
     notes: String(notes || "").slice(0, 500),
     positionApplied: true,
@@ -256,7 +299,13 @@ export async function backfillTradeToPortfolio(tradeDoc) {
   const fx = tradeDoc.fxUsdCadAtTrade || portfolio.fxUsdCad || 1.37;
 
   const newPositions = portfolio.positions.map((p) => ({ ...(p.toObject?.() || p) }));
-  for (const leg of tradeDoc.legs) {
+  // Same suffix + currency normalization as the auto-apply path. Without
+  // this, retry/backfill of a stuck bare-"SU" trade would keep failing
+  // against the existing "SU.TO" row (or push a duplicate orphan).
+  const normalizedLegs = tradeDoc.legs.map(l =>
+    normalizeLegToPortfolioRow(newPositions, tradeDoc.account, l)
+  );
+  for (const leg of normalizedLegs) {
     if (leg.side === "BUY" || leg.side === "SELL") {
       applyLeg(newPositions, tradeDoc.account, {
         side: leg.side, ticker: leg.ticker, shares: leg.shares,
@@ -270,12 +319,13 @@ export async function backfillTradeToPortfolio(tradeDoc) {
   portfolio.lastSyncedAt = new Date();
   await portfolio.save();
 
-  // Mark this trade doc so a second backfill run skips it. Also
-  // re-stamp daily-pick "ENTERED" for BUY legs — matches the
-  // apply-through-manual-flow behavior.
+  // Mark this trade doc so a second backfill run skips it. Also rewrite
+  // the legs to the normalized form so future scorecard/fuzzy-dedup
+  // lookups see the same ticker as the applied position. Then re-stamp
+  // daily-pick "ENTERED" for BUY legs.
   await StocksTradeJournal.updateOne(
     { _id: tradeDoc._id },
-    { $set: { positionApplied: true } }
+    { $set: { positionApplied: true, legs: normalizedLegs } }
   );
   try {
     const cutoff = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);

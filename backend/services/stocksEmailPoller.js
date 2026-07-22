@@ -23,7 +23,7 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import { decryptSecret } from "./stocksEncryption.js";
 import { parseCibcAlert, makeReconcileKey } from "./stocksCibcParser.js";
 import { planReconciliation } from "./stocksTradeReconciler.js";
-import { applyReconciledTrade } from "./stocksTradeApplier.js";
+import { applyReconciledTrade, backfillTradeToPortfolio } from "./stocksTradeApplier.js";
 
 const MAX_MESSAGES_PER_TICK = 25;
 
@@ -197,6 +197,50 @@ export async function pollUserMailbox(userEmail) {
                     } }
                 );
               } catch { /* non-fatal — future polls will still match via fuzzy path */ }
+              // RESCUE: if the pre-existing trade was itself journaled
+              // by an earlier poll but never applied to positions (the
+              // exact silent-reconcile bug we've been chasing), don't
+              // just skip and pretend it's resolved. Try to backfill it
+              // now — a fresh planReconciliation may succeed with the
+              // current portfolio state, and the applier's ticker/currency
+              // normalization will handle bare-ticker mismatches. If it
+              // still can't resolve, leave it as-is (Review panel).
+              if (fuzzyMatch.positionApplied !== true) {
+                try {
+                  const refreshed = await StocksTradeJournal.findById(fuzzyMatch._id).lean();
+                  if (refreshed && refreshed.positionApplied !== true) {
+                    if (refreshed.account) {
+                      // Account already picked (e.g. by the review UI or
+                      // an earlier auto pass). Backfill directly.
+                      await applyReconciledTrade({ email: userEmail, legs: refreshed.legs, accountId: refreshed.account, executedAt: refreshed.executedAt, notes: refreshed.notes, brokerReconcileKey: null, brokerReconcileSource: null, brokerReconcileStatus: "auto", brokerReconcileNotes: `Rescued during fuzzy-match at ${new Date().toISOString()}.` }).catch(async () => {
+                        // applier can throw on over-sell etc. — leave the
+                        // stuck trade alone in that case; the Review flow
+                        // still catches it.
+                      });
+                    } else {
+                      // No account yet. Re-plan and, if now resolvable,
+                      // promote + apply via the same path the retry
+                      // button uses.
+                      const rePlan = await planReconciliation({ email: userEmail, profile, alert, occurredAt });
+                      if (rePlan?.status === "auto" && rePlan.account?.id) {
+                        await StocksTradeJournal.updateOne(
+                          { _id: refreshed._id },
+                          { $set: {
+                              account: rePlan.account.id,
+                              accountName: rePlan.account.name,
+                              brokerReconcileStatus: "auto",
+                              brokerReconcileNotes: `Rescued during fuzzy-match at ${new Date().toISOString()} — ${rePlan.accountReason}`,
+                            } }
+                        );
+                        const rescued = await StocksTradeJournal.findById(refreshed._id).lean();
+                        await backfillTradeToPortfolio(rescued).catch(() => {});
+                      }
+                    }
+                  }
+                } catch (e) {
+                  console.warn("[stocks-email-poller] fuzzy-match rescue failed:", e?.message);
+                }
+              }
               skipped.push({ uid, reason: "matches-existing-trade", matchedTradeId: String(fuzzyMatch._id), subject: subj });
               highWater = Math.max(highWater, uid);
               await client.messageFlagsAdd({ uid }, ["\\Seen"], { uid: true }).catch(() => {});

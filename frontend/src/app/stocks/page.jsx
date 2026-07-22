@@ -3828,6 +3828,28 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setTesting(false); }
   };
 
+  // Read-only journal snapshot — hits backfill in dry-run so the user
+  // can see, at a glance, how many poller trades are stuck and why
+  // without having to run an actual apply.
+  const [snapshot, setSnapshot] = useState(null);
+  const [snapshotting, setSnapshotting] = useState(false);
+  const showJournalState = async () => {
+    setSnapshotting(true);
+    setSnapshot(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/backfill-positions?dryRun=1`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setSnapshot(j);
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Snapshot failed: ${e?.message || "unknown"}` });
+    } finally { setSnapshotting(false); }
+  };
+
   const [backfilling, setBackfilling] = useState(false);
   const backfillPositions = async () => {
     if (!window.confirm("Retroactively apply positions + cash for any poller-reconciled trades that were journalled BEFORE the position-update fix landed. Skip trades that fail (e.g. over-sell against current portfolio). Continue?")) return;
@@ -4105,8 +4127,40 @@ function EmailIntegrationCard({ sessionToken }) {
             <button className="sa-btn" onClick={rescanMailbox} disabled={rescanning} title="Reset the UID high-water mark and re-poll from the earliest matching message. Use when Test connection reports N matches but Poll now finds 0.">{rescanning ? "Rescanning…" : "Rescan mailbox"}</button>
             <button className="sa-btn" onClick={backfillPositions} disabled={backfilling}>{backfilling ? "Backfilling…" : "Backfill positions"}</button>
             <button className="sa-btn" onClick={retryNeedsReview} disabled={retrying} title="Re-run reconciler over stuck needs-review trades using improved account-inference. Promotes to auto + applies positions when it can now resolve them.">{retrying ? "Retrying…" : "Retry needs-review"}</button>
+            <button className="sa-btn" onClick={showJournalState} disabled={snapshotting} title="Read-only snapshot: how many CIBC-email trades are in the journal, how many are applied vs stuck, and the newest few needs-review samples.">{snapshotting ? "Reading…" : "Journal state"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
+          {snapshot && (
+            <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--sa-panel-2)", borderRadius: 8, fontSize: 12 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Journal state (read-only)</div>
+              {snapshot.diagnostic ? (
+                <>
+                  <div style={{ marginBottom: 6 }}>{snapshot.diagnostic.interpretation}</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6 }}>
+                    <div>Total in journal: <b>{snapshot.diagnostic.totalInJournal}</b></div>
+                    <div>Poller-sourced: <b>{snapshot.diagnostic.cibcEmailTrades}</b></div>
+                    <div>Applied: <b>{snapshot.diagnostic.cibcEmailAlreadyApplied}</b></div>
+                    <div>Auto/unapplied: <b style={{ color: snapshot.diagnostic.cibcEmailAutoStillUnapplied > 0 ? "var(--sa-amber)" : "inherit" }}>{snapshot.diagnostic.cibcEmailAutoStillUnapplied}</b></div>
+                    <div>Needs review: <b style={{ color: snapshot.diagnostic.cibcEmailNeedsReview > 0 ? "var(--sa-amber)" : "inherit" }}>{snapshot.diagnostic.cibcEmailNeedsReview}</b></div>
+                    <div>Manual (no source): <b>{snapshot.diagnostic.tradesWithNoBrokerSource}</b></div>
+                  </div>
+                  {Array.isArray(snapshot.diagnostic.needsReviewSamples) && snapshot.diagnostic.needsReviewSamples.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ color: "var(--sa-muted)", marginBottom: 4 }}>Newest needs-review samples:</div>
+                      {snapshot.diagnostic.needsReviewSamples.map(s => (
+                        <div key={s._id} style={{ padding: "4px 0", borderTop: "1px solid var(--sa-border)" }}>
+                          <div><b>{s.leg}</b> — {s.account || "no account"}</div>
+                          <div style={{ color: "var(--sa-muted)" }}>{s.reason || "(no reason recorded)"}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div>Backfill would apply <b>{snapshot.candidateCount}</b> auto trades. Click "Backfill positions" to apply.</div>
+              )}
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ display: "grid", gap: 10 }}>
