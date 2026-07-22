@@ -1771,6 +1771,15 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     maxTimeSeconds: 60,
     estimatedMinutes: 2,
     isOffTablet: true,
+    // Device Mode Support — see docs/device-mode-architecture.md.
+    // Body Break's pedagogy is motion-based (accelerometer-scored
+    // gestures are the intended play), so laptops trigger silent
+    // substitution with a compatible movement/energizer.
+    deviceCompat: {
+      requiredCapabilities: ["device_motion"],
+      supportedDeviceModes: ["tablet_only"],
+      incompatibilityReason: "Needs a tablet that can detect motion. Laptops can't score movement.",
+    },
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description:
@@ -1817,6 +1826,12 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     maxTimeSeconds: 180,
     estimatedMinutes: 4,
     isOffTablet: true,
+    // Uses DeviceMotionEvent (accelerometer) to score gestures.
+    deviceCompat: {
+      requiredCapabilities: ["device_motion"],
+      supportedDeviceModes: ["tablet_only"],
+      incompatibilityReason: "Needs a tablet that can detect motion. Laptops can't score these gestures.",
+    },
     interTeamEnabled: false,
     intraTeamEnabled: false,
     description: `
@@ -2340,6 +2355,13 @@ demoPrompt: "Copy these exact notes into your notebook. Then tap DONE.",
     hasOptions: false,
     expectsText: false,
     maxTimeSeconds: 0,
+    // Motion is used ONLY for the interstitial tilt mini-game (see
+    // TreasureRunnerTask.jsx). Marked preferred, not required — the
+    // task degrades gracefully on laptops with the mini-game skipped.
+    deviceCompat: {
+      preferredCapabilities: ["device_motion"],
+      supportedDeviceModes: ["tablet_only", "laptop_only", "mixed"],
+    },
     interTeamEnabled: false,
     intraTeamEnabled: true,
     description:
@@ -4879,6 +4901,13 @@ config: {
     expectsText: false,
     maxTimeSeconds: 900,
     estimatedMinutes: 10,
+    // Tilt IS the play — useDeviceTilt drives the ball. No laptop
+    // equivalent, so silent substitution is required for laptop teams.
+    deviceCompat: {
+      requiredCapabilities: ["device_motion"],
+      supportedDeviceModes: ["tablet_only"],
+      incompatibilityReason: "Needs a tablet the team can tilt. Laptops can't move the ball.",
+    },
     interTeamEnabled: true,
     intraTeamEnabled: true,
     description:

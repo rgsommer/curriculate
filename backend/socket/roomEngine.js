@@ -166,6 +166,13 @@ export function createRoomEngine(io, deps = {}) {
       isActive: false,
       locationCode, // e.g. "Classroom"
 
+      // Device Mode Support — see docs/device-mode-architecture.md.
+      // Default preserves current behavior (tablets play everything).
+      // Teacher can change it via `teacher:setDeviceMode` before
+      // launch. In Phase 1b this drives silent substitution of
+      // motion-required tasks for laptop / mixed rooms.
+      deviceMode: "tablet_only",
+
       // Random-treats state
       treatsConfig: {
         enabled: true,
@@ -723,6 +730,8 @@ export function createRoomEngine(io, deps = {}) {
     return {
       code: room.code,
       locationCode: room.locationCode || "Classroom",
+      // Device Mode Support (Phase 1a). Clients read this off room:state.
+      deviceMode: room.deviceMode || "tablet_only",
       reportOwnerId: room.reportOwnerId || "",
       reportOwnerName: room.reportOwnerName || "",
       reportOwnerEmail: room.reportOwnerEmail || "",

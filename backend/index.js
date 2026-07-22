@@ -6879,6 +6879,32 @@ if (!isMultiPack && task.taskType === "what-am-i") {
     }
   });
 
+  // ── Device Mode Support (Phase 1a) ──────────────────────────────────────
+  // Teacher picks Tablet Only / Laptop Only / Mixed before launch. Persisted
+  // on the room object and rebroadcast via full room:state so both teacher
+  // and student clients pick it up. Phase 1b will hook this into launch to
+  // silently substitute motion-required tasks when mode isn't tablet_only.
+  socket.on("teacher:setDeviceMode", ({ roomCode, deviceMode } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") ack({ ok: false, error: "room-not-found" });
+        return;
+      }
+      const VALID = new Set(["tablet_only", "laptop_only", "mixed"]);
+      const next = VALID.has(deviceMode) ? deviceMode : "tablet_only";
+      room.deviceMode = next;
+      const state = buildRoomState(room);
+      io.to(code).emit("room:state", state);
+      io.to(code).emit("roomState", state);
+      if (typeof ack === "function") ack({ ok: true, deviceMode: next });
+    } catch (err) {
+      console.error("[teacher:setDeviceMode] error:", err?.message || err);
+      if (typeof ack === "function") ack({ ok: false, error: "server-error" });
+    }
+  });
+
   socket.on("task:requestNext", ({ roomCode, teamId } = {}, ack) => {
     const code = (roomCode || "").toUpperCase();
     const room = rooms[code];
