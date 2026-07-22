@@ -78,6 +78,18 @@ export async function api<T = any>(path: string, opts: ApiOptions = {}): Promise
     /* non-JSON */
   }
   if (!res.ok) {
+    // An expired/invalid session shouldn't dead-end on a red error the teacher
+    // can't act on: drop the stale token and send them to sign in again,
+    // returning to the page they were on.
+    if (res.status === 401 && typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("curriculate_auth_token");
+      } catch {
+        /* storage unavailable — fall through to the redirect anyway */
+      }
+      const here = window.location.pathname + window.location.search;
+      if (!here.startsWith("/login")) window.location.href = loginHref(here);
+    }
     throw new ApiError(data?.error || `Request failed (${res.status})`, res.status, data);
   }
   return data as T;
