@@ -356,12 +356,23 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
           if (!(leg.side === "BUY" || leg.side === "SELL") || !leg.ticker) continue;
           const legBase = baseTicker(leg.ticker);
           const legCcy = leg.currency || "USD";
-          const match = recentRecs.find(r =>
+          // Prefer a strict base+action+currency match. But if none exists,
+          // fall back to base+action alone — a CNQ.TO CAD trade filling a
+          // rec that got journaled as CNQ USD (because the AI wrote "CNQ"
+          // without a currency tag) is the SAME intent on the SAME company,
+          // just on the sibling listing. The scorecard's currency-aware
+          // P&L math handles the actual grade against the right listing.
+          // Without this fallback the CNQ trade shows "not linked to a
+          // rec" even when the AI recommended it three days earlier.
+          const strict = recentRecs.find(r =>
             baseTicker(r.ticker) === legBase &&
             r.action === leg.side &&
             (r.entryCurrency || "USD") === legCcy
           );
-          if (match) { autoLinkedRecId = match._id; break; }
+          const loose = strict || recentRecs.find(r =>
+            baseTicker(r.ticker) === legBase && r.action === leg.side
+          );
+          if (loose) { autoLinkedRecId = loose._id; break; }
         }
       } catch (e) { console.warn("[stocks-trade] auto-link warn:", e?.message); }
     }
