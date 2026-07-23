@@ -165,6 +165,12 @@ export default function MadDashTask({
   // QR-coded stations and SHOULD be scanning, so the colour-button
   // simulator gets replaced with a "scan to continue" prompt.
   requireRealScans = false,
+  // 🔦 Torchlight superpower. When true, reveal the current target
+  // color for 3 seconds then call onTorchlightConsumed so the parent
+  // clears its flag. One-shot — the reveal fires the moment the prop
+  // flips to true, not once per scan.
+  torchlightActive = false,
+  onTorchlightConsumed,
 }) {
   const showScanSimulator = practiceMode && !requireRealScans;
   const palette = useMemo(() => {
@@ -220,6 +226,23 @@ export default function MadDashTask({
   const lastScanClearTimerRef = useRef(null);
   // Progressive hints: how many route colors have been revealed as hints
   const [hintsUsed, setHintsUsed] = useState(0);
+
+  // 🔦 Torchlight peek — locks in the target color at the moment the
+  // power fires so scan advancement doesn't yank the reveal to a
+  // different color mid-flash.
+  const [torchlightPeek, setTorchlightPeek] = useState(null); // { color, expiresAt } | null
+  const torchlightConsumedRef = useRef(false);
+  useEffect(() => {
+    if (!torchlightActive || torchlightConsumedRef.current) return;
+    const target = Array.isArray(route) ? route[scanIdx] : null;
+    if (!target) return;
+    torchlightConsumedRef.current = true;
+    const expiresAt = Date.now() + 3000;
+    setTorchlightPeek({ color: target, expiresAt });
+    if (typeof onTorchlightConsumed === "function") onTorchlightConsumed();
+    const t = setTimeout(() => setTorchlightPeek(null), 3000);
+    return () => clearTimeout(t);
+  }, [torchlightActive, route, scanIdx, onTorchlightConsumed]);
 
   const [runnerIdx, setRunnerIdx] = useState(0);
   const [runs, setRuns] = useState([]);
@@ -437,6 +460,43 @@ export default function MadDashTask({
 
   return (
     <div className="w-full min-h-[560px] rounded-2xl overflow-hidden border border-slate-200 bg-white">
+      {/* 🔦 Torchlight peek — one-shot 3-second reveal of the current target color */}
+      {torchlightPeek && (
+        <div
+          data-testid="torchlight-peek"
+          style={{
+            padding: "14px 18px",
+            background: "linear-gradient(135deg, #fef3c7, #fde68a)",
+            borderBottom: "2px solid #f59e0b",
+            display: "flex",
+            alignItems: "center",
+            gap: 14,
+            color: "#78350f",
+            fontWeight: 800,
+          }}
+        >
+          <span style={{ fontSize: "1.8rem" }} aria-hidden="true">🔦</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: "0.72rem", letterSpacing: 0.6, textTransform: "uppercase", opacity: 0.75 }}>
+              Torchlight peek — 3 seconds
+            </div>
+            <div style={{ fontSize: "1.1rem", marginTop: 2 }}>
+              Next station: <strong style={{ textTransform: "uppercase" }}>{torchlightPeek.color}</strong>
+            </div>
+          </div>
+          <span
+            data-testid="torchlight-peek-swatch"
+            aria-hidden="true"
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: torchlightPeek.color?.toLowerCase() || "#94a3b8",
+              boxShadow: "inset 0 0 0 2px rgba(0,0,0,0.15), 0 3px 8px rgba(0,0,0,0.2)",
+            }}
+          />
+        </div>
+      )}
       <div className="p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>

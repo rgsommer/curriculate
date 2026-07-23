@@ -1883,6 +1883,10 @@ export default function TaskRunner({
   // onXrayConsumed lets the parent clear its armed flag once fired.
   xrayActive = false,
   onXrayConsumed,
+  // 🔦 Torchlight — same flow, but fires only when the current task is
+  // Mad Dash. Reveals the current target color for 3s.
+  torchlightActive = false,
+  onTorchlightConsumed,
 }) {
   if (!task) return null;
 
@@ -3059,6 +3063,8 @@ case TASK_TYPES.MAD_DASH:
       memberNames={memberNames}
       practiceMode={practiceMode}
       requireRealScans={requireRealScans}
+      torchlightActive={torchlightActive}
+      onTorchlightConsumed={onTorchlightConsumed}
     />
   );
   break;

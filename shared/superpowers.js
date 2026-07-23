@@ -146,7 +146,7 @@ export const SUPERPOWERS = {
     description: "On the next Mad Dash, get a 3-second glimpse of the correct station colour before the round starts.",
     flavor: SUPERPOWER_FLAVORS.MECHANICS,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   WILD_CARD: {
     id: "wild_card",

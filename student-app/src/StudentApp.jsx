@@ -343,6 +343,7 @@ function StudentApp() {
   const [timeWarpFreezeUntil, setTimeWarpFreezeUntil] = useState(null);
   const [superpowerTriggered, setSuperpowerTriggered] = useState(null); // { powerId, pointsOut, revealText? }
   const [xrayArmed, setXrayArmed] = useState(false); // set true on activate; TaskRunner reads and forwards to MC
+  const [torchlightArmed, setTorchlightArmed] = useState(false); // set true on activate; TaskRunner forwards to MadDash
   const [wildCardRolling, setWildCardRolling] = useState(false); // spinner while server regenerates
 
   // Mode B (join): result of room:peek — populated when the student types
@@ -4655,6 +4656,13 @@ function StudentApp() {
                 // MC, the flag stays armed until an MC task shows up.
                 return;
               }
+              if (sp.id === "torchlight") {
+                setTorchlightArmed(true);
+                setSuperpowerUsedAt(stamp);
+                // Fires only on Mad Dash. If the current task isn't
+                // Mad Dash the flag stays armed until one comes up.
+                return;
+              }
               if (sp.id === "second_chance") {
                 // Server-armed like the point-manipulation powers.
                 // Backend intercepts the NEXT wrong submission and
@@ -7150,6 +7158,8 @@ function StudentApp() {
         }}
         xrayActive={xrayArmed}
         onXrayConsumed={() => setXrayArmed(false)}
+        torchlightActive={torchlightArmed}
+        onTorchlightConsumed={() => setTorchlightArmed(false)}
       />
       </TaskErrorBoundary>
     </div>
