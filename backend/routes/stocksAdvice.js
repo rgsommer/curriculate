@@ -865,7 +865,26 @@ async function resolveValidationPrice(ticker, currencyHint = null) {
   }
   const fmp = await fetchFmpQuote(ticker);
   if (Number.isFinite(fmp) && fmp > 0) return fmp;
-  return await fetchYahooQuote(ticker);
+  const yh = await fetchYahooQuote(ticker);
+  if (Number.isFinite(yh) && yh > 0) return yh;
+  // Bare-symbol miss when no currency hint was supplied. Canadian-only
+  // tickers (XIU, XIC, VFV, CNR, etc.) don't have a US listing to fall
+  // back to, and the AI often writes them without an inline CAD tag —
+  // so try the .TO variant before giving up. Parallel to keep it fast.
+  // If the .TO also fails we return null (real not_found, not a
+  // suffix-mishandling artifact).
+  if (!/\.(TO|V|NE|CN)$/i.test(ticker)) {
+    const suffixes = [".TO", ".V", ".NE", ".CN"];
+    const rows = await Promise.all(suffixes.map(async (suffix) => {
+      const variant = `${ticker}${suffix}`;
+      const p = await fetchFmpQuote(variant);
+      if (Number.isFinite(p) && p > 0) return p;
+      const py = await fetchYahooQuote(variant);
+      return (Number.isFinite(py) && py > 0) ? py : null;
+    }));
+    for (const p of rows) if (p != null) return p;
+  }
+  return null;
 }
 
 // Pull (ticker, quoted-price) pairs from card text.
