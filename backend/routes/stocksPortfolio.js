@@ -42,6 +42,7 @@ import { getMacroContext } from "../services/stocksMacroContext.js";
 import { getFedLiquidity } from "../services/stocksFedLiquidity.js";
 import { computePortfolioVar, computeLossCooldown } from "../services/stocksRiskBudget.js";
 import { getTechnicals } from "../services/stocksTechnicals.js";
+import { analyseTradeCosts } from "../services/stocksTradeCostAnalysis.js";
 
 const router = express.Router();
 
@@ -1039,6 +1040,24 @@ router.get("/regime-and-uoa", requireStocksAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("stocks-portfolio regime-and-uoa error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/tca
+// Trade Cost Analysis — measures fill-price slippage vs day's typical
+// price (H+L+C)/3 as a VWAP proxy. Buckets by time-of-day so the
+// trader can see whether their 09:30 market orders are systematically
+// worse than their 11:00 or GTC-limit fills.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/tca", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.max(30, Math.min(1825, parseInt(req.query.days, 10) || 365));
+    const result = await analyseTradeCosts(req.stocksUser.email, days);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("stocks-portfolio tca error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

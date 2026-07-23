@@ -7887,6 +7887,7 @@ function PerformanceView({ sessionToken }) {
       <DiscoveryScorecardCard data={discoveryScorecard} />
       <SetupScorecardCard data={setupScorecard} sessionToken={sessionToken} onLoad={setSetupScorecard} />
       <SizingBacktestCard sessionToken={sessionToken} />
+      <TcaCard sessionToken={sessionToken} />
 
       {/* ── Advisor scorecard ── */}
       <div className="sa-card" style={{ marginBottom: 18 }}>
@@ -10447,6 +10448,134 @@ function SizingBacktestCard({ sessionToken }) {
                 {data.caveats.map((c, i) => <li key={i}>{c}</li>)}
               </ul>
             </details>
+          </>
+        )
+      )}
+    </div>
+  );
+}
+
+// Trade Cost Analysis card — surfaces slippage by hour-of-day bucket
+// so the trader can see if their market-at-open habit is quietly
+// costing bps. Uses (H+L+C)/3 as a VWAP proxy on the day's OHLC.
+function TcaCard({ sessionToken }) {
+  const [days, setDays] = useState(365);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `${BACKEND_URL}/api/stocks-portfolio/tca?days=${days}`,
+          { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } }
+        );
+        if (!r.ok) throw new Error(`${r.status}`);
+        const j = await r.json();
+        if (!cancelled) setData(j);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "load failed");
+      } finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, days]);
+
+  const bucketLabel = (b) => ({
+    "pre-open": "Pre-market (< 09:30)",
+    "open-30": "Open 30 min (09:30–09:59)",
+    "mid-morn": "Mid-morn (10:00–10:59)",
+    "midday": "Midday (11:00–14:59)",
+    "close-hour": "Close hour (15:00–15:59)",
+    "after-hours": "After-hours (≥ 16:00)",
+    "unknown": "Unknown timestamp",
+  }[b] || b);
+
+  const fmtBps = (bps) => bps == null ? "—" : `${bps >= 0 ? "+" : ""}${bps.toFixed(1)} bps`;
+  const bpsColor = (bps) => bps == null ? "inherit" : bps > 3 ? "#b91c1c" : bps > 0 ? "#78350f" : "var(--sa-green)";
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <h3>Trade cost analysis — are you losing bps to bad timing?</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+        For every recorded trade, compares the fill price to that day's typical price ((H+L+C)/3) as a VWAP proxy. Bucketed by time-of-day in ET. Positive slippage = you paid too much on a BUY or sold too cheap on a SELL. Systematic red on the open-30 row is a common finding for retail — the fix is usually GTC limit orders inside 09:30-09:45.
+      </div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <label>Window:{" "}
+          <select value={days} onChange={(e) => setDays(parseInt(e.target.value, 10))} style={{ fontSize: 12 }}>
+            <option value={90}>90d</option>
+            <option value={180}>180d</option>
+            <option value={365}>1y</option>
+            <option value={730}>2y</option>
+          </select>
+        </label>
+        {data?.sampleSize != null && (
+          <span className="sa-muted">
+            {data.sampleSize} trades scored · {data.tickersFetched} tickers fetched
+          </span>
+        )}
+      </div>
+      {busy && <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>}
+      {err && <div className="sa-err" style={{ fontSize: 12 }}>Failed to load: {err}</div>}
+      {!busy && !err && data && (
+        data.sampleSize === 0 ? (
+          <div className="sa-muted" style={{ padding: 20, fontSize: 13 }}>
+            No recorded trades in this window. Record trades on the Dashboard or Trades tab; TCA populates once at least one day of OHLC is available for each ticker.
+          </div>
+        ) : (
+          <>
+            {data.summary && (
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, marginBottom: 12 }}>
+                <div style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Avg slippage</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3, color: bpsColor(data.summary.avgSlippageBps), fontVariantNumeric: "tabular-nums" }}>{fmtBps(data.summary.avgSlippageBps)}</div>
+                </div>
+                <div style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Median slippage</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3, color: bpsColor(data.summary.medianSlippageBps), fontVariantNumeric: "tabular-nums" }}>{fmtBps(data.summary.medianSlippageBps)}</div>
+                </div>
+                <div style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Best bucket</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3, color: "var(--sa-green)" }}>{bucketLabel(data.summary.bestBucket) || "—"}</div>
+                </div>
+                <div style={{ padding: "8px 10px", background: "var(--sa-panel-2)", borderRadius: 8, textAlign: "center" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Worst bucket</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, marginTop: 3, color: "#b91c1c" }}>{bucketLabel(data.summary.worstBucket) || "—"}</div>
+                </div>
+              </div>
+            )}
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--sa-panel-2)", color: "var(--sa-muted)", fontSize: 12 }}>
+                    <th style={{ textAlign: "left", padding: "6px 10px" }}>Bucket</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Trades</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Avg slippage</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Median</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Min</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Max</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>$ cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.byBucket.map((b) => (
+                    <tr key={b.bucket} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                      <td style={{ padding: "6px 10px", fontWeight: 600 }}>{bucketLabel(b.bucket)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right" }}>{b.trades}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", color: bpsColor(b.avgSlippageBps), fontVariantNumeric: "tabular-nums", fontWeight: 700 }}>{fmtBps(b.avgSlippageBps)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtBps(b.medianSlippageBps)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--sa-muted)" }}>{fmtBps(b.minSlippageBps)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "var(--sa-muted)" }}>{fmtBps(b.maxSlippageBps)}</td>
+                      <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: b.totalSlippageDollars > 0 ? "#b91c1c" : "var(--sa-green)" }}>${Math.abs(Math.round(b.totalSlippageDollars)).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="sa-muted" style={{ fontSize: 11, marginTop: 8 }}>{data.caveat}</div>
           </>
         )
       )}
