@@ -700,6 +700,12 @@ export default function StocksAdvisorPage() {
   const [hydrated, setHydrated] = useState(false);
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
+  // Mirror sync state to a ref so background pollers can check the
+  // current value without depending on it in their useEffect deps
+  // (which would cause the interval to be torn down and rebuilt every
+  // time a save completes).
+  const syncStatusRef = useRef(syncStatus);
+  useEffect(() => { syncStatusRef.current = syncStatus; }, [syncStatus]);
   const [currentTab, setCurrentTab] = useState("dashboard");
   const [toast, setToast] = useState(null);
   const [modalIdx, setModalIdx] = useState(undefined);
@@ -812,6 +818,56 @@ export default function StocksAdvisorPage() {
     })();
     return () => { cancelled = true; };
   }, [auth?.sessionToken, auth?.email]);
+
+  // ── Background refresh for poller-driven position updates ────────
+  // The email poller applies CIBC trade alerts to positions/cash on a
+  // 15-min cron. Without this hook the user had to hit Refresh to see
+  // the update. Now we quietly re-fetch every 45s (only when the tab
+  // is visible AND no local save is pending — otherwise the poll
+  // would clobber uncommitted Settings edits) and on visibilitychange
+  // when the tab comes back into focus. If the server's lastSyncedAt
+  // is newer than what we've got, we merge in the poller-owned fields
+  // (positions + accounts cash) without touching the user's Settings
+  // toggles / goals / etc.
+  useEffect(() => {
+    if (!auth?.sessionToken) return;
+    const POLL_MS = 45 * 1000;
+
+    const doPoll = async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      // Skip while a debounced save is in flight — don't stomp local edits.
+      if (syncStatusRef.current === "saving") return;
+      try {
+        const fresh = await apiGetPortfolio(auth.sessionToken);
+        if (!fresh) return;
+        setProfile((prev) => {
+          if (!prev) return fresh;
+          const prevSync = prev.lastSyncedAt ? new Date(prev.lastSyncedAt).getTime() : 0;
+          const nextSync = fresh.lastSyncedAt ? new Date(fresh.lastSyncedAt).getTime() : 0;
+          if (nextSync <= prevSync) return prev;
+          // Merge: take the server's positions + accounts (poller-owned),
+          // keep the client's Settings-level fields unchanged so an
+          // in-flight edit isn't reverted just because we polled.
+          return {
+            ...prev,
+            positions: fresh.positions || prev.positions,
+            accounts: fresh.accounts || prev.accounts,
+            lastSyncedAt: fresh.lastSyncedAt || prev.lastSyncedAt,
+          };
+        });
+      } catch { /* silent — this is a background refresh */ }
+    };
+
+    const intervalId = setInterval(doPoll, POLL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) doPoll();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [auth?.sessionToken]);
 
   // ── Debounced server save on profile mutation ────────────────────
   const updateProfile = (mut) => {
