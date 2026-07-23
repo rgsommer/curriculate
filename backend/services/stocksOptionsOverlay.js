@@ -271,6 +271,41 @@ export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37, en
   return Object.assign(out, { diagnostic: diag });
 }
 
+// Renders the overlay filter funnel as a compact user-facing markdown
+// section for the emailed briefing (not for the AI prompt). Returns "" —
+// nothing to append — when the overlay produced live suggestions
+// (they're already shown in the AI-authored section 6a) or when the
+// diagnostic is missing. When the overlay was empty, returns a small
+// "why no overlay today" block so the trader can see the actual
+// filter chain instead of a silent skip.
+export function formatOverlayFunnelForEmail(overlaySuggestions) {
+  if (!overlaySuggestions) return "";
+  if (Array.isArray(overlaySuggestions) && overlaySuggestions.length > 0) return "";
+  const diag = overlaySuggestions?.diagnostic;
+  if (!diag) return "";
+  if (diag.reason === "options-disabled") {
+    return `\n## 🎯 Options overlay\n\nSkipped — **Settings → Options Trading** is OFF. Enable it to surface covered-call ideas on Non-Spousal SWING-sleeve holdings.\n`;
+  }
+  if (diag.reason === "no-positions") return "";
+  const funnel = `${diag.heldCount} held → ${diag.afterAccountFilter} in Non-Spousal → ${diag.afterSleeveFilter} SWING sleeve → ${diag.afterShareCountGate} with 100+ sh → ${diag.afterIvGate} with IV rank ≥ 70 → ${diag.afterBasisGate} in unrealized gain → ${diag.produced} suggestions`;
+  const drops = (diag.perTicker || []).slice(0, 8);
+  const lines = [
+    "\n## 🎯 Options overlay funnel",
+    "",
+    "No eligible covered-call suggestion today. This is not a bug — the narrow subset (Non-Spousal + SWING sleeve + 100+ sh + IV rank ≥ 70 + in-gain) is deliberately strict. Filter chain:",
+    "",
+    `- ${funnel}`,
+  ];
+  if (drops.length > 0) {
+    lines.push("", "**Per-ticker drop reasons:**");
+    for (const d of drops) {
+      lines.push(`- **${d.ticker}** — dropped at *${d.stage}*: ${d.note}`);
+    }
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
 // Human-readable summary of the overlay diagnostic. Rendered when the
 // suggestions array is empty so the briefing can say "no overlay today —
 // here's what dropped where" instead of a silent skip. That silent skip

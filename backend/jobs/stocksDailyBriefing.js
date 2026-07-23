@@ -45,7 +45,7 @@ import { computeHorizonReview, formatHorizonReviewBlock } from "../services/stoc
 import { computeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns, formatBenchmarkBlock } from "../services/stocksBenchmark.js";
 import { computeSizingAdjustments, formatSizingAdjustmentBlock } from "../services/stocksCorrelationSizing.js";
-import { computeOverlaySuggestions, formatOverlayBlock } from "../services/stocksOptionsOverlay.js";
+import { computeOverlaySuggestions, formatOverlayBlock, formatOverlayFunnelForEmail } from "../services/stocksOptionsOverlay.js";
 import { computeCompliance, formatComplianceBlock } from "../services/stocksCompliance.js";
 import { computeAttribution, formatAttributionBlock } from "../services/stocksAttribution.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
@@ -1728,6 +1728,21 @@ export async function generateBriefing(profile) {
   const firstHeading = md.search(/^#{1,6}\s/m);
   if (firstHeading > 0) {
     md = md.slice(firstHeading);
+  }
+  // Append the options-overlay funnel as a user-visible section when
+  // the AI produced no covered-call ideas today. Returns "" for the
+  // suggestions-present case (already rendered inside AI section 6a)
+  // and for options-off with no positions.
+  const overlayFunnel = formatOverlayFunnelForEmail(overlaySuggestions);
+  if (overlayFunnel) {
+    // Insert BEFORE the trailing <RECS> block if present so the
+    // machine-readable rec parser stays anchored at end-of-doc.
+    const recsIdx = md.search(/\n?-{3,}\s*\n\s*<RECS>/i);
+    if (recsIdx > 0) {
+      md = md.slice(0, recsIdx) + "\n" + overlayFunnel + md.slice(recsIdx);
+    } else {
+      md = md.trim() + "\n\n" + overlayFunnel;
+    }
   }
   return md.trim();
 }
