@@ -211,8 +211,20 @@ export async function pollUserMailbox(userEmail) {
                   if (refreshed && refreshed.positionApplied !== true) {
                     if (refreshed.account) {
                       // Account already picked (e.g. by the review UI or
-                      // an earlier auto pass). Backfill directly.
-                      await applyReconciledTrade({ email: userEmail, legs: refreshed.legs, accountId: refreshed.account, executedAt: refreshed.executedAt, notes: refreshed.notes, brokerReconcileKey: null, brokerReconcileSource: null, brokerReconcileStatus: "auto", brokerReconcileNotes: `Rescued during fuzzy-match at ${new Date().toISOString()}.` }).catch(async () => {
+                      // an earlier auto pass). backfillTradeToPortfolio
+                      // is idempotent (it short-circuits when the doc
+                      // says positionApplied=true, so a subsequent
+                      // rescue on the SAME pre-existing doc is a no-op).
+                      //
+                      // WAS using applyReconciledTrade here, which created
+                      // a NEW journal doc AND mutated positions again
+                      // every time the rescue fired — root cause of the
+                      // MSFT/CNQ/DUOL "+54/+70 sh" double-application
+                      // pattern the trader kept having to reconcile. That
+                      // path is only correct when we're inserting a brand
+                      // new trade, NOT when we're rescuing a pre-existing
+                      // one.
+                      await backfillTradeToPortfolio(refreshed).catch(() => {
                         // applier can throw on over-sell etc. — leave the
                         // stuck trade alone in that case; the Review flow
                         // still catches it.
