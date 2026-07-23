@@ -1675,6 +1675,7 @@ export default function StocksAdvisorPage() {
             recipient={auth.email}
             onClose={() => setBriefingPreview(null)}
             onSend={sendBriefing}
+            onRetry={previewBriefing}
           />
         )}
         {monthlyPreview && (
@@ -1683,6 +1684,7 @@ export default function StocksAdvisorPage() {
             recipient={auth.email}
             onClose={() => setMonthlyPreview(null)}
             onSend={sendMonthlyReport}
+            onRetry={previewMonthlyReport}
             title="Monthly Account Report — Preview"
             loadingLabel="Building monthly report…"
             loadingDetail="Computing per-account P&L and beneficiary payouts · 1-3s"
@@ -6073,7 +6075,7 @@ const recCellLeft = { ...recCell, textAlign: "left", paddingLeft: 14 };
 // =============================================================================
 // Briefing preview modal — shows what the daily email will look like
 // =============================================================================
-function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, loadingLabel, loadingDetail }) {
+function BriefingPreviewModal({ preview, recipient, onClose, onSend, onRetry, title, loadingLabel, loadingDetail }) {
   const { busy, html, error, sent, sendError, subject, messageId, ccSends } = preview;
   const headerTitle = title || "Email Briefing — Preview";
   const loadLabel = loadingLabel || "Generating briefing…";
@@ -6153,9 +6155,37 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, title, load
         )}
 
         {/* Error state */}
-        {error && (
-          <div className="sa-err">{error}</div>
-        )}
+        {error && (() => {
+          // "Failed to fetch" from the browser is a TypeError raised when
+          // the connection dies at the transport layer — usually a Render
+          // cold-start on a request the client dropped. Not a real 5xx
+          // from our server. Show a friendlier message with a Retry.
+          const isTransient = /failed to fetch|networkerror|load failed|the network connection was lost|timed? ?out|aborted|econnreset/i.test(String(error));
+          const bg = isTransient ? "#fef3c7" : "#fee2e2";
+          const border = isTransient ? "#fbbf24" : "#fca5a5";
+          const fg = isTransient ? "#78350f" : "#7f1d1d";
+          const label = isTransient
+            ? "The briefing pipeline didn't respond in time — most often a Render dyno cold-start. Retry usually works on the second attempt."
+            : error;
+          return (
+            <div style={{ padding: "16px 18px", background: bg, border: `1px solid ${border}`, borderRadius: 8, color: fg }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                {isTransient ? "⚠ Briefing didn't come back" : "Briefing failed"}
+              </div>
+              <div style={{ fontSize: 12.5, marginBottom: 10 }}>{label}</div>
+              {isTransient && (
+                <div style={{ fontSize: 11, color: fg, opacity: 0.85, marginBottom: 10 }}>
+                  Raw error: <code>{String(error)}</code>
+                </div>
+              )}
+              {onRetry && (
+                <button className="sa-btn" onClick={onRetry} style={{ padding: "6px 14px" }}>
+                  Retry
+                </button>
+              )}
+            </div>
+          );
+        })()}
 
         {/* Preview ready */}
         {html && (
@@ -9833,9 +9863,18 @@ function DailyPickCard({ sessionToken, user }) {
                     </td>
                     <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b", fontVariantNumeric: "tabular-nums" }}>
                       ${p.stopPrice?.toFixed(2) ?? "—"}
-                      {Number.isFinite(p.stopPrice) && (
-                        <div style={{ fontSize: 9.5 }}>({(((p.stopPrice - p.entryPrice) / p.entryPrice) * 100).toFixed(1)}%)</div>
-                      )}
+                      {Number.isFinite(p.stopPrice) && (() => {
+                        // Same anchoring rule as target: use the lower of
+                        // entry and now. If now has pulled below entry,
+                        // that's your actual worst-case downside to stop.
+                        const now = livePx;
+                        const anchor = (Number.isFinite(now) && now < p.entryPrice) ? now : p.entryPrice;
+                        const anchoredToNow = anchor === now && anchor !== p.entryPrice;
+                        const dist = ((p.stopPrice - anchor) / anchor) * 100;
+                        return (
+                          <div style={{ fontSize: 9.5 }}>({dist.toFixed(1)}%{anchoredToNow ? " from now" : ""})</div>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>
                       ${p.targetPrice?.toFixed(2) ?? "—"}
