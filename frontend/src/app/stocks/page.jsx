@@ -9840,12 +9840,21 @@ function DailyPickCard({ sessionToken, user }) {
                     <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534", fontVariantNumeric: "tabular-nums" }}>
                       ${p.targetPrice?.toFixed(2) ?? "—"}
                       {Number.isFinite(p.targetPrice) && (() => {
-                        const roi = ((p.targetPrice - p.entryPrice) / p.entryPrice) * 100;
+                        // Anchor the ROI to whichever is LOWER — entry or
+                        // current price. If the pick has pulled below entry,
+                        // "now" is the actionable buy price and the ROI to
+                        // target is bigger, so we show that. If it's above
+                        // entry, the original entry-based ROI narrative
+                        // stands and we keep the pick's stated upside.
+                        const now = livePx;
+                        const anchor = (Number.isFinite(now) && now < p.entryPrice) ? now : p.entryPrice;
+                        const anchoredToNow = anchor === now && anchor !== p.entryPrice;
+                        const roi = ((p.targetPrice - anchor) / anchor) * 100;
                         const h = Number.isFinite(p.horizonDays) && p.horizonDays > 0 ? p.horizonDays : null;
                         const ann = h ? (Math.pow(1 + roi / 100, 365 / h) - 1) * 100 : null;
                         return (
                           <>
-                            <div style={{ fontSize: 9.5 }}>(+{roi.toFixed(1)}%{h ? ` / ${h}d` : ""})</div>
+                            <div style={{ fontSize: 9.5 }}>(+{roi.toFixed(1)}%{h ? ` / ${h}d` : ""}{anchoredToNow ? " from now" : ""})</div>
                             {ann != null && <div style={{ fontSize: 9.5, color: "#14532d" }}>ann. +{ann.toFixed(0)}%</div>}
                           </>
                         );
