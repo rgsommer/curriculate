@@ -10023,7 +10023,25 @@ function DailyPickCard({ sessionToken, user }) {
     finally { setBusy(false); }
   };
 
-  const items = data?.items || [];
+  const rawItems = data?.items || [];
+  // Suppress stale duplicate recs once a position has been entered.
+  // Rule: for any base ticker with an entered open pick, hide OTHER
+  // open picks on that ticker — the earlier rec that led to the buy
+  // is what remains visible (as POSITION ENTERED), and any later or
+  // earlier still-open pick for the same name is just noise now that
+  // the position is on. Closed picks are kept (history matters).
+  const enteredBases = new Set(
+    rawItems
+      .filter((p) => p.status === "open" && p.enteredAt)
+      .map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, ""))
+  );
+  const items = rawItems.filter((p) => {
+    if (p.status !== "open") return true;
+    if (p.enteredAt) return true;
+    const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+    return !enteredBases.has(base);
+  });
+  const suppressedCount = rawItems.length - items.length;
   const s = data?.summary;
 
   return (
@@ -10215,6 +10233,11 @@ function DailyPickCard({ sessionToken, user }) {
         </div>
       )}
       {(!items || items.length === 0) && <div style={{ marginTop: 12, fontSize: 12, color: "var(--sa-muted)" }}>No picks yet. Click <b>Generate now</b> to seed today's picks; the cron takes over from tomorrow morning.</div>}
+      {suppressedCount > 0 && (
+        <div style={{ marginTop: 8, fontSize: 10.5, color: "var(--sa-muted)", fontStyle: "italic" }}>
+          {suppressedCount} duplicate open rec{suppressedCount === 1 ? "" : "s"} hidden — position already entered on those tickers.
+        </div>
+      )}
     </div>
   );
 }
