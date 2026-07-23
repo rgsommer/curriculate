@@ -1185,21 +1185,33 @@ router.get("/week-in-review", requireStocksAuth, async (req, res) => {
     const alphaVsXicPp = (changePct != null && xicWow != null) ? changePct - xicWow : null;
 
     // Forward look — open recs with horizonDays that expire within `days`.
+    // Dedupe by (base-ticker, action): the same trade idea often re-recs
+    // across multiple briefings (MSFT SELL at $397 → $388 → $380 over 3
+    // mornings) and each generation persists as its own open row. Keep
+    // only the freshest per pair so the forward-look reads as a
+    // deduplicated to-do list, not an audit trail.
     const forwardWindowEnd = new Date(now.getTime() + days * 86400000);
-    const expiringRecs = [];
+    const baseTicker = (t) => String(t || "").toUpperCase().replace(/\..*$/, "");
+    const freshestByPair = new Map();
     for (const r of openRecs) {
       const generated = new Date(r.generatedAt).getTime();
       const horizonMs = (r.horizonDays || 30) * 86400000;
       const expiresAt = new Date(generated + horizonMs);
-      if (expiresAt <= forwardWindowEnd) {
-        expiringRecs.push({
+      if (expiresAt > forwardWindowEnd) continue;
+      const key = `${baseTicker(r.ticker)}::${r.action}`;
+      const prior = freshestByPair.get(key);
+      if (!prior || generated > prior._generated) {
+        freshestByPair.set(key, {
           ticker: r.ticker, action: r.action, entryPrice: r.entryPrice,
           targetPrice: r.targetPrice, stopPrice: r.stopPrice,
           horizonDays: r.horizonDays, expiresAt,
+          _generated: generated,
         });
       }
     }
-    expiringRecs.sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+    const expiringRecs = [...freshestByPair.values()]
+      .map(({ _generated, ...rest }) => rest)
+      .sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
 
     res.json({
       ok: true,

@@ -54,6 +54,18 @@ const SWING_TICKERS = new Set([
   "BN", "BAM", "REI", "CAR",
   // Canadian tech blue chips (mature)
   "CSU", "OTEX",
+  // US mega-cap large-caps. Not broad ETFs (so not CORE), not meme /
+  // early-stage spec (so not SPEC). Single-name conviction trades that
+  // fit the SWING mandate: sized deliberately, held weeks-to-months,
+  // -8% hard stop. Without these here, the default fallback below drops
+  // every US individual stock into SPEC — which is what was silently
+  // pushing the SPEC sleeve from ~5% to 70%+ of book despite the user
+  // holding no actual meme/moonshot names.
+  "MSFT", "AAPL", "GOOGL", "GOOG", "AMZN", "META", "NVDA", "TSLA",
+  "BRK.B", "BRKB", "V", "MA", "JPM", "WMT", "HD", "PG", "JNJ", "KO",
+  "XOM", "CVX", "UNH", "COST", "AVGO", "AMD", "NFLX", "CRM", "ORCL",
+  "ADBE", "CSCO", "PEP", "TMO", "ABT", "MRK", "PFE", "LLY", "DIS",
+  "BAC", "WFC", "GS", "MS", "C",
 ]);
 
 const SPEC_TICKERS = new Set([

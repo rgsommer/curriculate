@@ -9712,6 +9712,13 @@ const SLEEVE_SWING_TICKERS = new Set([
   "ENB","TRP","CNQ","SU","CVE","IMO","TOU","ARX",
   "FTS","H","EMA","AQN","BCE","T","RCI","CP","CNR",
   "L","ATD","MG","CTC","WCN","GIB","BN","BAM","REI","CAR","CSU","OTEX",
+  // US mega-cap large-caps — single-name conviction trades, not spec.
+  // Mirrors backend stocksSleeveEnforcer.SWING_TICKERS.
+  "MSFT","AAPL","GOOGL","GOOG","AMZN","META","NVDA","TSLA",
+  "BRK.B","BRKB","V","MA","JPM","WMT","HD","PG","JNJ","KO",
+  "XOM","CVX","UNH","COST","AVGO","AMD","NFLX","CRM","ORCL",
+  "ADBE","CSCO","PEP","TMO","ABT","MRK","PFE","LLY","DIS",
+  "BAC","WFC","GS","MS","C",
 ]);
 const SLEEVE_SPEC_TICKERS = new Set([
   "DJT","DJTWW","GME","AMC","BBAI","SOUN","RIVN","LCID",
@@ -9915,8 +9922,12 @@ function WeekInReviewCard({ sessionToken }) {
                             <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: r.action === "BUY" ? "var(--sa-green-soft)" : "var(--sa-red-soft)", color: r.action === "BUY" ? "var(--sa-green)" : "var(--sa-red)" }}>{r.action}</span>
                           </td>
                           <td style={{ padding: "5px 8px", textAlign: "right" }}>${Number(r.entryPrice).toFixed(2)}</td>
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534" }}>{r.targetPrice != null ? `$${Number(r.targetPrice).toFixed(2)}` : "—"}</td>
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b" }}>{r.stopPrice != null ? `$${Number(r.stopPrice).toFixed(2)}` : "—"}</td>
+                          {/* SELL recs (trim/exit existing positions) legitimately
+                              have no target — the "target" for a SELL is exit at
+                              market. Rendering "$0.00" reads as a broken value;
+                              render "—" for zero or missing on either exit level. */}
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534" }}>{Number(r.targetPrice) > 0 ? `$${Number(r.targetPrice).toFixed(2)}` : "—"}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b" }}>{Number(r.stopPrice) > 0 ? `$${Number(r.stopPrice).toFixed(2)}` : "—"}</td>
                           <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{r.horizonDays}d</td>
                           <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{new Date(r.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
                         </tr>
