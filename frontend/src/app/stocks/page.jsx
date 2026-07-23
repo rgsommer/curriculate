@@ -2711,12 +2711,17 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
           ) : (
             <table className="sa-table" style={{ marginBottom: 0 }}>
               <thead><tr>
-                <th>Ticker</th><th>Qty</th><th>Price</th><th>CCY</th><th>Value (CAD)</th><th>% acct</th><th>% book</th><th></th>
+                <th>Ticker</th><th>Qty</th><th>Price</th><th>CCY</th><th>Basis</th><th>P/L %</th><th>P/L $</th><th>Value (CAD)</th><th>% acct</th><th>% book</th><th></th>
               </tr></thead>
               <tbody>
                 {items.map((p) => {
                   const v = valueOfPosition(p, fx);
                   const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+                  const basis = p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
+                  const pnlPct = (price != null && basis != null && basis > 0) ? ((price - basis) / basis) * 100 : null;
+                  const pnlCcy = (price != null && basis != null && basis > 0) ? (price - basis) * (p.qty || 0) : null;
+                  const pnlCad = pnlCcy != null ? (p.ccy === "USD" ? pnlCcy * fx : pnlCcy) : null;
+                  const pnlColor = pnlPct == null ? "inherit" : pnlPct > 0 ? "#166534" : pnlPct < 0 ? "#991b1b" : "inherit";
                   const q = tickerFilter.trim().toLowerCase();
                   const matches = q && String(p.ticker || "").toLowerCase().includes(q);
                   if (q && !matches) return null;
@@ -2726,6 +2731,9 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
                       <td>{p.qty.toLocaleString()}</td>
                       <td>{price != null ? price.toFixed(4) : "—"}</td>
                       <td>{p.ccy}</td>
+                      <td>{basis != null ? basis.toFixed(2) : <span className="sa-muted">—</span>}</td>
+                      <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "—"}</td>
+                      <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pnlCad != null ? <span className="sa-amount">{pnlCad >= 0 ? "+" : "−"}{fmtMoney(Math.abs(pnlCad), "CAD")}</span> : "—"}</td>
                       <td><span className="sa-amount">{fmtMoney(v.cad, "CAD")}</span></td>
                       <td>{equityCad > 0 ? ((v.cad / equityCad) * 100).toFixed(1) : "0.0"}%</td>
                       <td>{bookTotal > 0 ? ((v.cad / bookTotal) * 100).toFixed(1) : "0.0"}%</td>
