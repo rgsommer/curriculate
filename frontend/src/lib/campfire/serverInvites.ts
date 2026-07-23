@@ -305,18 +305,23 @@ export function cardThanksEmail(opts: {
 
 export function revealEmail(opts: { groupName: string; title: string; url: string }) {
   const { groupName, title, url } = opts;
-  const subject = `Results are in: "${title}" (${groupName})`;
-  const text = `Everyone's responded — the results for "${title}" in ${groupName} just unlocked!
+  // The reveal is the payoff — the moment everyone waited for. Make it feel like an
+  // event, and open a curiosity gap (the answers are now visible, together).
+  const subject = `👀 Everyone's in — "${title}" is revealed`;
+  const text = `The wait's over. Every last person has answered, so "${title}" in ${groupName} just opened up — see how everyone's answers came together.
 
-See the reveal: ${url}`;
+See what everyone said: ${url}
+
+This is the good part.`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">🎉</div>
-  <h1 style="font-size:22px; margin:8px 0;">Results are in!</h1>
-  <p style="color:#475569; margin:0 0 12px;">Everyone's responded — the reveal for <strong>"${escapeHtml(title)}"</strong> in <strong>${escapeHtml(groupName)}</strong> just unlocked.</p>
+  <h1 style="font-size:22px; margin:8px 0;">The wait&rsquo;s over</h1>
+  <p style="color:#475569; margin:0 0 12px;">Every last person has answered — so <strong>&ldquo;${escapeHtml(title)}&rdquo;</strong> in <strong>${escapeHtml(groupName)}</strong> just opened up. See how everyone&rsquo;s answers came together. 👀</p>
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See the reveal</a>
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what everyone said &rarr;</a>
   </p>
+  <p style="color:#64748b; font-size:13px; margin:0 0 12px;">This is the good part. 💛</p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
 </div>`.trim();
   return { subject, text, html };
@@ -552,25 +557,45 @@ export function activityDigestEmail(opts: {
       g.newEngagements.length,
     0
   );
-  const subject = `🔥 ${events} new thing${events === 1 ? "" : "s"} in your Campfire group${
-    groups.length === 1 ? "" : "s"
-  }`;
+  // Enticing, varied subject — a curiosity hook, not a count. Rotates with the day's
+  // activity so it doesn't read the same every morning.
+  const single = groups.length === 1 ? groups[0].name : null;
+  const subjectPool = single
+    ? [
+        `🔥 Something's waiting for you in ${single}`,
+        `🔥 ${single} is coming alive`,
+        `🔥 Your ${single} circle just grew`,
+        `🔥 Don't leave ${single} hanging`,
+      ]
+    : [
+        `🔥 Your Campfire groups are lighting up`,
+        `🔥 Your people showed up today`,
+        `🔥 There's a lot waiting for you`,
+      ];
+  const subject = subjectPool[events % subjectPool.length];
+
+  // Warm, curiosity-driven phrasing per item. Counts only — never leaks sealed content;
+  // the 👀 does the pulling, not a spoiler.
+  const respLine = (count: number) =>
+    count === 1 ? `someone just shared theirs 👀` : `${count} people have jumped in 👀`;
 
   const groupText = (g: (typeof groups)[number]) => {
     const lines: string[] = [`${g.emoji} ${g.name}`];
-    g.responses.forEach((r) =>
-      lines.push(`  • ${r.title} — ${r.count} new response${r.count === 1 ? "" : "s"}`)
-    );
-    g.newEngagements.forEach((e) => lines.push(`  • New: ${e.title}`));
+    g.responses.forEach((r) => lines.push(`  • ${r.title} — ${respLine(r.count)}`));
+    g.newEngagements.forEach((e) => lines.push(`  • ✨ ${e.title} — fresh and ready for you`));
     if (g.newMembers.length)
-      lines.push(`  • Joined: ${g.newMembers.join(", ")}`);
+      lines.push(`  • 👋 ${g.newMembers.join(", ")} just joined the circle`);
     return lines.join("\n");
   };
-  const text = `${hi ? hi + ",\n\n" : ""}Here's what happened in your Campfire groups today:
+  const text = `${hi ? hi + ",\n\n" : ""}Your people have been busy. Here's what's waiting in your Campfire ${
+    groups.length === 1 ? "group" : "groups"
+  }:
 
 ${groups.map(groupText).join("\n\n")}
 
-See it all: ${url}`;
+See what's waiting: ${url}
+
+Moments like these are best while they're fresh.`;
 
   const groupHtml = (g: (typeof groups)[number]) => {
     const rows: string[] = [];
@@ -578,21 +603,21 @@ See it all: ${url}`;
       rows.push(
         `<div style="color:#475569; font-size:14px; margin:0 0 3px;">${r.icon} ${escapeHtml(
           r.title
-        )} — <strong>${r.count}</strong> new response${r.count === 1 ? "" : "s"}</div>`
+        )} — ${respLine(r.count)}</div>`
       )
     );
     g.newEngagements.forEach((e) =>
       rows.push(
-        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">✨ New: ${e.icon} ${escapeHtml(
+        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">✨ ${e.icon} ${escapeHtml(
           e.title
-        )}</div>`
+        )} — fresh and ready for you</div>`
       )
     );
     if (g.newMembers.length)
       rows.push(
-        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">👋 Joined: ${escapeHtml(
+        `<div style="color:#475569; font-size:14px; margin:0 0 3px;">👋 ${escapeHtml(
           g.newMembers.join(", ")
-        )}</div>`
+        )} just joined the circle</div>`
       );
     return `
     <div style="margin:0 0 16px;">
@@ -605,12 +630,15 @@ See it all: ${url}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">🔥</div>
-  <h1 style="font-size:20px; margin:8px 0;">New activity in your groups</h1>
-  ${hi ? `<p style="color:#475569; margin:0 0 12px;">Hi ${escapeHtml(hi)}, here's today's recap:</p>` : ""}
+  <h1 style="font-size:20px; margin:8px 0;">Something's waiting for you</h1>
+  <p style="color:#475569; margin:0 0 12px;">${
+    hi ? `Hi ${escapeHtml(hi)} — your` : "Your"
+  } people have been busy. Here's what's waiting:</p>
   ${groups.map(groupHtml).join("")}
   <p style="text-align:center; margin:24px 0;">
-    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Open Campfire</a>
+    <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what&rsquo;s waiting &rarr;</a>
   </p>
+  <p style="color:#64748b; font-size:13px; margin:0 0 12px;">Moments like these are best while they&rsquo;re fresh. 💛</p>
   <p style="color:#94a3b8; font-size:12px; margin:0;">You can turn these digests off in the group's settings.</p>
 </div>`.trim();
   return { subject, text, html };
