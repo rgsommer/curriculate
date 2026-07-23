@@ -147,10 +147,21 @@ function sumShares(lots) {
 //                         holdings inside a Non-Spousal-type account. Default
 //                         true when accounts is passed.
 export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37, enabled = true, accounts = [], narrowSubset = null }) {
-  if (!enabled) return [];
-  if (!positions || positions.length === 0) return [];
+  // Diagnostic bucket — populated as we walk the filter chain so the
+  // caller can render "6 held → 4 in Non-Spousal → 2 SWING → 1 with
+  // 100+ sh → 0 with IV rank ≥ 70" when the result is empty. Non-empty
+  // results ignore the diagnostic; the block itself is the signal.
+  const diag = {
+    enabled, applyNarrow: null, heldCount: 0,
+    afterAccountFilter: 0, afterSleeveFilter: 0, afterShareCountGate: 0,
+    afterIvGate: 0, afterBasisGate: 0, produced: 0,
+    perTicker: [], // [{ticker, stage, note}]
+  };
+  if (!enabled) { diag.reason = "options-disabled"; return Object.assign([], { diagnostic: diag }); }
+  if (!positions || positions.length === 0) { diag.reason = "no-positions"; return Object.assign([], { diagnostic: diag }); }
 
   const applyNarrow = narrowSubset === null ? (accounts && accounts.length > 0) : !!narrowSubset;
+  diag.applyNarrow = applyNarrow;
   const nonSpousalIds = new Set(
     (accounts || []).filter(isNonSpousalAccount).map((a) => a.id)
   );
@@ -160,17 +171,25 @@ export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37, en
   // BEFORE checking gates so the same ticker held in RRSP and
   // Non-Spousal only "counts" from Non-Spousal shares.
   const lotsByTicker = new Map();
+  const droppedByAccount = new Set();
+  const droppedBySleeve = new Set();
   for (const p of positions) {
     const t = String(p.ticker || "").toUpperCase();
     if (!t) continue;
     if (applyNarrow) {
-      if (!nonSpousalIds.has(p.acct)) continue;
-      if (classifyPosition(p) !== "swing") continue;
+      if (!nonSpousalIds.has(p.acct)) { droppedByAccount.add(t); continue; }
+      if (classifyPosition(p) !== "swing") { droppedBySleeve.add(t); continue; }
     }
     if (!lotsByTicker.has(t)) lotsByTicker.set(t, []);
     lotsByTicker.get(t).push(p);
   }
   const heldTickers = [...lotsByTicker.keys()];
+  const uniquePositionTickers = new Set(positions.map((p) => String(p.ticker || "").toUpperCase()).filter(Boolean));
+  diag.heldCount = uniquePositionTickers.size;
+  diag.afterAccountFilter = uniquePositionTickers.size - droppedByAccount.size;
+  diag.afterSleeveFilter = heldTickers.length;
+  for (const t of droppedByAccount) diag.perTicker.push({ ticker: t, stage: "account", note: "not in Non-Spousal-type account" });
+  for (const t of droppedBySleeve) diag.perTicker.push({ ticker: t, stage: "sleeve", note: "not classified as SWING sleeve" });
 
   const out = [];
   await Promise.all(heldTickers.map(async (ticker) => {
@@ -179,15 +198,22 @@ export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37, en
       // Gate 1: enough shares for 1 contract (100 sh) within the
       // eligible lot set — not across the whole book.
       const shares = sumShares(lots);
-      if (shares < 100) return;
+      if (shares < 100) { diag.perTicker.push({ ticker, stage: "shares", note: `${shares} sh < 100 required for 1 contract` }); return; }
+      diag.afterShareCountGate++;
       // Gate 2: IV rank ≥ 70 (options are relatively rich).
       const opt = await getOptionsMetrics(ticker).catch(() => null);
-      if (!opt || !(opt.ivRankPct >= 70) || !Number.isFinite(opt.currentIVPct) || !Number.isFinite(opt.spot)) return;
+      if (!opt || !(opt.ivRankPct >= 70) || !Number.isFinite(opt.currentIVPct) || !Number.isFinite(opt.spot)) {
+        const iv = opt?.ivRankPct;
+        diag.perTicker.push({ ticker, stage: "iv", note: iv != null ? `IV rank ${iv.toFixed(0)} < 70` : "options metrics unavailable" });
+        return;
+      }
+      diag.afterIvGate++;
       // Gate 3: position is in an unrealized gain (avg basis exists and
       // spot > basis). If basis unknown, allow with a note.
       const basis = avgBasis(lots);
       const inGain = basis == null ? null : opt.spot > basis;
-      if (basis != null && !inGain) return;
+      if (basis != null && !inGain) { diag.perTicker.push({ ticker, stage: "basis", note: `spot $${opt.spot.toFixed(2)} ≤ basis $${basis.toFixed(2)} — position underwater; covered call would cap upside past basis` }); return; }
+      diag.afterBasisGate++;
 
       // Fetch chain to get available expirations, then pick the target
       // expiry ≥25 days out.
@@ -241,12 +267,44 @@ export async function computeOverlaySuggestions({ positions, fxUsdCad = 1.37, en
   // Rank by monthly yield desc so the briefing surfaces the fattest
   // premium first when there are multiple candidates.
   out.sort((a, b) => (b.monthlyYieldPct || 0) - (a.monthlyYieldPct || 0));
-  return out;
+  diag.produced = out.length;
+  return Object.assign(out, { diagnostic: diag });
+}
+
+// Human-readable summary of the overlay diagnostic. Rendered when the
+// suggestions array is empty so the briefing can say "no overlay today —
+// here's what dropped where" instead of a silent skip. That silent skip
+// was the reason the user asked "is options working?"
+export function formatOverlayEmptyDiagnostic(diag) {
+  if (!diag) return "";
+  if (diag.reason === "options-disabled") {
+    return `\nOPTIONS OVERLAY: skipped — Settings > Options Trading is OFF for this user. Enable it to surface covered-call ideas on Non-Spousal SWING-sleeve holdings.`;
+  }
+  if (diag.reason === "no-positions") {
+    return `\nOPTIONS OVERLAY: skipped — no positions on the book.`;
+  }
+  const funnelLine = `  filter chain: ${diag.heldCount} held → ${diag.afterAccountFilter} in Non-Spousal → ${diag.afterSleeveFilter} SWING sleeve → ${diag.afterShareCountGate} with 100+ sh → ${diag.afterIvGate} with IV rank ≥ 70 → ${diag.afterBasisGate} in unrealized gain → ${diag.produced} suggestion${diag.produced === 1 ? "" : "s"}`;
+  const perTicker = (diag.perTicker || []).slice(0, 12);
+  const lines = [
+    `\nOPTIONS OVERLAY: no eligible covered-call suggestions today. Not a bug — the narrow subset (Non-Spousal + SWING sleeve + 100+ sh + IV rank ≥ 70 + in-gain) is a strict filter. SKIP section 6a in the briefing; do NOT invent any covered-call ideas outside this diagnostic.`,
+    funnelLine,
+  ];
+  if (perTicker.length > 0) {
+    lines.push(`  per-ticker drop reasons (up to 12):`);
+    for (const r of perTicker) {
+      lines.push(`    - ${r.ticker}: dropped at ${r.stage} — ${r.note}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 // Format a compact OPTIONS OVERLAY block for the briefing prompt.
 export function formatOverlayBlock(suggestions) {
-  if (!suggestions || suggestions.length === 0) return "";
+  if (!suggestions || suggestions.length === 0) {
+    // Render the empty-state diagnostic so the AI can surface "no
+    // overlay today — here's why" instead of writing nothing.
+    return formatOverlayEmptyDiagnostic(suggestions?.diagnostic);
+  }
   const lines = [`\nOPTIONS OVERLAY (IV rank ≥ 70 on held names — options are rich; premium worth selling):`];
   for (const s of suggestions.slice(0, 5)) {
     const yieldPct = Number.isFinite(s.monthlyYieldPct) ? `${s.monthlyYieldPct.toFixed(2)}%/mo` : "—";
