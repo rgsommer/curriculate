@@ -24,6 +24,7 @@ import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
 import { writeDailySnapshot } from "../routes/stocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
+import StocksBriefingHistory from "../models/StocksBriefingHistory.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
@@ -882,7 +883,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -1077,6 +1078,7 @@ ${formatOverlayBlock(overlaySuggestions)}
 ${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
 ${formatAttributionBlock(attribution)}
 ${formatHorizonReviewBlock(horizonRows)}
+${formatBriefingHistoryBlock(briefingHistory)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
@@ -1175,6 +1177,77 @@ export async function saveAdviceSnapshot({ email, markdown, source }) {
   } catch (e) {
     console.warn("[advice-snapshot] save failed:", e?.message);
   }
+  // Also append to briefing history so the next briefing's prompt can
+  // reference yesterday's calls. Separate model on purpose — snapshot
+  // overwrites; history keeps. Extract just section 2's per-ticker
+  // calls (that's where HOLD/TRIM/ADD/EXIT rationale lives) so the
+  // replay stays small.
+  try {
+    const callsExcerpt = extractSignalsPerHoldingSection(markdown).slice(0, 4000);
+    await StocksBriefingHistory.create({
+      email: email.toLowerCase(),
+      generatedAt: new Date(),
+      source: source || "cron",
+      markdown: markdown.slice(0, 20000),
+      callsExcerpt,
+    });
+  } catch (e) {
+    console.warn("[briefing-history] save failed:", e?.message);
+  }
+}
+
+// Pull section 2 ("Signals per holding") out of a briefing markdown —
+// that's where the AI writes the per-ticker HOLD/TRIM/ADD/EXIT calls +
+// rationale we want to replay into the next briefing. Falls back to
+// the full text truncated if the header isn't found.
+function extractSignalsPerHoldingSection(md) {
+  if (!md) return "";
+  const startPatterns = [
+    /## +2\..*Signals per holding[^\n]*\n/i,
+    /## +Signals per holding[^\n]*\n/i,
+    /##.*Signals per holding[^\n]*\n/i,
+  ];
+  let startIdx = -1;
+  for (const p of startPatterns) {
+    const m = md.match(p);
+    if (m) { startIdx = m.index + m[0].length; break; }
+  }
+  if (startIdx < 0) return md.slice(0, 3000);
+  const rest = md.slice(startIdx);
+  const nextHeader = rest.match(/\n## +/);
+  const end = nextHeader ? nextHeader.index : Math.min(rest.length, 4000);
+  return rest.slice(0, end).trim();
+}
+
+// Pull the last N briefings for a user, newest first. Returns an array
+// of { generatedAt, callsExcerpt, source }. Used by the prompt builder
+// to inject continuity context. Never throws — just returns [].
+export async function getRecentBriefingHistory(email, limit = 2) {
+  try {
+    const rows = await StocksBriefingHistory.find({ email: email.toLowerCase() })
+      .sort({ generatedAt: -1 })
+      .limit(limit)
+      .lean();
+    return rows;
+  } catch (e) {
+    console.warn("[briefing-history] fetch failed:", e?.message);
+    return [];
+  }
+}
+
+// Format the recent-briefings block for injection into the next prompt.
+function formatBriefingHistoryBlock(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return "";
+  const now = Date.now();
+  const lines = ["\nPREVIOUS BRIEFINGS (your recent per-ticker calls — REFERENCE these before writing today's calls):"];
+  for (const r of rows) {
+    const ageH = Math.max(1, Math.round((now - new Date(r.generatedAt).getTime()) / 3600000));
+    const when = new Date(r.generatedAt).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+    lines.push(`\n--- ${when} (${ageH}h ago, ${r.source}) ---`);
+    lines.push(r.callsExcerpt || "(no signals excerpt captured)");
+  }
+  lines.push("\nWhen your call on a ticker today matches your prior call above, say so briefly (\"still HOLD — no thesis change\"). When you're changing your call from what you said yesterday or the day before, name the specific NEW information that justifies the change. Reversing without a stated new trigger is the churn pattern we're eliminating.");
+  return lines.join("\n");
 }
 
 // Parse trade recommendations from the briefing text and save them for the
@@ -1415,6 +1488,10 @@ export async function generateBriefing(profile) {
     console.warn("[computeHorizonReview] warn:", e?.message);
     return [];
   });
+  // Recent briefing history — so the AI can cite yesterday's calls
+  // instead of pivoting arbitrarily. Pulls the last 2 briefings for
+  // this user (source-agnostic — cron, on-demand, intraday all count).
+  const briefingHistory = await getRecentBriefingHistory(profile.email, 2);
   // Idempotently persist daily picks. The daily-pick cron may have already
   // written today's rows, and briefing preview may fire multiple times
   // per day — dedupe by (email, ticker, ymd) so a scanning user doesn't
@@ -1493,7 +1570,7 @@ export async function generateBriefing(profile) {
       : Promise.resolve(null),
   ]);
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows);
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
