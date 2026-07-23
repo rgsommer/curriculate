@@ -44,18 +44,36 @@ function accountsHoldingTicker(profile, ticker) {
 }
 
 // Default account for a fresh BUY (no existing holding to infer from).
-// Falls back to the first account named "Non-Spousal" or, failing that,
-// the first account with matching-currency cash available. Last resort:
-// null (caller flags "needs review").
+//
+// Currency-aware ranking: pick the account whose matching-currency cash
+// is highest, since that's the account that actually has the money to
+// fund the buy. Non-Spousal is preferred only when CAD-account funding
+// is tied — the previous "always Non-Spousal first" default silently
+// misfiled every fresh CAD-listing buy (XIU, XIC, VFV, etc.) into
+// Non-Spousal USD, which was the root cause of the +284 XIU / −$14,861
+// USD mess.
+//
+// Returns null when nothing has meaningful matching-currency cash;
+// caller flags "needs review" rather than force a wrong default.
 function inferAccountForFreshBuy(profile, currency) {
-  const nonSpousal = (profile.accounts || []).find(a =>
-    /non.?spousal/i.test(a.name) && !/rrsp|tfsa|resp|fhsa/i.test(a.name)
-  );
-  if (nonSpousal) return { id: nonSpousal.id, name: nonSpousal.name };
   const cashKey = currency === "USD" ? "cashUsd" : "cashCad";
-  const funded = (profile.accounts || []).find(a => (a[cashKey] || 0) > 100);
-  if (funded) return { id: funded.id, name: funded.name };
-  return null;
+  const candidates = (profile.accounts || [])
+    .map(a => ({ a, cash: a[cashKey] || 0 }))
+    .filter(x => x.cash > 100)
+    .sort((x, y) => y.cash - x.cash);
+  if (candidates.length === 0) return null;
+  // Prefer whichever has the most matching-currency cash. Ties broken
+  // by Non-Spousal (for CAD ties this keeps existing behavior on the
+  // Non-Spousal cash sleeve; for USD ties same).
+  const top = candidates[0];
+  const secondHasSameCash = candidates[1] && Math.abs(candidates[1].cash - top.cash) < 100;
+  if (secondHasSameCash) {
+    const nonSpousalTop = candidates.find(x =>
+      /non.?spousal/i.test(x.a.name) && !/rrsp|tfsa|resp|fhsa/i.test(x.a.name)
+    );
+    if (nonSpousalTop) return { id: nonSpousalTop.a.id, name: nonSpousalTop.a.name };
+  }
+  return { id: top.a.id, name: top.a.name };
 }
 
 async function findMatchingOpenRec(email, alert) {

@@ -27,6 +27,33 @@ import { applyReconciledTrade, backfillTradeToPortfolio } from "./stocksTradeApp
 
 const MAX_MESSAGES_PER_TICK = 25;
 
+// Tickers that ONLY list on Canadian exchanges — used to infer CAD on
+// subject-line-only alerts where the CIBC template didn't carry the
+// exchange. Mirrors the CORE + SWING Canadian sets from
+// stocksSleeveEnforcer.js. Kept as a plain Set so the check is O(1) in
+// the hot poll path. Keep in sync when adding new Canadian holdings.
+const KNOWN_CANADIAN_ONLY_TICKERS = new Set([
+  // Canadian broad-market ETFs
+  "XIU","XIC","VCN","XEQT","XGRO","XBAL","VBAL","VGRO","VEQT",
+  "VFV","XUS","VUN","XUU",
+  // Canadian bond ETFs
+  "XBB","VAB","ZAG",
+  // Canadian banks
+  "RY","TD","BMO","BNS","CM","NA","CWB",
+  // Canadian insurers
+  "MFC","SLF","IFC","GWO",
+  // Canadian energy majors
+  "ENB","TRP","CNQ","SU","CVE","IMO","TOU","ARX",
+  // Canadian utilities / telecom / rails
+  "FTS","H","EMA","AQN","BCE","T","RCI","CP","CNR",
+  // Canadian consumer / industrial blue chips
+  "L","ATD","MG","CTC","WCN","GIB",
+  // Canadian real estate + Brookfield
+  "BN","BAM","REI","CAR",
+  // Canadian tech blue chips
+  "CSU","OTEX",
+]);
+
 // Connect + login, then run `fn(client)`. Always closes the connection.
 async function withImap(integration, fn) {
   const password = decryptSecret(integration.envelopePassword);
@@ -126,13 +153,23 @@ export async function pollUserMailbox(userEmail) {
           const bodyText = parsed.text || (parsed.html || "").replace(/<[^>]+>/g, " ");
           const alert = parseCibcAlert(bodyText, subj);
           if (!alert) { skipped.push({ uid, reason: "not-a-cibc-alert", subject: subj, from, bodyPreview: bodyText.slice(0, 200).replace(/\s+/g, " ") }); highWater = Math.max(highWater, uid); continue; }
-          // Subject-only parse returns currency=null; infer from held
-          // position (a ticker held with ccy=CAD/USD is the ground truth).
-          // Falls back to USD when the ticker isn't held anywhere.
+          // Subject-only parse returns currency=null; infer in priority:
+          //   1. A held position with ccy=CAD/USD is ground truth.
+          //   2. A known-Canadian-only ticker (XIU, XIC, VFV, ENB, SU,
+          //      CNQ, RY, TD, etc.) → CAD. Prevents the "fresh XIU alert
+          //      defaults to USD and lands in Non-Spousal USD sub"
+          //      failure mode that misplaced 284 sh XIU in the RRSP.
+          //   3. USD as the last-resort fallback for unknown symbols.
           if (alert.currency == null) {
             const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
             const held = (profile.positions || []).find(p => baseOf(p.ticker) === baseOf(alert.ticker));
-            alert.currency = held?.ccy || "USD";
+            if (held?.ccy) {
+              alert.currency = held.ccy;
+            } else if (KNOWN_CANADIAN_ONLY_TICKERS.has(baseOf(alert.ticker))) {
+              alert.currency = "CAD";
+            } else {
+              alert.currency = "USD";
+            }
           }
           const occurredAt = parsed.date || msg.envelope?.date || new Date();
 
