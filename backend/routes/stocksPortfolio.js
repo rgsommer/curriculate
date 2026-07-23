@@ -43,6 +43,7 @@ import { getFedLiquidity } from "../services/stocksFedLiquidity.js";
 import { computePortfolioVar, computeLossCooldown } from "../services/stocksRiskBudget.js";
 import { getTechnicals } from "../services/stocksTechnicals.js";
 import { analyseTradeCosts } from "../services/stocksTradeCostAnalysis.js";
+import { findDuplicateJournalGroups, deleteTradeWithReversal } from "../services/stocksJournalAudit.js";
 
 const router = express.Router();
 
@@ -1058,6 +1059,56 @@ router.get("/tca", requireStocksAuth, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error("stocks-portfolio tca error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/journal-audit
+// Duplicate-journal audit — clusters recorded trades by fingerprint
+// (email + ticker + account + side + shares within 3 days) so
+// duplicates show up as groups the trader can prune. Query: ?days=90.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/journal-audit", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.max(7, Math.min(365, parseInt(req.query.days, 10) || 90));
+    const groups = await findDuplicateJournalGroups(req.stocksUser.email, { days });
+    res.json({ ok: true, days, groups, groupCount: groups.length });
+  } catch (err) {
+    console.error("stocks-portfolio journal-audit error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/journal-audit/delete
+// Body: { tradeIds: [] }. Reverses each trade's applied legs from
+// positions + cash, then deletes the journal doc. Applies serially
+// so a later reversal sees the cumulative state.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/journal-audit/delete", requireStocksAuth, async (req, res) => {
+  try {
+    const { tradeIds } = req.body || {};
+    if (!Array.isArray(tradeIds) || tradeIds.length === 0) {
+      return res.status(400).json({ error: "tradeIds[] required" });
+    }
+    const results = [];
+    for (const id of tradeIds) {
+      if (!/^[a-f0-9]{24}$/i.test(String(id))) {
+        results.push({ tradeId: id, ok: false, error: "invalid id" });
+        continue;
+      }
+      try {
+        const r = await deleteTradeWithReversal(req.stocksUser.email, id);
+        results.push({ tradeId: id, ok: true, ...r });
+      } catch (e) {
+        results.push({ tradeId: id, ok: false, error: e?.message || "reversal failed" });
+      }
+    }
+    const succeeded = results.filter(r => r.ok).length;
+    res.json({ ok: true, results, succeeded, failed: results.length - succeeded });
+  } catch (err) {
+    console.error("stocks-portfolio journal-audit/delete error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

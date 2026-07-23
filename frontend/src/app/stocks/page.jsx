@@ -4133,6 +4133,52 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setTesting(false); }
   };
 
+  // Duplicate-journal audit state — populated by GET /journal-audit
+  // and consumed by the audit expand section. Selection is a Set of
+  // trade _ids the user has ticked for deletion.
+  const [audit, setAudit] = useState(null);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditSelected, setAuditSelected] = useState(new Set());
+  const [deletingDupes, setDeletingDupes] = useState(false);
+  const showAudit = async () => {
+    setAuditLoading(true);
+    setAudit(null);
+    setAuditSelected(new Set());
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/journal-audit?days=90`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setAudit(j);
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Audit failed: ${e?.message || "unknown"}` });
+    } finally { setAuditLoading(false); }
+  };
+  const deleteSelectedDuplicates = async () => {
+    const ids = [...auditSelected];
+    if (ids.length === 0) return;
+    if (!window.confirm(`Delete ${ids.length} trade${ids.length === 1 ? "" : "s"} and REVERSE their position + cash mutations?\n\nThis is irreversible. The affected positions should snap back to what they'd be without those trades. Continue?`)) return;
+    setDeletingDupes(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/journal-audit/delete`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeIds: ids }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setBanner({ kind: j.failed > 0 ? "err" : "ok", msg: `Duplicates deleted: ${j.succeeded} ok${j.failed > 0 ? `, ${j.failed} failed (over-sell on reversal — leave those alone)` : ""}` });
+      // Re-run audit + reload profile so positions reflect the changes.
+      await showAudit();
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Delete failed: ${e?.message || "unknown"}` });
+    } finally { setDeletingDupes(false); }
+  };
+
   // Read-only journal snapshot — hits backfill in dry-run so the user
   // can see, at a glance, how many poller trades are stuck and why
   // without having to run an actual apply.
@@ -4472,8 +4518,74 @@ function EmailIntegrationCard({ sessionToken }) {
             <button className="sa-btn" onClick={backfillPositions} disabled={backfilling}>{backfilling ? "Backfilling…" : "Backfill positions"}</button>
             <button className="sa-btn" onClick={retryNeedsReview} disabled={retrying} title="Re-run reconciler over stuck needs-review trades using improved account-inference. Promotes to auto + applies positions when it can now resolve them.">{retrying ? "Retrying…" : "Retry needs-review"}</button>
             <button className="sa-btn" onClick={showJournalState} disabled={snapshotting} title="Read-only snapshot: how many CIBC-email trades are in the journal, how many are applied vs stuck, and the newest few needs-review samples.">{snapshotting ? "Reading…" : "Journal state"}</button>
+            <button className="sa-btn" onClick={showAudit} disabled={auditLoading} title="Scan the trade journal for duplicates — same email + ticker + account + side + shares within 3 days. Delete duplicates in bulk with automatic position + cash reversal to repair the book.">{auditLoading ? "Auditing…" : "Find duplicates"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
+          {audit && (
+            <div style={{ marginTop: 10, padding: "12px 14px", background: audit.groupCount === 0 ? "#dcfce7" : "#fee2e2", border: `1px solid ${audit.groupCount === 0 ? "#86efac" : "#fecaca"}`, borderRadius: 8, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8, color: audit.groupCount === 0 ? "#166534" : "#7f1d1d" }}>
+                {audit.groupCount === 0
+                  ? "✓ No duplicate trades detected in the last " + audit.days + " days."
+                  : `⚠ ${audit.groupCount} duplicate cluster${audit.groupCount === 1 ? "" : "s"} found in the last ${audit.days} days · ${audit.groups.reduce((s, g) => s + g.trades.length, 0)} total trades in these clusters`}
+              </div>
+              {audit.groupCount > 0 && (
+                <div style={{ color: "#7f1d1d", marginBottom: 10 }}>
+                  Each cluster is a set of trades with identical fingerprint (ticker + account + side + shares) within 3 days. Almost certainly the same real trade recorded multiple times by the poller. Select the ones to <b>DELETE</b> — the app will reverse each deleted trade's positions + cash so the book heals as duplicates are pruned. Keep at least ONE per cluster (usually the earliest, or the one with a linked rec).
+                </div>
+              )}
+              {audit.groups.map((g, gi) => (
+                <div key={gi} style={{ marginBottom: 10, padding: 8, background: "white", border: "1px solid #fecaca", borderRadius: 6 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                    {g.fingerprint.side} {g.fingerprint.shares} {g.fingerprint.tickerBase} · {g.accountName} · {g.trades.length} copies span {g.spanHours}h
+                  </div>
+                  {g.trades.map((t, ti) => {
+                    const isSelected = auditSelected.has(t._id);
+                    return (
+                      <div key={t._id} style={{ padding: "4px 0", borderTop: ti === 0 ? "none" : "1px dashed #fecaca", display: "flex", alignItems: "flex-start", gap: 8 }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setAuditSelected(prev => {
+                              const next = new Set(prev);
+                              if (next.has(t._id)) next.delete(t._id); else next.add(t._id);
+                              return next;
+                            });
+                          }}
+                          style={{ marginTop: 3, width: 14, height: 14, accentColor: "#ef4444" }}
+                        />
+                        <div style={{ flex: 1 }}>
+                          <div><b>{t.leg}</b> · {new Date(t.executedAt).toLocaleString()}</div>
+                          <div style={{ color: "#6b7280", fontSize: 11 }}>
+                            {t.status || "—"} · {t.source || "manual"} · {t.positionApplied ? "positions applied" : "positions NOT applied"}
+                            {t.linkedAdviceRecId && <span> · <b style={{ color: "#065f46" }}>linked to advice rec</b></span>}
+                            {t.linkedDailyPickId && <span> · <b style={{ color: "#065f46" }}>linked to daily pick</b></span>}
+                          </div>
+                          {t.notes && <div style={{ color: "#6b7280", fontSize: 11, fontStyle: "italic" }}>{t.notes}</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+              {audit.groupCount > 0 && (
+                <div style={{ display: "flex", gap: 8, marginTop: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    className="sa-btn danger"
+                    onClick={deleteSelectedDuplicates}
+                    disabled={deletingDupes || auditSelected.size === 0}
+                    title="Delete each selected trade AND reverse its position + cash mutation on the portfolio."
+                  >
+                    {deletingDupes ? "Deleting…" : `Delete ${auditSelected.size} selected + reverse`}
+                  </button>
+                  <button className="sa-btn" onClick={() => setAuditSelected(new Set())} disabled={auditSelected.size === 0}>Clear selection</button>
+                  <span className="sa-muted" style={{ fontSize: 11 }}>
+                    Suggestion: for each cluster, KEEP the earliest (or the one linked to an advice rec) and delete the rest.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
           {snapshot && (
             <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--sa-panel-2)", borderRadius: 8, fontSize: 12 }}>
               <div style={{ fontWeight: 600, marginBottom: 6 }}>Journal state (read-only)</div>
