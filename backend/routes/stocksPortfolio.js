@@ -34,6 +34,7 @@ import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/stocksEncryption.js";
 import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
 import { computeHorizonReview } from "../services/stocksHorizonReview.js";
+import StocksDailyPick from "../models/StocksDailyPick.js";
 
 const router = express.Router();
 
@@ -679,6 +680,105 @@ router.get("/attribution", requireStocksAuth, async (req, res) => {
     res.json({ ok: true, attribution: att });
   } catch (err) {
     console.error("stocks-portfolio attribution error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/setup-scorecard
+// Setup-level ex-ante scorecard. Aggregates every CLOSED StocksDailyPick
+// (status: target-hit / stop-hit / horizon-exit) by setupName and
+// reports trades, wins, win rate, avg gain, avg win, avg loss, and
+// expectancy per setup. Open picks are excluded — the whole point of
+// this surface is honest realized-signal quality, not mark-to-market
+// noise on positions that haven't closed yet.
+//
+// Filter: default 365-day lookback via ?days=365, min sample size 3 to
+// surface a row (small samples are noise; ?min=1 opts in).
+// ──────────────────────────────────────────────────────────────────────
+router.get("/setup-scorecard", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.max(30, Math.min(1825, parseInt(req.query.days, 10) || 365));
+    const minSample = Math.max(1, Math.min(20, parseInt(req.query.min, 10) || 3));
+    const since = new Date(Date.now() - days * 86400000);
+    const picks = await StocksDailyPick.find({
+      email: req.stocksUser.email,
+      status: { $in: ["target-hit", "stop-hit", "horizon-exit"] },
+      exitDate: { $gte: since },
+      pnlPct: { $ne: null },
+      setupName: { $ne: null, $ne: "" },
+    }).sort({ exitDate: -1 }).lean();
+
+    const bySetup = new Map();
+    for (const p of picks) {
+      const key = p.setupName || "(unlabeled)";
+      if (!bySetup.has(key)) {
+        bySetup.set(key, { setupName: key, trades: 0, wins: 0, losses: 0, gains: [], winGains: [], lossGains: [], samples: [] });
+      }
+      const row = bySetup.get(key);
+      row.trades++;
+      row.gains.push(p.pnlPct);
+      if (p.pnlPct > 0) { row.wins++; row.winGains.push(p.pnlPct); }
+      else { row.losses++; row.lossGains.push(p.pnlPct); }
+      if (row.samples.length < 5) {
+        row.samples.push({
+          ticker: p.ticker,
+          pickDate: p.pickDate,
+          exitDate: p.exitDate,
+          exitStatus: p.status,
+          pnlPct: p.pnlPct,
+        });
+      }
+    }
+
+    const mean = (arr) => arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : null;
+    const rows = [];
+    let overallTrades = 0, overallWins = 0, overallGainSum = 0, overallGainCount = 0;
+    for (const r of bySetup.values()) {
+      if (r.trades < minSample) continue;
+      const winRate = r.wins / r.trades;
+      const avgGainPct = mean(r.gains);
+      const avgWinPct = mean(r.winGains);
+      const avgLossPct = mean(r.lossGains); // negative
+      // Expectancy = p(win) × avg_win + p(loss) × avg_loss. Since
+      // avg_loss is already signed negative, this composes cleanly.
+      const expectancyPct = (winRate * (avgWinPct || 0)) + ((1 - winRate) * (avgLossPct || 0));
+      rows.push({
+        setupName: r.setupName,
+        trades: r.trades,
+        wins: r.wins,
+        losses: r.losses,
+        winRatePct: winRate * 100,
+        avgGainPct,
+        avgWinPct,
+        avgLossPct,
+        expectancyPct,
+        samples: r.samples,
+      });
+      overallTrades += r.trades;
+      overallWins += r.wins;
+      overallGainSum += r.gains.reduce((s, x) => s + x, 0);
+      overallGainCount += r.gains.length;
+    }
+    // Rank by expectancy descending so the strongest-edge setups
+    // surface at the top of the trader's decision.
+    rows.sort((a, b) => (b.expectancyPct || -Infinity) - (a.expectancyPct || -Infinity));
+
+    res.json({
+      ok: true,
+      windowDays: days,
+      minSampleSize: minSample,
+      totalClosedPicks: picks.length,
+      setups: rows,
+      overall: overallTrades > 0 ? {
+        trades: overallTrades,
+        winRatePct: (overallWins / overallTrades) * 100,
+        avgGainPct: overallGainCount > 0 ? overallGainSum / overallGainCount : null,
+      } : null,
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("stocks-portfolio setup-scorecard error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

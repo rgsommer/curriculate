@@ -7471,6 +7471,7 @@ function PerformanceView({ sessionToken }) {
   const [scorecard, setScorecard] = useState(null);
   const [scorecardDays, setScorecardDays] = useState(30);
   const [discoveryScorecard, setDiscoveryScorecard] = useState(null);
+  const [setupScorecard, setSetupScorecard] = useState(null);
   const [dataStatus, setDataStatus] = useState(null);
   const [tradesActivity, setTradesActivity] = useState(null);
   const [busy, setBusy] = useState(true);
@@ -7602,6 +7603,7 @@ function PerformanceView({ sessionToken }) {
       {/* ── DISCOVERY SCORECARD: did the Discover engine actually find winners? ── */}
       <TradesActivityCard trades={tradesActivity} />
       <DiscoveryScorecardCard data={discoveryScorecard} />
+      <SetupScorecardCard data={setupScorecard} sessionToken={sessionToken} onLoad={setSetupScorecard} />
 
       {/* ── Advisor scorecard ── */}
       <div className="sa-card" style={{ marginBottom: 18 }}>
@@ -9932,6 +9934,132 @@ function TradesActivityCard({ trades }) {
         <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>
           Most-traded (1y): {top.map(([t, n]) => <span key={t} style={{ marginRight: 12 }}><b style={{ color: "var(--sa-text-2)" }}>{t}</b> ×{n}</span>)}
         </div>
+      )}
+    </div>
+  );
+}
+
+// Setup expectancy scorecard — aggregates every CLOSED daily pick by
+// setupName (bull flag, pocket pivot, VCP, coiled spring, etc.) and
+// reports the honest ex-ante edge per setup. Answers the trader's real
+// question: "which setups deserve more capital and which should I
+// retire?" Only closed picks (target/stop/horizon-exit) count — no
+// mark-to-market inflation on positions that haven't paid out.
+function SetupScorecardCard({ data, sessionToken, onLoad }) {
+  const [days, setDays] = useState(365);
+  const [minSample, setMinSample] = useState(3);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `${BACKEND_URL}/api/stocks-portfolio/setup-scorecard?days=${days}&min=${minSample}`,
+          { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } }
+        );
+        if (!r.ok) throw new Error(`${r.status}`);
+        const j = await r.json();
+        if (!cancelled) onLoad?.(j);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "load failed");
+      } finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, days, minSample, onLoad]);
+
+  const fmtPct = (n) => n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+  const cellPnl = (n) => ({
+    color: n == null ? "var(--sa-muted)" : n > 0 ? "var(--sa-green)" : n < 0 ? "#b91c1c" : "inherit",
+    fontVariantNumeric: "tabular-nums",
+  });
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <h3>Setup scorecard — which setups actually generate edge</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+        Every CLOSED daily pick (target-hit / stop-hit / horizon-exit) grouped by named setup. Expectancy = <code>P(win) × avg win + P(loss) × avg loss</code>. Rows with fewer than the minimum sample size are hidden as noise. This is the honest ex-ante edge test — no cherry-picking, no mark-to-market on open positions.
+      </div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <label>Window:{" "}
+          <select value={days} onChange={(e) => setDays(parseInt(e.target.value, 10))} style={{ fontSize: 12 }}>
+            <option value={90}>90d</option>
+            <option value={180}>180d</option>
+            <option value={365}>1y</option>
+            <option value={730}>2y</option>
+            <option value={1825}>5y</option>
+          </select>
+        </label>
+        <label>Min sample:{" "}
+          <select value={minSample} onChange={(e) => setMinSample(parseInt(e.target.value, 10))} style={{ fontSize: 12 }}>
+            <option value={1}>1</option>
+            <option value={3}>3 (default)</option>
+            <option value={5}>5</option>
+            <option value={10}>10</option>
+          </select>
+        </label>
+        {data?.totalClosedPicks != null && (
+          <span className="sa-muted">
+            {data.totalClosedPicks} closed picks in the {days}d window · {data.setups?.length || 0} setup{data.setups?.length === 1 ? "" : "s"} shown
+          </span>
+        )}
+      </div>
+      {busy && <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>}
+      {err && <div className="sa-err" style={{ fontSize: 12 }}>Failed to load: {err}</div>}
+      {!busy && !err && data && (
+        data.setups?.length ? (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", fontSize: 13, fontVariantNumeric: "tabular-nums", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "var(--sa-panel-2)", color: "var(--sa-muted)", fontSize: 12 }}>
+                  <th style={{ textAlign: "left", padding: "6px 10px" }}>Setup</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Trades</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Wins</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Win rate</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Avg gain</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Avg win</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Avg loss</th>
+                  <th style={{ textAlign: "right", padding: "6px 10px" }}>Expectancy</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.setups.map((s) => (
+                  <tr key={s.setupName} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>{s.setupName}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right" }}>{s.trades}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right" }}>{s.wins}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right" }}>{s.winRatePct.toFixed(0)}%</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right", ...cellPnl(s.avgGainPct) }}>{fmtPct(s.avgGainPct)}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right", ...cellPnl(s.avgWinPct) }}>{fmtPct(s.avgWinPct)}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right", ...cellPnl(s.avgLossPct) }}>{fmtPct(s.avgLossPct)}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right", fontWeight: 700, ...cellPnl(s.expectancyPct) }}>{fmtPct(s.expectancyPct)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {data.overall && (
+                <tfoot>
+                  <tr style={{ borderTop: "2px solid var(--sa-border)", background: "var(--sa-panel-2)", fontSize: 12 }}>
+                    <td style={{ padding: "6px 10px", fontWeight: 600 }}>Overall (across all setups)</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right" }}>{data.overall.trades}</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right" }}>—</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right" }}>{data.overall.winRatePct.toFixed(0)}%</td>
+                    <td style={{ padding: "6px 10px", textAlign: "right", ...cellPnl(data.overall.avgGainPct) }}>{fmtPct(data.overall.avgGainPct)}</td>
+                    <td colSpan={3} />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        ) : (
+          <div className="sa-muted" style={{ padding: 20, fontSize: 13 }}>
+            {data.totalClosedPicks === 0
+              ? "No closed daily picks yet in this window — the setup scorecard needs picks that hit target, stop, or horizon-expire to compute an ex-ante edge. Come back once the daily-pick engine has cycled a few times."
+              : `No setups yet with ≥ ${minSample} closed picks. Lower the Min sample filter to see smaller-sample rows, or expand the window.`}
+          </div>
+        )
       )}
     </div>
   );
