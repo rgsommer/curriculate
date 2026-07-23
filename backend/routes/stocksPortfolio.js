@@ -31,6 +31,7 @@ import StocksRecIntent from "../models/StocksRecIntent.js";
 import StocksEmailIntegration from "../models/StocksEmailIntegration.js";
 import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
+import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/stocksEncryption.js";
 import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
 import { computeHorizonReview } from "../services/stocksHorizonReview.js";
@@ -1110,6 +1111,121 @@ router.post("/journal-audit/delete", requireStocksAuth, async (req, res) => {
     res.json({ ok: true, results, succeeded, failed: results.length - succeeded });
   } catch (err) {
     console.error("stocks-portfolio journal-audit/delete error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/week-in-review
+// Rolling-7d retrospective + forward look. Reuses trade journal,
+// snapshot series, open recs, benchmark returns, and macro/regime
+// state already computed elsewhere — no new upstream fetches.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/week-in-review", requireStocksAuth, async (req, res) => {
+  try {
+    const email = req.stocksUser.email;
+    const days = Math.max(1, Math.min(90, parseInt(req.query.days, 10) || 7));
+    const now = new Date();
+    const windowStart = new Date(now.getTime() - days * 86400000);
+    const [profile, trades, snaps, openRecs] = await Promise.all([
+      StocksPortfolio.findOne({ email }).lean(),
+      StocksTradeJournal.find({ email, executedAt: { $gte: windowStart } }).sort({ executedAt: 1 }).lean(),
+      StocksPortfolioSnapshot.find({ email, accountId: "__total__" }).sort({ takenAt: -1 }).limit(50).lean(),
+      StocksAdviceRec.find({ email, status: "open" }).lean().catch(() => []),
+    ]);
+    const fx = profile?.fxUsdCad || 1.37;
+    const commissionCad = profile?.commissionPerTrade || 9.95;
+
+    // Activity
+    const byAction = { BUY: 0, SELL: 0, TRIM: 0, DEPOSIT: 0, WITHDRAW: 0, OTHER: 0 };
+    let totalNotionalCad = 0;
+    let biggest = null;
+    for (const t of trades) {
+      for (const leg of t.legs || []) {
+        const side = leg.side || "OTHER";
+        if (byAction[side] == null) byAction.OTHER++;
+        else byAction[side]++;
+        const notionalCcy = (leg.pricePerShare || 0) * (leg.shares || 0);
+        const notionalCad = leg.currency === "USD" ? notionalCcy * fx : notionalCcy;
+        totalNotionalCad += notionalCad;
+        if (!biggest || notionalCad > biggest.notionalCad) {
+          biggest = { ticker: leg.ticker, side, shares: leg.shares, price: leg.pricePerShare, currency: leg.currency, notionalCad, executedAt: t.executedAt };
+        }
+      }
+    }
+    const commissionsPaidCad = trades.length * commissionCad;
+
+    // Performance — walk snapshots to find the closest bookend for the window.
+    let startBookCad = null;
+    let endBookCad = null;
+    if (snaps.length > 0) {
+      endBookCad = snaps[0].totalCad || null;
+      const target = windowStart.getTime();
+      // Snapshots are DESC by takenAt; the first one older-than-or-equal to
+      // windowStart is our start-of-window anchor.
+      for (const s of snaps) {
+        if (new Date(s.takenAt).getTime() <= target) { startBookCad = s.totalCad; break; }
+      }
+      if (startBookCad == null && snaps.length > 0) startBookCad = snaps[snaps.length - 1].totalCad;
+    }
+    const changeCad = (startBookCad != null && endBookCad != null) ? endBookCad - startBookCad : null;
+    const changePct = (startBookCad != null && endBookCad != null && startBookCad > 0)
+      ? ((endBookCad - startBookCad) / startBookCad) * 100 : null;
+    // Benchmark returns over the same window (SPY / XIC).
+    let benchmarks = null;
+    try {
+      benchmarks = await computeBenchmarkReturns({
+        oldestSnapshotDate: windowStart,
+        latestSnapshotDate: now,
+      });
+    } catch { /* silent */ }
+    const spyWow = benchmarks?.spy?.wowPct ?? null;
+    const xicWow = benchmarks?.xic?.wowPct ?? null;
+    const alphaVsSpyPp = (changePct != null && spyWow != null) ? changePct - spyWow : null;
+    const alphaVsXicPp = (changePct != null && xicWow != null) ? changePct - xicWow : null;
+
+    // Forward look — open recs with horizonDays that expire within `days`.
+    const forwardWindowEnd = new Date(now.getTime() + days * 86400000);
+    const expiringRecs = [];
+    for (const r of openRecs) {
+      const generated = new Date(r.generatedAt).getTime();
+      const horizonMs = (r.horizonDays || 30) * 86400000;
+      const expiresAt = new Date(generated + horizonMs);
+      if (expiresAt <= forwardWindowEnd) {
+        expiringRecs.push({
+          ticker: r.ticker, action: r.action, entryPrice: r.entryPrice,
+          targetPrice: r.targetPrice, stopPrice: r.stopPrice,
+          horizonDays: r.horizonDays, expiresAt,
+        });
+      }
+    }
+    expiringRecs.sort((a, b) => new Date(a.expiresAt) - new Date(b.expiresAt));
+
+    res.json({
+      ok: true,
+      windowDays: days,
+      windowStart, windowEnd: now,
+      activity: {
+        tradeCount: trades.length,
+        legCount: Object.values(byAction).reduce((s, x) => s + x, 0),
+        byAction,
+        commissionsPaidCad,
+        totalNotionalCad,
+        biggestTrade: biggest,
+      },
+      performance: {
+        startBookCad, endBookCad, changeCad, changePct,
+        spyChangePct: spyWow, xicChangePct: xicWow,
+        alphaVsSpyPp, alphaVsXicPp,
+      },
+      forwardLook: {
+        openRecsExpiringInWindow: expiringRecs.slice(0, 15),
+        totalOpenRecs: openRecs.length,
+      },
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("stocks-portfolio week-in-review error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

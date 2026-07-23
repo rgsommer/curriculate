@@ -8283,6 +8283,8 @@ function PerformanceView({ sessionToken, user }) {
 
       <EightKFeedCard sessionToken={sessionToken} />
 
+      <WeekInReviewCard sessionToken={sessionToken} />
+
       <DailyPickCard sessionToken={sessionToken} user={user} />
 
       <PointInTimeBacktestCard sessionToken={sessionToken} />
@@ -9755,6 +9757,180 @@ function computeSleeveBalanceClient(user) {
       spec: targetsCad.spec - totals.spec,
     },
   };
+}
+
+// Rolling 7-day retrospective + forward look. Answers three questions
+// at a glance: what did I do this week (trades + commission burn),
+// how did I do (book change vs SPY/XIC alpha), and what's ahead
+// (open recs whose horizon expires in the coming week).
+function WeekInReviewCard({ sessionToken }) {
+  const [days, setDays] = useState(7);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `${BACKEND_URL}/api/stocks-portfolio/week-in-review?days=${days}`,
+          { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } }
+        );
+        if (!r.ok) throw new Error(`${r.status}`);
+        const j = await r.json();
+        if (!cancelled) setData(j);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "load failed");
+      } finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, days]);
+
+  const fmtCad = (n) => n == null ? "—" : `$${Math.round(Math.abs(n)).toLocaleString()} CAD`;
+  const fmtPct = (n) => n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+  const clrPnl = (n) => n == null ? "inherit" : n > 0 ? "#166534" : n < 0 ? "#b91c1c" : "inherit";
+  const dayLabel = days === 7 ? "week" : `${days}d window`;
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>📅 Week in review</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            What you did · how you did · what's next. Rolling {dayLabel} — activity + book delta + open recs expiring in the next {days} days.
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+          {[7, 14, 30].map((d) => (
+            <button key={d} onClick={() => setDays(d)}
+              style={{
+                padding: "4px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6,
+                background: days === d ? "var(--sa-panel)" : "transparent",
+                color: days === d ? "inherit" : "var(--sa-muted)",
+                border: "none", cursor: "pointer",
+              }}
+            >{d}d</button>
+          ))}
+        </div>
+      </div>
+      {busy && <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>}
+      {err && <div className="sa-err" style={{ fontSize: 12 }}>Failed to load: {err}</div>}
+      {!busy && !err && data && (() => {
+        const a = data.activity || {};
+        const p = data.performance || {};
+        const f = data.forwardLook || {};
+        const outperformedSpy = p.alphaVsSpyPp != null && p.alphaVsSpyPp > 0;
+        const outperformedXic = p.alphaVsXicPp != null && p.alphaVsXicPp > 0;
+        return (
+          <>
+            {/* Activity strip */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, marginBottom: 14 }}>
+              <div style={{ padding: "10px 12px", background: "var(--sa-panel-2)", borderRadius: 8 }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>You did</div>
+                <div style={{ fontSize: 20, fontWeight: 700, marginTop: 3 }}>{a.tradeCount} trade{a.tradeCount === 1 ? "" : "s"}</div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 3 }}>
+                  {a.byAction?.BUY || 0} BUY · {a.byAction?.SELL || 0} SELL{(a.byAction?.TRIM || 0) > 0 ? ` · ${a.byAction.TRIM} TRIM` : ""}
+                </div>
+              </div>
+              <div style={{ padding: "10px 12px", background: "var(--sa-panel-2)", borderRadius: 8 }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Commission burn</div>
+                <div className="sa-amount" style={{ fontSize: 20, fontWeight: 700, marginTop: 3, color: a.commissionsPaidCad > 100 ? "#991b1b" : "inherit" }}>
+                  {fmtCad(a.commissionsPaidCad)}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 3 }}>
+                  {a.tradeCount} × ${Math.round((a.commissionsPaidCad || 0) / Math.max(1, a.tradeCount))} each
+                </div>
+              </div>
+              <div style={{ padding: "10px 12px", background: "var(--sa-panel-2)", borderRadius: 8 }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Notional moved</div>
+                <div className="sa-amount" style={{ fontSize: 20, fontWeight: 700, marginTop: 3 }}>
+                  {fmtCad(a.totalNotionalCad)}
+                </div>
+                {a.biggestTrade && (
+                  <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 3 }}>
+                    biggest: {a.biggestTrade.side} {a.biggestTrade.shares} {a.biggestTrade.ticker}
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: "10px 12px", background: p.changeCad >= 0 ? "#dcfce7" : "#fee2e2", borderRadius: 8, border: `1px solid ${p.changeCad >= 0 ? "#86efac" : "#fca5a5"}` }}>
+                <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>Book Δ this {days === 7 ? "week" : `${days}d`}</div>
+                <div className="sa-amount" style={{ fontSize: 20, fontWeight: 700, marginTop: 3, color: clrPnl(p.changeCad) }}>
+                  {p.changeCad != null ? `${p.changeCad >= 0 ? "+" : "−"}${fmtCad(p.changeCad)}` : "—"}
+                </div>
+                <div style={{ fontSize: 11, color: clrPnl(p.changePct), marginTop: 3 }}>
+                  {fmtPct(p.changePct)}
+                </div>
+              </div>
+            </div>
+
+            {/* Vs benchmark line */}
+            {(p.alphaVsSpyPp != null || p.alphaVsXicPp != null) && (
+              <div style={{ padding: "10px 12px", background: "var(--sa-panel)", border: "1px solid var(--sa-border)", borderRadius: 8, marginBottom: 14, fontSize: 12 }}>
+                <b>vs benchmarks:</b>{" "}
+                {p.alphaVsSpyPp != null && (
+                  <span style={{ color: clrPnl(p.alphaVsSpyPp) }}>
+                    SPY {fmtPct(p.spyChangePct)} → alpha {p.alphaVsSpyPp >= 0 ? "+" : ""}{p.alphaVsSpyPp.toFixed(1)}pp{outperformedSpy ? " ✓" : ""}
+                  </span>
+                )}
+                {p.alphaVsSpyPp != null && p.alphaVsXicPp != null && <span style={{ color: "var(--sa-muted)" }}> · </span>}
+                {p.alphaVsXicPp != null && (
+                  <span style={{ color: clrPnl(p.alphaVsXicPp) }}>
+                    XIC {fmtPct(p.xicChangePct)} → alpha {p.alphaVsXicPp >= 0 ? "+" : ""}{p.alphaVsXicPp.toFixed(1)}pp{outperformedXic ? " ✓" : ""}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Forward look */}
+            <div>
+              <div style={{ fontWeight: 700, marginBottom: 6, fontSize: 13 }}>
+                Next {days} days · {f.openRecsExpiringInWindow?.length || 0} open rec{f.openRecsExpiringInWindow?.length === 1 ? "" : "s"} decision-window
+              </div>
+              {(f.openRecsExpiringInWindow || []).length === 0 ? (
+                <div className="sa-muted" style={{ fontSize: 12, fontStyle: "italic" }}>
+                  No open recs expire in the coming {days} days. {f.totalOpenRecs > 0 ? `${f.totalOpenRecs} open rec${f.totalOpenRecs === 1 ? "" : "s"} still tracking with longer horizons.` : "No open recs on file."}
+                </div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+                    <thead>
+                      <tr style={{ color: "var(--sa-muted)", background: "var(--sa-panel-2)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        <th style={{ textAlign: "left", padding: "5px 8px" }}>Ticker</th>
+                        <th style={{ textAlign: "left", padding: "5px 8px" }}>Side</th>
+                        <th style={{ textAlign: "right", padding: "5px 8px" }}>Entry</th>
+                        <th style={{ textAlign: "right", padding: "5px 8px" }}>Target</th>
+                        <th style={{ textAlign: "right", padding: "5px 8px" }}>Stop</th>
+                        <th style={{ textAlign: "right", padding: "5px 8px" }}>Horizon</th>
+                        <th style={{ textAlign: "right", padding: "5px 8px" }}>Expires</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {f.openRecsExpiringInWindow.map((r, i) => (
+                        <tr key={i} style={{ borderTop: "1px dashed var(--sa-border)" }}>
+                          <td style={{ padding: "5px 8px", fontWeight: 700 }}>{r.ticker}</td>
+                          <td style={{ padding: "5px 8px" }}>
+                            <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: r.action === "BUY" ? "var(--sa-green-soft)" : "var(--sa-red-soft)", color: r.action === "BUY" ? "var(--sa-green)" : "var(--sa-red)" }}>{r.action}</span>
+                          </td>
+                          <td style={{ padding: "5px 8px", textAlign: "right" }}>${Number(r.entryPrice).toFixed(2)}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534" }}>{r.targetPrice != null ? `$${Number(r.targetPrice).toFixed(2)}` : "—"}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b" }}>{r.stopPrice != null ? `$${Number(r.stopPrice).toFixed(2)}` : "—"}</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{r.horizonDays}d</td>
+                          <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{new Date(r.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        );
+      })()}
+    </div>
+  );
 }
 
 // ── Test A: forced daily-pick discipline ───────────────────────────
