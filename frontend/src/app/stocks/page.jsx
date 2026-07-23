@@ -4133,6 +4133,25 @@ function EmailIntegrationCard({ sessionToken }) {
     } finally { setTesting(false); }
   };
 
+  // Reconstruct-from-journal audit state.
+  const [reconstruct, setReconstruct] = useState(null);
+  const [reconstructLoading, setReconstructLoading] = useState(false);
+  const showReconstruct = async () => {
+    setReconstructLoading(true);
+    setReconstruct(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/reconstruct-audit`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setReconstruct(j);
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Reconstruct failed: ${e?.message || "unknown"}` });
+    } finally { setReconstructLoading(false); }
+  };
+
   // Duplicate-journal audit state — populated by GET /journal-audit
   // and consumed by the audit expand section. Selection is a Set of
   // trade _ids the user has ticked for deletion.
@@ -4519,6 +4538,7 @@ function EmailIntegrationCard({ sessionToken }) {
             <button className="sa-btn" onClick={retryNeedsReview} disabled={retrying} title="Re-run reconciler over stuck needs-review trades using improved account-inference. Promotes to auto + applies positions when it can now resolve them.">{retrying ? "Retrying…" : "Retry needs-review"}</button>
             <button className="sa-btn" onClick={showJournalState} disabled={snapshotting} title="Read-only snapshot: how many CIBC-email trades are in the journal, how many are applied vs stuck, and the newest few needs-review samples.">{snapshotting ? "Reading…" : "Journal state"}</button>
             <button className="sa-btn" onClick={showAudit} disabled={auditLoading} title="Scan the trade journal for duplicates — same email + ticker + account + side + shares within 3 days. Delete duplicates in bulk with automatic position + cash reversal to repair the book.">{auditLoading ? "Auditing…" : "Find duplicates"}</button>
+            <button className="sa-btn" onClick={showReconstruct} disabled={reconstructLoading} title="Walk every applied trade in the journal and diff against current positions + cash. Any unexplained drift = a bug or manual edit the trader can act on.">{reconstructLoading ? "Reconstructing…" : "Reconstruct audit"}</button>
             <button className="sa-btn danger" onClick={disconnect}>Disconnect</button>
           </div>
           {audit && (
@@ -4582,6 +4602,96 @@ function EmailIntegrationCard({ sessionToken }) {
                   <span className="sa-muted" style={{ fontSize: 11 }}>
                     Suggestion: for each cluster, KEEP the earliest (or the one linked to an advice rec) and delete the rest.
                   </span>
+                </div>
+              )}
+            </div>
+          )}
+          {reconstruct && (
+            <div style={{ marginTop: 10, padding: "12px 14px", background: (reconstruct.summary.positionDriftCount + reconstruct.summary.cashDriftCount) === 0 ? "#dcfce7" : "#fef3c7", border: `1px solid ${(reconstruct.summary.positionDriftCount + reconstruct.summary.cashDriftCount) === 0 ? "#86efac" : "#fbbf24"}`, borderRadius: 8, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8, color: (reconstruct.summary.positionDriftCount + reconstruct.summary.cashDriftCount) === 0 ? "#166534" : "#78350f" }}>
+                Reconstruct audit · {reconstruct.summary.tradesConsidered} applied trades walked ·
+                {" "}<b>{reconstruct.summary.positionDriftCount}</b> position drifts ·
+                {" "}<b>{reconstruct.summary.cashDriftCount}</b> cash drifts
+              </div>
+              <div className="sa-muted" style={{ marginBottom: 8, fontSize: 11 }}>
+                Green = matches journal · Blue = pre-journal / dividends / deposits (fine) · Amber = drift · Red = looks like a duplicate application. If everything is green + blue, the journal and portfolio are consistent — the reconciliation loop is closed.
+              </div>
+              {reconstruct.positionRows.length > 0 && (
+                <div style={{ overflowX: "auto", marginBottom: 8 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                    <thead>
+                      <tr style={{ background: "var(--sa-panel-2)", color: "var(--sa-muted)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>Account</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>Ticker</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>Sub</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px" }}>Journal implies</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px" }}>Actual</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px" }}>Delta</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>Diagnosis</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconstruct.positionRows.map((r, i) => {
+                        const tagBg = r.tag.level === "ok" ? "#dcfce7"
+                          : r.tag.level === "pre-journal" ? "#dbeafe"
+                          : r.tag.level === "info" ? "#dbeafe"
+                          : r.tag.level === "duplicate" ? "#fee2e2"
+                          : "#fef3c7";
+                        const tagFg = r.tag.level === "ok" ? "#166534"
+                          : r.tag.level === "pre-journal" || r.tag.level === "info" ? "#1e40af"
+                          : r.tag.level === "duplicate" ? "#b91c1c"
+                          : "#78350f";
+                        return (
+                          <tr key={i} style={{ borderTop: "1px solid var(--sa-border)", background: tagBg }}>
+                            <td style={{ padding: "4px 8px" }}>{r.account}</td>
+                            <td style={{ padding: "4px 8px", fontWeight: 700 }}>{r.ticker}</td>
+                            <td style={{ padding: "4px 8px", color: "var(--sa-muted)" }}>{r.subCcy}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right" }}>{r.impliedShares.toFixed(0)}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 700 }}>{r.actualShares.toFixed(0)}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right", color: Math.abs(r.delta) < 0.5 ? "inherit" : (r.delta > 0 ? "#b91c1c" : "#b91c1c") }}>{r.delta >= 0 ? "+" : ""}{r.delta.toFixed(0)}</td>
+                            <td style={{ padding: "4px 8px", color: tagFg }}>{r.tag.label}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {reconstruct.cashRows.length > 0 && (
+                <div style={{ overflowX: "auto" }}>
+                  <div style={{ fontWeight: 600, marginBottom: 4, marginTop: 4 }}>Cash reconciliation</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                    <thead>
+                      <tr style={{ background: "var(--sa-panel-2)", color: "var(--sa-muted)", fontSize: 10, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>Account</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>CCY</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px" }}>Journal implies</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px" }}>Actual</th>
+                        <th style={{ textAlign: "right", padding: "4px 8px" }}>Delta</th>
+                        <th style={{ textAlign: "left", padding: "4px 8px" }}>Interpretation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reconstruct.cashRows.map((r, i) => {
+                        const tagBg = r.tag.level === "ok" ? "#dcfce7"
+                          : r.tag.level === "info" ? "#dbeafe"
+                          : "#fef3c7";
+                        const tagFg = r.tag.level === "ok" ? "#166534"
+                          : r.tag.level === "info" ? "#1e40af"
+                          : "#78350f";
+                        return (
+                          <tr key={i} style={{ borderTop: "1px solid var(--sa-border)", background: tagBg }}>
+                            <td style={{ padding: "4px 8px" }}>{r.account}</td>
+                            <td style={{ padding: "4px 8px" }}>{r.currency}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right" }}>${Math.round(r.impliedCash).toLocaleString()}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 700 }}>${Math.round(r.actualCash).toLocaleString()}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right", color: Math.abs(r.delta) < 5 ? "inherit" : "#b91c1c" }}>{r.delta >= 0 ? "+" : ""}${Math.round(r.delta).toLocaleString()}</td>
+                            <td style={{ padding: "4px 8px", color: tagFg }}>{r.tag.label}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               )}
             </div>

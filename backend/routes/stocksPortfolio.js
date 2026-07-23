@@ -44,6 +44,7 @@ import { computePortfolioVar, computeLossCooldown } from "../services/stocksRisk
 import { getTechnicals } from "../services/stocksTechnicals.js";
 import { analyseTradeCosts } from "../services/stocksTradeCostAnalysis.js";
 import { findDuplicateJournalGroups, deleteTradeWithReversal } from "../services/stocksJournalAudit.js";
+import { reconstructFromJournal } from "../services/stocksJournalReconstruct.js";
 
 const router = express.Router();
 
@@ -1109,6 +1110,21 @@ router.post("/journal-audit/delete", requireStocksAuth, async (req, res) => {
     res.json({ ok: true, results, succeeded, failed: results.length - succeeded });
   } catch (err) {
     console.error("stocks-portfolio journal-audit/delete error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/reconstruct-audit
+// Reconstruct positions + cash from every applied trade in the journal,
+// diff against current portfolio state, surface unexplained drift.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/reconstruct-audit", requireStocksAuth, async (req, res) => {
+  try {
+    const result = await reconstructFromJournal(req.stocksUser.email);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("stocks-portfolio reconstruct-audit error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });
