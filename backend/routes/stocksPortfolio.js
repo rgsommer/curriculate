@@ -36,6 +36,10 @@ import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
 import { computeHorizonReview } from "../services/stocksHorizonReview.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import { computeOptimalSize, getSetupExpectancyMap } from "../services/stocksPositionSizing.js";
+import { computeTradingRegime } from "../services/stocksTradingRegime.js";
+import { scanUnusualOptionsFlow } from "../services/stocksUnusualOptionsFlow.js";
+import { getMacroContext } from "../services/stocksMacroContext.js";
+import { getFedLiquidity } from "../services/stocksFedLiquidity.js";
 
 const router = express.Router();
 
@@ -967,6 +971,48 @@ router.get("/sizing-backtest", requireStocksAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("stocks-portfolio sizing-backtest error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/regime-and-uoa
+// Dashboard-chip endpoint. Returns the current trading-regime state
+// and an unusual-options-flow scan across the user's held tickers so
+// the frontend can render live chips without waiting for a briefing.
+//
+// UOA is capped to the top 8 held tickers by book weight to keep the
+// Yahoo option-chain fan-out under 8 requests. Cached 30 min per
+// ticker inside the UOA service, so repeat renders in the same
+// 30-min window cost nothing.
+// ──────────────────────────────────────────────────────────────────────
+router.get("/regime-and-uoa", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    const [macro, fed] = await Promise.all([
+      getMacroContext().catch(() => null),
+      getFedLiquidity().catch(() => null),
+    ]);
+    const regime = macro ? (computeTradingRegime({ macroContext: macro, fedLiquidity: fed }) || null) : null;
+    // Rank held tickers by CAD value, take top 8, base-ticker normalized.
+    const fx = profile?.fxUsdCad || 1.37;
+    const byWeight = (profile?.positions || [])
+      .map(p => ({
+        ticker: String(p.ticker || "").toUpperCase().replace(/\..*$/, ""),
+        valueCad: p.ccy === "USD" ? (p.priceUsd || 0) * (p.qty || 0) * fx : (p.priceCad || 0) * (p.qty || 0),
+      }))
+      .filter(x => x.ticker && x.valueCad > 0)
+      .sort((a, b) => b.valueCad - a.valueCad);
+    const uniq = [...new Set(byWeight.map(x => x.ticker))].slice(0, 8);
+    const uoa = await scanUnusualOptionsFlow(uniq, { concurrency: 4 }).catch(() => []);
+    res.json({
+      ok: true,
+      regime,
+      uoa,
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("stocks-portfolio regime-and-uoa error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

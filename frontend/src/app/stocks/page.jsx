@@ -1988,6 +1988,102 @@ function OnboardingView({ onPick }) {
   );
 }
 
+// Compact Dashboard chips for trading-regime + unusual-options-flow.
+// Regime chip is a single line (colour-coded by trending/choppy/neutral)
+// with a hover-tooltip listing the drivers. UOA chip shows a count of
+// tickers with unusual flow; click to expand a compact per-ticker list
+// with directional bias + top strike.
+function RegimeAndUoaChips({ data }) {
+  const [uoaOpen, setUoaOpen] = useState(false);
+  const regime = data?.regime;
+  const uoa = Array.isArray(data?.uoa) ? data.uoa : [];
+
+  const regimeColor = regime?.regime === "trending" ? "#166534"
+    : regime?.regime === "choppy" ? "#b45309"
+    : regime?.regime === "neutral" ? "#334155" : "#6b7280";
+  const regimeBg = regime?.regime === "trending" ? "#dcfce7"
+    : regime?.regime === "choppy" ? "#fef3c7"
+    : regime?.regime === "neutral" ? "#e2e8f0" : "#f1f5f9";
+  const regimeIcon = regime?.regime === "trending" ? "📈"
+    : regime?.regime === "choppy" ? "🌊"
+    : regime?.regime === "neutral" ? "⚖️" : "";
+
+  const bullishCount = uoa.filter(u => u.bias === "bullish").length;
+  const bearishCount = uoa.filter(u => u.bias === "bearish").length;
+
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+      {regime && (
+        <div
+          title={
+            regime.drivers?.length
+              ? `Drivers:\n  • ${regime.drivers.join("\n  • ")}\n\nPrefer: ${regime.preferSetups?.join(", ") || "—"}\nAvoid: ${regime.avoidSetups?.join(", ") || "—"}`
+              : "Trading-regime state (VIX + SPX trend + Fed liquidity)"
+          }
+          style={{
+            padding: "8px 12px", borderRadius: 999,
+            background: regimeBg, color: regimeColor,
+            border: `1px solid ${regimeColor}`,
+            fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6,
+            cursor: "help",
+          }}
+        >
+          <span style={{ fontSize: 16 }}>{regimeIcon}</span>
+          <span style={{ fontWeight: 700 }}>{regime.regime?.toUpperCase()}</span>
+          <span style={{ opacity: 0.75 }}>· prefer {regime.strategy?.replace("-", " ")}</span>
+          {Number.isFinite(regime.confidence) && (
+            <span style={{ opacity: 0.6, fontSize: 11 }}>({Math.round(regime.confidence * 100)}%)</span>
+          )}
+        </div>
+      )}
+      {uoa.length > 0 && (
+        <div
+          onClick={() => setUoaOpen(o => !o)}
+          style={{
+            padding: "8px 12px", borderRadius: uoaOpen ? 12 : 999,
+            background: "#fef3c7", color: "#78350f",
+            border: "1px solid #fbbf24",
+            fontSize: 13, cursor: "pointer",
+            display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4,
+          }}
+        >
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 16 }}>🎯</span>
+            <span style={{ fontWeight: 700 }}>UOA · {uoa.length} tickers</span>
+            {(bullishCount > 0 || bearishCount > 0) && (
+              <span style={{ opacity: 0.75 }}>· {bullishCount > 0 && `🟢 ${bullishCount}`}{bullishCount > 0 && bearishCount > 0 && " "}{bearishCount > 0 && `🔴 ${bearishCount}`}</span>
+            )}
+            <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 4 }}>{uoaOpen ? "hide ▲" : "expand ▼"}</span>
+          </div>
+          {uoaOpen && (
+            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 6, background: "#fffbeb", borderTop: "1px solid #fcd34d", paddingTop: 8, width: "100%" }}>
+              {uoa.map(u => {
+                const biasEmoji = u.bias === "bullish" ? "🟢" : u.bias === "bearish" ? "🔴" : "⚪";
+                const topStrike = u.unusualStrikes?.[0];
+                const ratio = u.callPutDollarRatio == null ? "—"
+                  : !Number.isFinite(u.callPutDollarRatio) ? "call-only"
+                  : u.callPutDollarRatio >= 1 ? `${u.callPutDollarRatio.toFixed(1)}× call$`
+                  : `${(1 / u.callPutDollarRatio).toFixed(1)}× put$`;
+                return (
+                  <div key={u.ticker} style={{ padding: "3px 0", fontSize: 12, fontVariantNumeric: "tabular-nums", borderTop: "1px dashed #fde68a" }}>
+                    <span style={{ fontWeight: 700 }}>{biasEmoji} {u.ticker}</span>
+                    <span style={{ opacity: 0.75 }}> @ ${u.spot?.toFixed(2)} · {u.bias} · {ratio} · exp {u.expiration} ({u.dteDays}d)</span>
+                    {topStrike && (
+                      <div style={{ marginLeft: 22, opacity: 0.85, fontSize: 11 }}>
+                        top: {topStrike.side.toUpperCase()} ${topStrike.strike} ({topStrike.offset === "OTM" ? `${topStrike.distancePct >= 0 ? "+" : ""}${topStrike.distancePct.toFixed(1)}%` : topStrike.offset}) · vol {topStrike.volume.toLocaleString()}, OI {topStrike.openInterest.toLocaleString()} · ${(topStrike.dollarVol / 1000).toFixed(0)}k
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder, sessionToken }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
@@ -2026,6 +2122,27 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
           }
         }
         setHorizonByBase(map);
+      } catch { /* silent */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
+  // Trading regime + unusual options activity — combined endpoint so
+  // one fetch surfaces both Dashboard chips. Silent-fail if the
+  // endpoint is unavailable (chips just hide).
+  const [regimeAndUoa, setRegimeAndUoa] = useState(null);
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/regime-and-uoa`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled && j.ok) setRegimeAndUoa(j);
       } catch { /* silent */ }
     })();
     return () => { cancelled = true; };
@@ -2185,6 +2302,10 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
             </span>
           )}
         </div>
+      )}
+
+      {regimeAndUoa && (regimeAndUoa.regime || (regimeAndUoa.uoa || []).length > 0) && (
+        <RegimeAndUoaChips data={regimeAndUoa} />
       )}
 
       {perfIndicators && (
