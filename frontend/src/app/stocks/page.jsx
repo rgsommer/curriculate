@@ -8905,6 +8905,49 @@ function TradesView({ sessionToken }) {
   const [err, setErr] = useState(null);
   const [days, setDays] = useState(90);
   const [deletingId, setDeletingId] = useState(null);
+  // Pending-review index keyed by trade id — populated from the same
+  // /email-integration/pending-review endpoint that Settings uses.
+  // Lets us show a ⚠ Verify affordance right on the Trades row instead
+  // of making the trader scroll down to Settings to resolve one.
+  const [pendingReviewById, setPendingReviewById] = useState({});
+  const [allAccounts, setAllAccounts] = useState([]);
+  const [verifyExpanded, setVerifyExpanded] = useState(null);
+  const [verifyBanner, setVerifyBanner] = useState(null);
+  const loadPendingReview = async () => {
+    if (!sessionToken) return;
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/pending-review`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!r.ok) return;
+      const j = await r.json();
+      const idx = {};
+      for (const row of j.rows || []) idx[row._id] = row;
+      setPendingReviewById(idx);
+      setAllAccounts(Array.isArray(j.allAccounts) ? j.allAccounts : []);
+    } catch { /* silent */ }
+  };
+  useEffect(() => { loadPendingReview(); }, [sessionToken]);
+  const resolveOne = async (tradeId, accountId) => {
+    setVerifyBanner(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/resolve-trade`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ tradeId, accountId }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      setVerifyBanner({ kind: "ok", msg: `Applied to ${j.account}. Positions + cash updated.` });
+      setVerifyExpanded(null);
+      await loadPendingReview();
+      await load();
+    } catch (e) {
+      setVerifyBanner({ kind: "err", msg: `Verify failed: ${e?.message || "unknown"}` });
+    }
+  };
 
   const load = async () => {
     setBusy(true); setErr(null);
@@ -9039,10 +9082,23 @@ function TradesView({ sessionToken }) {
 
   return (
     <div>
+      {verifyBanner && (
+        <div style={{
+          marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: 12,
+          background: verifyBanner.kind === "ok" ? "#dcfce7" : "#fee2e2",
+          color: verifyBanner.kind === "ok" ? "#166534" : "#7f1d1d",
+          border: `1px solid ${verifyBanner.kind === "ok" ? "#86efac" : "#fecaca"}`,
+        }}>{verifyBanner.msg}</div>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6, flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2>Trades</h2>
-          <div className="sa-breadcrumb">Transaction journal · most recent first</div>
+          <div className="sa-breadcrumb">
+            Transaction journal · most recent first
+            {Object.keys(pendingReviewById).length > 0 && (
+              <> · <span style={{ color: "#7f1d1d", fontWeight: 700 }}>{Object.keys(pendingReviewById).length} trade{Object.keys(pendingReviewById).length === 1 ? "" : "s"} need verify — see rows highlighted in pink</span></>
+            )}
+          </div>
         </div>
         <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
           {[30, 90, 365, 1825].map((d) => (
@@ -9097,9 +9153,20 @@ function TradesView({ sessionToken }) {
                 </tr>
               </thead>
               <tbody>
-                {trades.map((t, i) => (
-                  <tr key={t._id || i} style={{ borderTop: "1px solid var(--sa-border)" }}>
-                    <td style={recCellLeft}>{new Date(t.executedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</td>
+                {trades.flatMap((t, i) => {
+                  const pending = pendingReviewById[t._id];
+                  const isPending = !!pending;
+                  const rowStyle = isPending
+                    ? { borderTop: "1px solid var(--sa-border)", background: "#fef2f2" }
+                    : { borderTop: "1px solid var(--sa-border)" };
+                  const rows = [(
+                  <tr key={t._id || i} style={rowStyle}>
+                    <td style={recCellLeft}>
+                      {new Date(t.executedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      {isPending && (
+                        <div style={{ marginTop: 2, fontSize: 10, fontWeight: 700, color: "#7f1d1d", letterSpacing: ".04em" }}>⚠ NEEDS REVIEW</div>
+                      )}
+                    </td>
                     <td style={recCellLeft}><span className="sa-muted">{t.accountName || "—"}</span></td>
                     <td style={recCellLeft}>
                       {(t.legs || []).map((leg, li) => {
@@ -9135,6 +9202,16 @@ function TradesView({ sessionToken }) {
                       {t.notes || "—"}
                     </td>
                     <td style={{ ...recCell, textAlign: "right", whiteSpace: "nowrap" }}>
+                      {isPending && (
+                        <button
+                          className="sa-btn"
+                          style={{ padding: "3px 8px", fontSize: 11, marginRight: 4, background: "#dc2626", color: "white" }}
+                          title="Pick an account and apply this trade to positions + cash."
+                          onClick={() => setVerifyExpanded(verifyExpanded === t._id ? null : t._id)}
+                        >
+                          {verifyExpanded === t._id ? "Cancel" : "Verify"}
+                        </button>
+                      )}
                       <button
                         className="sa-btn ghost"
                         style={{ padding: "3px 8px", fontSize: 11, marginRight: 4 }}
@@ -9155,7 +9232,25 @@ function TradesView({ sessionToken }) {
                       </button>
                     </td>
                   </tr>
-                ))}
+                  )];
+                  if (isPending && verifyExpanded === t._id) {
+                    rows.push(
+                      <tr key={`${t._id}-verify`} style={{ background: "#fef2f2" }}>
+                        <td colSpan={6} style={{ padding: "10px 14px" }}>
+                          <PendingReviewRow
+                            row={pending}
+                            allAccounts={allAccounts}
+                            onResolve={(acctId) => resolveOne(t._id, acctId)}
+                          />
+                          <div style={{ marginTop: 6, fontSize: 11, color: "#7f1d1d" }}>
+                            Reason: {pending.reason || "(no reason recorded)"}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return rows;
+                })}
               </tbody>
             </table>
           </div>
