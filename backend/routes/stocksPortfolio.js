@@ -40,6 +40,8 @@ import { computeTradingRegime } from "../services/stocksTradingRegime.js";
 import { scanUnusualOptionsFlow } from "../services/stocksUnusualOptionsFlow.js";
 import { getMacroContext } from "../services/stocksMacroContext.js";
 import { getFedLiquidity } from "../services/stocksFedLiquidity.js";
+import { computePortfolioVar, computeLossCooldown } from "../services/stocksRiskBudget.js";
+import { getTechnicals } from "../services/stocksTechnicals.js";
 
 const router = express.Router();
 
@@ -1005,10 +1007,34 @@ router.get("/regime-and-uoa", requireStocksAuth, async (req, res) => {
       .sort((a, b) => b.valueCad - a.valueCad);
     const uniq = [...new Set(byWeight.map(x => x.ticker))].slice(0, 8);
     const uoa = await scanUnusualOptionsFlow(uniq, { concurrency: 4 }).catch(() => []);
+    // Risk budget + cooldown for the Dashboard chip. Vol map is
+    // populated on demand from getTechnicals for held tickers (cached
+    // by that service so repeat calls are cheap).
+    const heldTickers = [...new Set((profile?.positions || [])
+      .map(p => String(p.ticker || "").toUpperCase())
+      .filter(Boolean))].slice(0, 20);
+    const techByTicker = {};
+    await Promise.all(heldTickers.map(async (t) => {
+      try {
+        const pos = (profile?.positions || []).find(p => String(p.ticker || "").toUpperCase() === t);
+        const tech = await getTechnicals(t, pos?.ccy || "USD").catch(() => null);
+        if (tech && Number.isFinite(tech.annualizedVolPct)) {
+          techByTicker[t] = { annualizedVolPct: tech.annualizedVolPct, last: tech.last };
+        }
+      } catch { /* per-ticker best-effort */ }
+    }));
+    const riskVar = computePortfolioVar({
+      positions: profile?.positions || [],
+      fxUsdCad: fx,
+      techByTicker,
+    });
+    const lossCooldown = await computeLossCooldown(req.stocksUser.email).catch(() => null);
     res.json({
       ok: true,
       regime,
       uoa,
+      riskVar,
+      lossCooldown,
       generatedAt: new Date(),
     });
   } catch (err) {

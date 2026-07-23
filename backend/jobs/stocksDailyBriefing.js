@@ -50,6 +50,7 @@ import { computeOptimalSize, formatSizingBlock, getSetupExpectancyMap } from "..
 import { computePyramidingSignals, formatPyramidingBlock } from "../services/stocksPyramidingMonitor.js";
 import { computeTradingRegime, formatTradingRegimeBlock } from "../services/stocksTradingRegime.js";
 import { scanUnusualOptionsFlow, formatUnusualOptionsBlock } from "../services/stocksUnusualOptionsFlow.js";
+import { computePortfolioVar, computeLossCooldown, formatRiskBudgetBlock } from "../services/stocksRiskBudget.js";
 import { computeCompliance, formatComplianceBlock } from "../services/stocksCompliance.js";
 import { computeAttribution, formatAttributionBlock } from "../services/stocksAttribution.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
@@ -931,7 +932,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -1127,6 +1128,7 @@ ${formatSizingBlock(sizedPicks)}
 ${formatPyramidingBlock(pyramidingSignals)}
 ${formatTradingRegimeBlock(tradingRegime)}
 ${formatUnusualOptionsBlock(unusualOptions)}
+${formatRiskBudgetBlock(riskVar, lossCooldown)}
 ${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
 ${formatAttributionBlock(attribution)}
 ${formatHorizonReviewBlock(horizonRows)}
@@ -1737,7 +1739,23 @@ export async function generateBriefing(profile) {
   const unusualOptions = await scanUnusualOptionsFlow([...uoaTickers].slice(0, 20))
     .catch(e => { console.warn("[uoa] warn:", e?.message); return []; });
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions);
+  // Risk budget — portfolio 1-day 95%/99% VaR + loss cooldown detector.
+  // Uses quantSignals for per-ticker annualized vol (already computed
+  // above for the SIGNALS PER HOLDING block) so no fresh fetch needed.
+  const riskVar = (() => {
+    try {
+      const techByTicker = {};
+      for (const [ticker, sig] of Object.entries(quantSignals || {})) {
+        if (Number.isFinite(sig?.annualizedVolPct)) techByTicker[ticker] = { annualizedVolPct: sig.annualizedVolPct };
+      }
+      return computePortfolioVar({ positions: profile.positions || [], fxUsdCad: profile.fxUsdCad || 1.37, techByTicker });
+    } catch (e) { console.warn("[risk-var] warn:", e?.message); return null; }
+  })();
+  const lossCooldown = await computeLossCooldown(profile.email).catch(e => {
+    console.warn("[loss-cooldown] warn:", e?.message); return null;
+  });
+
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat

@@ -1995,8 +1995,11 @@ function OnboardingView({ onPick }) {
 // with directional bias + top strike.
 function RegimeAndUoaChips({ data }) {
   const [uoaOpen, setUoaOpen] = useState(false);
+  const [varOpen, setVarOpen] = useState(false);
   const regime = data?.regime;
   const uoa = Array.isArray(data?.uoa) ? data.uoa : [];
+  const riskVar = data?.riskVar;
+  const cooldown = data?.lossCooldown;
 
   const regimeColor = regime?.regime === "trending" ? "#166534"
     : regime?.regime === "choppy" ? "#b45309"
@@ -2034,6 +2037,81 @@ function RegimeAndUoaChips({ data }) {
           {Number.isFinite(regime.confidence) && (
             <span style={{ opacity: 0.6, fontSize: 11 }}>({Math.round(regime.confidence * 100)}%)</span>
           )}
+        </div>
+      )}
+      {riskVar && riskVar.bookValueCad > 0 && (() => {
+        const usedPct = riskVar.used?.pct95 ?? 0;
+        const limitPct = riskVar.limits?.pct95 ?? 2;
+        const breach = riskVar.breach95;
+        const nearBreach = usedPct >= limitPct * 0.75 && !breach;
+        const color = breach ? "#7f1d1d" : nearBreach ? "#78350f" : "#166534";
+        const bg = breach ? "#fee2e2" : nearBreach ? "#fef3c7" : "#dcfce7";
+        return (
+          <div
+            title={
+              "Portfolio 1-day 95% VaR (parametric, no correlation adjustment).\n" +
+              `Used: $${Math.round(riskVar.portfolioVar95Cad).toLocaleString()} CAD (${usedPct.toFixed(2)}% of book)\n` +
+              `Limit: ${limitPct}%\n` +
+              `Headroom: $${Math.round(riskVar.headroomCad95).toLocaleString()} CAD\n` +
+              `Coverage: ${riskVar.coverageCount}/${riskVar.totalCount} positions have vol data\n\n` +
+              (riskVar.positionVars?.length ? "Top VaR contributors:\n  " + riskVar.positionVars.slice(0, 5).map(r => `${r.ticker}: $${Math.round(r.oneDayVar95Cad).toLocaleString()} (${(r.oneDayVar95Cad / riskVar.portfolioVar95Cad * 100).toFixed(0)}% of VaR)`).join("\n  ") : "")
+            }
+            onClick={() => setVarOpen(o => !o)}
+            style={{
+              padding: "8px 12px", borderRadius: varOpen ? 12 : 999,
+              background: bg, color,
+              border: `1px solid ${color}`,
+              fontSize: 13, cursor: "pointer",
+              display: "inline-flex", flexDirection: "column", alignItems: "flex-start", gap: 4,
+            }}
+          >
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <span style={{ fontSize: 16 }}>🎚️</span>
+              <span style={{ fontWeight: 700 }}>VaR {usedPct.toFixed(2)}%</span>
+              <span style={{ opacity: 0.75 }}>/ {limitPct}%</span>
+              {breach && <span style={{ marginLeft: 4, fontSize: 11, fontWeight: 700 }}>🚨 BREACH</span>}
+              {!breach && nearBreach && <span style={{ marginLeft: 4, fontSize: 11 }}>near limit</span>}
+              <span style={{ opacity: 0.55, fontSize: 11, marginLeft: 4 }}>{varOpen ? "hide ▲" : "expand ▼"}</span>
+            </div>
+            {varOpen && (
+              <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 6, borderTop: `1px solid ${color}`, paddingTop: 8, width: "100%", fontSize: 11.5 }}>
+                <div style={{ fontVariantNumeric: "tabular-nums" }}>
+                  95% VaR: <b>${Math.round(riskVar.portfolioVar95Cad).toLocaleString()} CAD</b> · limit ${Math.round(riskVar.limits?.cad95 || 0).toLocaleString()} · headroom ${Math.round(riskVar.headroomCad95).toLocaleString()}
+                </div>
+                <div style={{ fontVariantNumeric: "tabular-nums" }}>
+                  99% VaR: <b>${Math.round(riskVar.portfolioVar99Cad).toLocaleString()} CAD</b> ({riskVar.used?.pct99?.toFixed(2)}%) · limit {riskVar.limits?.pct99}%
+                </div>
+                <div style={{ marginTop: 6, opacity: 0.85 }}>Top VaR contributors:</div>
+                {(riskVar.positionVars || []).slice(0, 5).map(r => (
+                  <div key={r.ticker} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "2px 0", fontVariantNumeric: "tabular-nums", borderTop: "1px dashed rgba(0,0,0,0.15)" }}>
+                    <span><b>{r.ticker}</b> · vol {r.annualizedVolPct?.toFixed(0)}%/yr</span>
+                    <span>${Math.round(r.oneDayVar95Cad).toLocaleString()} <span style={{ opacity: 0.55 }}>({(r.oneDayVar95Cad / riskVar.portfolioVar95Cad * 100).toFixed(0)}%)</span></span>
+                  </div>
+                ))}
+                <div style={{ marginTop: 6, opacity: 0.7 }}>
+                  Coverage: {riskVar.coverageCount}/{riskVar.totalCount} positions have vol data — treat total as a lower bound.
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+      {cooldown?.active && (
+        <div
+          title={cooldown.reasons?.length ? `Reasons:\n  • ${cooldown.reasons.join("\n  • ")}` : ""}
+          style={{
+            padding: "8px 12px", borderRadius: 999,
+            background: "#fee2e2", color: "#7f1d1d",
+            border: "1px solid #ef4444",
+            fontSize: 13, display: "inline-flex", alignItems: "center", gap: 6,
+            cursor: "help",
+          }}
+        >
+          <span style={{ fontSize: 16 }}>🛑</span>
+          <span style={{ fontWeight: 700 }}>COOLDOWN</span>
+          <span style={{ opacity: 0.75 }}>
+            no new positions{cooldown.cooldownUntil ? ` until ${new Date(cooldown.cooldownUntil).toISOString().slice(5, 10)}` : ""}
+          </span>
         </div>
       )}
       {uoa.length > 0 && (
@@ -2304,7 +2382,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
       )}
 
-      {regimeAndUoa && (regimeAndUoa.regime || (regimeAndUoa.uoa || []).length > 0) && (
+      {regimeAndUoa && (regimeAndUoa.regime || (regimeAndUoa.uoa || []).length > 0 || regimeAndUoa.riskVar || regimeAndUoa.lossCooldown?.active) && (
         <RegimeAndUoaChips data={regimeAndUoa} />
       )}
 
