@@ -1018,10 +1018,18 @@ ACCOUNT-SOURCE RULE (mandatory):
   // trader actually has 8-15% in cash. Ratio is against equity+cash book.
   const bookForRatio = (summary.total || 0) + (summary.cashCadEquiv || 0);
   const cashPctOfBook = bookForRatio > 0 ? (summary.cashCadEquiv / bookForRatio) * 100 : 0;
-  const dryPowderTag = cashPctOfBook < 3 ? "LEAN — under-cashed vs 5-10% recommended dry-powder range"
-    : cashPctOfBook <= 10 ? "HEALTHY — inside the 5-10% recommended dry-powder range; do NOT recommend adding CASH.TO / HISA equivalents"
-    : cashPctOfBook <= 20 ? "AMPLE — above the recommended range; prioritize deployment into named picks rather than telling the trader to hold more cash"
-    : "HIGH — trader is running heavy cash; recommend deployment, not accumulation";
+  // Three rules per tag — WHAT the AI must say about the cash, so the
+  // AI can't (a) recommend adding more cash when there's enough already
+  // NOR (b) go silent on cash when there's a real per-account balance
+  // to deploy. The section-5 rules downstream check the tag and REQUIRE
+  // a deployment plan for HEALTHY / AMPLE / HIGH.
+  const dryPowderTag = cashPctOfBook < 3
+    ? "LEAN — under-cashed vs the 5-10% recommended dry-powder range. Section 5 must propose ONE TRIM/SELL first to raise cash BEFORE any BUY, since there's not enough cash on hand to deploy."
+    : cashPctOfBook <= 10
+      ? "HEALTHY — inside the 5-10% recommended dry-powder range. Section 5 MUST propose deployment for every funded account with >$200 free cash; do NOT recommend adding CASH.TO / HISA equivalents; do NOT go silent — the trader is holding deployable cash and expects a plan."
+      : cashPctOfBook <= 20
+        ? "AMPLE — above the 5-10% range. Section 5 MUST propose deployment into named picks; if you can't find enough eligible names, explicitly SAY so and defer the excess to a specific dated target (e.g. 'defer $3k to the next SWING breakout ≥ score 60'). Do not just hold cash silently."
+        : "HIGH — trader is running heavy cash (>20% of book). Section 5 MUST propose a multi-name deployment plan across the top 3 funded accounts; if the tape regime is CHOPPY, split entries into layered scale-ins rather than one lump.";
   const cashBlock = hasCash
     ? `\nAvailable cash:
   $${summary.cashCad.toFixed(2)} CAD
