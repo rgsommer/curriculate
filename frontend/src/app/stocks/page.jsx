@@ -9292,12 +9292,12 @@ function TradesView({ sessionToken }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontVariantNumeric: "tabular-nums", fontSize: 13 }}>
               <thead>
                 <tr style={{ background: "var(--sa-panel-2)" }}>
-                  <th style={recHeaderCellLeft}>Date</th>
-                  <th style={recHeaderCellLeft}>Account</th>
-                  <th style={recHeaderCellLeft}>Legs</th>
-                  <th style={recHeaderCell}>Net cash (CAD)</th>
-                  <th style={recHeaderCellLeft}>Notes</th>
-                  <th style={recHeaderCell}></th>
+                  <th style={{ ...recHeaderCellLeft, width: "1%", whiteSpace: "nowrap" }}>Date</th>
+                  <th style={{ ...recHeaderCellLeft, width: "1%", whiteSpace: "nowrap" }}>Account</th>
+                  <th style={{ ...recHeaderCellLeft, width: "1%", whiteSpace: "nowrap" }}>Legs</th>
+                  <th style={{ ...recHeaderCell, width: "1%", whiteSpace: "nowrap" }}>Net cash (CAD)</th>
+                  <th style={{ ...recHeaderCellLeft, width: "auto" }}>Notes</th>
+                  <th style={{ ...recHeaderCell, width: "1%", whiteSpace: "nowrap" }}></th>
                 </tr>
               </thead>
               <tbody>
@@ -9346,7 +9346,7 @@ function TradesView({ sessionToken }) {
                     <td style={{ ...recCell, color: t.netCashCad >= 0 ? "var(--sa-green)" : "var(--sa-red)", fontWeight: 600 }}>
                       <span className="sa-amount">{t.netCashCad >= 0 ? "+" : "−"}${Math.abs(t.netCashCad || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                     </td>
-                    <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, maxWidth: 220, whiteSpace: "normal" }}>
+                    <td style={{ ...recCellLeft, color: "var(--sa-muted)", fontSize: 12, whiteSpace: "normal", lineHeight: 1.4 }}>
                       {t.notes || "—"}
                     </td>
                     <td style={{ ...recCell, textAlign: "right", whiteSpace: "nowrap" }}>
