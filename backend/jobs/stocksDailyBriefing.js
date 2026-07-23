@@ -1014,11 +1014,19 @@ ACCOUNT-SOURCE RULE (mandatory):
     : `\nOpen-recommendation monitor: no targets or stops hit since last check.\n`;
 
   const hasCash = summary.cashUsd > 5 || summary.cashCad > 5;
+  // Dry-powder framing so the AI stops saying "no dry powder" when the
+  // trader actually has 8-15% in cash. Ratio is against equity+cash book.
+  const bookForRatio = (summary.total || 0) + (summary.cashCadEquiv || 0);
+  const cashPctOfBook = bookForRatio > 0 ? (summary.cashCadEquiv / bookForRatio) * 100 : 0;
+  const dryPowderTag = cashPctOfBook < 3 ? "LEAN — under-cashed vs 5-10% recommended dry-powder range"
+    : cashPctOfBook <= 10 ? "HEALTHY — inside the 5-10% recommended dry-powder range; do NOT recommend adding CASH.TO / HISA equivalents"
+    : cashPctOfBook <= 20 ? "AMPLE — above the recommended range; prioritize deployment into named picks rather than telling the trader to hold more cash"
+    : "HIGH — trader is running heavy cash; recommend deployment, not accumulation";
   const cashBlock = hasCash
     ? `\nAvailable cash:
   $${summary.cashCad.toFixed(2)} CAD
   $${summary.cashUsd.toFixed(2)} USD
-  Total ≈ $${Math.round(summary.cashCadEquiv).toLocaleString()} CAD
+  Total ≈ $${Math.round(summary.cashCadEquiv).toLocaleString()} CAD (${cashPctOfBook.toFixed(1)}% of book — ${dryPowderTag})
 ${summary.perAccountCash.length ? "Per account:\n" + summary.perAccountCash.join("\n") : ""}
 `
     : `\nAvailable cash: $0 (no cash to deploy).\n`;
