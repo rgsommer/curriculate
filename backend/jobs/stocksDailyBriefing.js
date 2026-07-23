@@ -1101,6 +1101,16 @@ Section-specific per-call rules (system prompt has the general shape 0–8; the 
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, 2-3 line block. Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
    **THEN** — after the top-7 blocks, add a "### Quiet holdings" subsection that emits ONE line for EVERY remaining held ticker from the current-holdings table that hasn't been named elsewhere in the briefing (not in top-7, not in stop check, not in trades-executed, not in horizon review). Format: "**TICKER** (N sh @ $basis, current $X, W% of book) — [HOLD / TRIM / EXIT / ADD $Y] · one-sentence reason (fundamental note, technical setup, or sleeve rationale)". Do not skip any held ticker — small weights and sleepy defensives (utilities ETFs, precious-metal juniors, cash-like bond funds) still deserve a one-line disposition so the trader knows the model saw them.
+
+   **THESIS DISCIPLINE — MANDATORY, applies to sections 2, 4, and 8:**
+   A recommendation to TRIM or EXIT a position that was itself opened on a Curriculate rec (SWING pick, high-conviction, or open advice rec — anything the "HORIZON REVIEW" block shows) is INVALID unless AT LEAST ONE of the following triggers fired:
+   - Target hit ("HIT-TARGET" in horizon review).
+   - Stop breached ("HIT-STOP" in horizon review).
+   - Horizon expired ("EXPIRED" in horizon review).
+   - Well-behind pace at ≥60% of horizon ("WELL-BEHIND" + horizon day ≥60% of stated window).
+   - Material NEW information (earnings surprise, guidance cut/raise, downgrade to Sell, FDA rejection, executive resignation, deal breakup, regulatory action, macro regime flip from RISK-ON→RISK-OFF).
+   None of "small profit locked in", "up 0.1% capture the gains", "de-risk into the weekend", "capture some now, let rest run" qualify. Recs come with a plan (entry/target/stop/horizon). Deviating from that plan requires a stated trigger; there is no default trigger. If none of the above triggers fired, the correct call is **HOLD** — even at +5% mid-horizon on a 20% target. Cite the horizon-review row and the day/horizon fraction when confirming HOLD ("day 1/10, on-pace, no thesis change → HOLD").
+   TRIMs proposed WITHOUT a cited trigger are noise trading; they will be counted against the strategy in the compliance report as churn.
 3. **Performance snapshot** — week/month/3M moves on top names
 4. **Today's one action** — single highest-conviction trade, all four levels + specific account (per Canadian tax notes). Section 5 must NOT repeat this trade.
 ${cashSection}
