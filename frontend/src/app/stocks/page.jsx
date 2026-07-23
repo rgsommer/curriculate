@@ -1316,7 +1316,7 @@ export default function StocksAdvisorPage() {
             />
           )}
           {currentTab === "discover" && <DiscoverView sessionToken={auth.sessionToken} user={user} />}
-          {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} />}
+          {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
           {currentTab === "reconcile" && (
             <ReconcileView
@@ -7913,7 +7913,7 @@ function DiscoverView({ sessionToken, user }) {
 // =============================================================================
 // Performance view — portfolio time series + "if-followed" advisor scorecard
 // =============================================================================
-function PerformanceView({ sessionToken }) {
+function PerformanceView({ sessionToken, user }) {
   const [snaps, setSnaps] = useState(null);
   const [perfAccounts, setPerfAccounts] = useState([]);
   const [selectedAccountId, setSelectedAccountId] = useState("__total__");
@@ -8035,7 +8035,7 @@ function PerformanceView({ sessionToken }) {
 
       <EightKFeedCard sessionToken={sessionToken} />
 
-      <DailyPickCard sessionToken={sessionToken} />
+      <DailyPickCard sessionToken={sessionToken} user={user} />
 
       <PointInTimeBacktestCard sessionToken={sessionToken} />
 
@@ -9449,8 +9449,68 @@ function AlertsCard({ sessionToken }) {
   );
 }
 
+// Client-side mirror of stocksSleeveEnforcer.js so we can classify a
+// pick locally without a round-trip. Keep in sync — these lists are
+// small and change rarely. Fallback: any .TO/.V/.NE/.CN suffix → SWING.
+const SLEEVE_CORE_ETFS = new Set([
+  "SPY","VOO","IVV","VTI","ITOT","SPTM","QQQ","VUG","SCHG",
+  "IWM","VB","XIU","XIC","VCN","XEQT","XGRO","XBAL","VBAL","VGRO","VEQT",
+  "VFV","XUS","VUN","XUU","AGG","BND","XBB","VAB","ZAG","TLT","IEF",
+]);
+const SLEEVE_SWING_TICKERS = new Set([
+  "RY","TD","BMO","BNS","CM","NA","CWB","MFC","SLF","IFC","GWO",
+  "ENB","TRP","CNQ","SU","CVE","IMO","TOU","ARX",
+  "FTS","H","EMA","AQN","BCE","T","RCI","CP","CNR",
+  "L","ATD","MG","CTC","WCN","GIB","BN","BAM","REI","CAR","CSU","OTEX",
+]);
+const SLEEVE_SPEC_TICKERS = new Set([
+  "DJT","DJTWW","GME","AMC","BBAI","SOUN","RIVN","LCID",
+  "PLTR","RKLB","IONQ","SMCI","COIN","MSTR","HOOD",
+  "NIO","XPEV","LI","BABA","PDD",
+]);
+function sleeveOfTicker(ticker) {
+  const raw = String(ticker || "").toUpperCase();
+  const base = raw.replace(/\..*$/, "");
+  if (SLEEVE_CORE_ETFS.has(base)) return "core";
+  if (SLEEVE_SWING_TICKERS.has(base)) return "swing";
+  if (SLEEVE_SPEC_TICKERS.has(base)) return "spec";
+  if (/\.(TO|V|NE|CN)$/i.test(raw)) return "swing";
+  return "spec";
+}
+// Compute sleeve balance from user.positions. Mirrors
+// stocksSleeveEnforcer.computeSleeveBalance but stays skinny.
+function computeSleeveBalanceClient(user) {
+  const fx = user?.fxUsdCad || 1.37;
+  const targets = user?.sleeveTargets || { core: 80, swing: 15, spec: 5 };
+  const sum = (targets.core || 0) + (targets.swing || 0) + (targets.spec || 0);
+  const targetPct = sum > 0
+    ? { core: (targets.core / sum) * 100, swing: (targets.swing / sum) * 100, spec: (targets.spec / sum) * 100 }
+    : { core: 80, swing: 15, spec: 5 };
+  const totals = { core: 0, swing: 0, spec: 0 };
+  for (const p of (user?.positions || [])) {
+    const sleeve = sleeveOfTicker(p.ticker);
+    const cad = (Number.isFinite(p.priceCad) ? p.priceCad : (Number.isFinite(p.priceUsd) ? p.priceUsd * fx : 0)) * (p.qty || 0);
+    totals[sleeve] += cad;
+  }
+  const cashCad = (user?.accounts || []).reduce((s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0);
+  const book = totals.core + totals.swing + totals.spec + cashCad;
+  const targetsCad = {
+    core: book * targetPct.core / 100,
+    swing: book * targetPct.swing / 100,
+    spec: book * targetPct.spec / 100,
+  };
+  return {
+    book, cashCad, fx, totals, targetsCad, targetPct,
+    headroomCad: {
+      core: targetsCad.core - totals.core,
+      swing: targetsCad.swing - totals.swing,
+      spec: targetsCad.spec - totals.spec,
+    },
+  };
+}
+
 // ── Test A: forced daily-pick discipline ───────────────────────────
-function DailyPickCard({ sessionToken }) {
+function DailyPickCard({ sessionToken, user }) {
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -9579,6 +9639,31 @@ function DailyPickCard({ sessionToken }) {
         </div>
       )}
 
+      {items.length > 0 && user && (() => {
+        const bal = computeSleeveBalanceClient(user);
+        const fmtCad = (n) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
+        return (
+          <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+            {["core", "swing", "spec"].map((k) => {
+              const h = bal.headroomCad[k];
+              const isOver = h < 0;
+              const label = k.toUpperCase();
+              return (
+                <div key={k} style={{ padding: "8px 10px", background: isOver ? "#fee2e2" : "var(--sa-panel-2)", border: `1px solid ${isOver ? "#fca5a5" : "var(--sa-border)"}`, borderRadius: 6, textAlign: "center" }}>
+                  <div style={{ fontSize: 10.5, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".06em" }}>{label} sleeve</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, marginTop: 2, color: isOver ? "#b91c1c" : "#166534" }}>
+                    {isOver ? `-${fmtCad(h)} over` : `${fmtCad(h)} headroom`}
+                  </div>
+                  <div style={{ fontSize: 10, color: "var(--sa-muted)", marginTop: 2 }}>
+                    now {fmtCad(bal.totals[k])} · target {fmtCad(bal.targetsCad[k])} ({bal.targetPct[k].toFixed(0)}%)
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
       {items.length > 0 && (
         <div style={{ marginTop: 12, overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
@@ -9589,6 +9674,7 @@ function DailyPickCard({ sessionToken }) {
                 <th style={{ padding: "5px 8px", textAlign: "right" }}>Entry</th>
                 <th style={{ padding: "5px 8px", textAlign: "right" }}>Stop</th>
                 <th style={{ padding: "5px 8px", textAlign: "right" }}>Target</th>
+                <th style={{ padding: "5px 8px", textAlign: "left" }}>Sleeve fit</th>
                 <th style={{ padding: "5px 8px", textAlign: "right" }}>Score</th>
                 <th style={{ padding: "5px 8px", textAlign: "left" }}>Setup</th>
                 <th style={{ padding: "5px 8px", textAlign: "left" }}>Status</th>
@@ -9643,6 +9729,34 @@ function DailyPickCard({ sessionToken }) {
                           <>
                             <div style={{ fontSize: 9.5 }}>(+{roi.toFixed(1)}%{h ? ` / ${h}d` : ""})</div>
                             {ann != null && <div style={{ fontSize: 9.5, color: "#14532d" }}>ann. +{ann.toFixed(0)}%</div>}
+                          </>
+                        );
+                      })()}
+                    </td>
+                    <td style={{ padding: "5px 8px", fontSize: 10.5 }}>
+                      {(() => {
+                        if (!user) return "—";
+                        const sleeve = sleeveOfTicker(p.ticker);
+                        const bal = computeSleeveBalanceClient(user);
+                        const headroom = bal.headroomCad[sleeve];
+                        const sleeveTagBg = sleeve === "core" ? "#dbeafe"
+                          : sleeve === "swing" ? "#dcfce7"
+                          : "#fef3c7";
+                        const sleeveTagFg = sleeve === "core" ? "#1e40af"
+                          : sleeve === "swing" ? "#166534"
+                          : "#78350f";
+                        // Convert entry to CAD to estimate # of shares that fit.
+                        const isCadTicker = /\.(TO|V|NE|CN)$/i.test(p.ticker || "") || p.currency === "CAD";
+                        const entryCad = isCadTicker ? p.entryPrice : (p.entryPrice * bal.fx);
+                        const sharesFit = (headroom > 0 && entryCad > 0) ? Math.floor(headroom / entryCad) : 0;
+                        return (
+                          <>
+                            <span style={{ padding: "1px 6px", borderRadius: 4, background: sleeveTagBg, color: sleeveTagFg, fontWeight: 700, fontSize: 10 }}>{sleeve.toUpperCase()}</span>
+                            <div style={{ marginTop: 2, color: headroom > 0 ? "#166534" : "#991b1b", fontVariantNumeric: "tabular-nums" }}>
+                              {headroom > 0
+                                ? `${sharesFit} sh fits ($${Math.round(headroom).toLocaleString()})`
+                                : `sleeve OVER by $${Math.round(Math.abs(headroom)).toLocaleString()}`}
+                            </div>
                           </>
                         );
                       })()}
