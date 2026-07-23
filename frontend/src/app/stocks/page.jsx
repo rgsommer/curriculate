@@ -143,6 +143,7 @@ async function apiPutPortfolio(sessionToken, profile) {
       intradayUpdatesEnabled: profile.intradayUpdatesEnabled,
       optionsTradingEnabled: profile.optionsTradingEnabled,
       noTouchMode: profile.noTouchMode,
+      disciplineCriticEnabled: profile.disciplineCriticEnabled,
       sleeveTargets: profile.sleeveTargets,
       goals: profile.goals,
       annualContributionGoals: profile.annualContributionGoals,
@@ -1413,6 +1414,10 @@ export default function StocksAdvisorPage() {
               onChangeNoTouchMode={(v) => {
                 updateUser(() => ({ noTouchMode: v }));
                 showToast(v ? "No-touch mode enabled" : "No-touch mode disabled");
+              }}
+              onChangeDisciplineCritic={(v) => {
+                updateUser(() => ({ disciplineCriticEnabled: v }));
+                showToast(v ? "Discipline critic enabled — every briefing will be audited" : "Discipline critic disabled");
               }}
               onChangeBriefingTimes={(times) => {
                 updateUser(() => ({ briefingTimes: times }));
@@ -4277,7 +4282,7 @@ function EmailIntegrationCard({ sessionToken }) {
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -4560,6 +4565,32 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
                 <li>Intraday briefings (if enabled) quiet down to <b>hard-stop hits only</b> — informational signals aren&apos;t actionable when you can&apos;t touch orders</li>
                 <li>A short <b>EOD recap</b> emails at 4:15 PM ET Mon–Fri: what filled today, what stopped, what to queue tomorrow</li>
               </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangeDisciplineCritic(!user.disciplineCriticEnabled)}>
+        <h3>Discipline critic (independent audit)</h3>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={!!user.disciplineCriticEnabled}
+            readOnly
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", pointerEvents: "none" }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Route every briefing through a second AI model for a discipline audit</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              After the primary briefing is written, sends it through a fast OpenAI model (gpt-4o-mini) with a 5-point rubric before delivery:
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                <li><b>Unjustified TRIM/EXIT</b> — SELL/TRIM without a cited trigger (target hit, stop breached, horizon expired, material news)</li>
+                <li><b>Unknown ticker</b> — a rec on a symbol not in your holdings or the discovery pool</li>
+                <li><b>Price discrepancy</b> — a current-price claim &gt;10% off from the holdings-table reference</li>
+                <li><b>Reverses yesterday</b> — a call that flips your prior briefing without naming a specific new trigger</li>
+                <li><b>Liquidation card on held ticker</b> — any "SELL AT MARKET / DELISTED / NOT FOUND" for a name you own</li>
+              </ul>
+              If anything flags, an amber banner is prepended to the emailed briefing naming each violation. Never blocks send. Costs ~$0.01–0.02/briefing, adds 1–3s latency. Requires the operator to have <code>OPENAI_API_KEY</code> set on the deploy — otherwise the toggle is a no-op.
             </div>
           </div>
         </div>

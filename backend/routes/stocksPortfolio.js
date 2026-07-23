@@ -220,6 +220,9 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.optionsTradingEnabled === "boolean") {
     out.optionsTradingEnabled = body.optionsTradingEnabled;
   }
+  if (typeof body.disciplineCriticEnabled === "boolean") {
+    out.disciplineCriticEnabled = body.disciplineCriticEnabled;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }

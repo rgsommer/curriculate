@@ -268,6 +268,14 @@ const StocksPortfolioSchema = new mongoose.Schema(
     //     signals aren't actionable when the user can't touch orders)
     //   - EOD recap (4:15 PM ET) closes the loop each day
     noTouchMode: { type: Boolean, default: false },
+    // Independent OpenAI discipline critic. When ON, every briefing
+    // gets routed through gpt-4o-mini after generation with a strict
+    // 5-point rubric (unjustified TRIM, unknown ticker, price >10% off
+    // reference, contradicts yesterday without trigger, liquidation
+    // card on held ticker). If any flag, an amber banner is prepended
+    // to the emailed briefing. Requires the operator to have
+    // OPENAI_API_KEY set on the deploy; otherwise the flag is a noop.
+    disciplineCriticEnabled: { type: Boolean, default: false },
     // Last day's EOD recap key (YYYY-MM-DD in ET) so the recap cron
     // doesn't double-fire when it ticks across two minutes.
     lastEodRecapSentKey: { type: String, default: "" },

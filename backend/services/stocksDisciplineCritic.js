@@ -115,9 +115,10 @@ async function callOpenAI(prompt, model) {
 // { violations: [], skipped: <reason> } if disabled/unconfigured. Never
 // throws — a critic failure must not block the briefing.
 export async function runDisciplineCritic({ markdown, holdings, horizonRows, previousCalls }) {
-  if (process.env.STOCKS_CRITIC_ENABLED !== "1") {
-    return { violations: [], skipped: "disabled" };
-  }
+  // Per-user opt-in is enforced by the caller (auditBriefingWithCritic
+  // checks portfolio.disciplineCriticEnabled). Here we only enforce the
+  // hard preconditions: OPENAI_API_KEY must be set on the deploy, and
+  // the briefing must be substantive enough to audit.
   if (!process.env.OPENAI_API_KEY) {
     return { violations: [], skipped: "no-openai-key" };
   }

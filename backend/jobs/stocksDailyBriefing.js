@@ -86,6 +86,11 @@ function getBriefingValidators() {
 // prepends an amber banner. Never throws; never blocks. Gated by
 // STOCKS_CRITIC_ENABLED=1 + OPENAI_API_KEY.
 async function auditBriefingWithCritic(md, portfolio) {
+  // Per-user opt-in. The deploy-level STOCKS_CRITIC_ENABLED gate
+  // inside runDisciplineCritic is still respected — this just adds
+  // a second, per-user knob so different users on the same deploy
+  // can independently opt in or out.
+  if (!portfolio?.disciplineCriticEnabled) return md;
   try {
     let previousCalls = "";
     try {
