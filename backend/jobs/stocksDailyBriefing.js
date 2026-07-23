@@ -25,6 +25,7 @@ import { writeDailySnapshot } from "../routes/stocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import StocksBriefingHistory from "../models/StocksBriefingHistory.js";
+import { runDisciplineCritic, formatCriticBanner } from "../services/stocksDisciplineCritic.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
@@ -78,6 +79,40 @@ function getBriefingValidators() {
 // the one-shot runDailyBriefing (admin) AND the per-minute sendBriefingForUser
 // (cron) — previously only the manual path had it. Never throws; returns the
 // (possibly-corrected, possibly-banner-prepended) markdown.
+// Independent post-generation audit — routes the finished briefing
+// through a small OpenAI model (gpt-4o-mini) against a strict rubric
+// (unjustified TRIM, unknown ticker, price >10% off, contradicts
+// yesterday, liquidation card on held ticker). If violations exist,
+// prepends an amber banner. Never throws; never blocks. Gated by
+// STOCKS_CRITIC_ENABLED=1 + OPENAI_API_KEY.
+async function auditBriefingWithCritic(md, portfolio) {
+  try {
+    let previousCalls = "";
+    try {
+      const prior = await StocksBriefingHistory.find({ email: portfolio.email.toLowerCase() })
+        .sort({ generatedAt: -1 }).limit(1).lean();
+      previousCalls = prior?.[0]?.callsExcerpt || "";
+    } catch { /* best-effort */ }
+    let horizonRows = [];
+    try {
+      horizonRows = await computeHorizonReview(portfolio.email);
+    } catch { /* best-effort */ }
+    const { violations, skipped } = await runDisciplineCritic({
+      markdown: md,
+      holdings: portfolio.positions || [],
+      horizonRows,
+      previousCalls,
+    });
+    if (skipped) return md;
+    if (!violations.length) return md;
+    console.log(`[discipline-critic] ${portfolio.email}: ${violations.length} violation(s) flagged`);
+    return formatCriticBanner(violations) + md;
+  } catch (e) {
+    console.warn("[discipline-critic] wrapper failed:", e?.message);
+    return md;
+  }
+}
+
 async function validateAndCorrectBriefing(md, portfolio) {
   const v = await getBriefingValidators();
   if (!v.validateTextPrices) return md; // validators unavailable — send as-is
@@ -1717,6 +1752,7 @@ export async function runDailyBriefing(opts = {}) {
       }
 
       md = await validateAndCorrectBriefing(md, p);
+      md = await auditBriefingWithCritic(md, p);
 
       const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
       await emailBriefing({ to: p.email, subject, md });
@@ -1834,6 +1870,9 @@ export async function sendBriefingForUser(p, sendKey) {
     // Same price-validation + correction pass the manual /send-briefing uses.
     // Never throws — returns the (corrected or as-is) markdown.
     md = await validateAndCorrectBriefing(md, p);
+    // Independent OpenAI critic pass — prepends an amber discipline
+    // banner if any violations flag. Best-effort; never blocks.
+    md = await auditBriefingWithCritic(md, p);
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     try { await emailBriefing({ to: p.email, subject, md }); }
