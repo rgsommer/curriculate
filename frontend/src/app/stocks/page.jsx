@@ -1286,6 +1286,7 @@ export default function StocksAdvisorPage() {
           {currentTab === "positions" && (
             <PositionsView
               user={user}
+              sessionToken={auth.sessionToken}
               onOpenModal={(idx) => setModalIdx(idx)}
               onDelete={(idx) => {
                 if (confirm(`Delete this position?`))
@@ -2618,7 +2619,37 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   );
 }
 
-function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPrices }) {
+function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount, onRefreshPrices }) {
+  // Trades loaded once for the whole view; expanded rows filter locally.
+  const [tradesByBaseTicker, setTradesByBaseTicker] = useState({});
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-trade?days=1825`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        const idx = {};
+        for (const t of (j.trades || [])) {
+          for (const leg of (t.legs || [])) {
+            if (!leg.ticker) continue;
+            const base = String(leg.ticker).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+            if (!idx[base]) idx[base] = [];
+            idx[base].push({ ...leg, executedAt: t.executedAt, tradeId: t._id, account: t.accountName || t.account });
+          }
+        }
+        for (const b of Object.keys(idx)) idx[b].sort((a, c) => new Date(a.executedAt) - new Date(c.executedAt));
+        setTradesByBaseTicker(idx);
+      } catch { /* silent — expand rows just say "no trades on file" */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+  const [expandedTicker, setExpandedTicker] = useState(null);
   const fx = user.fxUsdCad || 1.37;
   const bookTotal = totalCad(user.positions, fx) + (user.accounts || []).reduce(
     (s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0
@@ -2716,7 +2747,7 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
                 <th>Ticker</th><th>Qty</th><th>Price</th><th>CCY</th><th>Basis</th><th>P/L %</th><th>P/L $</th><th>Value (CAD)</th><th>% acct</th><th>% book</th><th></th>
               </tr></thead>
               <tbody>
-                {items.map((p) => {
+                {items.flatMap((p) => {
                   const v = valueOfPosition(p, fx);
                   const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
                   const basis = p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
@@ -2726,10 +2757,21 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
                   const pnlColor = pnlPct == null ? "inherit" : pnlPct > 0 ? "#166534" : pnlPct < 0 ? "#991b1b" : "inherit";
                   const q = tickerFilter.trim().toLowerCase();
                   const matches = q && String(p.ticker || "").toLowerCase().includes(q);
-                  if (q && !matches) return null;
-                  return (
-                    <tr key={p._origIdx} style={matches ? { background: "var(--sa-amber-soft)" } : undefined}>
-                      <td className="tk">{p.ticker}<span className="sub">{p.name || ""}</span></td>
+                  if (q && !matches) return [];
+                  const baseKey = String(p.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+                  const isExpanded = expandedTicker === `${p._origIdx}`;
+                  const tradesForTicker = tradesByBaseTicker[baseKey] || [];
+                  const rows = [(
+                    <tr
+                      key={p._origIdx}
+                      style={{ ...(matches ? { background: "var(--sa-amber-soft)" } : undefined), cursor: "pointer" }}
+                      onClick={() => setExpandedTicker(isExpanded ? null : `${p._origIdx}`)}
+                    >
+                      <td className="tk">
+                        <span style={{ display: "inline-block", width: 12, color: "var(--sa-muted)", fontSize: 9, transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
+                        {" "}
+                        {p.ticker}<span className="sub">{p.name || ""}</span>
+                      </td>
                       <td>{p.qty.toLocaleString()}</td>
                       <td>{price != null ? price.toFixed(4) : "—"}</td>
                       <td>{p.ccy}</td>
@@ -2739,13 +2781,71 @@ function PositionsView({ user, onOpenModal, onDelete, onAddAccount, onRefreshPri
                       <td><span className="sa-amount">{fmtMoney(v.cad, "CAD")}</span></td>
                       <td>{equityCad > 0 ? ((v.cad / equityCad) * 100).toFixed(1) : "0.0"}%</td>
                       <td>{bookTotal > 0 ? ((v.cad / bookTotal) * 100).toFixed(1) : "0.0"}%</td>
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <button className="sa-btn ghost" onClick={() => onOpenModal(p._origIdx)}>edit</button>
                         {" "}
                         <button className="sa-btn ghost" onClick={() => onDelete(p._origIdx)}>delete</button>
                       </td>
                     </tr>
-                  );
+                  )];
+                  if (isExpanded) {
+                    rows.push(
+                      <tr key={`${p._origIdx}-trades`} style={{ background: "var(--sa-panel-2)" }}>
+                        <td colSpan={11} style={{ padding: "8px 14px 10px 30px" }}>
+                          {tradesForTicker.length === 0 ? (
+                            <div className="sa-muted" style={{ fontSize: 12, fontStyle: "italic" }}>
+                              No recorded trades for <b>{baseKey}</b> in the journal.
+                            </div>
+                          ) : (
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, fontVariantNumeric: "tabular-nums" }}>
+                              <thead>
+                                <tr style={{ color: "var(--sa-muted)", textTransform: "uppercase", fontSize: 10, letterSpacing: ".05em" }}>
+                                  <th style={{ textAlign: "left", padding: "3px 8px" }}>Date</th>
+                                  <th style={{ textAlign: "left", padding: "3px 8px" }}>Side</th>
+                                  <th style={{ textAlign: "right", padding: "3px 8px" }}>Qty</th>
+                                  <th style={{ textAlign: "right", padding: "3px 8px" }}>Fill</th>
+                                  <th style={{ textAlign: "right", padding: "3px 8px" }}>vs now</th>
+                                  <th style={{ textAlign: "right", padding: "3px 8px" }}>P/L $</th>
+                                  <th style={{ textAlign: "left", padding: "3px 8px" }}>Account</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {tradesForTicker.map((leg, i) => {
+                                  const fillCcy = leg.currency || p.ccy;
+                                  const nowInLegCcy = fillCcy === p.ccy ? price
+                                    : (fillCcy === "USD" && p.ccy === "CAD") ? (p.priceCad != null ? p.priceCad / fx : null)
+                                    : (fillCcy === "CAD" && p.ccy === "USD") ? (p.priceUsd != null ? p.priceUsd * fx : null)
+                                    : price;
+                                  const vsNow = (Number.isFinite(nowInLegCcy) && Number.isFinite(leg.pricePerShare) && leg.pricePerShare > 0)
+                                    ? ((nowInLegCcy - leg.pricePerShare) / leg.pricePerShare) * 100
+                                    : null;
+                                  // BUY: gain if now > fill. SELL: gain if now < fill (you sold higher than today's price).
+                                  const dir = leg.side === "BUY" ? 1 : leg.side === "SELL" ? -1 : 0;
+                                  const realizedPnlCcy = (dir !== 0 && Number.isFinite(nowInLegCcy)) ? dir * (nowInLegCcy - leg.pricePerShare) * (leg.shares || 0) : null;
+                                  const realizedPnlCad = realizedPnlCcy != null ? (fillCcy === "USD" ? realizedPnlCcy * fx : realizedPnlCcy) : null;
+                                  const vsColor = vsNow == null ? "inherit" : (dir * vsNow > 0 ? "#166534" : dir * vsNow < 0 ? "#991b1b" : "inherit");
+                                  return (
+                                    <tr key={i} style={{ borderTop: "1px dashed var(--sa-border)" }}>
+                                      <td style={{ padding: "3px 8px" }}>{new Date(leg.executedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "2-digit" })}</td>
+                                      <td style={{ padding: "3px 8px" }}>
+                                        <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: leg.side === "BUY" ? "var(--sa-green-soft)" : leg.side === "SELL" ? "var(--sa-red-soft)" : "var(--sa-panel-2)", color: leg.side === "BUY" ? "var(--sa-green)" : leg.side === "SELL" ? "var(--sa-red)" : "var(--sa-muted)" }}>{leg.side}</span>
+                                      </td>
+                                      <td style={{ padding: "3px 8px", textAlign: "right" }}>{(leg.shares || 0).toLocaleString()}</td>
+                                      <td style={{ padding: "3px 8px", textAlign: "right" }}>{Number(leg.pricePerShare).toFixed(2)} {fillCcy}</td>
+                                      <td style={{ padding: "3px 8px", textAlign: "right", color: vsColor, fontWeight: 600 }}>{vsNow != null ? `${vsNow >= 0 ? "+" : ""}${vsNow.toFixed(1)}%` : "—"}</td>
+                                      <td style={{ padding: "3px 8px", textAlign: "right", color: vsColor, fontWeight: 600 }}>{realizedPnlCad != null ? <span className="sa-amount">{realizedPnlCad >= 0 ? "+" : "−"}{fmtMoney(Math.abs(realizedPnlCad), "CAD")}</span> : "—"}</td>
+                                      <td style={{ padding: "3px 8px", color: "var(--sa-muted)" }}>{leg.account || "—"}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  }
+                  return rows;
                 })}
               </tbody>
             </table>
