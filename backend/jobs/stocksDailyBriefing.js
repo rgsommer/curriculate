@@ -48,6 +48,8 @@ import { computeSizingAdjustments, formatSizingAdjustmentBlock } from "../servic
 import { computeOverlaySuggestions, formatOverlayBlock, formatOverlayFunnelForEmail } from "../services/stocksOptionsOverlay.js";
 import { computeOptimalSize, formatSizingBlock, getSetupExpectancyMap } from "../services/stocksPositionSizing.js";
 import { computePyramidingSignals, formatPyramidingBlock } from "../services/stocksPyramidingMonitor.js";
+import { computeTradingRegime, formatTradingRegimeBlock } from "../services/stocksTradingRegime.js";
+import { scanUnusualOptionsFlow, formatUnusualOptionsBlock } from "../services/stocksUnusualOptionsFlow.js";
 import { computeCompliance, formatComplianceBlock } from "../services/stocksCompliance.js";
 import { computeAttribution, formatAttributionBlock } from "../services/stocksAttribution.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
@@ -929,7 +931,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -1123,6 +1125,8 @@ ${formatSizingAdjustmentBlock(sizingAdjustments)}
 ${formatOverlayBlock(overlaySuggestions)}
 ${formatSizingBlock(sizedPicks)}
 ${formatPyramidingBlock(pyramidingSignals)}
+${formatTradingRegimeBlock(tradingRegime)}
+${formatUnusualOptionsBlock(unusualOptions)}
 ${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
 ${formatAttributionBlock(attribution)}
 ${formatHorizonReviewBlock(horizonRows)}
@@ -1712,7 +1716,28 @@ export async function generateBriefing(profile) {
       })
     : [];
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals);
+  // Trading regime — synthesizes VIX + SPY + Fed liquidity into a
+  // trending / choppy / neutral bias so the AI can prefer the setups
+  // most likely to work today. Reuses macro + fedLiquidity already
+  // fetched above — zero additional latency.
+  let tradingRegime = null;
+  try { tradingRegime = computeTradingRegime({ macroContext: macro, fedLiquidity }); }
+  catch (e) { console.warn("[trading-regime] warn:", e?.message); }
+
+  // Unusual options activity (UOA) — heuristic institutional flow
+  // signal on held tickers + top discovery-pool + today's daily picks.
+  // Capped to 20 unique tickers to keep the Yahoo option-chain fan-out
+  // sane. Scanner concurrency-bounded to 5. Cached 30 min per ticker.
+  const uoaTickers = new Set();
+  for (const p of (profile.positions || []).slice(0, 15)) {
+    if (p.ticker) uoaTickers.add(String(p.ticker).toUpperCase().replace(/\..*$/, ""));
+  }
+  for (const c of (discoveryPool || []).slice(0, 3)) if (c.ticker) uoaTickers.add(String(c.ticker).toUpperCase());
+  for (const p of (dailyPicks || [])) if (p.ticker) uoaTickers.add(String(p.ticker).toUpperCase().replace(/\..*$/, ""));
+  const unusualOptions = await scanUnusualOptionsFlow([...uoaTickers].slice(0, 20))
+    .catch(e => { console.warn("[uoa] warn:", e?.message); return []; });
+
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
