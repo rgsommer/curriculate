@@ -10,6 +10,7 @@ import {
   campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -126,7 +127,7 @@ export async function POST(req: Request) {
     if (emails.length) {
       const m = newEngagementEmail({ ...shared, url: engUrl });
       for (let i = 0; i < emails.length; i += 100) {
-        await resend.batch.send(
+        await sendCampfireBatch(
           emails.slice(i, i + 100).map((to) => ({
             from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults(),
           }))
@@ -153,7 +154,7 @@ export async function POST(req: Request) {
         return { from, to: [p.email], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
       });
       for (let i = 0; i < invMsgs.length; i += 100) {
-        await resend.batch.send(invMsgs.slice(i, i + 100));
+        await sendCampfireBatch(invMsgs.slice(i, i + 100));
       }
       // Record that these invitees were emailed (the host can see who's been reached).
       await admin

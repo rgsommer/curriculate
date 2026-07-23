@@ -9,6 +9,7 @@ import {
   escapeHtml,
   notifyHostOfAward,
 } from "./serverInvites";
+import { sendCampfireBatch } from "./serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -174,7 +175,7 @@ export async function awardHallOfFameGift(
     }<p><a href="${url}">See the results →</a></p>`;
     const from = campfireFrom();
     for (let i = 0; i < emails.length; i += 100) {
-      await resend.batch.send(
+      await sendCampfireBatch(
         emails
           .slice(i, i + 100)
           .map((to) => ({ from, to: [to], subject, text, html, ...mailDefaults() }))

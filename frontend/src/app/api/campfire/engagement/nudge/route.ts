@@ -12,6 +12,7 @@ import {
   campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -108,7 +109,7 @@ export async function POST(req: Request) {
         note,
       });
       for (let i = 0; i < memberEmails.length; i += 100) {
-        await resend.batch.send(
+        await sendCampfireBatch(
           memberEmails.slice(i, i + 100).map((to) => ({
             from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults(),
           }))
@@ -160,7 +161,7 @@ export async function POST(req: Request) {
         return { from, to: [p.email as string], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
       });
       for (let i = 0; i < msgs.length; i += 100) {
-        await resend.batch.send(msgs.slice(i, i + 100));
+        await sendCampfireBatch(msgs.slice(i, i + 100));
       }
       const nowIso = new Date().toISOString();
       for (const p of invitees) {

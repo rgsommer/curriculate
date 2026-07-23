@@ -6,6 +6,7 @@ import {
   mailDefaults,
   campfireSiteUrl,
   referrerWelcomeEmail,
+  sendCampfireBatch,
 } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
@@ -67,14 +68,16 @@ export async function POST(req: Request) {
   if (isNew && active) {
     try {
       const em = referrerWelcomeEmail({ name, code, site: campfireSiteUrl() });
-      await resend.emails.send({
-        from: campfireFrom(),
-        to: [email],
-        subject: em.subject,
-        text: em.text,
-        html: em.html,
-        ...mailDefaults(),
-      });
+      await sendCampfireBatch([
+        {
+          from: campfireFrom(),
+          to: [email],
+          subject: em.subject,
+          text: em.text,
+          html: em.html,
+          ...mailDefaults(email),
+        },
+      ]);
       welcomed = true;
     } catch (e) {
       console.error("Referrer welcome email failed:", e);

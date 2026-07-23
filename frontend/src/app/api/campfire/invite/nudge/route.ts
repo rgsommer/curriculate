@@ -9,6 +9,7 @@ import {
   campfireFrom,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -135,7 +136,7 @@ export async function POST(req: Request) {
     });
 
     for (let i = 0; i < messages.length; i += 100) {
-      const { error: sendErr } = await resend.batch.send(messages.slice(i, i + 100));
+      const { error: sendErr } = await sendCampfireBatch(messages.slice(i, i + 100));
       if (sendErr) {
         console.error("Campfire nudge send error:", sendErr);
         return NextResponse.json(

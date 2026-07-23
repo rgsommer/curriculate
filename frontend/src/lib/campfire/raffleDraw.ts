@@ -10,6 +10,7 @@ import {
   escapeHtml,
   notifyHostOfAward,
 } from "./serverInvites";
+import { sendCampfireBatch } from "./serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -205,7 +206,7 @@ export async function runRaffleDraw(
     )}"! 🎉</p>${unpaidNote ? `<p>${escapeHtml(unpaidNote.trim())}</p>` : ""}<p><a href="${url}">See it →</a></p>`;
     const from = campfireFrom();
     for (let i = 0; i < emails.length; i += 100) {
-      await resend.batch.send(
+      await sendCampfireBatch(
         emails.slice(i, i + 100).map((to) => ({ from, to: [to], subject, text, html, ...mailDefaults() }))
       );
     }

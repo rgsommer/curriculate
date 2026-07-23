@@ -13,6 +13,7 @@ import {
   campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon } from "@/lib/campfire/types";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -154,7 +155,7 @@ export async function POST(req: Request) {
     // line up a surprise recipient first). They get emailed when it resumes.
     if (!eng.paused) {
       for (let i = 0; i < msgs.length; i += 100) {
-        const { error: sendErr } = await resend.batch.send(msgs.slice(i, i + 100));
+        const { error: sendErr } = await sendCampfireBatch(msgs.slice(i, i + 100));
         if (sendErr) {
           console.error("Campfire engagement-invite send error:", sendErr);
           return NextResponse.json({ error: "Couldn't send. Try again." }, { status: 502 });

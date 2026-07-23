@@ -13,6 +13,7 @@ import {
   extractEmail,
 } from "@/lib/campfire/serverInvites";
 import { ENGAGEMENT_TYPES, resolveTitle } from "@/lib/campfire/types";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -129,7 +130,7 @@ export async function POST(req: Request) {
     if (!stage) {
       // Per-recipient link carrying the invited address (?inv=…) so we can mark
       // the right invitation joined even if they sign in with a different email.
-      const { error: sendErr } = await resend.batch.send(
+      const { error: sendErr } = await sendCampfireBatch(
         emails.map((to) => {
           const joinUrl = `${baseJoinUrl}?inv=${encodeURIComponent(to)}`;
           const m = inviteEmail({
@@ -239,7 +240,7 @@ export async function POST(req: Request) {
           return { from, to: [to], subject: im.subject, text: im.text, html: im.html, ...mailDefaults() };
         });
         for (let i = 0; i < msgs.length; i += 100) {
-          const { error: sendErr } = await resend.batch.send(msgs.slice(i, i + 100));
+          const { error: sendErr } = await sendCampfireBatch(msgs.slice(i, i + 100));
           if (sendErr) {
             console.error("Campfire catch-up invite send error:", sendErr);
             break;

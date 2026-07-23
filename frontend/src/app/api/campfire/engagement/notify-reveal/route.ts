@@ -13,6 +13,7 @@ import {
   campfireSiteUrl,
 } from "@/lib/campfire/serverInvites";
 import { resolveTitle, engagementIcon } from "@/lib/campfire/types";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -149,7 +150,7 @@ export async function POST(req: Request) {
       });
       let sendErr: string | null = null;
       for (let i = 0; i < msgs.length; i += 100) {
-        const { error: be } = await resend.batch.send(msgs.slice(i, i + 100));
+        const { error: be } = await sendCampfireBatch(msgs.slice(i, i + 100));
         if (be) sendErr = be.message ?? String(be);
       }
       // Diagnostics: which recipients actually got an email, and how many can't be
@@ -179,7 +180,7 @@ export async function POST(req: Request) {
       url: engUrl,
     });
     for (let i = 0; i < emails.length; i += 100) {
-      await resend.batch.send(
+      await sendCampfireBatch(
         emails.slice(i, i + 100).map((to) => ({
           from,
           to: [to],

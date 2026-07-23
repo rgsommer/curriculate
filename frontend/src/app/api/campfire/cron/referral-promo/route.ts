@@ -6,6 +6,7 @@ import {
   mailDefaults,
   referralPromoEmail,
 } from "@/lib/campfire/serverInvites";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -129,7 +130,7 @@ export async function GET(req: Request) {
 
   let sent = 0;
   for (let i = 0; i < msgs.length; i += 100) {
-    const { error } = await resend.batch.send(msgs.slice(i, i + 100));
+    const { error } = await sendCampfireBatch(msgs.slice(i, i + 100));
     if (error) {
       console.error("Referral promo send error:", error);
       break;

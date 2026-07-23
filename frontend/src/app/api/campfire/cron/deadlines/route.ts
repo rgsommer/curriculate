@@ -23,6 +23,7 @@ import {
 import { ENGAGEMENT_TYPES, resolveTitle, engagementIcon, nthWeekdayOfMonth, nextMonthlyNthWeekday, raffleOf, tournamentOf, selectPoolQuestions, type NthWeekday, type QuestionCategory } from "@/lib/campfire/types";
 import { runRaffleDraw } from "@/lib/campfire/raffleDraw";
 import { awardHallOfFameGift } from "@/lib/campfire/hallOfFame";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -193,7 +194,7 @@ export async function GET(req: Request) {
       if (messages.length) {
         // Resend batch caps at 100; chunk to be safe.
         for (let i = 0; i < messages.length; i += 100) {
-          await resend.batch.send(messages.slice(i, i + 100));
+          await sendCampfireBatch(messages.slice(i, i + 100));
         }
         await admin
           .from("engagements")
@@ -308,7 +309,7 @@ export async function GET(req: Request) {
             e.title as string
           )}</b>" yet.</p><p>Vote by <b>${by}</b> or the prize defaults to the first entry.</p><p><a href="${engUrl}">Vote now →</a></p>`;
           for (let i = 0; i < memberEmails.length; i += 100) {
-            await resend.batch.send(
+            await sendCampfireBatch(
               memberEmails.slice(i, i + 100).map((to) => ({
                 from,
                 to: [to],
@@ -460,7 +461,7 @@ export async function GET(req: Request) {
         e.title as string
       )}".</p><p><a href="${engUrl}">See the winning entry →</a></p>`;
       for (let i = 0; i < memberEmails.length; i += 100) {
-        await resend.batch.send(
+        await sendCampfireBatch(
           memberEmails.slice(i, i + 100).map((to) => ({
             from,
             to: [to],
@@ -540,7 +541,7 @@ export async function GET(req: Request) {
         url: engUrl,
       });
       for (let i = 0; i < memEmails.length; i += 100) {
-        await resend.batch.send(
+        await sendCampfireBatch(
           memEmails.slice(i, i + 100).map((to) => ({
             from, to: [to], subject: m.subject, text: m.text, html: m.html, ...mailDefaults(),
           }))
@@ -562,7 +563,7 @@ export async function GET(req: Request) {
         deadline: e.deadline as string | null,
         url: engUrl,
       });
-      await resend.batch.send([
+      await sendCampfireBatch([
         {
           from,
           to: [creatorEmail],
@@ -814,7 +815,7 @@ export async function GET(req: Request) {
           return { from, to: [to], subject: cm.subject, text: cm.text, html: cm.html, ...mailDefaults() };
         });
         for (let i = 0; i < msgs.length; i += 100) {
-          await resend.batch.send(msgs.slice(i, i + 100));
+          await sendCampfireBatch(msgs.slice(i, i + 100));
         }
       } else {
         const m = revealEmail({
@@ -823,7 +824,7 @@ export async function GET(req: Request) {
           url: engUrl,
         });
         for (let i = 0; i < emails.length; i += 100) {
-          await resend.batch.send(
+          await sendCampfireBatch(
             emails.slice(i, i + 100).map((to) => ({
               from,
               to: [to],

@@ -20,22 +20,30 @@ export function campfireFrom() {
   return process.env.CAMPFIRE_FROM || "Campfire (Curriculate) <noreply@curriculate.net>";
 }
 
-// Deliverability defaults applied to every Campfire email: a real Reply-To (not
-// the noreply sender) and a List-Unsubscribe header — both signal legitimacy to
-// spam filters (Gmail/Yahoo look for List-Unsubscribe on notification mail).
-export function mailDefaults(to?: string) {
+// One-click-compliant unsubscribe headers (RFC 8058). List-Unsubscribe-Post lets
+// Gmail/Yahoo/Apple Mail show a native "Unsubscribe" button that POSTs to our endpoint —
+// which only works when the URL carries the recipient (?e=). Always pass `to` when known;
+// the mailto is the fallback for clients that don't do one-click.
+export function unsubHeaders(to?: string): Record<string, string> {
   const addr = process.env.CONTACT_REPLYTO || "admin@curriculate.net";
   const base = (process.env.CAMPFIRE_BASE_URL || "https://www.curriculate.net").replace(/\/+$/, "");
-  // Prefer an HTTPS unsubscribe that we actually PROCESS (writes to the opt-out list);
-  // keep the mailto as a fallback. When the recipient is known, prefill their address.
   const httpUnsub = to
     ? `${base}/campfire/unsubscribe?e=${encodeURIComponent(to.trim().toLowerCase())}`
     : `${base}/campfire/unsubscribe`;
   return {
-    replyTo: addr,
-    headers: {
-      "List-Unsubscribe": `<${httpUnsub}>, <mailto:${addr}?subject=unsubscribe%20campfire>`,
-    },
+    "List-Unsubscribe": `<${httpUnsub}>, <mailto:${addr}?subject=unsubscribe%20campfire>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
+
+// Deliverability defaults applied to every Campfire email: a real Reply-To (not the
+// noreply sender) and one-click unsubscribe headers. NOTE: mailDefaults alone does NOT
+// filter opt-outs. Bulk sends must go through sendCampfireBatch (below), which drops
+// opted-out recipients AND re-stamps these headers per-recipient.
+export function mailDefaults(to?: string) {
+  return {
+    replyTo: process.env.CONTACT_REPLYTO || "admin@curriculate.net",
+    headers: unsubHeaders(to),
   };
 }
 
@@ -59,6 +67,41 @@ export async function filterOptedOut(
   } catch {
     return emails;
   }
+}
+
+// The single choke-point for Campfire bulk email. Every batch send routes through here so
+// two compliance guarantees hold everywhere instead of per-route: (1) opted-out recipients
+// are dropped before send (CAN-SPAM / CASL — unsubscribes must be honored), and (2) each
+// message carries a working per-recipient one-click List-Unsubscribe header. Drop-in for
+// resend.batch.send: same message array in, same `{ error }` out (error null on success).
+export async function sendCampfireBatch(
+  msgs: Array<{ to: string[]; headers?: Record<string, string> } & Record<string, unknown>>
+): Promise<{ error: { message?: string; name?: string } | null }> {
+  if (!msgs.length) return { error: null };
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  const recip = (m: { to: string[] }) => (m.to?.[0] || "").trim().toLowerCase();
+
+  // 1. Drop opted-out recipients (defensive even for routes that pre-filter).
+  let kept = msgs;
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (url && key) {
+    const admin = createClient(url, key);
+    const allowed = new Set(await filterOptedOut(admin, msgs.map(recip).filter(Boolean)));
+    kept = msgs.filter((m) => {
+      const e = recip(m);
+      return !e || allowed.has(e);
+    });
+  }
+  if (!kept.length) return { error: null };
+
+  // 2. Re-stamp per-recipient one-click unsubscribe headers (wins over any set upstream).
+  const stamped = kept.map((m) => ({
+    ...m,
+    headers: { ...(m.headers || {}), ...unsubHeaders(recip(m)) },
+  }));
+
+  return resend.batch.send(stamped as Parameters<typeof resend.batch.send>[0]);
 }
 
 export function escapeHtml(str: string) {
@@ -539,6 +582,7 @@ Respond here: ${url}`;
 export function activityDigestEmail(opts: {
   recipientName?: string | null;
   url: string;
+  unsubUrl?: string;
   groups: {
     name: string;
     emoji: string;
@@ -547,7 +591,7 @@ export function activityDigestEmail(opts: {
     newEngagements: { title: string; icon: string }[];
   }[];
 }) {
-  const { recipientName, url, groups } = opts;
+  const { recipientName, url, unsubUrl, groups } = opts;
   const hi = firstName(recipientName ?? undefined);
   const events = groups.reduce(
     (a, g) =>
@@ -595,7 +639,9 @@ ${groups.map(groupText).join("\n\n")}
 
 See what's waiting: ${url}
 
-Moments like these are best while they're fresh.`;
+Moments like these are best while they're fresh.${
+    unsubUrl ? `\n\nUnsubscribe from all Campfire emails: ${unsubUrl}` : ""
+  }`;
 
   const groupHtml = (g: (typeof groups)[number]) => {
     const rows: string[] = [];
@@ -639,7 +685,11 @@ Moments like these are best while they're fresh.`;
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what&rsquo;s waiting &rarr;</a>
   </p>
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">Moments like these are best while they&rsquo;re fresh. 💛</p>
-  <p style="color:#94a3b8; font-size:12px; margin:0;">You can turn these digests off in the group's settings.</p>
+  <p style="color:#94a3b8; font-size:12px; margin:0;">You can turn these digests off in the group's settings${
+    unsubUrl
+      ? `, or <a href="${unsubUrl}" style="color:#94a3b8; text-decoration:underline;">unsubscribe from all Campfire emails</a>`
+      : ""
+  }.</p>
 </div>`.trim();
   return { subject, text, html };
 }
@@ -991,7 +1041,9 @@ export async function notifyHostOfAward(
       subject: m.subject,
       text: m.text,
       html: m.html,
-      ...mailDefaults(),
+      // Operator-facing transactional notice — not opt-out filtered, but still carry a
+      // correct per-recipient one-click header.
+      ...mailDefaults(operatorEmail),
     });
   } catch (e) {
     console.error("notifyHostOfAward (operator) failed:", e);

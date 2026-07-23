@@ -11,6 +11,7 @@ import {
   mailDefaults,
   escapeHtml,
 } from "@/lib/campfire/serverInvites";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 function getStripe() {
   return new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -144,7 +145,7 @@ export async function POST(req: Request) {
       const html = `<p>🎉 <b>${escapeHtml(eng.title as string)}</b> is done — <b>${actualUnits} ${escapeHtml(pledge.unit)}s</b> achieved, raising <b>${amt}</b> for ${escapeHtml(eng.gift_recipient_name as string || "the participant")}.</p><p>Sponsors were charged only for what was achieved — any shortfall was refunded automatically. Thank you for your support! 🙌</p><p><a href="${url}">See the result →</a></p>`;
       const from = campfireFrom();
       for (let i = 0; i < emails.length; i += 100) {
-        await resend.batch.send(
+        await sendCampfireBatch(
           emails.slice(i, i + 100).map((to) => ({ from, to: [to], subject, text, html, ...mailDefaults() }))
         );
       }

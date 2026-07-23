@@ -9,6 +9,7 @@ import {
 } from "@/lib/campfire/serverInvites";
 import { resolveTitle, engagementIcon } from "@/lib/campfire/types";
 import { createPushSender } from "@/lib/campfire/push";
+import { sendCampfireBatch } from "@/lib/campfire/serverInvites";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -255,6 +256,7 @@ export async function GET(req: Request) {
       const em = activityDigestEmail({
         recipientName,
         url: `${base}/campfirelive`,
+        unsubUrl: `${base}/campfire/unsubscribe?e=${encodeURIComponent(email)}`,
         groups: groupsPayload,
       });
       return {
@@ -271,7 +273,7 @@ export async function GET(req: Request) {
 
   let sent = 0;
   for (let i = 0; i < msgs.length; i += 100) {
-    const { error } = await resend.batch.send(msgs.slice(i, i + 100));
+    const { error } = await sendCampfireBatch(msgs.slice(i, i + 100));
     if (error) {
       console.error("Campfire digest send error:", error);
       break;
