@@ -4577,7 +4577,12 @@ socket.on("station:scan", handleStationScan);
       ? team.taskIndex
       : room.taskIndex;
       
-  const task = room.taskset.tasks[idx];
+  // 🃏 Wild Card — if this team has a per-team taskOverride for the
+  // current index, use that task for scoring instead of the shared
+  // taskset's version. See backend/services/wildCardService.js.
+  const wildCardActive =
+    team.taskOverride && team.taskOverride.taskIndex === idx && team.taskOverride.task;
+  const task = wildCardActive ? team.taskOverride.task : room.taskset.tasks[idx];
   if (!task) {
     if (typeof ack === "function") {
       ack({ ok: false, error: "Task not found" });
@@ -6323,8 +6328,14 @@ if (!isMultiPack && task.taskType === "what-am-i") {
         handwritingPhotoUrl: answer?.handwritingPhotoUrl || null,
       }),
       ...(superpowerTriggered && { superpowerTriggered }),
+      ...(wildCardActive && { wildCarded: true }),
     };
     room.submissions.push(submissionDoc);
+
+    // Wild Card override is one-shot per assigned task index. Clear
+    // after we've committed the submission so the team can't accidentally
+    // re-play the swapped task if the room resurfaces this index.
+    if (wildCardActive) team.taskOverride = null;
 
     // Persist submission to MongoDB (fire-and-forget; errors logged but don't block student)
     Submission.create({
@@ -7114,6 +7125,70 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       if (typeof ack === "function") ack(result);
     } catch (err) {
       console.error("[superpower:activate] error:", err?.message || err);
+      if (typeof ack === "function") ack({ ok: false, error: "server-error" });
+    }
+  });
+
+  // ── Superpower — 🃏 Wild Card (Tier 2) ────────────────────────────────
+  // Fires immediately (not armed for later). Server regenerates a
+  // same-topic, different-type task for THIS team only, stores it on
+  // team.taskOverride, and emits back the new task so the client can
+  // swap what it displays. The submit-path lookup checks the override
+  // before falling back to the shared taskset.
+  socket.on("superpower:wildcard", async ({ roomCode, teamId, taskIndex } = {}, ack) => {
+    try {
+      const code = String(roomCode || "").toUpperCase();
+      const room = rooms[code];
+      if (!room) {
+        if (typeof ack === "function") ack({ ok: false, error: "room-not-found" });
+        return;
+      }
+      const team = room.teams?.[teamId];
+      if (!team) {
+        if (typeof ack === "function") ack({ ok: false, error: "team-not-found" });
+        return;
+      }
+      if (team.superpower !== "wild_card") {
+        if (typeof ack === "function") ack({ ok: false, error: "not-assigned-wild-card" });
+        return;
+      }
+      if (team.superpowerUsedAt) {
+        if (typeof ack === "function") ack({ ok: false, error: "already-used" });
+        return;
+      }
+
+      const targetIdx = Number.isFinite(taskIndex)
+        ? taskIndex
+        : typeof team.taskIndex === "number" && team.taskIndex >= 0
+          ? team.taskIndex
+          : room.taskIndex;
+
+      const [{ rollWildCard }, { regenerateSingleTask }] = await Promise.all([
+        import("./services/wildCardService.js"),
+        import("./controllers/sharedTasksetController.js"),
+      ]);
+      const result = await rollWildCard({ room, team, taskIndex: targetIdx, regenerateSingleTask });
+      if (!result.ok) {
+        if (typeof ack === "function") ack({ ok: false, error: result.error });
+        return;
+      }
+
+      // Success — mark the superpower as used and notify the student.
+      team.superpowerUsedAt = new Date().toISOString();
+      socket.emit("superpower:triggered", {
+        powerId: "wild_card",
+        taskIndex: targetIdx,
+        revealText: "🃏 Wild Card! Here's a fresh task from the same topic.",
+      });
+      socket.emit("superpower:wildcard-ready", {
+        taskIndex: targetIdx,
+        task: result.task,
+      });
+      if (typeof ack === "function") {
+        ack({ ok: true, taskIndex: targetIdx, task: result.task });
+      }
+    } catch (err) {
+      console.error("[superpower:wildcard] error:", err?.message || err);
       if (typeof ack === "function") ack({ ok: false, error: "server-error" });
     }
   });

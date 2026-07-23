@@ -343,6 +343,7 @@ function StudentApp() {
   const [timeWarpFreezeUntil, setTimeWarpFreezeUntil] = useState(null);
   const [superpowerTriggered, setSuperpowerTriggered] = useState(null); // { powerId, pointsOut, revealText? }
   const [xrayArmed, setXrayArmed] = useState(false); // set true on activate; TaskRunner reads and forwards to MC
+  const [wildCardRolling, setWildCardRolling] = useState(false); // spinner while server regenerates
 
   // Mode B (join): result of room:peek — populated when the student types
   // a class-bound room code. Drives the roster name dropdown in the join UI.
@@ -1689,6 +1690,25 @@ function StudentApp() {
     };
     socket.on("superpower:triggered", handleSuperpowerTriggered);
 
+    // 🃏 Wild Card — server rolled a replacement task for us. Swap it
+    // into place so TaskRunner renders the new content. The server has
+    // already stamped team.taskOverride on its side; the submit path
+    // will use it for scoring.
+    const handleWildCardReady = (payload) => {
+      if (!payload || !payload.task) return;
+      const merged = {
+        ...payload.task,
+        _wildCardReplacement: payload.task._wildCardReplacement || true,
+      };
+      setCurrentTask(merged);
+      currentTaskRef.current = merged;
+      if (Number.isFinite(payload.taskIndex)) {
+        setCurrentTaskIndex(payload.taskIndex);
+      }
+      setWildCardRolling(false);
+    };
+    socket.on("superpower:wildcard-ready", handleWildCardReady);
+
     // ── LevelUp: server pushed a new task to play (after we accepted) ──
     const handleLevelUpTaskReady = (payload) => {
       if (!payload || String(payload.teamId) !== String(teamId)) return;
@@ -1812,6 +1832,7 @@ function StudentApp() {
       socket.off("session:complete", handleSessionComplete);
       socket.off("superpower:assigned", handleSuperpowerAssigned);
       socket.off("superpower:triggered", handleSuperpowerTriggered);
+      socket.off("superpower:wildcard-ready", handleWildCardReady);
       socket.off("levelUp:taskReady", handleLevelUpTaskReady);
       socket.off("levelUp:resolved", handleLevelUpResolved);
       socket.off("team:bumped", handleBumped);
@@ -4649,6 +4670,25 @@ function StudentApp() {
                 );
                 return;
               }
+              if (sp.id === "wild_card") {
+                // Server regenerates a fresh task on the same topic
+                // and emits `superpower:wildcard-ready` when it's done.
+                // Show a spinner while we wait (2-5s of AI time).
+                setWildCardRolling(true);
+                socket.emit(
+                  "superpower:wildcard",
+                  { roomCode, teamId, taskIndex: currentTaskIndex },
+                  (resp) => {
+                    if (resp?.ok) {
+                      setSuperpowerUsedAt(stamp);
+                    } else {
+                      setWildCardRolling(false);
+                      console.warn("[superpower] wildcard failed:", resp?.error);
+                    }
+                  }
+                );
+                return;
+              }
               // Server-effect powers ask the backend to arm — the effect
               // fires the next time the team submits (booster / shield) or
               // scans a station (mystery gift). We optimistically flip
@@ -4723,6 +4763,14 @@ function StudentApp() {
             <div data-testid="time-warp-panel" style={superpowerPanel("#eef2ff", "#c7d2fe", "#312e81")}>
               <strong>💫 Time frozen for {Math.max(0, Math.ceil((timeWarpFreezeUntil - Date.now()) / 1000))}s.</strong>{" "}
               Take a breath and think — no countdown pressure for the next few seconds.
+            </div>
+          )}
+
+          {/* Wild Card — rolling spinner while server regenerates */}
+          {wildCardRolling && (
+            <div data-testid="wild-card-rolling" style={superpowerPanel("#fdf4ff", "#f5d0fe", "#701a75")}>
+              <strong>🃏 Rolling a fresh task…</strong> This takes a few seconds while
+              Curriculate crafts a new challenge on the same topic.
             </div>
           )}
 

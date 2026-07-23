@@ -153,10 +153,10 @@ export const SUPERPOWERS = {
     emoji: "🃏",
     name: "Wild Card",
     tagline: "Swap this task for a random one.",
-    description: "Don't like the task on screen? Swap it once — the server rolls you a fresh task of a different type.",
+    description: "Don't like the task on screen? Swap it once — Curriculate rolls you a fresh task on the same topic but a different type.",
     flavor: SUPERPOWER_FLAVORS.MECHANICS,
     weight: 1,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   MYSTERY_GIFT: {
     id: "mystery_gift",
