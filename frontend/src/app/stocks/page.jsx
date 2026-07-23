@@ -7687,6 +7687,7 @@ function PerformanceView({ sessionToken }) {
       <TradesActivityCard trades={tradesActivity} />
       <DiscoveryScorecardCard data={discoveryScorecard} />
       <SetupScorecardCard data={setupScorecard} sessionToken={sessionToken} onLoad={setSetupScorecard} />
+      <SizingBacktestCard sessionToken={sessionToken} />
 
       {/* ── Advisor scorecard ── */}
       <div className="sa-card" style={{ marginBottom: 18 }}>
@@ -10142,6 +10143,112 @@ function SetupScorecardCard({ data, sessionToken, onLoad }) {
               ? "No closed daily picks yet in this window — the setup scorecard needs picks that hit target, stop, or horizon-expire to compute an ex-ante edge. Come back once the daily-pick engine has cycled a few times."
               : `No setups yet with ≥ ${minSample} closed picks. Lower the Min sample filter to see smaller-sample rows, or expand the window.`}
           </div>
+        )
+      )}
+    </div>
+  );
+}
+
+// Sizing backtest — replays every closed daily pick under three sizing
+// strategies (naive 100 sh, equal-risk 1%, vol-Kelly) and shows the
+// end-book / return / drawdown side-by-side. Lets the trader see the
+// sizing edge before betting real money on it. Backend fills in the
+// approximations + caveats.
+function SizingBacktestCard({ sessionToken }) {
+  const [days, setDays] = useState(365);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `${BACKEND_URL}/api/stocks-portfolio/sizing-backtest?days=${days}`,
+          { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } }
+        );
+        if (!r.ok) throw new Error(`${r.status}`);
+        const j = await r.json();
+        if (!cancelled) setData(j);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "load failed");
+      } finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, days]);
+
+  const fmtCad = (n) => n == null ? "—" : `$${Math.round(n).toLocaleString()} CAD`;
+  const fmtPct = (n) => n == null ? "—" : `${n >= 0 ? "+" : ""}${n.toFixed(1)}%`;
+  const stratRow = (key, s) => {
+    const isBest = data?.strategies && key === Object.keys(data.strategies).reduce((best, k) =>
+      (data.strategies[k].totalReturnPct ?? -Infinity) > (data.strategies[best].totalReturnPct ?? -Infinity) ? k : best,
+    Object.keys(data.strategies)[0]);
+    return (
+      <tr key={key} style={{ borderTop: "1px solid var(--sa-border)" }}>
+        <td style={{ padding: "6px 10px", fontWeight: 600 }}>{s.label}{isBest && <span style={{ marginLeft: 6, fontSize: 10, color: "var(--sa-green)" }}>★ best</span>}</td>
+        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{fmtCad(s.endBookCad)}</td>
+        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: s.totalReturnPct > 0 ? "var(--sa-green)" : s.totalReturnPct < 0 ? "#b91c1c" : "inherit" }}>{fmtPct(s.totalReturnPct)}</td>
+        <td style={{ padding: "6px 10px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#b91c1c" }}>-{s.maxDrawdownPct.toFixed(1)}%</td>
+      </tr>
+    );
+  };
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <h3>Sizing backtest — would vol-Kelly actually beat the alternatives?</h3>
+      <div className="sa-muted" style={{ fontSize: 12, marginBottom: 12 }}>
+        Replays every CLOSED daily pick under three sizing strategies on the same starting book. If vol-Kelly wins on <b>end book</b> AND has a smaller <b>max drawdown</b>, the edge is real. If it only wins on end book but drags a worse drawdown, it's just leverage — decide whether you want that risk profile.
+      </div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 12, fontSize: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <label>Window:{" "}
+          <select value={days} onChange={(e) => setDays(parseInt(e.target.value, 10))} style={{ fontSize: 12 }}>
+            <option value={90}>90d</option>
+            <option value={180}>180d</option>
+            <option value={365}>1y</option>
+            <option value={730}>2y</option>
+            <option value={1825}>5y</option>
+          </select>
+        </label>
+        {data && (
+          <span className="sa-muted">
+            {data.totalClosedPicks} closed pick{data.totalClosedPicks === 1 ? "" : "s"} · start ${Math.round(data.startingBookCad).toLocaleString()} CAD
+          </span>
+        )}
+      </div>
+      {busy && <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>}
+      {err && <div className="sa-err" style={{ fontSize: 12 }}>Failed to load: {err}</div>}
+      {!busy && !err && data && (
+        data.totalClosedPicks === 0 ? (
+          <div className="sa-muted" style={{ padding: 20, fontSize: 13 }}>
+            No closed daily picks in this window yet. Come back once the daily-pick engine has cycled a few times.
+          </div>
+        ) : (
+          <>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+                <thead>
+                  <tr style={{ background: "var(--sa-panel-2)", color: "var(--sa-muted)", fontSize: 12 }}>
+                    <th style={{ textAlign: "left", padding: "6px 10px" }}>Strategy</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>End book</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Total return</th>
+                    <th style={{ textAlign: "right", padding: "6px 10px" }}>Max drawdown</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(data.strategies).map(([key, s]) => stratRow(key, s))}
+                </tbody>
+              </table>
+            </div>
+            <details style={{ marginTop: 12, fontSize: 11, color: "var(--sa-muted)" }}>
+              <summary style={{ cursor: "pointer" }}>Caveats / approximations (click)</summary>
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                {data.caveats.map((c, i) => <li key={i}>{c}</li>)}
+              </ul>
+            </details>
+          </>
         )
       )}
     </div>

@@ -35,6 +35,7 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
+import { bumpPyramidLayersForBuyTrade } from "./stocksPyramidingMonitor.js";
 
 // Base-ticker normalization: SU vs SU.TO both → SU. Used to reconcile
 // broker alerts (which come in bare) with position rows (which may
@@ -269,6 +270,10 @@ export async function applyReconciledTrade({
         }
       );
     }
+    // Add-on BUYs against an already-entered pick bump pyramid layers
+    // so the pyramiding monitor doesn't re-emit the same +1R / +2R
+    // trigger on tomorrow's briefing.
+    await bumpPyramidLayersForBuyTrade({ email, legs, executedAt: trade.executedAt }).catch(e => console.warn("[trade-applier] pyramid bump warn:", e?.message));
   } catch (e) { console.warn("[trade-applier] daily-pick stamp warn:", e?.message); }
 
   // Mark the linked advice rec's exit-filled marker so the "open recs"
@@ -360,6 +365,7 @@ export async function backfillTradeToPortfolio(tradeDoc) {
           } }
       );
     }
+    await bumpPyramidLayersForBuyTrade({ email: tradeDoc.email, legs: tradeDoc.legs, executedAt: tradeDoc.executedAt }).catch(e => console.warn("[trade-applier/backfill] pyramid bump warn:", e?.message));
   } catch (e) { console.warn("[trade-applier/backfill] daily-pick stamp warn:", e?.message); }
 
   return { applied: true };

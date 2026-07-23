@@ -442,6 +442,12 @@ router.post("/", express.json({ limit: "32kb" }), requireStocksAuth, async (req,
           }
         );
       }
+      // Bump pyramid layers on add-on BUYs against already-entered
+      // picks so the same +1R / +2R trigger doesn't re-emit tomorrow.
+      const { bumpPyramidLayersForBuyTrade } = await import("../services/stocksPyramidingMonitor.js");
+      await bumpPyramidLayersForBuyTrade({
+        email: req.stocksUser.email, legs: normLegs, executedAt: entry.executedAt,
+      }).catch(e => console.warn("[stocks-trade] pyramid bump warn:", e?.message));
     } catch (e) { console.warn("[stocks-trade] daily-pick entry-stamp warn:", e?.message); }
 
     res.json({ ok: true, portfolio: portfolio.toObject(), trade: entry.toObject() });

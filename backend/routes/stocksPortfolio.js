@@ -35,6 +35,7 @@ import { encryptSecret, isEncryptionConfigured, maskSecret } from "../services/s
 import { backfillTradeToPortfolio } from "../services/stocksTradeApplier.js";
 import { computeHorizonReview } from "../services/stocksHorizonReview.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
+import { computeOptimalSize, getSetupExpectancyMap } from "../services/stocksPositionSizing.js";
 
 const router = express.Router();
 
@@ -791,6 +792,181 @@ router.get("/setup-scorecard", requireStocksAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("stocks-portfolio setup-scorecard error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/sizing-backtest
+// Replays every CLOSED daily pick under three sizing strategies so the
+// trader can see the sizing edge before betting on it:
+//   • naive     — fixed 100 shares
+//   • equalRisk — 1% of book at stop (vol-agnostic)
+//   • volKelly  — full vol-scaled × fractional-Kelly per stocksPositionSizing
+//
+// Approximations (openly noted so the reader can weigh them):
+//   • bookValueCad: uses CURRENT book snapshot for every historical pick.
+//     A true point-in-time backtest would need a portfolio snapshot per
+//     pick date; we accept the drift because the equity-curve SHAPE
+//     across strategies is what matters, not the exact end value.
+//   • atrPctOfPrice: estimated from the pick's stop-distance / 2.5. Real
+//     stops are typically 2-3× ATR; using 2.5 as the divisor gets us
+//     within a reasonable band without a per-pick OHLC re-fetch.
+//   • setup expectancy: uses CURRENT setup-scorecard values. This IS
+//     lookahead bias, but running progressive expectancy through
+//     history is heavy — we surface the caveat in the response.
+//
+// Query: ?days=365 (window), ?bookCad=OVERRIDE (optional; otherwise
+// computed from current portfolio + cash).
+// ──────────────────────────────────────────────────────────────────────
+router.get("/sizing-backtest", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.max(30, Math.min(1825, parseInt(req.query.days, 10) || 365));
+    const since = new Date(Date.now() - days * 86400000);
+    const [picks, portfolio, setupStats] = await Promise.all([
+      StocksDailyPick.find({
+        email: req.stocksUser.email,
+        status: { $in: ["target-hit", "stop-hit", "horizon-exit"] },
+        exitDate: { $gte: since },
+        pnlPct: { $ne: null },
+        entryPrice: { $gt: 0 },
+        stopPrice: { $gt: 0 },
+        exitPrice: { $gt: 0 },
+      }).sort({ exitDate: 1 }).lean(),
+      StocksPortfolio.findOne({ email: req.stocksUser.email }).lean(),
+      getSetupExpectancyMap(req.stocksUser.email, days).catch(() => ({})),
+    ]);
+    const fx = portfolio?.fxUsdCad || 1.37;
+    const overrideBook = parseFloat(req.query.bookCad);
+    const currentBookCad = Number.isFinite(overrideBook) && overrideBook > 0
+      ? overrideBook
+      : ((portfolio?.positions || []).reduce((s, p) => {
+          const val = p.ccy === "USD"
+            ? (p.priceUsd || 0) * (p.qty || 0) * fx
+            : (p.priceCad || 0) * (p.qty || 0);
+          return s + val;
+        }, 0) + (portfolio?.accounts || []).reduce((s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0));
+
+    // Strategy replay — cumulative equity curves in CAD. Each strategy
+    // starts at the SAME theoretical starting book; profits compound.
+    const startingBook = currentBookCad;
+    const state = {
+      naive:     { book: startingBook, curve: [{ date: since, book: startingBook }], perPick: [] },
+      equalRisk: { book: startingBook, curve: [{ date: since, book: startingBook }], perPick: [] },
+      volKelly:  { book: startingBook, curve: [{ date: since, book: startingBook }], perPick: [] },
+    };
+    const perPick = [];
+    for (const p of picks) {
+      const entry = p.entryPrice;
+      const stop = p.stopPrice;
+      const exit = p.exitPrice;
+      const currency = p.currency || "USD";
+      const pnlPerShare = exit - entry;
+      const stopDistancePct = ((entry - stop) / entry) * 100;
+      const atrPctApprox = Math.max(0.3, stopDistancePct / 2.5); // heuristic; kept as a caveat in the response
+
+      // 1) Naive: 100 shares fixed
+      const naiveShares = 100;
+      const naivePnlCcy = naiveShares * pnlPerShare;
+      const naivePnlCad = currency === "USD" ? naivePnlCcy * fx : naivePnlCcy;
+
+      // 2) Equal risk: 1% of running book at stop
+      const equalRiskCad = state.equalRisk.book * 0.01;
+      const equalRiskCcy = currency === "USD" ? equalRiskCad / fx : equalRiskCad;
+      const equalRiskShares = Math.max(0, Math.floor(equalRiskCcy / (entry - stop)));
+      const equalRiskPnlCcy = equalRiskShares * pnlPerShare;
+      const equalRiskPnlCad = currency === "USD" ? equalRiskPnlCcy * fx : equalRiskPnlCcy;
+
+      // 3) Vol × Kelly: full computeOptimalSize using running book
+      const sizing = computeOptimalSize({
+        bookValueCad: state.volKelly.book,
+        entryPrice: entry,
+        stopPrice: stop,
+        currency,
+        fxUsdCad: fx,
+        atrPctOfPrice: atrPctApprox,
+        setupName: p.setupName,
+        setupStats,
+        riskPerTradePct: portfolio?.riskPerTradePct || 1.0,
+        kellyFractionCap: portfolio?.kellyFractionCap || 0.25,
+      });
+      const kellyShares = sizing?.shares || 0;
+      const kellyPnlCcy = kellyShares * pnlPerShare;
+      const kellyPnlCad = currency === "USD" ? kellyPnlCcy * fx : kellyPnlCcy;
+
+      // Book compounds
+      state.naive.book += naivePnlCad;
+      state.equalRisk.book += equalRiskPnlCad;
+      state.volKelly.book += kellyPnlCad;
+      state.naive.curve.push({ date: p.exitDate, book: state.naive.book });
+      state.equalRisk.curve.push({ date: p.exitDate, book: state.equalRisk.book });
+      state.volKelly.curve.push({ date: p.exitDate, book: state.volKelly.book });
+
+      perPick.push({
+        pickDate: p.pickDate,
+        exitDate: p.exitDate,
+        ticker: p.ticker,
+        currency,
+        setupName: p.setupName,
+        entry, stop, exit,
+        pnlPct: p.pnlPct,
+        exitStatus: p.status,
+        naive:     { shares: naiveShares,     pnlCad: naivePnlCad },
+        equalRisk: { shares: equalRiskShares, pnlCad: equalRiskPnlCad },
+        volKelly:  { shares: kellyShares,     pnlCad: kellyPnlCad, expectancyBasis: sizing?.expectancyBasis || null },
+      });
+    }
+
+    // Max drawdown per strategy (from running peak).
+    const maxDD = (curve) => {
+      let peak = -Infinity, dd = 0;
+      for (const c of curve) {
+        if (c.book > peak) peak = c.book;
+        const drawdown = (peak - c.book) / peak;
+        if (drawdown > dd) dd = drawdown;
+      }
+      return dd * 100;
+    };
+
+    res.json({
+      ok: true,
+      windowDays: days,
+      startingBookCad: startingBook,
+      totalClosedPicks: picks.length,
+      strategies: {
+        naive: {
+          label: "Naive fixed 100 sh",
+          endBookCad: state.naive.book,
+          totalReturnPct: startingBook > 0 ? ((state.naive.book - startingBook) / startingBook) * 100 : null,
+          maxDrawdownPct: maxDD(state.naive.curve),
+          curve: state.naive.curve,
+        },
+        equalRisk: {
+          label: "Equal-risk 1%",
+          endBookCad: state.equalRisk.book,
+          totalReturnPct: startingBook > 0 ? ((state.equalRisk.book - startingBook) / startingBook) * 100 : null,
+          maxDrawdownPct: maxDD(state.equalRisk.curve),
+          curve: state.equalRisk.curve,
+        },
+        volKelly: {
+          label: "Vol × Kelly",
+          endBookCad: state.volKelly.book,
+          totalReturnPct: startingBook > 0 ? ((state.volKelly.book - startingBook) / startingBook) * 100 : null,
+          maxDrawdownPct: maxDD(state.volKelly.curve),
+          curve: state.volKelly.curve,
+        },
+      },
+      perPick: perPick.slice(0, 100),
+      caveats: [
+        "Uses CURRENT book value for every historical pick — the equity-curve SHAPE across strategies is what matters, not the exact end value.",
+        "ATR% is approximated as (stop-distance% / 2.5) since per-pick point-in-time OHLC isn't stored. Real ATR could differ by ±30%.",
+        "Kelly gate uses CURRENT setup-expectancy values — this is lookahead bias. Progressive point-in-time expectancy would be more honest but heavier.",
+        "Only StocksDailyPick with setupName populated participate. AI advice recs without a labeled setup are not backtested here.",
+      ],
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("stocks-portfolio sizing-backtest error:", err);
     res.status(500).json({ error: "Internal error" });
   }
 });

@@ -115,6 +115,58 @@ function pickPriceFor(p, priceMap) {
   return p.lastCheckedPrice ?? null;
 }
 
+// Bump pyramidLayersAdded on the pick(s) matching a BUY trade that
+// happened AFTER the pick was already entered. Called from the trade
+// applier so an add-on BUY at +1R or +2R silently moves the counter,
+// preventing the pyramiding monitor from re-emitting the same layer
+// on tomorrow's briefing.
+//
+// Args:
+//   email          — trader
+//   legs           — normalized legs from the trade
+//   executedAt     — when the trade filled (Date)
+// Returns: array of { pickId, ticker, layer } for logging.
+export async function bumpPyramidLayersForBuyTrade({ email, legs, executedAt }) {
+  const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+  const cutoff = new Date(Date.now() - 90 * 86400000);
+  const openEnteredPicks = await StocksDailyPick.find({
+    email,
+    status: "open",
+    enteredAt: { $ne: null, $lt: executedAt || new Date() },
+    pickDate: { $gte: cutoff },
+    entryPrice: { $gt: 0 },
+    stopPrice: { $gt: 0 },
+    $or: [
+      { pyramidLayersAdded: { $exists: false } },
+      { pyramidLayersAdded: { $lt: MAX_LAYERS } },
+    ],
+  }).lean();
+  const bumps = [];
+  for (const leg of legs || []) {
+    if (leg.side !== "BUY" || !leg.ticker || !(leg.pricePerShare > 0)) continue;
+    const legBase = baseOf(leg.ticker);
+    const match = openEnteredPicks.find(p => baseOf(p.ticker) === legBase);
+    if (!match) continue;
+    const entry = match.enteredPrice || match.entryPrice;
+    const stop = match.stopPrice;
+    if (!(entry > stop)) continue;
+    const initialRisk = entry - stop;
+    const rAtFill = (leg.pricePerShare - entry) / initialRisk;
+    const layersDone = match.pyramidLayersAdded || 0;
+    let newLayer = layersDone;
+    if (layersDone === 0 && rAtFill >= LAYER1_TRIGGER_R) newLayer = 1;
+    if (newLayer <= 1 && rAtFill >= LAYER2_TRIGGER_R) newLayer = 2;
+    if (newLayer > layersDone) {
+      await StocksDailyPick.updateOne(
+        { _id: match._id, pyramidLayersAdded: layersDone },
+        { $set: { pyramidLayersAdded: newLayer } }
+      );
+      bumps.push({ pickId: String(match._id), ticker: match.ticker, layer: newLayer, rAtFill });
+    }
+  }
+  return bumps;
+}
+
 // Format the add-on block for the AI briefing prompt.
 export function formatPyramidingBlock(signals) {
   if (!Array.isArray(signals) || signals.length === 0) return "";
