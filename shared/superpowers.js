@@ -79,10 +79,10 @@ export const SUPERPOWERS = {
     emoji: "✋",
     name: "Second Chance",
     tagline: "Re-try a wrong answer.",
-    description: "One re-answer on a wrong answer this session — pick which one.",
+    description: "The next time your team gets an answer wrong, it doesn't count — you get to try again.",
     flavor: SUPERPOWER_FLAVORS.HELP,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
 
   // ────────────── Flavor B — Point manipulation ──────────────

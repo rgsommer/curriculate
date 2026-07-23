@@ -6258,6 +6258,29 @@ if (!isMultiPack && task.taskType === "what-am-i") {
       return;
     }
 
+    // ── Superpower — ✋ Second Chance (Tier 2) ──────────────────────────
+    // When a team armed Second Chance and this submission is WRONG,
+    // don't record anything — clear the flag, tell the client to unlock
+    // the task, and short-circuit the whole submit path so the team
+    // gets a clean retry. See backend/services/superpowerEffects.js.
+    try {
+      const { applySecondChance } = await import("./services/superpowerEffects.js");
+      const scResult = applySecondChance(team, correct);
+      if (scResult.triggered) {
+        socket.emit("superpower:triggered", {
+          powerId: "second_chance",
+          taskIndex: idx,
+          revealText: scResult.revealText,
+        });
+        if (typeof ack === "function") {
+          ack({ ok: true, secondChanceRetry: true, taskIndex: idx });
+        }
+        return;
+      }
+    } catch (scErr) {
+      console.warn("[superpower] second chance non-fatal:", scErr?.message || scErr);
+    }
+
     // ── Superpower scoring hook (Tier 1) ────────────────────────────────
     // Bonus Booster: 2× positive points on this submission, then clears.
     // Point Shield:  absorbs negative points to 0, then clears.

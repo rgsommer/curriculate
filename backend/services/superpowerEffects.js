@@ -26,7 +26,12 @@
 // (clearing the pending flag) but read no globals and throw only on
 // developer error.
 
-const SERVER_ENFORCED = new Set(["bonus_booster", "point_shield", "mystery_gift"]);
+const SERVER_ENFORCED = new Set([
+  "bonus_booster",
+  "point_shield",
+  "mystery_gift",
+  "second_chance",
+]);
 
 const MYSTERY_GIFT_BONUS_POINTS = 50;
 
@@ -99,6 +104,37 @@ export function applyMysteryGift(team) {
     bonus: MYSTERY_GIFT_BONUS_POINTS,
     revealText: `🎁 Mystery Gift! +${MYSTERY_GIFT_BONUS_POINTS} points for arriving at this station.`,
     triggered: true,
+  };
+}
+
+/**
+ * Apply Second Chance (Tier 2) on a submit path.
+ *
+ * When a team armed Second Chance and this submission is WRONG,
+ * we don't record anything — the flag clears and the caller is told
+ * to short-circuit the submit path with a retry ack. The team's retry
+ * runs the normal path (no superpower armed) and scores real points.
+ *
+ * @returns { triggered: boolean, revealText: string }
+ *   Triggered = true means the caller should skip the rest of the
+ *   submit handler, emit `superpower:triggered`, and ack with
+ *   { ok: true, secondChanceRetry: true }.
+ */
+export function applySecondChance(team, correct) {
+  const pending = team?.pendingSuperpower;
+  if (!pending || pending.id !== "second_chance") {
+    return { triggered: false, revealText: "" };
+  }
+  // Only fires on an explicitly-wrong answer. Correct === null (AI
+  // still scoring) or correct === true both mean "don't consume the
+  // charge yet."
+  if (correct !== false) {
+    return { triggered: false, revealText: "" };
+  }
+  team.pendingSuperpower = null;
+  return {
+    triggered: true,
+    revealText: "✋ Second Chance! That answer didn't count — give it one more shot.",
   };
 }
 

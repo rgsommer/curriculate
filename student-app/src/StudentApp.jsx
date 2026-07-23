@@ -2802,6 +2802,21 @@ function StudentApp() {
           return;
         }
 
+        // ── Superpower — Second Chance retry short-circuit ──
+        // Server armed the retry — unlock the task, reset the answer
+        // draft, and let the team try again. Do NOT enter the review
+        // flow; the retry submit runs the normal path.
+        if (response?.secondChanceRetry === true) {
+          setSubmitting(false);
+          setTaskLocked(false);
+          taskLockedRef.current = false;
+          setCurrentAnswerDraft(null);
+          setStatusMessage("");
+          // A superpower:triggered event will arrive concurrently and
+          // fire the celebration banner via the existing listener.
+          return;
+        }
+
         setSubmitting(false);
         setStatusMessage("");
         try {
@@ -4617,6 +4632,21 @@ function StudentApp() {
                 // component will call onXrayConsumed once it picks a
                 // wrong option to grey out. If the current task isn't
                 // MC, the flag stays armed until an MC task shows up.
+                return;
+              }
+              if (sp.id === "second_chance") {
+                // Server-armed like the point-manipulation powers.
+                // Backend intercepts the NEXT wrong submission and
+                // sends back { secondChanceRetry: true } so the task
+                // gets unlocked for a real retry.
+                socket.emit(
+                  "superpower:activate",
+                  { roomCode, teamId, powerId: sp.id },
+                  (resp) => {
+                    if (resp?.ok) setSuperpowerUsedAt(stamp);
+                    else console.warn("[superpower] server refused:", resp?.error);
+                  }
+                );
                 return;
               }
               // Server-effect powers ask the backend to arm — the effect

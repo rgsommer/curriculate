@@ -17,6 +17,7 @@ import {
   armSuperpower,
   applyBonusOrShield,
   applyMysteryGift,
+  applySecondChance,
 } from "../services/superpowerEffects.js";
 
 const teamWith = (powerId, opts = {}) => ({
@@ -127,6 +128,50 @@ describe("applyBonusOrShield", () => {
     const r = applyBonusOrShield(team, "not-a-number");
     expect(r.pointsOut).toBe(0);
     expect(r.triggered).toBeNull();
+  });
+});
+
+describe("applySecondChance", () => {
+  test("triggers on a wrong submission and clears the flag", () => {
+    const team = teamWith("second_chance", { pending: { id: "second_chance" } });
+    const r = applySecondChance(team, false);
+    expect(r.triggered).toBe(true);
+    expect(r.revealText).toMatch(/didn't count/);
+    expect(team.pendingSuperpower).toBeNull();
+  });
+
+  test("does NOT fire on a correct submission (charge stays armed)", () => {
+    const team = teamWith("second_chance", { pending: { id: "second_chance" } });
+    const r = applySecondChance(team, true);
+    expect(r.triggered).toBe(false);
+    expect(team.pendingSuperpower).not.toBeNull();
+  });
+
+  test("does NOT fire when correctness is unresolved (correct === null)", () => {
+    const team = teamWith("second_chance", { pending: { id: "second_chance" } });
+    const r = applySecondChance(team, null);
+    expect(r.triggered).toBe(false);
+    expect(team.pendingSuperpower).not.toBeNull();
+  });
+
+  test("no-op when the team doesn't have Second Chance armed", () => {
+    const team = teamWith("bonus_booster", { pending: { id: "bonus_booster" } });
+    const r = applySecondChance(team, false);
+    expect(r.triggered).toBe(false);
+    expect(team.pendingSuperpower).not.toBeNull();
+  });
+
+  test("no-op when there's no pending superpower at all", () => {
+    const team = teamWith("second_chance");
+    const r = applySecondChance(team, false);
+    expect(r.triggered).toBe(false);
+  });
+
+  test("one-shot semantics — second call is a no-op after the first fires", () => {
+    const team = teamWith("second_chance", { pending: { id: "second_chance" } });
+    applySecondChance(team, false);
+    const r2 = applySecondChance(team, false);
+    expect(r2.triggered).toBe(false);
   });
 });
 
