@@ -46,6 +46,8 @@ import { computeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns, formatBenchmarkBlock } from "../services/stocksBenchmark.js";
 import { computeSizingAdjustments, formatSizingAdjustmentBlock } from "../services/stocksCorrelationSizing.js";
 import { computeOverlaySuggestions, formatOverlayBlock, formatOverlayFunnelForEmail } from "../services/stocksOptionsOverlay.js";
+import { computeOptimalSize, formatSizingBlock, getSetupExpectancyMap } from "../services/stocksPositionSizing.js";
+import { computePyramidingSignals, formatPyramidingBlock } from "../services/stocksPyramidingMonitor.js";
 import { computeCompliance, formatComplianceBlock } from "../services/stocksCompliance.js";
 import { computeAttribution, formatAttributionBlock } from "../services/stocksAttribution.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
@@ -927,7 +929,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = []) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -1119,6 +1121,8 @@ ${formatCalibrationBlock(calibration)}
 ${formatBenchmarkBlock(benchmarkBundle?.userTwrr, benchmarkBundle?.benchmarks)}
 ${formatSizingAdjustmentBlock(sizingAdjustments)}
 ${formatOverlayBlock(overlaySuggestions)}
+${formatSizingBlock(sizedPicks)}
+${formatPyramidingBlock(pyramidingSignals)}
 ${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
 ${formatAttributionBlock(attribution)}
 ${formatHorizonReviewBlock(horizonRows)}
@@ -1658,7 +1662,57 @@ export async function generateBriefing(profile) {
       : Promise.resolve(null),
   ]);
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory);
+  // Vol-scaled / Kelly position sizing for today's daily picks (Test A).
+  // Gated by profile.volSizingEnabled — off by default. When on, each
+  // pick is run through computeOptimalSize using the setup-scorecard
+  // expectancy map and the pick's own ATR context (already in the
+  // pick's scoreContributors when the deterministic scorer set it,
+  // otherwise re-fetched cheaply per pick). The block instructs the
+  // AI to emit the computed share counts VERBATIM instead of picking
+  // round numbers.
+  let sizedPicks = [];
+  if (profile.volSizingEnabled && Array.isArray(dailyPicks) && dailyPicks.length > 0) {
+    try {
+      const setupStats = await getSetupExpectancyMap(profile.email, 365);
+      const bookValueCad = summary.total + summary.cashCadEquiv;
+      const fx = profile.fxUsdCad || 1.37;
+      sizedPicks = await Promise.all(dailyPicks.map(async (p) => {
+        try {
+          const { getTechnicals } = await import("../services/stocksTechnicals.js");
+          const tech = await getTechnicals(p.ticker, p.currency || "USD").catch(() => null);
+          const atrPctOfPrice = tech?.atrPctOfPrice;
+          if (!Number.isFinite(atrPctOfPrice)) return { ...p, sizing: null };
+          const sizing = computeOptimalSize({
+            bookValueCad,
+            entryPrice: p.entryPrice,
+            stopPrice: p.stopPrice,
+            currency: p.currency || "USD",
+            fxUsdCad: fx,
+            atrPctOfPrice,
+            setupName: p.setupName,
+            setupStats,
+            riskPerTradePct: profile.riskPerTradePct || 1.0,
+            kellyFractionCap: profile.kellyFractionCap || 0.25,
+          });
+          return { ...p, sizing };
+        } catch (e) {
+          console.warn(`[sizing] warn on ${p.ticker}:`, e?.message);
+          return { ...p, sizing: null };
+        }
+      }));
+    } catch (e) { console.warn("[sizing] pipeline warn:", e?.message); }
+  }
+
+  // Pyramiding add-on signals. Gated by profile.pyramidingEnabled —
+  // off by default. When on, scans open entered picks for +1R / +2R
+  // triggers and emits an ADD-ON SIGNALS block the AI must surface.
+  const pyramidingSignals = profile.pyramidingEnabled
+    ? await computePyramidingSignals(profile.email).catch(e => {
+        console.warn("[pyramiding] warn:", e?.message); return [];
+      })
+    : [];
+
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat

@@ -144,6 +144,10 @@ async function apiPutPortfolio(sessionToken, profile) {
       optionsTradingEnabled: profile.optionsTradingEnabled,
       noTouchMode: profile.noTouchMode,
       disciplineCriticEnabled: profile.disciplineCriticEnabled,
+      volSizingEnabled: profile.volSizingEnabled,
+      riskPerTradePct: profile.riskPerTradePct,
+      kellyFractionCap: profile.kellyFractionCap,
+      pyramidingEnabled: profile.pyramidingEnabled,
       sleeveTargets: profile.sleeveTargets,
       goals: profile.goals,
       annualContributionGoals: profile.annualContributionGoals,
@@ -1418,6 +1422,20 @@ export default function StocksAdvisorPage() {
               onChangeDisciplineCritic={(v) => {
                 updateUser(() => ({ disciplineCriticEnabled: v }));
                 showToast(v ? "Discipline critic enabled — every briefing will be audited" : "Discipline critic disabled");
+              }}
+              onChangeVolSizing={(v) => {
+                updateUser(() => ({ volSizingEnabled: v }));
+                showToast(v ? "Vol-scaled Kelly sizing enabled" : "Vol-scaled Kelly sizing disabled");
+              }}
+              onChangeRiskPerTrade={(v) => {
+                updateUser(() => ({ riskPerTradePct: v }));
+              }}
+              onChangeKellyCap={(v) => {
+                updateUser(() => ({ kellyFractionCap: v }));
+              }}
+              onChangePyramiding={(v) => {
+                updateUser(() => ({ pyramidingEnabled: v }));
+                showToast(v ? "Pyramiding on — add-on signals will surface at +1R and +2R" : "Pyramiding disabled");
               }}
               onChangeBriefingTimes={(times) => {
                 updateUser(() => ({ briefingTimes: times }));
@@ -4282,7 +4300,7 @@ function EmailIntegrationCard({ sessionToken }) {
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeVolSizing, onChangeRiskPerTrade, onChangeKellyCap, onChangePyramiding, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -4591,6 +4609,71 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
                 <li><b>Liquidation card on held ticker</b> — any "SELL AT MARKET / DELISTED / NOT FOUND" for a name you own</li>
               </ul>
               If anything flags, an amber banner is prepended to the emailed briefing naming each violation. Never blocks send. Costs ~$0.01–0.02/briefing, adds 1–3s latency. Requires the operator to have <code>OPENAI_API_KEY</code> set on the deploy — otherwise the toggle is a no-op.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangeVolSizing(!user.volSizingEnabled)}>
+        <h3>Vol-scaled × Kelly position sizing</h3>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={!!user.volSizingEnabled}
+            readOnly
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", pointerEvents: "none" }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Size every new pick by risk budget × vol × setup expectancy</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Instead of relying on the AI's improvised share counts (which tend to round to visually neat numbers), each new BUY rec's size is computed from three constraints:
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                <li><b>Risk budget</b> — never lose more than X% of book on any single trade if the stop hits</li>
+                <li><b>Vol scaling</b> — shrink positions on high-ATR names so book vol stays consistent</li>
+                <li><b>Kelly gate</b> — scale by setup expectancy from the Setup scorecard; unproven or negative-expectancy setups get quarter size</li>
+              </ul>
+              This is the sizing edge that separates disciplined pros from retail. Uses your Setup scorecard as the expectancy input, so it only takes real teeth once the daily-pick engine has run enough cycles to populate it.
+            </div>
+            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10, display: "flex", gap: 16, alignItems: "center", fontSize: 12, flexWrap: "wrap" }}>
+              <label>Risk per trade{" "}
+                <input
+                  type="number" min="0.1" max="5" step="0.1"
+                  value={user.riskPerTradePct ?? 1.0}
+                  onChange={(e) => onChangeRiskPerTrade(parseFloat(e.target.value))}
+                  style={{ width: 60, marginLeft: 4 }}
+                />% of book
+              </label>
+              <label>Kelly fraction cap{" "}
+                <input
+                  type="number" min="0.1" max="1" step="0.05"
+                  value={user.kellyFractionCap ?? 0.25}
+                  onChange={(e) => onChangeKellyCap(parseFloat(e.target.value))}
+                  style={{ width: 60, marginLeft: 4 }}
+                /> (0.25 = quarter-Kelly)
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangePyramiding(!user.pyramidingEnabled)}>
+        <h3>Systematic pyramiding (add to winners)</h3>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={!!user.pyramidingEnabled}
+            readOnly
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", pointerEvents: "none" }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Emit add-on signals when a position moves +1R or +2R in your favour</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              Retail underperforms because they trim winners early. Pros pyramid — add to positions that prove out, and trail the stop so each add-on secures partial gains. The briefing will surface every open pick that's crossed a threshold:
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                <li><b>Layer 1 at +1R</b> — add 50% of original size, move stop to break-even + 0.25R</li>
+                <li><b>Layer 2 at +2R</b> — add 25% of original size, move stop to +1R</li>
+              </ul>
+              R = (current − entry) / (entry − stop). Max 2 layers. Positions with earnings inside 3 trading days are skipped (post-earnings gap can reverse the R in one bar).
             </div>
           </div>
         </div>

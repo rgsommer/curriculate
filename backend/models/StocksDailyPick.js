@@ -53,6 +53,11 @@ const StocksDailyPickSchema = new mongoose.Schema(
     enteredPrice: { type: Number, default: null },
     enteredShares: { type: Number, default: null },
     enteredTradeId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksTradeJournal", default: null },
+    // Systematic pyramiding — how many add-on layers the trader has
+    // already taken on this position. 0 = untouched, 1 = added at +1R,
+    // 2 = added at +2R. Incremented when an add-on trade is recorded
+    // against this pick. Max 2 (see stocksPyramidingMonitor.js).
+    pyramidLayersAdded: { type: Number, default: 0, min: 0, max: 2 },
   },
   { timestamps: true }
 );

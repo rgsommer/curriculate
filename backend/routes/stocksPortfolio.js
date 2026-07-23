@@ -224,6 +224,18 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.disciplineCriticEnabled === "boolean") {
     out.disciplineCriticEnabled = body.disciplineCriticEnabled;
   }
+  if (typeof body.volSizingEnabled === "boolean") {
+    out.volSizingEnabled = body.volSizingEnabled;
+  }
+  if (Number.isFinite(body.riskPerTradePct) && body.riskPerTradePct >= 0.1 && body.riskPerTradePct <= 5.0) {
+    out.riskPerTradePct = body.riskPerTradePct;
+  }
+  if (Number.isFinite(body.kellyFractionCap) && body.kellyFractionCap >= 0.1 && body.kellyFractionCap <= 1.0) {
+    out.kellyFractionCap = body.kellyFractionCap;
+  }
+  if (typeof body.pyramidingEnabled === "boolean") {
+    out.pyramidingEnabled = body.pyramidingEnabled;
+  }
   if (typeof body.goals === "string") {
     out.goals = body.goals.slice(0, 5000);
   }

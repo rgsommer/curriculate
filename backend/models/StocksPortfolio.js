@@ -276,6 +276,26 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // to the emailed briefing. Requires the operator to have
     // OPENAI_API_KEY set on the deploy; otherwise the flag is a noop.
     disciplineCriticEnabled: { type: Boolean, default: false },
+    // Vol-scaled / Kelly-adjusted position sizing. When enabled, every
+    // new rec's suggested share count comes from:
+    //   risk_dollars = book_cad × riskPerTradePct
+    //   base_shares  = risk_dollars / (entry × stop_distance)
+    //   vol_mult     = clamp(2% / ATR%, 0.25, 1.0)
+    //   kelly_mult   = f(setup expectancy, kellyFraction cap)
+    //   shares       = round(base × vol_mult × kelly_mult)
+    // Defaults are conservative — 1% risk per trade, quarter-Kelly.
+    // Turn the toggle on to have the sizes flow into daily briefings
+    // (rec block + AI-emitted sizes must match).
+    volSizingEnabled: { type: Boolean, default: false },
+    riskPerTradePct: { type: Number, default: 1.0, min: 0.1, max: 5.0 },
+    kellyFractionCap: { type: Number, default: 0.25, min: 0.1, max: 1.0 },
+    // Systematic pyramiding — add-on signals for open positions that
+    // move in-favor by 1R and 2R. When on, the briefing emits an
+    // "Add-on signals" block listing every eligible position with the
+    // proposed add-on shares + stop-move. Disabled by default because
+    // pyramiding is a serious strategy change from typical retail
+    // "sell winners, hold losers" behavior — trader must opt in.
+    pyramidingEnabled: { type: Boolean, default: false },
     // Last day's EOD recap key (YYYY-MM-DD in ET) so the recap cron
     // doesn't double-fire when it ticks across two minutes.
     lastEodRecapSentKey: { type: String, default: "" },
