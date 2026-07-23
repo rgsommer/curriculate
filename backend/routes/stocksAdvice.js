@@ -713,15 +713,20 @@ function stripCiteTags(s) {
 const NON_TICKER_TOKENS = new Set([
   // Currency/units
   "USD","CAD","EUR","GBP","ETF","CRA","SEC","IRS","FED","BOC","ECB","BOJ","BOE",
+  "FX","GDP","CPI","PPI","PMI","GST","HST","VAT",
   // Common abbreviations
   "RSI","ATR","SMA","EMA","EPS","EBITDA","DCF","GTC","ATM","API","EOD","FDA","ESG",
   "MTD","YTD","YOY","QOQ","CAGR","TAM","SAM","SOM","ROE","ROI","ROIC","WACC",
-  "CEO","CFO","COO","CTO","COB","COO","HQ","IPO","SPAC",
-  // Account types
-  "TFSA","RRSP","RRIF","RESP","FHSA","OAS","CPP","RPP",
+  "CEO","CFO","COO","CTO","COB","HQ","IPO","SPAC","OBV","MACD","VWAP","OTM","ITM",
+  "TTM","LTM","PT","MOAT","AWS","GCP","SaaS","IaaS","PaaS","IoT","B2B","B2C","D2C",
+  "MOC","LMT","MKT","GTC","IOC","FOK","AON","IEX","OTC","EPS","PEG","PEG","BPS",
+  // Account types + sleeve names
+  "TFSA","RRSP","RRIF","RESP","FHSA","OAS","CPP","RPP","LIRA","LIF","RRIF",
+  "CORE","SWING","SPEC","YIELD","GROWTH","VALUE","LARGE","MID","SMALL","CAP",
   // Action verbs
   "BUY","SELL","HOLD","TRIM","EXIT","ADD","STOP","LIMIT","MARKET","DAY",
-  "TAX","LOSS","HARVEST","SWAP","SOURCE","ORDER","COST",
+  "TAX","LOSS","HARVEST","SWAP","SOURCE","ORDER","COST","RAISE","LOWER","CUT",
+  "RATE","ROLL","OPEN","CLOSE","FILL","BOOK","LEG","LOT","SIZE","RANGE",
   // Months
   "JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC",
   // Quarters
@@ -729,7 +734,8 @@ const NON_TICKER_TOKENS = new Set([
   // Misc generic
   "US","CDN","UK","EU","AI","ML","NEW","OLD","TBD","TBA","MAX","MIN","AVG",
   "LOW","HIGH","BID","ASK","NEAR","ABOVE","BELOW",
-  "WTI","BRENT","VIX",
+  "WTI","BRENT","VIX","GOLD","OIL","GAS","COPPER","SILVER",
+  "OPEC","GCC","NATO","FOMC","BLS","BEA","OECD","IMF",
 ]);
 
 // Fetch current quote — prefer FMP (Premium tier user pays for), fall back
@@ -930,7 +936,7 @@ export async function correctBriefingWithVerifiedPrices(markdown, warnings, sizi
     .map(w => `- ${w.ticker}: $${w.currentPrice.toFixed(2)} (you previously wrote $${w.quotedPrice.toFixed(2)} — that was wrong)`);
   const missingLines = (warnings || [])
     .filter(w => w.kind === "not_found")
-    .map(w => `- ${w.ticker}: ticker not found on live data feeds — likely renamed/delisted. REMOVE from briefing.`);
+    .map(w => `- ${w.ticker}: live-quote fetch returned no data. If this ticker appears in the user's holdings table above, TRUST the holdings table — the user owns it, so it exists. Only if it's a new-idea rec you were considering (NOT in holdings), quietly drop the rec. Do NOT emit any "delisted", "not found", "SELL AT MARKET", or "cannot be tracked" cards for tickers the user holds — that instruction is off-limits regardless of what this line says.`);
   const oversizedLines = (sizingWarnings || [])
     .filter(w => w.kind === "oversized")
     .map(w => `- ${w.account}: rec uses $${w.used.toFixed(0)} ${w.currency} but only $${w.actualAvail.toFixed(0)} ${w.currency} is available. DOWNSIZE share count to fit (or recommend depositing before buying).`);
@@ -1195,6 +1201,14 @@ export async function validateTextPrices(text, tickerCcyHints = {}) {
   if (!text || typeof text !== "string") return [];
   const quotes = extractTickerQuotes(text);
   if (quotes.length === 0) return [];
+  // Held-ticker set (base-ticker normalized). Any quote against one of
+  // these tickers cannot be flagged "not_found" — ownership IS proof
+  // the ticker exists. Yahoo/FMP fetch failures for a held ticker are
+  // transient noise, not evidence of delisting. Without this guard a
+  // rate-limited fetcher for 20 held tickers becomes 20 "SELL AT MARKET
+  // IMMEDIATELY — DELISTED" instructions in the correction pass.
+  const baseOf = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+  const heldBaseSet = new Set(Object.keys(tickerCcyHints || {}).map(baseOf));
   // Dedupe by (ticker, currency, price) — same ticker quoted in
   // different currencies must be validated separately.
   const seen = new Set();
@@ -1218,7 +1232,10 @@ export async function validateTextPrices(text, tickerCcyHints = {}) {
   for (const q of unique) {
     const key = `${q.ticker}|${q.resolvedCurrency || ""}`;
     const current = priceMap[key];
+    const isHeld = heldBaseSet.has(baseOf(q.ticker));
     if (current == null) {
+      // Held tickers never get "not_found" — ownership proves realness.
+      if (isHeld) continue;
       const aliased = TICKER_ALIASES[q.ticker];
       const aliasNote = aliased != null && aliased !== q.ticker
         ? ` (did you mean ${aliased}?)`
@@ -1238,6 +1255,17 @@ export async function validateTextPrices(text, tickerCcyHints = {}) {
         });
       }
     }
+  }
+  // Circuit breaker: if the vast majority of prices scanned came back
+  // null, we're almost certainly looking at a fetcher outage or
+  // rate-limit cascade, not real mass-delisting. Drop the not_found
+  // warnings entirely so the correction pass doesn't hand the AI a
+  // list of 20 "SELL — DELISTED" instructions for tickers that trade
+  // fine.
+  const notFoundCount = warnings.filter(w => w.kind === "not_found").length;
+  if (notFoundCount > 0 && notFoundCount >= unique.length * 0.5) {
+    console.warn(`[validateTextPrices] ${notFoundCount}/${unique.length} tickers returned null — suspecting fetcher outage, dropping not_found warnings`);
+    return warnings.filter(w => w.kind !== "not_found");
   }
   return warnings;
 }
