@@ -1887,6 +1887,10 @@ export default function TaskRunner({
   // Mad Dash. Reveals the current target color for 3s.
   torchlightActive = false,
   onTorchlightConsumed,
+  // 🦘 Jump Higher — Motion Mission only. Lowers the accelerometer
+  // shake threshold + shortens the debounce.
+  jumpHigherActive = false,
+  onJumpHigherConsumed,
 }) {
   if (!task) return null;
 
@@ -3149,7 +3153,14 @@ case TASK_TYPES.MAD_DASH_SEQUENCE:
 
     case TASK_TYPES.MOTION_MISSION:
       content = (
-        <MotionMissionTask task={tp} onSubmit={handleTaskSubmit} disabled={effectiveDisabled} remainingMs={remainingMs} />
+        <MotionMissionTask
+          task={tp}
+          onSubmit={handleTaskSubmit}
+          disabled={effectiveDisabled}
+          remainingMs={remainingMs}
+          jumpHigherActive={jumpHigherActive}
+          onJumpHigherConsumed={onJumpHigherConsumed}
+        />
       );
       break;
 

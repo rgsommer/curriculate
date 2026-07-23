@@ -344,6 +344,7 @@ function StudentApp() {
   const [superpowerTriggered, setSuperpowerTriggered] = useState(null); // { powerId, pointsOut, revealText? }
   const [xrayArmed, setXrayArmed] = useState(false); // set true on activate; TaskRunner reads and forwards to MC
   const [torchlightArmed, setTorchlightArmed] = useState(false); // set true on activate; TaskRunner forwards to MadDash
+  const [jumpHigherArmed, setJumpHigherArmed] = useState(false); // set true on activate; TaskRunner forwards to MotionMission
   const [wildCardRolling, setWildCardRolling] = useState(false); // spinner while server regenerates
 
   // Mode B (join): result of room:peek — populated when the student types
@@ -4663,6 +4664,14 @@ function StudentApp() {
                 // Mad Dash the flag stays armed until one comes up.
                 return;
               }
+              if (sp.id === "jump_higher") {
+                setJumpHigherArmed(true);
+                setSuperpowerUsedAt(stamp);
+                // Fires only on Motion Mission. Boost applies for the
+                // whole task; consumed on mount so re-entering the
+                // same task later doesn't re-boost.
+                return;
+              }
               if (sp.id === "second_chance") {
                 // Server-armed like the point-manipulation powers.
                 // Backend intercepts the NEXT wrong submission and
@@ -7160,6 +7169,8 @@ function StudentApp() {
         onXrayConsumed={() => setXrayArmed(false)}
         torchlightActive={torchlightArmed}
         onTorchlightConsumed={() => setTorchlightArmed(false)}
+        jumpHigherActive={jumpHigherArmed}
+        onJumpHigherConsumed={() => setJumpHigherArmed(false)}
       />
       </TaskErrorBoundary>
     </div>

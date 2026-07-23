@@ -136,7 +136,7 @@ export const SUPERPOWERS = {
     description: "For the next Motion Mission, the accelerometer counts smaller movements — great for teams with a cautious player.",
     flavor: SUPERPOWER_FLAVORS.MECHANICS,
     weight: 2,
-    activationImplemented: false,
+    activationImplemented: true,
   },
   TORCHLIGHT: {
     id: "torchlight",

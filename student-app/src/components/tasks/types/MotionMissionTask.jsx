@@ -59,7 +59,18 @@ function calcTurnPoints(count, target, bestPrev) {
   return Math.min(pts, 18); // hard cap
 }
 
-export default function MotionMissionTask({ task, onSubmit, disabled, presenter, remainingMs }) {
+export default function MotionMissionTask({
+  task,
+  onSubmit,
+  disabled,
+  presenter,
+  remainingMs,
+  // 🦘 Jump Higher superpower — when true, lower the accelerometer
+  // shake threshold and the debounce so smaller/faster movements
+  // count. Applies for the whole task; consumed at mount.
+  jumpHigherActive = false,
+  onJumpHigherConsumed,
+}) {
   const activityPrompt = task?.prompt || task?.activity || "Jump 10 times";
   const activityName = useMemo(() => String(activityPrompt || "").trim() || "Jump 10 times", [activityPrompt]);
 
@@ -86,8 +97,17 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
   useEffect(() => { countRef.current = count; }, [count]);
   const [noMotionSupport, setNoMotionSupport] = useState(false);
   const lastShakeTime = useRef(0);
-  const shakeThreshold = 1.9;
-  const minInterval = 380;
+  // 🦘 Jump Higher — sensitivity boost. Threshold drops by ~25% and
+  // debounce shortens so smaller/faster movements register as counts.
+  const shakeThreshold = jumpHigherActive ? 1.4 : 1.9;
+  const minInterval = jumpHigherActive ? 280 : 380;
+  const jumpHigherConsumedRef = useRef(false);
+  useEffect(() => {
+    if (jumpHigherActive && !jumpHigherConsumedRef.current) {
+      jumpHigherConsumedRef.current = true;
+      if (typeof onJumpHigherConsumed === "function") onJumpHigherConsumed();
+    }
+  }, [jumpHigherActive, onJumpHigherConsumed]);
 
   // Per-turn timer
   const [turnTime, setTurnTime] = useState(TURN_SECONDS);
@@ -325,6 +345,28 @@ export default function MotionMissionTask({ task, onSubmit, disabled, presenter,
 
   return (
     <div className="relative flex flex-col items-center h-full p-6 md:p-8 bg-gradient-to-br from-orange-600 via-red-600 to-pink-700 text-white overflow-hidden">
+      {jumpHigherActive && (
+        <div
+          data-testid="jump-higher-boost"
+          style={{
+            position: "absolute",
+            top: 10,
+            left: "50%",
+            transform: "translateX(-50%)",
+            padding: "6px 14px",
+            borderRadius: 999,
+            background: "linear-gradient(135deg, #fde68a, #f59e0b)",
+            color: "#78350f",
+            fontWeight: 900,
+            fontSize: "0.8rem",
+            letterSpacing: 0.3,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            zIndex: 20,
+          }}
+        >
+          🦘 Jump Higher active — smaller moves count!
+        </div>
+      )}
       <h1 className="text-4xl md:text-6xl font-black drop-shadow-2xl z-10 mt-2 mb-3 text-center">
         MOTION MISSION!
       </h1>
