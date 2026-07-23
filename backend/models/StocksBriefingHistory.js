@@ -26,6 +26,21 @@ const StocksBriefingHistorySchema = new mongoose.Schema(
     // so the next briefing's prompt can inject only what's needed
     // instead of the whole 15KB markdown.
     callsExcerpt: { type: String, default: "" },
+    // Discipline critic (OpenAI gpt-4o-mini) violations flagged on this
+    // briefing. Each entry: {rule 1-5, ticker, quote, reason}. Empty if
+    // the critic was off, the briefing was clean, or the audit failed.
+    // Used by the compliance surface (trend view) and by the next
+    // briefing's prompt (fed back as "don't repeat these patterns").
+    criticViolations: {
+      type: [{
+        rule: { type: Number, required: true, min: 1, max: 5 },
+        ticker: { type: String, default: null },
+        quote: { type: String, required: true },
+        reason: { type: String, default: "" },
+      }],
+      default: [],
+      _id: false,
+    },
   },
   { timestamps: true }
 );

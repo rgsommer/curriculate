@@ -90,7 +90,11 @@ async function auditBriefingWithCritic(md, portfolio) {
   // inside runDisciplineCritic is still respected — this just adds
   // a second, per-user knob so different users on the same deploy
   // can independently opt in or out.
-  if (!portfolio?.disciplineCriticEnabled) return md;
+  //
+  // Returns { markdown, violations }. Callers persist violations on the
+  // briefing-history row (for compliance trend + next-briefing feedback)
+  // and use the possibly-bannered markdown for send + snapshot.
+  if (!portfolio?.disciplineCriticEnabled) return { markdown: md, violations: [] };
   try {
     let previousCalls = "";
     try {
@@ -108,13 +112,13 @@ async function auditBriefingWithCritic(md, portfolio) {
       horizonRows,
       previousCalls,
     });
-    if (skipped) return md;
-    if (!violations.length) return md;
+    if (skipped) return { markdown: md, violations: [] };
+    if (!violations.length) return { markdown: md, violations: [] };
     console.log(`[discipline-critic] ${portfolio.email}: ${violations.length} violation(s) flagged`);
-    return formatCriticBanner(violations) + md;
+    return { markdown: formatCriticBanner(violations) + md, violations };
   } catch (e) {
     console.warn("[discipline-critic] wrapper failed:", e?.message);
-    return md;
+    return { markdown: md, violations: [] };
   }
 }
 
@@ -1119,6 +1123,7 @@ ${formatComplianceBlock(compliance, { weeklyHeartbeat: isMondayEt })}
 ${formatAttributionBlock(attribution)}
 ${formatHorizonReviewBlock(horizonRows)}
 ${formatBriefingHistoryBlock(briefingHistory)}
+${formatCriticFeedbackBlock(briefingHistory)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
@@ -1199,7 +1204,7 @@ export function briefingToAdviceCards(md) {
 
 // Persist (or upsert) the latest briefing's cards + raw markdown as the
 // per-user advice snapshot. Best-effort — never throws.
-export async function saveAdviceSnapshot({ email, markdown, source }) {
+export async function saveAdviceSnapshot({ email, markdown, source, criticViolations = [] }) {
   try {
     const cards = briefingToAdviceCards(markdown);
     await StocksAdviceSnapshot.findOneAndUpdate(
@@ -1221,7 +1226,10 @@ export async function saveAdviceSnapshot({ email, markdown, source }) {
   // reference yesterday's calls. Separate model on purpose — snapshot
   // overwrites; history keeps. Extract just section 2's per-ticker
   // calls (that's where HOLD/TRIM/ADD/EXIT rationale lives) so the
-  // replay stays small.
+  // replay stays small. Also persist any critic violations flagged
+  // against this briefing so (a) the compliance surface can trend
+  // repeat-offender patterns and (b) tomorrow's prompt can inject
+  // "your last briefing was flagged for X — don't repeat these."
   try {
     const callsExcerpt = extractSignalsPerHoldingSection(markdown).slice(0, 4000);
     await StocksBriefingHistory.create({
@@ -1230,6 +1238,7 @@ export async function saveAdviceSnapshot({ email, markdown, source }) {
       source: source || "cron",
       markdown: markdown.slice(0, 20000),
       callsExcerpt,
+      criticViolations: Array.isArray(criticViolations) ? criticViolations : [],
     });
   } catch (e) {
     console.warn("[briefing-history] save failed:", e?.message);
@@ -1287,6 +1296,45 @@ function formatBriefingHistoryBlock(rows) {
     lines.push(r.callsExcerpt || "(no signals excerpt captured)");
   }
   lines.push("\nWhen your call on a ticker today matches your prior call above, say so briefly (\"still HOLD — no thesis change\"). When you're changing your call from what you said yesterday or the day before, name the specific NEW information that justifies the change. Reversing without a stated new trigger is the churn pattern we're eliminating.");
+  return lines.join("\n");
+}
+
+// Format the prior briefing's critic violations as a "don't repeat"
+// instruction block. Fed into the next prompt so repeat offenders
+// become explicit — the AI sees "yesterday you were flagged for
+// unjustified TRIM on CNQ; do NOT do that again unless a specific
+// trigger fired." Empty string when there's nothing to feed back.
+function formatCriticFeedbackBlock(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return "";
+  // Collect violations across the last 2 briefings (most recent first
+  // — already sorted that way by getRecentBriefingHistory).
+  const bucket = [];
+  for (const r of rows) {
+    for (const v of (r.criticViolations || [])) {
+      if (bucket.length >= 8) break;
+      bucket.push({
+        rule: v.rule, ticker: v.ticker, quote: (v.quote || "").slice(0, 120),
+        reason: (v.reason || "").slice(0, 200),
+        ageH: Math.max(1, Math.round((Date.now() - new Date(r.generatedAt).getTime()) / 3600000)),
+      });
+    }
+    if (bucket.length >= 8) break;
+  }
+  if (bucket.length === 0) return "";
+  const ruleNames = {
+    1: "unjustified TRIM/EXIT",
+    2: "unknown-ticker rec",
+    3: "price >10% off reference",
+    4: "reverses prior briefing without trigger",
+    5: "liquidation card on held ticker",
+  };
+  const lines = ["\nDISCIPLINE-CRITIC FEEDBACK (an independent auditor flagged the following on your recent briefings — do NOT repeat these patterns today):"];
+  for (const v of bucket) {
+    const label = ruleNames[v.rule] || `rule ${v.rule}`;
+    const tk = v.ticker ? ` (${v.ticker})` : "";
+    lines.push(`  - [${v.ageH}h ago] ${label}${tk}: "${v.quote}" — ${v.reason}`);
+  }
+  lines.push("\nIf a similar situation applies today, either (a) don't emit the flagged call at all, or (b) emit it with an explicit, verifiable trigger that resolves the rule (e.g., \"target hit\", \"stop breached\", \"earnings surprise\"). Prose about \"capturing gains\" or \"de-risking\" without a concrete trigger will be flagged again.");
   return lines.join("\n");
 }
 
@@ -1757,13 +1805,14 @@ export async function runDailyBriefing(opts = {}) {
       }
 
       md = await validateAndCorrectBriefing(md, p);
-      md = await auditBriefingWithCritic(md, p);
+      const audit = await auditBriefingWithCritic(md, p);
+      md = audit.markdown;
 
       const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
       await emailBriefing({ to: p.email, subject, md });
       // Persist as the in-app advice snapshot so the Advice tab reflects
       // the same content the user just got in email (no extra AI call).
-      await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" });
+      await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron", criticViolations: audit.violations });
 
       // Persist actionable recs for the scorecard
       const recs = parseRecsFromBriefing(md);
@@ -1877,12 +1926,13 @@ export async function sendBriefingForUser(p, sendKey) {
     md = await validateAndCorrectBriefing(md, p);
     // Independent OpenAI critic pass — prepends an amber discipline
     // banner if any violations flag. Best-effort; never blocks.
-    md = await auditBriefingWithCritic(md, p);
+    const audit = await auditBriefingWithCritic(md, p);
+    md = audit.markdown;
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     try { await emailBriefing({ to: p.email, subject, md }); }
     catch (e) { await recordFail("emailBriefing", e); throw e; }
-    try { await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron" }); }
+    try { await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron", criticViolations: audit.violations }); }
     catch (e) { await recordFail("saveAdviceSnapshot", e); throw e; }
 
     const recs = parseRecsFromBriefing(md);
