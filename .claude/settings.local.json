@@ -845,7 +845,8 @@
       "Bash(awk -F: '$2 >= 1584 && $2 <= 1900 {print}')",
       "Bash(awk 'NR >= 1750 && NR <= 1900' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(awk 'NR >= 1900 && NR <= 2050 && /return|raw|final/' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
-      "Bash(node /private/tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/test_prefix_renderer.mjs)"
+      "Bash(node /private/tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/test_prefix_renderer.mjs)",
+      "Bash(awk 'NR >= 751 && NR <= 935 {chars += length\\($0\\) + 1} END {print chars, \"chars in STATIC_SYSTEM_PROMPT\"}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
     ]
   }
 }
