@@ -2221,6 +2221,204 @@ function RegimeAndUoaChips({ data }) {
   );
 }
 
+// ── Portfolio Health chip ────────────────────────────────────────────
+// Single-glance answer to "am I OK regardless of what the market did?"
+// Five guardrail dimensions rolled up into one traffic light, computed
+// entirely client-side from data the Dashboard already has in hand:
+//   • Risk budget (portfolio VaR vs the user's own limit)
+//   • Sleeve balance (drift from 80/15/5 targets)
+//   • Concentration (largest single position as % of book)
+//   • Cash zone (LEAN / HEALTHY / AMPLE / IDLE-DRAG)
+//   • Loss cooldown (recent drawdown / streak triggering discipline pause)
+// Overall = worst of the five. Each tile is colour-coded and carries a
+// one-line "why" so the trader can act on the red ones without hunting
+// through five cards.
+function PortfolioHealthChip({ user, regimeAndUoa }) {
+  const fx = user.fxUsdCad || 1.37;
+
+  // 1) Risk budget — VaR vs limit. Green when comfortably under; amber
+  //    within 20% headroom; red on breach. Silent when we don't have
+  //    vol data for any positions (no false-clean).
+  const riskVar = regimeAndUoa?.riskVar || null;
+  const varPct = riskVar?.used?.pct95 ?? null;
+  const varLimit = riskVar?.limits?.pct95 ?? 2;
+  const varBreach = !!riskVar?.breach95;
+  const riskStatus = varPct == null
+    ? null
+    : varBreach ? "act" : (varPct >= varLimit * 0.8 ? "watch" : "ok");
+
+  // 2) Sleeve balance — largest absolute drift from any single sleeve's
+  //    target expressed as % of book. Under 5pp = green, under 15pp =
+  //    amber, beyond = red.
+  const bal = computeSleeveBalanceClient(user);
+  const worstSleeve = Object.entries(bal.headroomCad || {}).reduce(
+    (worst, [k, v]) => Math.abs(v) > Math.abs(worst.v) ? { k, v } : worst,
+    { k: null, v: 0 }
+  );
+  const bookAbs = Math.abs(bal.book) || 1;
+  const driftPct = (Math.abs(worstSleeve.v) / bookAbs) * 100;
+  const sleeveStatus = bal.book <= 0 ? null
+    : driftPct < 5 ? "ok"
+    : driftPct < 15 ? "watch" : "act";
+
+  // 3) Concentration — largest single ticker share of positions. Under
+  //    10% = green, under 20% = amber, beyond = red. Base-ticker match
+  //    (XIU vs XIU.TO both roll up as XIU).
+  const posByBase = {};
+  for (const p of user.positions || []) {
+    const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+    if (!base) continue;
+    const cad = (Number.isFinite(p.priceCad) ? p.priceCad
+      : Number.isFinite(p.priceUsd) ? p.priceUsd * fx : 0) * (p.qty || 0);
+    posByBase[base] = (posByBase[base] || 0) + cad;
+  }
+  const posTotal = Object.values(posByBase).reduce((s, x) => s + x, 0);
+  const largest = Object.entries(posByBase).reduce(
+    (max, [k, v]) => v > max.v ? { k, v } : max, { k: null, v: 0 }
+  );
+  const concPct = posTotal > 0 ? (largest.v / posTotal) * 100 : 0;
+  const concStatus = posTotal <= 0 ? null
+    : concPct < 10 ? "ok"
+    : concPct < 20 ? "watch" : "act";
+
+  // 4) Cash zone — same LEAN / HEALTHY / AMPLE / HIGH bands the
+  //    briefing enforcer uses. HEALTHY = 3-10%. AMPLE = 10-15%.
+  //    Below 3% = lean (amber), below 1% = red. Above 15% = ample
+  //    (amber, capital drag), above 30% = red (heavy idle).
+  const cashCad = (user.accounts || []).reduce(
+    (s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0
+  );
+  const bookTotal = posTotal + cashCad;
+  const cashPct = bookTotal > 0 ? (cashCad / bookTotal) * 100 : 0;
+  const cashLabel = cashPct < 3 ? "lean"
+    : cashPct <= 10 ? "healthy"
+    : cashPct <= 15 ? "ample"
+    : "idle drag";
+  const cashStatus = bookTotal <= 0 ? null
+    : cashPct >= 3 && cashPct <= 15 ? "ok"
+    : cashPct >= 1 && cashPct <= 30 ? "watch"
+    : "act";
+
+  // 5) Loss cooldown — active = red (discipline pause triggered), any
+  //    partial signal (streak > 0, but under threshold) = amber, clean = green.
+  const cool = regimeAndUoa?.lossCooldown || null;
+  const coolStatus = cool == null ? null
+    : cool.active ? "act"
+    : (cool.streak > 0 || (cool.dailyDrawdownPct != null && cool.dailyDrawdownPct <= -1)) ? "watch"
+    : "ok";
+  const coolReason = cool?.reasons?.[0]
+    || (cool?.streak > 0 ? `${cool.streak} losing trade${cool.streak === 1 ? "" : "s"} in a row` : null)
+    || (cool?.dailyDrawdownPct != null && cool.dailyDrawdownPct <= -1 ? `${cool.dailyDrawdownPct.toFixed(1)}% day-over-day` : null)
+    || "no recent stress signals";
+
+  const dims = [
+    {
+      key: "risk", label: "Risk budget",
+      status: riskStatus,
+      value: varPct != null ? `VaR ${varPct.toFixed(2)}%` : "no vol data",
+      detail: varPct != null ? `vs ${varLimit}% cap · headroom ${varBreach ? "−" : ""}$${Math.round(Math.abs(riskVar?.headroomCad95 || 0)).toLocaleString()}` : "need FMP tech data for held tickers",
+    },
+    {
+      key: "sleeve", label: "Sleeve balance",
+      status: sleeveStatus,
+      value: bal.book > 0 ? `${driftPct.toFixed(0)}pp drift` : "—",
+      detail: worstSleeve.k
+        ? `${worstSleeve.k.toUpperCase()} ${worstSleeve.v >= 0 ? "under" : "over"} by $${Math.round(Math.abs(worstSleeve.v)).toLocaleString()} CAD`
+        : "—",
+    },
+    {
+      key: "conc", label: "Concentration",
+      status: concStatus,
+      value: largest.k ? `${concPct.toFixed(0)}% in ${largest.k}` : "—",
+      detail: "of held positions",
+    },
+    {
+      key: "cash", label: "Cash zone",
+      status: cashStatus,
+      value: bookTotal > 0 ? `${cashPct.toFixed(1)}%` : "—",
+      detail: cashLabel,
+    },
+    {
+      key: "cool", label: "Loss cooldown",
+      status: coolStatus,
+      value: cool?.active ? "ACTIVE" : cool?.streak > 0 ? "near" : "clear",
+      detail: coolReason,
+    },
+  ];
+
+  const priority = { act: 3, watch: 2, ok: 1 };
+  const overall = dims.reduce((max, d) => {
+    if (d.status == null) return max;
+    return (priority[d.status] || 0) > (priority[max] || 0) ? d.status : max;
+  }, "ok");
+
+  const statusColor = (s) => s === "ok" ? "#166534"
+    : s === "watch" ? "#92400e"
+    : s === "act" ? "#991b1b"
+    : "#64748b";
+  const statusBg = (s) => s === "ok" ? "#f0fdf4"
+    : s === "watch" ? "#fefce8"
+    : s === "act" ? "#fef2f2"
+    : "#f1f5f9";
+  const statusBorder = (s) => s === "ok" ? "#bbf7d0"
+    : s === "watch" ? "#fde68a"
+    : s === "act" ? "#fecaca"
+    : "#e2e8f0";
+  const statusIcon = (s) => s === "ok" ? "✓" : s === "watch" ? "⚠" : s === "act" ? "✗" : "—";
+  const overallLabel = overall === "ok" ? "GOOD" : overall === "watch" ? "WATCH" : "ACT NOW";
+  const watchCount = dims.filter(d => d.status === "watch").length;
+  const actCount = dims.filter(d => d.status === "act").length;
+  const overallLine = overall === "ok"
+    ? "All five guardrails clear. No urgent action."
+    : overall === "watch"
+      ? `${watchCount} guardrail${watchCount === 1 ? "" : "s"} drifting — see amber tile${watchCount === 1 ? "" : "s"}.`
+      : `${actCount} guardrail${actCount === 1 ? "" : "s"} breached — see red tile${actCount === 1 ? "" : "s"}.`;
+
+  return (
+    <div style={{
+      marginBottom: 12,
+      background: statusBg(overall),
+      border: `1px solid ${statusBorder(overall)}`,
+      borderRadius: 10,
+      padding: "10px 12px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>🩺 Portfolio Health</span>
+          <span style={{
+            padding: "3px 10px",
+            borderRadius: 99,
+            fontWeight: 800,
+            fontSize: 11.5,
+            letterSpacing: ".04em",
+            background: statusColor(overall),
+            color: "#fff",
+          }}>{overallLabel}</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: "var(--sa-muted)" }}>{overallLine}</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 6 }}>
+        {dims.map(d => (
+          <div key={d.key} style={{
+            padding: "7px 9px",
+            borderRadius: 6,
+            background: "var(--sa-panel)",
+            border: `1px solid ${statusBorder(d.status)}`,
+            opacity: d.status == null ? 0.55 : 1,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 2, fontSize: 11, fontWeight: 700, color: statusColor(d.status), textTransform: "uppercase", letterSpacing: ".04em" }}>
+              <span>{statusIcon(d.status)}</span>
+              <span>{d.label}</span>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 13, fontVariantNumeric: "tabular-nums", marginBottom: 1 }}>{d.value}</div>
+            <div style={{ fontSize: 10.5, color: "var(--sa-muted)", lineHeight: 1.3 }}>{d.detail}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder, sessionToken }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
@@ -2413,6 +2611,8 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
       </div>
       <div className="sa-disclaimer">Research and education only. Not licensed investment advice.</div>
+
+      <PortfolioHealthChip user={user} regimeAndUoa={regimeAndUoa} />
 
       {showPmBanner && (
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "8px 12px", background: "var(--sa-panel-2)", borderRadius: 8, marginBottom: 12, fontSize: 12 }}>
@@ -8283,7 +8483,7 @@ function PerformanceView({ sessionToken, user }) {
 
       <EightKFeedCard sessionToken={sessionToken} />
 
-      <WeekInReviewCard sessionToken={sessionToken} />
+      <WeekInReviewCard sessionToken={sessionToken} user={user} />
 
       <DailyPickCard sessionToken={sessionToken} user={user} />
 
@@ -9770,7 +9970,21 @@ function computeSleeveBalanceClient(user) {
 // at a glance: what did I do this week (trades + commission burn),
 // how did I do (book change vs SPY/XIC alpha), and what's ahead
 // (open recs whose horizon expires in the coming week).
-function WeekInReviewCard({ sessionToken }) {
+function WeekInReviewCard({ sessionToken, user }) {
+  // Base-ticker set for held positions — used to distinguish SELL recs
+  // that mean "close/trim an existing long" (target/stop are meaningless
+  // — you're just exiting) from SELL recs on unheld tickers, which are
+  // genuine short-sale setups with a downside target and upside cover.
+  // Rendering "$430 stop" on a SELL you already own reads as nonsense.
+  const heldBases = useMemo(() => {
+    const s = new Set();
+    for (const p of user?.positions || []) {
+      if (!(p.qty > 0)) continue;
+      const b = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+      if (b) s.add(b);
+    }
+    return s;
+  }, [user]);
   const [days, setDays] = useState(7);
   const [data, setData] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -9915,23 +10129,43 @@ function WeekInReviewCard({ sessionToken }) {
                       </tr>
                     </thead>
                     <tbody>
-                      {f.openRecsExpiringInWindow.map((r, i) => (
-                        <tr key={i} style={{ borderTop: "1px dashed var(--sa-border)" }}>
-                          <td style={{ padding: "5px 8px", fontWeight: 700 }}>{r.ticker}</td>
-                          <td style={{ padding: "5px 8px" }}>
-                            <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: r.action === "BUY" ? "var(--sa-green-soft)" : "var(--sa-red-soft)", color: r.action === "BUY" ? "var(--sa-green)" : "var(--sa-red)" }}>{r.action}</span>
-                          </td>
-                          <td style={{ padding: "5px 8px", textAlign: "right" }}>${Number(r.entryPrice).toFixed(2)}</td>
-                          {/* SELL recs (trim/exit existing positions) legitimately
-                              have no target — the "target" for a SELL is exit at
-                              market. Rendering "$0.00" reads as a broken value;
-                              render "—" for zero or missing on either exit level. */}
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534" }}>{Number(r.targetPrice) > 0 ? `$${Number(r.targetPrice).toFixed(2)}` : "—"}</td>
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b" }}>{Number(r.stopPrice) > 0 ? `$${Number(r.stopPrice).toFixed(2)}` : "—"}</td>
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{r.horizonDays}d</td>
-                          <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{new Date(r.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
-                        </tr>
-                      ))}
+                      {f.openRecsExpiringInWindow.map((r, i) => {
+                        // Distinguish "trim/exit existing long" (SELL on a
+                        // ticker in the position book) from "genuine short
+                        // setup" (SELL on an unheld name). For the first
+                        // case the stop/target fields carry no useful info
+                        // — the rec just says "get out around $entry"
+                        // — and rendering them as prices reads as a broken
+                        // short setup with stop above entry.
+                        const base = String(r.ticker || "").toUpperCase().replace(/\..*$/, "");
+                        const isCloseExisting = r.action === "SELL" && heldBases.has(base);
+                        return (
+                          <tr key={i} style={{ borderTop: "1px dashed var(--sa-border)" }}>
+                            <td style={{ padding: "5px 8px", fontWeight: 700 }}>{r.ticker}</td>
+                            <td style={{ padding: "5px 8px" }}>
+                              <span style={{ padding: "1px 7px", borderRadius: 99, fontSize: 10, fontWeight: 700, background: r.action === "BUY" ? "var(--sa-green-soft)" : "var(--sa-red-soft)", color: r.action === "BUY" ? "var(--sa-green)" : "var(--sa-red)" }}>
+                                {isCloseExisting ? "EXIT" : r.action}
+                              </span>
+                            </td>
+                            <td style={{ padding: "5px 8px", textAlign: "right" }}>
+                              ${Number(r.entryPrice).toFixed(2)}
+                              {isCloseExisting && <span style={{ marginLeft: 4, fontSize: 10, color: "var(--sa-muted)" }}>at market</span>}
+                            </td>
+                            {isCloseExisting ? (
+                              <td colSpan={2} style={{ padding: "5px 8px", textAlign: "center", color: "var(--sa-muted)", fontSize: 11, fontStyle: "italic" }}>
+                                close existing position — no target / stop
+                              </td>
+                            ) : (
+                              <>
+                                <td style={{ padding: "5px 8px", textAlign: "right", color: "#166534" }}>{Number(r.targetPrice) > 0 ? `$${Number(r.targetPrice).toFixed(2)}` : "—"}</td>
+                                <td style={{ padding: "5px 8px", textAlign: "right", color: "#991b1b" }}>{Number(r.stopPrice) > 0 ? `$${Number(r.stopPrice).toFixed(2)}` : "—"}</td>
+                              </>
+                            )}
+                            <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{r.horizonDays}d</td>
+                            <td style={{ padding: "5px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{new Date(r.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
