@@ -110,6 +110,10 @@ function applyLeg(positions, accountId, leg) {
         (p.subCcy || p.ccy) === settleCcy
     );
     if (idx >= 0) {
+      // Existing position: update qty + weighted-average cost basis.
+      // Do NOT touch priceUsd/priceCad — those are the current market
+      // price, owned by the refresh path. See stocksTradeApplier.js
+      // for the full rationale (task #120 root-cause fix).
       const existing = positions[idx];
       const oldQty = existing.qty || 0;
       const oldCostKey = currency === "USD" ? "costBasisUsd" : "costBasisCad";
@@ -124,7 +128,6 @@ function applyLeg(positions, accountId, leg) {
         ...existing,
         qty: newQty,
         [oldCostKey]: newCost,
-        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
       };
     } else {
       positions.push({
@@ -171,10 +174,11 @@ function applyLeg(positions, accountId, leg) {
       remaining -= row.qty;
       positions[i] = { ...row, qty: 0 }; // mark empty; we'll prune after
     } else {
+      // SELL: reduce qty only. Do NOT touch priceUsd/priceCad —
+      // market price is a refresh concern (task #120 fix).
       positions[i] = {
         ...row,
         qty: row.qty - remaining,
-        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
       };
       remaining = 0;
     }

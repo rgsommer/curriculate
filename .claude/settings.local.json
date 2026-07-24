@@ -851,7 +851,8 @@
       "Bash(awk 'NR >= 704 && NR <= 900 {chars += length\\($0\\) + 1} END {print chars, \"chars in STATIC_SYSTEM_PROMPT after stage 3\"}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(awk '/^const STATIC_SYSTEM_PROMPT/{p=1; start=NR} p{chars += length\\($0\\) + 1; if\\(NR>start && /^Length.*Date-stamp/\\){print \"STATIC_SYSTEM_PROMPT chars:\", chars, \"ending at line\", NR; exit}}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(cat)",
-      "Bash(awk -F= '{print $1\"=\"\\(length\\($2\\)>0?\"<\"length\\($2\\)\" chars>\":\"<empty>\"\\)}')"
+      "Bash(awk -F= '{print $1\"=\"\\(length\\($2\\)>0?\"<\"length\\($2\\)\" chars>\":\"<empty>\"\\)}')",
+      "Bash(node --check routes/stocksPendingOrders.js)"
     ]
   }
 }

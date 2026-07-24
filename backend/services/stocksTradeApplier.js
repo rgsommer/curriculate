@@ -79,6 +79,25 @@ function normalizeLegToPortfolioRow(positions, accountId, leg) {
 // Duplicated deliberately: the route file is legacy and untangling it
 // mid-flight risks the manual flow. When we come back to consolidate,
 // the route should import from here, not the other way around.
+// Applier semantics for the price fields:
+//
+//   priceUsd / priceCad     — CURRENT MARKET PRICE. Read by display,
+//                             P/L math, sleeve balance, health chip,
+//                             stop monitor. Owned by the price-refresh
+//                             path and the intraday poller. The applier
+//                             writes it ONLY when creating a fresh
+//                             position (bootstrap — the first trade
+//                             price is the best guess until the next
+//                             refresh runs). Never overwrites it on
+//                             existing positions — that was the root
+//                             cause of task #120's MSFT $26.80 phantom,
+//                             where one stale-priced trade poisoned
+//                             every subsequent display of the ticker.
+//   costBasisUsd/Cad         — WEIGHTED AVERAGE COST BASIS from every
+//                             BUY leg. Owned by the applier. SELLs do
+//                             not touch cost basis (holding lots'
+//                             average stays where it was for the
+//                             remaining shares).
 function applyLeg(positions, accountId, leg) {
   const { side, ticker, shares, price, currency } = leg;
   const settleCcy = leg.settleCcy || currency;
@@ -89,6 +108,9 @@ function applyLeg(positions, accountId, leg) {
              p.ccy === currency && (p.subCcy || p.ccy) === settleCcy
     );
     if (idx >= 0) {
+      // Existing position: update qty + weighted-average cost basis.
+      // Deliberately do NOT touch priceUsd/priceCad — those are the
+      // current market price, owned by the refresh path.
       const existing = positions[idx];
       const oldQty = existing.qty || 0;
       const oldCostKey = currency === "USD" ? "costBasisUsd" : "costBasisCad";
@@ -103,9 +125,10 @@ function applyLeg(positions, accountId, leg) {
         ...existing,
         qty: newQty,
         [oldCostKey]: newCost,
-        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
       };
     } else {
+      // Fresh position: bootstrap the market price to the fill price.
+      // Next Refresh Prices call replaces it with a live quote.
       positions.push({
         acct: accountId, ticker, name: "",
         qty: shares, ccy: currency, subCcy: settleCcy,
@@ -117,7 +140,9 @@ function applyLeg(positions, accountId, leg) {
     return;
   }
 
-  // SELL
+  // SELL — reduce qty on matching lots FIFO-ish. Do not touch
+  // priceUsd/priceCad (market price is a refresh concern) OR
+  // costBasisUsd/Cad (average basis of remaining shares stays put).
   const matchIdxs = positions
     .map((p, i) => ({ p, i }))
     .filter(({ p }) => p.acct === accountId && p.ticker === ticker &&
@@ -138,10 +163,7 @@ function applyLeg(positions, accountId, leg) {
       remaining -= row.qty;
       positions[i] = { ...row, qty: 0 };
     } else {
-      positions[i] = {
-        ...row, qty: row.qty - remaining,
-        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
-      };
+      positions[i] = { ...row, qty: row.qty - remaining };
       remaining = 0;
     }
   }

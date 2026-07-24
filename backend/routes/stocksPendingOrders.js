@@ -222,11 +222,13 @@ function applyOrderToPositions(positions, accountId, side, ticker, shares, price
       } else if (existing[costKey] == null) {
         newCost = price;
       }
+      // Existing position: update qty + weighted-average cost basis.
+      // Do NOT overwrite priceUsd/priceCad (current market price is
+      // owned by the refresh path — task #120 fix).
       positions[idx] = {
         ...existing,
         qty: newQty,
         [costKey]: newCost,
-        ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }),
       };
     } else {
       positions.push({
@@ -254,7 +256,8 @@ function applyOrderToPositions(positions, accountId, side, ticker, shares, price
       remaining -= row.qty;
       positions[i] = { ...row, qty: 0 };
     } else {
-      positions[i] = { ...row, qty: row.qty - remaining, ...(currency === "USD" ? { priceUsd: price } : { priceCad: price }) };
+      // SELL: reduce qty only; don't touch market price (task #120 fix).
+      positions[i] = { ...row, qty: row.qty - remaining };
       remaining = 0;
     }
   }
