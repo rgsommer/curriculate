@@ -954,8 +954,15 @@ export default function StocksAdvisorPage() {
   //   step 1: preview (POST without send=true) — fast, no email
   //   step 2: confirm send (POST with send=true) — emails it
   const previewBriefing = async () => {
-    setBriefingPreview({ busy: true });
-    try {
+    // First attempt sets busy; a transient network error (fetch abort,
+    // Failed-to-fetch on a proxy timeout, 502/503/504) triggers one silent
+    // retry. Because the backend now dedupes in-flight generations by email
+    // and caches the result for 5 minutes, the retry either awaits the
+    // same in-flight promise or returns the cached result instantly — it
+    // does NOT re-trigger a fresh 60-90s pipeline. So the retry is safe
+    // and usually much faster than the first call.
+    setBriefingPreview({ busy: true, hint: "Generating — this can take up to 90s. Retry will piggyback on the same run." });
+    const attempt = async () => {
       const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing`, {
         method: "POST",
         credentials: "include",
@@ -963,8 +970,30 @@ export default function StocksAdvisorPage() {
         body: JSON.stringify({ send: false }),
       });
       const j = await r.json();
-      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
-      setBriefingPreview({ html: j.html, markdown: j.markdown, subject: j.subject, sent: false });
+      if (!r.ok) {
+        const err = new Error(j?.error || `HTTP ${r.status}`);
+        err.status = r.status;
+        throw err;
+      }
+      return j;
+    };
+    const isTransient = (e) => {
+      const msg = String(e?.message || "").toLowerCase();
+      if (/failed to fetch|networkerror|timeout|aborted|econnreset|network request failed/.test(msg)) return true;
+      if ([502, 503, 504, 522, 524].includes(e?.status)) return true;
+      return false;
+    };
+    try {
+      let j;
+      try {
+        j = await attempt();
+      } catch (e1) {
+        if (!isTransient(e1)) throw e1;
+        setBriefingPreview({ busy: true, hint: "Retrying — reusing the in-flight generation…" });
+        await new Promise((r) => setTimeout(r, 1500));
+        j = await attempt();
+      }
+      setBriefingPreview({ html: j.html, markdown: j.markdown, subject: j.subject, sent: false, cacheHit: j.cacheHit });
     } catch (e) {
       setBriefingPreview({ error: e?.message || "Failed to generate briefing" });
     }
@@ -6451,6 +6480,11 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, onRetry, ti
             </div>
             <div style={{ fontSize: 12, color: "var(--sa-text-2)", fontStyle: "italic" }}>{stageLabel}</div>
             <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 10 }}>{loadDetail}</div>
+            {preview.hint && (
+              <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 8, padding: "6px 10px", background: "var(--sa-panel-2)", borderRadius: 6, display: "inline-block" }}>
+                ↺ {preview.hint}
+              </div>
+            )}
           </div>
         )}
 

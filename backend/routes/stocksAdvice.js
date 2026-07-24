@@ -2433,60 +2433,66 @@ router.post("/trigger-briefing-now", requireStocksAuth, async (req, res) => {
   }
 });
 
-router.post("/send-briefing", requireStocksAuth, async (req, res) => {
-  try {
-    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
-    if (!profile || !profile.positions?.length) {
-      return res.status(400).json({ error: "No portfolio with positions found." });
-    }
+// ─────────────────────────────────────────────────────────────────────
+// Per-email in-flight dedupe + short result cache for briefing previews.
+//
+// The generateBriefing → validateTextPrices → correctBriefingWithVerifiedPrices
+// pipeline takes 60-90s. The client fetch sits right on the edge of proxy
+// timeouts, so a first click frequently "fails to fetch" from the user's
+// perspective even though the backend is still working. Their retry then
+// kicks off a fresh 60-90s pipeline — same tokens spent twice, same wait
+// endured twice.
+//
+// This cache solves both:
+//   • In-flight dedupe — a retry that lands while the first generation is
+//     still running awaits the SAME promise instead of starting a new one.
+//     Whoever's HTTP request survives long enough gets the result.
+//   • Short result cache — after success, the produced markdown sticks in
+//     memory for BRIEFING_CACHE_TTL_MS. A retry within that window returns
+//     the cached result instantly. This also means SEND (send=true, no
+//     provided markdown) reuses the preview's result if it fired within the
+//     window, so the email matches what the user just saw.
+//
+// Scope: only the markdown-production path (steps 3-7 of send-briefing) is
+// cached. Actual email sending (step 9) still runs fresh so a resend
+// dispatches a new message. Query param ?fresh=1 busts both layers.
+// ─────────────────────────────────────────────────────────────────────
+const BRIEFING_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const briefingInFlight = new Map(); // email → Promise<{markdown, tracked, priceWarnings}>
+const briefingResultCache = new Map(); // email → {result, expiresAt}
 
-    // Two paths:
-    //   1) PREVIEW (send=false) — always generates fresh briefing
-    //   2) SEND (send=true) — if client provides the markdown it just previewed,
-    //      reuse it instead of generating again (avoids 30s wait + ensures the
-    //      email matches the preview character-for-character).
-    const wantsSend = !!req.body?.send;
-    const providedMarkdown = typeof req.body?.markdown === "string" && req.body.markdown.trim();
-    const reuse = wantsSend && providedMarkdown;
+async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
+  const email = profile.email;
+  if (!forceFresh) {
+    const cached = briefingResultCache.get(email);
+    if (cached && cached.expiresAt > Date.now()) return { ...cached.result, cacheHit: "result" };
+    const inFlight = briefingInFlight.get(email);
+    if (inFlight) return { ...(await inFlight), cacheHit: "in-flight" };
+  }
 
-    let markdown;
+  const workPromise = (async () => {
+    let markdown = await generateBriefing(profile);
+    await saveAdviceSnapshot({ email, markdown, source: "on-demand" });
+
     let tracked = 0;
-
-    if (reuse) {
-      markdown = req.body.markdown;
-    } else {
-      if (!process.env.ANTHROPIC_API_KEY) {
-        return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
-      }
-      markdown = await generateBriefing(profile);
-      // Persist as the in-app advice snapshot so the Advice tab can render
-      // the same content as the email (no extra Anthropic call needed).
-      await saveAdviceSnapshot({ email: profile.email, markdown, source: "on-demand" });
-
-      // Track recommendations only on fresh generations (so we don't re-insert
-      // them when the client is just sending a previously-previewed briefing).
-      const recs = parseRecsFromBriefing(markdown);
-      if (recs.length) {
-        (async () => {
-          try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
-          await StocksAdviceRec.insertMany(
-            recs.map((r) => ({
-              email: profile.email,
-              generatedAt: new Date(),
-              source: "ai",
-              ...r,
-              rationale: "On-demand briefing",
-            }))
-          );
-        })().catch((e) => console.warn("brief-recs save warning:", e?.message));
-        tracked = recs.length;
-      }
+    const recs = parseRecsFromBriefing(markdown);
+    if (recs.length) {
+      (async () => {
+        try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
+        await StocksAdviceRec.insertMany(
+          recs.map((r) => ({
+            email,
+            generatedAt: new Date(),
+            source: "ai",
+            ...r,
+            rationale: "On-demand briefing",
+          }))
+        );
+      })().catch((e) => console.warn("brief-recs save warning:", e?.message));
+      tracked = recs.length;
     }
 
-    // Validate every $price the briefing mentions against the FMP live feed.
-    // If anything is off by >10%, silently rewrite the briefing with the
-    // verified prices — the user should receive a clean, correct briefing,
-    // not an error report about what the AI got wrong.
+    // Price validation + corrective rewrite, same as before.
     let priceWarnings = [];
     let sizingWarnings = [];
     try {
@@ -2502,11 +2508,57 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       const corrected = await correctBriefingWithVerifiedPrices(markdown, priceWarnings, sizingWarnings);
       if (corrected && corrected !== markdown) {
         markdown = corrected;
-        // Re-persist the corrected snapshot so the Advice tab matches the email
-        if (!reuse) {
-          await saveAdviceSnapshot({ email: profile.email, markdown, source: "on-demand" }).catch(() => {});
-        }
+        await saveAdviceSnapshot({ email, markdown, source: "on-demand" }).catch(() => {});
       }
+    }
+
+    return { markdown, tracked, priceWarnings };
+  })();
+
+  briefingInFlight.set(email, workPromise);
+  try {
+    const result = await workPromise;
+    briefingResultCache.set(email, { result, expiresAt: Date.now() + BRIEFING_CACHE_TTL_MS });
+    return { ...result, cacheHit: "miss" };
+  } finally {
+    briefingInFlight.delete(email);
+  }
+}
+
+router.post("/send-briefing", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    if (!profile || !profile.positions?.length) {
+      return res.status(400).json({ error: "No portfolio with positions found." });
+    }
+
+    // Two paths:
+    //   1) PREVIEW (send=false) — cache-aware; retries piggyback on the
+    //      in-flight generation instead of re-triggering it.
+    //   2) SEND (send=true) — if client provides the markdown it just
+    //      previewed, reuse it verbatim so the email matches the preview
+    //      character-for-character.
+    const wantsSend = !!req.body?.send;
+    const providedMarkdown = typeof req.body?.markdown === "string" && req.body.markdown.trim();
+    const forceFresh = !!req.query?.fresh || !!req.body?.fresh;
+    const reuse = wantsSend && providedMarkdown;
+
+    let markdown;
+    let tracked = 0;
+    let priceWarnings = [];
+    let cacheHit = null;
+
+    if (reuse) {
+      markdown = req.body.markdown;
+    } else {
+      if (!process.env.ANTHROPIC_API_KEY) {
+        return res.status(503).json({ error: "ANTHROPIC_API_KEY not set on backend" });
+      }
+      const produced = await produceBriefingMarkdown(profile, { forceFresh });
+      markdown = produced.markdown;
+      tracked = produced.tracked;
+      priceWarnings = produced.priceWarnings;
+      cacheHit = produced.cacheHit;
     }
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
@@ -2547,7 +2599,7 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       }
     }
 
-    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, tracked, reused: !!reuse, priceWarnings });
+    res.json({ markdown, html, subject, sent, sendError, messageId, to: toAddress, tracked, reused: !!reuse, priceWarnings, cacheHit });
   } catch (err) {
     console.error("send-briefing error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
