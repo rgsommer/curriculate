@@ -920,6 +920,122 @@ function formatDiscoveryPoolBlock(discoveryPool) {
   return lines.join("\n");
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// Deterministic prefix renderer — replaces the AI on the mechanical
+// sections at the top of the briefing (0 / 0c / 0d).
+//
+// These three sections are pure formatting passes over input blocks
+// the backend already computed. Prior to this refactor the AI was
+// asked to restate them in a fixed format, and it occasionally slipped
+// — e.g. renaming a ticker, dropping a stop-tier line, or (worst)
+// inventing an EXIT-AT-MARKET for a ticker whose basis was already
+// corrupted upstream. Rendering them here means the section text is
+// guaranteed to match the underlying data byte-for-byte.
+//
+// SCOPE: only sections that are purely mechanical. Left to the AI:
+//   • Section 0b (Trades you executed) — the "on-track / halfway to
+//     target / stop tightening" language per BUY leg is analytical.
+//   • Section 0f (Horizon review) — per-row EXIT / ROLL / TRIM /
+//     PATIENCE calls are analytical judgment.
+//
+// The behavioural rules that FLOW from these sections (SPEC over
+// limit → no new spec in 4/7/8, CORE underweight → close section 4
+// with a XIC/VUN/XEQT nudge) stay in the AI prompt; only the
+// section-body formatting moves out.
+//
+// Returns "" when none of the three sections have anything to
+// surface, so the AI-generated briefing renders unchanged in the
+// quiet-tape case.
+// ─────────────────────────────────────────────────────────────────────
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions }) {
+  const chunks = [];
+
+  // Section 0 — Open recommendation alerts. Alerts are already
+  // formatted upstream (they carry their own emoji / stop-hit
+  // phrasing); we just surface them verbatim under the fixed heading.
+  chunks.push("## 🚨 Open recommendation alerts");
+  if (Array.isArray(monitorAlerts) && monitorAlerts.length > 0) {
+    for (const a of monitorAlerts) chunks.push(`- ${a}`);
+  } else {
+    chunks.push("No targets or stops hit overnight.");
+  }
+  chunks.push("");
+
+  // Section 0c — Position P&L stop check. Only render when the monitor
+  // has at least one flagged row. Order: hard-stop, within-stop, watch
+  // (already sorted worst-first within each tier by monitorPositionStops).
+  const hasStopSignal = stopMonitor && (
+    (stopMonitor.hardStopHit?.length || 0) +
+    (stopMonitor.withinStop?.length || 0) +
+    (stopMonitor.watch?.length || 0) > 0
+  );
+  if (hasStopSignal) {
+    chunks.push("## 🚨 Position P&L stop check");
+    for (const r of stopMonitor.hardStopHit || []) {
+      chunks.push(
+        `- 🚨 **EXIT AT MARKET**: ${r.ticker} in ${r.account} · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency}, pnl ${r.pnlPct.toFixed(1)}% · sell ${r.qty} sh unless a specific NEW-INFO reason overrides.`
+      );
+    }
+    for (const r of stopMonitor.withinStop || []) {
+      chunks.push(
+        `- ⚠ **TIGHTEN**: ${r.ticker} in ${r.account} · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency}, pnl ${r.pnlPct.toFixed(1)}% · move stop to break-even at $${r.costBasis?.toFixed(2)} ${r.currency} OR trim 50% of the position now.`
+      );
+    }
+    for (const r of stopMonitor.watch || []) {
+      chunks.push(
+        `- 👀 **WATCH**: ${r.ticker} · pnl ${r.pnlPct.toFixed(1)}% · 3% from hard stop.`
+      );
+    }
+    chunks.push("");
+  }
+
+  // Section 0d — Sleeve balance. Only render when at least one flag
+  // is active (SPEC over, CORE under, or SWING under). Otherwise all
+  // three sleeves are within tolerance and the section is skipped.
+  const b = sleeveBalance;
+  const hasSleeveFlag = b && (b.specOverLimit || b.coreUnderweight || b.swingUnderweight);
+  if (hasSleeveFlag) {
+    chunks.push("## ⚖ Sleeve balance");
+    const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
+    if (b.specOverLimit) {
+      const excessCad = b.totals.spec - b.targetsCad.spec;
+      // Find the largest spec-classified name so the AI's downstream
+      // trim proposal has a concrete target. Same base-ticker match
+      // the sleeve enforcer uses.
+      const posByBase = {};
+      for (const p of positions || []) {
+        if (classifyPosition(p) !== "spec") continue;
+        const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+        const cadValue = (Number.isFinite(p.priceCad) ? p.priceCad
+          : Number.isFinite(p.priceUsd) ? p.priceUsd * 1.37 : 0) * (p.qty || 0);
+        posByBase[base] = (posByBase[base] || 0) + cadValue;
+      }
+      const largest = Object.entries(posByBase).sort((a, b) => b[1] - a[1])[0];
+      const trimHint = largest
+        ? ` Largest spec name: ${largest[0]} (${m(largest[1])}) — trim first.`
+        : "";
+      chunks.push(
+        `- 🚨 **SPEC OVER LIMIT**: ${m(excessCad)} excess (${b.actualPct.spec.toFixed(1)}% of book vs ${b.targetsPct.spec.toFixed(0)}% target). No new SPEC positions today in sections 4 / 7 / 8.${trimHint}`
+      );
+    }
+    if (b.coreUnderweight) {
+      const shortfall = b.rebalanceCad.core;
+      chunks.push(
+        `- ⚠ **CORE UNDERWEIGHT**: ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target — deploy ~${m(Math.abs(shortfall))} into XIC / VUN / XEQT to restore the anchor.`
+      );
+    }
+    if (b.swingUnderweight) {
+      const room = Math.abs(b.rebalanceCad.swing);
+      chunks.push(
+        `- 💡 **SWING SLEEVE HAS ROOM**: ${m(room)} available for a fresh Canadian large-cap (RY / ENB template) entry.`
+      );
+    }
+    chunks.push("");
+  }
+
+  return chunks.join("\n").trim();
+}
+
 function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
@@ -1142,23 +1258,20 @@ ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
 Section-specific per-call rules (system prompt has the general shape 0–8; the rules below tune it to THIS briefing's blocks):
-0. **🚨 Open recommendation alerts** — surface verbatim the ALERTS block above if non-empty. Otherwise write "No targets or stops hit overnight."
+
+⚠ SECTIONS 0, 0c, AND 0d ARE PRE-RENDERED BY THE BACKEND AND WILL BE PREPENDED TO YOUR OUTPUT. **DO NOT WRITE THEM YOURSELF.** Start your response at section 0b (if the executed-trades block is non-empty) or otherwise at section 1. Do not restate the alerts, the position-P&L stop check, or the sleeve balance table — that content is deterministic and already correctly rendered from the input blocks; your job is to honour the BEHAVIOURAL RULES those sections imply for the rest of the briefing:
+
+   • If POSITION P&L STOP MONITOR shows a hard-stop hit — the deterministic renderer will have written an EXIT AT MARKET line for it. Section 4 should acknowledge that exit and use its proceeds in section 5's cash deployment.
+   • If SLEEVE BALANCE shows 🚨 SPEC OVER LIMIT — sections 4 / 7 / 8 MUST NOT propose any high-vol / meme / unknown US name as a new BUY. Only Canadian large-caps and broad ETFs eligible. If the deterministic engine's swing pick is spec-classified, replace with "SPEC sleeve full — no new spec entries today. Trim [largest spec name] first" and route the trim into section 4.
+   • If SLEEVE BALANCE shows 💡 SWING SLEEVE HAS ROOM — prefer Canadian large-caps in sections 4 / 7.
+   • If SLEEVE BALANCE shows ⚠ CORE UNDERWEIGHT — close section 4 with a "consider $X into XIC / VUN / XEQT to restore the anchor" note.
+
 0b. **✅ Trades you executed since last briefing** — REQUIRED when the "TRADES YOU EXECUTED SINCE LAST BRIEFING" block above is non-empty. Heading must be exactly "## ✅ Trades you executed". Write ONE line per BUY/SELL leg from the block, in this format:
    • For a BUY fulfilling an AI rec: "**BOUGHT** N sh TICKER @ $entry_actual CCY on YYYY-MM-DD — this fulfills the [target-hit/AI rec/high-conviction] BUY. Current price $X (Y% vs entry). Target $target, stop $stop. Position on track [OR: past halfway to target, tighten trailing stop / or: pulled back to entry, still valid]."
    • For a BUY without a linked rec: "**BOUGHT** N sh TICKER @ $entry_actual — no linked AI rec; treat as a fresh position. Current $X. Consider a stop at 2.5×ATR below entry."
    • For a SELL: "**SOLD** N sh TICKER @ $exit_price — [closed the (BUY-rec-date) position / partial trim / rebalance]. Realized ~$Y or ~Z% vs original basis."
    Skip this section entirely if the block is empty (write nothing, do not include a "no trades" placeholder).
    **NO-REPEAT INVARIANT**: any BUY leg in the executed-trades block turns that ticker into a MANAGE-EXISTING-POSITION line item in section 2 for the rest of this briefing. Sections 4 (Today's one action), 7 (Aggressive new ideas), and 8 (Today's Swing-Trade Picks) MUST NOT propose a fresh BUY on that ticker — the user already owns it. If you would have picked the same name again, upgrade the section-2 line for it to an "ADD to position at $X, target $Y" instruction instead. Every ticker in the current portfolio's positions list is subject to the same rule.
-0d. **⚖ Sleeve balance** — REQUIRED any day the "SLEEVE BALANCE" block above shows a 🚨 or ⚠ flag. Heading must be exactly "## ⚖ Sleeve balance". Rules the whole briefing must obey:
-   • **SPEC OVER LIMIT** (🚨 flag present) → sections 4/7/8 MUST NOT propose any high-vol / meme / unknown US name as a new BUY. Only Canadian large-caps and broad ETFs are eligible. If the deterministic engine's Swing Pick is a spec-classified ticker, replace it with "SPEC sleeve full — no new spec entries today. Trim [largest spec name] first." Trim recommendation counts as an action; propose it in section 4.
-   • **SWING UNDERWEIGHT** (💡 sleeve has room note) → prefer Canadian large-caps in sections 4/7. Frame as "SWING sleeve has $X available for a fresh RY/ENB-template entry."
-   • **CORE UNDERWEIGHT** (⚠ flag) → close section 4 with a "consider $X into XIC/VUN/XEQT to restore the anchor" note.
-   Write ONE line per active flag with the specific $ amount and action. Skip section if all three sleeves within ±5pp of target.
-0c. **🚨 Position P&L stop check** — REQUIRED when the "POSITION P&L STOP MONITOR" block above is non-empty. Heading exactly "## 🚨 Position P&L stop check". Write ONE line per position in the block, most severe first. **The ticker string you write MUST appear verbatim on one of the raw block's lines above; if you cannot find the ticker there, do not write the line — the section is a formatting pass over that block, not a place to invent positions.**
-   • **HARD STOP TRIGGERED** (pnl ≤ -8%): "🚨 **EXIT AT MARKET**: <ticker-from-block> in <account> · basis $X, now $Y, pnl -N% · sell N sh unless a specific NEW-INFO reason overrides." Do NOT hedge on hard-stop calls.
-   • **WITHIN 2% OF STOP** (-8% to -6%): "⚠ **TIGHTEN**: <ticker-from-block> in <account> · pnl -N% · move stop to break-even at $basis OR trim 50% of the position now."
-   • **WATCH** (-6% to -5%): "👀 **WATCH**: <ticker-from-block> · pnl -N% · 3% from hard stop."
-   CORE-exempt tickers (RY, ENB) may skip WATCH but STILL apply for hard-stop hits. Skip section if block empty.
 1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
 2. **Signals per holding** — for EACH top-7 ticker, 2-3 line block. Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
    **THEN** — after the top-7 blocks, add a "### Quiet holdings" subsection that emits ONE line for EVERY remaining held ticker from the current-holdings table that hasn't been named elsewhere in the briefing (not in top-7, not in stop check, not in trades-executed, not in horizon review). Format: "**TICKER** (N sh @ $basis, current $X, W% of book) — [HOLD / TRIM / EXIT / ADD $Y] · one-sentence reason (fundamental note, technical setup, or sleeve rationale)". Do not skip any held ticker — small weights and sleepy defensives (utilities ETFs, precious-metal juniors, cash-like bond funds) still deserve a one-line disposition so the trader knows the model saw them.
@@ -1759,6 +1872,19 @@ export async function generateBriefing(profile) {
     console.warn("[loss-cooldown] warn:", e?.message); return null;
   });
 
+  // Deterministic prefix — sections 0, 0c, and 0d are rendered here
+  // from the same input blocks the prompt already carries. Prepended
+  // to the AI output at return time. See renderDeterministicPrefix
+  // for the scope + rationale.
+  const stopMonitor = monitorPositionStops(profile.positions || []);
+  const sleeveBalanceForPrefix = computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets);
+  const deterministicPrefix = renderDeterministicPrefix({
+    monitorAlerts,
+    stopMonitor,
+    sleeveBalance: sleeveBalanceForPrefix,
+    positions: profile.positions || [],
+  });
+
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
@@ -1845,6 +1971,28 @@ export async function generateBriefing(profile) {
       md = md.trim() + "\n\n" + overlayFunnel;
     }
   }
+
+  // Prepend the deterministic prefix (sections 0, 0c, 0d) that the AI
+  // is instructed to skip. Defensive strip: if the AI still restated
+  // one of those sections, drop the AI's version so the deterministic
+  // one is the only copy in the final briefing.
+  if (deterministicPrefix) {
+    const stripHeaderBlock = (source, headerRe) => {
+      const match = source.match(headerRe);
+      if (!match) return source;
+      const start = match.index;
+      const rest = source.slice(start + match[0].length);
+      // Section ends at the next H2 heading or end of doc.
+      const nextH2 = rest.search(/\n##\s/);
+      const end = nextH2 === -1 ? source.length : start + match[0].length + nextH2;
+      return source.slice(0, start) + source.slice(end);
+    };
+    md = stripHeaderBlock(md, /^##\s*🚨\s*Open recommendation alerts.*$/m);
+    md = stripHeaderBlock(md, /^##\s*🚨\s*Position P&L stop check.*$/m);
+    md = stripHeaderBlock(md, /^##\s*⚖\s*Sleeve balance.*$/m);
+    md = deterministicPrefix + "\n\n" + md.trim();
+  }
+
   return md.trim();
 }
 
