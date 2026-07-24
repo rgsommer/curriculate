@@ -791,19 +791,7 @@ ${OUTPUT_FORMAT_RULES}
 
 Use the web_search tool aggressively — at least 6-10 searches across signal categories above for the top holdings.
 
-Write a markdown briefing with these sections (details for section-specific rules and required blocks are provided in the per-call context that follows this system prompt):
-0. **🚨 Open recommendation alerts** — surface verbatim if ALERTS block non-empty; else "No targets or stops hit overnight."
-0b. **✅ Trades you executed since last briefing** — REQUIRED when the executed-trades block is non-empty. One line per BUY/SELL leg per per-call section rules.
-0c. **🚨 Position P&L stop check** — REQUIRED when position-stop block non-empty. Hard-stop (≤-8%) = EXIT AT MARKET. Within-stop (-8% to -6%) = TIGHTEN. Watch (-6% to -5%) = keep on radar.
-0d. **⚖ Sleeve balance** — REQUIRED when sleeve block shows 🚨 or ⚠. SPEC OVER LIMIT → no new spec in sections 4/7/8.
-1. **Overnight & pre-market** — futures, VIX, USD/CAD, oil, Fed/BoC.
-2. **Signals per holding** — 2-3 lines per top-7 ticker: news + earnings + analyst + insider + technicals + call.
-3. **Performance snapshot** — week/month/3M moves on top names.
-4. **Today's one action** — single highest-conviction trade, full 4 levels + account.
-5. **💵 Cash deployment** — per-call rules below.
-6. **Watch list** — 2-3 price triggers.
-7. **Aggressive new ideas (SPEC sleeve)** — ONLY from DISCOVERY POOL spec candidates; skip if SPEC over cap.
-8. **🎯 Today's Swing-Trade Picks (SWING sleeve)** — primary source Test A picks, secondary Discovery swing candidates.
+Write a markdown briefing following the per-call section outline that immediately follows this system prompt (sections 0 → 8, with 0b/0c/0d/0f as conditional prefix sections tied to their input blocks). The per-call outline is the source of truth for section headings, ordering, and format; this system prompt provides only analytical guidance.
 
 Length: 700-1100 words. Date-stamp the top.`;
 

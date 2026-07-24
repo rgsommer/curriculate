@@ -840,7 +840,8 @@
       "Bash(node --check services/stocksJournalAudit.js)",
       "Bash(node --check services/stocksJournalReconstruct.js)",
       "Bash(awk -F: '$1 >= 2400 && $1 <= 2500 {print}')",
-      "Bash(awk 'NR >= 2380 && NR <= 2420' /Users/richardsommer/dev/curriculate/frontend/src/app/stocks/page.jsx)"
+      "Bash(awk 'NR >= 2380 && NR <= 2420' /Users/richardsommer/dev/curriculate/frontend/src/app/stocks/page.jsx)",
+      "Bash(awk 'NR >= 751 && NR <= 935 {chars += length\\($0\\) + 1} END {print chars, \"chars in STATIC_SYSTEM_PROMPT \\(~\", int\\(chars/4\\), \"tokens\\)\"}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
     ]
   }
 }
