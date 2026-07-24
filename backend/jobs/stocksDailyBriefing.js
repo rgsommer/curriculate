@@ -953,18 +953,22 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
     if (b.specOverLimit) {
       const excessCad = b.totals.spec - b.targetsCad.spec;
-      // Find the largest spec-classified name so the AI's downstream
-      // trim proposal has a concrete target. Same base-ticker match
-      // the sleeve enforcer uses.
-      const posByBase = {};
-      for (const p of positions || []) {
-        if (classifyPosition(p) !== "spec") continue;
-        const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
-        const cadValue = (Number.isFinite(p.priceCad) ? p.priceCad
-          : Number.isFinite(p.priceUsd) ? p.priceUsd * 1.37 : 0) * (p.qty || 0);
-        posByBase[base] = (posByBase[base] || 0) + cadValue;
+      // Find the largest spec-classified name. Use the already-
+      // computed per-position CAD values from computeSleeveBalance
+      // (bal.byPosition) so the aggregation math is byte-identical
+      // to what produced totals.spec — no risk of the renderer
+      // reporting a different largest-name figure from a duplicate
+      // re-computation with different fx / rounding. Aggregate by
+      // BASE ticker (XIU / XIU.TO collapse to XIU) since the same
+      // holding can appear in multiple accounts.
+      const specByBase = {};
+      for (const row of b.byPosition || []) {
+        if (row.sleeve !== "spec") continue;
+        if (!(row.cadValue > 0)) continue;
+        const base = String(row.ticker || "").toUpperCase().replace(/\..*$/, "");
+        specByBase[base] = (specByBase[base] || 0) + row.cadValue;
       }
-      const largest = Object.entries(posByBase).sort((a, b) => b[1] - a[1])[0];
+      const largest = Object.entries(specByBase).sort((a, b) => b[1] - a[1])[0];
       const trimHint = largest
         ? ` Largest spec name: ${largest[0]} (${m(largest[1])}) — trim first.`
         : "";
@@ -1246,7 +1250,9 @@ ${cashSection}
 7. **Aggressive new ideas (SPEC sleeve)** — 1-2 unowned names SOURCED EXCLUSIVELY from the DISCOVERY POOL block's "SPEC-sleeve candidates" list. Do NOT propose a name that isn't in the discovery pool. If SPEC OVER LIMIT (🚨), skip section. If pool has zero spec candidates, write "No pre-vetted SPEC candidates today — pass" and skip. For each pick: quote entry/target/stop verbatim, cite sleeve tag, suggest optimal account.
 8. **🎯 Today's Swing-Trade Picks (SWING sleeve)** — REQUIRED (heading exactly "## 🎯 Today's Swing-Trade Picks"). PRIMARY: TODAY'S SWING-TRADE PICKS block (Test A). SECONDARY: SWING-sleeve candidates in DISCOVERY POOL (supplement when Test A produced fewer than 2 swing-classified picks). ONE narrative paragraph per pick, entry/target/stop verbatim, setup + score in plain English, 10-day horizon. Every pick MUST also appear in trailing <RECS> block with action="BUY". If both pools empty or all picks spec-classified and SPEC sleeve full, write "No SWING-sleeve picks today" and skip.
 
-Use web_search aggressively — 6-10 searches for top holdings.`;
+Use web_search aggressively — 6-10 searches for top holdings.
+
+SECTIONS 5, 6, 7, 8, AND THE TRAILING <RECS>...</RECS> BLOCK ARE MANDATORY. Emit them EVERY briefing. If some holdings show data anomalies (mismatched prices, missing cost basis, etc.), FLAG each anomaly briefly in section 2 and CONTINUE with sections 3-8 + RECS as normal. Data anomalies are never a reason to stop the briefing early — they are a reason to write a shorter, honest per-holding line and then finish the required sections. A briefing that stops at section 4 with no cash plan, no watch list, no ideas, and no RECS block is unusable regardless of how thorough the earlier sections were.`;
 
   return { system: STATIC_SYSTEM_PROMPT, user: userMessage };
 }
@@ -1869,8 +1875,13 @@ export async function generateBriefing(profile) {
   };
 
   // First call — generous max_tokens so the per-account cash deployment
-  // sections don't truncate the way they did at 4096.
-  let j = await callClaude([{ role: "user", content: userPrompt }], 8192);
+  // sections don't truncate. Bumped from 8192 → 12288 after a real
+  // briefing came back missing sections 5-8 and RECS: the AI padded
+  // every corrupted-price holding with defensive "⚠ PRICE DIVERGENCE"
+  // prose (~500 tokens per holding × 5 holdings), which ate into the
+  // budget for downstream sections. 12288 gives ~4k headroom over the
+  // normal ~8k briefing without needing a continuation call.
+  let j = await callClaude([{ role: "user", content: userPrompt }], 12288);
   let raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
   if (!raw) throw new Error("Empty briefing");
   // Log cache stats so we can confirm the cache is warming.
@@ -1896,6 +1907,32 @@ export async function generateBriefing(profile) {
     if (!more) break;
     raw = raw + more;
     j = continuation;
+  }
+
+  // Targeted RECS-missing continuation. Even at stop_reason="end_turn"
+  // the AI sometimes stops before emitting the mandatory <RECS>...</RECS>
+  // block — usually when data anomalies made it defensive about
+  // recommending anything (a real briefing came back last week with
+  // every position flagged "⚠ PRICE DIVERGENCE" and the AI voluntarily
+  // stopped at section 4 without emitting sections 5-8 or RECS). Ask
+  // for a completion focused strictly on what's missing. Cheap: only
+  // fires when the block is genuinely absent.
+  if (!/<RECS>[\s\S]*?<\/RECS>/i.test(raw)) {
+    console.warn("[stocks-briefing] RECS block absent — requesting targeted completion");
+    try {
+      const completion = await callClaude([
+        { role: "user", content: userPrompt },
+        { role: "assistant", content: raw },
+        {
+          role: "user",
+          content: "Your last response ended without the mandatory sections 5 (💵 Cash deployment), 6 (Watch list), 7 (Aggressive new ideas — SPEC sleeve), 8 (🎯 Today's Swing-Trade Picks) or the trailing <RECS>...</RECS> block. Emit exactly what's missing, in order, starting from whichever section you stopped at. Do NOT repeat sections you've already written. End with the <RECS> block — emit `<RECS>[]</RECS>` if there are zero actionable recs today. No preamble.",
+        },
+      ], 4096);
+      const tail = (completion?.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
+      if (tail) raw = raw + "\n\n" + tail;
+    } catch (e) {
+      console.warn("[stocks-briefing] RECS completion failed:", e?.message);
+    }
   }
 
   // Strip Claude web_search citation markers AND any chatty preamble before
