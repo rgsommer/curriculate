@@ -2849,6 +2849,47 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
 }
 
 function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount, onRefreshPrices }) {
+  // Open BUY recs per held base-ticker — populates the Target / Stop
+  // columns so the trader can see exit levels without opening the
+  // briefing. Fetches once on mount, per-ticker keyed by BASE (XIU vs
+  // XIU.TO both roll up as XIU) so the same rec surfaces for CAD and
+  // USD listings of the same name. 30-day window covers the swing
+  // horizon; longer-horizon recs re-fetch when the view remounts.
+  const [openBuyRecsByBase, setOpenBuyRecsByBase] = useState({});
+  useEffect(() => {
+    if (!sessionToken) return;
+    const heldBases = [...new Set(
+      (user.positions || [])
+        .filter(p => (p.qty || 0) > 0)
+        .map(p => String(p.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, ""))
+        .filter(Boolean)
+    )];
+    if (heldBases.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const q = new URLSearchParams({ tickers: heldBases.join(","), hours: String(30 * 24) });
+        const r = await fetch(`${BACKEND_URL}/api/stocks-advice/recs-for-tickers?${q.toString()}`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        const byBase = {};
+        for (const rec of j.recs || []) {
+          if (rec.action !== "BUY") continue; // only long-side targets/stops surface here
+          const base = String(rec.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+          if (!base) continue;
+          const prior = byBase[base];
+          if (!prior || new Date(rec.generatedAt) > new Date(prior.generatedAt)) byBase[base] = rec;
+        }
+        setOpenBuyRecsByBase(byBase);
+      } catch { /* silent — Target / Stop cells just show "—" */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, user.positions]);
+
   // Trades loaded once for the whole view; expanded rows filter locally.
   const [tradesByBaseTicker, setTradesByBaseTicker] = useState({});
   useEffect(() => {
@@ -2973,7 +3014,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
           ) : (
             <table className="sa-table" style={{ marginBottom: 0 }}>
               <thead><tr>
-                <th>Ticker</th><th>Qty</th><th>Price</th><th>CCY</th><th>Basis</th><th>P/L %</th><th>P/L $</th><th>Value (CAD)</th><th>% acct</th><th>% book</th><th></th>
+                <th>Ticker</th><th>Qty</th><th>Price</th><th>CCY</th><th>Basis</th><th>P/L %</th><th>P/L $</th><th title="Target price from the most recent open BUY rec (30-day window). Shows % distance from current price.">Target</th><th title="Stop price from the most recent open BUY rec (30-day window). Red when current is within 3% or already below.">Stop</th><th>Value (CAD)</th><th>% acct</th><th>% book</th><th></th>
               </tr></thead>
               <tbody>
                 {items.flatMap((p) => {
@@ -3007,6 +3048,46 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                       <td>{basis != null ? basis.toFixed(2) : <span className="sa-muted">—</span>}</td>
                       <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "—"}</td>
                       <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pnlCad != null ? <span className="sa-amount">{pnlCad >= 0 ? "+" : "−"}{fmtMoney(Math.abs(pnlCad), "CAD")}</span> : "—"}</td>
+                      {(() => {
+                        // Target / Stop from the most-recent open BUY rec on
+                        // this base ticker. Distance is signed % from current
+                        // price. Green when approaching target from below;
+                        // red when stop is close or already breached.
+                        const rec = openBuyRecsByBase[baseKey];
+                        const cur = price;
+                        const fmtDist = (from, to) => {
+                          if (from == null || to == null || from <= 0) return "";
+                          const d = ((to - from) / from) * 100;
+                          return ` (${d >= 0 ? "+" : ""}${d.toFixed(1)}%)`;
+                        };
+                        if (!rec || !Number.isFinite(cur)) {
+                          return (
+                            <>
+                              <td className="sa-muted">—</td>
+                              <td className="sa-muted">—</td>
+                            </>
+                          );
+                        }
+                        const tgt = rec.targetPrice;
+                        const stp = rec.stopPrice;
+                        const stopBreached = stp != null && cur <= stp;
+                        const stopNear = stp != null && !stopBreached && ((cur - stp) / cur) * 100 <= 3;
+                        const targetHit = tgt != null && cur >= tgt;
+                        const targetColor = targetHit ? "#166534" : "var(--sa-text)";
+                        const stopColor = stopBreached ? "#991b1b" : stopNear ? "#92400e" : "var(--sa-text)";
+                        return (
+                          <>
+                            <td style={{ color: targetColor, fontVariantNumeric: "tabular-nums" }} title={targetHit ? "🎯 Target reached — consider trimming or moving stop up" : undefined}>
+                              {tgt != null ? `$${tgt.toFixed(2)}` : "—"}
+                              {tgt != null && <span style={{ fontSize: 10, color: "var(--sa-muted)" }}>{fmtDist(cur, tgt)}</span>}
+                            </td>
+                            <td style={{ color: stopColor, fontVariantNumeric: "tabular-nums", fontWeight: stopBreached ? 700 : 400 }} title={stopBreached ? "🛑 Stop breached — hard-stop discipline says exit" : stopNear ? "⚠ Within 3% of stop" : undefined}>
+                              {stp != null ? `$${stp.toFixed(2)}` : "—"}
+                              {stp != null && <span style={{ fontSize: 10, color: "var(--sa-muted)" }}>{fmtDist(cur, stp)}</span>}
+                            </td>
+                          </>
+                        );
+                      })()}
                       <td><span className="sa-amount">{fmtMoney(v.cad, "CAD")}</span></td>
                       <td>{equityCad > 0 ? ((v.cad / equityCad) * 100).toFixed(1) : "0.0"}%</td>
                       <td>{bookTotal > 0 ? ((v.cad / bookTotal) * 100).toFixed(1) : "0.0"}%</td>
@@ -3020,7 +3101,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                   if (isExpanded) {
                     rows.push(
                       <tr key={`${p._origIdx}-trades`} style={{ background: "var(--sa-panel-2)" }}>
-                        <td colSpan={11} style={{ padding: "8px 14px 10px 30px" }}>
+                        <td colSpan={13} style={{ padding: "8px 14px 10px 30px" }}>
                           {tradesForTicker.length === 0 ? (
                             <div className="sa-muted" style={{ fontSize: 12, fontStyle: "italic" }}>
                               No recorded trades for <b>{baseKey}</b> in the journal.

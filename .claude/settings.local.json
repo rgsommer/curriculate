@@ -852,7 +852,8 @@
       "Bash(awk '/^const STATIC_SYSTEM_PROMPT/{p=1; start=NR} p{chars += length\\($0\\) + 1; if\\(NR>start && /^Length.*Date-stamp/\\){print \"STATIC_SYSTEM_PROMPT chars:\", chars, \"ending at line\", NR; exit}}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(cat)",
       "Bash(awk -F= '{print $1\"=\"\\(length\\($2\\)>0?\"<\"length\\($2\\)\" chars>\":\"<empty>\"\\)}')",
-      "Bash(node --check routes/stocksPendingOrders.js)"
+      "Bash(node --check routes/stocksPendingOrders.js)",
+      "Bash(awk -F: '$2 >= 2950 && $2 <= 3200')"
     ]
   }
 }
