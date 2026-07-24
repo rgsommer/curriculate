@@ -9216,32 +9216,54 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
               // Compute target/stop hit. Direction-aware:
               //   BUY: target hit if any point.price >= targetPrice
               //   SELL/TRIM: target hit if any point.price <= targetPrice
+              // Hit detection — "is the price on the wrong side of my
+              // exit level RIGHT NOW?", not "did it ever touch the level
+              // at any point in the visible chart window". The old
+              // whole-window max/min gave false positives on stops
+              // brushed by an intraday wick and never revisited (e.g.
+              // a fresh BUY rec today would flag stopHit because the
+              // chart's 7d range included last Tuesday's flush that
+              // touched the stop level well BEFORE the rec was even
+              // generated). Now: server-side rec.status is the
+              // authoritative signal (persistently set by the monitor
+              // when a genuine hit happened), and the client-side
+              // check uses CURRENT price only.
               let targetHit = false;
               let stopHit = false;
               if (rec) {
                 if (rec.status === "target-hit") targetHit = true;
                 if (rec.status === "stop-hit") stopHit = true;
-                if (!targetHit && !stopHit && pts.length > 0) {
-                  const high = Math.max(...pts.map((p) => p.price));
-                  const low = Math.min(...pts.map((p) => p.price));
+                if (!targetHit && !stopHit && Number.isFinite(lastPrice)) {
                   if (rec.action === "BUY") {
-                    if (rec.targetPrice != null && high >= rec.targetPrice) targetHit = true;
-                    if (rec.stopPrice != null && low <= rec.stopPrice) stopHit = true;
+                    if (rec.targetPrice != null && lastPrice >= rec.targetPrice) targetHit = true;
+                    if (rec.stopPrice != null && lastPrice <= rec.stopPrice) stopHit = true;
                   } else if (rec.action === "SELL" || rec.action === "TRIM") {
-                    if (rec.targetPrice != null && low <= rec.targetPrice) targetHit = true;
-                    if (rec.stopPrice != null && high >= rec.stopPrice) stopHit = true;
+                    if (rec.targetPrice != null && lastPrice <= rec.targetPrice) targetHit = true;
+                    if (rec.stopPrice != null && lastPrice >= rec.stopPrice) stopHit = true;
                   }
                 }
               }
+              // Three tiers when a rec is open:
+              //   • target-hit → deep green + 🎯 (best)
+              //   • stop-hit   → deep red   + 🛑 (worst)
+              //   • on-track   → light green (rec exists, price is
+              //                   between stop and target; the plan
+              //                   is still working)
+              // No open rec → transparent (nothing to track against).
+              const onTrack = !!rec && !targetHit && !stopHit;
               const highlightBg = targetHit
                 ? "var(--sa-green-soft)"
                 : stopHit
                 ? "#fee2e2"
+                : onTrack
+                ? "#f0fdf4"
                 : "transparent";
               const highlightBorder = targetHit
                 ? "1px solid #bbf7d0"
                 : stopHit
                 ? "1px solid #fecaca"
+                : onTrack
+                ? "1px solid #dcfce7"
                 : "1px solid transparent";
               return (
                 <div
@@ -9251,6 +9273,8 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
                       ? `🎯 Target hit — ${rec.action} rec from ${new Date(rec.generatedAt).toLocaleDateString()} target $${rec.targetPrice}`
                       : stopHit
                       ? `🛑 Stop hit — ${rec.action} rec from ${new Date(rec.generatedAt).toLocaleDateString()} stop $${rec.stopPrice}`
+                      : onTrack
+                      ? `✓ On plan — ${rec.action} rec from ${new Date(rec.generatedAt).toLocaleDateString()}, target $${rec.targetPrice ?? "—"}, stop $${rec.stopPrice ?? "—"}. Price is inside the working range.`
                       : undefined
                   }
                   style={{
