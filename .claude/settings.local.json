@@ -846,7 +846,11 @@
       "Bash(awk 'NR >= 1750 && NR <= 1900' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(awk 'NR >= 1900 && NR <= 2050 && /return|raw|final/' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(node /private/tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/test_prefix_renderer.mjs)",
-      "Bash(awk 'NR >= 751 && NR <= 935 {chars += length\\($0\\) + 1} END {print chars, \"chars in STATIC_SYSTEM_PROMPT\"}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
+      "Bash(awk 'NR >= 751 && NR <= 935 {chars += length\\($0\\) + 1} END {print chars, \"chars in STATIC_SYSTEM_PROMPT\"}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
+      "Bash(awk 'NR >= 571 && NR <= 760 {chars += length\\($0\\) + 1} END {print chars, \"chars in the 6 sub-blocks \\(was ~7900 before stage 3\\)\"}' jobs/stocksDailyBriefing.js)",
+      "Bash(awk 'NR >= 704 && NR <= 900 {chars += length\\($0\\) + 1} END {print chars, \"chars in STATIC_SYSTEM_PROMPT after stage 3\"}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
+      "Bash(awk '/^const STATIC_SYSTEM_PROMPT/{p=1; start=NR} p{chars += length\\($0\\) + 1; if\\(NR>start && /^Length.*Date-stamp/\\){print \"STATIC_SYSTEM_PROMPT chars:\", chars, \"ending at line\", NR; exit}}' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
+      "Bash(cat)"
     ]
   }
 }

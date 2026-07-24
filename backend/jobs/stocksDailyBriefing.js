@@ -570,48 +570,17 @@ export function portfolioSummary(profile) {
 // Signals checklist — what the AI MUST web_search for and incorporate
 const SIGNALS_CHECKLIST = `
 Mandatory signals to search and weigh for EACH top-holding before writing recs.
-Use web_search calls — don't guess. If a signal isn't found, say "no signal" rather than skipping.
+Use web_search — don't guess. If a signal isn't found, say "no signal", don't skip.
 
-A. NEWS (last 24h):
-   - Breaking corporate news, M&A, regulatory action, lawsuits
-   - Material announcements (product launches, partnerships)
-   - CEO/leadership changes
+A. NEWS (24h): breaking corporate news, M&A, regulatory action, lawsuits, product/partnership announcements, CEO/leadership changes.
+B. PERIODIC REPORTING: next earnings date (≤14d = high-attention, flag it); most-recent revenue/EPS vs consensus (beat/miss/in-line); guidance change; call-commentary highlights.
+C. CORPORATE ACTIONS: ex-dividend dates ≤14d; dividend raises/cuts/suspensions; splits, buybacks, special distributions; spin-offs/mergers/tender offers.
+D. ANALYST ACTION: upgrades/downgrades in last 7d from top-tier shops (Goldman, JPM, MS, Wells, BofA, Wedbush, Piper Sandler); PT changes >10%; initiation of coverage.
+E. INSIDER + OWNERSHIP: Form 4 filings ≤30d (flag clusters); 13F swings (Berkshire, Burry, etc.); short-interest changes (>20% of float = signal, rising short = pressure).
+F. TECHNICAL / FLOW (web_search Finviz / StockAnalysis / TradingView): 50/200-day MAs (price vs MA, recent golden/death cross); RSI <30 oversold or >70 overbought; unusual options flow (large call/put sweeps); volume spikes vs 20d average.
+G. MACRO: Fed/BoC rate decisions or commentary today; oil moves (ENB, SU, CNQ); USD/CAD daily move (any USD holding); VIX level (>20 elevated, >25 risk-off).
 
-B. PERIODIC REPORTING:
-   - Next earnings date (within 14 days = high-attention; flag in briefing)
-   - Most recent earnings: revenue/EPS vs consensus (beat/miss/in-line)
-   - Guidance changes (raised/lowered/maintained)
-   - Conference call commentary highlights
-
-C. CORPORATE ACTIONS:
-   - Ex-dividend dates upcoming (within 14 days)
-   - Dividend changes (raises/cuts/suspensions)
-   - Splits, special distributions, buybacks
-   - Spin-offs / mergers / tender offers (DJT/Truth Social spin-off is live)
-
-D. ANALYST ACTION:
-   - Upgrades / downgrades in last 7 days from top-tier shops (Goldman, JPM, MS, Wells, BofA, Wedbush, Piper Sandler)
-   - Price target changes >10% in either direction
-   - Initiation of coverage
-
-E. INSIDER + OWNERSHIP:
-   - Form 4 filings (insider buys/sells) in last 30 days — flag clusters
-   - 13F changes (institutional ownership swings, e.g., Berkshire/Buffett, Burry)
-   - Short interest changes (>20% of float = signal; rising short = pressure)
-
-F. TECHNICAL / FLOW (web_search for these — sources include Finviz, StockAnalysis, TradingView):
-   - 50-day and 200-day moving averages (price vs MA, golden/death crosses recently)
-   - RSI: <30 (oversold) or >70 (overbought)
-   - Unusual options flow (large call/put sweeps)
-   - Volume spikes vs 20-day average
-
-G. MACRO:
-   - Fed/BoC rate decisions or commentary today
-   - Oil price moves (matters for ENB, SU, CNQ)
-   - USD/CAD daily move (matters for any USD-denominated holding)
-   - VIX level (>20 = elevated; >25 = risk-off mode)
-
-For each top-7 holding, the briefing must NAME at least one specific signal from the categories above that informs the call (BUY/HOLD/TRIM/SELL). Don't write generic prose — cite the actual signal.
+Each top-7 holding must NAME at least one specific signal from A-G that informs the BUY/HOLD/TRIM/SELL call. No generic prose — cite the actual signal.
 `;
 
 // Canadian tax + account-placement guidance — applied to every prompt
@@ -631,46 +600,43 @@ MULTI-DAY EXECUTION (for any BUY > ~$1,500 CAD):
 
 const ORDER_TICKET_RULES = `
 ORDER-TICKET GUIDANCE (gap-protection — every BUY/SELL rec must include):
-- Default to LIMIT orders, not market — protects vs overnight gaps at the open.
-- BUY limit = upper end of entry zone (or current ask + ~0.3% liquid / ~1% thin), never above the target.
-- SELL limit = lower end of exit zone (or current bid − small buffer), never below the stop.
-- After every BUY fill, recommend a GTC STOP-LIMIT SELL to enter at the rec's stop level (stop = stop price, limit = stop − 1-2% as gap protection).
-- Note duration: "Day" cancels EOD; "GTC" persists.
+- Default to LIMIT orders, not market — protects vs overnight gaps.
+- BUY limit = upper end of entry zone (or current ask + ~0.3% liquid / ~1% thin), never above target.
+- SELL limit = lower end of exit zone (or current bid − small buffer), never below stop.
+- After every BUY fill, recommend a GTC STOP-LIMIT SELL at the rec's stop level (stop = stop price, limit = stop − 1-2% as gap protection).
+- Duration: "Day" cancels EOD; "GTC" persists.
 
-REC HEADER FORMAT — every Action line must start with: "Action: <VERB> <N> sh <TICKER>". The token after the verb MUST be a real ticker symbol (DJT, ENB, NVDA, etc.). NEVER write "Action: SELL ENTIRE", "Action: HOLD CURRENT", "Action: HOLD BOTH", "Action: SELL ALL", "Action: HOLD BUT raise stop", or any English word in the ticker slot. If you mean "sell the entire position" write "Action: SELL 1267 sh DJT" with the actual share count.
+REC HEADER FORMAT — every Action line: "Action: <VERB> <N> sh <TICKER>". The token after the verb MUST be a real ticker symbol. NEVER write "Action: SELL ENTIRE", "HOLD CURRENT", "SELL ALL", "HOLD BUT raise stop", or any English word in the ticker slot. If you mean "sell the whole position", write "Action: SELL 1267 sh DJT" with the exact share count.
 
-QUANTITY MUST MATCH THE HOLDINGS TABLE. If the user holds 1267 sh of DJT in RRSP and you want to exit fully, write "SELL 1267 sh DJT". Do not pick a partial number like 900 unless you explicitly intend a partial trim AND state that clearly. Within ONE briefing, all references to a position's size must use the same number — don't say "1,267-share RRSP position" in the narrative and then "Sell 900 shares" in the order ticket.
+QUANTITY MUST MATCH THE HOLDINGS TABLE. Full exit → use the exact holdings-table qty. Partial trim only when explicitly stated. Within one briefing, all references to a position's size use the same number.
 
-FIELD FORMATTING — every named field (Entry, Target, Stop, Horizon, Account, Order ticket, After fill, Cost note, Rationale, Uses) must END WITH A PERIOD on its own logical line. Do not chain fields with commas or semicolons. Parenthetical notes are allowed inside a field's value (e.g. "Stop: $69 CAD (2.5×ATR pullback)."), but the field ends at the closing paren + period. Bad: "Stop: $69 CAD (2.5×ATR, GTC). Horizon..." — the comma inside parens confuses parsers. Good: "Stop: $69 CAD (2.5×ATR). Horizon: 12 months. Order ticket: GTC STOP-LIMIT...".
+FIELD FORMATTING — every named field (Entry, Target, Stop, Horizon, Account, Order ticket, After fill, Cost note, Rationale, Uses) ENDS WITH A PERIOD on its own logical line. Do not chain fields with commas / semicolons. Parenthetical notes inside a value are fine ("Stop: $69 CAD (2.5×ATR).") but the field ends at ")." — no comma inside the parens for the parser's sake.
 
-Required addition per rec body (EVERY BUY/SELL/TRIM rec, no exceptions):
+Required lines per rec body (EVERY BUY/SELL/TRIM, no exceptions):
   Order ticket: LIMIT BUY/SELL <N> <TICKER> @ $<limit> <CCY> <max/min>, Day/GTC.
   Order timing: pre-market | at-open | post-10am | gtc.
   After fill: GTC STOP-LIMIT SELL <N> <TICKER>, stop $<stop> / limit $<stop-1%> <CCY>.
   Account: <Non-Spousal | RRSP | TFSA | RESP | FHSA> · uses $<X> of $<Y> pro-forma <CCY> · leaves $<Z>.
 
-Order timing guidance (default to "post-10am" unless the setup calls for something else):
-  pre-market  → Only when the thesis is a gap-and-go / earnings-morning move and a missed open kills the setup.
-  at-open     → Only when opening-auction volatility IS the setup (climax reversal, earnings-day gap fill).
-  post-10am   → The default. Waits for 9:30-9:45 spreads to tighten. Reduces slippage on swing entries.
-  gtc         → Use for pullback / mean-reversion setups where the level may not trigger today. Order works until filled or cancelled.
-Cite the choice in the rec's narrative rationale ONE short sentence (e.g. "Timing: post-10am — spreads at open are 3× normal on this small-cap; letting the auction clear protects the entry price.").
+The "Account:" line is MANDATORY — omit it and the rec is invalid. The named account MUST have enough PRO-FORMA cash in the trade's currency to cover the proposed size (see CASH PRO-FORMA below).
 
-The "Account:" line is MANDATORY. If you omit it the rec is invalid. The account named MUST have enough PRO-FORMA cash in the trade's currency to cover the size you proposed — see the CASH PRO-FORMA rule below for how to compute pro-forma. Verify against the per-account cash inventory + your own SELL recs for the same account/currency before writing the rec.
+CASH PRO-FORMA (mandatory — apply before sizing any BUY):
+- Treat every recommended SELL / TRIM as if it EXECUTES and releases proceeds to the same (account, currency).
+- Per (account, currency) running balance: current cash + your SELL/TRIM proceeds − your already-sized BUY costs, in that order down the briefing.
+- Every BUY's "Account:" line references the pro-forma balance right BEFORE that BUY ("uses $X of $Y pro-forma <CCY> · leaves $Z").
+- The BUY's Rationale (or a dedicated "Cash source:" line) cites what makes the cash available ("Cash source: $8,200 CAD current + $3,500 CAD from ENB SELL rec above"). If BUY relies entirely on current cash, say so.
+- Pro-forma balance MUST NEVER go negative in any (account, currency). Downsize BUYs or add a further TRIM if needed.
+- SELL proceeds fund BUYs ONLY within the SAME (account, currency). Cross-account moves need an explicit WITHDRAW→DEPOSIT transfer rec (both legs).
+- Narrative order: same-account SELLs appear BEFORE the BUYs they fund.
 
-CASH PRO-FORMA (mandatory — apply this before sizing any BUY rec):
-- Treat every SELL / TRIM you're recommending as if it EXECUTES and releases proceeds to the account it's coming from, in the trade's currency (US-listed → USD bucket, TSX → CAD bucket).
-- For each (account, currency) pair, compute a running pro-forma balance in this order:
-    1. Start with the current balance from the per-account cash inventory below.
-    2. Add: sum of gross proceeds from your recommended SELL/TRIM recs in that (account, currency).
-    3. Subtract: sum of gross cost from your recommended BUY recs already sized in that (account, currency).
-- Every BUY rec's "Account:" line must reference PRO-FORMA cash — the "uses $X of $Y pro-forma <CCY>" figure is that running balance right BEFORE this BUY is sized, and "leaves $Z" is the balance right AFTER.
-- In the BUY's Rationale (or a dedicated "Cash source:" line), explicitly cite what makes the cash available: "Cash source: $8,200 CAD current + $3,500 CAD from ENB SELL rec above". If a BUY relies entirely on current cash (no SELL prerequisite), say so: "Cash source: existing $Y CAD balance."
-- If the pro-forma balance would go negative after all recommended trades in ANY (account, currency), DOWNSIZE BUYs (or add a further TRIM) so nothing lands short. Never propose a BUY that exceeds pro-forma cash — the account will refuse to settle it.
-- SELL proceeds fund BUYs ONLY WITHIN THE SAME ACCOUNT + CURRENCY. A SELL in RRSP-CAD does not fund a BUY in Non-Spousal-USD. If the user needs cross-account cash movement, propose an explicit WITHDRAW→DEPOSIT transfer rec (both legs recorded).
-- Order the recs in the narrative so that same-account SELLs appear BEFORE the BUYs whose pro-forma cash they enable — a reader scanning the briefing should see the source of funds before the destination.
+ORDER-TIMING VOCABULARY (used by both the rec-body "Order timing:" line and the JSON block below):
+  pre-market  → Queue for the 9:30 opening auction. ONLY for gap-and-go / earnings-morning theses where missing the open kills the setup.
+  at-open     → First 15 min. RARE — only when opening volatility IS the setup (climax reversal, earnings-day gap fill).
+  post-10am   → DEFAULT for most swing entries. Waits for 9:30-9:45 spreads to tighten.
+  gtc         → Pullback / mean-reversion setups where the level may not hit today. Works until filled or cancelled.
+Cite the choice in the rec's narrative rationale in ONE short sentence.
 
-MANDATORY MACHINE-READABLE REC BLOCK — at the very end of your briefing, emit an exact block for automated parsing. Format:
+MANDATORY MACHINE-READABLE REC BLOCK — at the very end of the briefing, emit exactly:
 
 <RECS>
 [
@@ -679,47 +645,36 @@ MANDATORY MACHINE-READABLE REC BLOCK — at the very end of your briefing, emit 
 ]
 </RECS>
 
-Rules for the block:
-- Include one JSON object per actionable BUY / SELL / TRIM rec that appears in the narrative above. HOLD entries may be omitted.
-- ticker is the exact exchange symbol (never a brand name).
-- entry is the recommended entry price you cited in the narrative, in the security's native currency.
-- target and stop are REQUIRED numbers for every BUY (not null). Use the same values you cited in the narrative.
-- currency is "USD" or "CAD" — must match the security's native listing.
-- horizonDays is an integer (days). Convert weeks→×7, months→×30.
-- orderTiming is REQUIRED. One of:
-    "pre-market"  — queue for the 9:30 opening auction; ONLY when the thesis is a gap-and-go / earnings-morning move where a missed open kills the setup
-    "at-open"     — first 15 min of trading; use RARELY, only when opening volatility itself is the setup (volume climax, earnings-day gap fill, etc.)
-    "post-10am"   — wait until ~10:00-10:30 ET so opening-auction spreads tighten first; THIS IS THE DEFAULT for most swing entries
-    "gtc"         — no timing urgency; leave the LIMIT order working until filled or cancelled; use for pullback-entry setups where the level might not hit today
-  When in doubt, choose "post-10am". Cite the timing choice in the narrative rationale (one short sentence) so the user understands WHY.
-- Do not wrap the block in code fences. No prose inside <RECS>...</RECS>. Nothing else after </RECS>.
-- If there are ZERO actionable recs, emit "<RECS>[]</RECS>" — never omit the block.
+Block rules:
+- One JSON object per actionable BUY / SELL / TRIM in the narrative. HOLD may be omitted.
+- ticker = exact exchange symbol, never a brand name.
+- entry / target / stop = the numbers cited in the narrative, native currency. target and stop are REQUIRED for every BUY (not null).
+- currency = "USD" or "CAD", matches native listing.
+- horizonDays = integer (weeks × 7, months × 30).
+- orderTiming = one of the four values above (REQUIRED — same vocabulary the narrative uses).
+- No code fences, no prose inside <RECS>...</RECS>, nothing after </RECS>.
+- Zero actionable recs → emit "<RECS>[]</RECS>". Never omit the block.
 `;
 
 const PRICE_CURRENCY_RULES = `
 PRICE CURRENCY CONVENTION (strict):
-- Every position has a native trading currency shown in the Holdings list (e.g., "TSLA (USD)", "ENB (CAD)").
-- Always state prices in the security's NATIVE currency. Never convert US-listed prices to CAD for price discussion.
+- Always state prices in the security's NATIVE currency (shown in Holdings, e.g. "TSLA (USD)", "ENB (CAD)"). Never convert US-listed prices to CAD (or vice versa) for price discussion.
   ✓ "TSLA at $442 USD" · ✗ "TSLA at $607 CAD"
-  ✓ "ENB at $75.58 CAD" · ✗ "ENB at $55.10 USD"
 - Entry/Target/Stop in trade recs MUST be in the security's native currency.
-- CAD/USD conversions in parentheses are OK only for portfolio totals or cash-sizing math, not for stock prices.
+- CAD/USD conversions in parens are OK only for portfolio totals or cash-sizing math, not for stock prices.
 
-CANONICAL TICKER RULE (read carefully):
-- ALWAYS use the actual exchange ticker, never the brand-name acronym. Common errors:
-  • Royal Bank = "RY" (NYSE) or "RY.TO" (TSX) — NEVER "RBC" (RBC is RBC Bearings, an unrelated US company).
-  • TD Bank = "TD" (NYSE, ~$80 USD) or "TD.TO" (TSX, ~$154 CAD).
-  • Scotia = "BNS"/"BNS.TO". CIBC = "CM"/"CM.TO". National = "NA"/"NA.TO".
-  • Block (formerly Square) = "XYZ", not "SQ". Meta = "META", not "FB".
-- When in doubt, web_search "<company name> stock ticker" before recommending.
+CANONICAL TICKER RULE (use exchange tickers, not brand acronyms):
+  • Royal Bank = RY (NYSE) or RY.TO (TSX) — NEVER "RBC" (RBC is RBC Bearings, an unrelated US company).
+  • TD Bank = TD / TD.TO. Scotia = BNS / BNS.TO. CIBC = CM / CM.TO. National = NA / NA.TO.
+  • Block (formerly Square) = XYZ, not SQ. Meta = META, not FB. Twitter is delisted.
+- In doubt → web_search "<company name> stock ticker" before recommending.
 
 PRICE INTEGRITY (mandatory — accuracy over completeness):
-- HELD-POSITION TICKERS ARE PRE-VERIFIED. Any ticker in the user's current holdings table is REAL, TRADABLE, and ALREADY VALIDATED by the backend before this prompt was built. NEVER produce a "Ticker Not Found", "UNABLE TO VERIFY", or similar cautionary card for a ticker the user already owns. Household names like PLTR, NVDA, TSLA, SOUN, RUM, DJT, ENB are all real. If web_search fails on a held ticker, use the holdings-table price as authoritative and move on.
-- For ANY ticker NOT in the user's current holdings table, web_search "<TICKER> stock price" and use ONLY the retrieved live quote. NEVER quote a price from memory — training data is stale, you will be wrong by 30-200%.
-- Verify ticker is currently tradable before recommending a NEW name. Beware renamed/delisted symbols: SQ (Square) was renamed XYZ in early 2025; FB → META; TWTR → delisted. Any sub-mega-cap ticker from training — verify first.
-- If web_search can't confirm a live quote for a NEW ticker, do NOT recommend it. Pick a different name. Do NOT emit a card about the failure — silently move on.
-- State retrieved prices with "(verified)" inline. Example: "ROKU at $128 USD (verified)" — not "$67.50".
-- Known prior failures the user has caught: SQ at $79 (deprecated), ROKU at $67 (stale ~50%), META at $525 (stale, actual ~$608). Don't repeat.
+- HELD-POSITION TICKERS ARE PRE-VERIFIED. Any ticker in the holdings table is REAL and TRADABLE — the backend validated it before this prompt was built. NEVER produce a "Ticker Not Found" / "UNABLE TO VERIFY" card for a held name (PLTR, NVDA, TSLA, SOUN, RUM, DJT, ENB, etc. are all real). If web_search fails on a held ticker, use the holdings-table price as authoritative and move on.
+- For ANY ticker NOT in holdings, web_search "<TICKER> stock price" and use ONLY the retrieved live quote. NEVER quote a price from memory — training data is stale by 30-200%.
+- Verify a new name is currently tradable before recommending. Watch renamed/delisted symbols (SQ→XYZ 2025, FB→META, TWTR delisted). Any sub-mega-cap from training → verify first.
+- If web_search can't confirm a live quote for a NEW ticker → don't recommend it, pick a different name, don't emit a failure card. Silently move on.
+- State retrieved prices with "(verified)" inline. Prior failures the user caught: SQ at $79, ROKU at $67, META at $525. Don't repeat.
 `;
 
 const OUTPUT_FORMAT_RULES = `
