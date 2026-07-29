@@ -3669,33 +3669,51 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
     try { await onRefresh(); } finally { setBusy(false); }
   };
 
+  // Update Advice — unified path (task #129 slice 2). Instead of hitting
+  // the now-display-only POST /advice endpoint, this regenerates the
+  // canonical daily briefing (POST /send-briefing?fresh=1) and refetches
+  // the snapshot the Advice tab already renders from. Result: one voice
+  // across surfaces. Every "Update Advice" click produces the same recs
+  // the morning email would have shown, persisting through the briefing
+  // pipeline that owns rec-storage.
   const handleAi = async () => {
     if (aiBusy) return;
-    setAiBusy(true); setAiError(null); setAiPhase("signals");
+    setAiBusy(true); setAiError(null); setAiPhase("thinking");
     try {
-      // Refresh prices first so the AI sees fresh quotes
       await onRefresh();
-      let j;
-      try {
-        // Preferred path: stream progress so the user isn't staring at a
-        // blank spinner during the ~30–90s web_search turn.
-        j = await streamAdvice({ onPhase: setAiPhase });
-      } catch (streamErr) {
-        // Any stream failure → fall back to the proven blocking endpoint.
-        setAiPhase("thinking");
-        const r = await fetch(`${BACKEND_URL}/api/stocks-advice`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
-          body: JSON.stringify({}),
-        });
-        j = await r.json();
-        if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/send-briefing?fresh=1`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ send: false, fresh: true }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      // Refetch the snapshot the Advice tab renders from. saveAdviceSnapshot
+      // ran inside the briefing pipeline, so the fresh markdown is already
+      // on the server — just pull the new cards.
+      const snapR = await fetch(`${BACKEND_URL}/api/stocks-advice/snapshot`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (snapR.ok) {
+        const snap = await snapR.json();
+        if (snap && Array.isArray(snap.advice)) {
+          const safeAdvice = snap.advice
+            .filter(c => c && typeof c.title === "string")
+            .map(c => ({ title: String(c.title), body: typeof c.body === "string" ? c.body : "" }));
+          setSnapshotAdvice({
+            generatedAt: snap.generatedAt || null,
+            source: snap.source || "on-demand",
+            advice: safeAdvice,
+            markdown: typeof snap.markdown === "string" ? snap.markdown : "",
+          });
+        }
       }
-      setAiAdvice(j);
+      // Clear any previously-shown fresh AI advice + consensus view since
+      // the snapshot is now the single source of truth for display.
+      setAiAdvice(null);
       setConsensusData(null);
-      // Fresh AI advice → clear stale "executed" marks (a new rec is not the
-      // same as the old one even if ticker/side/qty happen to match)
       onClearExecuted?.();
     } catch (e) {
       setAiError(e?.message || "Failed");
@@ -3786,22 +3804,22 @@ function AdviceView({ user, onRefresh, sessionToken, autoFetchAi, onAutoFetchCon
           <button className="sa-btn secondary" onClick={handleRefresh} disabled={busy || aiBusy || consensusBusy} title="Re-fetch prices and re-run the rule engine">
             {busy ? "Refreshing…" : "↻ Refresh prices"}
           </button>
-          {/* Single Update Advice button — branches on user.consensusMode.
-              Toggle the setting in Settings → AI advice mode. Consensus runs
-              3× in parallel and surfaces ideas that appear in ≥2 of 3 runs;
-              if only 1 of 3 succeeds, server falls back to single-run output
-              with a "degraded" badge. */}
+          {/* Update Advice — unified path (task #129 slice 2 + 4).
+              Regenerates the canonical daily briefing and refreshes the
+              Advice tab from its snapshot. Consensus branch retired: it
+              produced a third independent rec stream that could disagree
+              with the briefing AND the on-demand Advice output — three
+              voices where one is enough. If the trader wants extra
+              conviction, the briefing itself can be regenerated on the
+              server with consensus mode ON via Settings, and the result
+              still lands as a single snapshot the whole app reads. */}
           <button
             className="sa-btn"
-            onClick={user.consensusMode ? handleConsensus : handleAi}
-            disabled={aiBusy || busy || consensusBusy}
-            title={user.consensusMode
-              ? "Consensus mode is ON. Runs advice 3× in parallel and surfaces only the recs that appear in ≥ 2 of 3 runs. Costs ~3× the single-run API spend. Toggle in Settings."
-              : "Search the web for fresh news on each holding and run Claude once over the portfolio. For higher conviction enable Consensus mode in Settings."}
+            onClick={handleAi}
+            disabled={aiBusy || busy}
+            title="Regenerate the canonical daily briefing and refresh the Advice tab from it. Same recs that would appear in tomorrow's morning email."
           >
-            {user.consensusMode
-              ? (consensusBusy ? "Running 3×…" : "🧠🧠🧠 Update Advice (Consensus)")
-              : (aiBusy ? (aiPhaseLabel(aiPhase) || "Thinking…") : "🧠 Update Advice")}
+            {aiBusy ? (aiPhaseLabel(aiPhase) || "Regenerating briefing…") : "🧠 Update Advice"}
           </button>
         </div>
       </div>
