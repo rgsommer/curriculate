@@ -223,6 +223,12 @@ export async function sendStudentReportEmail({
       ` : ""}
     </div>
 
+    <!-- Get the app CTA -->
+    <div style="text-align:center;padding:8px 0 20px;">
+      <a href="https://curriculate.net/app" style="display:inline-block;background:#ea580c;color:#ffffff;text-decoration:none;font-weight:700;font-size:14px;padding:12px 26px;border-radius:999px;">📲 Get the Curriculate app</a>
+      <p style="margin:10px 0 0;font-size:12px;color:#94a3b8;">Jump into your next class game in seconds — on iPhone, iPad, or Android.</p>
+    </div>
+
     <!-- Footer -->
     <div style="text-align:center;padding:20px 0;color:#94a3b8;font-size:11px;">
       <p style="margin:0;">Powered by ${BRAND_NAME} — Engage • Learn • Reflect</p>

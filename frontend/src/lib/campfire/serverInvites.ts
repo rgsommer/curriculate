@@ -104,6 +104,26 @@ export async function sendCampfireBatch(
   return resend.batch.send(stamped as Parameters<typeof resend.batch.send>[0]);
 }
 
+// "Get the app" promo block for email footers. Derives the landing URL from the email's
+// own link origin, so no builder needs a new param. Returns both html + text fragments.
+export function appPromoBlock(fromUrl: string): { html: string; text: string } {
+  let origin = "https://www.curriculate.net";
+  try {
+    origin = new URL(fromUrl).origin;
+  } catch {
+    /* keep default */
+  }
+  const url = `${origin}/campfire/get`;
+  const html = `
+  <div style="margin:20px 0 0; padding:14px 16px; background:#fff7ed; border:1px solid #fed7aa; border-radius:12px; text-align:center;">
+    <div style="font-size:14px; color:#9a3412; font-weight:700;">📲 Get the Campfire app</div>
+    <div style="font-size:13px; color:#9a3412; margin:2px 0 9px;">Faster notifications and one-tap open.</div>
+    <a href="${url}" style="display:inline-block; background:#0f172a; color:#ffffff; text-decoration:none; padding:9px 18px; border-radius:9999px; font-weight:700; font-size:13px;">Download the app &rarr;</a>
+  </div>`;
+  const text = `\n\n📲 Get the Campfire app (faster notifications, one-tap open): ${url}`;
+  return { html, text };
+}
+
 export function escapeHtml(str: string) {
   return str
     .replace(/&/g, "&amp;")
@@ -355,7 +375,7 @@ export function revealEmail(opts: { groupName: string; title: string; url: strin
 
 See what everyone said: ${url}
 
-This is the good part.`;
+This is the good part.${appPromoBlock(url).text}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">🎉</div>
@@ -365,7 +385,8 @@ This is the good part.`;
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what everyone said &rarr;</a>
   </p>
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">This is the good part. 💛</p>
-  <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${appPromoBlock(url).html}
+  <p style="margin:16px 0 0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
 </div>`.trim();
   return { subject, text, html };
 }
@@ -464,7 +485,7 @@ ${bits.map((b) => "• " + b).join("\n")}
 
 ${cta}: ${url}
 
-${campfireTeaserText()}`;
+${campfireTeaserText()}${appPromoBlock(url).text}`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
@@ -479,6 +500,7 @@ ${campfireTeaserText()}`;
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">${escapeHtml(cta)}</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${appPromoBlock(url).html}
   ${campfireTeaserHtml()}
 </div>`.trim();
 
@@ -557,7 +579,7 @@ export function reminderEmail(opts: {
   }
 ${responded} of ${total} have responded — be one of the ones that unlocks the reveal!${noteText}
 
-Respond here: ${url}`;
+Respond here: ${url}${appPromoBlock(url).text}`;
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
   <div style="font-size:40px;">⏰</div>
@@ -572,6 +594,7 @@ Respond here: ${url}`;
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">Respond now</a>
   </p>
   <p style="margin:0;"><a href="${url}" style="color:#ea580c; word-break:break-all;">${url}</a></p>
+  ${appPromoBlock(url).html}
 </div>`.trim();
   return { subject, text, html };
 }
@@ -639,7 +662,7 @@ ${groups.map(groupText).join("\n\n")}
 
 See what's waiting: ${url}
 
-Moments like these are best while they're fresh.${
+Moments like these are best while they're fresh.${appPromoBlock(url).text}${
     unsubUrl ? `\n\nUnsubscribe from all Campfire emails: ${unsubUrl}` : ""
   }`;
 
@@ -685,7 +708,8 @@ Moments like these are best while they're fresh.${
     <a href="${url}" style="background:linear-gradient(to right,#f97316,#f43f5e); color:#ffffff; text-decoration:none; padding:14px 28px; border-radius:9999px; font-weight:700; display:inline-block;">See what&rsquo;s waiting &rarr;</a>
   </p>
   <p style="color:#64748b; font-size:13px; margin:0 0 12px;">Moments like these are best while they&rsquo;re fresh. 💛</p>
-  <p style="color:#94a3b8; font-size:12px; margin:0;">You can turn these digests off in the group's settings${
+  ${appPromoBlock(url).html}
+  <p style="color:#94a3b8; font-size:12px; margin:16px 0 0;">You can turn these digests off in the group's settings${
     unsubUrl
       ? `, or <a href="${unsubUrl}" style="color:#94a3b8; text-decoration:underline;">unsubscribe from all Campfire emails</a>`
       : ""
@@ -893,7 +917,7 @@ How to jump in:
 
 Invite code: ${inviteCode}
 
-${campfireTeaserText()}`;
+${campfireTeaserText()}${appPromoBlock(joinUrl).text}`;
 
   const html = `
 <div style="font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; max-width:480px; margin:0 auto; line-height:1.6; color:#0f172a;">
@@ -907,6 +931,7 @@ ${campfireTeaserText()}`;
   <p style="color:#64748b; font-size:14px; margin:0 0 4px;">Or paste this link into your browser:</p>
   <p style="margin:0 0 16px;"><a href="${joinUrl}" style="color:#ea580c; word-break:break-all;">${joinUrl}</a></p>
   <p style="color:#94a3b8; font-size:12px; margin:0;">Invite code: ${escapeHtml(inviteCode)}</p>
+  ${appPromoBlock(joinUrl).html}
   ${campfireTeaserHtml()}
 </div>`.trim();
 

@@ -6390,10 +6390,35 @@ function StudentApp() {
       }}
     >
       <div style={{ fontSize: "0.95rem", fontWeight: 700, marginBottom: 6 }}>
-        🎉 Had fun? Share the experience!
+        🎉 Had fun? Get the app!
       </div>
       <div style={{ fontSize: "0.82rem", color: "#4b5563", marginBottom: 10 }}>
-        Curriculate works for classrooms, parties, and corporate events — interactive team games on any device.
+        Download Curriculate to jump into your next class game in seconds — on iPhone, iPad, or Android.
+      </div>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+        <button
+          type="button"
+          onClick={() => window.open("https://curriculate.net/app", "_blank")}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            padding: "10px 22px",
+            borderRadius: 999,
+            border: "none",
+            background: "linear-gradient(135deg, #f97316, #ea580c)",
+            color: "#fff",
+            fontWeight: 800,
+            fontSize: "0.92rem",
+            cursor: "pointer",
+            boxShadow: "0 6px 16px rgba(234,88,12,0.35)",
+          }}
+        >
+          📲 Get the Curriculate App
+        </button>
+      </div>
+      <div style={{ fontSize: "0.78rem", color: "#6b7280", marginBottom: 8 }}>
+        Or tell someone who&rsquo;d love it:
       </div>
       <div style={{ display: "flex", justifyContent: "center", gap: 8, flexWrap: "wrap" }}>
         <button

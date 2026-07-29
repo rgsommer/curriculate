@@ -1501,6 +1501,59 @@ async function finalizeAdvice({ email, profile, textOut, sources = [] }) {
     if (card.meta) card.meta = stripCiteTags(card.meta);
   }
 
+  // Defensive filter: enforce rule 5l (HELD-POSITION TICKERS ARE
+  // PRE-VERIFIED) even when the AI ignores it. If a card carries a
+  // "ticker not found / unable to verify / may have been renamed
+  // or delisted" claim on a ticker the user actually owns, that
+  // card is factually wrong AND alarming — Sonnet occasionally
+  // does this after a web_search timeout or a stale-quote scare.
+  // Strip those cards and prepend a single small note explaining
+  // what happened; the user's real recs stay visible.
+  const heldBases = new Set(
+    (profile?.positions || [])
+      .filter(p => (p.qty || 0) > 0)
+      .map(p => String(p.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, ""))
+      .filter(Boolean)
+  );
+  const NOT_FOUND_RE = /(ticker not found|unable to verify|may have been (?:renamed|delisted)|not (?:be )?located on (?:major )?data (?:providers|feeds)|no clean quote|no live quote|could not be (?:located|found|verified))/i;
+  const bogusHeldTicker = (card) => {
+    if (!card) return null;
+    const blob = `${card.title || ""}\n${card.body || ""}\n${card.meta || ""}`;
+    if (!NOT_FOUND_RE.test(blob)) return null;
+    // Extract candidate ticker(s) from the card. Uppercase-only tokens
+    // 1-5 chars (or with a .TO/.V/.NE/.CN suffix) that appear next to
+    // a "not found" phrase.
+    const tickerCandidates = new Set();
+    const re = /\b([A-Z]{1,5}(?:\.(?:TO|V|NE|CN))?)\b/g;
+    let m;
+    while ((m = re.exec(blob)) != null) {
+      const base = m[1].toUpperCase().replace(/\..*$/, "");
+      if (base.length >= 2) tickerCandidates.add(base);
+    }
+    for (const base of tickerCandidates) {
+      if (heldBases.has(base)) return base;
+    }
+    return null;
+  };
+  const stripped = [];
+  const kept = [];
+  for (const card of parsed.advice) {
+    const bogus = bogusHeldTicker(card);
+    if (bogus) {
+      stripped.push(bogus);
+    } else {
+      kept.push(card);
+    }
+  }
+  if (stripped.length) {
+    console.warn(`[advice] stripped ${stripped.length} bogus "not found" cards for held tickers: ${stripped.join(", ")}`);
+    kept.unshift({
+      title: `⚠ ${stripped.length} incorrect "ticker not found" card${stripped.length === 1 ? "" : "s"} removed`,
+      body: `The AI flagged ${stripped.join(", ")} as "not found on data providers" and suggested pausing until verification. These tickers are in your holdings and are real, tradable, and validated. Their cards have been suppressed to avoid alarming false alerts. This is a known Sonnet failure mode after a web_search timeout — please regenerate advice if you want fresh coverage on these names.`,
+    });
+    parsed.advice = kept;
+  }
+
   const generatedAt = new Date();
   const recsToSave = [];
   const recCardIndices = [];

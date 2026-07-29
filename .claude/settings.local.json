@@ -853,7 +853,9 @@
       "Bash(cat)",
       "Bash(awk -F= '{print $1\"=\"\\(length\\($2\\)>0?\"<\"length\\($2\\)\" chars>\":\"<empty>\"\\)}')",
       "Bash(node --check routes/stocksPendingOrders.js)",
-      "Bash(awk -F: '$2 >= 2950 && $2 <= 3200')"
+      "Bash(awk -F: '$2 >= 2950 && $2 <= 3200')",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('modules/display_handler.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(awk -F: '$1>10020 && $1<10720')"
     ]
   }
 }
