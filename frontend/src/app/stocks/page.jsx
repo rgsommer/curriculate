@@ -1199,23 +1199,64 @@ export default function StocksAdvisorPage() {
         if (q) priceByOrig[`${ent.originalTicker}|${ent.currency}`] = q;
       }
       const fxRate = user.fxUsdCad || 1.37;
+      const skipped = []; // tickers where the fetched price failed the drift check
       const updated = user.positions.map((p) => {
         const q = priceByOrig[`${p.ticker}|${p.ccy}`];
         if (!q) return p;
-        // Write BOTH sides — refresh the position's native-currency price
-        // AND its FX-converted sibling. Historical seed data has both
-        // fields populated, and the dashboard's totalCad formula
-        // (p.priceCad ?? p.priceUsd*fx) prefers priceCad when present, so
-        // a USD-native refresh that only touched priceUsd left the CAD
-        // view showing stale numbers.
-        if (p.ccy === "USD") return { ...p, priceUsd: q.price, priceCad: q.price * fxRate };
-        if (p.ccy === "CAD") return { ...p, priceCad: q.price, priceUsd: q.price / fxRate };
+        // Drift-check the fetched price before writing. This is the
+        // second half of the task #120 root-cause fix (first half:
+        // trade applier no longer overwrites priceUsd). Yahoo/FMP
+        // occasionally returns wildly wrong prices — pre-split values,
+        // wrong-ticker aliases, cold-cache misses — and the July 29
+        // NVDA-at-$42.55 briefing was directly caused by this refresh
+        // path writing bad data. If the new price is either >3× the
+        // prior stored price, <1/3 of it, or >50% different from the
+        // cost basis (whichever is the tighter guard), skip the
+        // write and keep the stored value. Toast the skipped set so
+        // the user knows to click Refresh again or verify manually.
+        //
+        // Threshold set loose enough to allow real crash / earnings-
+        // gap moves (~30-40%) and tight enough to catch the >100%
+        // discrepancies that mean the feed is broken. Split events
+        // are the one case where a legitimate 2-10× ratio is real;
+        // brokers usually adjust the position book automatically
+        // via a corporate-action feed, at which point a subsequent
+        // refresh will see prices that agree with the new share
+        // count. If a split is in progress and the check misfires,
+        // the user can force the write by editing the position
+        // directly — same escape hatch as any other manual override.
+        const currentPrice = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+        const costBasis = p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
+        const newPrice = q.price;
+        const priorRatio = (Number.isFinite(currentPrice) && currentPrice > 0)
+          ? newPrice / currentPrice : null;
+        const basisDrift = (Number.isFinite(costBasis) && costBasis > 0)
+          ? Math.abs(newPrice - costBasis) / costBasis : null;
+        const priorDriftBad = priorRatio != null && (priorRatio > 3 || priorRatio < 0.333);
+        // A big basis drift alone isn't disqualifying — a real position
+        // held through a big move legitimately has current far from
+        // basis. Only reject when BOTH signals agree the number is
+        // implausible: prior-price ratio is extreme AND basis drift
+        // exceeds 50%. That combination is the specific NVDA-$42.55
+        // fingerprint (fresh reconciled book had NVDA at $206.81 →
+        // subsequent refresh returned $42.55, ratio 0.20, basis drift
+        // 79%, both signals concur so we skip).
+        if (priorDriftBad && basisDrift != null && basisDrift > 0.5) {
+          skipped.push(`${p.ticker} (feed said $${newPrice.toFixed(2)}, was $${currentPrice.toFixed(2)}, basis $${costBasis.toFixed(2)})`);
+          console.warn(`[refresh-prices] SKIPPED ${p.ticker}: feed=$${newPrice}, prior=$${currentPrice}, basis=$${costBasis} (ratio=${priorRatio.toFixed(2)}, basis-drift=${(basisDrift * 100).toFixed(0)}%)`);
+          return p;
+        }
+        if (p.ccy === "USD") return { ...p, priceUsd: newPrice, priceCad: newPrice * fxRate };
+        if (p.ccy === "CAD") return { ...p, priceCad: newPrice, priceUsd: newPrice / fxRate };
         return p;
       });
       updateUser(() => ({ positions: updated }));
-      const ok = tickers.length - (failed?.length || 0);
-      showToast(`Fetched ${ok}/${tickers.length}.${failed?.length ? ` Failed: ${failed.join(", ")}` : ""}`);
-      return { ok, fail: failed?.length || 0 };
+      const ok = tickers.length - (failed?.length || 0) - skipped.length;
+      const parts = [`Fetched ${ok}/${tickers.length}.`];
+      if (failed?.length) parts.push(`Failed: ${failed.join(", ")}.`);
+      if (skipped.length) parts.push(`⚠ Skipped as implausible (data-feed drift guard): ${skipped.join("; ")}. Kept the stored price.`);
+      showToast(parts.join(" "));
+      return { ok, fail: (failed?.length || 0), skipped: skipped.length };
     } catch (e) {
       showToast(`Price fetch failed: ${e?.message || "network"}`);
       return { ok: 0, fail: user.positions.length };
