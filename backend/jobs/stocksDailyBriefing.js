@@ -2113,6 +2113,7 @@ export async function runDailyBriefing(opts = {}) {
             email: p.email,
             generatedAt: new Date(),
             source: "ai",
+            sourceLabel: "sonnet-briefing-cron",
             ...r,
             rationale: "Daily briefing — server-side cron",
           }))
@@ -2234,6 +2235,7 @@ export async function sendBriefingForUser(p, sendKey) {
             email: p.email,
             generatedAt: new Date(),
             source: "ai",
+            sourceLabel: "sonnet-briefing-cron",
             ...r,
             rationale: "Daily briefing — server-side cron",
           }))

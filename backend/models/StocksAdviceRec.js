@@ -11,6 +11,14 @@ const StocksAdviceRecSchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true, index: true },
     generatedAt: { type: Date, required: true, default: Date.now, index: true },
     source: { type: String, enum: ["ai", "rule", "auto-sell-trail"], default: "ai" },
+    // Granular source label for the per-source scorecard — the enum-narrow
+    // `source` field above stays for backward compat, this one lets us
+    // distinguish sonnet-briefing / sonnet-advice / sonnet-consensus /
+    // high-conviction / moonshot / discovery-pool / rule-stop / etc. so the
+    // "baseball cards" scorecard can compare per-source performance.
+    // Free-string on purpose — enum churn every time we add a source type
+    // isn't worth the type safety.
+    sourceLabel: { type: String, default: null, index: true },
     // Set on trail-SELL recs auto-emitted when a BUY rec's target or stop
     // fires, so /advice history shows the full BUY→SELL round trip.
     linkedBuyRecId: { type: mongoose.Schema.Types.ObjectId, ref: "StocksAdviceRec", default: null, index: true },
