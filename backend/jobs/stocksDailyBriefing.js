@@ -958,10 +958,30 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   );
   if (hasStopSignal) {
     chunks.push("## 🚨 Position P&L stop check");
+    // Implausible-loss guard: -50% or worse in a single position on a
+    // normal day is almost never a real stop hit — it's a stale/wrong
+    // priceUsd sneaking through the applier or a bad Refresh Prices
+    // response (see task #120's NVDA-at-$42.55 incident where a mega-
+    // cap position emitted a "confidently wrong EXIT AT MARKET" that
+    // would have cost the user $5k+ of real market value). Rather
+    // than trust the number, emit a PRICE VERIFICATION card so the
+    // trader has to look at the raw feed before acting. The AI is
+    // free to escalate to a real EXIT later after verifying, but
+    // the deterministic renderer never issues an exit signal based
+    // on a number the position book itself cannot possibly be right
+    // about.
+    const IMPLAUSIBLE_LOSS_PCT = -50;
     for (const r of stopMonitor.hardStopHit || []) {
-      chunks.push(
-        `- 🚨 **EXIT AT MARKET**: ${r.ticker} in ${r.account} · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency}, pnl ${r.pnlPct.toFixed(1)}% · sell ${r.qty} sh unless a specific NEW-INFO reason overrides.`
-      );
+      if (r.pnlPct <= IMPLAUSIBLE_LOSS_PCT) {
+        chunks.push(
+          `- ⚠ **PRICE VERIFICATION REQUIRED**: ${r.ticker} in ${r.account} · position book has basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (pnl ${r.pnlPct.toFixed(1)}%). A loss this large on ${r.qty} sh is almost never a real single-day event on a normal ticker — the stored price is likely stale, a bad refresh response, or a split-adjustment mismatch. DO NOT sell on this line. Click Refresh Prices, cross-check the broker balance, and only exit if the loss is confirmed by both the broker AND a fresh Yahoo/FMP quote. If the stored price is wrong, edit the position row directly to correct it (the applier no longer overwrites market prices after task #120's fix — Refresh Prices is the correct path).`
+        );
+        console.warn(`[stop-check] SUPPRESSED implausible EXIT for ${r.ticker}: pnl ${r.pnlPct.toFixed(1)}% (basis $${r.costBasis}, now $${r.currentPrice}) — likely data-feed corruption`);
+      } else {
+        chunks.push(
+          `- 🚨 **EXIT AT MARKET**: ${r.ticker} in ${r.account} · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency}, pnl ${r.pnlPct.toFixed(1)}% · sell ${r.qty} sh unless a specific NEW-INFO reason overrides.`
+        );
+      }
     }
     for (const r of stopMonitor.withinStop || []) {
       chunks.push(
