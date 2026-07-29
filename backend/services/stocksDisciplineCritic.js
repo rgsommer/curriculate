@@ -21,12 +21,23 @@
 // Gated by:
 //   - OPENAI_API_KEY env var (falls through to noop if unset)
 //   - STOCKS_CRITIC_ENABLED=1 (default off; opt-in per deploy)
-//   - STOCKS_CRITIC_MODEL (default "gpt-4o-mini" — cheap and fast)
+//   - STOCKS_CRITIC_MODEL (default "gpt-4.1" — better reasoning than
+//     the previous gpt-4o-mini for the rubric-based audit, still cheap.
+//     Set STOCKS_CRITIC_MODEL=gpt-5 or gpt-5-mini on the deploy to
+//     upgrade further once you've confirmed the tier is available on
+//     your OpenAI plan and the marginal cost is worth it. See the
+//     "second-opinion critic" note in the strategy discussion —
+//     using a different family (OpenAI) to audit Claude's briefing
+//     is the value here, not the specific model tier.)
 //
-// Cost: ~$0.01-0.02 per briefing at ~2K input + 500 output tokens on
-// gpt-4o-mini. Latency: 1-3s.
+// Cost per briefing (rough, at ~2K input + 500 output tokens):
+//   gpt-4o-mini      ~$0.01
+//   gpt-4.1          ~$0.02
+//   gpt-5-mini       ~$0.03
+//   gpt-5            ~$0.10
+// Latency: 1-3s at gpt-4o-mini / gpt-4.1; 2-5s at gpt-5 family.
 
-const DEFAULT_MODEL = process.env.STOCKS_CRITIC_MODEL || "gpt-4o-mini";
+const DEFAULT_MODEL = process.env.STOCKS_CRITIC_MODEL || "gpt-4.1";
 
 function buildCriticPrompt({ markdown, holdings, horizonRows, previousCalls }) {
   const held = (holdings || []).map(p => `${p.ticker} (${p.qty || 0} sh, ${p.ccy})`).join(", ");
