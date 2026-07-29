@@ -3040,7 +3040,35 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                       <td className="tk">
                         <span style={{ display: "inline-block", width: 12, color: "var(--sa-muted)", fontSize: 9, transform: isExpanded ? "rotate(90deg)" : "none", transition: "transform .15s" }}>▶</span>
                         {" "}
-                        {p.ticker}<span className="sub">{p.name || ""}</span>
+                        {p.ticker}
+                        {(() => {
+                          // Sleeve badge — same colour scheme the Test A
+                          // and sleeve-balance blocks use, so every surface
+                          // in the app labels a ticker's role identically.
+                          const sleeve = sleeveOfTicker(p.ticker);
+                          const bg = sleeve === "core" ? "#dbeafe"
+                            : sleeve === "swing" ? "#dcfce7"
+                            : "#fef3c7";
+                          const fg = sleeve === "core" ? "#1e40af"
+                            : sleeve === "swing" ? "#166534"
+                            : "#78350f";
+                          return (
+                            <span
+                              title={
+                                sleeve === "core" ? "CORE — buy-and-hold anchor (broad ETFs), target 80% of book"
+                                : sleeve === "swing" ? "SWING — Canadian large-caps + US mega-caps, target 15%, single-name conviction trades"
+                                : "SPEC — high-vol / meme / early-stage names, cap 5%"
+                              }
+                              style={{
+                                marginLeft: 6, padding: "1px 6px",
+                                borderRadius: 4, fontSize: 9.5, fontWeight: 700,
+                                letterSpacing: ".04em", background: bg, color: fg,
+                                verticalAlign: "middle",
+                              }}
+                            >{sleeve.toUpperCase()}</span>
+                          );
+                        })()}
+                        <span className="sub">{p.name || ""}</span>
                       </td>
                       <td>{p.qty.toLocaleString()}</td>
                       <td>{price != null ? price.toFixed(4) : "—"}</td>
