@@ -8764,6 +8764,8 @@ function PerformanceView({ sessionToken, user }) {
 
       <BacktestCard sessionToken={sessionToken} />
 
+      <DisciplineBacktestCard sessionToken={sessionToken} />
+
       <TradeJournalAnalysisCard sessionToken={sessionToken} />
 
       {/* ── ADVICE SCORECARD: what was taken, what worked, what didn't ── */}
@@ -11149,6 +11151,165 @@ function BacktestCard({ sessionToken }) {
 
           <div style={{ marginTop: 14, fontSize: 10.5, color: "var(--sa-muted)", background: "var(--sa-panel-2)", padding: "8px 10px", borderRadius: 6 }}>
             ⚠ {result.disclaimer}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Pass A discipline backtest — takes the user's current portfolio and
+// runs it back through N years of Yahoo history under three scenarios:
+// buy-and-hold, trailing-stop-cash, trailing-stop-redeploy. Plus XEQT
+// benchmark. Answers "did the discipline layer save/cost me money on
+// this exact book vs doing nothing?"
+function DisciplineBacktestCard({ sessionToken }) {
+  const [years, setYears] = useState(5);
+  const [trailStopPct, setTrailStopPct] = useState(20);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [err, setErr] = useState(null);
+
+  const run = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null); setResult(null);
+    try {
+      const q = new URLSearchParams({
+        years: String(years),
+        trailStopPct: String(trailStopPct / 100),
+      });
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/backtest-discipline?${q.toString()}`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setResult(j);
+    } catch (e) { setErr(e?.message || "Backtest failed"); }
+    finally { setBusy(false); }
+  };
+
+  const money = (v) => v == null ? "—" : `$${Math.round(v).toLocaleString()}`;
+  const pct = (v) => v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(1)}%`;
+
+  const rows = result?.scenarios ? [
+    { key: "hold", label: "Buy-and-hold", desc: result.scenarios.hold?.description, sum: result.scenarios.hold?.summary },
+    { key: "stops", label: "Trailing stops → cash", desc: result.scenarios.stops?.description, sum: result.scenarios.stops?.summary, events: result.scenarios.stops?.stopEventCount },
+    { key: "redeploy", label: "Trailing stops → redeploy to index", desc: result.scenarios.redeploy?.description, sum: result.scenarios.redeploy?.summary, events: result.scenarios.redeploy?.redeployEventCount },
+    { key: "benchmark", label: `100% ${result.inputs?.benchmarkTicker || "XEQT.TO"} (benchmark)`, desc: result.scenarios.benchmark?.description, sum: result.scenarios.benchmark?.summary },
+  ] : [];
+
+  // Best CAGR wins the "recommended" badge
+  const bestCagr = rows.reduce((best, r) => (r.sum?.cagrPct ?? -Infinity) > (best?.cagrPct ?? -Infinity) ? r.sum : best, null);
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>🧪 Discipline framework backtest (Pass A)</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3, maxWidth: 780 }}>
+            Takes your <b>current portfolio</b> and simulates 3 scenarios over the last N years: pure buy-and-hold vs a trailing-stop discipline (cash on exit) vs discipline with proceeds redeployed to an index. Plus XEQT benchmark. Isolates whether the discipline layer helps or hurts on your actual book. <b>Does NOT backtest AI advice</b> — that would be data-leaked.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: 10, alignItems: "end" }}>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Lookback (years)</div>
+          <input type="number" value={years} onChange={(e) => setYears(Number(e.target.value))} min={1} max={10} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Trailing stop (% from peak)</div>
+          <input type="number" value={trailStopPct} onChange={(e) => setTrailStopPct(Number(e.target.value))} min={5} max={50} step={1} style={{ width: "100%", padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <button className="sa-btn" onClick={run} disabled={busy}>{busy ? "Running…" : "Run backtest"}</button>
+      </div>
+
+      {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+
+      {result?.error && (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--sa-muted)", background: "var(--sa-panel-2)", borderRadius: 8, padding: "10px 12px" }}>
+          {result.error}
+          {result.missingTickers?.length > 0 && (
+            <div style={{ marginTop: 6, fontSize: 12 }}>Missing history for: {result.missingTickers.join(", ")}</div>
+          )}
+        </div>
+      )}
+
+      {result?.scenarios && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 8 }}>
+            Window: <b>{result.inputs.startDate}</b> → <b>{result.inputs.endDate}</b> · {result.inputs.positionCount} positions · FX ${result.inputs.fxUsdCad}/USD
+            {result.inputs.tickersMissingHistory?.length > 0 && (
+              <span style={{ color: "#b45309" }}> · Skipped (no history): {result.inputs.tickersMissingHistory.join(", ")}</span>
+            )}
+          </div>
+
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse", marginTop: 8 }}>
+            <thead>
+              <tr style={{ color: "var(--sa-muted)", textAlign: "left" }}>
+                <th style={{ padding: "6px 8px", fontWeight: 500, borderBottom: "1px solid var(--sa-border)" }}>Scenario</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Start</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>End</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Total return</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>CAGR</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Max DD</th>
+                <th style={{ padding: "6px 8px", fontWeight: 500, textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Stops</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const isBest = r.sum && bestCagr && Math.abs(r.sum.cagrPct - bestCagr.cagrPct) < 0.01;
+                return (
+                  <tr key={r.key} style={{ borderBottom: "1px solid #f1f5f9", background: isBest ? "#ecfdf5" : undefined }}>
+                    <td style={{ padding: "8px", fontWeight: 600 }}>
+                      {r.label}{isBest && <span style={{ marginLeft: 6, background: "#059669", color: "#fff", fontSize: 10, padding: "2px 6px", borderRadius: 999, verticalAlign: "middle" }}>BEST</span>}
+                      <div style={{ fontSize: 11, color: "var(--sa-muted)", fontWeight: 400, marginTop: 2 }}>{r.desc}</div>
+                    </td>
+                    <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{money(r.sum?.startValueCad)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{money(r.sum?.endValueCad)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: (r.sum?.totalReturnPct ?? 0) >= 0 ? "#166534" : "#991b1b" }}>{pct(r.sum?.totalReturnPct)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: (r.sum?.cagrPct ?? 0) >= 0 ? "#166534" : "#991b1b", fontWeight: 700 }}>{pct(r.sum?.cagrPct)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#b45309" }}>{pct(r.sum?.maxDrawdownPct)}</td>
+                    <td style={{ padding: "8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{r.events ?? "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {result.scenarios.stops?.stopEvents?.length > 0 && (
+            <details style={{ marginTop: 14 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12, color: "var(--sa-muted)" }}>{result.scenarios.stops.stopEvents.length} stop events triggered — see individual exits</summary>
+              <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse", marginTop: 8 }}>
+                <thead>
+                  <tr style={{ color: "var(--sa-muted)", textAlign: "left" }}>
+                    <th style={{ padding: "4px 8px" }}>Ticker</th>
+                    <th style={{ padding: "4px 8px" }}>Exit date</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Peak</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Exit</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Drawdown</th>
+                    <th style={{ padding: "4px 8px", textAlign: "right" }}>Proceeds</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {result.scenarios.stops.stopEvents.map((e, i) => (
+                    <tr key={i} style={{ borderTop: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "4px 8px", fontWeight: 600 }}>{e.ticker}</td>
+                      <td style={{ padding: "4px 8px" }}>{e.exitDate}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${e.peakPrice?.toFixed(2)}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${e.exitPrice?.toFixed(2)}</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: "#991b1b" }}>{e.drawdownFromPeakPct?.toFixed(1)}%</td>
+                      <td style={{ padding: "4px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>${Math.round(e.proceedsCad).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </details>
+          )}
+
+          <div style={{ marginTop: 14, fontSize: 12, color: "var(--sa-muted)", background: "#fef3c7", border: "1px solid #fcd34d", padding: "10px 12px", borderRadius: 8 }}>
+            <b>Honest caveat:</b> This tests the DISCIPLINE FRAMEWORK only. The AI-advice layer is not backtested — today's Claude already knows what happened historically, so any "AI backtest" would be data-leaked. To measure AI-advice quality, use the Advice Scorecard which runs forward from today.
           </div>
         </div>
       )}
