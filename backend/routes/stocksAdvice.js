@@ -3482,6 +3482,35 @@ router.get("/backtest", requireStocksAuth, async (req, res) => {
   }
 });
 
+// GET /api/stocks-advice/backtest-discipline?years=5&trailStopPct=0.20
+//
+// Pass A audit. Takes the user's CURRENT portfolio and simulates 3 scenarios
+// over the requested lookback window: buy-and-hold baseline, trailing-stop
+// discipline with cash on exit, and trailing-stop discipline with proceeds
+// redeployed to a currency-matched index. Plus XEQT benchmark for reference.
+//
+// Answers the honest question: "Did the discipline rules help or hurt vs
+// pure buy-and-hold on this exact book?" — the AI-advice layer is not
+// backtested (that would be data-leaked and dishonest).
+router.get("/backtest-discipline", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    if (!profile || !profile.positions?.length) {
+      return res.status(400).json({ error: "No positions to backtest." });
+    }
+    const years = Math.max(1, Math.min(10, Number(req.query.years) || 5));
+    const trailStopPct = Math.max(0.05, Math.min(0.50, Number(req.query.trailStopPct) || 0.20));
+    const fx = Number(profile.fxUsdCad) || 1.37;
+    const result = await runDisciplineBacktest(profile.positions, years, {
+      trailStopPct, fx,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error("backtest-discipline error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 // Trade journal AI analysis — pairs BUY/SELL legs FIFO into closed
 // round trips, computes rollups, asks Anthropic for THIS trader's
 // specific winning/losing patterns. Personal compounding edge.
