@@ -27,6 +27,7 @@ import { processEightKsOnce } from "../jobs/stocksEightKPoll.js";
 import { analyzeTradeJournal } from "../services/stocksTradeJournalAnalysis.js";
 import { runBacktest } from "../services/stocksBacktest.js";
 import { runPointInTimeBacktest } from "../services/stocksPointInTimeBacktest.js";
+import { runDisciplineBacktest } from "../services/stocksDisciplineBacktest.js";
 import { enrichRecsWithExitDefaults } from "../services/stocksRecTrail.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import { runDailyPickGenerationOnce, sweepOpenPicks, generateAndPersistPicksForUser } from "../jobs/stocksDailyPick.js";
@@ -2553,6 +2554,7 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
             email,
             generatedAt: new Date(),
             source: "ai",
+            sourceLabel: "sonnet-briefing-ondemand",
             ...r,
             rationale: "On-demand briefing",
           }))
@@ -2891,6 +2893,92 @@ router.get("/snapshot", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("snapshot GET error:", err);
     res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/stocks-advice/source-scorecard?days=90
+//
+// "Baseball cards" — aggregate every CLOSED rec (target-hit, stop-hit,
+// expired) by sourceLabel over the window. For each source, compute:
+//   trades, wins, losses, winRate, avgReturnPct, medianReturnPct,
+//   maxDrawdownPct (worst single trade), expectancyPct
+//     (= winRate × avgWin − (1-winRate) × |avgLoss|)
+//
+// The "return" for each closed rec is:
+//   BUY:  (hitPrice - entryPrice) / entryPrice × 100
+//   SELL: (entryPrice - hitPrice) / entryPrice × 100  (short-style)
+// So a positive return = the rec would have made money if executed at
+// entry and closed at hit.
+//
+// Feedback loop that lets you retire sources that don't earn their spot.
+// Feeds the source-comparison "baseball cards" table on Performance.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/source-scorecard", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.min(Math.max(parseInt(req.query.days, 10) || 90, 7), 730);
+    const since = new Date(Date.now() - days * 86400 * 1000);
+    const recs = await StocksAdviceRec.find({
+      email: req.stocksUser.email,
+      generatedAt: { $gte: since },
+      status: { $in: ["target-hit", "stop-hit", "expired"] },
+      entryPrice: { $gt: 0 },
+      hitPrice: { $gt: 0 },
+    }).select("sourceLabel action entryPrice hitPrice status").lean();
+
+    const bySource = new Map();
+    for (const r of recs) {
+      const label = r.sourceLabel || "unlabeled";
+      if (!bySource.has(label)) bySource.set(label, []);
+      const dir = r.action === "BUY" ? 1 : -1;
+      const retPct = ((r.hitPrice - r.entryPrice) / r.entryPrice) * 100 * dir;
+      if (!Number.isFinite(retPct)) continue;
+      bySource.get(label).push({ retPct, status: r.status });
+    }
+
+    const rows = [];
+    for (const [label, arr] of bySource.entries()) {
+      const trades = arr.length;
+      if (trades === 0) continue;
+      const wins = arr.filter(x => x.retPct > 0);
+      const losses = arr.filter(x => x.retPct <= 0);
+      const winRate = trades > 0 ? (wins.length / trades) * 100 : 0;
+      const avgReturnPct = arr.reduce((s, x) => s + x.retPct, 0) / trades;
+      const avgWin = wins.length ? wins.reduce((s, x) => s + x.retPct, 0) / wins.length : 0;
+      const avgLoss = losses.length ? losses.reduce((s, x) => s + x.retPct, 0) / losses.length : 0;
+      const worstTradePct = arr.reduce((min, x) => x.retPct < min ? x.retPct : min, 0);
+      const expectancyPct = (winRate / 100) * avgWin + ((100 - winRate) / 100) * avgLoss;
+      const sorted = [...arr].map(x => x.retPct).sort((a, b) => a - b);
+      const medianReturnPct = trades % 2 === 0
+        ? (sorted[trades / 2 - 1] + sorted[trades / 2]) / 2
+        : sorted[Math.floor(trades / 2)];
+      rows.push({
+        source: label,
+        trades,
+        winRate: Number(winRate.toFixed(1)),
+        avgReturnPct: Number(avgReturnPct.toFixed(2)),
+        medianReturnPct: Number(medianReturnPct.toFixed(2)),
+        avgWinPct: Number(avgWin.toFixed(2)),
+        avgLossPct: Number(avgLoss.toFixed(2)),
+        worstTradePct: Number(worstTradePct.toFixed(2)),
+        expectancyPct: Number(expectancyPct.toFixed(3)),
+        proven: trades >= 20,
+      });
+    }
+    // Sort by expectancy descending — best source at top. Ties broken by trades.
+    rows.sort((a, b) => (b.expectancyPct - a.expectancyPct) || (b.trades - a.trades));
+
+    res.json({
+      ok: true,
+      windowDays: days,
+      windowStart: since,
+      rows,
+      totalRecsInWindow: recs.length,
+      generatedAt: new Date(),
+    });
+  } catch (err) {
+    console.error("stocks-advice source-scorecard error:", err);
+    res.status(500).json({ error: "Internal error" });
   }
 });
 

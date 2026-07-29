@@ -855,7 +855,9 @@
       "Bash(node --check routes/stocksPendingOrders.js)",
       "Bash(awk -F: '$2 >= 2950 && $2 <= 3200')",
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('modules/display_handler.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
-      "Bash(awk -F: '$1>10020 && $1<10720')"
+      "Bash(awk -F: '$1>10020 && $1<10720')",
+      "Bash(node --check src/app/stocks/page.jsx)",
+      "Bash(grep -n \"GET.*/api/stocks-advice\\\\|/stocks-advice/snapshot\\\\|/stocks-advice\\\\`\" /Users/richardsommer/dev/curriculate/frontend/src/app/stocks/page.jsx)"
     ]
   }
 }

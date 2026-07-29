@@ -69,6 +69,7 @@ export async function insertAutoSellTrail({ buyRec, hitPrice, hitAt, reason }) {
       email: buyRec.email,
       generatedAt: hitAt || new Date(),
       source: "auto-sell-trail",
+      sourceLabel: "auto-sell-trail",
       linkedBuyRecId: buyRec._id,
       ticker: buyRec.ticker,
       action: "SELL",

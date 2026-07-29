@@ -8756,6 +8756,8 @@ function PerformanceView({ sessionToken, user }) {
 
       <WeekInReviewCard sessionToken={sessionToken} user={user} />
 
+      <SourceScorecardCard sessionToken={sessionToken} />
+
       <DailyPickCard sessionToken={sessionToken} user={user} />
 
       <PointInTimeBacktestCard sessionToken={sessionToken} />
@@ -10259,6 +10261,121 @@ function computeSleeveBalanceClient(user) {
       spec: targetsCad.spec - totals.spec,
     },
   };
+}
+
+// Baseball cards — per-source performance table (task #128). Aggregates
+// every closed rec (target-hit, stop-hit, expired) by sourceLabel over
+// the selected window and shows trades / win rate / avg return /
+// expectancy / worst-trade for each. Feedback loop that lets the trader
+// (and future backtest-gating) empirically retire sources whose recs
+// don't earn their spot. Sources with < 20 trades are tagged "unproven"
+// so the reader doesn't over-index on small-sample noise.
+function SourceScorecardCard({ sessionToken }) {
+  const [days, setDays] = useState(90);
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(
+          `${BACKEND_URL}/api/stocks-advice/source-scorecard?days=${days}`,
+          { credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` } }
+        );
+        if (!r.ok) throw new Error(`${r.status}`);
+        const j = await r.json();
+        if (!cancelled) setData(j);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "load failed");
+      } finally { if (!cancelled) setBusy(false); }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, days]);
+
+  const fmtPct = (v, sign = false) => {
+    if (v == null) return "—";
+    const s = v >= 0 ? "+" : "";
+    return `${sign ? s : (v < 0 ? "" : "")}${v.toFixed(2)}%`;
+  };
+  const clr = (v) => v == null ? "inherit" : v > 0 ? "#166534" : v < 0 ? "#991b1b" : "inherit";
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 10 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>⚾ Source scorecard</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
+            Every closed rec bucketed by where it came from — sonnet-briefing / auto-sell-trail / rule-stop / etc. Best expectancy sorts to the top. Sources with &lt;20 trades tagged unproven (small-sample noise, not signal).
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+          {[30, 90, 180, 365].map((d) => (
+            <button key={d} onClick={() => setDays(d)}
+              style={{
+                padding: "4px 10px", fontSize: 12, fontWeight: 600, borderRadius: 6,
+                background: days === d ? "var(--sa-panel)" : "transparent",
+                color: days === d ? "inherit" : "var(--sa-muted)",
+                border: "none", cursor: "pointer",
+              }}
+            >{d}d</button>
+          ))}
+        </div>
+      </div>
+      {busy && <div className="sa-muted" style={{ padding: 20 }}>Loading…</div>}
+      {err && <div className="sa-err">{err}</div>}
+      {data && (data.rows || []).length === 0 && (
+        <div className="sa-muted" style={{ fontSize: 12.5, padding: "12px 4px", fontStyle: "italic" }}>
+          No closed recs in the last {days} days yet. The scorecard populates as target/stop hits + expiries close out open recs.
+          {data.totalRecsInWindow > 0 && ` (${data.totalRecsInWindow} recs generated, all still open.)`}
+        </div>
+      )}
+      {data && data.rows?.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, fontVariantNumeric: "tabular-nums" }}>
+            <thead>
+              <tr style={{ background: "var(--sa-panel-2)", color: "var(--sa-muted)", fontSize: 10.5, textTransform: "uppercase", letterSpacing: ".05em" }}>
+                <th style={{ textAlign: "left", padding: "6px 8px" }}>Source</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="Number of closed recs">Trades</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="% of closed recs where return was positive">Win %</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="Average return across every closed rec">Avg</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="Winners: average return">Avg win</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="Losers: average return (negative)">Avg loss</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="Worst single-trade return in the window">Worst</th>
+                <th style={{ textAlign: "right", padding: "6px 8px" }} title="winRate × avgWin − (1 − winRate) × |avgLoss| — expected return per rec">Expectancy</th>
+                <th style={{ textAlign: "left", padding: "6px 8px" }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r, i) => (
+                <tr key={r.source} style={{ borderTop: "1px dashed var(--sa-border)", background: i === 0 && r.proven ? "#f0fdf4" : "transparent" }}>
+                  <td style={{ padding: "6px 8px", fontWeight: 600 }}>{r.source}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.trades}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.winRate.toFixed(0)}%</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: clr(r.avgReturnPct), fontWeight: 600 }}>{fmtPct(r.avgReturnPct, true)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: "#166534" }}>{fmtPct(r.avgWinPct, true)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: "#991b1b" }}>{fmtPct(r.avgLossPct, true)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: "#991b1b" }}>{fmtPct(r.worstTradePct, true)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: clr(r.expectancyPct), fontWeight: 700 }}>{fmtPct(r.expectancyPct, true)}</td>
+                  <td style={{ padding: "6px 8px", fontSize: 10.5, color: "var(--sa-muted)" }}>
+                    {r.proven
+                      ? <span style={{ color: "#166534" }}>✓ proven (n≥20)</span>
+                      : <span style={{ color: "#92400e" }}>⚠ unproven</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ marginTop: 8, fontSize: 10.5, color: "var(--sa-muted)", fontStyle: "italic" }}>
+            Best-expectancy source highlighted green if proven. Retire (or gate) sources with negative expectancy once they cross n=20 — they're actively subtracting from your returns.
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Rolling 7-day retrospective + forward look. Answers three questions
