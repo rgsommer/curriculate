@@ -1482,7 +1482,20 @@ async function runOneAdvicePass({ profile, monitorAlerts, quantSignals, macro, l
 // recs, attach rec ids, then validate prices + sizing and run the (now-rare,
 // Haiku) correction pass. Returns the finished payload. Keeping this in one
 // place means the two entry points can't drift.
-async function finalizeAdvice({ email, profile, textOut, sources = [] }) {
+// finalizeAdvice — parse AI output into display cards, optionally persist
+// recs into the scorecard collection, run the price-validator correction
+// pass, and return the assembled response.
+//
+// persistRecs defaults to FALSE (single-source-of-truth unification slice
+// #1 — task #128 follow-on). The daily briefing is the ONLY surface that
+// owns rec persistence to StocksAdviceRec now; the on-demand Advice tab
+// still shows AI cards for display but no longer creates a competing set
+// of rec rows that could disagree with the morning briefing's calls.
+// When we want a fresh set of authoritative recs on demand, the flow is
+// "regenerate briefing" (POST /send-briefing?fresh=1), not "hit /advice".
+// This eliminates the class of user-visible contradiction where the
+// briefing says HOLD DJT and the Advice tab says TRIM DJT.
+async function finalizeAdvice({ email, profile, textOut, sources = [], persistRecs = false }) {
   let parsed = extractJson(textOut);
   if (!parsed || !Array.isArray(parsed.advice)) {
     const cards = briefingToAdviceCards(textOut);
@@ -1582,18 +1595,21 @@ async function finalizeAdvice({ email, profile, textOut, sources = [] }) {
     }
   });
   let inserted = [];
-  if (recsToSave.length) {
+  if (recsToSave.length && persistRecs) {
     // Fill missing target/stop from ATR so every BUY has a monitorable
-    // exit plan before it lands in Mongo.
+    // exit plan before it lands in Mongo. Only runs when the caller
+    // explicitly opts into persistence — the on-demand Advice flow now
+    // defaults to display-only so it doesn't create rec rows that
+    // compete with the morning briefing's canonical picks.
     try { await enrichRecsWithExitDefaults(recsToSave); } catch { /* ignore */ }
     try {
       inserted = await StocksAdviceRec.insertMany(recsToSave);
     } catch (e) { console.warn("advice-rec save warning:", e?.message); }
+    inserted.forEach((doc, i) => {
+      const cardIdx = recCardIndices[i];
+      if (parsed.advice[cardIdx]) parsed.advice[cardIdx].recId = doc._id.toString();
+    });
   }
-  inserted.forEach((doc, i) => {
-    const cardIdx = recCardIndices[i];
-    if (parsed.advice[cardIdx]) parsed.advice[cardIdx].recId = doc._id.toString();
-  });
 
   try {
     const ccyHints = buildTickerCurrencyHints(profile.positions);
