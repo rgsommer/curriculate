@@ -2448,6 +2448,114 @@ function PortfolioHealthChip({ user, regimeAndUoa }) {
   );
 }
 
+// TodaysActionCard — the single canonical "what to do" surface
+// pulled from the latest briefing snapshot (task #129 slice 3). This
+// is the front-and-center consequence of the single-source-of-truth
+// unification: the trader lands on the Dashboard and immediately sees
+// the same rec the morning email would have shown, in one place, with
+// no way to accidentally read a contradictory version from the Advice
+// tab or a stale AI regen. If there's no snapshot yet (fresh account,
+// briefing never fired) or no actionable card in the snapshot, the
+// component renders a soft prompt to generate one — not a scary
+// "no data" error.
+function TodaysActionCard({ sessionToken, onGoToAdvice }) {
+  const [snapshot, setSnapshot] = useState(null);
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-advice/snapshot`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (!cancelled && j && Array.isArray(j.advice)) setSnapshot(j);
+      } catch { /* silent — card just shows the empty state */ }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken]);
+
+  const advice = snapshot?.advice || [];
+  // Find the "Today's one action" card first (the briefing's section 4
+  // where the AI is instructed to name a single highest-conviction trade).
+  // Fall back to any card whose title starts with an action verb — covers
+  // section 0c hard-stop-exit lines or section 5 cash-deploy cards.
+  const ACTION_TITLE_RE = /(today.?s\s*one\s*action|one\s*action|action|exit\s*at\s*market)/i;
+  const VERB_RE = /^(🚨|⚠|👀|🔴|🟢|🛑|🎯)?\s*(BUY|SELL|TRIM|ADD|EXIT|HOLD|TIGHTEN|WATCH)\b/i;
+  const oneAction = advice.find(c => ACTION_TITLE_RE.test(c.title || ""))
+    || advice.find(c => VERB_RE.test((c.title || "").trim()))
+    || null;
+  const generatedAt = snapshot?.generatedAt ? new Date(snapshot.generatedAt) : null;
+  const staleness = generatedAt
+    ? (() => {
+        const hrs = (Date.now() - generatedAt.getTime()) / 3600000;
+        if (hrs < 1) return `${Math.round(hrs * 60)} min ago`;
+        if (hrs < 24) return `${hrs.toFixed(1)}h ago`;
+        return `${(hrs / 24).toFixed(1)}d ago`;
+      })()
+    : null;
+
+  // Empty state — no snapshot at all, or the snapshot has no actionable card.
+  if (!oneAction) {
+    return (
+      <div style={{
+        marginBottom: 12,
+        background: "var(--sa-panel-2)",
+        border: "1px solid var(--sa-border)",
+        borderRadius: 10, padding: "12px 14px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "var(--sa-muted)", textTransform: "uppercase", letterSpacing: ".05em" }}>📌 Today's action</div>
+            <div style={{ fontSize: 13, color: "var(--sa-muted)", marginTop: 4 }}>
+              {snapshot
+                ? "No actionable trade in the latest briefing — the plan today is HOLD across the board."
+                : "No briefing snapshot yet. Click Update Advice to generate today's plan."}
+            </div>
+          </div>
+          <button className="sa-btn secondary" onClick={onGoToAdvice} style={{ fontSize: 12 }}>Open Advice →</button>
+        </div>
+      </div>
+    );
+  }
+
+  // Trim the body so the card doesn't dominate the Dashboard. Keep the
+  // first ~360 chars — enough for the Action/Entry/Target/Stop/Account
+  // block plus a sentence of rationale. Full detail is one click away.
+  const bodyPreview = (oneAction.body || "").trim().slice(0, 360);
+  const truncated = (oneAction.body || "").length > 360;
+
+  return (
+    <div style={{
+      marginBottom: 12,
+      background: "linear-gradient(135deg, #eff6ff 0%, #ede9fe 100%)",
+      border: "1px solid #c7d2fe",
+      borderRadius: 10, padding: "12px 14px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 6 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: "#4338ca", textTransform: "uppercase", letterSpacing: ".06em" }}>📌 Today's action</span>
+          {staleness && (
+            <span style={{ fontSize: 11, color: "var(--sa-muted)" }}>
+              from briefing · {staleness}
+            </span>
+          )}
+        </div>
+        <button className="sa-btn secondary" onClick={onGoToAdvice} style={{ fontSize: 12 }}>Open full briefing →</button>
+      </div>
+      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: "#1e293b" }}>
+        {oneAction.title || "Today"}
+      </div>
+      <div style={{ fontSize: 12.5, color: "var(--sa-text-2)", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+        {bodyPreview}
+        {truncated && <span style={{ color: "var(--sa-muted)" }}>…</span>}
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder, sessionToken }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
@@ -2640,6 +2748,8 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         </div>
       </div>
       <div className="sa-disclaimer">Research and education only. Not licensed investment advice.</div>
+
+      <TodaysActionCard sessionToken={sessionToken} onGoToAdvice={() => onTab("advice")} />
 
       <PortfolioHealthChip user={user} regimeAndUoa={regimeAndUoa} />
 
