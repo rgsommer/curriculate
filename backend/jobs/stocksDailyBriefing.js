@@ -758,6 +758,16 @@ async function computeQuantSignals(profile, topN = 8) {
     if (!tickerInfo[p.ticker]) tickerInfo[p.ticker] = { ccy: p.ccy };
   }
   const tickers = Object.keys(tickerInfo).slice(0, topN);
+  // Position-book prices per ticker, in each ticker's native currency —
+  // the ground truth after the user's reconciliation. Used below to
+  // sanity-check whatever getTechnicals returns.
+  const bookPriceByTicker = {};
+  for (const p of profile.positions || []) {
+    const t = String(p.ticker || "").toUpperCase();
+    if (!t) continue;
+    const px = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+    if (Number.isFinite(px) && !bookPriceByTicker[t]) bookPriceByTicker[t] = px;
+  }
   const out = {};
   await Promise.all(
     tickers.map(async (ticker) => {
@@ -765,15 +775,38 @@ async function computeQuantSignals(profile, topN = 8) {
       // Pass currency so a CAD holding resolves to its TSX listing (ENB →
       // ENB.TO) — without it the technicals/last-price come from the US ADR
       // and the briefing reasons on the wrong market/currency.
-      const [tech, fund, catalysts, options] = await Promise.all([
+      let [tech, fund, catalysts, options] = await Promise.all([
         getTechnicals(ticker, ccy).catch(() => ({ ok: false })),
         getFundamentals(ticker, ccy).catch(() => ({ ok: false })),
         getCatalysts(ticker, ccy).catch(() => null),
         getOptionsMetrics(ticker).catch(() => null),
       ]);
+
+      // Sanity check — if getTechnicals returned a last price that
+      // disagrees with the user's reconciled position book by more than
+      // 30%, treat the WHOLE tech block as suspect and drop it. The
+      // user's book reconciles to CIBC daily; a data-provider that
+      // returns e.g. NVDA at $42.89 when the book says $206.81 is
+      // almost certainly serving stale / wrong / pre-split data, and
+      // any anchoring the AI does off tech.last (ATR stop, RSI, SMA
+      // deltas, Fib levels) will compound the error. Better a "tech
+      // unavailable" line than a confidently-wrong exit signal.
+      const bookPx = bookPriceByTicker[String(ticker).toUpperCase()];
+      if (tech && tech.ok && Number.isFinite(tech.last) && Number.isFinite(bookPx) && bookPx > 0) {
+        const drift = Math.abs(tech.last - bookPx) / bookPx;
+        if (drift > 0.30) {
+          console.warn(`[quant-signals] ${ticker}: tech.last=$${tech.last.toFixed(2)} vs position-book $${bookPx.toFixed(2)} (${(drift * 100).toFixed(0)}% drift) — dropping tech block`);
+          tech = {
+            ok: false,
+            reason: `data-feed returned $${tech.last.toFixed(2)} but the reconciled position book has $${bookPx.toFixed(2)} (${(drift * 100).toFixed(0)}% drift). Book overrides — use $${bookPx.toFixed(2)} as the current price. RSI / SMA / ATR / Fib suppressed to avoid anchoring on suspect data.`,
+          };
+        }
+      }
+
       // Short interest reads bimonthly FINRA data (cheap Yahoo call, 24h
       // cache) and takes optional tech context to compute the squeeze
-      // score — so it goes AFTER tech resolves.
+      // score — so it goes AFTER tech resolves (and the sanity-check
+      // above already replaced tech with an ok:false stub when suspect).
       const shortInterest = await getShortInterest(ticker, ccy, tech).catch(() => null);
       out[ticker] = { tech, fund, catalysts, shortInterest, options, ccy };
     })
