@@ -6424,7 +6424,7 @@ function StudentApp() {
         <button
           type="button"
           onClick={() => {
-            const shareText = "I just played some awesome team games on Curriculate — it would be amazing for your classroom! Check it out: https://curriculate.net?ref=share";
+            const shareText = "The best teachers make learning feel like this — I just played awesome team games on Curriculate. You should try it with your class: https://curriculate.net?ref=share";
             if (navigator.share) {
               navigator.share({ title: "Curriculate", text: shareText, url: "https://curriculate.net?ref=share" }).catch(() => {});
             } else {
