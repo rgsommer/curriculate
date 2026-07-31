@@ -793,6 +793,14 @@ function buildEmailHtml({
           The full printable report is attached as a PDF and is also available in your Curriculate <strong>Reports</strong> sidebar.
         </div>
 
+        <div style="margin-top:20px; padding:16px 18px; border-radius:14px; background:#fff7ed; border:1px solid #fed7aa; text-align:center;">
+          <div style="font-weight:800; font-size:14px; color:#9a3412; margin-bottom:4px;">Engaging students like this is great teaching.</div>
+          <div style="font-size:13px; color:#7c2d12; line-height:1.5; margin-bottom:12px;">
+            Keep the momentum going — get your class on the Curriculate app so they&rsquo;re playing your next session in seconds, on any phone or tablet.
+          </div>
+          <a href="https://curriculate.net/app" style="display:inline-block; background:#ea580c; color:#ffffff; text-decoration:none; font-weight:700; font-size:14px; padding:11px 24px; border-radius:999px;">📲 Get your class on the app</a>
+        </div>
+
         <div style="margin-top:16px; font-size:11px; color:#94a3b8;">
           Automated message from ${BRAND_NAME}. Replies may not be monitored.
         </div>
