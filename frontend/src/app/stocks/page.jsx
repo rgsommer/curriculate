@@ -1233,17 +1233,33 @@ export default function StocksAdvisorPage() {
         const basisDrift = (Number.isFinite(costBasis) && costBasis > 0)
           ? Math.abs(newPrice - costBasis) / costBasis : null;
         const priorDriftBad = priorRatio != null && (priorRatio > 3 || priorRatio < 0.333);
-        // A big basis drift alone isn't disqualifying — a real position
-        // held through a big move legitimately has current far from
-        // basis. Only reject when BOTH signals agree the number is
-        // implausible: prior-price ratio is extreme AND basis drift
-        // exceeds 50%. That combination is the specific NVDA-$42.55
-        // fingerprint (fresh reconciled book had NVDA at $206.81 →
-        // subsequent refresh returned $42.55, ratio 0.20, basis drift
-        // 79%, both signals concur so we skip).
-        if (priorDriftBad && basisDrift != null && basisDrift > 0.5) {
-          skipped.push(`${p.ticker} (feed said $${newPrice.toFixed(2)}, was $${currentPrice.toFixed(2)}, basis $${costBasis.toFixed(2)})`);
-          console.warn(`[refresh-prices] SKIPPED ${p.ticker}: feed=$${newPrice}, prior=$${currentPrice}, basis=$${costBasis} (ratio=${priorRatio.toFixed(2)}, basis-drift=${(basisDrift * 100).toFixed(0)}%)`);
+        // Reject the write when ANY of these fire:
+        //
+        //  (A) prior-price ratio is extreme (new > 3× prior OR < 1/3
+        //      prior) AND basis drift is extreme (> 50%). This is the
+        //      "big sudden move" case — new price disagrees with both
+        //      the previous stored value AND the cost basis. Almost
+        //      always a data-feed error caught mid-corruption.
+        //
+        //  (B) basis-drift is extreme downward — new price is < 25%
+        //      of cost basis. This is the "sticky corruption" case
+        //      where a prior refresh already poisoned the stored
+        //      price, so subsequent refreshes returning similar-
+        //      ballpark wrong values pass check (A) unchanged. The
+        //      original NVDA-$42.55 corruption was survived by the
+        //      first shipped guard because $42.55 → $43.65 is only
+        //      1.03× ratio, but $43.65 vs $206.81 basis is -79%
+        //      which triggers this rule. Real crash-day losses of
+        //      75%+ on a normal ticker without headline news are
+        //      vanishingly rare — if this misfires on a legitimate
+        //      catastrophic move, the trader can manually edit the
+        //      position row to override.
+        const extremeBasisDrop = Number.isFinite(costBasis) && costBasis > 0
+          && newPrice < costBasis * 0.25;
+        if ((priorDriftBad && basisDrift != null && basisDrift > 0.5) || extremeBasisDrop) {
+          const reason = extremeBasisDrop ? "new price <25% of basis (sticky-corruption fingerprint)" : "new price disagrees with both prior and basis (fresh-corruption fingerprint)";
+          skipped.push(`${p.ticker} (feed said $${newPrice.toFixed(2)}, was $${currentPrice?.toFixed(2) ?? "?"}, basis $${costBasis?.toFixed(2) ?? "?"} — ${reason})`);
+          console.warn(`[refresh-prices] SKIPPED ${p.ticker}: feed=$${newPrice}, prior=$${currentPrice}, basis=$${costBasis} (ratio=${priorRatio?.toFixed(2)}, basis-drift=${basisDrift != null ? (basisDrift * 100).toFixed(0) + "%" : "n/a"}) — ${reason}`);
           return p;
         }
         if (p.ccy === "USD") return { ...p, priceUsd: newPrice, priceCad: newPrice * fxRate };
