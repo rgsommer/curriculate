@@ -857,7 +857,14 @@
       "Bash(python3 -c \"import ast; ast.parse\\(open\\('modules/display_handler.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
       "Bash(awk -F: '$1>10020 && $1<10720')",
       "Bash(node --check src/app/stocks/page.jsx)",
-      "Bash(grep -n \"GET.*/api/stocks-advice\\\\|/stocks-advice/snapshot\\\\|/stocks-advice\\\\`\" /Users/richardsommer/dev/curriculate/frontend/src/app/stocks/page.jsx)"
+      "Bash(grep -n \"GET.*/api/stocks-advice\\\\|/stocks-advice/snapshot\\\\|/stocks-advice\\\\`\" /Users/richardsommer/dev/curriculate/frontend/src/app/stocks/page.jsx)",
+      "Bash(curl -s -A \"Mozilla/5.0 \\(Curriculate Stocks Proxy\\)\" \"https://query1.finance.yahoo.com/v8/finance/chart/NVDA?interval=1d&range=2d\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); m=d['chart']['result'][0]['meta']; print\\('regularMarketPrice:', m.get\\('regularMarketPrice'\\)\\); print\\('previousClose:', m.get\\('chartPreviousClose'\\)\\); print\\('currency:', m.get\\('currency'\\)\\); print\\('symbol:', m.get\\('symbol'\\)\\); print\\('exchange:', m.get\\('exchangeName'\\)\\)\")",
+      "Bash(awk -F: '$1>10000 && $1<10800')",
+      "Bash(grep -nE \"Powered by|curriculate.net|</body>|margin.*auto.*color:#9|font-size:1[12]px;color|Room \\\\\\\\\\\\$\\\\{|© \" transcriptEmailer.js)",
+      "Bash(awk -F: '$1>400 && $1<600')",
+      "Bash(awk 'NR>=413 && NR<=860 && \\(/return `/ || /^  `;/ || /<\\\\/div>\\\\s*$/ || /Powered|curriculate\\\\.net|footer|Thanks|Report generated|© /\\)' transcriptEmailer.js)",
+      "Bash(awk 'NR>=413 && NR<=860 && \\(/^  \\\\}\\\\s*$/ || /`;\\\\s*$/ || /return html/\\)' transcriptEmailer.js)"
     ]
   }
 }
