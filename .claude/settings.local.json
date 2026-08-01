@@ -864,7 +864,8 @@
       "Bash(grep -nE \"Powered by|curriculate.net|</body>|margin.*auto.*color:#9|font-size:1[12]px;color|Room \\\\\\\\\\\\$\\\\{|© \" transcriptEmailer.js)",
       "Bash(awk -F: '$1>400 && $1<600')",
       "Bash(awk 'NR>=413 && NR<=860 && \\(/return `/ || /^  `;/ || /<\\\\/div>\\\\s*$/ || /Powered|curriculate\\\\.net|footer|Thanks|Report generated|© /\\)' transcriptEmailer.js)",
-      "Bash(awk 'NR>=413 && NR<=860 && \\(/^  \\\\}\\\\s*$/ || /`;\\\\s*$/ || /return html/\\)' transcriptEmailer.js)"
+      "Bash(awk 'NR>=413 && NR<=860 && \\(/^  \\\\}\\\\s*$/ || /`;\\\\s*$/ || /return html/\\)' transcriptEmailer.js)",
+      "Bash(rm /Users/richardsommer/dev/curriculate/.git/index.lock *)"
     ]
   }
 }

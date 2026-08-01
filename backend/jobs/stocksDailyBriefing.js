@@ -1032,7 +1032,7 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     if (b.coreUnderweight) {
       const shortfall = b.rebalanceCad.core;
       chunks.push(
-        `- ⚠ **CORE UNDERWEIGHT**: ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target — deploy ~${m(Math.abs(shortfall))} into XIC / VUN / XEQT to restore the anchor.`
+        `- ⚠ **CORE UNDERWEIGHT**: ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target — gap of ~${m(Math.abs(shortfall))}. Close this via rotation (funnel proceeds from your next SWING/SPEC trims into XIU / VUN / XEQT instead of another swing) OR fresh cash deposit into XIU. This is NOT idle cash waiting to deploy — check the cash-inventory line above for actual free capital before proposing new BUYs.`
       );
     }
     if (b.swingUnderweight) {
@@ -1275,7 +1275,7 @@ Section-specific per-call rules (system prompt has the general shape 0–8; the 
    • If POSITION P&L STOP MONITOR shows a hard-stop hit — the deterministic renderer will have written an EXIT AT MARKET line for it. Section 4 should acknowledge that exit and use its proceeds in section 5's cash deployment.
    • If SLEEVE BALANCE shows 🚨 SPEC OVER LIMIT — sections 4 / 7 / 8 MUST NOT propose any high-vol / meme / unknown US name as a new BUY. Only Canadian large-caps and broad ETFs eligible. If the deterministic engine's swing pick is spec-classified, replace with "SPEC sleeve full — no new spec entries today. Trim [largest spec name] first" and route the trim into section 4.
    • If SLEEVE BALANCE shows 💡 SWING SLEEVE HAS ROOM — prefer Canadian large-caps in sections 4 / 7.
-   • If SLEEVE BALANCE shows ⚠ CORE UNDERWEIGHT — close section 4 with a "consider $X into XIC / VUN / XEQT to restore the anchor" note.
+   • If SLEEVE BALANCE shows ⚠ CORE UNDERWEIGHT — close section 4 with a rebalance-framed note, NOT a "deploy $X" note. The sleeve gap is not idle cash; it's the difference between current CORE weight and target. Options to close it: (a) rotate proceeds from proposed SWING/SPEC trims into XIU/VUN/XEQT instead of another swing pick, (b) recommend a fresh cash deposit if the trader has one queued in their contribution schedule. Cite the per-account cash inventory above to name what's actually available. NEVER phrase this as "deploy $X into XIU today" unless the trader has $X of unused CAD cash sitting in the right account — check first.
 
 0b. **✅ Trades you executed since last briefing** — REQUIRED when the "TRADES YOU EXECUTED SINCE LAST BRIEFING" block above is non-empty. Heading must be exactly "## ✅ Trades you executed". Write ONE line per BUY/SELL leg from the block, in this format:
    • For a BUY fulfilling an AI rec: "**BOUGHT** N sh TICKER @ $entry_actual CCY on YYYY-MM-DD — this fulfills the [target-hit/AI rec/high-conviction] BUY. Current price $X (Y% vs entry). Target $target, stop $stop. Position on track [OR: past halfway to target, tighten trailing stop / or: pulled back to entry, still valid]."

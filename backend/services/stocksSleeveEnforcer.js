@@ -192,7 +192,7 @@ export function formatSleeveBalanceBlock(bal) {
     lines.push(`  🚨 SPEC OVER LIMIT: ${m(excessCad)} excess. NO NEW SPEC POSITIONS today. Trim the largest spec name or wait for the sleeve to shrink back to 5% before proposing any new high-vol names.`);
   }
   if (bal.coreUnderweight) {
-    lines.push(`  ⚠ CORE UNDERWEIGHT (${dev(bal.deviations.core)}): consider adding to broad ETFs (XIC, VUN, XEQT) to restore anchor.`);
+    lines.push(`  ⚠ CORE UNDERWEIGHT (${dev(bal.deviations.core)}): sleeve gap of ~${m(Math.abs(bal.rebalanceCad.core))}. This is a rebalance gap, NOT idle cash. Close it via rotation (funnel proceeds from your next SWING/SPEC trims into XIU/VUN/XEQT instead of another swing pick) OR fresh cash deposits — check the per-account cash inventory before phrasing this as "deploy $X today".`);
   }
   if (bal.swingUnderweight) {
     lines.push(`  💡 SWING SLEEVE HAS ROOM: ${m(-bal.rebalanceCad.swing).replace("-", "")} available for a new Canadian large-cap swing entry. Prefer the RY/ENB template if a fresh setup appears.`);
