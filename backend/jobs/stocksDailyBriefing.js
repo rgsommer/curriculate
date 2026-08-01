@@ -998,11 +998,20 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     );
   }
 
-  // Confirmed hard stops.
+  // Confirmed hard stops. Each SELL is auto-paired with a CORE DEPLOY
+  // line when CORE is >10pp underweight — proceeds should not sit as
+  // idle cash while the sleeve gap is wide.
   for (const r of confirmedStops) {
+    const proceeds = (r.qty || 0) * (r.currentPrice || 0);
     mandatory.push(
       `**SELL AT MARKET** — ${r.ticker} in ${r.account}: ${r.qty} sh · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%). Hard-stop rule triggered. Sell at market or LIMIT at ~1% below current.`
     );
+    if (coreLockActive && proceeds > 0) {
+      const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";
+      mandatory.push(
+        `   → **CORE DEPLOY (paired with SELL above)** — After the ${r.ticker} SELL settles, use the ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds to BUY ${coreTicker} in **${r.account}** (same account, same currency). Uses proceeds from SELL of ${r.ticker} above (pro-forma). CORE gap is ${coreGapPp.toFixed(1)}pp — this is the required destination.`
+      );
+    }
   }
 
   // Price-integrity failures (implausible losses).
@@ -1020,7 +1029,9 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     );
   }
 
-  // Sleeve compliance trim mandate (SPEC over).
+  // Sleeve compliance trim mandate (SPEC over). Same auto-pairing as
+  // above: if CORE is underweight, the freed CAD from a SPEC trim
+  // routes to CORE by default.
   if (specOver) {
     const excessCad = (b.totals?.spec || 0) - (b.targetsCad?.spec || 0);
     const specByBase = {};
@@ -1033,6 +1044,11 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     mandatory.push(
       `**TRIM SPEC** — SPEC sleeve is ${m(excessCad)} over the ${b.targetsPct.spec.toFixed(0)}% cap (currently ${b.actualPct.spec.toFixed(1)}%).${largest ? ` Largest spec name: **${largest[0]}** (${m(largest[1])}) — trim first.` : ""} Proceeds route to CORE (see rebalance mandate) or cash.`
     );
+    if (coreLockActive) {
+      mandatory.push(
+        `   → **CORE DEPLOY (paired with TRIM above)** — Route the SPEC-trim proceeds (~${m(excessCad)} needed to reach cap) into XEQT / VUN / XIU in the same account and currency as the SELL. CORE gap is ${coreGapPp.toFixed(1)}pp — this is the required destination, not cash.`
+      );
+    }
   }
 
   // Within-stop tightens (secondary but still non-discretionary).
