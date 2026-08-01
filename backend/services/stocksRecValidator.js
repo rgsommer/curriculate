@@ -19,9 +19,16 @@
 //   sleeve-spec-cap-hard              — BUY on SPEC when SPEC is at/over cap
 //   sleeve-core-widen                 — new non-CORE BUY when CORE is >10pp under
 //   single-name-cap                   — BUY that would push one ticker past 15% of book
-//   sell-no-redeploy-core-underweight — SELL/TRIM with no companion BUY when
-//                                       CORE is >10pp under (batch rule — freed
-//                                       cash would widen the sleeve gap)
+//   sell-no-redeploy-core-underweight — SELL/TRIM with no companion CORE BUY
+//                                       when CORE is >10pp under (batch rule)
+//   sell-redeploy-account-mismatch    — SELL paired with CORE BUY in a
+//                                       different account (dormant until parser
+//                                       preserves account on <RECS>)
+//   buy-not-core-while-core-underweight — belt-and-suspenders batch backstop
+//                                       to the per-rec sleeve-core-widen rule
+//   cross-account-fragmentation       — BUY on a ticker already held in
+//                                       a different account (avoid paying
+//                                       commission per-account on future exits)
 //
 // Rules NOT yet enforced (data / infrastructure not ready):
 //   expectancy-floor        — needs source scorecard to accumulate n≥20
@@ -141,18 +148,44 @@ const RULES = [
 // array. validateRecs applies these rejections after per-rec rules.
 // ─────────────────────────────────────────────────────────────────────
 
+// CORE ETF bases (kept in sync with CORE_ETFS in stocksSleeveEnforcer).
+// Duplicated locally so the validator has no import cycle with the
+// enforcer and can be evolved independently. Any change here should
+// mirror there — otherwise a rec that classifies as CORE for sleeve
+// counting won't count as CORE for pairing satisfaction.
+const CORE_BUY_BASES = new Set([
+  "SPY", "VOO", "IVV", "VTI", "ITOT", "SPTM",
+  "QQQ", "VUG", "SCHG",
+  "IWM", "VB",
+  "XIU", "XIC", "VCN", "XEQT", "XGRO", "XBAL", "VBAL", "VGRO", "VEQT",
+  "VFV", "XUS", "VUN", "XUU",
+  "AGG", "BND", "XBB", "VAB", "ZAG", "TLT", "IEF",
+]);
+
+function isCoreBuy(rec) {
+  if (!rec || rec.action !== "BUY") return false;
+  return CORE_BUY_BASES.has(baseTicker(rec.ticker));
+}
+
+// Best-effort account equality. Returns true when either side omits an
+// account (parser doesn't preserve account today, so this is inert
+// for the AI-emitted rec path — but if a future parser change adds
+// account propagation, the check becomes active without a rewrite).
+function sameAccount(a, b) {
+  if (!a || !b) return true;
+  return String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+}
+
 // A discretionary SELL/TRIM that arrives at the validator was authored
 // by the AI (mandatory hard-stop SELLs are pre-rendered in the briefing
 // prefix and never round-trip through <RECS>). When CORE is >10pp
-// under target, that SELL MUST be paired with a companion BUY in the
-// same batch — otherwise the freed cash sits idle and the CORE gap
-// widens. The rule doesn't inspect ticker names on the redeploy
-// (matching "Cash source: from ENB SELL" prose would require passing
-// the raw briefing text through, which the parser doesn't preserve);
-// it enforces the weaker "must have SOME BUY" invariant, and relies on
-// ruleCoreGapWidening to force that companion BUY to be a CORE ticker.
-// The composition is deliberate — one rule ensures redeployment,
-// another ensures the redeployment lands on the correct sleeve.
+// under target, EVERY SELL/TRIM in the batch must be paired with a
+// companion CORE BUY (not just any BUY) — a SWING/SPEC BUY doesn't
+// close the sleeve gap, so pairing against it would still leave CORE
+// bleeding. This is deliberately stronger than the initial "any BUY"
+// version (per Grok's audit): naked SELLs, SELLs paired only with
+// SWING/SPEC BUYs, and BUYs that aren't CORE while the gap is open all
+// get rejected here at batch level.
 function ruleBatchPairedRedeploy(recs, ctx) {
   const bal = ctx.sleeveBalance;
   if (!bal || !bal.actualPct || !bal.targetsPct) return [];
@@ -162,22 +195,135 @@ function ruleBatchPairedRedeploy(recs, ctx) {
   // doesn't compound a gap that doesn't exist.
   if (coreGap <= 10) return [];
 
-  const sells = recs.map((r, i) => ({ r, i }))
-    .filter(x => x.r.action === "SELL" || x.r.action === "TRIM");
-  if (sells.length === 0) return [];
+  const list = recs || [];
+  const sells = list
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => r.action === "SELL" || r.action === "TRIM");
+  if (sells.length === 0 && list.filter(r => r.action === "BUY").length === 0) return [];
 
-  const buys = recs.filter(r => r.action === "BUY");
-  if (buys.length > 0) return []; // batch has a redeploy destination — allowed
+  // Pool of CORE BUYs available as redeploy destinations. Each CORE
+  // BUY can only cover ONE SELL (proceeds don't multiply); pairing
+  // preference is same-account-first, then any-account fallback.
+  const coreBuys = list
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => isCoreBuy(r));
+  const usedCoreBuyIdx = new Set();
 
-  return sells.map(({ r, i }) => ({
-    recIndex: i,
-    reason: "sell-no-redeploy-core-underweight",
-    detail: `${r.action} ${r.ticker} has no companion BUY in the same batch, but CORE is ${coreGap.toFixed(1)}pp underweight — the freed cash would compound the sleeve gap. Either pair this SELL with a CORE BUY (XEQT / VUN / XIU) in the SAME account and currency, or drop the SELL until a redeploy target is defined. AI proposed a naked ${r.action} — rejected.`,
-  }));
+  const rejections = [];
+
+  // For each SELL: find a CORE BUY match, prefer same-account.
+  for (const { r: sell, i: sellIdx } of sells) {
+    let match = coreBuys.find(({ r, i }) => !usedCoreBuyIdx.has(i) && sameAccount(sell.account, r.account));
+    if (!match) match = coreBuys.find(({ i }) => !usedCoreBuyIdx.has(i));
+    if (!match && coreBuys.length > 0) match = coreBuys[0]; // shared redeploy still better than none
+
+    if (!match) {
+      rejections.push({
+        recIndex: sellIdx,
+        reason: "sell-no-redeploy-core-underweight",
+        detail:
+          `${sell.action} ${sell.ticker} has no companion CORE BUY in the same batch, ` +
+          `but CORE is ${coreGap.toFixed(1)}pp underweight. Pair this ${sell.action} with a ` +
+          `CORE BUY (XEQT / VUN / XIU / VOO / VTI / …) in the same account and currency, ` +
+          `or drop the ${sell.action} until a redeploy target is defined. Naked ${sell.action} rejected.`,
+      });
+      continue;
+    }
+
+    usedCoreBuyIdx.add(match.i);
+
+    // Same-account mismatch reject (dormant until parser preserves
+    // account — see sameAccount comment). Keeps the "proceeds don't
+    // cross accounts" invariant enforceable end-to-end once account
+    // is threaded through the pipeline.
+    if (sell.account && match.r.account && !sameAccount(sell.account, match.r.account)) {
+      rejections.push({
+        recIndex: sellIdx,
+        reason: "sell-redeploy-account-mismatch",
+        detail:
+          `${sell.action} ${sell.ticker} in ${sell.account} is paired with CORE BUY ` +
+          `${match.r.ticker} in ${match.r.account}. Redeploy must stay in the same account ` +
+          `(proceeds do not automatically cross accounts). Rejected.`,
+      });
+    }
+  }
+
+  // Belt-and-suspenders: reject any non-CORE BUY at batch level while
+  // the gap is open. In the current pipeline this is largely redundant
+  // with ruleCoreGapWidening (per-rec, same >10pp threshold) so it
+  // typically only fires if the per-rec rule is disabled or its
+  // threshold drifts. Keeps the batch-level intent readable and the
+  // guarantee explicit.
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (r.action !== "BUY") continue;
+    if (isCoreBuy(r)) continue;
+    rejections.push({
+      recIndex: i,
+      reason: "buy-not-core-while-core-underweight",
+      detail:
+        `BUY ${r.ticker} is not a CORE ETF, but CORE is ${coreGap.toFixed(1)}pp underweight. ` +
+        `Only CORE ETFs (XEQT / VUN / XIU / VOO / VTI / …) are allowed as new buys until CORE ≥ target−10pp. Rejected.`,
+    });
+  }
+
+  return rejections;
+}
+
+// A BUY on a ticker the trader ALREADY holds in a DIFFERENT account
+// fragments the position across accounts. Every future SELL/rebalance
+// then costs an extra commission per account holding the name — so a
+// user with RY in RRSP + Non-Spousal pays 2× $9.95 to fully exit RY.
+// This rule blocks the fragmentation-widening BUY. Consolidating in
+// the already-held account (or picking a different ticker) is the
+// intended response.
+function ruleAccountFragmentation(recs, ctx) {
+  const positions = ctx.positions || [];
+  if (positions.length === 0) return [];
+
+  // Existing holdings grouped by base ticker → accounts holding it.
+  const held = new Map(); // base → Set<account>
+  for (const p of positions) {
+    if (!(p.qty > 0)) continue;
+    const base = baseTicker(p.ticker);
+    const acct = String(p.account || "").trim();
+    if (!base || !acct) continue;
+    if (!held.has(base)) held.set(base, new Set());
+    held.get(base).add(acct);
+  }
+  if (held.size === 0) return [];
+
+  const rejections = [];
+  for (let i = 0; i < (recs || []).length; i++) {
+    const r = recs[i];
+    if (r.action !== "BUY") continue;
+    const base = baseTicker(r.ticker);
+    const heldAccts = held.get(base);
+    if (!heldAccts || heldAccts.size === 0) continue;
+    // Parser doesn't preserve rec.account today, so we can't verify
+    // "BUY is in the already-held account" — the safest current
+    // response is: if the ticker is held ANYWHERE, warn/reject unless
+    // the rec explicitly names the same account. Once account
+    // propagation lands, tighten to "reject only when rec.account is
+    // absent from heldAccts".
+    if (r.account && heldAccts.has(String(r.account).trim())) continue;
+    const acctList = [...heldAccts].join(", ");
+    rejections.push({
+      recIndex: i,
+      reason: "cross-account-fragmentation",
+      detail:
+        `BUY ${r.ticker} would fragment the position across accounts — ${r.ticker} is already ` +
+        `held in ${acctList}. Every future SELL/rebalance then pays commission per account ` +
+        `holding the name. Add to the existing ${r.ticker} position in ${acctList} instead, ` +
+        `or pick a different ticker. Rejected.`,
+    });
+  }
+  return rejections;
 }
 
 const BATCH_RULES = [
   ruleBatchPairedRedeploy,
+  ruleAccountFragmentation,
 ];
 
 // ─────────────────────────────────────────────────────────────────────

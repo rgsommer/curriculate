@@ -42,6 +42,8 @@ import {
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown } from "../services/stocksMonthlyReport.js";
 import { briefingToAdviceCards } from "../jobs/stocksDailyBriefing.js";
+import { validateRecs, buildValidatorContext } from "../services/stocksRecValidator.js";
+import { computeSleeveBalance } from "../services/stocksSleeveEnforcer.js";
 import { getTechnicals, formatTechnicalsLine } from "../services/stocksTechnicals.js";
 import { getFundamentals, formatFundamentalsLine } from "../services/stocksFundamentals.js";
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
@@ -1603,13 +1605,35 @@ async function finalizeAdvice({ email, profile, textOut, sources = [], persistRe
     // defaults to display-only so it doesn't create rec rows that
     // compete with the morning briefing's canonical picks.
     try { await enrichRecsWithExitDefaults(recsToSave); } catch { /* ignore */ }
-    try {
-      inserted = await StocksAdviceRec.insertMany(recsToSave);
-    } catch (e) { console.warn("advice-rec save warning:", e?.message); }
-    inserted.forEach((doc, i) => {
-      const cardIdx = recCardIndices[i];
-      if (parsed.advice[cardIdx]) parsed.advice[cardIdx].recId = doc._id.toString();
+    // Post-generation validator — same hard gates as the cron path so
+    // sleeve caps, CORE-lock, single-name cap, SELL↔CORE pairing, and
+    // cross-account fragmentation are enforced regardless of which
+    // endpoint minted the rec. Rejected recs are dropped from the
+    // insert set and logged; card.recId only gets stamped on survivors.
+    const validatorCtx = buildValidatorContext({
+      positions: profile?.positions || [],
+      cashAccounts: profile?.accounts || [],
+      fxUsdCad: profile?.fxUsdCad,
+      sleeveTargets: profile?.sleeveTargets,
+      computeSleeveBalance,
     });
+    const { accepted, rejected } = validateRecs(recsToSave, validatorCtx);
+    // Map accepted rows back to their card indices so recId stamping
+    // stays aligned after rejects are filtered out.
+    const acceptedIndices = accepted.map(rec => recsToSave.indexOf(rec));
+    const survivingCardIdx = acceptedIndices.map(i => recCardIndices[i]);
+    if (rejected.length > 0) {
+      console.warn(`[advice-validator] rejected ${rejected.length}/${recsToSave.length} recs on ${email}`);
+    }
+    if (accepted.length > 0) {
+      try {
+        inserted = await StocksAdviceRec.insertMany(accepted);
+      } catch (e) { console.warn("advice-rec save warning:", e?.message); }
+      inserted.forEach((doc, i) => {
+        const cardIdx = survivingCardIdx[i];
+        if (parsed.advice[cardIdx]) parsed.advice[cardIdx].recId = doc._id.toString();
+      });
+    }
   }
 
   try {
@@ -2232,14 +2256,30 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     let inserted = [];
     if (recsToSave.length) {
       try { await enrichRecsWithExitDefaults(recsToSave); } catch { /* ignore */ }
-      try { inserted = await StocksAdviceRec.insertMany(recsToSave); } catch (e) {
-        console.warn("consensus rec save warning:", e?.message);
+      // Validator gate — same rules as cron + finalizeAdvice paths.
+      const validatorCtx = buildValidatorContext({
+        positions: profile?.positions || [],
+        cashAccounts: profile?.accounts || [],
+        fxUsdCad: profile?.fxUsdCad,
+        sleeveTargets: profile?.sleeveTargets,
+        computeSleeveBalance,
+      });
+      const { accepted, rejected } = validateRecs(recsToSave, validatorCtx);
+      const acceptedIndices = accepted.map(rec => recsToSave.indexOf(rec));
+      const survivingConsensusIdx = acceptedIndices.map(i => consensusIndexMap[i]);
+      if (rejected.length > 0) {
+        console.warn(`[consensus-validator] rejected ${rejected.length}/${recsToSave.length} recs`);
+      }
+      if (accepted.length > 0) {
+        try { inserted = await StocksAdviceRec.insertMany(accepted); } catch (e) {
+          console.warn("consensus rec save warning:", e?.message);
+        }
+        inserted.forEach((doc, i) => {
+          const consensusIdx = survivingConsensusIdx[i];
+          if (consensus[consensusIdx]) consensus[consensusIdx].recId = doc._id.toString();
+        });
       }
     }
-    inserted.forEach((doc, i) => {
-      const consensusIdx = consensusIndexMap[i];
-      if (consensus[consensusIdx]) consensus[consensusIdx].recId = doc._id.toString();
-    });
 
     // Post-validate quoted prices on BOTH consensus + alternatives so the
     // UI red-banner kicks in whichever bucket a stale rec lands in.
@@ -2549,16 +2589,30 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
     if (recs.length) {
       (async () => {
         try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
-        await StocksAdviceRec.insertMany(
-          recs.map((r) => ({
-            email,
-            generatedAt: new Date(),
-            source: "ai",
-            sourceLabel: "sonnet-briefing-ondemand",
-            ...r,
-            rationale: "On-demand briefing",
-          }))
-        );
+        // Validator gate — see cron path for rationale.
+        const validatorCtx = buildValidatorContext({
+          positions: profile?.positions || [],
+          cashAccounts: profile?.accounts || [],
+          fxUsdCad: profile?.fxUsdCad,
+          sleeveTargets: profile?.sleeveTargets,
+          computeSleeveBalance,
+        });
+        const { accepted, rejected } = validateRecs(recs, validatorCtx);
+        if (rejected.length > 0) {
+          console.warn(`[ondemand-validator] rejected ${rejected.length}/${recs.length} recs on ${email}`);
+        }
+        if (accepted.length > 0) {
+          await StocksAdviceRec.insertMany(
+            accepted.map((r) => ({
+              email,
+              generatedAt: new Date(),
+              source: "ai",
+              sourceLabel: "sonnet-briefing-ondemand",
+              ...r,
+              rationale: "On-demand briefing",
+            }))
+          );
+        }
       })().catch((e) => console.warn("brief-recs save warning:", e?.message));
       tracked = recs.length;
     }

@@ -939,12 +939,12 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 // Discipline-enforcing header that comes BEFORE the AI's narrative:
 //   1. MANDATORY ACTIONS  — every non-discretionary decision, priority-ordered
 //   2. FORBIDDEN TODAY    — every hard rule blocking new ideas
-//   3. OPTIONAL           — placeholder for AI-generated ideas below
-//   4. ONE-LINE STATUS    — 5-second scannable summary
+//   3. ONE-LINE STATUS    — 5-second scannable summary
+//   4. OPTIONAL           — placeholder for AI-generated ideas below
 //
-// Everything in sections 1/2/4 is derived deterministically from monitors
+// Everything in sections 1/2/3 is derived deterministically from monitors
 // the app already runs (stopMonitor, sleeveBalance, horizonRows). The AI
-// writes section 3 beneath (compact TICKER|ACTION|... table format) and
+// writes section 4 beneath (compact TICKER|ACTION|... table format) and
 // pushes monthly reports, macro, per-holding essays into an Appendix at
 // the very bottom.
 //
@@ -1100,12 +1100,9 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     chunks.push("");
   }
 
-  // ─── § 3. OPTIONAL ideas — placeholder heading, AI fills below ───
-  chunks.push("## 3. 💡 OPTIONAL ideas");
-  chunks.push("_(Only surface if all hard rules above are satisfied. AI writes compact TICKER | ACTION | SIZE | TRIGGER | STOP | NOTES table beneath this heading. Routine HOLDs stay one line each.)_");
-  chunks.push("");
-
-  // ─── § 4. ONE-LINE STATUS ───
+  // ─── § 3. ONE-LINE STATUS (5-second scan) ───
+  // Moved above §4 Optional so the reader can glance at portfolio
+  // posture before deciding whether to read any AI ideas.
   const corePct = b?.actualPct?.core != null ? `${b.actualPct.core.toFixed(1)}%` : "n/a";
   const specPct = b?.actualPct?.spec != null ? `${b.actualPct.spec.toFixed(1)}%` : "n/a";
   const coreGapStr = coreGapPp > 0.5 ? ` (gap −${coreGapPp.toFixed(1)}pp)` : "";
@@ -1113,8 +1110,13 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   const suspectStr = suspectStops.length > 0 ? ` (${suspectStops.length} suspect)` : "";
   const regimeStr = tradingRegime?.label || tradingRegime?.regime || "neutral";
   const newIdeasAllowed = (!coreLockActive && !specOver && !regimeHostile) ? "YES" : "BLOCKED";
-  chunks.push("## 4. 📊 Status");
+  chunks.push("## 3. 📊 Status");
   chunks.push(`CORE: ${corePct}${coreGapStr} · SPEC: ${specPct} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  chunks.push("");
+
+  // ─── § 4. OPTIONAL ideas — placeholder heading, AI fills below ───
+  chunks.push("## 4. 💡 OPTIONAL ideas");
+  chunks.push("_(Only surface if all hard rules above are satisfied. AI writes compact TICKER | ACTION | SIZE | TRIGGER | STOP | NOTES table beneath this heading. Routine HOLDs stay one line each.)_");
   chunks.push("");
 
   // ─── § 0 (bottom) — Open alerts (kept for continuity, moved out of primary flow) ───
@@ -1352,12 +1354,12 @@ STRUCTURAL DIRECTIVE — the briefing now uses a Daily Orders format. The backen
 
    §1. MANDATORY ACTIONS   (hard stops, price-verify flags, horizon expiries, sleeve rebalances, TRIM SPEC)
    §2. FORBIDDEN TODAY     (which new-BUY types are blocked by sleeve / concentration / price-integrity rules)
-   §3. OPTIONAL ideas      (heading only — YOU write beneath)
-   §4. ONE-LINE STATUS     (5-second scannable summary)
+   §3. ONE-LINE STATUS     (5-second scannable summary — CORE / SPEC / stops / regime / new-ideas allowed)
+   §4. OPTIONAL ideas      (heading only — YOU write beneath)
 
-YOU WRITE FROM SECTION 3 DOWNWARD. Do NOT write §1, §2, or §4 — they're pre-rendered from monitors and would be duplicated / contradicted if you re-emit them. Your output is:
+YOU WRITE FROM SECTION 4 DOWNWARD. Do NOT write §1, §2, or §3 — they're pre-rendered from monitors and would be duplicated / contradicted if you re-emit them. Your output is:
 
-   §3 body (compact table + optional narrative for any TRUE new ideas)
+   §4 body (compact table + optional narrative for any TRUE new ideas)
    §0b. ✅ Trades you executed since last briefing  (only when executed-trades block is non-empty)
    ---
    ## 📎 Appendix — research & context
@@ -1368,12 +1370,12 @@ YOU WRITE FROM SECTION 3 DOWNWARD. Do NOT write §1, §2, or §4 — they're pre
    §A5. Any deeper research
 
 Behavioural rules the pre-rendered §1/§2 imply that you must respect:
-   • If §1 shows a CORE REBALANCE mandate — §3 has ONE allowed BUY class: CORE ETFs (XEQT / VUN / XIU). Any SWING/SPEC "new idea" you'd have proposed is REPLACED with the rebalance. No exceptions.
-   • If §1 shows a SELL AT MARKET hard-stop hit — §3 acknowledges the exit and cites the proceeds destination (either the CORE rebalance or explicit next allowed BUY).
+   • If §1 shows a CORE REBALANCE mandate — §4 has ONE allowed BUY class: CORE ETFs (XEQT / VUN / XIU). Any SWING/SPEC "new idea" you'd have proposed is REPLACED with the rebalance. No exceptions.
+   • If §1 shows a SELL AT MARKET hard-stop hit — §4 acknowledges the exit and cites the proceeds destination (either the CORE rebalance or explicit next allowed BUY).
    • If §1 shows a VERIFY MANUALLY price-integrity flag — the flagged ticker gets ONE line in the Appendix per-holding table saying "PRICE SUSPECT — do not act". No SELL, no rec, no analysis of the fake number.
-   • If §2 forbids new SPEC / new SWING — do NOT surface any such rec in §3, even from Test A / Discovery pools. Replace with "SPEC/SWING blocked today per §2 forbidden list."
+   • If §2 forbids new SPEC / new SWING — do NOT surface any such rec in §4, even from Test A / Discovery pools. Replace with "SPEC/SWING blocked today per §2 forbidden list."
 
-§3 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
+§4 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
    TICKER | ACTION | SIZE | TRIGGER / LEVEL | STOP | NOTES (1 line)
    Example:
    TRP.TO | BUY | 45 sh | $99.60 max, GTC | $94.78 | Pocket pivot 59, SWING sleeve; funded by 53-sh ENB trim.
@@ -1385,9 +1387,9 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
    • BUY fulfilling AI rec: "**BOUGHT** N sh TICKER @ $entry CCY on YYYY-MM-DD — fulfills the [rec-type] BUY. Current $X (Y% vs entry). On track / past halfway / pulled back."
    • BUY without linked rec: "**BOUGHT** N sh TICKER @ $entry — no linked rec; treat as fresh."
    • SELL: "**SOLD** N sh TICKER @ $exit — [closed/trim/rebal]. Realized ~$Y."
-   **NO-REPEAT INVARIANT**: any ticker in the current-holdings table can ONLY appear as ADD / HOLD / TRIM / EXIT in §3 or the Appendix — never as a fresh BUY.
+   **NO-REPEAT INVARIANT**: any ticker in the current-holdings table can ONLY appear as ADD / HOLD / TRIM / EXIT in §4 or the Appendix — never as a fresh BUY.
 
-APPENDIX (## 📎 Appendix — research & context) — comes AFTER §3 + §0b, before the trailing <RECS> block. Everything below is optional depth for readers who want it, NOT primary action content:
+APPENDIX (## 📎 Appendix — research & context) — comes AFTER §4 + §0b, before the trailing <RECS> block. Everything below is optional depth for readers who want it, NOT primary action content:
 
    §A1. Overnight & macro (1 short paragraph — futures, VIX, USD/CAD, oil, Fed/BoC)
    §A2. Per-holding compact table — ONE line per held ticker:
@@ -1398,13 +1400,13 @@ APPENDIX (## 📎 Appendix — research & context) — comes AFTER §3 + §0b, b
    §A4. Performance snapshot — 1 line week/month/YTD alpha vs SPY/XIC.
    §A5. Any THESIS DISCIPLINE flag from horizon review that didn't already surface in §1.
 
-THESIS DISCIPLINE — MANDATORY, applies to §3 and §A2:
+THESIS DISCIPLINE — MANDATORY, applies to §4 and §A2:
    A TRIM/EXIT on a Curriculate-rec position is INVALID unless one of these fired: target-hit / stop-breached / horizon-expired / well-behind at ≥60% of horizon / material NEW information (earnings surprise, guidance change, downgrade, deal breakup, regulatory action, regime flip). Vague reasons ("small profit locked", "de-risk into the weekend") do NOT qualify.
 
 APPENDIX + <RECS> BLOCK ARE MANDATORY. Emit them EVERY briefing. If some holdings show data anomalies, FLAG each in §A2 with "PRICE SUSPECT" one-liners and CONTINUE — anomalies never truncate the briefing.
 ${cashSection}
 
-Use web_search aggressively — 6-10 searches focused on tickers that appear in §1 (need current context to justify or refute the mandated action) or §3 (any new idea needs current price/news verification). Skip web_search on quiet holdings in §A2.`;
+Use web_search aggressively — 6-10 searches focused on tickers that appear in §1 (need current context to justify or refute the mandated action) or §4 (any new idea needs current price/news verification). Skip web_search on quiet holdings in §A2.`;
 
   return { system: STATIC_SYSTEM_PROMPT, user: userMessage };
 }
@@ -2142,6 +2144,9 @@ export async function generateBriefing(profile) {
     // is the only copy in the final briefing.
     md = stripHeaderBlock(md, /^##\s*1\.\s*🚨?\s*MANDATORY ACTIONS.*$/im);
     md = stripHeaderBlock(md, /^##\s*2\.\s*🛑?\s*FORBIDDEN TODAY.*$/im);
+    md = stripHeaderBlock(md, /^##\s*3\.\s*📊?\s*Status.*$/im);
+    // Legacy strip for pre-reorder briefs still cached — §4 was Status
+    // before the swap. Safe to keep for a few weeks then remove.
     md = stripHeaderBlock(md, /^##\s*4\.\s*📊?\s*Status.*$/im);
     md = deterministicPrefix + "\n\n" + md.trim();
   }
@@ -2377,18 +2382,34 @@ export async function sendBriefingForUser(p, sendKey) {
       // Fill missing exit levels before persisting so every BUY is
       // monitorable and trail-eligible.
       try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
-      try {
-        await StocksAdviceRec.insertMany(
-          recs.map((r) => ({
-            email: p.email,
-            generatedAt: new Date(),
-            source: "ai",
-            sourceLabel: "sonnet-briefing-cron",
-            ...r,
-            rationale: "Daily briefing — server-side cron",
-          }))
-        );
-      } catch (e) { await recordFail("insertRecs", e); throw e; }
+      // Validator gate — mirror the subscriber-loop path so the
+      // dispatcher variant of the cron send doesn't bypass sleeve /
+      // pairing / concentration rules.
+      const validatorCtx = buildValidatorContext({
+        positions: p.positions,
+        cashAccounts: p.accounts,
+        fxUsdCad: p.fxUsdCad,
+        sleeveTargets: p.sleeveTargets,
+        computeSleeveBalance,
+      });
+      const { accepted: acceptedRecs, rejected: rejectedRecs } = validateRecs(recs, validatorCtx);
+      if (rejectedRecs.length > 0) {
+        console.warn(`[stocks-briefing/dispatch] ${p.email}: ${rejectedRecs.length} rec(s) rejected, ${acceptedRecs.length} accepted`);
+      }
+      if (acceptedRecs.length > 0) {
+        try {
+          await StocksAdviceRec.insertMany(
+            acceptedRecs.map((r) => ({
+              email: p.email,
+              generatedAt: new Date(),
+              source: "ai",
+              sourceLabel: "sonnet-briefing-cron",
+              ...r,
+              rationale: "Daily briefing — server-side cron",
+            }))
+          );
+        } catch (e) { await recordFail("insertRecs", e); throw e; }
+      }
     }
 
     // Stamp idempotency key + clear any prior error state (this send succeeded).
