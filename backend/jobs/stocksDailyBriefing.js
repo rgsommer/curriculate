@@ -40,6 +40,7 @@ import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../s
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
+import { validateRecs, buildValidatorContext } from "../services/stocksRecValidator.js";
 import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
 import { computeHorizonReview, formatHorizonReviewBlock } from "../services/stocksHorizonReview.js";
 import { computeTwrr } from "../services/stocksTwrr.js";
@@ -2128,16 +2129,35 @@ export async function runDailyBriefing(opts = {}) {
         // Ensure every BUY ships with target + stop — auto-fill from ATR
         // if the AI omitted them so no rec goes un-monitorable.
         await enrichRecsWithExitDefaults(recs);
-        await StocksAdviceRec.insertMany(
-          recs.map((r) => ({
-            email: p.email,
-            generatedAt: new Date(),
-            source: "ai",
-            sourceLabel: "sonnet-briefing-cron",
-            ...r,
-            rationale: "Daily briefing — server-side cron",
-          }))
-        );
+        // Post-generation validator — gate every rec against hard rules
+        // (sleeve caps, CORE-widening, single-name concentration) BEFORE
+        // it lands in the scorecard collection. Rejected recs are logged
+        // + skipped so the AI can never persist a BUY that violates the
+        // portfolio's own risk rules. See stocksRecValidator.js for the
+        // rule catalog.
+        const validatorCtx = buildValidatorContext({
+          positions: p.positions,
+          cashAccounts: p.accounts,
+          fxUsdCad: p.fxUsdCad,
+          sleeveTargets: p.sleeveTargets,
+          computeSleeveBalance,
+        });
+        const { accepted: acceptedRecs, rejected: rejectedRecs } = validateRecs(recs, validatorCtx);
+        if (acceptedRecs.length > 0) {
+          await StocksAdviceRec.insertMany(
+            acceptedRecs.map((r) => ({
+              email: p.email,
+              generatedAt: new Date(),
+              source: "ai",
+              sourceLabel: "sonnet-briefing-cron",
+              ...r,
+              rationale: "Daily briefing — server-side cron",
+            }))
+          );
+        }
+        if (rejectedRecs.length > 0) {
+          console.warn(`[stocks-briefing] ${p.email}: ${rejectedRecs.length} rec(s) rejected by validator, ${acceptedRecs.length} accepted`);
+        }
       }
       console.log(`[stocks-briefing] ✓ ${p.email} — ${recs.length} recs tracked`);
     } catch (err) {

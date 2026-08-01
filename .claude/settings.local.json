@@ -865,7 +865,9 @@
       "Bash(awk -F: '$1>400 && $1<600')",
       "Bash(awk 'NR>=413 && NR<=860 && \\(/return `/ || /^  `;/ || /<\\\\/div>\\\\s*$/ || /Powered|curriculate\\\\.net|footer|Thanks|Report generated|© /\\)' transcriptEmailer.js)",
       "Bash(awk 'NR>=413 && NR<=860 && \\(/^  \\\\}\\\\s*$/ || /`;\\\\s*$/ || /return html/\\)' transcriptEmailer.js)",
-      "Bash(rm /Users/richardsommer/dev/curriculate/.git/index.lock *)"
+      "Bash(rm /Users/richardsommer/dev/curriculate/.git/index.lock *)",
+      "Bash(git remote *)",
+      "Bash(node --check services/stocksRecValidator.js)"
     ]
   }
 }
