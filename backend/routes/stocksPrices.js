@@ -92,7 +92,7 @@ async function fetchOneFmp(ticker) {
 // The confidence tier is passed through to the frontend so the drift
 // guard there can be smarter over time (e.g. "if confidence is high
 // AND drift is <20%, always accept").
-async function fetchOne(ticker) {
+export async function fetchOne(ticker) {
   const [yahoo, fmp] = await Promise.all([
     fetchOneYahoo(ticker).catch(() => null),
     fetchOneFmp(ticker),

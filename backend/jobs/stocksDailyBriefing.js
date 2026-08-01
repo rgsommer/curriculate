@@ -40,7 +40,7 @@ import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../s
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
-import { validateRecs, buildValidatorContext } from "../services/stocksRecValidator.js";
+import { validateRecs, buildValidatorContext, fetchLivePricesForRecs } from "../services/stocksRecValidator.js";
 import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
 import { computeHorizonReview, formatHorizonReviewBlock } from "../services/stocksHorizonReview.js";
 import { computeTwrr } from "../services/stocksTwrr.js";
@@ -2189,6 +2189,13 @@ export async function generateBriefing(profile) {
   const rawRecs = parseRecsFromBriefing(md);
   if (Array.isArray(rawRecs) && rawRecs.length > 0) {
     try { await enrichRecsWithExitDefaults(rawRecs); } catch { /* ignore */ }
+    // Pre-fetch live cross-checked prices for every ticker in the batch
+    // so ruleLivePriceDrift can compare rec.entryPrice against a fresh
+    // Yahoo+FMP consensus. Missing prices → the rule silently no-ops
+    // for that ticker (fetch failure never blocks the whole batch).
+    let livePrices = {};
+    try { livePrices = await fetchLivePricesForRecs(rawRecs); }
+    catch (e) { console.warn("[briefing] livePrices fetch warn:", e?.message); }
     const validatorCtx = buildValidatorContext({
       positions: profile.positions,
       cashAccounts: profile.accounts,
@@ -2197,6 +2204,7 @@ export async function generateBriefing(profile) {
       computeSleeveBalance,
       sectorRotation,
       tradingRegime,
+      livePrices,
     });
     const result = validateRecs(rawRecs, validatorCtx);
     acceptedRecs = result.accepted || [];

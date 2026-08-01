@@ -32,12 +32,17 @@
 //   sector-laggard-hard-avoid         — BUY whose sector is bottom-3 by
 //                                       60d RS vs SPY when regime is
 //                                       hostile (CORE ETFs exempt)
+//   regime-hostile-no-new-swing-spec  — any BUY that isn't a CORE ETF
+//                                       when regime is hostile (broader
+//                                       than sector-laggard — even
+//                                       leader-sector SWING/SPEC blocked)
+//   price-drift-stale                 — rec.entryPrice is >5% away from
+//                                       the current Yahoo+FMP consensus;
+//                                       stale price → wrong sizing/stops
 //
 // Rules NOT yet enforced (data / infrastructure not ready):
 //   expectancy-floor        — needs source scorecard to accumulate n≥20
-//   regime-hard-gate        — needs regime module wired as input
 //   liquidity-floor         — needs per-ticker avg daily volume feed
-//   price-integrity         — needs live re-fetch on emit path
 //
 // Design principles:
 //   • Validators are pure functions — no I/O, no DB writes. Callers
@@ -135,10 +140,56 @@ function ruleSingleNameCap({ rec, ctx }) {
   };
 }
 
+// Live-price drift gate: if the rec's entryPrice is materially out of
+// sync with the current dual-source (Yahoo+FMP) price, the rec was
+// authored on stale data — sizing, stops, and target math all suffer.
+// Reject rather than persist a rec that will trigger at a wrong level
+// or lock in the wrong risk. The rule needs `ctx.livePrices[TICKER]`
+// pre-populated (the async fetch happens outside the validator, in
+// generateBriefing, so validator rules stay synchronous). Missing
+// livePrices entry → rule no-ops (don't block on missing data).
+const PRICE_DRIFT_THRESHOLD = 0.05; // 5% — tighter than the 10% cross-check disagreement threshold
+function ruleLivePriceDrift({ rec, ctx }) {
+  if (!rec.entryPrice || !rec.ticker) return { ok: true };
+  const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
+  if (!live || !(live.price > 0)) return { ok: true }; // no live data — don't block
+  const drift = Math.abs(live.price - rec.entryPrice) / Math.max(live.price, rec.entryPrice);
+  if (drift <= PRICE_DRIFT_THRESHOLD) return { ok: true };
+  const direction = rec.entryPrice > live.price ? "above" : "below";
+  return {
+    ok: false,
+    reason: "price-drift-stale",
+    detail: `${rec.action} ${rec.ticker} @ $${rec.entryPrice} ${rec.entryCurrency || ""} is ${(drift * 100).toFixed(1)}% ${direction} the current cross-checked price of $${live.price.toFixed(2)} (source: ${(live.sources || []).join("+") || "unknown"}, confidence: ${live.confidence || "unknown"}). Stale entry price means wrong sizing + wrong stop % + wrong trigger — refresh the price and re-emit.`,
+  };
+}
+
+// Regime hard gate: when the regime module flags an unfavourable tape
+// (risk-off / hostile / bear / contraction / distribution), block any
+// new BUY that isn't a CORE ETF. CORE keeps flowing so the sleeve
+// stays healthy even in bear regimes; discretionary SWING/SPEC entries
+// are what regime hostility is meant to suppress. Composes cleanly
+// with ruleSectorLaggardBuy (which handles a narrower "hostile AND
+// laggard sector" case for CORE-adjacent tickers).
+function ruleRegimeHostileNoNewSwingSpec({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  const regimeLabel = String(ctx.tradingRegime?.label || ctx.tradingRegime?.regime || "").toLowerCase();
+  const regimeHostile = /risk[- ]?off|hostile|bear|contract|distribut/i.test(regimeLabel);
+  if (!regimeHostile) return { ok: true };
+  if (isCoreBuy(rec)) return { ok: true };
+  const label = ctx.tradingRegime?.label || ctx.tradingRegime?.regime;
+  return {
+    ok: false,
+    reason: "regime-hostile-no-new-swing-spec",
+    detail: `BUY ${rec.ticker} is not a CORE ETF, but the regime detector flags **${label}**. Only CORE ETF adds (XEQT / VUN / XIU / VOO / VTI / …) are allowed until regime turns constructive. Wait for the regime to flip or route the capital to CORE instead.`,
+  };
+}
+
 const RULES = [
   ruleSpecCapHard,
   ruleCoreGapWidening,
   ruleSingleNameCap,
+  ruleRegimeHostileNoNewSwingSpec,
+  ruleLivePriceDrift,
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -460,7 +511,7 @@ export function validateRecs(recs, ctx) {
  * sites so they don't duplicate the same computeSleeveBalance +
  * totalCad + fx wiring.
  */
-export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleeveTargets, computeSleeveBalance, sectorRotation, tradingRegime, sectorHardAvoid }) {
+export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleeveTargets, computeSleeveBalance, sectorRotation, tradingRegime, sectorHardAvoid, livePrices }) {
   const fx = fxUsdCad || 1.37;
   const bookPositions = (positions || []).reduce((s, p) => {
     const cad = (Number.isFinite(p.priceCad) ? p.priceCad
@@ -482,5 +533,29 @@ export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleev
     sectorRotation: sectorRotation || null,
     tradingRegime: tradingRegime || null,
     sectorHardAvoid: sectorHardAvoid === true,
+    livePrices: livePrices || {},
   };
+}
+
+// Pre-fetch live cross-checked prices for the tickers a rec batch
+// references. Pass through to ctx.livePrices via buildValidatorContext
+// so ruleLivePriceDrift can consult per-ticker prices synchronously.
+// Rejects nothing on fetch failure — a ticker with no live data just
+// disables the drift check for that rec (the rule already no-ops).
+//
+// fetchOne is imported lazily to avoid the routes → services import
+// cycle that would form if this file top-level imported stocksPrices.
+export async function fetchLivePricesForRecs(recs) {
+  if (!Array.isArray(recs) || recs.length === 0) return {};
+  const { fetchOne } = await import("../routes/stocksPrices.js");
+  const uniqueTickers = [...new Set(recs.map(r => String(r.ticker || "").toUpperCase()).filter(Boolean))];
+  const entries = await Promise.all(uniqueTickers.map(async (t) => {
+    try {
+      const live = await fetchOne(t);
+      return [t, live];
+    } catch { return [t, null]; }
+  }));
+  const out = {};
+  for (const [t, live] of entries) if (live) out[t] = live;
+  return out;
 }
