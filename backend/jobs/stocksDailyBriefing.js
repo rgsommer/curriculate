@@ -33,7 +33,7 @@ import { getShortInterest, formatShortInterestLine } from "../services/stocksSho
 import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
 import { generateDailyPicksForUser } from "../services/stocksDailyPickEngine.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
-import { getSectorRotation, formatSectorRotationBlock } from "../services/stocksSectorRotation.js";
+import { getSectorRotation, formatSectorRotationBlock, formatSectorTiltLine, getSectorLaggards } from "../services/stocksSectorRotation.js";
 import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
 import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedLiquidity.js";
 import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
@@ -954,7 +954,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, horizonRows, tradingRegime }) {
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, horizonRows, tradingRegime, sectorRotation }) {
   const chunks = [];
   const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
   const IMPLAUSIBLE_LOSS_PCT = -50;
@@ -1094,6 +1094,17 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   if (regimeHostile) {
     forbidden.push(`**No new SWING or SPEC entries** — regime detector flags **${tradingRegime?.label || tradingRegime?.regime}**. Only CORE ETF adds allowed until regime turns constructive.`);
   }
+  // Sector-hostile gate: when regime is hostile AND we have sector
+  // rotation data, block any new BUY whose sector is in the bottom-3
+  // by 60d RS (CORE ETFs still allowed — sector tilt never overrides
+  // the CORE mandate). Same "sectorHardAvoid" mode below can be
+  // triggered by other future signals (Fed tightening, VIX spike).
+  const laggards = getSectorLaggards(sectorRotation, 3);
+  const sectorHardAvoid = regimeHostile;
+  if (sectorHardAvoid && laggards.length > 0) {
+    const laggardStr = laggards.map(l => `${l.symbol} (${l.name})`).join(", ");
+    forbidden.push(`**No new BUYs in laggard sectors** (${laggardStr}) — regime is hostile AND these sectors are in the bottom 3 by 60d RS vs SPY. CORE ETFs (XEQT/VUN/XIU/VOO) still allowed regardless of sector.`);
+  }
   if (forbidden.length > 0) {
     chunks.push("## 2. 🛑 FORBIDDEN TODAY");
     for (const line of forbidden) chunks.push(`- ${line}`);
@@ -1112,6 +1123,10 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   const newIdeasAllowed = (!coreLockActive && !specOver && !regimeHostile) ? "YES" : "BLOCKED";
   chunks.push("## 3. 📊 Status");
   chunks.push(`CORE: ${corePct}${coreGapStr} · SPEC: ${specPct} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  // Sector tilt one-liner — deterministic, no AI prose needed. Empty
+  // when sector data is unavailable (silent, not a "n/a" line).
+  const sectorTilt = formatSectorTiltLine(sectorRotation);
+  if (sectorTilt) chunks.push(sectorTilt);
   chunks.push("");
 
   // ─── § 4. OPTIONAL ideas — placeholder heading, AI fills below ───
@@ -1374,6 +1389,7 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
    • If §1 shows a SELL AT MARKET hard-stop hit — §4 acknowledges the exit and cites the proceeds destination (either the CORE rebalance or explicit next allowed BUY).
    • If §1 shows a VERIFY MANUALLY price-integrity flag — the flagged ticker gets ONE line in the Appendix per-holding table saying "PRICE SUSPECT — do not act". No SELL, no rec, no analysis of the fake number.
    • If §2 forbids new SPEC / new SWING — do NOT surface any such rec in §4, even from Test A / Discovery pools. Replace with "SPEC/SWING blocked today per §2 forbidden list."
+   • The §3 Status line includes a SECTOR TILT (Leaders / Laggards by 60d RS vs SPY). §4 new ideas MUST prefer leader-sector tickers; a laggard-sector name is only allowed with an explicit one-line exception reason ("earnings beat, RS turning"). CORE ETFs are always allowed regardless of sector tilt. Do NOT re-emit the sector ranking or write multi-paragraph sector commentary — the tilt line above is enough.
 
 §4 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
    TICKER | ACTION | SIZE | TRIGGER / LEVEL | STOP | NOTES (1 line)
@@ -1999,6 +2015,7 @@ export async function generateBriefing(profile) {
     positions: profile.positions || [],
     horizonRows,
     tradingRegime,
+    sectorRotation,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
@@ -2151,7 +2168,11 @@ export async function generateBriefing(profile) {
     md = deterministicPrefix + "\n\n" + md.trim();
   }
 
-  return md.trim();
+  // Return signals alongside the markdown so downstream persist sites
+  // can wire them into the rec validator without re-fetching. Callers
+  // that only need the string use `.md`; sectorRotation + tradingRegime
+  // feed the sector-laggard / regime-hostile gates in the validator.
+  return { md: md.trim(), sectorRotation, tradingRegime };
 }
 
 export async function emailBriefing({ to, subject, md }) {
@@ -2219,7 +2240,9 @@ export async function runDailyBriefing(opts = {}) {
 
   for (const p of portfolios) {
     try {
-      let md = await generateBriefing(p);
+      const gen = await generateBriefing(p);
+      let md = gen.md;
+      const briefingSignals = { sectorRotation: gen.sectorRotation, tradingRegime: gen.tradingRegime };
       if (includeMonthly) {
         const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
         const block = formatAllReportsMarkdown(reports);
@@ -2254,6 +2277,8 @@ export async function runDailyBriefing(opts = {}) {
           fxUsdCad: p.fxUsdCad,
           sleeveTargets: p.sleeveTargets,
           computeSleeveBalance,
+          sectorRotation: briefingSignals.sectorRotation,
+          tradingRegime: briefingSignals.tradingRegime,
         });
         const { accepted: acceptedRecs, rejected: rejectedRecs } = validateRecs(recs, validatorCtx);
         if (acceptedRecs.length > 0) {
@@ -2356,7 +2381,12 @@ export async function sendBriefingForUser(p, sendKey) {
   let md;
   try {
     const includeMonthly = isLastTradingDayOfMonth(new Date());
-    try { md = await generateBriefing(p); }
+    let dispatchSignals = { sectorRotation: null, tradingRegime: null };
+    try {
+      const gen = await generateBriefing(p);
+      md = gen.md;
+      dispatchSignals = { sectorRotation: gen.sectorRotation, tradingRegime: gen.tradingRegime };
+    }
     catch (e) { await recordFail("generateBriefing", e); throw e; }
     if (includeMonthly) {
       const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
@@ -2391,6 +2421,8 @@ export async function sendBriefingForUser(p, sendKey) {
         fxUsdCad: p.fxUsdCad,
         sleeveTargets: p.sleeveTargets,
         computeSleeveBalance,
+        sectorRotation: dispatchSignals.sectorRotation,
+        tradingRegime: dispatchSignals.tradingRegime,
       });
       const { accepted: acceptedRecs, rejected: rejectedRecs } = validateRecs(recs, validatorCtx);
       if (rejectedRecs.length > 0) {

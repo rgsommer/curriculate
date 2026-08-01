@@ -2257,12 +2257,17 @@ router.post("/consensus", requireStocksAuth, async (req, res) => {
     if (recsToSave.length) {
       try { await enrichRecsWithExitDefaults(recsToSave); } catch { /* ignore */ }
       // Validator gate — same rules as cron + finalizeAdvice paths.
+      // sectorRotation is already in scope from the Promise.all above.
+      // tradingRegime is not fetched here (consensus doesn't render the
+      // Daily Orders prefix directly), so sector-laggard rule fires on
+      // sectorHardAvoid only unless a caller sets that flag.
       const validatorCtx = buildValidatorContext({
         positions: profile?.positions || [],
         cashAccounts: profile?.accounts || [],
         fxUsdCad: profile?.fxUsdCad,
         sleeveTargets: profile?.sleeveTargets,
         computeSleeveBalance,
+        sectorRotation,
       });
       const { accepted, rejected } = validateRecs(recsToSave, validatorCtx);
       const acceptedIndices = accepted.map(rec => recsToSave.indexOf(rec));
@@ -2581,7 +2586,9 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
   }
 
   const workPromise = (async () => {
-    let markdown = await generateBriefing(profile);
+    const genResult = await generateBriefing(profile);
+    let markdown = genResult.md;
+    const briefingSignals = { sectorRotation: genResult.sectorRotation, tradingRegime: genResult.tradingRegime };
     await saveAdviceSnapshot({ email, markdown, source: "on-demand" });
 
     let tracked = 0;
@@ -2596,6 +2603,8 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
           fxUsdCad: profile?.fxUsdCad,
           sleeveTargets: profile?.sleeveTargets,
           computeSleeveBalance,
+          sectorRotation: briefingSignals.sectorRotation,
+          tradingRegime: briefingSignals.tradingRegime,
         });
         const { accepted, rejected } = validateRecs(recs, validatorCtx);
         if (rejected.length > 0) {

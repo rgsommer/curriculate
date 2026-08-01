@@ -29,6 +29,9 @@
 //   cross-account-fragmentation       — BUY on a ticker already held in
 //                                       a different account (avoid paying
 //                                       commission per-account on future exits)
+//   sector-laggard-hard-avoid         — BUY whose sector is bottom-3 by
+//                                       60d RS vs SPY when regime is
+//                                       hostile (CORE ETFs exempt)
 //
 // Rules NOT yet enforced (data / infrastructure not ready):
 //   expectancy-floor        — needs source scorecard to accumulate n≥20
@@ -48,6 +51,7 @@
 //     blocked and why (future UI: "rejected recs" section under Advice).
 
 import { classifyPosition } from "./stocksSleeveEnforcer.js";
+import { getSectorLaggards, mapTickerToSector } from "./stocksSectorRotation.js";
 
 // Base-ticker normalization — same rule the sleeve enforcer uses so a
 // CAD-listed holding and its US ADR aren't treated as separate exposures.
@@ -321,6 +325,48 @@ function ruleAccountFragmentation(recs, ctx) {
   return rejections;
 }
 
+// Reject a BUY whose sector is in the current bottom-3 by 60d RS
+// when the market is in a hard-avoid mode (regime hostile, or an
+// explicit ctx.sectorHardAvoid flag set by a caller). CORE ETFs are
+// exempt — sector tilt never overrides the CORE mandate. Unknown
+// tickers (not in TICKER_SECTOR_MAP) are also exempt — missing map
+// means no confident classification, so don't block. Soft-preference
+// for leader-sector tickers stays in the prompt; this rule is only
+// the hard gate.
+function ruleSectorLaggardBuy({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  // Never block CORE ETFs on sector grounds.
+  if (isCoreBuy(rec)) return { ok: true };
+  const sectorRotation = ctx.sectorRotation;
+  if (!sectorRotation?.rows?.length) return { ok: true };
+  // Hard-avoid mode required — otherwise sector tilt is only a
+  // preference, expressed in the prompt.
+  const regimeLabel = String(ctx.tradingRegime?.label || ctx.tradingRegime?.regime || "").toLowerCase();
+  const regimeHostile = /risk[- ]?off|hostile|bear|contract|distribut/i.test(regimeLabel);
+  const hardAvoid = ctx.sectorHardAvoid === true || regimeHostile;
+  if (!hardAvoid) return { ok: true };
+
+  const laggards = getSectorLaggards(sectorRotation, 3);
+  if (laggards.length === 0) return { ok: true };
+  const laggardSyms = new Set(laggards.map(l => l.symbol));
+
+  const sector = mapTickerToSector(rec.ticker);
+  if (!sector) return { ok: true }; // unknown ticker — don't block
+  if (!laggardSyms.has(sector)) return { ok: true };
+
+  const laggardName = laggards.find(l => l.symbol === sector)?.name || sector;
+  return {
+    ok: false,
+    reason: "sector-laggard-hard-avoid",
+    detail: `BUY ${rec.ticker} maps to sector **${sector} (${laggardName})** which is in the bottom 3 by 60d RS vs SPY. Regime is hostile, so laggard-sector new buys are hard-blocked. Prefer a leader-sector ticker or a CORE ETF (XEQT/VUN/XIU/VOO).`,
+  };
+}
+
+// Insert into per-rec RULES so the sector gate fires alongside
+// sleeve/concentration/cap checks. Uses ctx.sectorRotation +
+// ctx.tradingRegime; both are optional (rule no-ops if absent).
+RULES.push(ruleSectorLaggardBuy);
+
 const BATCH_RULES = [
   ruleBatchPairedRedeploy,
   ruleAccountFragmentation,
@@ -414,7 +460,7 @@ export function validateRecs(recs, ctx) {
  * sites so they don't duplicate the same computeSleeveBalance +
  * totalCad + fx wiring.
  */
-export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleeveTargets, computeSleeveBalance }) {
+export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleeveTargets, computeSleeveBalance, sectorRotation, tradingRegime, sectorHardAvoid }) {
   const fx = fxUsdCad || 1.37;
   const bookPositions = (positions || []).reduce((s, p) => {
     const cad = (Number.isFinite(p.priceCad) ? p.priceCad
@@ -428,5 +474,13 @@ export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleev
   const sleeveBalance = computeSleeveBalance
     ? computeSleeveBalance(positions || [], fx, sleeveTargets)
     : null;
-  return { positions: positions || [], sleeveBalance, bookCad, fxUsdCad: fx };
+  return {
+    positions: positions || [],
+    sleeveBalance,
+    bookCad,
+    fxUsdCad: fx,
+    sectorRotation: sectorRotation || null,
+    tradingRegime: tradingRegime || null,
+    sectorHardAvoid: sectorHardAvoid === true,
+  };
 }
