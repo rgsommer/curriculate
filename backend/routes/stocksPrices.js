@@ -19,7 +19,7 @@ const CACHE_TTL_MS = 60 * 1000;
 const MAX_TICKERS_PER_CALL = 50;
 const YAHOO_BASE = "https://query1.finance.yahoo.com/v8/finance/chart/";
 
-async function fetchOne(ticker) {
+async function fetchOneYahoo(ticker) {
   // Yahoo expects URL-encoded tickers (e.g. SLV.V → SLV.V is OK; BRK.B → BRK.B)
   const url = `${YAHOO_BASE}${encodeURIComponent(ticker)}?interval=1d&range=2d`;
   const ctrl = new AbortController();
@@ -45,6 +45,85 @@ async function fetchOne(ticker) {
   } finally {
     clearTimeout(tid);
   }
+}
+
+// Secondary source — FMP /stable/quote. Cross-checked against Yahoo below
+// so a single feed hallucinating a wrong price can't poison the position
+// book. Returns null (not throw) on any failure — we want to fall back
+// gracefully to Yahoo-only when FMP is down or unconfigured, not surface
+// noise to the caller.
+async function fetchOneFmp(ticker) {
+  const key = process.env.FMP_API_KEY || "";
+  if (!key) return null;
+  const url = `https://financialmodelingprep.com/stable/quote?symbol=${encodeURIComponent(ticker)}&apikey=${key}`;
+  const ctrl = new AbortController();
+  const tid = setTimeout(() => ctrl.abort(), 6000);
+  try {
+    const r = await fetch(url, { signal: ctrl.signal });
+    if (!r.ok) return null;
+    const j = await r.json();
+    const row = Array.isArray(j) ? j[0] : null;
+    if (!row || !Number.isFinite(row.price) || row.price <= 0) return null;
+    return {
+      price: row.price,
+      currency: row.currency || null, // FMP doesn't always report — Yahoo is authoritative here
+      changePct: Number.isFinite(row.changesPercentage) ? row.changesPercentage : null,
+    };
+  } catch { return null; } finally { clearTimeout(tid); }
+}
+
+// Dual-source price fetch with cross-check. Yahoo is the primary
+// authoritative feed (has been for the whole project). FMP is the
+// independent second opinion that catches the "Yahoo returned a wildly
+// wrong number for a specific ticker" failure mode we hit with the
+// NVDA-$42.55 / $43.65 sticky-corruption incidents.
+//
+// Cross-check logic:
+//   • Both sources agree within 3% → return with confidence: "high"
+//   • Disagree 3-10%             → return Yahoo's, confidence: "medium"
+//   • Disagree >10%              → SUSPICIOUS: refuse to return a price
+//     at all (throws "cross-check failed"). Client-side drift guard then
+//     doesn't get to write anything, preserving whatever priceUsd was
+//     stored before. Better a stale price than a confidently-wrong one.
+//   • Only Yahoo returns          → confidence: "medium" (single-source)
+//   • Only FMP returns            → confidence: "medium" (single-source)
+//   • Neither returns             → throw, caller marks as failed
+//
+// The confidence tier is passed through to the frontend so the drift
+// guard there can be smarter over time (e.g. "if confidence is high
+// AND drift is <20%, always accept").
+async function fetchOne(ticker) {
+  const [yahoo, fmp] = await Promise.all([
+    fetchOneYahoo(ticker).catch(() => null),
+    fetchOneFmp(ticker),
+  ]);
+  if (!yahoo && !fmp) throw new Error("no source returned a price");
+  if (yahoo && !fmp) {
+    return { ...yahoo, confidence: "medium", sources: ["yahoo"] };
+  }
+  if (!yahoo && fmp) {
+    return { ...fmp, currency: fmp.currency || "USD", confidence: "medium", sources: ["fmp"] };
+  }
+  // Both sources returned — cross-check.
+  const yp = yahoo.price;
+  const fp = fmp.price;
+  const disagreementPct = Math.abs(yp - fp) / Math.max(yp, fp);
+  if (disagreementPct > 0.10) {
+    console.warn(`[stocks-prices] ${ticker}: Yahoo=$${yp} vs FMP=$${fp} (${(disagreementPct * 100).toFixed(1)}% disagreement) — refusing to return a price`);
+    throw new Error(`cross-check failed: yahoo=$${yp} vs fmp=$${fp}`);
+  }
+  const confidence = disagreementPct <= 0.03 ? "high" : "medium";
+  if (confidence === "medium") {
+    console.log(`[stocks-prices] ${ticker}: Yahoo=$${yp} vs FMP=$${fp} — medium confidence (${(disagreementPct * 100).toFixed(1)}% apart)`);
+  }
+  return {
+    price: yp, // Yahoo remains the authoritative price value; FMP's role is verification.
+    currency: yahoo.currency,
+    changePct: yahoo.changePct,
+    confidence,
+    sources: ["yahoo", "fmp"],
+    disagreementPct: Number((disagreementPct * 100).toFixed(2)),
+  };
 }
 
 router.post("/", express.json({ limit: "16kb" }), async (req, res) => {
