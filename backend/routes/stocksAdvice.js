@@ -648,6 +648,12 @@ function parseRec(body) {
   // matching the same enum the RECS JSON block uses.
   const timingMatch = body.match(/Order timing:\s*(pre-market|at-open|post-10am|gtc)\b/i);
   const orderTiming = timingMatch ? timingMatch[1].toLowerCase() : null;
+  // Optional "Account:" line — the narrative-card equivalent of the
+  // account field on the JSON block. Free-string on purpose (RRSP,
+  // TFSA, Non-Spousal, "Non-Spousal USD"…). Trim whitespace, cap
+  // length so a malformed multi-line capture can't blow up the row.
+  const accountMatch = body.match(/^\s*Account:\s*([^\n\r]{1,60})/im);
+  const account = accountMatch ? accountMatch[1].trim() : null;
   return {
     action: action.toUpperCase(),
     shares,
@@ -658,6 +664,7 @@ function parseRec(body) {
     horizonDays,
     ...(entryCurrency ? { entryCurrency } : {}),
     ...(orderTiming ? { orderTiming } : {}),
+    ...(account ? { account } : {}),
   };
 }
 

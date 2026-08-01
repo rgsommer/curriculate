@@ -641,14 +641,15 @@ MANDATORY MACHINE-READABLE REC BLOCK — at the very end of the briefing, emit e
 
 <RECS>
 [
-  {"action":"BUY","ticker":"NVDA","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100,"orderTiming":"post-10am"},
-  {"action":"SELL","ticker":"ENB","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500,"orderTiming":"gtc"}
+  {"action":"BUY","ticker":"NVDA","account":"Non-Spousal USD","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100,"orderTiming":"post-10am"},
+  {"action":"SELL","ticker":"ENB","account":"RRSP","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500,"orderTiming":"gtc"}
 ]
 </RECS>
 
 Block rules:
 - One JSON object per actionable BUY / SELL / TRIM in the narrative. HOLD may be omitted.
 - ticker = exact exchange symbol, never a brand name.
+- account = REQUIRED — the exact account name from the per-account cash inventory block above (e.g. "RRSP", "TFSA", "Non-Spousal"). This is what activates the same-account SELL↔BUY pairing checks and the cross-account fragmentation gate. Missing account → validator treats the rec as unassigned and cannot pair it with sibling recs by account.
 - entry / target / stop = the numbers cited in the narrative, native currency. target and stop are REQUIRED for every BUY (not null).
 - currency = "USD" or "CAD", matches native listing.
 - horizonDays = integer (weeks × 7, months × 30).
@@ -1641,9 +1642,16 @@ function extractRecsFromJsonBlock(text) {
     const rawTiming = String(r.orderTiming || "").toLowerCase().trim();
     const orderTiming = ["pre-market", "at-open", "post-10am", "gtc"].includes(rawTiming)
       ? rawTiming : null;
+    // Account: free-string, whatever name the AI emitted. Trimmed +
+    // preserved as-is so downstream comparisons can match the profile's
+    // account labels. Null when omitted so legacy briefings keep
+    // working; validator rules that need account degrade gracefully.
+    const account = typeof r.account === "string" && r.account.trim()
+      ? r.account.trim() : null;
     out.push({
       action,
       ticker,
+      account,
       shares: Number.isFinite(+r.shares) ? Math.floor(+r.shares) : null,
       entryPrice,
       targetPrice: Number.isFinite(+r.target) ? +r.target

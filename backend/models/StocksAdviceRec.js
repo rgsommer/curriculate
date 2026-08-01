@@ -30,6 +30,11 @@ const StocksAdviceRecSchema = new mongoose.Schema(
     // Parsed from the recommendation body
     ticker: { type: String, required: true, uppercase: true },
     action: { type: String, enum: ["BUY", "SELL", "TRIM", "HOLD"], required: true },
+    // Target account for the trade (RRSP / TFSA / Non-Spousal / etc.).
+    // Free-string so a portfolio can rename its accounts without an
+    // enum migration. Optional — legacy recs and unspecified recs
+    // stay null. Populated by the <RECS> JSON block starting 2026-08.
+    account: { type: String, default: null, index: true },
     shares: { type: Number, default: null },
     entryPrice: { type: Number, default: null },
     entryCurrency: { type: String, enum: ["USD", "CAD"], default: "USD" },
