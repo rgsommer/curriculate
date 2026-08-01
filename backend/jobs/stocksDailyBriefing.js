@@ -2176,11 +2176,98 @@ export async function generateBriefing(profile) {
     md = deterministicPrefix + "\n\n" + md.trim();
   }
 
-  // Return signals alongside the markdown so downstream persist sites
-  // can wire them into the rec validator without re-fetching. Callers
-  // that only need the string use `.md`; sectorRotation + tradingRegime
-  // feed the sector-laggard / regime-hostile gates in the validator.
-  return { md: md.trim(), sectorRotation, tradingRegime };
+  // ─── Post-generation validation ───
+  // Parse the AI's <RECS> block, run the validator once here so every
+  // consumer sees the same accepted/rejected split — no more silent
+  // per-persist-site validation with divergent context or dropped recs
+  // that never make it back to the reader. Rejected recs get surfaced
+  // as a §5 block in the email so the user sees WHAT was proposed and
+  // WHY it was blocked, instead of learning "the AI proposed 5 recs
+  // and 3 disappeared" only from server logs.
+  let acceptedRecs = [];
+  let rejectedRecs = [];
+  const rawRecs = parseRecsFromBriefing(md);
+  if (Array.isArray(rawRecs) && rawRecs.length > 0) {
+    try { await enrichRecsWithExitDefaults(rawRecs); } catch { /* ignore */ }
+    const validatorCtx = buildValidatorContext({
+      positions: profile.positions,
+      cashAccounts: profile.accounts,
+      fxUsdCad: profile.fxUsdCad,
+      sleeveTargets: profile.sleeveTargets,
+      computeSleeveBalance,
+      sectorRotation,
+      tradingRegime,
+    });
+    const result = validateRecs(rawRecs, validatorCtx);
+    acceptedRecs = result.accepted || [];
+    rejectedRecs = result.rejected || [];
+    if (rejectedRecs.length > 0) {
+      // Inject §5 blocked-recs section directly above the <RECS> block
+      // so it reads chronologically after §4 Optional. Rewrite <RECS>
+      // to accepted-only so any downstream re-parser and the archived
+      // email content stay consistent with what actually persisted.
+      const blockedSection = renderBlockedRecsSection({ rejected: rejectedRecs });
+      const rewrittenRecsBlock = rewriteRecsBlock(acceptedRecs);
+      md = md.replace(
+        /<RECS>[\s\S]*?<\/RECS>/i,
+        `${blockedSection}\n\n${rewrittenRecsBlock}`
+      );
+    }
+  }
+
+  // Return signals + accepted/rejected recs alongside the markdown so
+  // persist sites can insertMany directly without re-parsing or
+  // re-validating. Callers that only want the string use `.md`.
+  return { md: md.trim(), sectorRotation, tradingRegime, acceptedRecs, rejectedRecs };
+}
+
+// Render the §5 "Blocked by validator" section for the email.
+// Empty string when nothing rejected — callers should suppress the
+// injection entirely rather than emitting a "0 blocked today" line.
+function renderBlockedRecsSection({ rejected }) {
+  if (!Array.isArray(rejected) || rejected.length === 0) return "";
+  const preface = rejected.length === 1
+    ? "One AI-emitted rec was rejected before persist — the system working as designed."
+    : `${rejected.length} AI-emitted recs were rejected before persist — the system working as designed.`;
+  const lines = [
+    `## 5. ⛔ Blocked by validator (${rejected.length})`,
+    "",
+    `${preface} Each violated a hard rule the portfolio has committed to.`,
+    "",
+  ];
+  for (const item of rejected) {
+    const r = item.rec || {};
+    const acctStr = r.account ? ` in **${r.account}**` : "";
+    const entryStr = r.entryPrice != null ? ` @ $${r.entryPrice}` : "";
+    const ccyStr = r.entryCurrency ? ` ${r.entryCurrency}` : "";
+    const sizeStr = r.shares ? ` (${r.shares} sh)` : "";
+    lines.push(`- **${r.action} ${r.ticker}**${acctStr}${sizeStr}${entryStr}${ccyStr}`);
+    for (const rej of (item.rejections || [])) {
+      lines.push(`  - \`${rej.reason}\` — ${rej.detail}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+// Rewrite the <RECS> JSON block from the accepted-only rec list. Keeps
+// the same shape the parser reads (action / ticker / account / entry /
+// target / stop / horizonDays / currency / shares / orderTiming) so
+// any downstream code that re-parses the archived md gets a truthful
+// list matching what actually persisted.
+function rewriteRecsBlock(accepted) {
+  const arr = (accepted || []).map(r => {
+    const o = { action: r.action, ticker: r.ticker };
+    if (r.account) o.account = r.account;
+    if (r.entryPrice != null) o.entry = r.entryPrice;
+    if (r.targetPrice != null) o.target = r.targetPrice;
+    if (r.stopPrice != null) o.stop = r.stopPrice;
+    if (r.horizonDays) o.horizonDays = r.horizonDays;
+    if (r.entryCurrency) o.currency = r.entryCurrency;
+    if (r.shares != null) o.shares = r.shares;
+    if (r.orderTiming) o.orderTiming = r.orderTiming;
+    return o;
+  });
+  return `<RECS>\n${JSON.stringify(arr, null, 2)}\n</RECS>`;
 }
 
 export async function emailBriefing({ to, subject, md }) {
@@ -2250,7 +2337,6 @@ export async function runDailyBriefing(opts = {}) {
     try {
       const gen = await generateBriefing(p);
       let md = gen.md;
-      const briefingSignals = { sectorRotation: gen.sectorRotation, tradingRegime: gen.tradingRegime };
       if (includeMonthly) {
         const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
         const block = formatAllReportsMarkdown(reports);
@@ -2267,43 +2353,25 @@ export async function runDailyBriefing(opts = {}) {
       // the same content the user just got in email (no extra AI call).
       await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron", criticViolations: audit.violations });
 
-      // Persist actionable recs for the scorecard
-      const recs = parseRecsFromBriefing(md);
-      if (recs.length) {
-        // Ensure every BUY ships with target + stop — auto-fill from ATR
-        // if the AI omitted them so no rec goes un-monitorable.
-        await enrichRecsWithExitDefaults(recs);
-        // Post-generation validator — gate every rec against hard rules
-        // (sleeve caps, CORE-widening, single-name concentration) BEFORE
-        // it lands in the scorecard collection. Rejected recs are logged
-        // + skipped so the AI can never persist a BUY that violates the
-        // portfolio's own risk rules. See stocksRecValidator.js for the
-        // rule catalog.
-        const validatorCtx = buildValidatorContext({
-          positions: p.positions,
-          cashAccounts: p.accounts,
-          fxUsdCad: p.fxUsdCad,
-          sleeveTargets: p.sleeveTargets,
-          computeSleeveBalance,
-          sectorRotation: briefingSignals.sectorRotation,
-          tradingRegime: briefingSignals.tradingRegime,
-        });
-        const { accepted: acceptedRecs, rejected: rejectedRecs } = validateRecs(recs, validatorCtx);
-        if (acceptedRecs.length > 0) {
-          await StocksAdviceRec.insertMany(
-            acceptedRecs.map((r) => ({
-              email: p.email,
-              generatedAt: new Date(),
-              source: "ai",
-              sourceLabel: "sonnet-briefing-cron",
-              ...r,
-              rationale: "Daily briefing — server-side cron",
-            }))
-          );
-        }
-        if (rejectedRecs.length > 0) {
-          console.warn(`[stocks-briefing] ${p.email}: ${rejectedRecs.length} rec(s) rejected by validator, ${acceptedRecs.length} accepted`);
-        }
+      // Persist actionable recs — generateBriefing already ran the
+      // validator so we just persist the accepted list. Rejected recs
+      // are already surfaced as §5 in the email that just went out.
+      const acceptedRecs = gen.acceptedRecs || [];
+      const rejectedRecs = gen.rejectedRecs || [];
+      if (acceptedRecs.length > 0) {
+        await StocksAdviceRec.insertMany(
+          acceptedRecs.map((r) => ({
+            email: p.email,
+            generatedAt: new Date(),
+            source: "ai",
+            sourceLabel: "sonnet-briefing-cron",
+            ...r,
+            rationale: "Daily briefing — server-side cron",
+          }))
+        );
+      }
+      if (rejectedRecs.length > 0) {
+        console.warn(`[stocks-briefing] ${p.email}: ${rejectedRecs.length} rec(s) rejected by validator, ${acceptedRecs.length} accepted`);
       }
       console.log(`[stocks-briefing] ✓ ${p.email} — ${recs.length} recs tracked`);
     } catch (err) {
@@ -2389,11 +2457,10 @@ export async function sendBriefingForUser(p, sendKey) {
   let md;
   try {
     const includeMonthly = isLastTradingDayOfMonth(new Date());
-    let dispatchSignals = { sectorRotation: null, tradingRegime: null };
+    let genResult = { acceptedRecs: [], rejectedRecs: [] };
     try {
-      const gen = await generateBriefing(p);
-      md = gen.md;
-      dispatchSignals = { sectorRotation: gen.sectorRotation, tradingRegime: gen.tradingRegime };
+      genResult = await generateBriefing(p);
+      md = genResult.md;
     }
     catch (e) { await recordFail("generateBriefing", e); throw e; }
     if (includeMonthly) {
@@ -2415,41 +2482,27 @@ export async function sendBriefingForUser(p, sendKey) {
     try { await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron", criticViolations: audit.violations }); }
     catch (e) { await recordFail("saveAdviceSnapshot", e); throw e; }
 
-    const recs = parseRecsFromBriefing(md);
-    if (recs.length) {
-      // Fill missing exit levels before persisting so every BUY is
-      // monitorable and trail-eligible.
-      try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
-      // Validator gate — mirror the subscriber-loop path so the
-      // dispatcher variant of the cron send doesn't bypass sleeve /
-      // pairing / concentration rules.
-      const validatorCtx = buildValidatorContext({
-        positions: p.positions,
-        cashAccounts: p.accounts,
-        fxUsdCad: p.fxUsdCad,
-        sleeveTargets: p.sleeveTargets,
-        computeSleeveBalance,
-        sectorRotation: dispatchSignals.sectorRotation,
-        tradingRegime: dispatchSignals.tradingRegime,
-      });
-      const { accepted: acceptedRecs, rejected: rejectedRecs } = validateRecs(recs, validatorCtx);
-      if (rejectedRecs.length > 0) {
-        console.warn(`[stocks-briefing/dispatch] ${p.email}: ${rejectedRecs.length} rec(s) rejected, ${acceptedRecs.length} accepted`);
-      }
-      if (acceptedRecs.length > 0) {
-        try {
-          await StocksAdviceRec.insertMany(
-            acceptedRecs.map((r) => ({
-              email: p.email,
-              generatedAt: new Date(),
-              source: "ai",
-              sourceLabel: "sonnet-briefing-cron",
-              ...r,
-              rationale: "Daily briefing — server-side cron",
-            }))
-          );
-        } catch (e) { await recordFail("insertRecs", e); throw e; }
-      }
+    // generateBriefing already ran parse + enrich + validate; §5
+    // section is in the email that just went out. Persist the
+    // accepted list directly.
+    const acceptedRecs = genResult.acceptedRecs || [];
+    const rejectedRecs = genResult.rejectedRecs || [];
+    if (rejectedRecs.length > 0) {
+      console.warn(`[stocks-briefing/dispatch] ${p.email}: ${rejectedRecs.length} rec(s) rejected, ${acceptedRecs.length} accepted`);
+    }
+    if (acceptedRecs.length > 0) {
+      try {
+        await StocksAdviceRec.insertMany(
+          acceptedRecs.map((r) => ({
+            email: p.email,
+            generatedAt: new Date(),
+            source: "ai",
+            sourceLabel: "sonnet-briefing-cron",
+            ...r,
+            rationale: "Daily briefing — server-side cron",
+          }))
+        );
+      } catch (e) { await recordFail("insertRecs", e); throw e; }
     }
 
     // Stamp idempotency key + clear any prior error state (this send succeeded).

@@ -2595,42 +2595,29 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
   const workPromise = (async () => {
     const genResult = await generateBriefing(profile);
     let markdown = genResult.md;
-    const briefingSignals = { sectorRotation: genResult.sectorRotation, tradingRegime: genResult.tradingRegime };
     await saveAdviceSnapshot({ email, markdown, source: "on-demand" });
 
-    let tracked = 0;
-    const recs = parseRecsFromBriefing(markdown);
-    if (recs.length) {
+    // generateBriefing already ran parse + enrich + validate; §5
+    // section is in the returned markdown. Persist accepted directly.
+    const accepted = genResult.acceptedRecs || [];
+    const rejected = genResult.rejectedRecs || [];
+    let tracked = accepted.length + rejected.length;
+    if (rejected.length > 0) {
+      console.warn(`[ondemand-validator] rejected ${rejected.length}/${tracked} recs on ${email}`);
+    }
+    if (accepted.length > 0) {
       (async () => {
-        try { await enrichRecsWithExitDefaults(recs); } catch { /* ignore */ }
-        // Validator gate — see cron path for rationale.
-        const validatorCtx = buildValidatorContext({
-          positions: profile?.positions || [],
-          cashAccounts: profile?.accounts || [],
-          fxUsdCad: profile?.fxUsdCad,
-          sleeveTargets: profile?.sleeveTargets,
-          computeSleeveBalance,
-          sectorRotation: briefingSignals.sectorRotation,
-          tradingRegime: briefingSignals.tradingRegime,
-        });
-        const { accepted, rejected } = validateRecs(recs, validatorCtx);
-        if (rejected.length > 0) {
-          console.warn(`[ondemand-validator] rejected ${rejected.length}/${recs.length} recs on ${email}`);
-        }
-        if (accepted.length > 0) {
-          await StocksAdviceRec.insertMany(
-            accepted.map((r) => ({
-              email,
-              generatedAt: new Date(),
-              source: "ai",
-              sourceLabel: "sonnet-briefing-ondemand",
-              ...r,
-              rationale: "On-demand briefing",
-            }))
-          );
-        }
+        await StocksAdviceRec.insertMany(
+          accepted.map((r) => ({
+            email,
+            generatedAt: new Date(),
+            source: "ai",
+            sourceLabel: "sonnet-briefing-ondemand",
+            ...r,
+            rationale: "On-demand briefing",
+          }))
+        );
       })().catch((e) => console.warn("brief-recs save warning:", e?.message));
-      tracked = recs.length;
     }
 
     // Price validation + corrective rewrite, same as before.
