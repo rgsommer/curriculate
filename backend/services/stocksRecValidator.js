@@ -39,10 +39,15 @@
 //   price-drift-stale                 — rec.entryPrice is >5% away from
 //                                       the current Yahoo+FMP consensus;
 //                                       stale price → wrong sizing/stops
+//   expectancy-floor-negative         — non-CORE BUY when user's overall
+//                                       AI-rec expectancy (n≥20) is ≤ -1%
+//                                       (process bleeding; slow down)
+//   liquidity-floor                   — non-CORE BUY on a name whose
+//                                       avg daily $ volume is below the
+//                                       sleeve-aware floor (SWING $10M,
+//                                       SPEC $3M CAD-equivalent)
 //
-// Rules NOT yet enforced (data / infrastructure not ready):
-//   expectancy-floor        — needs source scorecard to accumulate n≥20
-//   liquidity-floor         — needs per-ticker avg daily volume feed
+// (all planned rules landed — this list can be trimmed once dust settles)
 //
 // Design principles:
 //   • Validators are pure functions — no I/O, no DB writes. Callers
@@ -140,6 +145,65 @@ function ruleSingleNameCap({ rec, ctx }) {
   };
 }
 
+// Liquidity floor gate: block BUYs on tickers whose average daily
+// dollar volume is below the floor. Thin liquidity = wide spreads +
+// slippage + inability to exit at a sensible price if the thesis
+// breaks. CORE ETFs are always liquid — exempt. Unknown/missing
+// volume → no-op (missing data ≠ block). SPEC gets a lower floor
+// than SWING since micro-cap exposure IS the point of the sleeve;
+// the goal is to keep untradeable names out, not enforce large-cap-only.
+const LIQUIDITY_FLOOR_CAD = {
+  swing: 10_000_000, // $10M/day — enough for the trader's typical position size to be a rounding error
+  spec:   3_000_000, // $3M/day — permissive; smaller SPEC positions can survive here
+};
+function ruleLiquidityFloor({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  if (isCoreBuy(rec)) return { ok: true };
+  const liq = ctx.liquidity?.[String(rec.ticker).toUpperCase()];
+  if (!liq || !(liq.dailyDollarVol > 0)) return { ok: true }; // no data — skip
+  const fx = ctx.fxUsdCad || 1.37;
+  // Convert to CAD for uniform comparison. Liquidity is fetched from
+  // FMP in the security's listing currency, so USD tickers need FX.
+  const dvCad = liq.currency === "CAD" ? liq.dailyDollarVol : liq.dailyDollarVol * fx;
+  // Sleeve-aware floor via same classifier the enforcer uses. Default
+  // to SPEC floor for unclassified tickers (the stricter direction is
+  // "harder to trade"; SPEC floor is looser, so classify unknown as
+  // SPEC to avoid over-blocking).
+  const sleeve = classifyPosition({ ticker: rec.ticker });
+  const floor = LIQUIDITY_FLOOR_CAD[sleeve] ?? LIQUIDITY_FLOOR_CAD.spec;
+  if (dvCad >= floor) return { ok: true };
+  const dvStr = dvCad >= 1e6 ? `$${(dvCad / 1e6).toFixed(1)}M` : `$${(dvCad / 1e3).toFixed(0)}k`;
+  const floorStr = `$${(floor / 1e6).toFixed(0)}M`;
+  return {
+    ok: false,
+    reason: "liquidity-floor",
+    detail: `BUY ${rec.ticker} rejected — avg daily dollar volume ${dvStr} CAD is below the ${sleeve.toUpperCase()} sleeve floor of ${floorStr} CAD. Thin liquidity means wide spreads and exit slippage — pick a more liquid name in the same sector.`,
+  };
+}
+
+// Expectancy floor gate: if the user's recent AI-emitted rec history
+// has closed enough trades to be statistically meaningful (n ≥ 20)
+// AND overall expectancy is deeply negative (≤ -1% avg return per
+// trade), block new BUYs on non-CORE tickers. Point isn't to freeze
+// the whole book — CORE ETF rebalances still fire — but to force a
+// pause on discretionary swing/spec entries while the AI's process
+// is bleeding, so the user doesn't compound losses on autopilot.
+// Missing ctx.userExpectancy → no-op. Underpowered sample (<20) →
+// no-op (expectancy math too noisy to gate on).
+const EXPECTANCY_FLOOR_PCT = -1.0;
+function ruleExpectancyFloor({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  if (isCoreBuy(rec)) return { ok: true }; // CORE always allowed
+  const exp = ctx.userExpectancy;
+  if (!exp || !exp.proven) return { ok: true };
+  if (exp.expectancyPct == null || exp.expectancyPct > EXPECTANCY_FLOOR_PCT) return { ok: true };
+  return {
+    ok: false,
+    reason: "expectancy-floor-negative",
+    detail: `BUY ${rec.ticker} rejected — recent AI-rec expectancy is ${exp.expectancyPct.toFixed(2)}% over ${exp.trades} closed trades (win rate ${exp.winRate.toFixed(1)}%). Below the ${EXPECTANCY_FLOOR_PCT}% floor. Discretionary BUYs paused until expectancy recovers; CORE rebalances still allowed. Consider what's dragging performance (source scorecard) before overriding.`,
+  };
+}
+
 // Live-price drift gate: if the rec's entryPrice is materially out of
 // sync with the current dual-source (Yahoo+FMP) price, the rec was
 // authored on stale data — sizing, stops, and target math all suffer.
@@ -190,6 +254,8 @@ const RULES = [
   ruleSingleNameCap,
   ruleRegimeHostileNoNewSwingSpec,
   ruleLivePriceDrift,
+  ruleLiquidityFloor,
+  ruleExpectancyFloor,
 ];
 
 // ─────────────────────────────────────────────────────────────────────
@@ -511,7 +577,7 @@ export function validateRecs(recs, ctx) {
  * sites so they don't duplicate the same computeSleeveBalance +
  * totalCad + fx wiring.
  */
-export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleeveTargets, computeSleeveBalance, sectorRotation, tradingRegime, sectorHardAvoid, livePrices }) {
+export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleeveTargets, computeSleeveBalance, sectorRotation, tradingRegime, sectorHardAvoid, livePrices, userExpectancy, liquidity }) {
   const fx = fxUsdCad || 1.37;
   const bookPositions = (positions || []).reduce((s, p) => {
     const cad = (Number.isFinite(p.priceCad) ? p.priceCad
@@ -534,6 +600,76 @@ export function buildValidatorContext({ positions, cashAccounts, fxUsdCad, sleev
     tradingRegime: tradingRegime || null,
     sectorHardAvoid: sectorHardAvoid === true,
     livePrices: livePrices || {},
+    userExpectancy: userExpectancy || null,
+    liquidity: liquidity || {},
+  };
+}
+
+// Pre-fetch avg daily $ volume for the tickers a rec batch references
+// via FMP realtime quote. Returns { TICKER: { avgVolume, price,
+// dailyDollarVol, currency } }. FMP handles both US and Canadian
+// listings; missing key or fetch failure → empty map (rule no-ops).
+// Dynamic import mirrors fetchLivePricesForRecs to avoid import cycles.
+export async function fetchLiquidityForRecs(recs) {
+  if (!Array.isArray(recs) || recs.length === 0) return {};
+  const { getRealtimeQuote } = await import("./stocksIntradayFmp.js");
+  const items = [...new Set(recs.map(r => ({
+    ticker: String(r.ticker || "").toUpperCase(),
+    currency: r.entryCurrency || "USD",
+  })).filter(x => x.ticker).map(x => JSON.stringify(x)))].map(s => JSON.parse(s));
+  const entries = await Promise.all(items.map(async ({ ticker, currency }) => {
+    try {
+      const q = await getRealtimeQuote(ticker, currency);
+      if (!q || !Number.isFinite(q.avgVolume) || !Number.isFinite(q.price)) return [ticker, null];
+      return [ticker, {
+        avgVolume: q.avgVolume,
+        price: q.price,
+        dailyDollarVol: q.avgVolume * q.price,
+        currency,
+      }];
+    } catch { return [ticker, null]; }
+  }));
+  const out = {};
+  for (const [t, v] of entries) if (v) out[t] = v;
+  return out;
+}
+
+// Compute overall user expectancy from AI-emitted recs that have
+// closed (target-hit / stop-hit / expired) in the last `days` window.
+// Aggregates ALL sourceLabels — a v1 signal to detect "the process is
+// currently bleeding" without needing per-source stratification.
+// Returns null-ish for underpowered samples (rule then no-ops).
+export async function computeUserExpectancy({ email, days = 90 }) {
+  const { default: StocksAdviceRec } = await import("../models/StocksAdviceRec.js");
+  const since = new Date(Date.now() - days * 86400 * 1000);
+  const recs = await StocksAdviceRec.find({
+    email,
+    generatedAt: { $gte: since },
+    status: { $in: ["target-hit", "stop-hit", "expired"] },
+    entryPrice: { $gt: 0 },
+    hitPrice: { $gt: 0 },
+  }).select("action entryPrice hitPrice").lean();
+
+  const returns = [];
+  for (const r of recs) {
+    const dir = r.action === "BUY" ? 1 : -1;
+    const ret = ((r.hitPrice - r.entryPrice) / r.entryPrice) * 100 * dir;
+    if (Number.isFinite(ret)) returns.push(ret);
+  }
+  if (returns.length === 0) {
+    return { trades: 0, expectancyPct: null, winRate: 0, proven: false };
+  }
+  const wins = returns.filter(x => x > 0);
+  const losses = returns.filter(x => x <= 0);
+  const winRate = wins.length / returns.length;
+  const avgWin = wins.length ? wins.reduce((s, x) => s + x, 0) / wins.length : 0;
+  const avgLoss = losses.length ? losses.reduce((s, x) => s + x, 0) / losses.length : 0;
+  const expectancyPct = winRate * avgWin + (1 - winRate) * avgLoss;
+  return {
+    trades: returns.length,
+    expectancyPct,
+    winRate: winRate * 100,
+    proven: returns.length >= 20,
   };
 }
 

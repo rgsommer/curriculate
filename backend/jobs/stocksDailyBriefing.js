@@ -40,7 +40,7 @@ import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../s
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
-import { validateRecs, buildValidatorContext, fetchLivePricesForRecs } from "../services/stocksRecValidator.js";
+import { validateRecs, buildValidatorContext, fetchLivePricesForRecs, computeUserExpectancy, fetchLiquidityForRecs } from "../services/stocksRecValidator.js";
 import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
 import { computeHorizonReview, formatHorizonReviewBlock } from "../services/stocksHorizonReview.js";
 import { computeTwrr } from "../services/stocksTwrr.js";
@@ -2193,9 +2193,22 @@ export async function generateBriefing(profile) {
     // so ruleLivePriceDrift can compare rec.entryPrice against a fresh
     // Yahoo+FMP consensus. Missing prices → the rule silently no-ops
     // for that ticker (fetch failure never blocks the whole batch).
-    let livePrices = {};
-    try { livePrices = await fetchLivePricesForRecs(rawRecs); }
-    catch (e) { console.warn("[briefing] livePrices fetch warn:", e?.message); }
+    // Parallel-fetch everything the validator needs from the network:
+    //   • Live prices (Yahoo+FMP cross-check) → drift gate
+    //   • Liquidity (FMP realtime quote avgVolume) → liquidity gate
+    //   • User expectancy (Mongo aggregation) → expectancy gate
+    // All optional — rules no-op on missing data individually.
+    const [livePrices, liquidity, userExpectancy] = await Promise.all([
+      fetchLivePricesForRecs(rawRecs).catch(e => {
+        console.warn("[briefing] livePrices fetch warn:", e?.message); return {};
+      }),
+      fetchLiquidityForRecs(rawRecs).catch(e => {
+        console.warn("[briefing] liquidity fetch warn:", e?.message); return {};
+      }),
+      computeUserExpectancy({ email: profile.email, days: 90 }).catch(e => {
+        console.warn("[briefing] userExpectancy fetch warn:", e?.message); return null;
+      }),
+    ]);
     const validatorCtx = buildValidatorContext({
       positions: profile.positions,
       cashAccounts: profile.accounts,
@@ -2205,6 +2218,8 @@ export async function generateBriefing(profile) {
       sectorRotation,
       tradingRegime,
       livePrices,
+      liquidity,
+      userExpectancy,
     });
     const result = validateRecs(rawRecs, validatorCtx);
     acceptedRecs = result.accepted || [];
