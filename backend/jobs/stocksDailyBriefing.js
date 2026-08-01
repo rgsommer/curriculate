@@ -935,113 +935,176 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 // surface, so the AI-generated briefing renders unchanged in the
 // quiet-tape case.
 // ─────────────────────────────────────────────────────────────────────
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions }) {
+// Daily Orders — the new briefing structure (task #133 follow-on).
+// Discipline-enforcing header that comes BEFORE the AI's narrative:
+//   1. MANDATORY ACTIONS  — every non-discretionary decision, priority-ordered
+//   2. FORBIDDEN TODAY    — every hard rule blocking new ideas
+//   3. OPTIONAL           — placeholder for AI-generated ideas below
+//   4. ONE-LINE STATUS    — 5-second scannable summary
+//
+// Everything in sections 1/2/4 is derived deterministically from monitors
+// the app already runs (stopMonitor, sleeveBalance, horizonRows). The AI
+// writes section 3 beneath (compact TICKER|ACTION|... table format) and
+// pushes monthly reports, macro, per-holding essays into an Appendix at
+// the very bottom.
+//
+// Design goals baked in:
+//   • Actionable part (§1-2) readable in ≤90 seconds.
+//   • Corrupted/low-confidence prices can never generate a SELL order —
+//     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
+//   • CORE-under-70% locks new discretionary buys via §2.
+//   • Sleeve/concentration rules are structural, not advisory.
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, horizonRows, tradingRegime }) {
   const chunks = [];
+  const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
+  const IMPLAUSIBLE_LOSS_PCT = -50;
+  const CORE_LOCK_GAP_PP = 10; // if CORE is >10pp under target, block new non-CORE buys
 
-  // Section 0 — Open recommendation alerts. Alerts are already
-  // formatted upstream (they carry their own emoji / stop-hit
-  // phrasing); we just surface them verbatim under the fixed heading.
-  chunks.push("## 🚨 Open recommendation alerts");
-  if (Array.isArray(monitorAlerts) && monitorAlerts.length > 0) {
-    for (const a of monitorAlerts) chunks.push(`- ${a}`);
+  // ─── Split hard-stops into confirmed vs implausible-suspect ───
+  const stopHits = stopMonitor?.hardStopHit || [];
+  const confirmedStops = [];
+  const suspectStops = [];
+  for (const r of stopHits) {
+    if (r.pnlPct <= IMPLAUSIBLE_LOSS_PCT) {
+      suspectStops.push(r);
+      console.warn(`[stop-check] SUPPRESSED implausible EXIT for ${r.ticker}: pnl ${r.pnlPct.toFixed(1)}% (basis $${r.costBasis}, now $${r.currentPrice}) — likely data-feed corruption`);
+    } else {
+      confirmedStops.push(r);
+    }
+  }
+  const withinStops = stopMonitor?.withinStop || [];
+
+  // ─── Sleeve status flags ───
+  const b = sleeveBalance;
+  const coreGapPp = b?.actualPct?.core != null && b?.targetsPct?.core != null
+    ? b.targetsPct.core - b.actualPct.core : 0;
+  const coreLockActive = coreGapPp > CORE_LOCK_GAP_PP;
+  const specOver = !!b?.specOverLimit;
+  const swingHasRoom = !!b?.swingUnderweight;
+
+  // ─── Horizon expiries needing action ───
+  const expiredRecs = (horizonRows || []).filter(r => r.status === "expired");
+  const wellBehindRecs = (horizonRows || []).filter(r => r.status === "well-behind" && r.daysElapsed / r.horizonDays >= 0.6);
+
+  // ─── § 1. MANDATORY ACTIONS ───
+  chunks.push("## 1. 🚨 MANDATORY ACTIONS (do these today)");
+  const mandatory = [];
+
+  // Rebalance if CORE is severely under.
+  if (coreLockActive) {
+    const gap = Math.abs(b.rebalanceCad?.core || 0);
+    mandatory.push(
+      `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct all free cash AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.**`
+    );
+  }
+
+  // Confirmed hard stops.
+  for (const r of confirmedStops) {
+    mandatory.push(
+      `**SELL AT MARKET** — ${r.ticker} in ${r.account}: ${r.qty} sh · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%). Hard-stop rule triggered. Sell at market or LIMIT at ~1% below current.`
+    );
+  }
+
+  // Price-integrity failures (implausible losses).
+  for (const r of suspectStops) {
+    mandatory.push(
+      `**VERIFY MANUALLY in broker** — ${r.ticker} in ${r.account}: position book shows basis $${r.costBasis?.toFixed(2)} → now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%). A loss this large is almost always data-feed corruption, not a real move. **Do NOT act on the system price.** Refresh Prices, cross-check the broker balance, and edit the position row directly if the stored price is wrong.`
+    );
+  }
+
+  // Horizon expiries.
+  for (const r of expiredRecs.slice(0, 5)) {
+    const cur = r.current != null ? `$${r.current.toFixed(2)}` : "n/a";
+    mandatory.push(
+      `**HORIZON EXPIRED** — ${r.ticker} rec from day ${r.daysElapsed}/${r.horizonDays}: entry $${r.entry?.toFixed(2)} → now ${cur}. Decide: EXIT, ROLL (name a specific new-evidence trigger), or TRIM. Passive hold no longer allowed.`
+    );
+  }
+
+  // Sleeve compliance trim mandate (SPEC over).
+  if (specOver) {
+    const excessCad = (b.totals?.spec || 0) - (b.targetsCad?.spec || 0);
+    const specByBase = {};
+    for (const row of b.byPosition || []) {
+      if (row.sleeve !== "spec" || !(row.cadValue > 0)) continue;
+      const base = String(row.ticker || "").toUpperCase().replace(/\..*$/, "");
+      specByBase[base] = (specByBase[base] || 0) + row.cadValue;
+    }
+    const largest = Object.entries(specByBase).sort((a, b) => b[1] - a[1])[0];
+    mandatory.push(
+      `**TRIM SPEC** — SPEC sleeve is ${m(excessCad)} over the ${b.targetsPct.spec.toFixed(0)}% cap (currently ${b.actualPct.spec.toFixed(1)}%).${largest ? ` Largest spec name: **${largest[0]}** (${m(largest[1])}) — trim first.` : ""} Proceeds route to CORE (see rebalance mandate) or cash.`
+    );
+  }
+
+  // Within-stop tightens (secondary but still non-discretionary).
+  for (const r of withinStops) {
+    mandatory.push(
+      `**TIGHTEN STOP** — ${r.ticker} in ${r.account}: pnl ${r.pnlPct.toFixed(1)}% (within 2% of hard stop). Move stop to break-even at $${r.costBasis?.toFixed(2)} ${r.currency} OR trim 50% of the position.`
+    );
+  }
+
+  if (mandatory.length === 0) {
+    chunks.push("None. Portfolio is inside all hard rules today.");
   } else {
-    chunks.push("No targets or stops hit overnight.");
+    mandatory.forEach((line, i) => chunks.push(`${i + 1}. ${line}`));
   }
   chunks.push("");
 
-  // Section 0c — Position P&L stop check. Only render when the monitor
-  // has at least one flagged row. Order: hard-stop, within-stop, watch
-  // (already sorted worst-first within each tier by monitorPositionStops).
-  const hasStopSignal = stopMonitor && (
-    (stopMonitor.hardStopHit?.length || 0) +
-    (stopMonitor.withinStop?.length || 0) +
-    (stopMonitor.watch?.length || 0) > 0
-  );
-  if (hasStopSignal) {
-    chunks.push("## 🚨 Position P&L stop check");
-    // Implausible-loss guard: -50% or worse in a single position on a
-    // normal day is almost never a real stop hit — it's a stale/wrong
-    // priceUsd sneaking through the applier or a bad Refresh Prices
-    // response (see task #120's NVDA-at-$42.55 incident where a mega-
-    // cap position emitted a "confidently wrong EXIT AT MARKET" that
-    // would have cost the user $5k+ of real market value). Rather
-    // than trust the number, emit a PRICE VERIFICATION card so the
-    // trader has to look at the raw feed before acting. The AI is
-    // free to escalate to a real EXIT later after verifying, but
-    // the deterministic renderer never issues an exit signal based
-    // on a number the position book itself cannot possibly be right
-    // about.
-    const IMPLAUSIBLE_LOSS_PCT = -50;
-    for (const r of stopMonitor.hardStopHit || []) {
-      if (r.pnlPct <= IMPLAUSIBLE_LOSS_PCT) {
-        chunks.push(
-          `- ⚠ **PRICE VERIFICATION REQUIRED**: ${r.ticker} in ${r.account} · position book has basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (pnl ${r.pnlPct.toFixed(1)}%). A loss this large on ${r.qty} sh is almost never a real single-day event on a normal ticker — the stored price is likely stale, a bad refresh response, or a split-adjustment mismatch. DO NOT sell on this line. Click Refresh Prices, cross-check the broker balance, and only exit if the loss is confirmed by both the broker AND a fresh Yahoo/FMP quote. If the stored price is wrong, edit the position row directly to correct it (the applier no longer overwrites market prices after task #120's fix — Refresh Prices is the correct path).`
-        );
-        console.warn(`[stop-check] SUPPRESSED implausible EXIT for ${r.ticker}: pnl ${r.pnlPct.toFixed(1)}% (basis $${r.costBasis}, now $${r.currentPrice}) — likely data-feed corruption`);
-      } else {
-        chunks.push(
-          `- 🚨 **EXIT AT MARKET**: ${r.ticker} in ${r.account} · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency}, pnl ${r.pnlPct.toFixed(1)}% · sell ${r.qty} sh unless a specific NEW-INFO reason overrides.`
-        );
-      }
-    }
-    for (const r of stopMonitor.withinStop || []) {
-      chunks.push(
-        `- ⚠ **TIGHTEN**: ${r.ticker} in ${r.account} · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency}, pnl ${r.pnlPct.toFixed(1)}% · move stop to break-even at $${r.costBasis?.toFixed(2)} ${r.currency} OR trim 50% of the position now.`
-      );
-    }
-    for (const r of stopMonitor.watch || []) {
-      chunks.push(
-        `- 👀 **WATCH**: ${r.ticker} · pnl ${r.pnlPct.toFixed(1)}% · 3% from hard stop.`
-      );
-    }
+  // ─── § 2. FORBIDDEN TODAY ───
+  const forbidden = [];
+  if (specOver) {
+    forbidden.push(`**No new SPEC positions** — sleeve at ${b.actualPct.spec.toFixed(1)}%, cap ${b.targetsPct.spec.toFixed(0)}%.`);
+  }
+  if (coreLockActive) {
+    forbidden.push(`**No new discretionary SWING or SPEC buys** — CORE is ${coreGapPp.toFixed(1)}pp underweight. Only CORE ETF buys (XEQT / VUN / XIU) allowed until CORE ≥ 70%.`);
+  }
+  if (suspectStops.length > 0) {
+    const tickers = suspectStops.map(r => r.ticker).join(", ");
+    forbidden.push(`**No SELL orders on ${tickers}** — price-integrity failure. Verify manually before any trade on these names.`);
+  }
+  // Averaging-down block on any position ≤ −5% (a specific concern per Grok's list).
+  const decliners = new Set();
+  for (const r of [...(stopMonitor?.watch || []), ...withinStops, ...confirmedStops]) {
+    if (r.pnlPct <= -5) decliners.add(r.ticker);
+  }
+  if (decliners.size > 0) {
+    forbidden.push(`**No averaging down on ${[...decliners].join(", ")}** — position(s) already down ≥ 5%; adding to a losing name violates the risk-per-trade discipline.`);
+  }
+  // Regime-hostile gate: when the regime module flags an unfavourable
+  // tape ("risk-off" / "hostile" / negative bias), block new SWING/SPEC
+  // entries entirely — only CORE ETF buys allowed. Regime module lives
+  // outside this renderer, so we consult label/regime fields defensively.
+  const regimeLabel = String(tradingRegime?.label || tradingRegime?.regime || "").toLowerCase();
+  const regimeHostile = /risk[- ]?off|hostile|bear|contract|distribut/i.test(regimeLabel);
+  if (regimeHostile) {
+    forbidden.push(`**No new SWING or SPEC entries** — regime detector flags **${tradingRegime?.label || tradingRegime?.regime}**. Only CORE ETF adds allowed until regime turns constructive.`);
+  }
+  if (forbidden.length > 0) {
+    chunks.push("## 2. 🛑 FORBIDDEN TODAY");
+    for (const line of forbidden) chunks.push(`- ${line}`);
     chunks.push("");
   }
 
-  // Section 0d — Sleeve balance. Only render when at least one flag
-  // is active (SPEC over, CORE under, or SWING under). Otherwise all
-  // three sleeves are within tolerance and the section is skipped.
-  const b = sleeveBalance;
-  const hasSleeveFlag = b && (b.specOverLimit || b.coreUnderweight || b.swingUnderweight);
-  if (hasSleeveFlag) {
-    chunks.push("## ⚖ Sleeve balance");
-    const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
-    if (b.specOverLimit) {
-      const excessCad = b.totals.spec - b.targetsCad.spec;
-      // Find the largest spec-classified name. Use the already-
-      // computed per-position CAD values from computeSleeveBalance
-      // (bal.byPosition) so the aggregation math is byte-identical
-      // to what produced totals.spec — no risk of the renderer
-      // reporting a different largest-name figure from a duplicate
-      // re-computation with different fx / rounding. Aggregate by
-      // BASE ticker (XIU / XIU.TO collapse to XIU) since the same
-      // holding can appear in multiple accounts.
-      const specByBase = {};
-      for (const row of b.byPosition || []) {
-        if (row.sleeve !== "spec") continue;
-        if (!(row.cadValue > 0)) continue;
-        const base = String(row.ticker || "").toUpperCase().replace(/\..*$/, "");
-        specByBase[base] = (specByBase[base] || 0) + row.cadValue;
-      }
-      const largest = Object.entries(specByBase).sort((a, b) => b[1] - a[1])[0];
-      const trimHint = largest
-        ? ` Largest spec name: ${largest[0]} (${m(largest[1])}) — trim first.`
-        : "";
-      chunks.push(
-        `- 🚨 **SPEC OVER LIMIT**: ${m(excessCad)} excess (${b.actualPct.spec.toFixed(1)}% of book vs ${b.targetsPct.spec.toFixed(0)}% target). No new SPEC positions today in sections 4 / 7 / 8.${trimHint}`
-      );
-    }
-    if (b.coreUnderweight) {
-      const shortfall = b.rebalanceCad.core;
-      chunks.push(
-        `- ⚠ **CORE UNDERWEIGHT**: ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target — gap of ~${m(Math.abs(shortfall))}. Close this via rotation (funnel proceeds from your next SWING/SPEC trims into XIU / VUN / XEQT instead of another swing) OR fresh cash deposit into XIU. This is NOT idle cash waiting to deploy — check the cash-inventory line above for actual free capital before proposing new BUYs.`
-      );
-    }
-    if (b.swingUnderweight) {
-      const room = Math.abs(b.rebalanceCad.swing);
-      chunks.push(
-        `- 💡 **SWING SLEEVE HAS ROOM**: ${m(room)} available for a fresh Canadian large-cap (RY / ENB template) entry.`
-      );
-    }
+  // ─── § 3. OPTIONAL ideas — placeholder heading, AI fills below ───
+  chunks.push("## 3. 💡 OPTIONAL ideas");
+  chunks.push("_(Only surface if all hard rules above are satisfied. AI writes compact TICKER | ACTION | SIZE | TRIGGER | STOP | NOTES table beneath this heading. Routine HOLDs stay one line each.)_");
+  chunks.push("");
+
+  // ─── § 4. ONE-LINE STATUS ───
+  const corePct = b?.actualPct?.core != null ? `${b.actualPct.core.toFixed(1)}%` : "n/a";
+  const specPct = b?.actualPct?.spec != null ? `${b.actualPct.spec.toFixed(1)}%` : "n/a";
+  const coreGapStr = coreGapPp > 0.5 ? ` (gap −${coreGapPp.toFixed(1)}pp)` : "";
+  const stopsTotal = confirmedStops.length;
+  const suspectStr = suspectStops.length > 0 ? ` (${suspectStops.length} suspect)` : "";
+  const regimeStr = tradingRegime?.label || tradingRegime?.regime || "neutral";
+  const newIdeasAllowed = (!coreLockActive && !specOver && !regimeHostile) ? "YES" : "BLOCKED";
+  chunks.push("## 4. 📊 Status");
+  chunks.push(`CORE: ${corePct}${coreGapStr} · SPEC: ${specPct} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  chunks.push("");
+
+  // ─── § 0 (bottom) — Open alerts (kept for continuity, moved out of primary flow) ───
+  if (Array.isArray(monitorAlerts) && monitorAlerts.length > 0) {
+    chunks.push("### 🔔 Open rec alerts");
+    for (const a of monitorAlerts) chunks.push(`- ${a}`);
     chunks.push("");
   }
 
@@ -1269,44 +1332,63 @@ ${formatCriticFeedbackBlock(briefingHistory)}
 ${formatTranscriptsBlock(transcripts)}
 ${tradingCostsBlock}
 
-Section-specific per-call rules (system prompt has the general shape 0–8; the rules below tune it to THIS briefing's blocks):
+STRUCTURAL DIRECTIVE — the briefing now uses a Daily Orders format. The backend prepends four DETERMINISTIC sections before you write anything:
 
-⚠ SECTIONS 0, 0c, AND 0d ARE PRE-RENDERED BY THE BACKEND AND WILL BE PREPENDED TO YOUR OUTPUT. **DO NOT WRITE THEM YOURSELF.** Start your response at section 0b (if the executed-trades block is non-empty) or otherwise at section 1. Do not restate the alerts, the position-P&L stop check, or the sleeve balance table — that content is deterministic and already correctly rendered from the input blocks; your job is to honour the BEHAVIOURAL RULES those sections imply for the rest of the briefing:
+   §1. MANDATORY ACTIONS   (hard stops, price-verify flags, horizon expiries, sleeve rebalances, TRIM SPEC)
+   §2. FORBIDDEN TODAY     (which new-BUY types are blocked by sleeve / concentration / price-integrity rules)
+   §3. OPTIONAL ideas      (heading only — YOU write beneath)
+   §4. ONE-LINE STATUS     (5-second scannable summary)
 
-   • If POSITION P&L STOP MONITOR shows a hard-stop hit — the deterministic renderer will have written an EXIT AT MARKET line for it. Section 4 should acknowledge that exit and use its proceeds in section 5's cash deployment.
-   • If SLEEVE BALANCE shows 🚨 SPEC OVER LIMIT — sections 4 / 7 / 8 MUST NOT propose any high-vol / meme / unknown US name as a new BUY. Only Canadian large-caps and broad ETFs eligible. If the deterministic engine's swing pick is spec-classified, replace with "SPEC sleeve full — no new spec entries today. Trim [largest spec name] first" and route the trim into section 4.
-   • If SLEEVE BALANCE shows 💡 SWING SLEEVE HAS ROOM — prefer Canadian large-caps in sections 4 / 7.
-   • If SLEEVE BALANCE shows ⚠ CORE UNDERWEIGHT — close section 4 with a rebalance-framed note, NOT a "deploy $X" note. The sleeve gap is not idle cash; it's the difference between current CORE weight and target. Options to close it: (a) rotate proceeds from proposed SWING/SPEC trims into XIU/VUN/XEQT instead of another swing pick, (b) recommend a fresh cash deposit if the trader has one queued in their contribution schedule. Cite the per-account cash inventory above to name what's actually available. NEVER phrase this as "deploy $X into XIU today" unless the trader has $X of unused CAD cash sitting in the right account — check first.
+YOU WRITE FROM SECTION 3 DOWNWARD. Do NOT write §1, §2, or §4 — they're pre-rendered from monitors and would be duplicated / contradicted if you re-emit them. Your output is:
 
-0b. **✅ Trades you executed since last briefing** — REQUIRED when the "TRADES YOU EXECUTED SINCE LAST BRIEFING" block above is non-empty. Heading must be exactly "## ✅ Trades you executed". Write ONE line per BUY/SELL leg from the block, in this format:
-   • For a BUY fulfilling an AI rec: "**BOUGHT** N sh TICKER @ $entry_actual CCY on YYYY-MM-DD — this fulfills the [target-hit/AI rec/high-conviction] BUY. Current price $X (Y% vs entry). Target $target, stop $stop. Position on track [OR: past halfway to target, tighten trailing stop / or: pulled back to entry, still valid]."
-   • For a BUY without a linked rec: "**BOUGHT** N sh TICKER @ $entry_actual — no linked AI rec; treat as a fresh position. Current $X. Consider a stop at 2.5×ATR below entry."
-   • For a SELL: "**SOLD** N sh TICKER @ $exit_price — [closed the (BUY-rec-date) position / partial trim / rebalance]. Realized ~$Y or ~Z% vs original basis."
-   Skip this section entirely if the block is empty (write nothing, do not include a "no trades" placeholder).
-   **NO-REPEAT INVARIANT**: any BUY leg in the executed-trades block turns that ticker into a MANAGE-EXISTING-POSITION line item in section 2 for the rest of this briefing. Sections 4 (Today's one action), 7 (Aggressive new ideas), and 8 (Today's Swing-Trade Picks) MUST NOT propose a fresh BUY on that ticker — the user already owns it. If you would have picked the same name again, upgrade the section-2 line for it to an "ADD to position at $X, target $Y" instruction instead. Every ticker in the current portfolio's positions list is subject to the same rule.
-1. **Overnight & pre-market** — ES/NQ futures, VIX, USD/CAD, oil, Fed/BoC actions
-2. **Signals per holding** — for EACH top-7 ticker, 2-3 line block. Format: "**TICKER**: news=... · earnings=... · analyst=... · insider=... · technicals=... · call: [HOLD/TRIM/ADD/EXIT at $X]"
-   **THEN** — after the top-7 blocks, add a "### Quiet holdings" subsection that emits ONE line for EVERY remaining held ticker from the current-holdings table that hasn't been named elsewhere in the briefing (not in top-7, not in stop check, not in trades-executed, not in horizon review). Format: "**TICKER** (N sh @ $basis, current $X, W% of book) — [HOLD / TRIM / EXIT / ADD $Y] · one-sentence reason (fundamental note, technical setup, or sleeve rationale)". Do not skip any held ticker — small weights and sleepy defensives (utilities ETFs, precious-metal juniors, cash-like bond funds) still deserve a one-line disposition so the trader knows the model saw them.
+   §3 body (compact table + optional narrative for any TRUE new ideas)
+   §0b. ✅ Trades you executed since last briefing  (only when executed-trades block is non-empty)
+   ---
+   ## 📎 Appendix — research & context
+   §A1. Overnight & macro
+   §A2. Per-holding signals (compact TICKER | STATUS | NOTES table)
+   §A3. Watch list (GTC alerts, not intraday triggers)
+   §A4. Performance snapshot
+   §A5. Any deeper research
 
-   **THESIS DISCIPLINE — MANDATORY, applies to sections 2, 4, and 8:**
-   A recommendation to TRIM or EXIT a position that was itself opened on a Curriculate rec (SWING pick, high-conviction, or open advice rec — anything the "HORIZON REVIEW" block shows) is INVALID unless AT LEAST ONE of the following triggers fired:
-   - Target hit ("HIT-TARGET" in horizon review).
-   - Stop breached ("HIT-STOP" in horizon review).
-   - Horizon expired ("EXPIRED" in horizon review).
-   - Well-behind pace at ≥60% of horizon ("WELL-BEHIND" + horizon day ≥60% of stated window).
-   - Material NEW information (earnings surprise, guidance cut/raise, downgrade to Sell, FDA rejection, executive resignation, deal breakup, regulatory action, macro regime flip from RISK-ON→RISK-OFF).
-   None of "small profit locked in", "up 0.1% capture the gains", "de-risk into the weekend", "capture some now, let rest run" qualify. Recs come with a plan (entry/target/stop/horizon). Deviating from that plan requires a stated trigger; there is no default trigger. If none of the above triggers fired, the correct call is **HOLD** — even at +5% mid-horizon on a 20% target. Cite the horizon-review row and the day/horizon fraction when confirming HOLD ("day 1/10, on-pace, no thesis change → HOLD").
-   TRIMs proposed WITHOUT a cited trigger are noise trading; they will be counted against the strategy in the compliance report as churn.
-3. **Performance snapshot** — week/month/3M moves on top names
-4. **Today's one action** — single highest-conviction trade, all four levels + specific account (per Canadian tax notes). Section 5 must NOT repeat this trade.
+Behavioural rules the pre-rendered §1/§2 imply that you must respect:
+   • If §1 shows a CORE REBALANCE mandate — §3 has ONE allowed BUY class: CORE ETFs (XEQT / VUN / XIU). Any SWING/SPEC "new idea" you'd have proposed is REPLACED with the rebalance. No exceptions.
+   • If §1 shows a SELL AT MARKET hard-stop hit — §3 acknowledges the exit and cites the proceeds destination (either the CORE rebalance or explicit next allowed BUY).
+   • If §1 shows a VERIFY MANUALLY price-integrity flag — the flagged ticker gets ONE line in the Appendix per-holding table saying "PRICE SUSPECT — do not act". No SELL, no rec, no analysis of the fake number.
+   • If §2 forbids new SPEC / new SWING — do NOT surface any such rec in §3, even from Test A / Discovery pools. Replace with "SPEC/SWING blocked today per §2 forbidden list."
+
+§3 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
+   TICKER | ACTION | SIZE | TRIGGER / LEVEL | STOP | NOTES (1 line)
+   Example:
+   TRP.TO | BUY | 45 sh | $99.60 max, GTC | $94.78 | Pocket pivot 59, SWING sleeve; funded by 53-sh ENB trim.
+   XEQT   | BUY | 60 sh | at market post-10am | — | CORE rebalance mandate (§1) — buy on any tap.
+
+   If nothing survives the §2 forbidden list, write "No new ideas today — every allowed slot is being spent on the §1 mandates above." Do NOT invent a rec to fill space.
+
+0b. **✅ Trades you executed since last briefing** — REQUIRED when the "TRADES YOU EXECUTED SINCE LAST BRIEFING" block above is non-empty. ONE line per BUY/SELL leg, format unchanged:
+   • BUY fulfilling AI rec: "**BOUGHT** N sh TICKER @ $entry CCY on YYYY-MM-DD — fulfills the [rec-type] BUY. Current $X (Y% vs entry). On track / past halfway / pulled back."
+   • BUY without linked rec: "**BOUGHT** N sh TICKER @ $entry — no linked rec; treat as fresh."
+   • SELL: "**SOLD** N sh TICKER @ $exit — [closed/trim/rebal]. Realized ~$Y."
+   **NO-REPEAT INVARIANT**: any ticker in the current-holdings table can ONLY appear as ADD / HOLD / TRIM / EXIT in §3 or the Appendix — never as a fresh BUY.
+
+APPENDIX (## 📎 Appendix — research & context) — comes AFTER §3 + §0b, before the trailing <RECS> block. Everything below is optional depth for readers who want it, NOT primary action content:
+
+   §A1. Overnight & macro (1 short paragraph — futures, VIX, USD/CAD, oil, Fed/BoC)
+   §A2. Per-holding compact table — ONE line per held ticker:
+        TICKER | SLEEVE | WEIGHT | P/L | STOP DIST | STATUS
+        Example: ENB | SWING | 14.4% | +2% | 4.4% slack | HOLD — earnings intact
+        Only expand into paragraph form for tickers that had NEW material info today (earnings result, downgrade, headline). Everything else stays one line.
+   §A3. Watch list — 2-3 GTC-alert levels the user might set (NOT intraday triggers).
+   §A4. Performance snapshot — 1 line week/month/YTD alpha vs SPY/XIC.
+   §A5. Any THESIS DISCIPLINE flag from horizon review that didn't already surface in §1.
+
+THESIS DISCIPLINE — MANDATORY, applies to §3 and §A2:
+   A TRIM/EXIT on a Curriculate-rec position is INVALID unless one of these fired: target-hit / stop-breached / horizon-expired / well-behind at ≥60% of horizon / material NEW information (earnings surprise, guidance change, downgrade, deal breakup, regulatory action, regime flip). Vague reasons ("small profit locked", "de-risk into the weekend") do NOT qualify.
+
+APPENDIX + <RECS> BLOCK ARE MANDATORY. Emit them EVERY briefing. If some holdings show data anomalies, FLAG each in §A2 with "PRICE SUSPECT" one-liners and CONTINUE — anomalies never truncate the briefing.
 ${cashSection}
-6. **Watch list** — 2-3 levels to monitor today (specific price triggers)
-7. **Aggressive new ideas (SPEC sleeve)** — 1-2 unowned names SOURCED EXCLUSIVELY from the DISCOVERY POOL block's "SPEC-sleeve candidates" list. Do NOT propose a name that isn't in the discovery pool. If SPEC OVER LIMIT (🚨), skip section. If pool has zero spec candidates, write "No pre-vetted SPEC candidates today — pass" and skip. For each pick: quote entry/target/stop verbatim, cite sleeve tag, suggest optimal account.
-8. **🎯 Today's Swing-Trade Picks (SWING sleeve)** — REQUIRED (heading exactly "## 🎯 Today's Swing-Trade Picks"). PRIMARY: TODAY'S SWING-TRADE PICKS block (Test A). SECONDARY: SWING-sleeve candidates in DISCOVERY POOL (supplement when Test A produced fewer than 2 swing-classified picks). ONE narrative paragraph per pick, entry/target/stop verbatim, setup + score in plain English, 10-day horizon. Every pick MUST also appear in trailing <RECS> block with action="BUY". If both pools empty or all picks spec-classified and SPEC sleeve full, write "No SWING-sleeve picks today" and skip.
 
-Use web_search aggressively — 6-10 searches for top holdings.
-
-SECTIONS 5, 6, 7, 8, AND THE TRAILING <RECS>...</RECS> BLOCK ARE MANDATORY. Emit them EVERY briefing. If some holdings show data anomalies (mismatched prices, missing cost basis, etc.), FLAG each anomaly briefly in section 2 and CONTINUE with sections 3-8 + RECS as normal. Data anomalies are never a reason to stop the briefing early — they are a reason to write a shorter, honest per-holding line and then finish the required sections. A briefing that stops at section 4 with no cash plan, no watch list, no ideas, and no RECS block is unusable regardless of how thorough the earlier sections were.`;
+Use web_search aggressively — 6-10 searches focused on tickers that appear in §1 (need current context to justify or refute the mandated action) or §3 (any new idea needs current price/news verification). Skip web_search on quiet holdings in §A2.`;
 
   return { system: STATIC_SYSTEM_PROMPT, user: userMessage };
 }
@@ -1897,6 +1979,8 @@ export async function generateBriefing(profile) {
     stopMonitor,
     sleeveBalance: sleeveBalanceForPrefix,
     positions: profile.positions || [],
+    horizonRows,
+    tradingRegime,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
@@ -2032,9 +2116,17 @@ export async function generateBriefing(profile) {
       const end = nextH2 === -1 ? source.length : start + match[0].length + nextH2;
       return source.slice(0, start) + source.slice(end);
     };
+    // Legacy strips (pre-Daily-Orders renderer) — kept in case the AI
+    // regresses to the old section headings from prompt-cache staleness.
     md = stripHeaderBlock(md, /^##\s*🚨\s*Open recommendation alerts.*$/m);
     md = stripHeaderBlock(md, /^##\s*🚨\s*Position P&L stop check.*$/m);
     md = stripHeaderBlock(md, /^##\s*⚖\s*Sleeve balance.*$/m);
+    // New Daily Orders strips — §1/§2/§4 are pre-rendered; strip any AI
+    // attempt to duplicate them so the prepended deterministic version
+    // is the only copy in the final briefing.
+    md = stripHeaderBlock(md, /^##\s*1\.\s*🚨?\s*MANDATORY ACTIONS.*$/im);
+    md = stripHeaderBlock(md, /^##\s*2\.\s*🛑?\s*FORBIDDEN TODAY.*$/im);
+    md = stripHeaderBlock(md, /^##\s*4\.\s*📊?\s*Status.*$/im);
     md = deterministicPrefix + "\n\n" + md.trim();
   }
 
