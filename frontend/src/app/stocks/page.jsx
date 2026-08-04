@@ -2322,6 +2322,15 @@ function RegimeAndUoaChips({ data }) {
 function PortfolioHealthChip({ user, regimeAndUoa }) {
   const fx = user.fxUsdCad || 1.37;
 
+  // Rounding-error tolerance in CAD. A guardrail whose dollar-magnitude
+  // breach is under this floor gets treated as OK even if the % would
+  // flag "act" — otherwise the chip is always screaming about $24
+  // over the VaR cap or $50 sleeve drift, which trains the operator
+  // to ignore it. Applied to risk budget + sleeve balance only
+  // (concentration and cash zone are % / band-based and don't benefit
+  // from a dollar floor).
+  const MATERIAL_BREACH_CAD = 100;
+
   // 1) Risk budget — VaR vs limit. Green when comfortably under; amber
   //    within 20% headroom; red on breach. Silent when we don't have
   //    vol data for any positions (no false-clean).
@@ -2329,13 +2338,19 @@ function PortfolioHealthChip({ user, regimeAndUoa }) {
   const varPct = riskVar?.used?.pct95 ?? null;
   const varLimit = riskVar?.limits?.pct95 ?? 2;
   const varBreach = !!riskVar?.breach95;
+  const varHeadroomCad = Math.abs(riskVar?.headroomCad95 || 0);
+  // Downgrade breach → watch when headroom is under the material floor;
+  // treat as ok when it's near zero either side of the cap.
   const riskStatus = varPct == null
     ? null
-    : varBreach ? "act" : (varPct >= varLimit * 0.8 ? "watch" : "ok");
+    : varBreach
+      ? (varHeadroomCad < MATERIAL_BREACH_CAD ? "watch" : "act")
+      : (varPct >= varLimit * 0.8 ? "watch" : "ok");
 
   // 2) Sleeve balance — largest absolute drift from any single sleeve's
   //    target expressed as % of book. Under 5pp = green, under 15pp =
-  //    amber, beyond = red.
+  //    amber, beyond = red. Dollar-floor override: any drift under
+  //    $100 CAD is ok regardless of pp — trivial in absolute terms.
   const bal = computeSleeveBalanceClient(user);
   const worstSleeve = Object.entries(bal.headroomCad || {}).reduce(
     (worst, [k, v]) => Math.abs(v) > Math.abs(worst.v) ? { k, v } : worst,
@@ -2343,7 +2358,9 @@ function PortfolioHealthChip({ user, regimeAndUoa }) {
   );
   const bookAbs = Math.abs(bal.book) || 1;
   const driftPct = (Math.abs(worstSleeve.v) / bookAbs) * 100;
+  const worstDriftCad = Math.abs(worstSleeve.v);
   const sleeveStatus = bal.book <= 0 ? null
+    : worstDriftCad < MATERIAL_BREACH_CAD ? "ok"
     : driftPct < 5 ? "ok"
     : driftPct < 15 ? "watch" : "act";
 
