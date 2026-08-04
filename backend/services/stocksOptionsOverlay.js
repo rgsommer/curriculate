@@ -288,18 +288,29 @@ export function formatOverlayFunnelForEmail(overlaySuggestions) {
   }
   if (diag.reason === "no-positions") return "";
   const funnel = `${diag.heldCount} held → ${diag.afterAccountFilter} in Non-Spousal → ${diag.afterSleeveFilter} SWING sleeve → ${diag.afterShareCountGate} with 100+ sh → ${diag.afterIvGate} with IV rank ≥ 70 → ${diag.afterBasisGate} in unrealized gain → ${diag.produced} suggestions`;
-  const drops = (diag.perTicker || []).slice(0, 8);
+  // Per-ticker drop breakdown was previously listed here (one line per
+  // held ticker with its drop stage + note). In practice this produced
+  // 6-8 near-identical "dropped at account: not in Non-Spousal-type
+  // account" lines that added no signal — the funnel line above
+  // already tells the reader why zero suggestions surfaced. Only
+  // surface the per-ticker breakdown when the tickers dropped at
+  // different late-stage gates (IV rank / basis), which is genuinely
+  // interesting information ("SU had IV rank 30 — no rich premium").
+  const drops = (diag.perTicker || []);
+  const uniqueLateStageDrops = drops
+    .filter(d => d.stage === "iv-rank" || d.stage === "basis")
+    .slice(0, 5);
   const lines = [
     "\n## 🎯 Options overlay funnel",
     "",
-    "No eligible covered-call suggestion today. This is not a bug — the narrow subset (Non-Spousal + SWING sleeve + 100+ sh + IV rank ≥ 70 + in-gain) is deliberately strict. Filter chain:",
+    "No eligible covered-call suggestion today. Deliberately narrow filter (Non-Spousal + SWING sleeve + 100+ sh + IV rank ≥ 70 + in-gain):",
     "",
     `- ${funnel}`,
   ];
-  if (drops.length > 0) {
-    lines.push("", "**Per-ticker drop reasons:**");
-    for (const d of drops) {
-      lines.push(`- **${d.ticker}** — dropped at *${d.stage}*: ${d.note}`);
+  if (uniqueLateStageDrops.length > 0) {
+    lines.push("", "**Late-stage drops** (positions that passed account/sleeve/size but failed IV/basis):");
+    for (const d of uniqueLateStageDrops) {
+      lines.push(`- **${d.ticker}** — ${d.note}`);
     }
   }
   lines.push("");
