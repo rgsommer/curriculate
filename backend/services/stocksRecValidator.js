@@ -39,6 +39,12 @@
 //   price-drift-stale                 — rec.entryPrice is >5% away from
 //                                       the current Yahoo+FMP consensus;
 //                                       stale price → wrong sizing/stops
+//   gap-extension                     — BUY on a ticker that's already
+//                                       moved ≥8% vs prior close today
+//                                       (setup consumed / gap chase)
+//   min-reward-risk                   — BUY whose (target-entry)/(entry-stop)
+//                                       is below 1.5 (inverted payoff — wide
+//                                       stops laundered as small size)
 //   expectancy-floor-negative         — non-CORE BUY when user's overall
 //                                       AI-rec expectancy (n≥20) is ≤ -1%
 //                                       (process bleeding; slow down)
@@ -181,6 +187,61 @@ function ruleLiquidityFloor({ rec, ctx }) {
   };
 }
 
+// Gap-extension gate: reject a BUY when the ticker has moved
+// materially since prior close — you shouldn't chase an
+// earnings-day / news-day gap in size. PLTR case: pick generated
+// at $158.40 pre-earnings; overnight gap took price to $159.57
+// (+27% vs prior close $125.65). The AI treated the rec as still
+// valid and re-emitted with entry = current + tiny buffer, which
+// is exactly the "chase the top of the move" pattern. Rule blocks
+// this regardless of whether the rec's entryPrice matches the
+// current price — the disqualifier is the SESSION MOVE, not
+// entry-vs-live drift.
+// Missing priorClose → rule no-ops (don't block on unavailable data).
+const GAP_EXTENSION_PCT = 8.0; // 8% same-day move disqualifies new BUYs
+function ruleGapExtension({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  if (isCoreBuy(rec)) return { ok: true };
+  const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
+  if (!live || !(live.price > 0) || !(live.priorClose > 0)) return { ok: true };
+  const movePct = ((live.price - live.priorClose) / live.priorClose) * 100;
+  if (Math.abs(movePct) < GAP_EXTENSION_PCT) return { ok: true };
+  const dir = movePct >= 0 ? "up" : "down";
+  return {
+    ok: false,
+    reason: "gap-extension",
+    detail: `BUY ${rec.ticker} rejected — ticker is ${dir} ${movePct.toFixed(1)}% vs prior close $${live.priorClose.toFixed(2)} (now $${live.price.toFixed(2)}). Same-day move ≥ ${GAP_EXTENSION_PCT}% means the setup is either consumed (up-gap chase) or invalidated (down-gap thesis break). No new BUYs on extension days — wait for digestion, then reset entry / stop / target on fresh structure, or drop the idea.`,
+  };
+}
+
+// Reward-to-risk floor: reject any BUY whose (target - entry) /
+// (entry - stop) ratio is below a minimum. This catches the PLTR-class
+// failure — target $163.70 vs entry $159.50 vs stop $137.52 = R:R of
+// (4.20 / 22.00) = 0.19. Even if the setup wins outright, the payoff
+// is a fifth of the risk. Wide stops laundered as "small size" don't
+// fix inverted payoffs; they just limit the damage. CORE ETFs are
+// exempt (they're not R:R plays — they're sleeve rebalances). Recs
+// missing target or stop are also exempt (can't compute ratio).
+const MIN_REWARD_RISK = 1.5;
+function ruleMinRewardRisk({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  if (isCoreBuy(rec)) return { ok: true };
+  const entry = rec.entryPrice;
+  const target = rec.targetPrice;
+  const stop = rec.stopPrice;
+  if (!(entry > 0) || !(target > 0) || !(stop > 0)) return { ok: true };
+  const reward = target - entry;
+  const risk = entry - stop;
+  if (!(reward > 0) || !(risk > 0)) return { ok: true }; // degenerate — skip
+  const ratio = reward / risk;
+  if (ratio >= MIN_REWARD_RISK) return { ok: true };
+  return {
+    ok: false,
+    reason: "min-reward-risk",
+    detail: `BUY ${rec.ticker} @ $${entry} target $${target} stop $${stop} → reward-to-risk = ${ratio.toFixed(2)} (needs ≥ ${MIN_REWARD_RISK}). You are risking $${risk.toFixed(2)}/sh to make $${reward.toFixed(2)}/sh. Wide stops laundered as "small size" don't fix an inverted payoff — this setup fails its own math. Rewrite with a target ≥ entry + ${(risk * MIN_REWARD_RISK).toFixed(2)} or a stop tighter than $${(entry - reward / MIN_REWARD_RISK).toFixed(2)}, or drop the rec.`,
+  };
+}
+
 // Expectancy floor gate: if the user's recent AI-emitted rec history
 // has closed enough trades to be statistically meaningful (n ≥ 20)
 // AND overall expectancy is deeply negative (≤ -1% avg return per
@@ -254,6 +315,8 @@ const RULES = [
   ruleSingleNameCap,
   ruleRegimeHostileNoNewSwingSpec,
   ruleLivePriceDrift,
+  ruleGapExtension,
+  ruleMinRewardRisk,
   ruleLiquidityFloor,
   ruleExpectancyFloor,
 ];

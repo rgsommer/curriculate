@@ -41,7 +41,7 @@ async function fetchOneYahoo(ticker) {
       meta.regularMarketPreviousClose ??
       null;
     const changePct = prevClose ? ((price - prevClose) / prevClose) * 100 : null;
-    return { price, currency: meta.currency || "USD", changePct };
+    return { price, currency: meta.currency || "USD", changePct, priorClose: prevClose };
   } finally {
     clearTimeout(tid);
   }
@@ -68,6 +68,7 @@ async function fetchOneFmp(ticker) {
       price: row.price,
       currency: row.currency || null, // FMP doesn't always report — Yahoo is authoritative here
       changePct: Number.isFinite(row.changesPercentage) ? row.changesPercentage : null,
+      priorClose: Number.isFinite(row.previousClose) ? row.previousClose : null,
     };
   } catch { return null; } finally { clearTimeout(tid); }
 }
