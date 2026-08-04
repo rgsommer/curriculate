@@ -36,13 +36,23 @@ function computePositionPnl(position) {
   return ((price - basis) / basis) * 100;
 }
 
-export function monitorPositionStops(positions) {
+export function monitorPositionStops(positions, accounts = null) {
   if (!Array.isArray(positions) || positions.length === 0) {
     return { hardStopHit: [], withinStop: [], watch: [] };
   }
   const hardStopHit = [];
   const withinStop = [];
   const watch = [];
+
+  // Resolve account id → human-readable name. Position rows store the
+  // account id (e.g. "a2"); the briefing displays the account name
+  // (e.g. "TFSA"). If accounts list is unavailable or the id doesn't
+  // match, fall back to the id string so nothing goes blank.
+  const acctNameById = new Map();
+  for (const a of (accounts || [])) {
+    if (a?.id && a?.name) acctNameById.set(String(a.id), String(a.name));
+  }
+  const resolveAcct = (id) => acctNameById.get(String(id || "")) || String(id || "");
 
   // Aggregate P&L per (ticker + currency + account) so partial fills at
   // different cost bases don't confuse the flag. Position rows are one per
@@ -60,7 +70,7 @@ export function monitorPositionStops(positions) {
 
     const row = {
       ticker: p.ticker,
-      account: p.acct,
+      account: resolveAcct(p.acct),
       currency: p.ccy,
       qty: p.qty,
       currentPrice: p.ccy === "USD" ? p.priceUsd : p.priceCad,

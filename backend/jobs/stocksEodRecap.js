@@ -217,7 +217,7 @@ async function buildEodUserMessage(profile) {
   ];
   const priceMap = await currentPriceMap(candidateTickers, currencyMap);
 
-  const stops = monitorPositionStops(profile.positions || []);
+  const stops = monitorPositionStops(profile.positions || [], profile.accounts || []);
   const stopsBlock = formatPositionStopBlock(stops) || "No open P&L stop conditions on positions.";
 
   const hasAnything =

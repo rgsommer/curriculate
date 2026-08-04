@@ -1347,7 +1347,7 @@ ${formatSectorRotationBlock(sectorRotation)}
 ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
-${formatPositionStopBlock(monitorPositionStops(profile.positions || []))}
+${formatPositionStopBlock(monitorPositionStops(profile.positions || [], profile.accounts || []))}
 ${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets))}
 ${formatCalibrationBlock(calibration)}
 ${formatBenchmarkBlock(benchmarkBundle?.userTwrr, benchmarkBundle?.benchmarks)}
@@ -1391,6 +1391,7 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
    • If §1 shows a VERIFY MANUALLY price-integrity flag — the flagged ticker gets ONE line in the Appendix per-holding table saying "PRICE SUSPECT — do not act". No SELL, no rec, no analysis of the fake number.
    • If §2 forbids new SPEC / new SWING — do NOT surface any such rec in §4, even from Test A / Discovery pools. Replace with "SPEC/SWING blocked today per §2 forbidden list."
    • The §3 Status line includes a SECTOR TILT (Leaders / Laggards by 60d RS vs SPY). §4 new ideas MUST prefer leader-sector tickers; a laggard-sector name is only allowed with an explicit one-line exception reason ("earnings beat, RS turning"). CORE ETFs are always allowed regardless of sector tilt. Do NOT re-emit the sector ranking or write multi-paragraph sector commentary — the tilt line above is enough.
+   • **NEVER OVERRIDE §1 STOP MANDATES IN PROSE.** If §1 emits SELL AT MARKET for a ticker, §A2 / Appendix must NOT write "acknowledge stop hit but DO NOT exit" or "hold despite stop" or any variant that argues against the mandated exit. Long-horizon or dividend theses do NOT override the hard-stop rule — if that framing applies to a name, the name belongs in a different sleeve with wider stops, not in narrative loopholes. Reframing a stop hit as "monitor, do not churn" is a compliance violation.
 
 §4 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
    TICKER | ACTION | SIZE | TRIGGER / LEVEL | STOP | NOTES (1 line)
@@ -2014,7 +2015,7 @@ export async function generateBriefing(profile) {
   // from the same input blocks the prompt already carries. Prepended
   // to the AI output at return time. See renderDeterministicPrefix
   // for the scope + rationale.
-  const stopMonitor = monitorPositionStops(profile.positions || []);
+  const stopMonitor = monitorPositionStops(profile.positions || [], profile.accounts || []);
   const sleeveBalanceForPrefix = computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets);
   const deterministicPrefix = renderDeterministicPrefix({
     monitorAlerts,
@@ -2173,6 +2174,19 @@ export async function generateBriefing(profile) {
     // Legacy strip for pre-reorder briefs still cached — §4 was Status
     // before the swap. Safe to keep for a few weeks then remove.
     md = stripHeaderBlock(md, /^##\s*4\.\s*📊?\s*Status.*$/im);
+    // Strip AI-written stop-override sentences that contradict §1
+    // stop mandates. Pattern: any sentence that pairs "STOP HIT" (or
+    // similar) with "DO NOT exit" / "hold despite" / "monitor, do not
+    // churn" / "acknowledge ... but hold" language. Applied per-line
+    // so a single override doesn't nuke the whole per-holding row.
+    // Prompt directive above tells AI not to write these; this is
+    // defense-in-depth against prompt-cache staleness.
+    md = md.split("\n").filter(line => {
+      const hasStopFlag = /(?:stop\s*hit|STOP\s*HIT|hard[\s-]*stop|trailing\s*stop)/i.test(line);
+      if (!hasStopFlag) return true;
+      const hasOverride = /(?:do\s*not\s*exit|don['’]?t\s*exit|do\s*not\s*sell|don['’]?t\s*sell|hold\s+despite|monitor,?\s*do\s*not\s*churn|acknowledge[^.]*but\s*(?:hold|do\s*not))/i.test(line);
+      return !hasOverride;
+    }).join("\n");
     md = deterministicPrefix + "\n\n" + md.trim();
   }
 

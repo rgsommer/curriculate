@@ -207,7 +207,7 @@ export async function processPositionStopsOnce() {
       }
       refreshed.push(refreshedPos);
     }
-    const monitor = monitorPositionStops(refreshed);
+    const monitor = monitorPositionStops(refreshed, p.accounts || []);
     checked += (p.positions || []).length;
     const flagged = [
       ...monitor.hardStopHit.map((r) => ({ ...r, tier: "hard-stop-hit" })),

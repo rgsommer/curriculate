@@ -313,7 +313,7 @@ export async function runIntradayUpdateForUser(profile, slot, ymd) {
   const quoteMap = await fetchQuoteMap(profile.positions);
   const liveProfile = overlayIntradayPrices(profile, quoteMap);
 
-  const stops = monitorPositionStops(liveProfile.positions || []);
+  const stops = monitorPositionStops(liveProfile.positions || [], liveProfile.accounts || []);
   const freshEightKs = await findFreshEightKs(liveProfile.positions);
 
   // Regime flip — compare to what the last morning briefing / previous
