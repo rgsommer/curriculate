@@ -955,7 +955,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, horizonRows, tradingRegime, sectorRotation }) {
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation }) {
   const chunks = [];
   const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
   const IMPLAUSIBLE_LOSS_PCT = -50;
@@ -997,6 +997,59 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     mandatory.push(
       `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct all free cash AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.**`
     );
+  }
+
+  // Cash-deploy mandate: when dry powder is high AND an auto-routable
+  // sleeve is meaningfully under target, direct the deployment
+  // explicitly. Fills the gap between "trivial drift, do nothing" and
+  // "severe gap, force-trim to fund" — the common case where cash is
+  // just sitting because no other mandate is telling the operator
+  // where to put it. Trigger thresholds are deliberately looser than
+  // force-trim (5pp vs 15pp) because deploying idle cash is much
+  // lower-friction than trimming a held position.
+  const CASH_HIGH_PCT = 15;
+  const CASH_DEPLOY_GAP_PP = 5;
+  const fx = fxUsdCad || 1.37;
+  const totalCashCad = (cashAccounts || []).reduce(
+    (s, a) => s + (a?.cashCad || 0) + (a?.cashUsd || 0) * fx, 0
+  );
+  const totalBookCad = (b?.book || 0) + totalCashCad;
+  const cashPct = totalBookCad > 0 ? (totalCashCad / totalBookCad) * 100 : 0;
+  if (cashPct > CASH_HIGH_PCT && b?.deviations) {
+    const AUTO_ROUTE = new Set(["core", "income"]);
+    const underweight = [
+      { sleeve: "core",   gap: -b.deviations.core },
+      { sleeve: "income", gap: -b.deviations.income },
+    ]
+      .filter(x => AUTO_ROUTE.has(x.sleeve) && x.gap > CASH_DEPLOY_GAP_PP)
+      .sort((a, b) => b.gap - a.gap)[0];
+    if (underweight) {
+      // Pick the largest cash pool. Prefer CAD accounts for INCOME
+      // (dividend payers are TSX-listed) and match currency of the
+      // deploy destination for CORE. Uses account with the most
+      // convertible cash so the deploy line names a real target.
+      const withCashCad = (cashAccounts || [])
+        .map(a => ({ ...a, cashInCad: (a?.cashCad || 0) + (a?.cashUsd || 0) * fx }))
+        .filter(a => a.cashInCad > 500)
+        .sort((a, b) => b.cashInCad - a.cashInCad);
+      const largestPool = withCashCad[0];
+      // Suggested deploy size: min(cash available, sleeve gap in CAD).
+      // Deliberately doesn't drain cash to zero — leaves a modest
+      // reserve (1% of book, min $500) for opportunistic use later.
+      const sleeveGapCad = (underweight.gap / 100) * totalBookCad;
+      const reserveCad = Math.max(500, totalBookCad * 0.01);
+      const deployCadRaw = Math.min(totalCashCad - reserveCad, sleeveGapCad);
+      const deployCad = Math.floor(deployCadRaw / 100) * 100; // round to $100
+      if (deployCad >= 500 && largestPool) {
+        const deployTickers = underweight.sleeve === "income"
+          ? "RY / TD / BMO / BNS / ENB / TRP (TSX dividend payers — pick 1-2, same CAD account)"
+          : "XEQT / VUN / XIU (CAD) or VOO / VTI / QQQ (USD) — pick one matching account currency";
+        const acctLabel = largestPool.name || largestPool.id || "the account with the largest cash pool";
+        mandatory.push(
+          `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book is in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Deploy ~${m(deployCad)} from **${acctLabel}** into ${deployTickers}. Leave ~${m(reserveCad)} reserve for opportunistic use. Sitting on dry powder isn't the same as risk management — it's an unfilled sleeve.`
+        );
+      }
+    }
   }
 
   // Force-shrink mandate: when ANY sleeve is severely underweight
@@ -2080,6 +2133,8 @@ export async function generateBriefing(profile) {
     stopMonitor,
     sleeveBalance: sleeveBalanceForPrefix,
     positions: profile.positions || [],
+    cashAccounts: profile.accounts || [],
+    fxUsdCad: profile.fxUsdCad || 1.37,
     horizonRows,
     tradingRegime,
     sectorRotation,
