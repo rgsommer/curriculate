@@ -956,10 +956,59 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits }) {
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices }) {
   // Alias — kept as ctxRecentExits inside so callers don't have to
   // rebind if the param name changes later.
   const ctxRecentExits = recentExits || [];
+  const ctxLivePrices = mandateLivePrices || {};
+
+  // Pick a concrete default ticker + compute share count for a mandate.
+  // Grok clarity rule #3: every mandatory action becomes ONE executable
+  // order ticket. Falls back to null when we can't pick a specific
+  // ticker (no live price, all candidates recently exited, etc.) —
+  // caller then keeps the older list-of-options wording.
+  //
+  // list: ordered by preference; first available wins.
+  // targetCad: total CAD budget for the buy.
+  // deployCurrency: "CAD" or "USD" — determines whether we FX-convert.
+  const pickDefaultTicket = (list, targetCad, deployCurrency) => {
+    if (!(targetCad > 0)) return null;
+    const filtered = (list || [])
+      .filter(t => !ctxRecentExits.includes(t))
+      .filter(t => ctxLivePrices[t]?.price > 0);
+    if (filtered.length === 0) return null;
+    const ticker = filtered[0];
+    const live = ctxLivePrices[ticker];
+    const liveCcy = String(live.currency || deployCurrency || "USD").toUpperCase();
+    const fx = fxUsdCad || 1.37;
+    // Convert deploy budget to the LIVE PRICE's currency so share
+    // count math is correct: shares = budget_in_native / native_price.
+    let budgetInNative;
+    if (liveCcy === deployCurrency) {
+      budgetInNative = targetCad; // already same currency
+    } else if (liveCcy === "USD" && deployCurrency === "CAD") {
+      budgetInNative = targetCad / fx;
+    } else if (liveCcy === "CAD" && deployCurrency === "USD") {
+      budgetInNative = targetCad * fx;
+    } else {
+      budgetInNative = targetCad;
+    }
+    const shares = Math.floor(budgetInNative / live.price);
+    if (!(shares > 0)) return null;
+    const usedNative = shares * live.price;
+    const usedCad = liveCcy === "CAD" ? usedNative
+      : liveCcy === "USD" ? usedNative * fx : usedNative;
+    const alternatives = filtered.slice(1, 4).join(" / ");
+    return {
+      ticker,
+      livePrice: live.price,
+      liveCcy,
+      shares,
+      usedNative,
+      usedCad,
+      alternatives,
+    };
+  };
   const chunks = [];
   const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
   const IMPLAUSIBLE_LOSS_PCT = -50;
@@ -995,12 +1044,22 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   chunks.push("## 1. 🚨 MANDATORY ACTIONS (do these today)");
   const mandatory = [];
 
-  // Rebalance if CORE is severely under.
+  // Rebalance if CORE is severely under. Emits a specific default
+  // ticket (XEQT for CAD, VOO for USD) sized to close the gap, with
+  // the raw gap and no-new-non-CORE rule stated after.
   if (coreLockActive) {
     const gap = Math.abs(b.rebalanceCad?.core || 0);
-    mandatory.push(
-      `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct all free cash AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.**`
-    );
+    const rebalTicket = pickDefaultTicket(["XEQT", "VUN", "XIU"], gap, "CAD");
+    if (rebalTicket) {
+      const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
+      mandatory.push(
+        `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}. **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}`
+      );
+    } else {
+      mandatory.push(
+        `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct all free cash AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.** (No live price for default ticker — pick one manually.)`
+      );
+    }
   }
 
   // Cash-deploy mandate: when dry powder is high AND an auto-routable
@@ -1048,25 +1107,39 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       // trace in server logs. Cheap; only fires when the mandate would.
       console.log(`[cash-deploy] cash=${cashPct.toFixed(1)}% ($${totalCashCad.toFixed(0)} CAD) · book=$${totalBookCad.toFixed(0)} · ${underweight.sleeve} gap=${underweight.gap.toFixed(1)}pp · sleeveGapCad=$${sleeveGapCad.toFixed(0)} · reserve=$${reserveCad.toFixed(0)} · deploy=$${deployCad}`);
       if (deployCad >= 500 && largestPool) {
-        // Skip tickers the operator hit stops on recently — recommending
-        // ENB the same day it was hard-stopped out reads as tone-deaf.
-        // Recent-exits list threads through from the caller; when
-        // unavailable we fall back to the full list.
-        const recentExitBases = new Set(
-          (ctxRecentExits || []).map(t => String(t || "").toUpperCase().replace(/\..*$/, ""))
-        );
-        const baseIncomeTickers = ["RY", "TD", "BMO", "BNS", "ENB", "TRP"];
-        const filteredIncome = baseIncomeTickers.filter(t => !recentExitBases.has(t));
-        const incomeTickerStr = filteredIncome.length > 0
-          ? filteredIncome.join(" / ") + " (TSX dividend payers — pick 1-2, same CAD account)"
-          : baseIncomeTickers.join(" / ") + " (TSX dividend payers — pick 1-2, same CAD account)";
-        const deployTickers = underweight.sleeve === "income"
-          ? incomeTickerStr
-          : "XEQT / VUN / XIU (CAD) or VOO / VTI / QQQ (USD) — pick one matching account currency";
         const acctLabel = largestPool.name || largestPool.id || "the account with the largest cash pool";
-        mandatory.push(
-          `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book is in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Deploy ~${m(deployCad)} from **${acctLabel}** into ${deployTickers}. Leave ~${m(reserveCad)} reserve for opportunistic use. Sitting on dry powder isn't the same as risk management — it's an unfilled sleeve.`
-        );
+        // Deploy currency: derive from largest pool's dominant cash
+        // holding. If it has more USD than CAD in equivalent terms,
+        // deploy in USD; else CAD.
+        const poolCadOnly = largestPool.cashCad || 0;
+        const poolUsdOnly = (largestPool.cashUsd || 0) * fx;
+        const deployCurrency = poolUsdOnly > poolCadOnly ? "USD" : "CAD";
+        // Ordered ticker list per sleeve + currency. First available
+        // (not on recentExits, has live price) becomes the default.
+        const incomeCadList = ["RY", "TD", "BMO", "BNS", "ENB", "TRP"];
+        const coreCadList = ["XEQT", "VUN", "XIU"];
+        const coreUsdList = ["VOO", "VTI", "QQQ"];
+        const defaultList = underweight.sleeve === "income"
+          ? incomeCadList
+          : (deployCurrency === "USD" ? coreUsdList : coreCadList);
+        const ticket = pickDefaultTicket(defaultList, deployCad, deployCurrency);
+        if (ticket) {
+          const remainingCad = Math.max(0, deployCad - ticket.usedCad);
+          const remainingStr = remainingCad >= 100
+            ? ` · leaves ~${m(remainingCad)} of the deploy budget + ${m(reserveCad)} reserve` : ` · leaves ~${m(reserveCad)} reserve`;
+          const altStr = ticket.alternatives ? ` · Alternatives if you prefer: ${ticket.alternatives}` : "";
+          mandatory.push(
+            `**DEPLOY CASH** — BUY **${ticket.shares} sh ${ticket.ticker}** in **${acctLabel}** @ ~$${ticket.livePrice.toFixed(2)} ${ticket.liveCcy} (live cross-check). Uses ~${m(ticket.usedCad)}${remainingStr}. Fills ${underweight.sleeve.toUpperCase()} sleeve gap (${underweight.gap.toFixed(1)}pp under; ${cashPct.toFixed(0)}% of book in cash).${altStr}`
+          );
+        } else {
+          // Fallback: no live price for any candidate → keep list-of-options form.
+          const deployTickers = underweight.sleeve === "income"
+            ? "RY / TD / BMO / BNS / TRP (TSX dividend payers — pick 1, same CAD account)"
+            : "XEQT / VUN / XIU (CAD) or VOO / VTI / QQQ (USD) — pick one matching account currency";
+          mandatory.push(
+            `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book is in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Deploy ~${m(deployCad)} from **${acctLabel}** into ${deployTickers}. Leave ~${m(reserveCad)} reserve for opportunistic use. (No live price for default ticker — placing at market means picking manually.)`
+          );
+        }
       }
     }
   }
@@ -1138,10 +1211,20 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       `**SELL AT MARKET** — ${r.ticker} in ${r.account}: ${r.qty} sh · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%)${sleeveStop}. Hard-stop rule triggered. Sell at market or LIMIT at ~1% below current.`
     );
     if (coreLockActive && proceeds > 0) {
-      const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";
-      mandatory.push(
-        `   → **CORE DEPLOY (paired with SELL above)** — After the ${r.ticker} SELL settles, use the ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds to BUY ${coreTicker} in **${r.account}** (same account, same currency). Uses proceeds from SELL of ${r.ticker} above (pro-forma). CORE gap is ${coreGapPp.toFixed(1)}pp — this is the required destination.`
-      );
+      const proceedsCad = r.currency === "CAD" ? proceeds : proceeds * (fxUsdCad || 1.37);
+      const coreList = r.currency === "CAD" ? ["XEQT", "VUN", "XIU"] : ["VOO", "VTI", "QQQ"];
+      const pairTicket = pickDefaultTicket(coreList, proceedsCad, r.currency);
+      if (pairTicket) {
+        const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
+        mandatory.push(
+          `   → **CORE DEPLOY (paired with SELL above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}** in **${r.account}** @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds from ${r.ticker} SELL (pro-forma). CORE gap ${coreGapPp.toFixed(1)}pp — required destination.${altStr}`
+        );
+      } else {
+        const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";
+        mandatory.push(
+          `   → **CORE DEPLOY (paired with SELL above)** — After the ${r.ticker} SELL settles, use the ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds to BUY ${coreTicker} in **${r.account}** (same account, same currency). CORE gap is ${coreGapPp.toFixed(1)}pp — required destination.`
+        );
+      }
     }
   }
 
@@ -1176,9 +1259,17 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       `**TRIM SPEC** — SPEC sleeve is ${m(excessCad)} over the ${b.targetsPct.spec.toFixed(0)}% cap (currently ${b.actualPct.spec.toFixed(1)}%).${largest ? ` Largest spec name: **${largest[0]}** (${m(largest[1])}) — trim first.` : ""} Proceeds route to CORE (see rebalance mandate) or cash.`
     );
     if (coreLockActive) {
-      mandatory.push(
-        `   → **CORE DEPLOY (paired with TRIM above)** — Route the SPEC-trim proceeds (~${m(excessCad)} needed to reach cap) into XEQT / VUN / XIU in the same account and currency as the SELL. CORE gap is ${coreGapPp.toFixed(1)}pp — this is the required destination, not cash.`
-      );
+      const trimTicket = pickDefaultTicket(["XEQT", "VUN", "XIU"], excessCad, "CAD");
+      if (trimTicket) {
+        const altStr = trimTicket.alternatives ? ` · Alternatives: ${trimTicket.alternatives}` : "";
+        mandatory.push(
+          `   → **CORE DEPLOY (paired with TRIM above)** — After the SPEC trim settles, BUY **${trimTicket.shares} sh ${trimTicket.ticker}** @ ~$${trimTicket.livePrice.toFixed(2)} ${trimTicket.liveCcy} (live). Uses ~${m(excessCad)} trim proceeds. Same-account CAD deploy. CORE gap ${coreGapPp.toFixed(1)}pp — required destination, not cash.${altStr}`
+        );
+      } else {
+        mandatory.push(
+          `   → **CORE DEPLOY (paired with TRIM above)** — Route the SPEC-trim proceeds (~${m(excessCad)} needed to reach cap) into XEQT / VUN / XIU in the same account and currency as the SELL. CORE gap is ${coreGapPp.toFixed(1)}pp — required destination, not cash.`
+        );
+      }
     }
   }
 
@@ -2192,6 +2283,26 @@ export async function generateBriefing(profile) {
     }
     return [...out];
   })();
+  // Pre-fetch live prices for the fixed set of default deploy tickers
+  // used by §1 mandates (CASH DEPLOY / CORE REBALANCE / paired CORE
+  // DEPLOY). Enables mandates to emit ONE specific order ticket with
+  // computed share count instead of a list of options. Small handful
+  // of tickers so it's cheap; each mandate then picks the first
+  // available (not on recentExits, has live price).
+  const MANDATE_DEFAULT_TICKERS = [
+    // INCOME (CAD) — dividend payers
+    "RY", "TD", "BMO", "BNS", "TRP", "ENB",
+    // CORE (CAD) — broad-market ETFs
+    "XEQT", "VUN", "XIU",
+    // CORE (USD) — broad-market ETFs
+    "VOO", "VTI", "QQQ",
+  ];
+  let mandateLivePrices = {};
+  try {
+    mandateLivePrices = await fetchLivePricesForRecs(
+      MANDATE_DEFAULT_TICKERS.map(t => ({ ticker: t }))
+    );
+  } catch (e) { console.warn("[mandate-live-prices] fetch warn:", e?.message); }
   const deterministicPrefix = renderDeterministicPrefix({
     monitorAlerts,
     stopMonitor,
@@ -2203,6 +2314,7 @@ export async function generateBriefing(profile) {
     tradingRegime,
     sectorRotation,
     recentExits,
+    mandateLivePrices,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
