@@ -103,17 +103,49 @@ const DEFAULT_TARGETS = { core: 75, swing: 5, income: 15, spec: 5 };
 const SLEEVE_DRIFT_ALERT_PP = 5; // flag if actual > target ± 5 pp
 
 // Normalize targets to sum to 100 exactly — user-edited values in
-// Settings may not sum cleanly (e.g. 80 / 12 / 5 = 97). Anything
-// missing/negative falls back to the default. Income sleeve is
-// optional in stored targets (older portfolios pre-dating INCOME
-// don't have it); default to 5% coming out of what was SWING's share
-// so total-book targets still sum to 100.
+// Settings may not sum cleanly. Handles three cases:
+//
+//   (a) Nothing stored / all invalid → use DEFAULT_TARGETS (75/5/15/5).
+//   (b) Old-style stored (core+swing+spec present, no income key,
+//       sums to ~100) → treat as pre-INCOME migration: DON'T fill
+//       income from default (that would sum to 115 and dilute
+//       everything). Instead fall back to DEFAULT_TARGETS entirely
+//       so the user gets the new 75/5/15/5 split until they
+//       explicitly opt in to different values.
+//   (c) Full 4-key stored (or partial with income present) → use
+//       user's values, filling any single missing key with 0 rather
+//       than default (respects intent).
+//
+// Bug this fixes: user had legacy {core:80, swing:15, spec:5} stored
+// from before INCOME sleeve existed. Old normalizer stuffed income=15
+// (from default) into raw, sum=115, then divided everything by 1.15
+// → SPEC cap showed as 4.35% instead of 5%, INCOME target 13% not
+// 15%. Sleeve percentages were off by ~13% across the board every
+// day. Auto-migration to DEFAULT_TARGETS is the safest reset.
 function normalizeTargets(t) {
+  const hasIncome = Number.isFinite(+t?.income) && +t?.income >= 0;
+  const hasCore = Number.isFinite(+t?.core) && +t?.core >= 0;
+  const hasSwing = Number.isFinite(+t?.swing) && +t?.swing >= 0;
+  const hasSpec = Number.isFinite(+t?.spec) && +t?.spec >= 0;
+
+  // Case (a): no valid targets at all → default.
+  if (!hasCore && !hasSwing && !hasIncome && !hasSpec) {
+    return { ...DEFAULT_TARGETS };
+  }
+  // Case (b): old-style (core+swing+spec, no income, close to 100).
+  // Auto-migrate to defaults rather than dilute.
+  if (hasCore && hasSwing && hasSpec && !hasIncome) {
+    const storedSum = (+t.core) + (+t.swing) + (+t.spec);
+    if (storedSum >= 95 && storedSum <= 105) {
+      return { ...DEFAULT_TARGETS };
+    }
+  }
+  // Case (c): use provided values, missing keys → 0 (respects intent).
   const raw = {
-    core: Number.isFinite(+t?.core) && +t.core >= 0 ? +t.core : DEFAULT_TARGETS.core,
-    swing: Number.isFinite(+t?.swing) && +t.swing >= 0 ? +t.swing : DEFAULT_TARGETS.swing,
-    income: Number.isFinite(+t?.income) && +t.income >= 0 ? +t.income : DEFAULT_TARGETS.income,
-    spec: Number.isFinite(+t?.spec) && +t.spec >= 0 ? +t.spec : DEFAULT_TARGETS.spec,
+    core: hasCore ? +t.core : 0,
+    swing: hasSwing ? +t.swing : 0,
+    income: hasIncome ? +t.income : 0,
+    spec: hasSpec ? +t.spec : 0,
   };
   const sum = raw.core + raw.swing + raw.income + raw.spec;
   if (sum <= 0) return { ...DEFAULT_TARGETS };

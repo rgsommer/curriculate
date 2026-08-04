@@ -955,7 +955,10 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation }) {
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits }) {
+  // Alias — kept as ctxRecentExits inside so callers don't have to
+  // rebind if the param name changes later.
+  const ctxRecentExits = recentExits || [];
   const chunks = [];
   const m = (v) => `$${Math.round(v).toLocaleString()} CAD`;
   const IMPLAUSIBLE_LOSS_PCT = -50;
@@ -1040,9 +1043,24 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       const reserveCad = Math.max(500, totalBookCad * 0.01);
       const deployCadRaw = Math.min(totalCashCad - reserveCad, sleeveGapCad);
       const deployCad = Math.floor(deployCadRaw / 100) * 100; // round to $100
+      // Debug log so a wrong deploy value in tomorrow's briefing has
+      // trace in server logs. Cheap; only fires when the mandate would.
+      console.log(`[cash-deploy] cash=${cashPct.toFixed(1)}% ($${totalCashCad.toFixed(0)} CAD) · book=$${totalBookCad.toFixed(0)} · ${underweight.sleeve} gap=${underweight.gap.toFixed(1)}pp · sleeveGapCad=$${sleeveGapCad.toFixed(0)} · reserve=$${reserveCad.toFixed(0)} · deploy=$${deployCad}`);
       if (deployCad >= 500 && largestPool) {
+        // Skip tickers the operator hit stops on recently — recommending
+        // ENB the same day it was hard-stopped out reads as tone-deaf.
+        // Recent-exits list threads through from the caller; when
+        // unavailable we fall back to the full list.
+        const recentExitBases = new Set(
+          (ctxRecentExits || []).map(t => String(t || "").toUpperCase().replace(/\..*$/, ""))
+        );
+        const baseIncomeTickers = ["RY", "TD", "BMO", "BNS", "ENB", "TRP"];
+        const filteredIncome = baseIncomeTickers.filter(t => !recentExitBases.has(t));
+        const incomeTickerStr = filteredIncome.length > 0
+          ? filteredIncome.join(" / ") + " (TSX dividend payers — pick 1-2, same CAD account)"
+          : baseIncomeTickers.join(" / ") + " (TSX dividend payers — pick 1-2, same CAD account)";
         const deployTickers = underweight.sleeve === "income"
-          ? "RY / TD / BMO / BNS / ENB / TRP (TSX dividend payers — pick 1-2, same CAD account)"
+          ? incomeTickerStr
           : "XEQT / VUN / XIU (CAD) or VOO / VTI / QQQ (USD) — pick one matching account currency";
         const acctLabel = largestPool.name || largestPool.id || "the account with the largest cash pool";
         mandatory.push(
@@ -1227,14 +1245,19 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   // Moved above §4 Optional so the reader can glance at portfolio
   // posture before deciding whether to read any AI ideas.
   const corePct = b?.actualPct?.core != null ? `${b.actualPct.core.toFixed(1)}%` : "n/a";
+  const incomePct = b?.actualPct?.income != null ? `${b.actualPct.income.toFixed(1)}%` : "n/a";
   const specPct = b?.actualPct?.spec != null ? `${b.actualPct.spec.toFixed(1)}%` : "n/a";
   const coreGapStr = coreGapPp > 0.5 ? ` (gap −${coreGapPp.toFixed(1)}pp)` : "";
+  const incomeGapPp = b?.actualPct?.income != null && b?.targetsPct?.income != null
+    ? b.targetsPct.income - b.actualPct.income : 0;
+  const incomeGapStr = incomeGapPp > 0.5 ? ` (gap −${incomeGapPp.toFixed(1)}pp)` : "";
+  const cashPctStr = cashPct != null && Number.isFinite(cashPct) ? `${cashPct.toFixed(0)}%` : "n/a";
   const stopsTotal = confirmedStops.length;
   const suspectStr = suspectStops.length > 0 ? ` (${suspectStops.length} suspect)` : "";
   const regimeStr = tradingRegime?.label || tradingRegime?.regime || "neutral";
   const newIdeasAllowed = (!coreLockActive && !specOver && !regimeHostile) ? "YES" : "BLOCKED";
   chunks.push("## 3. 📊 Status");
-  chunks.push(`CORE: ${corePct}${coreGapStr} · SPEC: ${specPct} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  chunks.push(`CORE: ${corePct}${coreGapStr} · INCOME: ${incomePct}${incomeGapStr} · SPEC: ${specPct} · Cash: ${cashPctStr} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
   // Sector tilt one-liner — deterministic, no AI prose needed. Empty
   // when sector data is unavailable (silent, not a "n/a" line).
   const sectorTilt = formatSectorTiltLine(sectorRotation);
@@ -2128,6 +2151,24 @@ export async function generateBriefing(profile) {
   // for the scope + rationale.
   const stopMonitor = monitorPositionStops(profile.positions || [], profile.accounts || []);
   const sleeveBalanceForPrefix = computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets);
+  // Derive base-ticker list of names the operator SOLD in the last
+  // ~7 days so the DEPLOY CASH mandate doesn't suggest a ticker they
+  // just hard-stopped out of. Same-day recommend-what-you-just-exited
+  // reads as tone-deaf and undermines trust in the mandate.
+  const recentExits = (() => {
+    const out = new Set();
+    const cutoff = Date.now() - 7 * 86400 * 1000;
+    for (const t of (recentTrades || [])) {
+      const when = new Date(t.executedAt).getTime();
+      if (!(when >= cutoff)) continue;
+      for (const leg of t.legs || []) {
+        if (leg.side !== "SELL") continue;
+        const base = String(leg.ticker || "").toUpperCase().replace(/\..*$/, "");
+        if (base) out.add(base);
+      }
+    }
+    return [...out];
+  })();
   const deterministicPrefix = renderDeterministicPrefix({
     monitorAlerts,
     stopMonitor,
@@ -2138,6 +2179,7 @@ export async function generateBriefing(profile) {
     horizonRows,
     tradingRegime,
     sectorRotation,
+    recentExits,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
