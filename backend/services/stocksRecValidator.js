@@ -313,9 +313,13 @@ function ruleSleeveDeclaration({ rec, ctx }) {
     return {
       ok: false,
       reason: "missing-sleeve",
-      detail: `${rec.action} ${rec.ticker} rejected — sleeve field missing. Every rec must declare its sleeve: "core" | "swing" | "income" | "spec". If you can't state the sleeve, you haven't decided where this fits in the portfolio.`,
+      detail: `${rec.action} ${rec.ticker} rejected — sleeve field missing and classifier fallback failed. This shouldn't normally happen (parser auto-fills from classifier when AI omits sleeve).`,
     };
   }
+  // When the parser auto-filled sleeve from the classifier (because
+  // AI omitted the field), there's no "declared vs derived" to
+  // cross-check — they're the same value by construction. Skip.
+  if (rec._sleeveAutoFilled) return { ok: true };
   const derived = classifyPosition({ ticker: rec.ticker });
   if (String(declared).toLowerCase() !== derived) {
     return {

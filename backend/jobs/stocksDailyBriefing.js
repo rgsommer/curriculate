@@ -1786,11 +1786,20 @@ function extractRecsFromJsonBlock(text) {
     // working; validator rules that need account degrade gracefully.
     const account = typeof r.account === "string" && r.account.trim()
       ? r.account.trim() : null;
-    // Sleeve declaration — REQUIRED by validator via ruleSleeveDeclaration.
-    // Preserved as-is (lowercased) so cross-check with classifyPosition
-    // works. Missing sleeve → null → validator rejects.
+    // Sleeve declaration handling — two-tier per Grok clarity rules:
+    //   • AI declared a valid sleeve → preserve as-is; validator
+    //     cross-checks with classifier and REJECTS on mismatch (the
+    //     signal that AI got confused about where the trade fits).
+    //   • AI omitted / invalid sleeve → auto-fill from classifier so
+    //     the AI can stay terse without triggering false rejections.
+    //     Flagged via _sleeveAutoFilled so the mismatch check skips
+    //     these (the classifier can't disagree with itself).
+    // Net effect: classifier is the single source of truth for sleeve;
+    // AI's declaration is only used as a signal of confusion.
     const rawSleeve = typeof r.sleeve === "string" ? r.sleeve.trim().toLowerCase() : "";
-    const sleeve = ["core", "swing", "income", "spec"].includes(rawSleeve) ? rawSleeve : null;
+    const declaredSleeve = ["core", "swing", "income", "spec"].includes(rawSleeve) ? rawSleeve : null;
+    const sleeveWasAutoFilled = !declaredSleeve;
+    const sleeve = declaredSleeve || classifyPosition({ ticker });
     // horizonDays: PRESERVE null when AI omitted the field so the
     // validator can reject "no stated holding period." Persist sites
     // apply a default of 30 only AFTER the rec passes validation.
@@ -1800,6 +1809,7 @@ function extractRecsFromJsonBlock(text) {
       ticker,
       account,
       sleeve,
+      _sleeveAutoFilled: sleeveWasAutoFilled,
       shares: Number.isFinite(+r.shares) ? Math.floor(+r.shares) : null,
       entryPrice,
       targetPrice: Number.isFinite(+r.target) ? +r.target
@@ -2362,6 +2372,17 @@ export async function generateBriefing(profile) {
       const hasOverride = /(?:do\s*not\s*exit|don['’]?t\s*exit|do\s*not\s*sell|don['’]?t\s*sell|hold\s+despite|monitor,?\s*do\s*not\s*churn|acknowledge[^.]*but\s*(?:hold|do\s*not))/i.test(line);
       return !hasOverride;
     }).join("\n");
+    // Strip AI-written "consider re-entering" / "watch for pullback"
+    // / "await better setup" language. Grok clarity rule #4: on a day
+    // when a trim/sell is mandated, hedge language about re-entering
+    // the same ticker later undermines the finality of the exit and
+    // trains the reader to ignore mandates. Ban it entirely from the
+    // primary sections; if genuine re-entry timing matters, it goes
+    // on the Watch List with a concrete trigger, not as hedge prose.
+    md = md.split("\n").filter(line => {
+      const hasHedge = /(?:consider\s+re-?enter|watch(?:list)?\s+for\s+(?:a?\s*)?pullback|await\s+(?:a?\s*)?(?:better\s+setup|entry|clean\s+setup|pullback)|re-?enter\s+on\s+(?:a?\s*)?pullback|re-?entry\s+once|monitor\s+for\s+re-?entry|pending\s+a\s+clean|patience\s+>\s*forcing)/i.test(line);
+      return !hasHedge;
+    }).join("\n");
     md = deterministicPrefix + "\n\n" + md.trim();
   }
 
@@ -2413,6 +2434,39 @@ export async function generateBriefing(profile) {
     const result = validateRecs(rawRecs, validatorCtx);
     acceptedRecs = result.accepted || [];
     rejectedRecs = result.rejected || [];
+
+    // Same-ticker dedupe: if any rec for TICKER was blocked, suppress
+    // ALL accepted recs for that same TICKER. Mixed signals for one
+    // ticker in one briefing almost always mean the AI got confused —
+    // safest response is "no ticket, operator must resolve." Moved-
+    // to-rejected entries carry a "conflicts-with-blocked-sibling"
+    // reason so the user sees why. Per Grok clarity rule #2.
+    const rejectedTickers = new Set(
+      rejectedRecs.map(x => String(x.rec?.ticker || "").toUpperCase()).filter(Boolean)
+    );
+    if (rejectedTickers.size > 0 && acceptedRecs.length > 0) {
+      const cleanAccepted = [];
+      const movedToRejected = [];
+      for (const r of acceptedRecs) {
+        const t = String(r.ticker || "").toUpperCase();
+        if (t && rejectedTickers.has(t)) {
+          movedToRejected.push({
+            rec: r,
+            rejections: [{
+              reason: "conflicts-with-blocked-sibling",
+              detail: `${r.action} ${r.ticker} was accepted, but another rec for the same ticker in this batch was BLOCKED. Mixed signals on one ticker = do not act. Resolve manually and re-emit.`,
+            }],
+          });
+        } else {
+          cleanAccepted.push(r);
+        }
+      }
+      if (movedToRejected.length > 0) {
+        console.warn(`[dedupe] hid ${movedToRejected.length} accepted recs conflicting with blocked siblings on same ticker`);
+        acceptedRecs = cleanAccepted;
+        rejectedRecs = [...rejectedRecs, ...movedToRejected];
+      }
+    }
     // Rewrite <RECS> to accepted-only every time recs went through
     // validation (was previously only rewritten when there were
     // rejections — but even zero-rejection paths benefit from a
@@ -2489,6 +2543,14 @@ function plainEnglishFix(reason, detail) {
       "Recent AI-rec expectancy is negative. Discretionary BUYs paused until expectancy recovers; CORE rebalances still OK.",
     "liquidity-floor":
       "Average daily $ volume below the sleeve floor. Pick a more liquid name.",
+    "conflicts-with-blocked-sibling":
+      "Another rec for this ticker was blocked in the same batch. Mixed signals for one ticker = do not act. Resolve manually and re-emit.",
+    "missing-sleeve":
+      "Sleeve field missing. Every rec must declare its sleeve (core/swing/income/spec). Parser will normally auto-fill from classifier; this means the classifier also failed to map the ticker.",
+    "sleeve-mismatch":
+      "AI's declared sleeve disagrees with the classifier's mapping for this ticker. Fix the declaration or update the classifier list.",
+    "missing-horizon":
+      "horizonDays field missing. Every rec needs an intended holding period as integer days.",
   };
   return map[reason] || detail;
 }
