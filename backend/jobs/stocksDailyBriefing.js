@@ -999,24 +999,40 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     );
   }
 
-  // Force-shrink mandate: when CORE is severely underweight (>15pp),
-  // organic attrition through stops + trims isn't fast enough. Emit a
-  // MANDATORY TRIM on the largest non-CORE position (SWING / INCOME /
-  // SPEC — anything that's oversized relative to CORE). Trims 25% of
-  // the position, routing proceeds to CORE ETFs in the same account
-  // and currency. This closes the gap in weeks rather than months.
+  // Force-shrink mandate: when ANY sleeve is severely underweight
+  // (>15pp), route trim proceeds to that sleeve — not blindly to
+  // CORE. Original version always deployed to CORE ETFs, which was
+  // wrong for portfolios where CORE was at target but another sleeve
+  // (typically INCOME) had a huge gap. Now the mandate picks:
   //
-  // Deliberately triggers ABOVE the standard 10pp CORE-lock threshold
-  // so normal drift doesn't force a trim every day — only genuine
-  // severe under-allocation does.
+  //   • which sleeve is most underweight (biggest negative gap)
+  //   • which oversize position to trim (largest not in the
+  //     most-underweight sleeve, skipping stop-hits already flagged)
+  //   • which ETF / ticker set to deploy into, matching the
+  //     underweight sleeve's currency and hold-style
+  //
+  // SPEC is never a routing destination — never trim INTO the loss
+  // zone. If SPEC is the most underweight (rare), skip. SWING is
+  // also not auto-routable because SWING entries are discretionary
+  // technical setups, not fill-a-bucket buys.
   const FORCE_SHRINK_GAP_PP = 15;
-  if (coreGapPp > FORCE_SHRINK_GAP_PP && b?.byPosition) {
-    // Rank non-CORE positions by CAD value, pick the largest that
-    // isn't already flagged for stop-hit exit today (don't double-
-    // count — the confirmed-stop line already covers that name).
+  const sleeveGaps = b?.deviations ? [
+    { sleeve: "core",   gap: -b.deviations.core },
+    { sleeve: "income", gap: -b.deviations.income },
+    { sleeve: "swing",  gap: -b.deviations.swing },
+    { sleeve: "spec",   gap: -b.deviations.spec },
+  ].sort((a, b) => b.gap - a.gap) : [];
+  const mostUnderweight = sleeveGaps[0];
+  const AUTO_ROUTE_SLEEVES = new Set(["core", "income"]);
+  if (mostUnderweight && mostUnderweight.gap > FORCE_SHRINK_GAP_PP
+      && AUTO_ROUTE_SLEEVES.has(mostUnderweight.sleeve)
+      && b?.byPosition) {
     const stopHitTickers = new Set(confirmedStops.map(r => String(r.ticker || "").toUpperCase()));
+    // Trim candidates: any position NOT in the underweight sleeve
+    // (can't trim from what you're trying to fill) and not already
+    // scheduled to exit via a hard stop.
     const candidates = (b.byPosition || [])
-      .filter(row => row.sleeve !== "core" && row.cadValue > 0)
+      .filter(row => row.sleeve !== mostUnderweight.sleeve && row.cadValue > 0)
       .filter(row => !stopHitTickers.has(String(row.ticker || "").toUpperCase()))
       .sort((a, b) => b.cadValue - a.cadValue);
     const largest = candidates[0];
@@ -1025,8 +1041,16 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       const heldPos = (positions || []).find(p => String(p.ticker || "").toUpperCase() === String(largest.ticker || "").toUpperCase());
       const acctStr = heldPos?.acct ? ` in ${heldPos.acct}` : "";
       const sleeveStr = largest.sleeve ? ` (${largest.sleeve.toUpperCase()} sleeve)` : "";
+      // Per-sleeve deploy ETF suggestions. INCOME picks are TSX-CAD
+      // dividend payers (the Canadian book is where the trader's own
+      // edge lives, per the journal); CORE picks are broad-market
+      // ETFs matched to the SELL's currency where possible.
+      const heldCurrency = heldPos?.ccy || "CAD";
+      const deployTickers = mostUnderweight.sleeve === "income"
+        ? "RY / TD / BMO / BNS / ENB / TRP (dividend payers, same account & CAD)"
+        : (heldCurrency === "CAD" ? "XEQT / VUN / XIU" : "VOO / VTI / QQQ") + " (broad-market ETF, same account & currency)";
       mandatory.push(
-        `**FORCE-TRIM 25% of ${largest.ticker}**${acctStr}${sleeveStr} — ~${m(trimCad)} proceeds. CORE gap is ${coreGapPp.toFixed(1)}pp (severe); organic attrition isn't fast enough to close it. Trim 25% of the largest non-CORE position, route proceeds into XEQT / VUN / XIU in the same account and currency. If the ticker is high-conviction, this doesn't kill the thesis — it right-sizes it while CORE catches up.`
+        `**FORCE-TRIM 25% of ${largest.ticker}**${acctStr}${sleeveStr} — ~${m(trimCad)} proceeds. ${mostUnderweight.sleeve.toUpperCase()} sleeve is ${mostUnderweight.gap.toFixed(1)}pp underweight (severe); organic attrition isn't fast enough. Trim 25% of the largest non-${mostUnderweight.sleeve.toUpperCase()} position, deploy proceeds into ${deployTickers}. If the trimmed ticker is high-conviction, this doesn't kill the thesis — it right-sizes it while ${mostUnderweight.sleeve.toUpperCase()} catches up.`
       );
     }
   }
