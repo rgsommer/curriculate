@@ -1094,8 +1094,15 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       //   • USD cash → CORE-USD (no INCOME-USD list today)
       // Reserve per pool: max($200, 10% of pool). Total deployment
       // capped by sleeve gap so we don't overshoot into overweight.
-      const incomeCadList = ["RY", "TD", "BMO", "BNS", "TRP", "ENB"];
-      const coreCadList = ["XEQT", "VUN", "XIU"];
+      // Ticker lists match what MANDATE_DEFAULT_TICKERS fetched (with
+      // .TO suffix for TSX names). ctxLivePrices is keyed by the same
+      // string used to fetch, so mismatched suffixes would return no
+      // price → skip. INCOME-USD list added so USD cash can fill the
+      // INCOME sleeve via US-listed dividend payers (previously USD
+      // always routed to CORE-USD even when INCOME was underweight).
+      const incomeCadList = ["RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "TRP.TO", "ENB.TO"];
+      const incomeUsdList = ["KO", "PEP", "JNJ", "PG", "MO", "ABBV", "MRK", "XOM", "CVX", "O", "VZ", "MMM"];
+      const coreCadList = ["XEQT.TO", "VUN.TO", "XIU.TO"];
       const coreUsdList = ["VOO", "VTI", "QQQ"];
       const sleeveGapCad = (underweight.gap / 100) * totalBookCad;
       // Debug log — one line summarising the whole deploy plan.
@@ -1127,15 +1134,18 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
         const deployCadThisPool = pool.ccy === "CAD" ? deployNative : deployNative * fx;
         // Sleeve routing per currency:
         //   CAD cash → INCOME (if underweight sleeve is INCOME) else CORE-CAD
-        //   USD cash → CORE-USD (no INCOME-USD list today)
+        //   USD cash → INCOME-USD (if underweight sleeve is INCOME) else CORE-USD
+        // INCOME-USD list is US-listed dividend payers (KO/PG/JNJ/etc.)
+        // so USD cash isn't forced into CORE ETFs when the INCOME sleeve
+        // actually needs the fill.
         let list;
         let effectiveSleeve;
         if (pool.ccy === "CAD") {
           list = underweight.sleeve === "income" ? incomeCadList : coreCadList;
           effectiveSleeve = underweight.sleeve === "income" ? "INCOME" : "CORE";
         } else {
-          list = coreUsdList;
-          effectiveSleeve = "CORE";
+          list = underweight.sleeve === "income" ? incomeUsdList : coreUsdList;
+          effectiveSleeve = underweight.sleeve === "income" ? "INCOME" : "CORE";
         }
         const ticket = pickDefaultTicket(list, deployCadThisPool, pool.ccy);
         if (!ticket) continue;
@@ -2312,12 +2322,17 @@ export async function generateBriefing(profile) {
   // of tickers so it's cheap; each mandate then picks the first
   // available (not on recentExits, has live price).
   const MANDATE_DEFAULT_TICKERS = [
-    // INCOME (CAD) — dividend payers
-    "RY", "TD", "BMO", "BNS", "TRP", "ENB",
-    // CORE (CAD) — broad-market ETFs
-    "XEQT", "VUN", "XIU",
-    // CORE (USD) — broad-market ETFs
+    // INCOME (CAD-TSX) — force .TO suffix so Yahoo returns TSX price
+    // (~$148 CAD for RY) instead of NYSE ADR (~$208 USD). Bare "RY"
+    // resolves to the US listing which was producing the wrong-currency
+    // deploy amounts observed in the Aug 4 on-demand brief.
+    "RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "TRP.TO", "ENB.TO",
+    // CORE (CAD-TSX) — same .TO discipline
+    "XEQT.TO", "VUN.TO", "XIU.TO",
+    // CORE (USD) — bare symbols resolve to US listing (correct)
     "VOO", "VTI", "QQQ",
+    // INCOME (USD) — dividend payers. Bare symbols resolve to US listing.
+    "KO", "PEP", "JNJ", "PG", "MO", "ABBV", "MRK", "XOM", "CVX", "O", "VZ", "MMM",
   ];
   let mandateLivePrices = {};
   try {
@@ -2480,9 +2495,13 @@ export async function generateBriefing(profile) {
     // New Daily Orders strips — §1/§2/§4 are pre-rendered; strip any AI
     // attempt to duplicate them so the prepended deterministic version
     // is the only copy in the final briefing.
-    md = stripHeaderBlock(md, /^##\s*1\.\s*🚨?\s*MANDATORY ACTIONS.*$/im);
-    md = stripHeaderBlock(md, /^##\s*2\.\s*🛑?\s*FORBIDDEN TODAY.*$/im);
-    md = stripHeaderBlock(md, /^##\s*3\.\s*📊?\s*Status.*$/im);
+    // Broadened patterns — original required "## 1." prefix. AI often
+    // drops the "1." (leaving "## 🚨 MANDATORY ACTIONS") which slipped
+    // through the strip and led to duplicate/contradicting §1 blocks.
+    // The (?:N\.\s*)? makes the number optional so both forms match.
+    md = stripHeaderBlock(md, /^##\s*(?:1\.\s*)?🚨?\s*MANDATORY ACTIONS.*$/im);
+    md = stripHeaderBlock(md, /^##\s*(?:2\.\s*)?🛑?\s*FORBIDDEN TODAY.*$/im);
+    md = stripHeaderBlock(md, /^##\s*(?:3\.\s*)?📊?\s*Status.*$/im);
     // Legacy strip for pre-reorder briefs still cached — §4 was Status
     // before the swap. Safe to keep for a few weeks then remove.
     md = stripHeaderBlock(md, /^##\s*4\.\s*📊?\s*Status.*$/im);
@@ -2505,6 +2524,15 @@ export async function generateBriefing(profile) {
       if (!hasStopFlag) return true;
       const hasOverride = /(?:do\s*not\s*exit|don['’]?t\s*exit|do\s*not\s*sell|don['’]?t\s*sell|hold\s+despite|monitor,?\s*do\s*not\s*churn|acknowledge[^.]*but\s*(?:hold|do\s*not))/i.test(line);
       return !hasOverride;
+    }).join("\n");
+    // Strip AI-written meta-commentary on my §1 mandates. AI was
+    // observed appending lines like "Revised deployment: Deploy 17 sh
+    // RY only..." or "0 sh SKIP — insufficient cash" that rewrite my
+    // deterministic tickets with hallucinated numbers. My §1 is
+    // authoritative; AI has nothing to add there.
+    md = md.split("\n").filter(line => {
+      const isMandateRewrite = /^\s*(?:revised\s+deployment|deferring\s+.*deploy|deploy\s+of\s+[^:]+deferred|reduced\s+deploy|adjust(?:ed|ing)\s+deploy)/i.test(line);
+      return !isMandateRewrite;
     }).join("\n");
     // Strip AI-written "consider re-entering" / "watch for pullback"
     // / "await better setup" language. Grok clarity rule #4: on a day

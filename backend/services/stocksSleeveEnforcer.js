@@ -97,6 +97,16 @@ const INCOME_TICKERS = new Set([
   "ENB", "TRP",
   // Canadian utilities / telecom / rails — regulated cash flows
   "FTS", "EMA", "AQN", "BCE", "T", "RCI", "CP", "CNR",
+  // US dividend aristocrats + high-yield names. Added so USD cash in
+  // RRSP/TFSA can fill the INCOME sleeve without forced FX conversion
+  // (previously any USD cash defaulted to CORE-USD/VOO regardless of
+  // whether INCOME was underweight). Some of these are ALSO on
+  // SWING_TICKERS (KO, PG, JNJ, PEP, XOM, CVX, MRK, WMT, HD) —
+  // classifyPosition checks INCOME first, so these classify as INCOME
+  // for wider stops + long-horizon treatment. Deliberate: a held KO
+  // position for its 3.1% dividend is fundamentally an INCOME hold,
+  // not a swing trade.
+  "KO", "PEP", "JNJ", "PG", "MO", "ABBV", "MRK", "XOM", "CVX", "O", "VZ", "MMM",
 ]);
 
 const DEFAULT_TARGETS = { core: 75, swing: 5, income: 15, spec: 5 };
