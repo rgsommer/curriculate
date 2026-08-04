@@ -724,10 +724,16 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
       lastPriceCheckedAt: scanDate,
       lastPrice: c.price,
     };
-    // Upsert keyed on (email, ticker, scanDate) — usually a fresh insert
+    // Upsert keyed on (email, ticker, scanDate) — usually a fresh insert.
+    // Also append to scoreHistory so the ConvictionTrendBadge on the
+    // DiscoverTab card can render rising/falling/stable vs prior scans
+    // (previously only high-conviction + moonshot scans appended).
     const saved = await StocksDiscoveryCandidate.findOneAndUpdate(
       { email: doc.email, ticker: doc.ticker, scanDate: doc.scanDate },
-      { $set: doc },
+      {
+        $set: doc,
+        $push: { scoreHistory: { $each: [{ date: scanDate, score: doc.score, source: "discovery" }], $slice: -90 } },
+      },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     return saved.toObject();

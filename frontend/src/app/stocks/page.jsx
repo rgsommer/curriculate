@@ -8599,6 +8599,7 @@ function DiscoverView({ sessionToken, user }) {
                   {c.thesis?.conviction?.toUpperCase() || "—"} conviction
                 </span>
                 <span className="sa-muted" style={{ fontSize: 11 }}>{c.score > 0 ? `score ${c.score}/100` : "not scored"}</span>
+                <ConvictionTrendBadge history={c.scoreHistory} />
               </div>
             </div>
 

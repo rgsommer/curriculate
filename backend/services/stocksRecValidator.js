@@ -283,7 +283,7 @@ function ruleExpectancyFloor({ rec, ctx }) {
 // pre-populated (the async fetch happens outside the validator, in
 // generateBriefing, so validator rules stay synchronous). Missing
 // livePrices entry → rule no-ops (don't block on missing data).
-const PRICE_DRIFT_THRESHOLD = 0.015; // 1.5% — tightened per audit; catches "AI wrote entry from stale technicals + tiny buffer" pattern that a 5% threshold missed. Still permissive enough to allow small pre-market buffers.
+const PRICE_DRIFT_THRESHOLD = 0.006; // 0.6% — tightened again per Grok Aug rule set. Post-intraday recs (limit set from the current print) shouldn't drift more than 0.5-1.0% by the time validation runs. Anything wider almost always means AI wrote entry from stale technicals or a pre-market snapshot that has since moved.
 function ruleLivePriceDrift({ rec, ctx }) {
   if (!rec.entryPrice || !rec.ticker) return { ok: true };
   const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
