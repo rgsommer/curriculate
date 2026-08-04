@@ -2614,6 +2614,7 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
             source: "ai",
             sourceLabel: "sonnet-briefing-ondemand",
             ...r,
+            horizonDays: r.horizonDays ?? 30, // defensive; validator rejects null but schema needs a number
             rationale: "On-demand briefing",
           }))
         );

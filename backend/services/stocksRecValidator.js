@@ -16,7 +16,11 @@
 // in the RULES array — the framework runs all of them and aggregates.
 //
 // Rules currently enforced (highest-leverage first, per Grok's plan):
-//   sleeve-spec-cap-hard              — BUY on SPEC when SPEC is at/over cap
+//   missing-sleeve                    — rec has no sleeve declaration
+//   sleeve-mismatch                   — declared sleeve doesn't match classifier
+//   missing-horizon                   — rec has no horizonDays declaration
+//   sleeve-spec-cap-hard              — BUY on SPEC when SPEC is at/over
+//                                       (target − 0.5pp buffer)
 //   sleeve-core-widen                 — new non-CORE BUY when CORE is >10pp under
 //   single-name-cap                   — BUY that would push one ticker past 15% of book
 //   sell-no-redeploy-core-underweight — SELL/TRIM with no companion CORE BUY
@@ -84,6 +88,11 @@ function baseTicker(t) {
 // occasionally (e.g. the July 31 briefing surfaced ZETA with
 // "spec-sleeve already 4.7pp over limit"). The validator refuses
 // regardless of AI reasoning.
+// SPEC cap has a 0.5pp buffer below the target — reject new SPEC BUYs
+// when the sleeve is already at or over (target − buffer). Prevents
+// the "just under cap → sneak in one more" accumulation pattern that
+// wastes cap headroom on a marginal add. Per Grok audit.
+const SPEC_CAP_BUFFER_PP = 0.5;
 function ruleSpecCapHard({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   const sleeve = classifyPosition({ ticker: rec.ticker });
@@ -92,11 +101,12 @@ function ruleSpecCapHard({ rec, ctx }) {
   if (!bal || !bal.actualPct) return { ok: true }; // no context — don't block
   const specPct = bal.actualPct.spec;
   const specTargetPct = bal.targetsPct?.spec ?? 5;
-  if (specPct <= specTargetPct) return { ok: true };
+  const effectiveCap = specTargetPct - SPEC_CAP_BUFFER_PP;
+  if (specPct < effectiveCap) return { ok: true };
   return {
     ok: false,
     reason: "sleeve-spec-cap-hard",
-    detail: `SPEC sleeve at ${specPct.toFixed(1)}% is already over the ${specTargetPct}% cap. New SPEC BUYs are hard-blocked until the sleeve shrinks back under target. AI proposed BUY ${rec.ticker} anyway — rejected.`,
+    detail: `SPEC sleeve at ${specPct.toFixed(1)}% is at/over the buffered cap ${effectiveCap.toFixed(1)}% (target ${specTargetPct}% − ${SPEC_CAP_BUFFER_PP}pp buffer). New SPEC BUYs are hard-blocked until the sleeve shrinks below the buffered cap. AI proposed BUY ${rec.ticker} anyway — rejected.`,
   };
 }
 
@@ -273,7 +283,7 @@ function ruleExpectancyFloor({ rec, ctx }) {
 // pre-populated (the async fetch happens outside the validator, in
 // generateBriefing, so validator rules stay synchronous). Missing
 // livePrices entry → rule no-ops (don't block on missing data).
-const PRICE_DRIFT_THRESHOLD = 0.05; // 5% — tighter than the 10% cross-check disagreement threshold
+const PRICE_DRIFT_THRESHOLD = 0.015; // 1.5% — tightened per audit; catches "AI wrote entry from stale technicals + tiny buffer" pattern that a 5% threshold missed. Still permissive enough to allow small pre-market buffers.
 function ruleLivePriceDrift({ rec, ctx }) {
   if (!rec.entryPrice || !rec.ticker) return { ok: true };
   const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
@@ -286,6 +296,51 @@ function ruleLivePriceDrift({ rec, ctx }) {
     reason: "price-drift-stale",
     detail: `${rec.action} ${rec.ticker} @ $${rec.entryPrice} ${rec.entryCurrency || ""} is ${(drift * 100).toFixed(1)}% ${direction} the current cross-checked price of $${live.price.toFixed(2)} (source: ${(live.sources || []).join("+") || "unknown"}, confidence: ${live.confidence || "unknown"}). Stale entry price means wrong sizing + wrong stop % + wrong trigger — refresh the price and re-emit.`,
   };
+}
+
+// Sleeve declaration required + cross-checked against the classifier.
+// Every non-HOLD rec must name its sleeve; if AI can't say what sleeve
+// a ticker belongs to, they haven't thought through the trade. Also
+// catches the "declare sleeve=core to sneak past sleeve caps" pattern
+// by cross-checking against the deterministic classifier — mismatch
+// rejects the rec, forcing either the ticker's classifier mapping to
+// be updated (proper) or the rec to be re-emitted with the true sleeve
+// (which then hits the correct cap/gap rules).
+function ruleSleeveDeclaration({ rec, ctx }) {
+  if (rec.action === "HOLD") return { ok: true };
+  const declared = rec.sleeve;
+  if (!declared) {
+    return {
+      ok: false,
+      reason: "missing-sleeve",
+      detail: `${rec.action} ${rec.ticker} rejected — sleeve field missing. Every rec must declare its sleeve: "core" | "swing" | "income" | "spec". If you can't state the sleeve, you haven't decided where this fits in the portfolio.`,
+    };
+  }
+  const derived = classifyPosition({ ticker: rec.ticker });
+  if (String(declared).toLowerCase() !== derived) {
+    return {
+      ok: false,
+      reason: "sleeve-mismatch",
+      detail: `${rec.action} ${rec.ticker} declared sleeve="${declared}" but classifier maps this ticker to "${derived}" (via CORE_ETFS / INCOME_TICKERS / SWING_TICKERS / SPEC_TICKERS / TSX-default rules). Either the ticker belongs in a different sleeve than you think, or the classifier list needs updating. Rejected.`,
+    };
+  }
+  return { ok: true };
+}
+
+// Horizon required on every non-HOLD rec. If you can't state how long
+// you'd hold this trade, you're not committing to a plan — you're
+// hoping. horizonDays is now null (not the old silent 30-day default)
+// when AI omits it, so this rule catches the omission cleanly.
+function ruleHorizonDeclaration({ rec, ctx }) {
+  if (rec.action === "HOLD") return { ok: true };
+  if (!(rec.horizonDays > 0)) {
+    return {
+      ok: false,
+      reason: "missing-horizon",
+      detail: `${rec.action} ${rec.ticker} rejected — horizonDays missing or invalid. Every rec must declare an intended holding period (integer days: weeks × 7, months × 30). Missing horizon = missing exit plan.`,
+    };
+  }
+  return { ok: true };
 }
 
 // Regime hard gate: when the regime module flags an unfavourable tape
@@ -310,6 +365,11 @@ function ruleRegimeHostileNoNewSwingSpec({ rec, ctx }) {
 }
 
 const RULES = [
+  // Field-declaration gates run first — cheap and catch "AI didn't
+  // think this through" recs before they hit the more expensive
+  // classifier / live-price / sleeve rules.
+  ruleSleeveDeclaration,
+  ruleHorizonDeclaration,
   ruleSpecCapHard,
   ruleCoreGapWidening,
   ruleSingleNameCap,

@@ -641,8 +641,8 @@ MANDATORY MACHINE-READABLE REC BLOCK — at the very end of the briefing, emit e
 
 <RECS>
 [
-  {"action":"BUY","ticker":"NVDA","account":"Non-Spousal USD","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100,"orderTiming":"post-10am"},
-  {"action":"SELL","ticker":"ENB","account":"RRSP","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500,"orderTiming":"gtc"}
+  {"action":"BUY","ticker":"NVDA","account":"Non-Spousal USD","sleeve":"swing","entry":145.20,"target":160.00,"stop":138.50,"horizonDays":14,"currency":"USD","shares":100,"orderTiming":"post-10am"},
+  {"action":"SELL","ticker":"ENB","account":"RRSP","sleeve":"income","entry":75.80,"target":72.00,"stop":78.00,"horizonDays":30,"currency":"CAD","shares":500,"orderTiming":"gtc"}
 ]
 </RECS>
 
@@ -650,9 +650,10 @@ Block rules:
 - One JSON object per actionable BUY / SELL / TRIM in the narrative. HOLD may be omitted.
 - ticker = exact exchange symbol, never a brand name.
 - account = REQUIRED — the exact account name from the per-account cash inventory block above (e.g. "RRSP", "TFSA", "Non-Spousal"). This is what activates the same-account SELL↔BUY pairing checks and the cross-account fragmentation gate. Missing account → validator treats the rec as unassigned and cannot pair it with sibling recs by account.
+- sleeve = REQUIRED — one of "core" | "swing" | "income" | "spec". Must match the classifier's assignment for the ticker (CORE_ETFS / INCOME_TICKERS / SWING_TICKERS / SPEC_TICKERS lists in stocksSleeveEnforcer). Validator rejects missing OR mismatched sleeve. If you can't state the sleeve you haven't decided where the rec fits.
+- horizonDays = REQUIRED integer (weeks × 7, months × 30). No silent default. Missing horizonDays = missing exit plan → validator rejects.
 - entry / target / stop = the numbers cited in the narrative, native currency. target and stop are REQUIRED for every BUY (not null).
 - currency = "USD" or "CAD", matches native listing.
-- horizonDays = integer (weeks × 7, months × 30).
 - orderTiming = one of the four values above (REQUIRED — same vocabulary the narrative uses).
 - No code fences, no prose inside <RECS>...</RECS>, nothing after </RECS>.
 - Zero actionable recs → emit "<RECS>[]</RECS>". Never omit the block.
@@ -1785,17 +1786,27 @@ function extractRecsFromJsonBlock(text) {
     // working; validator rules that need account degrade gracefully.
     const account = typeof r.account === "string" && r.account.trim()
       ? r.account.trim() : null;
+    // Sleeve declaration — REQUIRED by validator via ruleSleeveDeclaration.
+    // Preserved as-is (lowercased) so cross-check with classifyPosition
+    // works. Missing sleeve → null → validator rejects.
+    const rawSleeve = typeof r.sleeve === "string" ? r.sleeve.trim().toLowerCase() : "";
+    const sleeve = ["core", "swing", "income", "spec"].includes(rawSleeve) ? rawSleeve : null;
+    // horizonDays: PRESERVE null when AI omitted the field so the
+    // validator can reject "no stated holding period." Persist sites
+    // apply a default of 30 only AFTER the rec passes validation.
+    const horizonDays = Number.isFinite(+r.horizonDays) ? +r.horizonDays : null;
     out.push({
       action,
       ticker,
       account,
+      sleeve,
       shares: Number.isFinite(+r.shares) ? Math.floor(+r.shares) : null,
       entryPrice,
       targetPrice: Number.isFinite(+r.target) ? +r.target
         : Number.isFinite(+r.targetPrice) ? +r.targetPrice : null,
       stopPrice: Number.isFinite(+r.stop) ? +r.stop
         : Number.isFinite(+r.stopPrice) ? +r.stopPrice : null,
-      horizonDays: Number.isFinite(+r.horizonDays) ? +r.horizonDays : 30,
+      horizonDays,
       entryCurrency: ["USD", "CAD"].includes(String(r.currency || r.entryCurrency || "").toUpperCase())
         ? String(r.currency || r.entryCurrency).toUpperCase()
         : "USD",
@@ -2665,6 +2676,7 @@ export async function runDailyBriefing(opts = {}) {
             source: "ai",
             sourceLabel: "sonnet-briefing-cron",
             ...r,
+            horizonDays: r.horizonDays ?? 30, // defensive; validator rejects null but schema needs a number
             rationale: "Daily briefing — server-side cron",
           }))
         );
@@ -2798,6 +2810,7 @@ export async function sendBriefingForUser(p, sendKey) {
             source: "ai",
             sourceLabel: "sonnet-briefing-cron",
             ...r,
+            horizonDays: r.horizonDays ?? 30, // defensive; validator rejects null but schema needs a number
             rationale: "Daily briefing — server-side cron",
           }))
         );
