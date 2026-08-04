@@ -75,23 +75,52 @@ const SPEC_TICKERS = new Set([
   "NIO", "XPEV", "LI", "BABA", "PDD",
 ]);
 
-const DEFAULT_TARGETS = { core: 80, swing: 15, spec: 5 };
+// INCOME sleeve — dividend-payer holds with LONG horizons (typically 365d)
+// and WIDER stops than SWING. These positions are held for yield + capex
+// runway, not short-term price action. Fitting them into SWING created
+// the "trailing stop hit but do not exit" contradiction that undermined
+// the whole hard-stop regime — INCOME sleeve resolves the mismatch by
+// giving these names their own sleeve, target %, and stop rule.
+//
+// Guiding principle: if the thesis is "3-5% dividend + long runway",
+// the position belongs in INCOME. If it's "45-60 day swing on a Canadian
+// large-cap with a defined stop", it stays in SWING. Same ticker CAN
+// legitimately live in either sleeve depending on the entry rationale,
+// but this default classification handles the common case.
+const INCOME_TICKERS = new Set([
+  // Canadian big-5 banks (dividend-payer core)
+  "RY", "TD", "BMO", "BNS", "CM", "NA",
+  // Canadian insurers with steady dividends
+  "MFC", "SLF", "GWO",
+  // Canadian energy majors that are held for dividend + capex runway
+  // (ENB is the textbook example — 5%+ yield, 30-year infrastructure)
+  "ENB", "TRP",
+  // Canadian utilities / telecom / rails — regulated cash flows
+  "FTS", "EMA", "AQN", "BCE", "T", "RCI", "CP", "CNR",
+]);
+
+const DEFAULT_TARGETS = { core: 80, swing: 10, income: 5, spec: 5 };
 const SLEEVE_DRIFT_ALERT_PP = 5; // flag if actual > target ± 5 pp
 
 // Normalize targets to sum to 100 exactly — user-edited values in
 // Settings may not sum cleanly (e.g. 80 / 12 / 5 = 97). Anything
-// missing/negative falls back to the default.
+// missing/negative falls back to the default. Income sleeve is
+// optional in stored targets (older portfolios pre-dating INCOME
+// don't have it); default to 5% coming out of what was SWING's share
+// so total-book targets still sum to 100.
 function normalizeTargets(t) {
   const raw = {
     core: Number.isFinite(+t?.core) && +t.core >= 0 ? +t.core : DEFAULT_TARGETS.core,
     swing: Number.isFinite(+t?.swing) && +t.swing >= 0 ? +t.swing : DEFAULT_TARGETS.swing,
+    income: Number.isFinite(+t?.income) && +t.income >= 0 ? +t.income : DEFAULT_TARGETS.income,
     spec: Number.isFinite(+t?.spec) && +t.spec >= 0 ? +t.spec : DEFAULT_TARGETS.spec,
   };
-  const sum = raw.core + raw.swing + raw.spec;
+  const sum = raw.core + raw.swing + raw.income + raw.spec;
   if (sum <= 0) return { ...DEFAULT_TARGETS };
   return {
     core: (raw.core / sum) * 100,
     swing: (raw.swing / sum) * 100,
+    income: (raw.income / sum) * 100,
     spec: (raw.spec / sum) * 100,
   };
 }
@@ -101,11 +130,17 @@ function baseTicker(t) {
   return String(t || "").toUpperCase().replace(/\..*$/, "");
 }
 
-// Assign a sleeve to a position. Returns "core" | "swing" | "spec".
+// Assign a sleeve to a position. Returns "core" | "swing" | "income" | "spec".
+// INCOME check runs BEFORE SWING so dividend-payer TSX names route to
+// their long-horizon sleeve instead of getting the shorter SWING stop.
+// Order matters: CORE ETFs first (broad-market always wins), then INCOME
+// (dividend holds), then SWING (Canadian large-caps not in the income
+// list), then SPEC (known high-vol), then fallbacks.
 export function classifyPosition(position) {
   if (!position) return "spec";
   const base = baseTicker(position.ticker);
   if (CORE_ETFS.has(base)) return "core";
+  if (INCOME_TICKERS.has(base)) return "income";
   if (SWING_TICKERS.has(base)) return "swing";
   if (SPEC_TICKERS.has(base)) return "spec";
   // Fallback: any TSX-suffixed ticker not on the spec list defaults to
@@ -117,11 +152,11 @@ export function classifyPosition(position) {
 }
 
 // Compute per-sleeve $ CAD totals + % of book + target deviation.
-// targets: optional { core, swing, spec } override (from user's
-// profile.sleeveTargets). Falls back to 80/15/5 default.
+// targets: optional { core, swing, income, spec } override (from user's
+// profile.sleeveTargets). Falls back to 80/10/5/5 default.
 export function computeSleeveBalance(positions, fxUsdCad = 1.37, targets = null) {
   const targetPct = normalizeTargets(targets);
-  const totals = { core: 0, swing: 0, spec: 0 };
+  const totals = { core: 0, swing: 0, income: 0, spec: 0 };
   const byPosition = [];
   for (const p of positions || []) {
     const sleeve = classifyPosition(p);
@@ -135,26 +170,30 @@ export function computeSleeveBalance(positions, fxUsdCad = 1.37, targets = null)
       cadValue: cad,
     });
   }
-  const bookTotal = totals.core + totals.swing + totals.spec;
+  const bookTotal = totals.core + totals.swing + totals.income + totals.spec;
   if (bookTotal === 0) return { totals, byPosition, book: 0, sleeves: {} };
   const actualPct = {
     core: (totals.core / bookTotal) * 100,
     swing: (totals.swing / bookTotal) * 100,
+    income: (totals.income / bookTotal) * 100,
     spec: (totals.spec / bookTotal) * 100,
   };
   const deviations = {
     core: actualPct.core - targetPct.core,
     swing: actualPct.swing - targetPct.swing,
+    income: actualPct.income - targetPct.income,
     spec: actualPct.spec - targetPct.spec,
   };
   const targetsCad = {
     core: bookTotal * targetPct.core / 100,
     swing: bookTotal * targetPct.swing / 100,
+    income: bookTotal * targetPct.income / 100,
     spec: bookTotal * targetPct.spec / 100,
   };
   const rebalanceCad = {
     core: targetsCad.core - totals.core,
     swing: targetsCad.swing - totals.swing,
+    income: targetsCad.income - totals.income,
     spec: targetsCad.spec - totals.spec,
   };
   return {
@@ -171,6 +210,7 @@ export function computeSleeveBalance(positions, fxUsdCad = 1.37, targets = null)
     specOverLimit: actualPct.spec > targetPct.spec,
     coreUnderweight: deviations.core < -SLEEVE_DRIFT_ALERT_PP,
     swingUnderweight: deviations.swing < -SLEEVE_DRIFT_ALERT_PP,
+    incomeUnderweight: deviations.income < -SLEEVE_DRIFT_ALERT_PP,
     driftAlertPp: SLEEVE_DRIFT_ALERT_PP,
   };
 }
@@ -181,22 +221,45 @@ export function formatSleeveBalanceBlock(bal) {
   const pct = (v) => `${v.toFixed(1)}%`;
   const dev = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}pp`;
   const lines = [
-    `\nSLEEVE BALANCE (80/15/5 rule — auto-classified):`,
+    `\nSLEEVE BALANCE (80/10/5/5 rule — auto-classified):`,
     `  Book total: ${m(bal.book)}`,
-    `  CORE (buy-and-hold, target 80%): ${m(bal.totals.core)} · ${pct(bal.actualPct.core)} · ${dev(bal.deviations.core)}`,
-    `  SWING (Canadian large-caps, target 15%): ${m(bal.totals.swing)} · ${pct(bal.actualPct.swing)} · ${dev(bal.deviations.swing)}`,
-    `  SPEC (high-vol, target 5% CAP): ${m(bal.totals.spec)} · ${pct(bal.actualPct.spec)} · ${dev(bal.deviations.spec)}`,
+    `  CORE (buy-and-hold, target ${bal.targetsPct.core.toFixed(0)}%): ${m(bal.totals.core)} · ${pct(bal.actualPct.core)} · ${dev(bal.deviations.core)}`,
+    `  SWING (Canadian large-cap short-swing, target ${bal.targetsPct.swing.toFixed(0)}%): ${m(bal.totals.swing)} · ${pct(bal.actualPct.swing)} · ${dev(bal.deviations.swing)}`,
+    `  INCOME (dividend-payer long holds, target ${bal.targetsPct.income.toFixed(0)}%): ${m(bal.totals.income)} · ${pct(bal.actualPct.income)} · ${dev(bal.deviations.income)}`,
+    `  SPEC (high-vol, target ${bal.targetsPct.spec.toFixed(0)}% CAP): ${m(bal.totals.spec)} · ${pct(bal.actualPct.spec)} · ${dev(bal.deviations.spec)}`,
   ];
   if (bal.specOverLimit) {
     const excessCad = bal.totals.spec - bal.targetsCad.spec;
-    lines.push(`  🚨 SPEC OVER LIMIT: ${m(excessCad)} excess. NO NEW SPEC POSITIONS today. Trim the largest spec name or wait for the sleeve to shrink back to 5% before proposing any new high-vol names.`);
+    lines.push(`  🚨 SPEC OVER LIMIT: ${m(excessCad)} excess. NO NEW SPEC POSITIONS today. Trim the largest spec name or wait for the sleeve to shrink back to ${bal.targetsPct.spec.toFixed(0)}% before proposing any new high-vol names.`);
   }
   if (bal.coreUnderweight) {
     lines.push(`  ⚠ CORE UNDERWEIGHT (${dev(bal.deviations.core)}): sleeve gap of ~${m(Math.abs(bal.rebalanceCad.core))}. This is a rebalance gap, NOT idle cash. Close it via rotation (funnel proceeds from your next SWING/SPEC trims into XIU/VUN/XEQT instead of another swing pick) OR fresh cash deposits — check the per-account cash inventory before phrasing this as "deploy $X today".`);
   }
   if (bal.swingUnderweight) {
-    lines.push(`  💡 SWING SLEEVE HAS ROOM: ${m(-bal.rebalanceCad.swing).replace("-", "")} available for a new Canadian large-cap swing entry. Prefer the RY/ENB template if a fresh setup appears.`);
+    lines.push(`  💡 SWING SLEEVE HAS ROOM: ${m(-bal.rebalanceCad.swing).replace("-", "")} available for a new Canadian large-cap short-swing entry (45-60 day horizon, -8% stop). Different template than INCOME.`);
   }
-  lines.push(`  Auto-classification: CORE = broad ETFs + bonds · SWING = Canadian large-caps · SPEC = high-vol US + meme. TSX names default to SWING; unknown US names default to SPEC (where prior losses came from).`);
+  if (bal.incomeUnderweight) {
+    lines.push(`  💡 INCOME SLEEVE HAS ROOM: ${m(-bal.rebalanceCad.income).replace("-", "")} available for a new dividend-payer long hold (365-day horizon, wider stop). Prefer RY/ENB/BNS-style entries — not the swing template.`);
+  }
+  lines.push(`  Auto-classification: CORE = broad ETFs + bonds · SWING = Canadian large-caps (short horizon) · INCOME = dividend payers (long horizon, wider stops) · SPEC = high-vol US + meme. TSX names default to SWING; unknown US names default to SPEC.`);
   return lines.join("\n");
+}
+
+// INCOME sleeve gets a WIDER hard-stop threshold than SWING/SPEC.
+// The whole point of separating INCOME is to remove the "stop hit on
+// a dividend hold" contradiction. Long-horizon fundamental holds ride
+// through 10-12% drawdowns as normal noise; the stop only fires on a
+// genuine thesis break.
+//
+// Callers: stocksPositionStopMonitor consults this to pick per-sleeve
+// stop thresholds. Everything else uses the fixed -8% rule.
+const HARD_STOP_PCT_BY_SLEEVE = {
+  income: -15,   // dividend holds — wider tolerance
+  core:    -8,   // ETFs shouldn't hit -8% but keep it same as default
+  swing:   -8,   // proven -8% rule from journal analysis
+  spec:    -8,   // same as swing; SPEC's problem is sizing, not stops
+};
+
+export function hardStopPctForSleeve(sleeve) {
+  return HARD_STOP_PCT_BY_SLEEVE[sleeve] ?? -8;
 }

@@ -999,13 +999,47 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     );
   }
 
+  // Force-shrink mandate: when CORE is severely underweight (>15pp),
+  // organic attrition through stops + trims isn't fast enough. Emit a
+  // MANDATORY TRIM on the largest non-CORE position (SWING / INCOME /
+  // SPEC — anything that's oversized relative to CORE). Trims 25% of
+  // the position, routing proceeds to CORE ETFs in the same account
+  // and currency. This closes the gap in weeks rather than months.
+  //
+  // Deliberately triggers ABOVE the standard 10pp CORE-lock threshold
+  // so normal drift doesn't force a trim every day — only genuine
+  // severe under-allocation does.
+  const FORCE_SHRINK_GAP_PP = 15;
+  if (coreGapPp > FORCE_SHRINK_GAP_PP && b?.byPosition) {
+    // Rank non-CORE positions by CAD value, pick the largest that
+    // isn't already flagged for stop-hit exit today (don't double-
+    // count — the confirmed-stop line already covers that name).
+    const stopHitTickers = new Set(confirmedStops.map(r => String(r.ticker || "").toUpperCase()));
+    const candidates = (b.byPosition || [])
+      .filter(row => row.sleeve !== "core" && row.cadValue > 0)
+      .filter(row => !stopHitTickers.has(String(row.ticker || "").toUpperCase()))
+      .sort((a, b) => b.cadValue - a.cadValue);
+    const largest = candidates[0];
+    if (largest && largest.cadValue > 1000) {
+      const trimCad = largest.cadValue * 0.25;
+      const heldPos = (positions || []).find(p => String(p.ticker || "").toUpperCase() === String(largest.ticker || "").toUpperCase());
+      const acctStr = heldPos?.acct ? ` in ${heldPos.acct}` : "";
+      const sleeveStr = largest.sleeve ? ` (${largest.sleeve.toUpperCase()} sleeve)` : "";
+      mandatory.push(
+        `**FORCE-TRIM 25% of ${largest.ticker}**${acctStr}${sleeveStr} — ~${m(trimCad)} proceeds. CORE gap is ${coreGapPp.toFixed(1)}pp (severe); organic attrition isn't fast enough to close it. Trim 25% of the largest non-CORE position, route proceeds into XEQT / VUN / XIU in the same account and currency. If the ticker is high-conviction, this doesn't kill the thesis — it right-sizes it while CORE catches up.`
+      );
+    }
+  }
+
   // Confirmed hard stops. Each SELL is auto-paired with a CORE DEPLOY
   // line when CORE is >10pp underweight — proceeds should not sit as
   // idle cash while the sleeve gap is wide.
   for (const r of confirmedStops) {
     const proceeds = (r.qty || 0) * (r.currentPrice || 0);
+    const sleeveStop = r.sleeve && r.hardStopPct != null
+      ? ` [${r.sleeve.toUpperCase()} stop ${r.hardStopPct}%]` : "";
     mandatory.push(
-      `**SELL AT MARKET** — ${r.ticker} in ${r.account}: ${r.qty} sh · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%). Hard-stop rule triggered. Sell at market or LIMIT at ~1% below current.`
+      `**SELL AT MARKET** — ${r.ticker} in ${r.account}: ${r.qty} sh · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%)${sleeveStop}. Hard-stop rule triggered. Sell at market or LIMIT at ~1% below current.`
     );
     if (coreLockActive && proceeds > 0) {
       const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";

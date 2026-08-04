@@ -21,8 +21,15 @@
 // "your only consistent winners" finding). Configurable per user in a
 // future iteration; hard-coded for now.
 
+import { classifyPosition, hardStopPctForSleeve } from "./stocksSleeveEnforcer.js";
+
+// Legacy exemption set — RY and ENB were carved out as "your only
+// consistent winners" before the INCOME sleeve existed. Now that both
+// are auto-classified to INCOME with a -15% stop, the exemption is
+// redundant but kept as belt-and-suspenders in case sleeve
+// classification changes.
 const CORE_EXEMPT_TICKERS = new Set(["RY", "ENB", "RY.TO", "ENB.TO"]);
-const HARD_STOP_PCT = -8;
+const HARD_STOP_PCT = -8;   // default when sleeve unknown; overridden per sleeve below
 const WITHIN_STOP_PCT = -6;
 const WATCH_PCT = -5;
 
@@ -60,13 +67,24 @@ export function monitorPositionStops(positions, accounts = null) {
   for (const p of positions) {
     const pnlPct = computePositionPnl(p);
     if (pnlPct == null) continue;
-    if (pnlPct > WATCH_PCT) continue; // above -5%, not flagged
+
+    // Per-sleeve stop threshold — INCOME gets -15%, others get -8%.
+    // Compute early so per-tier bucketing uses the right cutoff for
+    // dividend holds (fixes the "trailing stop hit but do not exit"
+    // conflict that used to force AI narrative loopholes).
+    const sleeve = classifyPosition(p);
+    const stopPct = hardStopPctForSleeve(sleeve);
+    const withinPct = stopPct + 2; // "within 2% of stop" tier scales with the stop
+    const watchPct = stopPct + 3;
+
+    if (pnlPct > watchPct) continue; // above the watch band — not flagged
 
     const tickerCore = String(p.ticker || "").toUpperCase();
     const isCoreExempt = CORE_EXEMPT_TICKERS.has(tickerCore);
-    // Core exemption ONLY applies to the "watch" tier; a -8% hit is still
-    // a hit even on RY/ENB (though it would be extreme for a blue chip).
-    if (isCoreExempt && pnlPct > HARD_STOP_PCT) continue;
+    // Legacy exemption: only skips "watch" tier for the two named
+    // tickers. INCOME sleeve gives them a wider stop already, so this
+    // is rarely load-bearing anymore.
+    if (isCoreExempt && pnlPct > stopPct) continue;
 
     const row = {
       ticker: p.ticker,
@@ -76,12 +94,14 @@ export function monitorPositionStops(positions, accounts = null) {
       currentPrice: p.ccy === "USD" ? p.priceUsd : p.priceCad,
       costBasis: p.ccy === "USD" ? p.costBasisUsd : p.costBasisCad,
       pnlPct,
-      distanceToHardStopPct: pnlPct - HARD_STOP_PCT, // positive = above stop; negative = below
+      sleeve,
+      hardStopPct: stopPct, // per-sleeve threshold, exposed for renderer
+      distanceToHardStopPct: pnlPct - stopPct, // positive = above stop; negative = below
       isCoreExempt,
     };
 
-    if (pnlPct <= HARD_STOP_PCT) hardStopHit.push(row);
-    else if (pnlPct <= WITHIN_STOP_PCT) withinStop.push(row);
+    if (pnlPct <= stopPct) hardStopHit.push(row);
+    else if (pnlPct <= withinPct) withinStop.push(row);
     else watch.push(row);
   }
 
@@ -95,11 +115,12 @@ export function formatPositionStopBlock(monitor) {
   if (!monitor) return "";
   const { hardStopHit, withinStop, watch } = monitor;
   if (hardStopHit.length === 0 && withinStop.length === 0 && watch.length === 0) return "";
-  const lines = [`\nPOSITION P&L STOP MONITOR (-8% hard-stop rule from journal analysis):`];
+  const lines = [`\nPOSITION P&L STOP MONITOR (per-sleeve stops: SWING/SPEC -8%, INCOME -15%):`];
   if (hardStopHit.length > 0) {
-    lines.push(`  🚨 HARD STOP TRIGGERED (pnl ≤ -8%) — EXIT AT MARKET unless there is a specific new-info reason to override. When you reformat this block for the email, ONLY the ticker string at the START of each line below is a ticker; every word in this header is prose:`);
+    lines.push(`  🚨 HARD STOP TRIGGERED (pnl ≤ sleeve stop threshold) — EXIT AT MARKET unless there is a specific new-info reason to override. When you reformat this block for the email, ONLY the ticker string at the START of each line below is a ticker; every word in this header is prose:`);
     for (const r of hardStopHit) {
-      lines.push(`     ${r.ticker} in ${r.account}: ${r.qty} sh @ basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} = ${r.pnlPct.toFixed(1)}%${r.isCoreExempt ? " (CORE ticker — unusual, verify basis)" : ""}`);
+      const sleeveTag = r.sleeve ? ` [${r.sleeve.toUpperCase()} stop ${r.hardStopPct}%]` : "";
+      lines.push(`     ${r.ticker} in ${r.account}: ${r.qty} sh @ basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} = ${r.pnlPct.toFixed(1)}%${sleeveTag}${r.isCoreExempt ? " (CORE ticker — unusual, verify basis)" : ""}`);
     }
   }
   if (withinStop.length > 0) {
