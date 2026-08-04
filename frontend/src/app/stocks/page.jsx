@@ -7681,7 +7681,11 @@ function convictionTrend(history) {
 function ConvictionTrendBadge({ history }) {
   const t = convictionTrend(history);
   if (!t) return null;
-  if (t.dir === "new") return <span style={{ fontSize: 10.5, color: "var(--sa-muted)" }} title="Conviction trend builds over repeat scans + the daily tracker">conviction: building…</span>;
+  // Hide the badge when there's insufficient history to say anything
+  // real. Previously showed "conviction: building…" for < 2 points,
+  // which read as a positive signal ("conviction is growing") when
+  // it actually just meant "not enough data yet." Silent > misleading.
+  if (t.dir === "new") return null;
   const cfg = {
     rising: { icon: "▲", color: "var(--sa-green)", label: "rising" },
     falling: { icon: "▼", color: "var(--sa-red)", label: "falling" },
@@ -9887,8 +9891,47 @@ function TradesView({ sessionToken }) {
 
   const fmtMoney0 = (n) => "$" + Math.round(Math.abs(n)).toLocaleString();
 
+  // Rescan mailbox from the Trades page — same endpoint as Settings,
+  // so trader can force a CIBC alert re-poll without navigating away
+  // from the trade list. Uses the same dedup key as normal polls, so
+  // no double-inserts. Shows an inline banner with the result.
+  const [rescanning, setRescanning] = useState(false);
+  const [rescanBanner, setRescanBanner] = useState(null);
+  const rescanMailbox = async () => {
+    setRescanBanner(null);
+    setRescanning(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/email-integration/rescan-mailbox`, {
+        method: "POST",
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || `${r.status}`);
+      const parts = [];
+      if (Number.isFinite(j.inserted)) parts.push(`${j.inserted} inserted`);
+      if (Number.isFinite(j.skipped)) parts.push(`${j.skipped} skipped`);
+      if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
+      setRescanBanner({ kind: j.fatal ? "err" : "ok", msg: `Rescan complete — ${parts.join(" · ") || "no matches"}` });
+      await load();
+      await loadPendingReview();
+    } catch (e) {
+      setRescanBanner({ kind: "err", msg: `Rescan failed: ${e?.message || "unknown"}` });
+    } finally {
+      setRescanning(false);
+    }
+  };
+
   return (
     <div>
+      {rescanBanner && (
+        <div style={{
+          marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: 12, whiteSpace: "pre-wrap",
+          background: rescanBanner.kind === "ok" ? "#dcfce7" : "#fee2e2",
+          color: rescanBanner.kind === "ok" ? "#166534" : "#7f1d1d",
+          border: `1px solid ${rescanBanner.kind === "ok" ? "#86efac" : "#fecaca"}`,
+        }}>{rescanBanner.msg}</div>
+      )}
       {verifyBanner && (
         <div style={{
           marginBottom: 10, padding: "8px 12px", borderRadius: 8, fontSize: 12,
@@ -9907,19 +9950,29 @@ function TradesView({ sessionToken }) {
             )}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
-          {[30, 90, 365, 1825].map((d) => (
-            <button
-              key={d}
-              onClick={() => setDays(d)}
-              style={{
-                padding: "5px 12px", fontSize: 12, fontWeight: 600,
-                border: "none", borderRadius: 6, cursor: "pointer",
-                background: days === d ? "var(--sa-accent)" : "transparent",
-                color: days === d ? "#fff" : "var(--sa-text-2)",
-              }}
-            >{d === 1825 ? "5y" : d === 365 ? "1y" : d === 90 ? "90d" : "30d"}</button>
-          ))}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            className="sa-btn"
+            onClick={rescanMailbox}
+            disabled={rescanning}
+            title="Re-poll the CIBC alert mailbox from the earliest matching message. Uses the same dedup key as the background poller, so no double-inserts. Use this after placing a trade to pick it up immediately instead of waiting for the next scheduled poll."
+          >
+            {rescanning ? "Rescanning…" : "↻ Rescan mailbox"}
+          </button>
+          <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+            {[30, 90, 365, 1825].map((d) => (
+              <button
+                key={d}
+                onClick={() => setDays(d)}
+                style={{
+                  padding: "5px 12px", fontSize: 12, fontWeight: 600,
+                  border: "none", borderRadius: 6, cursor: "pointer",
+                  background: days === d ? "var(--sa-accent)" : "transparent",
+                  color: days === d ? "#fff" : "var(--sa-text-2)",
+                }}
+              >{d === 1825 ? "5y" : d === 365 ? "1y" : d === 90 ? "90d" : "30d"}</button>
+            ))}
+          </div>
         </div>
       </div>
 
