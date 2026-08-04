@@ -1525,6 +1525,8 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
    • If §1 shows a VERIFY MANUALLY price-integrity flag — the flagged ticker gets ONE line in the Appendix per-holding table saying "PRICE SUSPECT — do not act". No SELL, no rec, no analysis of the fake number.
    • If §2 forbids new SPEC / new SWING — do NOT surface any such rec in §4, even from Test A / Discovery pools. Replace with "SPEC/SWING blocked today per §2 forbidden list."
    • The §3 Status line includes a SECTOR TILT (Leaders / Laggards by 60d RS vs SPY). §4 new ideas MUST prefer leader-sector tickers; a laggard-sector name is only allowed with an explicit one-line exception reason ("earnings beat, RS turning"). CORE ETFs are always allowed regardless of sector tilt. Do NOT re-emit the sector ranking or write multi-paragraph sector commentary — the tilt line above is enough.
+   • **NO HEDGE VOCAB IN §1–§4.** Banned phrases in the primary action sections: "consider", "or cash", "cleanest path", "patience > forcing", "better:", "actually:", "wait for a clean setup", "skip today", "pending a...", "or FX convert". If a rec doesn't qualify, DON'T write it and DON'T narrate the alternatives — just omit. Multi-account "deliberation" sections that walk through NVDA→IWM→CNQ→"actually skip TFSA" are forbidden. §1 already says exactly what to deploy where; §4 executes with one order ticket per accepted line and NO alternative-narratives.
+   • **DO NOT WRITE A "## 5. 💵 Cash deployment" SECTION.** §1 DEPLOY CASH is the single source of truth for cash deployment. Any per-account tickets go directly in §4 as compact order lines (no §5 header, no hedgy per-account walkthrough).
    • **NEVER OVERRIDE §1 STOP MANDATES IN PROSE.** If §1 emits SELL AT MARKET for a ticker, §A2 / Appendix must NOT write "acknowledge stop hit but DO NOT exit" or "hold despite stop" or any variant that argues against the mandated exit. Long-horizon or dividend theses do NOT override the hard-stop rule — if that framing applies to a name, the name belongs in a different sleeve with wider stops, not in narrative loopholes. Reframing a stop hit as "monitor, do not churn" is a compliance violation.
 
 §4 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
@@ -2329,6 +2331,13 @@ export async function generateBriefing(profile) {
     // Legacy strip for pre-reorder briefs still cached — §4 was Status
     // before the swap. Safe to keep for a few weeks then remove.
     md = stripHeaderBlock(md, /^##\s*4\.\s*📊?\s*Status.*$/im);
+    // Strip any AI-written "## 5. Cash deployment" / "§5. Cash..." —
+    // it duplicates §1 DEPLOY CASH with hedgy per-account narrative
+    // ("better: IWM...", "actually skip, TFSA cash pending clean
+    // setup...") that competes with the deterministic mandate.
+    // §1 is authoritative. §5 slot is reserved for blocked-recs.
+    md = stripHeaderBlock(md, /^##\s*5\.\s*💵?\s*Cash\s*deployment.*$/im);
+    md = stripHeaderBlock(md, /^#*\s*§\s*5[abcd]?\.\s*💵?\s*Cash\s*deployment.*$/im);
     // Strip AI-written stop-override sentences that contradict §1
     // stop mandates. Pattern: any sentence that pairs "STOP HIT" (or
     // similar) with "DO NOT exit" / "hold despite" / "monitor, do not
@@ -2393,17 +2402,39 @@ export async function generateBriefing(profile) {
     const result = validateRecs(rawRecs, validatorCtx);
     acceptedRecs = result.accepted || [];
     rejectedRecs = result.rejected || [];
-    if (rejectedRecs.length > 0) {
-      // Inject §5 blocked-recs section directly above the <RECS> block
-      // so it reads chronologically after §4 Optional. Rewrite <RECS>
-      // to accepted-only so any downstream re-parser and the archived
-      // email content stay consistent with what actually persisted.
-      const blockedSection = renderBlockedRecsSection({ rejected: rejectedRecs });
-      const rewrittenRecsBlock = rewriteRecsBlock(acceptedRecs);
-      md = md.replace(
-        /<RECS>[\s\S]*?<\/RECS>/i,
-        `${blockedSection}\n\n${rewrittenRecsBlock}`
-      );
+    // Rewrite <RECS> to accepted-only every time recs went through
+    // validation (was previously only rewritten when there were
+    // rejections — but even zero-rejection paths benefit from a
+    // canonicalised block that matches what persisted).
+    const rewrittenRecsBlock = rewriteRecsBlock(acceptedRecs);
+    md = md.replace(/<RECS>[\s\S]*?<\/RECS>/i, rewrittenRecsBlock);
+
+    // Grok clarity: put DO TODAY (accepted tickets) and BLOCKED (do
+    // NOT place) sections at the TOP of the AI body, right after
+    // the deterministic §3 Status heading + sector tilt. Reader sees
+    // concrete accepted tickets first, then rejected tickets with
+    // fix-instructions, then optional narrative. No more scrolling
+    // past prose to find "which recs actually apply today."
+    const doTodaySection = renderDoTodaySection({
+      accepted: acceptedRecs,
+      positions: profile.positions || [],
+    });
+    const blockedSection = renderBlockedRecsSection({ rejected: rejectedRecs });
+    const injectBlock = [doTodaySection, blockedSection]
+      .filter(x => x && x.length > 0)
+      .join("\n\n");
+    if (injectBlock) {
+      // Anchor: try to insert right after the §3 Status heading + its
+      // one-line status + sector tilt line. Fall back to inserting at
+      // the top of the AI md (after prefix, before AI's own writing).
+      // Regex matches "## 3. 📊 Status\n<status line>\n[<sector tilt>\n]?"
+      const anchor = md.match(/^##\s*3\.\s*📊?\s*Status[^\n]*\n[^\n]+\n(?:SECTOR TILT:[^\n]*\n)?/im);
+      if (anchor) {
+        const insertAt = anchor.index + anchor[0].length;
+        md = md.slice(0, insertAt) + "\n" + injectBlock + "\n\n" + md.slice(insertAt);
+      } else {
+        md = injectBlock + "\n\n" + md;
+      }
     }
   }
 
@@ -2413,31 +2444,107 @@ export async function generateBriefing(profile) {
   return { md: md.trim(), sectorRotation, tradingRegime, acceptedRecs, rejectedRecs };
 }
 
+// Plain-English fix instructions per validator reason slug. Reader
+// shouldn't need to interpret "price-drift-stale" — they need to know
+// "the system used your cost basis; use current ~$X and re-issue."
+// Missing slug → falls back to the machine-readable detail.
+function plainEnglishFix(reason, detail) {
+  const map = {
+    "price-drift-stale":
+      "Stale entry price. The system's live cross-check disagrees with what the AI wrote. Refresh the price and re-emit with a limit ≈ live.",
+    "gap-extension":
+      "Ticker already gapped ≥8% today. Setup consumed. Skip today; wait for digestion.",
+    "min-reward-risk":
+      "Reward-to-risk below 1.5. Either tighten the stop, widen the target, or drop the idea.",
+    "single-name-cap":
+      "Position would exceed 15% single-name cap. Cut the share count to fit, or trim the existing lot first.",
+    "sleeve-spec-cap-hard":
+      "SPEC sleeve is already at/over cap. No new SPEC BUYs until sleeve shrinks.",
+    "sleeve-core-gap-widening":
+      "CORE is >10pp under target. Only CORE ETF BUYs (XEQT / VUN / XIU / VOO) are allowed until the gap closes.",
+    "regime-hostile-no-new-swing-spec":
+      "Regime is hostile. Only CORE ETF BUYs allowed until it turns constructive.",
+    "sector-laggard-hard-avoid":
+      "Sector is bottom-3 by 60d RS in a hostile regime. Pick a leader-sector ticker or a CORE ETF.",
+    "sell-no-redeploy-core-underweight":
+      "SELL with no companion CORE BUY in the same batch. Pair with a CORE BUY (same account & currency) or drop the SELL.",
+    "sell-redeploy-account-mismatch":
+      "Proceeds don't cross accounts. Pair SELL and BUY within the same account.",
+    "buy-not-core-while-core-underweight":
+      "CORE gap open. Only CORE ETFs allowed as new BUYs today.",
+    "cross-account-fragmentation":
+      "You already hold this ticker in another account. Add to the existing lot to avoid paying commission per-account on future exits.",
+    "expectancy-floor-negative":
+      "Recent AI-rec expectancy is negative. Discretionary BUYs paused until expectancy recovers; CORE rebalances still OK.",
+    "liquidity-floor":
+      "Average daily $ volume below the sleeve floor. Pick a more liquid name.",
+  };
+  return map[reason] || detail;
+}
+
 // Render the §5 "Blocked by validator" section for the email.
 // Empty string when nothing rejected — callers should suppress the
 // injection entirely rather than emitting a "0 blocked today" line.
+// Reader-first format: ticket-shaped ticker line, then one plain-
+// English fix line per reason (not a raw slug + detail dump).
 function renderBlockedRecsSection({ rejected }) {
   if (!Array.isArray(rejected) || rejected.length === 0) return "";
   const preface = rejected.length === 1
-    ? "One AI-emitted rec was rejected before persist — the system working as designed."
-    : `${rejected.length} AI-emitted recs were rejected before persist — the system working as designed.`;
+    ? "One AI-emitted rec was rejected before persist — do not place it."
+    : `${rejected.length} AI-emitted recs were rejected before persist — do not place them.`;
   const lines = [
-    `## 5. ⛔ Blocked by validator (${rejected.length})`,
+    `## 5. ⛔ BLOCKED — do not place these (${rejected.length})`,
     "",
-    `${preface} Each violated a hard rule the portfolio has committed to.`,
+    preface,
     "",
   ];
   for (const item of rejected) {
     const r = item.rec || {};
-    const acctStr = r.account ? ` in **${r.account}**` : "";
+    const acctStr = r.account ? ` · ${r.account}` : "";
+    const sizeStr = r.shares ? ` ${r.shares} sh` : "";
     const entryStr = r.entryPrice != null ? ` @ $${r.entryPrice}` : "";
     const ccyStr = r.entryCurrency ? ` ${r.entryCurrency}` : "";
-    const sizeStr = r.shares ? ` (${r.shares} sh)` : "";
-    lines.push(`- **${r.action} ${r.ticker}**${acctStr}${sizeStr}${entryStr}${ccyStr}`);
+    lines.push(`- **${r.action}${sizeStr} ${r.ticker}**${entryStr}${ccyStr}${acctStr}`);
     for (const rej of (item.rejections || [])) {
-      lines.push(`  - \`${rej.reason}\` — ${rej.detail}`);
+      lines.push(`  - ${plainEnglishFix(rej.reason, rej.detail)}`);
     }
   }
+  return lines.join("\n");
+}
+
+// Render the "DO TODAY" order-ticket section — accepted-only recs in
+// fixed-field format. Reader sees the concrete tickets FIRST, before
+// any narrative deliberation. Grok clarity rules E + A: one line per
+// order, no prose, no hedging. Empty string when no accepted recs
+// (some briefings only have §1 mandates and no AI-emitted tickets).
+function renderDoTodaySection({ accepted, positions }) {
+  if (!Array.isArray(accepted) || accepted.length === 0) return "";
+  const posByTicker = new Map();
+  for (const p of (positions || [])) {
+    const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+    if (base) posByTicker.set(base, p);
+  }
+  const lines = [
+    `## 🎯 DO TODAY — order tickets (${accepted.length})`,
+    "",
+    "One line per accepted rec. Fixed fields, no narrative. Place these in the broker in order.",
+    "",
+  ];
+  accepted.forEach((r, idx) => {
+    const acctStr = r.account || "—";
+    const shares = r.shares || "?";
+    const isBuy = r.action === "BUY";
+    const priceCap = isBuy ? "max" : "min";
+    const limitStr = r.entryPrice != null
+      ? `limit $${r.entryPrice} ${r.entryCurrency || ""} ${priceCap}`
+      : "limit —";
+    const timingStr = r.orderTiming || "post-10am";
+    const stopStr = r.stopPrice != null ? ` · stop $${r.stopPrice}` : "";
+    const targetStr = r.targetPrice != null ? ` · target $${r.targetPrice}` : "";
+    lines.push(
+      `**${idx + 1}. ${r.action} ${shares} ${r.ticker}** · ${acctStr} · ${limitStr} · ${timingStr}${stopStr}${targetStr}`
+    );
+  });
   return lines.join("\n");
 }
 
