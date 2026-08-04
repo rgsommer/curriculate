@@ -1087,59 +1087,81 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       .filter(x => AUTO_ROUTE.has(x.sleeve) && x.gap > CASH_DEPLOY_GAP_PP)
       .sort((a, b) => b.gap - a.gap)[0];
     if (underweight) {
-      // Pick the largest cash pool. Prefer CAD accounts for INCOME
-      // (dividend payers are TSX-listed) and match currency of the
-      // deploy destination for CORE. Uses account with the most
-      // convertible cash so the deploy line names a real target.
-      const withCashCad = (cashAccounts || [])
-        .map(a => ({ ...a, cashInCad: (a?.cashCad || 0) + (a?.cashUsd || 0) * fx }))
-        .filter(a => a.cashInCad > 500)
-        .sort((a, b) => b.cashInCad - a.cashInCad);
-      const largestPool = withCashCad[0];
-      // Suggested deploy size: min(cash available, sleeve gap in CAD).
-      // Deliberately doesn't drain cash to zero — leaves a modest
-      // reserve (1% of book, min $500) for opportunistic use later.
+      // Emit ONE ticket per (account, currency) with meaningful cash.
+      // Each ticket deploys into a ticker that MATCHES the currency
+      // (no forced FX conversion). Sleeve mapping:
+      //   • CAD cash → INCOME (if underweight) else CORE-CAD
+      //   • USD cash → CORE-USD (no INCOME-USD list today)
+      // Reserve per pool: max($200, 10% of pool). Total deployment
+      // capped by sleeve gap so we don't overshoot into overweight.
+      const incomeCadList = ["RY", "TD", "BMO", "BNS", "TRP", "ENB"];
+      const coreCadList = ["XEQT", "VUN", "XIU"];
+      const coreUsdList = ["VOO", "VTI", "QQQ"];
       const sleeveGapCad = (underweight.gap / 100) * totalBookCad;
-      const reserveCad = Math.max(500, totalBookCad * 0.01);
-      const deployCadRaw = Math.min(totalCashCad - reserveCad, sleeveGapCad);
-      const deployCad = Math.floor(deployCadRaw / 100) * 100; // round to $100
-      // Debug log so a wrong deploy value in tomorrow's briefing has
-      // trace in server logs. Cheap; only fires when the mandate would.
-      console.log(`[cash-deploy] cash=${cashPct.toFixed(1)}% ($${totalCashCad.toFixed(0)} CAD) · book=$${totalBookCad.toFixed(0)} · ${underweight.sleeve} gap=${underweight.gap.toFixed(1)}pp · sleeveGapCad=$${sleeveGapCad.toFixed(0)} · reserve=$${reserveCad.toFixed(0)} · deploy=$${deployCad}`);
-      if (deployCad >= 500 && largestPool) {
-        const acctLabel = largestPool.name || largestPool.id || "the account with the largest cash pool";
-        // Deploy currency: derive from largest pool's dominant cash
-        // holding. If it has more USD than CAD in equivalent terms,
-        // deploy in USD; else CAD.
-        const poolCadOnly = largestPool.cashCad || 0;
-        const poolUsdOnly = (largestPool.cashUsd || 0) * fx;
-        const deployCurrency = poolUsdOnly > poolCadOnly ? "USD" : "CAD";
-        // Ordered ticker list per sleeve + currency. First available
-        // (not on recentExits, has live price) becomes the default.
-        const incomeCadList = ["RY", "TD", "BMO", "BNS", "ENB", "TRP"];
-        const coreCadList = ["XEQT", "VUN", "XIU"];
-        const coreUsdList = ["VOO", "VTI", "QQQ"];
-        const defaultList = underweight.sleeve === "income"
-          ? incomeCadList
-          : (deployCurrency === "USD" ? coreUsdList : coreCadList);
-        const ticket = pickDefaultTicket(defaultList, deployCad, deployCurrency);
-        if (ticket) {
-          const remainingCad = Math.max(0, deployCad - ticket.usedCad);
-          const remainingStr = remainingCad >= 100
-            ? ` · leaves ~${m(remainingCad)} of the deploy budget + ${m(reserveCad)} reserve` : ` · leaves ~${m(reserveCad)} reserve`;
-          const altStr = ticket.alternatives ? ` · Alternatives if you prefer: ${ticket.alternatives}` : "";
-          mandatory.push(
-            `**DEPLOY CASH** — BUY **${ticket.shares} sh ${ticket.ticker}** in **${acctLabel}** @ ~$${ticket.livePrice.toFixed(2)} ${ticket.liveCcy} (live cross-check). Uses ~${m(ticket.usedCad)}${remainingStr}. Fills ${underweight.sleeve.toUpperCase()} sleeve gap (${underweight.gap.toFixed(1)}pp under; ${cashPct.toFixed(0)}% of book in cash).${altStr}`
-          );
+      // Debug log — one line summarising the whole deploy plan.
+      console.log(`[cash-deploy] sleeve=${underweight.sleeve} gap=${underweight.gap.toFixed(1)}pp · sleeveGapCad=$${sleeveGapCad.toFixed(0)} · pools=${(cashAccounts || []).length}`);
+
+      // Rank pools by CAD-equivalent value so bigger pools get first
+      // claim on the (possibly-limited) sleeve gap budget.
+      const pools = [];
+      for (const a of (cashAccounts || [])) {
+        const cad = a?.cashCad || 0;
+        const usd = a?.cashUsd || 0;
+        if (cad >= 500) pools.push({ acct: a, ccy: "CAD", cashInCcy: cad, cadEquivalent: cad });
+        if (usd >= 500) pools.push({ acct: a, ccy: "USD", cashInCcy: usd, cadEquivalent: usd * fx });
+      }
+      pools.sort((a, b) => b.cadEquivalent - a.cadEquivalent);
+
+      // Deploy each pool up to (cash - reserve), independently. No
+      // global sleeve-gap cap — with cash at 31% and target near 5%,
+      // there's more excess cash than any single sleeve can absorb.
+      // INCOME target gets filled first from CAD cash; overflow and
+      // all USD cash route to CORE ETFs. Reserve = max($200, 10% of
+      // pool) so no single account gets fully drained.
+      const tickets = [];
+      for (const pool of pools) {
+        const reserveInCcy = Math.max(200, pool.cashInCcy * 0.10);
+        const availableInCcy = pool.cashInCcy - reserveInCcy;
+        if (availableInCcy < 500) continue;
+        const deployNative = Math.floor(availableInCcy / 100) * 100;
+        const deployCadThisPool = pool.ccy === "CAD" ? deployNative : deployNative * fx;
+        // Sleeve routing per currency:
+        //   CAD cash → INCOME (if underweight sleeve is INCOME) else CORE-CAD
+        //   USD cash → CORE-USD (no INCOME-USD list today)
+        let list;
+        let effectiveSleeve;
+        if (pool.ccy === "CAD") {
+          list = underweight.sleeve === "income" ? incomeCadList : coreCadList;
+          effectiveSleeve = underweight.sleeve === "income" ? "INCOME" : "CORE";
         } else {
-          // Fallback: no live price for any candidate → keep list-of-options form.
-          const deployTickers = underweight.sleeve === "income"
-            ? "RY / TD / BMO / BNS / TRP (TSX dividend payers — pick 1, same CAD account)"
-            : "XEQT / VUN / XIU (CAD) or VOO / VTI / QQQ (USD) — pick one matching account currency";
-          mandatory.push(
-            `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book is in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Deploy ~${m(deployCad)} from **${acctLabel}** into ${deployTickers}. Leave ~${m(reserveCad)} reserve for opportunistic use. (No live price for default ticker — placing at market means picking manually.)`
-          );
+          list = coreUsdList;
+          effectiveSleeve = "CORE";
         }
+        const ticket = pickDefaultTicket(list, deployCadThisPool, pool.ccy);
+        if (!ticket) continue;
+        tickets.push({ pool, ticket, deployNative, effectiveSleeve, reserveInCcy });
+      }
+
+      if (tickets.length > 0) {
+        // Header line describing the total plan.
+        const totalDeployCad = tickets.reduce((s, t) => s + (t.pool.ccy === "CAD" ? t.deployNative : t.deployNative * fx), 0);
+        const headerParts = [
+          `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Deploying ~${m(totalDeployCad)} across ${tickets.length} cash pool${tickets.length === 1 ? "" : "s"} (no FX conversion; each ticket uses same-currency cash):`
+        ];
+        mandatory.push(headerParts.join("\n"));
+        tickets.forEach((t, i) => {
+          const acctLabel = t.pool.acct.name || t.pool.acct.id || "account";
+          const usedNative = t.ticket.shares * t.ticket.livePrice;
+          const altStr = t.ticket.alternatives ? ` · Alternatives: ${t.ticket.alternatives}` : "";
+          mandatory.push(
+            `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${altStr}`
+          );
+        });
+      } else if (pools.length > 0) {
+        // Fallback: had pools but no ticket generated (no live prices).
+        mandatory.push(
+          `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Live prices unavailable for default deploy tickers — pick manually per account: CAD cash → INCOME (RY/TD/BMO/BNS/TRP), USD cash → CORE-USD (VOO/VTI). Reserve ~10% of each pool.`
+        );
       }
     }
   }
