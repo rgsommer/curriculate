@@ -99,7 +99,7 @@ const INCOME_TICKERS = new Set([
   "FTS", "EMA", "AQN", "BCE", "T", "RCI", "CP", "CNR",
 ]);
 
-const DEFAULT_TARGETS = { core: 80, swing: 10, income: 5, spec: 5 };
+const DEFAULT_TARGETS = { core: 75, swing: 5, income: 15, spec: 5 };
 const SLEEVE_DRIFT_ALERT_PP = 5; // flag if actual > target ± 5 pp
 
 // Normalize targets to sum to 100 exactly — user-edited values in
@@ -221,7 +221,7 @@ export function formatSleeveBalanceBlock(bal) {
   const pct = (v) => `${v.toFixed(1)}%`;
   const dev = (v) => `${v >= 0 ? "+" : ""}${v.toFixed(1)}pp`;
   const lines = [
-    `\nSLEEVE BALANCE (80/10/5/5 rule — auto-classified):`,
+    `\nSLEEVE BALANCE (75/5/15/5 rule — auto-classified):`,
     `  Book total: ${m(bal.book)}`,
     `  CORE (buy-and-hold, target ${bal.targetsPct.core.toFixed(0)}%): ${m(bal.totals.core)} · ${pct(bal.actualPct.core)} · ${dev(bal.deviations.core)}`,
     `  SWING (Canadian large-cap short-swing, target ${bal.targetsPct.swing.toFixed(0)}%): ${m(bal.totals.swing)} · ${pct(bal.actualPct.swing)} · ${dev(bal.deviations.swing)}`,
