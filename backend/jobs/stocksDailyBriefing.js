@@ -2889,6 +2889,65 @@ export async function generateBriefing(profile) {
       md = md.replace(/\n{3,}/g, "\n\n");
       console.log(`[concentration] enforced ${canonicalsByBase.size} canonical mandate line(s): ${remainingKeys.join(", ")}`);
     }
+
+    // Phantom-ticker guard: drop any line whose SELL/EXIT/TRIM action
+    // verb names only tickers the user does NOT hold. Aug 5 user report:
+    // a briefing said "exit XLU" but the user holds XIU (TSX 60), not
+    // XLU (US utilities sector ETF). The AI conflated XLU on the sector-
+    // laggard tag with the XIU concentration mandate — one letter apart,
+    // both start with X. Any sell-side mandate for a name the user
+    // doesn't hold is by definition phantom (nothing to sell / exit /
+    // trim), so scrub the line regardless of how confidently the AI
+    // narrated it.
+    const heldBasesForPhantomGuard = new Set();
+    for (const p of (profile.positions || [])) {
+      const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+      if (base) heldBasesForPhantomGuard.add(base);
+    }
+    // Common uppercase words that look like tickers but aren't. Include
+    // finance jargon (RSI/OBV/ATR/MTF/RVOL/IV), currencies (USD/CAD),
+    // order types (GTC/OCO/OTO), sleeve labels (CORE/SWING/INCOME/SPEC),
+    // action verbs, section names, exchange codes, and generic prepositions.
+    const TICKER_STOPWORDS = new Set([
+      "BUY","SELL","TRIM","EXIT","HOLD","ADD","LIMIT","MARKET","GTC","OCO","OTO",
+      "USD","CAD","EUR","GBP","JPY","AUD","CHF","INR","MXN","BRL",
+      "CORE","SWING","INCOME","SPEC","INCOMES","SLEEVE","SLEEVES",
+      "AT","OR","AND","THE","TO","FROM","INTO","VS","IF","IS","AS","ON","IN","BY","OF","PER","ANY","ALL",
+      "RSI","OBV","ATR","MTF","MA","SMA","EMA","MACD","VWAP","IV","RVOL","VOL","OI","PP",
+      "TRAIL","STOP","STOPS","REVIEW","MANDATORY","ACTIONS","FORBIDDEN","TODAY","STATUS","OPTIONAL","IDEAS",
+      "TSX","NYSE","NASDAQ","AMEX","LSE","BATS","SPX","NDX","DJI",
+      "ETF","ETN","ADR","SPAC","REIT","MLP",
+      "TFSA","RRSP","RESP","LIRA","LIF","NON","SPOUSAL","JOINT","CASH","MARGIN",
+      "YOY","QOQ","WOW","MOM","YTD","MTD","QTD","YTD","EOD","EOW","EOM","EOY",
+      "OK","NO","YES","NA","TBD","ETC","IE","EG",
+      "AI","ML","API","SDK","CEO","CFO","CIO","IPO","SEC","FED","BOC","ECB","BOJ",
+      "PT","EPS","P","E","B","V","H","L","O","C","N","S","U","Y","Z","G","T","D","J","K","Q","R","W","X","F","M",
+      "RS","LB","KG","OZ",
+    ]);
+    let phantomDropped = 0;
+    const phantomDroppedTickers = new Set();
+    md = md.split("\n").filter(line => {
+      const hasSellVerb = /\b(?:SELL|EXIT|TRIM)\b/i.test(line);
+      if (!hasSellVerb) return true;
+      // Extract candidate uppercase 2–5-letter tokens, optionally with an
+      // exchange suffix. Filter out stopwords so finance jargon doesn't
+      // register as a phantom ticker.
+      const candidates = [...line.matchAll(/\b([A-Z]{2,5})(?:\.(?:TO|V|NE))?\b/g)]
+        .map(m => m[1].toUpperCase())
+        .filter(t => !TICKER_STOPWORDS.has(t));
+      if (candidates.length === 0) return true; // no ticker mentioned → generic prose, keep
+      const anyHeld = candidates.some(t => heldBasesForPhantomGuard.has(t));
+      if (anyHeld) return true; // at least one held ticker referenced → keep
+      // Every named ticker is non-held AND the line has a sell verb →
+      // phantom mandate. Drop.
+      for (const t of candidates) phantomDroppedTickers.add(t);
+      phantomDropped++;
+      return false;
+    }).join("\n");
+    if (phantomDropped > 0) {
+      md = md.replace(/\n{3,}/g, "\n\n");
+      console.warn(`[phantom-sell] dropped ${phantomDropped} line(s) mandating SELL/EXIT/TRIM on non-held ticker(s): ${[...phantomDroppedTickers].join(", ")}`);
+    }
   }
 
   // ─── Post-generation validation ───
