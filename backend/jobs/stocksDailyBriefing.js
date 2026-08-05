@@ -2820,6 +2820,48 @@ export async function generateBriefing(profile) {
     // §1 is authoritative. §5 slot is reserved for blocked-recs.
     md = stripHeaderBlock(md, /^##\s*5\.\s*💵?\s*Cash\s*deployment.*$/im);
     md = stripHeaderBlock(md, /^#*\s*§\s*5[abcd]?\.\s*💵?\s*Cash\s*deployment.*$/im);
+
+    // §4 dedupe + relocation. My prefix already emits
+    // "## 4. 💡 OPTIONAL ideas" as a heading with an italic placeholder,
+    // expecting the AI to write body content beneath it. In practice AI
+    // often writes a SECOND ## 4. heading much later in its response
+    // (after the Appendix), leaving my heading up top with the ugly
+    // placeholder still visible. Extract the AI's §4 body, remove the
+    // AI's whole block, and splice the body in place of my placeholder
+    // so there's exactly one clean §4 with real content.
+    {
+      const aiOptRe = /^##[^\n]*?\bOPTIONAL\s+ideas?\b[^\n]*$/im;
+      const aiOptMatch = md.match(aiOptRe);
+      if (aiOptMatch) {
+        const start = aiOptMatch.index;
+        const rest = md.slice(start + aiOptMatch[0].length);
+        const nextH2 = rest.search(/\n##\s/);
+        const end = nextH2 === -1 ? md.length : start + aiOptMatch[0].length + nextH2;
+        const aiBody = md.slice(start + aiOptMatch[0].length, end).trim();
+        // Only relocate if my prefix's §4 heading + placeholder is still
+        // present and the AI's body has actual content.
+        const placeholderRe = /(^##[^\n]*?\bOPTIONAL\s+ideas?\b[^\n]*\n)(_\([^\n]*\)_\s*\n?)?/im;
+        if (aiBody.length > 0 && placeholderRe.test(md)) {
+          // Remove AI's block first (or we'd hit its heading with the
+          // placeholder-replace regex).
+          md = md.slice(0, start) + md.slice(end);
+          // Replace my prefix's §4 heading + placeholder with the same
+          // heading + AI's body.
+          md = md.replace(placeholderRe, (m, headingLine) => `${headingLine}${aiBody}\n`);
+        } else if (aiBody.length === 0) {
+          // Empty AI block — just drop the duplicate heading.
+          md = md.slice(0, start) + md.slice(end);
+        }
+      }
+    }
+
+    // Bogus mid-body "Daily Briefing — <date>" headers. AI sometimes
+    // interleaves a full re-titled document into its response. Drop any
+    // line that looks like a stray daily-briefing title.
+    md = md.split("\n").filter(line => {
+      return !/^\s*#{0,3}\s*Daily\s+Briefing\b[^\n]*$/i.test(line);
+    }).join("\n");
+    md = md.replace(/\n{3,}/g, "\n\n");
     // Strip AI-written stop-override sentences that contradict §1
     // stop mandates. Pattern: any sentence that pairs "STOP HIT" (or
     // similar) with "DO NOT exit" / "hold despite" / "monitor, do not
