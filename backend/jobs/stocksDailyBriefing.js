@@ -1204,13 +1204,13 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   }
 
   // Single-name concentration mandate: any base ticker over 20% of
-  // book. Grok Aug 5 audit — book had XIU 26.5%, VOO 22.3%, IWM 24.7%
-  // all breaching the 15% cap. CORE ETFs are internally diversified so
-  // exempt them from the strict 15% rule but still cap at 30% (below
-  // that they're fine — 60-name broad-market ETFs aren't blow-up risk).
-  // Individual stocks: hard 20% (Grok's rule set) — no exemption.
-  const CORE_ETF_CONC_CAP = 30;
-  const NON_CORE_CONC_CAP = 20;
+  // book. Strict 20% cap across ALL sleeves including CORE ETFs — per
+  // user directive after Aug 5 audit. Rationale: even a broad-market
+  // ETF at 26% is 26% correlated exposure to one specific market/
+  // regime (TSX 60 for XIU, S&P for VOO, Russell 2000 for IWM). Two
+  // ETFs at 25%+ each concentrates the same beta twice. Better to
+  // spread CORE across 3-4 ETFs so no single one is >20%.
+  const SINGLE_NAME_CAP_PCT = 20;
   const concByBase = {};
   for (const row of (b?.byPosition || [])) {
     if (!(row.cadValue > 0)) continue;
@@ -1221,14 +1221,19 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   }
   const bookForConc = b?.book || 0;
   if (bookForConc > 0) {
-    for (const [base, info] of Object.entries(concByBase)) {
-      const pct = (info.cad / bookForConc) * 100;
-      const cap = info.sleeve === "core" ? CORE_ETF_CONC_CAP : NON_CORE_CONC_CAP;
-      if (pct <= cap) continue;
-      const excessCad = info.cad - (cap / 100) * bookForConc;
+    // Sort worst-first so the largest concentration lands at the top of §1.
+    const overCap = Object.entries(concByBase)
+      .map(([base, info]) => ({ base, info, pct: (info.cad / bookForConc) * 100 }))
+      .filter(x => x.pct > SINGLE_NAME_CAP_PCT)
+      .sort((a, b) => b.pct - a.pct);
+    for (const { base, info, pct } of overCap) {
+      const excessCad = info.cad - (SINGLE_NAME_CAP_PCT / 100) * bookForConc;
       if (excessCad < 100) continue; // trivial breach, skip
+      const sleeveNote = info.sleeve === "core"
+        ? " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve."
+        : " Single-name blow-ups are the loss zone.";
       mandatory.push(
-        `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${cap}% ${info.sleeve === "core" ? "CORE-ETF" : "single-name"} cap. Trim ~${m(excessCad)} to bring it to ≤ ${cap}%. ${info.sleeve === "core" ? "CORE ETFs get a 30% cap (they're internally diversified), but stacking multiple >20% CORE ETFs still concentrates the same beta." : "Single-name blow-ups are the loss zone — no exemption on this cap."}`
+        `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${SINGLE_NAME_CAP_PCT}% single-name cap. Trim ~${m(excessCad)} to bring it to ≤ ${SINGLE_NAME_CAP_PCT}%.${sleeveNote}`
       );
     }
   }
@@ -2772,7 +2777,7 @@ function plainEnglishFix(reason, detail) {
     "min-reward-risk":
       "Reward-to-risk below 1.5. Either tighten the stop, widen the target, or drop the idea.",
     "single-name-cap":
-      "Position would exceed 15% single-name cap. Cut the share count to fit, or trim the existing lot first.",
+      "Position would exceed 20% single-name cap. Cut the share count to fit, or trim the existing lot first.",
     "sleeve-spec-cap-hard":
       "SPEC sleeve is already at/over cap. No new SPEC BUYs until sleeve shrinks.",
     "sleeve-core-gap-widening":

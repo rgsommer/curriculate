@@ -152,7 +152,11 @@ function ruleSingleNameCap({ rec, ctx }) {
   const buyCad = rec.entryCurrency === "USD" ? buyShares * buyPrice * fx : buyShares * buyPrice;
   const postBuyCad = existingCad + buyCad;
   const postBuyPct = (postBuyCad / bookCad) * 100;
-  const CAP_PCT = 15;
+  // 20% single-name cap — aligned with the §1 TRIM CONCENTRATION
+  // mandate in the briefing renderer. CORE ETFs are NOT exempted
+  // (per user directive Aug 5): a broad-market ETF at 20%+ is still
+  // 20%+ tied to one specific index. Spread CORE across multiple ETFs.
+  const CAP_PCT = 20;
   if (postBuyPct <= CAP_PCT) return { ok: true };
   return {
     ok: false,
