@@ -1221,6 +1221,24 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
   }
   const bookForConc = b?.book || 0;
   if (bookForConc > 0) {
+    // Detect the most-underweight sleeve so trim proceeds can be
+    // routed there instead of defaulting to the trimmed name's own
+    // sleeve. Per user directive after Aug 5 audit: if INCOME is
+    // >5pp under target when a concentration trim fires, the mandate
+    // should say "Redeploy into RY / TD / BMO / BNS (INCOME sleeve —
+    // 7.7pp underweight)" instead of same-sleeve CORE ETFs.
+    // SPEC intentionally excluded — never redirect a concentration
+    // trim into SPEC (defeats the point of trimming risk).
+    const routableGaps = b?.deviations ? [
+      { sleeve: "income", gap: -b.deviations.income, ccy: "CAD",
+        list: ["RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "TRP.TO", "ENB.TO"] },
+      { sleeve: "core", gap: -b.deviations.core, ccy: "CAD",
+        list: ["XEQT.TO", "VUN.TO", "XIU.TO"] },
+    ]
+      .filter(x => x.gap > 5)
+      .sort((a, b) => b.gap - a.gap) : [];
+    const underweightRedirect = routableGaps[0] || null;
+
     // Sort worst-first so the largest concentration lands at the top of §1.
     const overCap = Object.entries(concByBase)
       .map(([base, info]) => ({ base, info, pct: (info.cad / bookForConc) * 100 }))
@@ -1228,10 +1246,21 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       .sort((a, b) => b.pct - a.pct);
     for (const { base, info, pct } of overCap) {
       const excessCad = info.cad - (SINGLE_NAME_CAP_PCT / 100) * bookForConc;
+      // Debug log so trim-size fluctuations are traceable across briefs.
+      // book + info.cad + pct + excess all logged per name each run.
+      console.log(`[concentration] base=${base} sleeve=${info.sleeve} cad=$${info.cad.toFixed(0)} book=$${bookForConc.toFixed(0)} pct=${pct.toFixed(1)}% excess=$${excessCad.toFixed(0)} redirect=${underweightRedirect?.sleeve || "none"}`);
       if (excessCad < 100) continue; // trivial breach, skip
-      const sleeveNote = info.sleeve === "core"
-        ? " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve."
-        : " Single-name blow-ups are the loss zone.";
+      let sleeveNote;
+      if (underweightRedirect && underweightRedirect.sleeve !== info.sleeve) {
+        // Prefer the underweight sleeve — kills two birds: reduces
+        // concentration AND closes the sleeve gap on the same trim.
+        const listStr = underweightRedirect.list.slice(0, 4).join(" / ");
+        sleeveNote = ` Redeploy proceeds into **${underweightRedirect.sleeve.toUpperCase()} sleeve** (${listStr}) — ${underweightRedirect.sleeve.toUpperCase()} is ${underweightRedirect.gap.toFixed(1)}pp underweight, so this trim closes two gaps at once.`;
+      } else if (info.sleeve === "core") {
+        sleeveNote = " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve.";
+      } else {
+        sleeveNote = " Single-name blow-ups are the loss zone.";
+      }
       mandatory.push(
         `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${SINGLE_NAME_CAP_PCT}% single-name cap. Trim ~${m(excessCad)} to bring it to ≤ ${SINGLE_NAME_CAP_PCT}%.${sleeveNote}`
       );
@@ -2758,12 +2787,44 @@ export async function generateBriefing(profile) {
     const rewrittenRecsBlock = rewriteRecsBlock(acceptedRecs);
     md = md.replace(/<RECS>[\s\S]*?<\/RECS>/i, rewrittenRecsBlock);
 
+    // Post-validation strip: kill AI-written §4 "Today's one action"
+    // tables/lines that name any BLOCKED ticker. My existing dedupe
+    // catches conflicts inside <RECS> JSON, but the AI can still
+    // narrate rejected tickers as prose in §4 tables — Aug 5 briefing
+    // had "AYA.TO" and "CNQ" as trade tickets in the §4 table even
+    // though both were in §5 BLOCKED. This filter removes any line
+    // that mentions a blocked ticker AND looks like an action row
+    // (contains BUY/SELL/TRIM/EXIT keyword near the ticker).
+    //
+    // MUST run BEFORE the DO TODAY / BLOCKED injection below —
+    // otherwise the filter eats my own §3 BLOCKED "**BUY N sh TICKER**"
+    // header lines (which contain both an action verb AND the blocked
+    // ticker by construction). That was why the Aug 5 evening brief
+    // showed only the plain-English fix line without the ticket header.
+    if (rejectedRecs.length > 0) {
+      const blockedTickers = new Set(
+        rejectedRecs.map(x => String(x.rec?.ticker || "").toUpperCase()).filter(Boolean)
+      );
+      if (blockedTickers.size > 0) {
+        md = md.split("\n").filter(line => {
+          const upperLine = line.toUpperCase();
+          const hasActionVerb = /\b(?:BUY|SELL|TRIM|EXIT|LIMIT\s+(?:BUY|SELL)|ADD)\b/.test(upperLine);
+          if (!hasActionVerb) return true;
+          for (const t of blockedTickers) {
+            const re = new RegExp(`\\b${t.replace(/\./g, "\\.")}\\b`);
+            if (re.test(upperLine)) return false;
+          }
+          return true;
+        }).join("\n");
+      }
+    }
+
     // Grok clarity: put DO TODAY (accepted tickets) and BLOCKED (do
     // NOT place) sections at the TOP of the AI body, right after
     // the deterministic §3 Status heading + sector tilt. Reader sees
     // concrete accepted tickets first, then rejected tickets with
-    // fix-instructions, then optional narrative. No more scrolling
-    // past prose to find "which recs actually apply today."
+    // fix-instructions, then optional narrative. Runs AFTER the
+    // blocked-ticker strip so my ticket-header lines aren't eaten.
     const doTodaySection = renderDoTodaySection({
       accepted: acceptedRecs,
       positions: profile.positions || [],
@@ -2773,46 +2834,12 @@ export async function generateBriefing(profile) {
       .filter(x => x && x.length > 0)
       .join("\n\n");
     if (injectBlock) {
-      // Anchor: try to insert right after the §3 Status heading + its
-      // one-line status + sector tilt line. Fall back to inserting at
-      // the top of the AI md (after prefix, before AI's own writing).
-      // Regex matches "## 3. 📊 Status\n<status line>\n[<sector tilt>\n]?"
       const anchor = md.match(/^##\s*3\.\s*📊?\s*Status[^\n]*\n[^\n]+\n(?:SECTOR TILT:[^\n]*\n)?/im);
       if (anchor) {
         const insertAt = anchor.index + anchor[0].length;
         md = md.slice(0, insertAt) + "\n" + injectBlock + "\n\n" + md.slice(insertAt);
       } else {
         md = injectBlock + "\n\n" + md;
-      }
-    }
-
-    // Post-validation strip: kill AI-written §4 "Today's one action"
-    // tables/lines that name any BLOCKED ticker. My existing dedupe
-    // catches conflicts inside <RECS> JSON, but the AI can still
-    // narrate rejected tickers as prose in §4 tables — Aug 5 briefing
-    // had "AYA.TO" and "CNQ" as trade tickets in the §4 table even
-    // though both were in §5 BLOCKED. This filter removes any line
-    // that mentions a blocked ticker AND looks like an action row
-    // (contains BUY/SELL/TRIM/EXIT keyword near the ticker).
-    if (rejectedRecs.length > 0) {
-      const blockedTickers = new Set(
-        rejectedRecs.map(x => String(x.rec?.ticker || "").toUpperCase()).filter(Boolean)
-      );
-      if (blockedTickers.size > 0) {
-        // Split by line + surviving line array preserves order.
-        md = md.split("\n").filter(line => {
-          const upperLine = line.toUpperCase();
-          const hasActionVerb = /\b(?:BUY|SELL|TRIM|EXIT|LIMIT\s+(?:BUY|SELL)|ADD)\b/.test(upperLine);
-          if (!hasActionVerb) return true;
-          // If line has an action verb AND names a blocked ticker, drop it.
-          for (const t of blockedTickers) {
-            // Look for whole-word ticker match to avoid substring hits
-            // (e.g. "CNQ" appearing inside a longer word).
-            const re = new RegExp(`\\b${t.replace(/\./g, "\\.")}\\b`);
-            if (re.test(upperLine)) return false;
-          }
-          return true;
-        }).join("\n");
       }
     }
   }
