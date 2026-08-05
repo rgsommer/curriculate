@@ -957,6 +957,11 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
 function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals }) {
+  // Concentration mandate metadata (populated inside the §1 loop below).
+  // Returned alongside the rendered markdown so the caller can enforce
+  // these lines as the authoritative version in the final briefing —
+  // even if the AI mimics the mandate format with downscaled numbers.
+  const concentrationMandates = [];
   // Alias — kept as ctxRecentExits inside so callers don't have to
   // rebind if the param name changes later.
   const ctxRecentExits = recentExits || [];
@@ -1261,9 +1266,13 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
       } else {
         sleeveNote = " Single-name blow-ups are the loss zone.";
       }
-      mandatory.push(
-        `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${SINGLE_NAME_CAP_PCT}% single-name cap. Trim ~${m(excessCad)} to bring it to ≤ ${SINGLE_NAME_CAP_PCT}%.${sleeveNote}`
-      );
+      const line = `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${SINGLE_NAME_CAP_PCT}% single-name cap. Trim ~${m(excessCad)} to bring it to ≤ ${SINGLE_NAME_CAP_PCT}%.${sleeveNote}`;
+      mandatory.push(line);
+      // Stash the exact canonical string so the caller can force it into
+      // the final briefing post-generation. AI has been observed mimicking
+      // this line's format with hallucinated (much smaller) trim amounts
+      // that fail to actually bring the position under the cap.
+      concentrationMandates.push({ base, canonical: line });
     }
   }
 
@@ -1538,7 +1547,7 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
     chunks.push("");
   }
 
-  return chunks.join("\n").trim();
+  return { md: chunks.join("\n").trim(), concentrationMandates };
 }
 
 function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null) {
@@ -2487,7 +2496,7 @@ export async function generateBriefing(profile) {
       MANDATE_DEFAULT_TICKERS.map(t => ({ ticker: t }))
     );
   } catch (e) { console.warn("[mandate-live-prices] fetch warn:", e?.message); }
-  const deterministicPrefix = renderDeterministicPrefix({
+  const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates } = renderDeterministicPrefix({
     monitorAlerts,
     stopMonitor,
     sleeveBalance: sleeveBalanceForPrefix,
@@ -2706,6 +2715,42 @@ export async function generateBriefing(profile) {
       return !hasHedge;
     }).join("\n");
     md = deterministicPrefix + "\n\n" + md.trim();
+
+    // Force my concentration mandate lines to be the authoritative
+    // version in the final briefing. Grok Aug 5 09:42 audit — the AI
+    // was mimicking my mandate format ("TRIM CONCENTRATION — TICKER is
+    // XX% of book…") with downscaled dollar amounts and share counts
+    // that DID NOT actually bring the position under the 20% cap. E.g.
+    // XIU at 26.6% should trim ~$5,839 to hit the cap; AI was writing
+    // "Trim ~$1,084 CAD (~20 sh @ $54.20)" — a token gesture, not the
+    // real cap-satisfying trim. This pass finds every TRIM CONCENTRATION
+    // line naming any ticker in my precomputed mandate set, replaces the
+    // first with my exact canonical string, and deletes the rest.
+    // Defense-in-depth against the strip missing a variant AI heading.
+    if (prefixConcentrationMandates && prefixConcentrationMandates.length > 0) {
+      for (const { base, canonical } of prefixConcentrationMandates) {
+        const re = new RegExp(`^.*TRIM\\s+CONCENTRATION\\b.*?\\b${base}\\b.*$`, "gim");
+        let replaced = false;
+        md = md.replace(re, () => {
+          if (!replaced) { replaced = true; return canonical; }
+          return ""; // drop duplicates (AI-emitted variants with wrong numbers)
+        });
+        if (!replaced) {
+          // My canonical didn't appear at all — reinsert it near the
+          // MANDATORY ACTIONS heading so the mandate isn't silently
+          // dropped. This is the pathological case where both my
+          // prefix injection and the AI's own line were stripped out.
+          console.warn(`[concentration] canonical for ${base} vanished from md — reinserting`);
+          const anchor = md.match(/^##\s*(?:1\.\s*)?🚨?\s*MANDATORY ACTIONS.*$/im);
+          if (anchor) {
+            const insertAt = anchor.index + anchor[0].length;
+            md = md.slice(0, insertAt) + "\n" + canonical + md.slice(insertAt);
+          }
+        }
+      }
+      // Collapse any triple-blank runs left behind by dropped duplicates.
+      md = md.replace(/\n{3,}/g, "\n\n");
+    }
   }
 
   // ─── Post-generation validation ───

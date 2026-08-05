@@ -904,7 +904,8 @@
       "Bash(npx --yes acorn --ecma2022 --module src/app/stocks/page.jsx)",
       "Bash(node -e \"require\\('esbuild'\\).buildSync\\({entryPoints:['src/app/stocks/page.jsx'],bundle:false,write:false,loader:{'.jsx':'jsx'}}\\); console.log\\('SYNTAX_OK'\\)\")",
       "Bash(git -C /Users/richardsommer/dev/curriculate/ add backend/jobs/stocksDailyBriefing.js backend/services/stocksRecValidator.js)",
-      "Bash(node /private/tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/strip_test2.mjs)"
+      "Bash(node /private/tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/strip_test2.mjs)",
+      "Bash(awk 'NR>=1540 && NR<=1580' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
     ]
   }
 }
