@@ -547,7 +547,10 @@ export async function getTechnicals(ticker, currency = null, opts = {}) {
         // hit" line in daily position reports.
         ...(function () {
           if (atr14 == null || points.length < 60) {
-            return { recentHigh60d: null, trailingStopPct: null, trailingStopPrice: null, limitOffset: null };
+            return {
+              recentHigh60d: null, trailingStopPct: null, trailingStopPrice: null, limitOffset: null,
+              high60d: null, trailStopAtrAdjusted: null, drawdownFromHigh60dPct: null, trailStopBreach: false,
+            };
           }
           const last60 = points.slice(-60);
           const high60 = Math.max(...last60.map((p) => p.close));
@@ -560,11 +563,22 @@ export async function getTechnicals(ticker, currency = null, opts = {}) {
           // to nearest cent so it matches what a broker input accepts.
           const isHighVol = vol != null && vol > 60;
           const limitOffset = Math.max(0.01, Math.round((last * (isHighVol ? 0.015 : 0.01)) * 100) / 100);
+          // Canonical field names used by §1 TRAIL STOP REVIEW mandate in
+          // stocksDailyBriefing.js. Aliased to the same values as the
+          // "recentHigh60d / trailingStopPrice" pair above — the older
+          // fields drive existing per-position report lines and stay
+          // unchanged. `trailStopBreach` is the actionable flag.
+          const drawdownFromHigh60dPct = high60 > 0 ? ((last - high60) / high60) * 100 : null;
+          const trailStopBreach = last <= trailPrice;
           return {
             recentHigh60d: high60,
             trailingStopPct: trailPct,
             trailingStopPrice: trailPrice,
             limitOffset,
+            high60d: high60,
+            trailStopAtrAdjusted: trailPrice,
+            drawdownFromHigh60dPct,
+            trailStopBreach,
           };
         })(),
         // Fibonacci retracement over a 6-month swing window — pullback /
