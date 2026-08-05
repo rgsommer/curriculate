@@ -956,7 +956,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar }) {
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals }) {
   // Alias — kept as ctxRecentExits inside so callers don't have to
   // rebind if the param name changes later.
   const ctxRecentExits = recentExits || [];
@@ -1236,6 +1236,53 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
         `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${SINGLE_NAME_CAP_PCT}% single-name cap. Trim ~${m(excessCad)} to bring it to ≤ ${SINGLE_NAME_CAP_PCT}%.${sleeveNote}`
       );
     }
+  }
+
+  // Trail-stop review mandate: any held position whose current price
+  // is at or below its 60d-peak-minus-2.5×ATR trailing stop. Turns a
+  // passive ⚠ flag into a forced decision: EXIT (lock the remaining
+  // gain / cut the drawdown), TIGHTEN (move hard stop to break-even
+  // or 1×ATR), or DOCUMENT WHY (specific new-evidence trigger + a
+  // new review date). Does NOT emit a SELL — the hard-stop rule
+  // (cost basis −8% / −15% by sleeve) is a separate discipline;
+  // this is the trail-stop layer per user's rule spec:
+  //   "Turns a passive warning into an active decision point without
+  //    over-riding the hard-stop logic."
+  // Skips positions already in confirmedStops (§1 SELL AT MARKET
+  // already handles those) so we don't double-mandate the same ticker.
+  const stopHitTickerSet = new Set(
+    (stopMonitor?.hardStopHit || []).map(r => String(r.ticker || "").toUpperCase())
+  );
+  const trailReviews = [];
+  for (const p of (positions || [])) {
+    const ticker = String(p.ticker || "").toUpperCase();
+    if (!ticker || !(p.qty > 0)) continue;
+    if (stopHitTickerSet.has(ticker)) continue; // already a hard-stop SELL mandate
+    const sig = (quantSignals || {})[ticker] || (quantSignals || {})[ticker.replace(/\..*$/, "")];
+    const tech = sig?.tech;
+    if (!tech || !tech.trailStopBreach) continue;
+    trailReviews.push({
+      ticker: p.ticker,
+      account: p.acct,
+      last: tech.last,
+      high60d: tech.high60d,
+      trailStop: tech.trailStopAtrAdjusted,
+      drawdownPct: tech.drawdownFromHigh60dPct,
+      currency: p.ccy || "USD",
+    });
+  }
+  // Sort worst-first by drawdown magnitude (most-negative first).
+  trailReviews.sort((a, b) => (a.drawdownPct ?? 0) - (b.drawdownPct ?? 0));
+  for (const r of trailReviews) {
+    const drawdownStr = r.drawdownPct != null
+      ? `${r.drawdownPct.toFixed(1)}%` : "n/a";
+    const trailStopStr = r.trailStop != null
+      ? `$${r.trailStop.toFixed(2)} ${r.currency}` : "n/a";
+    const highStr = r.high60d != null
+      ? `$${r.high60d.toFixed(2)} ${r.currency}` : "n/a";
+    mandatory.push(
+      `**TRAIL STOP REVIEW** — **${r.ticker}**. Current price is below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **Decide today and record ONE of:** (1) **EXIT** — lock in the remaining gain or cut the drawdown; (2) **TIGHTEN** — move hard stop to break-even or 1×ATR below current; (3) **HOLD with documented reason** — must include a concrete new-evidence trigger AND a new review date. No fourth option. "Hold through earnings" or "thesis intact" alone are NOT acceptable — write out the specific trigger.`
+    );
   }
 
   // Force-shrink mandate: when ANY sleeve is severely underweight
@@ -2415,6 +2462,7 @@ export async function generateBriefing(profile) {
     recentExits,
     mandateLivePrices,
     riskVar,
+    quantSignals,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);

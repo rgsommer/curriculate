@@ -423,6 +423,21 @@ export function computeTechnicalsFromPoints(points, currency = null) {
     for (let i = 14; i < trs.length; i++) atr = (atr * 13 + trs[i]) / 14;
     atr14 = atr;
   }
+  // 60-day peak + peak-adjusted trailing stop. `high60d` is the highest
+  // close in the last 60 bars (or all available if < 60). `trailStopAtrAdjusted`
+  // is that peak minus 2.5×ATR — the classic volatility-adjusted trailing
+  // stop level. `trailStopBreach` is true when the current close is at or
+  // below the trailing stop → position has given back its recent gains
+  // and the operator must decide: EXIT / TIGHTEN / DOCUMENT a hold.
+  // Drives the §1 TRAIL STOP REVIEW mandate in the daily briefing.
+  const last60 = closes.slice(-60);
+  const high60d = last60.length > 0 ? Math.max(...last60) : null;
+  const trailStopAtrAdjusted = (high60d != null && atr14 != null)
+    ? high60d - 2.5 * atr14 : null;
+  const drawdownFromHigh60dPct = (high60d != null && high60d > 0 && last != null)
+    ? ((last - high60d) / high60d) * 100 : null;
+  const trailStopBreach = (trailStopAtrAdjusted != null && last != null)
+    ? last <= trailStopAtrAdjusted : false;
   const data = {
     ok: true, currency, last, sma20, sma50, sma200, rsi14,
     recentCross: cross, annualizedVolPct: vol, atr14,
@@ -430,6 +445,10 @@ export function computeTechnicalsFromPoints(points, currency = null) {
     priceVsSma50: sma50 ? ((last - sma50) / sma50) * 100 : null,
     priceVsSma200: sma200 ? ((last - sma200) / sma200) * 100 : null,
     suggested25AtrStop: atr14 != null ? last - 2.5 * atr14 : null,
+    high60d,
+    trailStopAtrAdjusted,
+    drawdownFromHigh60dPct,
+    trailStopBreach,
     fib: fibonacciRetracement(points, 120),
     volume: volumeAnalytics(points),
   };
