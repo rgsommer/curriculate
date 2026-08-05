@@ -2585,7 +2585,7 @@ export async function generateBriefing(profile) {
     md = md.split("\n").filter(line => {
       const hasStopFlag = /(?:stop\s*hit|STOP\s*HIT|hard[\s-]*stop|trailing\s*stop)/i.test(line);
       if (!hasStopFlag) return true;
-      const hasOverride = /(?:do\s*not\s*exit|don['’]?t\s*exit|do\s*not\s*sell|don['’]?t\s*sell|hold\s+despite|monitor,?\s*do\s*not\s*churn|acknowledge[^.]*but\s*(?:hold|do\s*not))/i.test(line);
+      const hasOverride = /(?:do\s*not\s*exit|don['’]?t\s*exit|do\s*not\s*sell|don['’]?t\s*sell|hold\s+despite|monitor,?\s*do\s*not\s*churn|acknowledge[^.]*but\s*(?:hold|do\s*not)|no\s+exit\s+(?:action\s+)?today|(?:hold|held|holding).{0,40}(?:because|due\s+to|given|until|before)\s+(?:earnings|catalyst|event|announcement|q[1-4]|guidance)|earnings.{0,30}(?:hold|no\s+exit|monitor)|(?:catalyst|earnings).{0,40}intact)/i.test(line);
       return !hasOverride;
     }).join("\n");
     // Strip AI-written meta-commentary on my §1 mandates. AI was
@@ -2593,9 +2593,20 @@ export async function generateBriefing(profile) {
     // RY only..." or "0 sh SKIP — insufficient cash" that rewrite my
     // deterministic tickets with hallucinated numbers. My §1 is
     // authoritative; AI has nothing to add there.
+    //
+    // Also strip AI-written "portfolio is fine / inside all hard rules"
+    // narrative — my §1 mandates already tell the truth about which
+    // rules fired. AI reassurance contradicts the deterministic §1
+    // when concentration/VaR/sleeve breaches are actively mandating
+    // action. Grok Aug 6 audit: "Status says 'inside all hard rules
+    // today' in spirit, yet the mandatory section is full of
+    // concentration breaches. The language should explicitly say the
+    // concentration rules are the reason for action."
     md = md.split("\n").filter(line => {
       const isMandateRewrite = /^\s*(?:revised\s+deployment|deferring\s+.*deploy|deploy\s+of\s+[^:]+deferred|reduced\s+deploy|adjust(?:ed|ing)\s+deploy)/i.test(line);
-      return !isMandateRewrite;
+      if (isMandateRewrite) return false;
+      const isFalseReassurance = /(?:portfolio\s+(?:is\s+)?(?:inside|within|healthy|fine|clean|OK)\s+(?:all\s+)?(?:hard\s+)?rules|inside\s+all\s+(?:hard\s+)?rules\s+today|no\s+(?:mandatory\s+)?actions?\s+(?:required|needed)\s+today|nothing\s+to\s+act\s+on\s+today|process\s+running\s+cleanly)/i.test(line);
+      return !isFalseReassurance;
     }).join("\n");
     // Strip AI-written "consider re-entering" / "watch for pullback"
     // / "await better setup" language. Grok clarity rule #4: on a day
