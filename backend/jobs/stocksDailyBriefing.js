@@ -1791,13 +1791,22 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
    • **DO NOT WRITE A "## 5. 💵 Cash deployment" SECTION.** §1 DEPLOY CASH is the single source of truth for cash deployment. Any per-account tickets go directly in §4 as compact order lines (no §5 header, no hedgy per-account walkthrough).
    • **NEVER OVERRIDE §1 STOP MANDATES IN PROSE.** If §1 emits SELL AT MARKET for a ticker, §A2 / Appendix must NOT write "acknowledge stop hit but DO NOT exit" or "hold despite stop" or any variant that argues against the mandated exit. Long-horizon or dividend theses do NOT override the hard-stop rule — if that framing applies to a name, the name belongs in a different sleeve with wider stops, not in narrative loopholes. Reframing a stop hit as "monitor, do not churn" is a compliance violation.
 
-§4 OPTIONAL ideas — compact table format. ONE line per idea, priority-ordered:
-   TICKER | ACTION | SIZE | TRIGGER / LEVEL | STOP | NOTES (1 line)
+§4 OPTIONAL ideas — **BULLETED / TABLE ONLY. NO PROSE PARAGRAPHS.**
+   ONE line per idea, priority-ordered, compact table format:
+   TICKER | ACTION | SIZE | TRIGGER / LEVEL | STOP | NOTES (1 line, max ~15 words)
    Example:
    TRP.TO | BUY | 45 sh | $99.60 max, GTC | $94.78 | Pocket pivot 59, SWING sleeve; funded by 53-sh ENB trim.
    XEQT   | BUY | 60 sh | at market post-10am | — | CORE rebalance mandate (§1) — buy on any tap.
 
-   If nothing survives the §2 forbidden list, write "No new ideas today — every allowed slot is being spent on the §1 mandates above." Do NOT invent a rec to fill space.
+   **Format enforcement — every one violates this section:**
+   • NO framing/preamble paragraph before the table ("Given the current regime…", "Here are today's ideas…").
+   • NO between-row commentary paragraphs — put reasoning in the NOTES cell, one line, or leave the row out.
+   • NO trailing wrap-up paragraph after the table ("Overall, these ideas balance…").
+   • NO multi-sentence NOTES cells — one sentence, one clause preferred.
+   • NO section commentary about §4 itself ("This section is bulleted for clarity" is still prose — omit).
+   • If the pipe-table format doesn't render for your row, use a single bullet — "- TICKER: ACTION N sh @ LEVEL, stop STOP (NOTES)." — still one line.
+
+   If nothing survives the §2 forbidden list, write EXACTLY: "No new ideas today — every allowed slot is being spent on the §1 mandates above." Nothing else. Do NOT invent a rec to fill space and do NOT narrate the absence.
 
 0b. **✅ Trades you executed since last briefing** — REQUIRED when the "TRADES YOU EXECUTED SINCE LAST BRIEFING" block above is non-empty. ONE line per BUY/SELL leg, format unchanged:
    • BUY fulfilling AI rec: "**BOUGHT** N sh TICKER @ $entry CCY on YYYY-MM-DD — fulfills the [rec-type] BUY. Current $X (Y% vs entry). On track / past halfway / pulled back."
@@ -2816,6 +2825,65 @@ export async function generateBriefing(profile) {
           }
           return true;
         }).join("\n");
+      }
+    }
+
+    // Sleeve mis-label rewriter: AI narrative sometimes labels held
+    // tickers with the wrong sleeve (Aug 5 audit — Grok flagged XIC
+    // written as "(SWING)" in the per-holding table while the
+    // deterministic sleeve enforcer correctly classifies it as CORE).
+    // Rewrite any "TICKER (SLEEVE)" / "TICKER — SLEEVE" / "TICKER in
+    // SLEEVE sleeve" pattern for a held ticker where the AI-asserted
+    // sleeve disagrees with sleeveEnforcer's classification. Preserves
+    // the useful signal (the ticker line) but corrects the label so the
+    // reader isn't second-guessing the truth. Keyed by base ticker
+    // (XIC and XIC.TO both hit the same map entry).
+    const heldSleeveByBase = {};
+    for (const row of (sleeveBalance?.byPosition || [])) {
+      const base = String(row.ticker || "").toUpperCase().replace(/\..*$/, "");
+      if (!base) continue;
+      if (!heldSleeveByBase[base]) heldSleeveByBase[base] = String(row.sleeve || "").toUpperCase();
+    }
+    const heldBases = Object.keys(heldSleeveByBase);
+    if (heldBases.length > 0) {
+      let relabels = 0;
+      for (const base of heldBases) {
+        const correct = heldSleeveByBase[base];
+        if (!correct || !["CORE", "SWING", "SPEC", "INCOME"].includes(correct)) continue;
+        // TICKER ( WRONGSLEEVE ...) — parenthetical label right after the ticker
+        // Matches: TICKER (SWING), TICKER (SWING sleeve), TICKER (SWING —…)
+        const parenRe = new RegExp(
+          `\\b(${base}(?:\\.TO|\\.V|\\.NE)?)\\s*\\(\\s*(CORE|SWING|SPEC|INCOME)\\b`,
+          "gi"
+        );
+        md = md.replace(parenRe, (match, tickerPart, sleeveWord) => {
+          if (sleeveWord.toUpperCase() === correct) return match;
+          relabels++;
+          return `${tickerPart} (${correct}`;
+        });
+        // TICKER — WRONGSLEEVE  |  TICKER - WRONGSLEEVE  |  TICKER: WRONGSLEEVE
+        const dashRe = new RegExp(
+          `\\b(${base}(?:\\.TO|\\.V|\\.NE)?)\\s*[—\\-:]\\s*(CORE|SWING|SPEC|INCOME)\\b(?!\\w)`,
+          "gi"
+        );
+        md = md.replace(dashRe, (match, tickerPart, sleeveWord) => {
+          if (sleeveWord.toUpperCase() === correct) return match;
+          relabels++;
+          return match.replace(new RegExp(sleeveWord, "i"), correct);
+        });
+        // TICKER in WRONGSLEEVE sleeve  |  TICKER (a WRONGSLEEVE hold)
+        const inSleeveRe = new RegExp(
+          `\\b(${base}(?:\\.TO|\\.V|\\.NE)?)\\b([^\\n]{0,30}?)\\b(CORE|SWING|SPEC|INCOME)\\s+sleeve\\b`,
+          "gi"
+        );
+        md = md.replace(inSleeveRe, (match, tickerPart, mid, sleeveWord) => {
+          if (sleeveWord.toUpperCase() === correct) return match;
+          relabels++;
+          return match.replace(new RegExp(`\\b${sleeveWord}\\s+sleeve\\b`, "i"), `${correct} sleeve`);
+        });
+      }
+      if (relabels > 0) {
+        console.log(`[sleeve-relabel] corrected ${relabels} mis-labelled sleeve reference(s) in AI narrative`);
       }
     }
 
