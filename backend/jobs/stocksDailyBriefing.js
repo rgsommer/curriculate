@@ -956,7 +956,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices }) {
+function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar }) {
   // Alias — kept as ctxRecentExits inside so callers don't have to
   // rebind if the param name changes later.
   const ctxRecentExits = recentExits || [];
@@ -1173,6 +1173,63 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
           `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Live prices unavailable for default deploy tickers — pick manually per account: CAD cash → INCOME (RY/TD/BMO/BNS/TRP), USD cash → CORE-USD (VOO/VTI). Reserve ~10% of each pool.`
         );
       }
+    }
+  }
+
+  // VaR breach mandate: portfolio 1-day 95% VaR is over the user's
+  // hard cap. Grok Aug 5 audit — §1 was saying "None. Portfolio is
+  // inside all hard rules" while the Dashboard was showing ACT NOW on
+  // VaR breach. §1 needs its own gate for VaR so the two never
+  // disagree. Non-CORE positions are the usual driver; guidance
+  // suggests trimming largest non-CORE contributor by ~10-15%.
+  if (riskVar?.breach95 && riskVar?.used?.pct95 != null) {
+    const varPct = riskVar.used.pct95;
+    const cap = riskVar.limits?.pct95 || 2;
+    const headroomCad = Math.abs(riskVar.headroomCad95 || 0);
+    // Suppress if the breach is trivial (< $100 CAD headroom deficit).
+    // Same tolerance the Dashboard PortfolioHealthChip uses so the two
+    // stay consistent — no false urgency on rounding-error breaches.
+    if (headroomCad >= 100) {
+      // Largest non-CORE-ETF contributor by CAD value — that's the
+      // one whose trim moves the needle. Skip CORE ETFs (diversified
+      // internally, trimming them shifts sleeve balance the wrong way).
+      const nonCoreLargest = (b?.byPosition || [])
+        .filter(row => row.sleeve !== "core" && row.cadValue > 1000)
+        .sort((a, b) => b.cadValue - a.cadValue)[0];
+      const target = nonCoreLargest?.ticker || "the largest non-CORE position";
+      mandatory.push(
+        `**REDUCE VAR** — portfolio 1-day 95% VaR is ${varPct.toFixed(2)}% vs the ${cap}% hard cap (breach; headroom ~−${m(headroomCad)}). Trim ~10-15% of **${target}** (largest non-CORE contributor by \\$) to bring VaR back under cap. Non-CORE first — trimming a CORE ETF shifts sleeve balance the wrong way.`
+      );
+    }
+  }
+
+  // Single-name concentration mandate: any base ticker over 20% of
+  // book. Grok Aug 5 audit — book had XIU 26.5%, VOO 22.3%, IWM 24.7%
+  // all breaching the 15% cap. CORE ETFs are internally diversified so
+  // exempt them from the strict 15% rule but still cap at 30% (below
+  // that they're fine — 60-name broad-market ETFs aren't blow-up risk).
+  // Individual stocks: hard 20% (Grok's rule set) — no exemption.
+  const CORE_ETF_CONC_CAP = 30;
+  const NON_CORE_CONC_CAP = 20;
+  const concByBase = {};
+  for (const row of (b?.byPosition || [])) {
+    if (!(row.cadValue > 0)) continue;
+    const base = String(row.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    if (!base) continue;
+    if (!concByBase[base]) concByBase[base] = { cad: 0, sleeve: row.sleeve };
+    concByBase[base].cad += row.cadValue;
+  }
+  const bookForConc = b?.book || 0;
+  if (bookForConc > 0) {
+    for (const [base, info] of Object.entries(concByBase)) {
+      const pct = (info.cad / bookForConc) * 100;
+      const cap = info.sleeve === "core" ? CORE_ETF_CONC_CAP : NON_CORE_CONC_CAP;
+      if (pct <= cap) continue;
+      const excessCad = info.cad - (cap / 100) * bookForConc;
+      if (excessCad < 100) continue; // trivial breach, skip
+      mandatory.push(
+        `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${cap}% ${info.sleeve === "core" ? "CORE-ETF" : "single-name"} cap. Trim ~${m(excessCad)} to bring it to ≤ ${cap}%. ${info.sleeve === "core" ? "CORE ETFs get a 30% cap (they're internally diversified), but stacking multiple >20% CORE ETFs still concentrates the same beta." : "Single-name blow-ups are the loss zone — no exemption on this cap."}`
+      );
     }
   }
 
@@ -2352,6 +2409,7 @@ export async function generateBriefing(profile) {
     sectorRotation,
     recentExits,
     mandateLivePrices,
+    riskVar,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
@@ -2661,6 +2719,36 @@ export async function generateBriefing(profile) {
         md = md.slice(0, insertAt) + "\n" + injectBlock + "\n\n" + md.slice(insertAt);
       } else {
         md = injectBlock + "\n\n" + md;
+      }
+    }
+
+    // Post-validation strip: kill AI-written §4 "Today's one action"
+    // tables/lines that name any BLOCKED ticker. My existing dedupe
+    // catches conflicts inside <RECS> JSON, but the AI can still
+    // narrate rejected tickers as prose in §4 tables — Aug 5 briefing
+    // had "AYA.TO" and "CNQ" as trade tickets in the §4 table even
+    // though both were in §5 BLOCKED. This filter removes any line
+    // that mentions a blocked ticker AND looks like an action row
+    // (contains BUY/SELL/TRIM/EXIT keyword near the ticker).
+    if (rejectedRecs.length > 0) {
+      const blockedTickers = new Set(
+        rejectedRecs.map(x => String(x.rec?.ticker || "").toUpperCase()).filter(Boolean)
+      );
+      if (blockedTickers.size > 0) {
+        // Split by line + surviving line array preserves order.
+        md = md.split("\n").filter(line => {
+          const upperLine = line.toUpperCase();
+          const hasActionVerb = /\b(?:BUY|SELL|TRIM|EXIT|LIMIT\s+(?:BUY|SELL)|ADD)\b/.test(upperLine);
+          if (!hasActionVerb) return true;
+          // If line has an action verb AND names a blocked ticker, drop it.
+          for (const t of blockedTickers) {
+            // Look for whole-word ticker match to avoid substring hits
+            // (e.g. "CNQ" appearing inside a longer word).
+            const re = new RegExp(`\\b${t.replace(/\./g, "\\.")}\\b`);
+            if (re.test(upperLine)) return false;
+          }
+          return true;
+        }).join("\n");
       }
     }
   }
