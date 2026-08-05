@@ -1062,21 +1062,31 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
 
   // ─── § 1. MANDATORY ACTIONS ───
   chunks.push("## 1. 🚨 MANDATORY ACTIONS (do these today)");
+  // Two buckets: `mandatory` for exits (SELL / TRIM / EXIT) and their
+  // tightly-paired REDEPLOY lines; `mandatoryLater` for standalone
+  // BUY-only mandates (DEPLOY CASH from existing balance, CORE
+  // REBALANCE). Concatenated `mandatory + mandatoryLater` at render
+  // time so SELLs land above BUYs — the operator places trims first,
+  // proceeds settle, then places the standalone buys. Prevents the
+  // "buy first, but the cash from those buys hasn't landed yet" trap.
   const mandatory = [];
+  const mandatoryLater = [];
 
   // Rebalance if CORE is severely under. Emits a specific default
   // ticket (XEQT for CAD, VOO for USD) sized to close the gap, with
   // the raw gap and no-new-non-CORE rule stated after.
+  // Pushed to `mandatoryLater` — this is a standalone BUY, must land
+  // below the SELL/TRIM section so proceeds are available.
   if (coreLockActive) {
     const gap = Math.abs(b.rebalanceCad?.core || 0);
     const rebalTicket = pickDefaultTicket(["XEQT", "VUN", "XIU"], gap, "CAD");
     if (rebalTicket) {
       const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
-      mandatory.push(
+      mandatoryLater.push(
         `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}. **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}`
       );
     } else {
-      mandatory.push(
+      mandatoryLater.push(
         `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct all free cash AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.** (No live price for default ticker — pick one manually.)`
       );
     }
@@ -1173,23 +1183,25 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       }
 
       if (tickets.length > 0) {
-        // Header line describing the total plan.
+        // Header line describing the total plan. Routed to
+        // `mandatoryLater` so DEPLOY CASH (BUY-side) lands below all
+        // SELL/TRIM mandates in §1 — operator sells first, then buys.
         const totalDeployCad = tickets.reduce((s, t) => s + (t.pool.ccy === "CAD" ? t.deployNative : t.deployNative * fx), 0);
         const headerParts = [
           `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Deploying ~${m(totalDeployCad)} across ${tickets.length} cash pool${tickets.length === 1 ? "" : "s"} (no FX conversion; each ticket uses same-currency cash):`
         ];
-        mandatory.push(headerParts.join("\n"));
+        mandatoryLater.push(headerParts.join("\n"));
         tickets.forEach((t, i) => {
           const acctLabel = t.pool.acct.name || t.pool.acct.id || "account";
           const usedNative = t.ticket.shares * t.ticket.livePrice;
           const altStr = t.ticket.alternatives ? ` · Alternatives: ${t.ticket.alternatives}` : "";
-          mandatory.push(
+          mandatoryLater.push(
             `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${altStr}`
           );
         });
       } else if (pools.length > 0) {
         // Fallback: had pools but no ticket generated (no live prices).
-        mandatory.push(
+        mandatoryLater.push(
           `**DEPLOY CASH** — ${cashPct.toFixed(0)}% of book in cash while ${underweight.sleeve.toUpperCase()} sleeve is ${underweight.gap.toFixed(1)}pp under target. Live prices unavailable for default deploy tickers — pick manually per account: CAD cash → INCOME (RY/TD/BMO/BNS/TRP), USD cash → CORE-USD (VOO/VTI). Reserve ~10% of each pool.`
         );
       }
@@ -1573,10 +1585,14 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     );
   }
 
-  if (mandatory.length === 0) {
+  // Concatenate SELL/TRIM/EXIT mandates first, then BUY-only mandates
+  // (DEPLOY CASH, CORE REBALANCE). Keeps the "sell to free cash before
+  // you buy" ordering the operator expects when placing orders top-down.
+  const combinedMandatory = [...mandatory, ...mandatoryLater];
+  if (combinedMandatory.length === 0) {
     chunks.push("None. Portfolio is inside all hard rules today.");
   } else {
-    mandatory.forEach((line, i) => chunks.push(`${i + 1}. ${line}`));
+    combinedMandatory.forEach((line, i) => chunks.push(`${i + 1}. ${line}`));
   }
   chunks.push("");
 
