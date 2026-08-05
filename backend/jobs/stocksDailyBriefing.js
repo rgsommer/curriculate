@@ -2788,37 +2788,106 @@ export async function generateBriefing(profile) {
     // line naming any ticker in my precomputed mandate set, replaces the
     // first with my exact canonical string, and deletes the rest.
     // Defense-in-depth against the strip missing a variant AI heading.
-    if (prefixConcentrationMandates && prefixConcentrationMandates.length > 0) {
-      for (const { base, canonical } of prefixConcentrationMandates) {
+    // Rebuild the concentration mandate lines FRESH from sleeveBalance
+    // right here, so the enforcement is independent of whether the
+    // prefix's own loop populated concentrationMandates. Two failure
+    // modes we're covering:
+    //   (1) prefix loop didn't fire (data race / empty positions) →
+    //       AI's fabricated numbers would otherwise survive
+    //   (2) prefix DID fire, but the AI mimicked its format with
+    //       downscaled dollar amounts and my line-by-line replace was
+    //       matching the AI's line first
+    // Now we compute the authoritative canonicals from the same
+    // sleeveBalance the prefix uses, then scan md for EVERY TRIM
+    // CONCENTRATION line (whoever wrote it) and force our value.
+    const canonicalsByBase = new Map();
+    for (const cm of (prefixConcentrationMandates || [])) {
+      canonicalsByBase.set(cm.base, cm.canonical);
+    }
+    // Fill in any that the prefix missed by recomputing from the same
+    // sleeveBalance snapshot.
+    if (sleeveBalanceForPrefix?.book > 0) {
+      const bookForRebuild = sleeveBalanceForPrefix.book;
+      const perBase = {};
+      for (const row of (sleeveBalanceForPrefix.byPosition || [])) {
+        if (!(row.cadValue > 0)) continue;
+        const b = String(row.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+        if (!b) continue;
+        if (!perBase[b]) perBase[b] = { cad: 0, sleeve: row.sleeve };
+        perBase[b].cad += row.cadValue;
+      }
+      const routableGaps = sleeveBalanceForPrefix.deviations ? [
+        { sleeve: "income", gap: -sleeveBalanceForPrefix.deviations.income,
+          list: ["RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "TRP.TO", "ENB.TO"] },
+        { sleeve: "core", gap: -sleeveBalanceForPrefix.deviations.core,
+          list: ["XEQT.TO", "VUN.TO", "XIU.TO"] },
+      ].filter(x => x.gap > 5).sort((a, b) => b.gap - a.gap) : [];
+      const redirect = routableGaps[0] || null;
+      const mCad = (v) => `$${Math.round(v).toLocaleString()} CAD`;
+      for (const [base, info] of Object.entries(perBase)) {
+        const pct = (info.cad / bookForRebuild) * 100;
+        if (pct <= 20) continue;
+        const excessCad = info.cad - 0.20 * bookForRebuild;
+        if (excessCad < 100) continue;
+        let sleeveNote;
+        if (redirect && redirect.sleeve !== info.sleeve) {
+          const listStr = redirect.list.slice(0, 4).join(" / ");
+          sleeveNote = ` Redeploy proceeds into **${redirect.sleeve.toUpperCase()} sleeve** (${listStr}) — ${redirect.sleeve.toUpperCase()} is ${redirect.gap.toFixed(1)}pp underweight, so this trim closes two gaps at once.`;
+        } else if (info.sleeve === "core") {
+          sleeveNote = " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve.";
+        } else {
+          sleeveNote = " Single-name blow-ups are the loss zone.";
+        }
+        const line = `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the 20% single-name cap. Trim ~${mCad(excessCad)} to bring it to ≤ 20%.${sleeveNote}`;
+        // Prefix's canonical wins if it exists (already stored above);
+        // otherwise use this freshly-computed one.
+        if (!canonicalsByBase.has(base)) canonicalsByBase.set(base, line);
+      }
+    }
+
+    if (canonicalsByBase.size > 0) {
+      for (const [base, canonical] of canonicalsByBase.entries()) {
         // Match ANY line containing "TRIM CONCENTRATION" and the base
         // ticker in the same line — regardless of leading list markers
         // ("1.", "-", "*"), bold markers ("**"), or preceding numbering.
-        // Anchored to line boundaries so we replace whole rendered rows.
         const re = new RegExp(`^.*?TRIM\\s+CONCENTRATION\\b.*?\\b${base}\\b.*$`, "gim");
         let replaced = false;
         md = md.replace(re, () => {
           if (!replaced) { replaced = true; return canonical; }
-          return ""; // drop duplicates (AI-emitted variants with wrong numbers)
+          return ""; // drop duplicates
         });
         if (!replaced) {
-          // My canonical didn't appear at all — reinsert it near the
-          // MANDATORY ACTIONS heading so the mandate isn't silently
-          // dropped. Also try the AI's variant heading pattern so the
-          // reinsert lands adjacent to the mandate list the reader is
-          // actually seeing (e.g. "## 0a. ✅ Mandatory actions").
           console.warn(`[concentration] canonical for ${base} vanished from md — reinserting`);
           const anchor = md.match(/^##[^\n]*?\bMandatory\s+Actions?\b[^\n]*$/im);
           if (anchor) {
             const insertAt = anchor.index + anchor[0].length;
             md = md.slice(0, insertAt) + "\n" + canonical + md.slice(insertAt);
           } else {
-            // No mandate heading at all — prepend to whole document.
             md = canonical + "\n\n" + md;
           }
         }
       }
-      // Collapse any triple-blank runs left behind by dropped duplicates.
+      // Final belt-and-braces: any leftover TRIM CONCENTRATION line
+      // naming a ticker NOT in our canonical map is AI-invented (ticker
+      // isn't actually over cap per sleeveBalance) → drop it. Prevents
+      // stale AI narration surviving after positions moved back under
+      // the cap. Also drops any TRIM CONCENTRATION whose numbers still
+      // look wrong for a ticker we DO have — the per-base loop above
+      // should have caught these, but a matching failure on some regex
+      // edge case would leave stragglers.
+      const remainingKeys = [...canonicalsByBase.keys()];
+      md = md.split("\n").filter(line => {
+        if (!/TRIM\s+CONCENTRATION\b/i.test(line)) return true;
+        // Keep only lines that MATCH one of our canonical strings verbatim.
+        for (const canonical of canonicalsByBase.values()) {
+          if (line.includes(canonical) || line.trim() === canonical.trim()) return true;
+        }
+        // Line names a TRIM CONCENTRATION but doesn't match any canonical
+        // → AI hallucination or duplicate → drop.
+        return false;
+      }).join("\n");
       md = md.replace(/\n{3,}/g, "\n\n");
+      console.log(`[concentration] enforced ${canonicalsByBase.size} canonical mandate line(s): ${remainingKeys.join(", ")}`);
     }
   }
 
