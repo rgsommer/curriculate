@@ -290,6 +290,15 @@ function ruleExpectancyFloor({ rec, ctx }) {
 const PRICE_DRIFT_THRESHOLD = 0.006; // 0.6% — tightened again per Grok Aug rule set. Post-intraday recs (limit set from the current print) shouldn't drift more than 0.5-1.0% by the time validation runs. Anything wider almost always means AI wrote entry from stale technicals or a pre-market snapshot that has since moved.
 function ruleLivePriceDrift({ rec, ctx }) {
   if (!rec.entryPrice || !rec.ticker) return { ok: true };
+  // Exits (SELL / TRIM / EXIT) are mandated exits — the operator
+  // places a limit close to the current market at execution time. The
+  // rec's entryPrice is a reference point, not a trigger the AI needs
+  // to hit precisely. Enforcing tight drift here rejects mandatory
+  // exits any time the market moves 0.6% in the minutes between AI
+  // generation and validation, which is nonsense — the exit is
+  // authored by a §1 mandate, not by the AI picking a limit level.
+  const action = String(rec.action || "").toUpperCase();
+  if (action === "SELL" || action === "TRIM" || action === "EXIT") return { ok: true };
   const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
   if (!live || !(live.price > 0)) return { ok: true }; // no live data — don't block
   const drift = Math.abs(live.price - rec.entryPrice) / Math.max(live.price, rec.entryPrice);
@@ -341,6 +350,12 @@ function ruleSleeveDeclaration({ rec, ctx }) {
 // when AI omits it, so this rule catches the omission cleanly.
 function ruleHorizonDeclaration({ rec, ctx }) {
   if (rec.action === "HOLD") return { ok: true };
+  // Exits close a position — there's no "hold period" to declare. The
+  // horizon concept applies to opening a new BUY (how long you intend
+  // to hold before exit). SELL / TRIM / EXIT are the exit itself, so
+  // requiring horizonDays on them is a category error.
+  const action = String(rec.action || "").toUpperCase();
+  if (action === "SELL" || action === "TRIM" || action === "EXIT") return { ok: true };
   if (!(rec.horizonDays > 0)) {
     return {
       ok: false,
