@@ -2839,7 +2839,7 @@ export async function generateBriefing(profile) {
     // reader isn't second-guessing the truth. Keyed by base ticker
     // (XIC and XIC.TO both hit the same map entry).
     const heldSleeveByBase = {};
-    for (const row of (sleeveBalance?.byPosition || [])) {
+    for (const row of (sleeveBalanceForPrefix?.byPosition || [])) {
       const base = String(row.ticker || "").toUpperCase().replace(/\..*$/, "");
       if (!base) continue;
       if (!heldSleeveByBase[base]) heldSleeveByBase[base] = String(row.sleeve || "").toUpperCase();
