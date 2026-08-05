@@ -1259,6 +1259,27 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       .sort((a, b) => b.gap - a.gap) : [];
     const underweightRedirect = routableGaps[0] || null;
 
+    // Build per-base-ticker ccy + primary account maps so the paired
+    // REDEPLOY line can name a concrete ticket in the right currency /
+    // account. Primary account = the one holding the largest slice of
+    // this ticker (most proceeds land there → keep FX unchanged).
+    const baseTickerToCcy = {};
+    const baseTickerToPrimaryAcct = {};
+    for (const p of (positions || [])) {
+      const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+      if (!base) continue;
+      const posCad = (p.ccy === "USD" ? (p.priceUsd || 0) * (fxUsdCad || 1.37) : (p.priceCad || 0)) * (p.qty || 0);
+      if (!baseTickerToCcy[base] && p.ccy) baseTickerToCcy[base] = p.ccy;
+      const prior = baseTickerToPrimaryAcct[base];
+      if (!prior || posCad > prior.cad) baseTickerToPrimaryAcct[base] = { acct: p.acct, cad: posCad };
+    }
+    const acctNameForBase = (base) => {
+      const acctId = baseTickerToPrimaryAcct[base]?.acct;
+      if (!acctId) return null;
+      const a = (cashAccounts || []).find(x => String(x.id) === String(acctId));
+      return a?.name || String(acctId);
+    };
+
     // Sort worst-first so the largest concentration lands at the top of §1.
     const overCap = Object.entries(concByBase)
       .map(([base, info]) => ({ base, info, pct: (info.cad / bookForConc) * 100 }))
@@ -1271,13 +1292,33 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       console.log(`[concentration] base=${base} sleeve=${info.sleeve} cad=$${info.cad.toFixed(0)} book=$${bookForConc.toFixed(0)} pct=${pct.toFixed(1)}% excess=$${excessCad.toFixed(0)} redirect=${underweightRedirect?.sleeve || "none"}`);
       if (excessCad < 100) continue; // trivial breach, skip
       let sleeveNote;
+      let destList = null;
+      let destSleeveLabel = null;
+      const positionCcy = baseTickerToCcy[base] || "CAD";
       if (underweightRedirect && underweightRedirect.sleeve !== info.sleeve) {
         // Prefer the underweight sleeve — kills two birds: reduces
         // concentration AND closes the sleeve gap on the same trim.
         const listStr = underweightRedirect.list.slice(0, 4).join(" / ");
         sleeveNote = ` Redeploy proceeds into **${underweightRedirect.sleeve.toUpperCase()} sleeve** (${listStr}) — ${underweightRedirect.sleeve.toUpperCase()} is ${underweightRedirect.gap.toFixed(1)}pp underweight, so this trim closes two gaps at once.`;
+        // Currency-match the destination list so proceeds stay in the
+        // same currency (no forced FX). CAD sale → CAD destination
+        // list; USD sale → USD destination list.
+        if (underweightRedirect.sleeve === "income") {
+          destList = positionCcy === "CAD"
+            ? ["RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "TRP.TO", "ENB.TO"]
+            : ["KO", "PEP", "JNJ", "PG", "MO", "ABBV", "MRK", "XOM", "CVX", "O", "VZ", "MMM"];
+        } else if (underweightRedirect.sleeve === "core") {
+          destList = positionCcy === "CAD"
+            ? ["XEQT.TO", "VUN.TO", "XIU.TO"]
+            : ["VOO", "VTI", "QQQ"];
+        }
+        destSleeveLabel = underweightRedirect.sleeve.toUpperCase();
       } else if (info.sleeve === "core") {
         sleeveNote = " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve.";
+        destList = positionCcy === "CAD"
+          ? ["XEQT.TO", "VUN.TO", "XIU.TO"].filter(t => t.split(".")[0] !== base)
+          : ["VOO", "VTI", "QQQ"].filter(t => t !== base);
+        destSleeveLabel = "CORE";
       } else {
         sleeveNote = " Single-name blow-ups are the loss zone.";
       }
@@ -1288,6 +1329,24 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       // this line's format with hallucinated (much smaller) trim amounts
       // that fail to actually bring the position under the cap.
       concentrationMandates.push({ base, canonical: line });
+
+      // Paired REDEPLOY ticket — concrete buy order matching the SELL
+      // proceeds, in the same account and currency so no FX / transfer
+      // is needed. User previously reported: took the two TRIM/SELL
+      // recs but had no direction on where to deploy the freed cash.
+      // This closes the loop.
+      if (destList && destList.length > 0) {
+        const excessNative = positionCcy === "CAD" ? excessCad : excessCad / (fxUsdCad || 1.37);
+        const pairTicket = pickDefaultTicket(destList, excessNative, positionCcy);
+        if (pairTicket) {
+          const acctLabel = acctNameForBase(base);
+          const acctStr = acctLabel ? ` in **${acctLabel}**` : "";
+          const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
+          const usedNative = pairTicket.shares * pairTicket.livePrice;
+          const pairedLine = `   → **REDEPLOY (paired with TRIM above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}**${acctStr} @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${positionCcy} of the ~$${Math.round(excessNative).toLocaleString()} ${positionCcy} proceeds from ${base} TRIM. ${destSleeveLabel} sleeve — required destination.${altStr}`;
+          mandatory.push(pairedLine);
+        }
+      }
     }
   }
 
