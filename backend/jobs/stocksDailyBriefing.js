@@ -2710,16 +2710,20 @@ export async function generateBriefing(profile) {
     // New Daily Orders strips — §1/§2/§4 are pre-rendered; strip any AI
     // attempt to duplicate them so the prepended deterministic version
     // is the only copy in the final briefing.
-    // Broadened patterns — original required "## 1." prefix. AI often
-    // drops the "1." (leaving "## 🚨 MANDATORY ACTIONS") which slipped
-    // through the strip and led to duplicate/contradicting §1 blocks.
-    // The (?:N\.\s*)? makes the number optional so both forms match.
-    md = stripHeaderBlock(md, /^##\s*(?:1\.\s*)?🚨?\s*MANDATORY ACTIONS.*$/im);
-    md = stripHeaderBlock(md, /^##\s*(?:2\.\s*)?🛑?\s*FORBIDDEN TODAY.*$/im);
-    md = stripHeaderBlock(md, /^##\s*(?:3\.\s*)?📊?\s*Status.*$/im);
-    // Legacy strip for pre-reorder briefs still cached — §4 was Status
-    // before the swap. Safe to keep for a few weeks then remove.
-    md = stripHeaderBlock(md, /^##\s*4\.\s*📊?\s*Status.*$/im);
+    //
+    // Broadened HEAVILY — AI has been observed renaming the section
+    // ("## 0a. ✅ Mandatory actions", "## 1️⃣ MANDATORY ACTIONS", etc)
+    // and slipping past narrower regex. The new pattern matches ANY H2
+    // heading whose text contains the key words, regardless of numbering
+    // scheme, emoji prefix, or bold markup — up to a newline. Case-
+    // insensitive so "Mandatory Actions" / "MANDATORY ACTIONS" both hit.
+    md = stripHeaderBlock(md, /^##[^\n]*?\bMandatory\s+Actions?\b[^\n]*$/im);
+    md = stripHeaderBlock(md, /^##[^\n]*?\bForbidden\s+Today\b[^\n]*$/im);
+    // Status: only strip if paired with the 📊 emoji OR a leading "3." /
+    // "1." numeric prefix — avoids nuking anything ad-hoc like a per-
+    // rec "Status" header the AI might legitimately write.
+    md = stripHeaderBlock(md, /^##\s*(?:📊|(?:0[a-z]?|[1-9])\.).*?\bStatus\b[^\n]*$/im);
+    md = stripHeaderBlock(md, /^##\s*📊[^\n]*\bStatus\b[^\n]*$/im);
     // Strip any AI-written "## 5. Cash deployment" / "§5. Cash..." —
     // it duplicates §1 DEPLOY CASH with hedgy per-account narrative
     // ("better: IWM...", "actually skip, TFSA cash pending clean
@@ -2786,7 +2790,11 @@ export async function generateBriefing(profile) {
     // Defense-in-depth against the strip missing a variant AI heading.
     if (prefixConcentrationMandates && prefixConcentrationMandates.length > 0) {
       for (const { base, canonical } of prefixConcentrationMandates) {
-        const re = new RegExp(`^.*TRIM\\s+CONCENTRATION\\b.*?\\b${base}\\b.*$`, "gim");
+        // Match ANY line containing "TRIM CONCENTRATION" and the base
+        // ticker in the same line — regardless of leading list markers
+        // ("1.", "-", "*"), bold markers ("**"), or preceding numbering.
+        // Anchored to line boundaries so we replace whole rendered rows.
+        const re = new RegExp(`^.*?TRIM\\s+CONCENTRATION\\b.*?\\b${base}\\b.*$`, "gim");
         let replaced = false;
         md = md.replace(re, () => {
           if (!replaced) { replaced = true; return canonical; }
@@ -2795,13 +2803,17 @@ export async function generateBriefing(profile) {
         if (!replaced) {
           // My canonical didn't appear at all — reinsert it near the
           // MANDATORY ACTIONS heading so the mandate isn't silently
-          // dropped. This is the pathological case where both my
-          // prefix injection and the AI's own line were stripped out.
+          // dropped. Also try the AI's variant heading pattern so the
+          // reinsert lands adjacent to the mandate list the reader is
+          // actually seeing (e.g. "## 0a. ✅ Mandatory actions").
           console.warn(`[concentration] canonical for ${base} vanished from md — reinserting`);
-          const anchor = md.match(/^##\s*(?:1\.\s*)?🚨?\s*MANDATORY ACTIONS.*$/im);
+          const anchor = md.match(/^##[^\n]*?\bMandatory\s+Actions?\b[^\n]*$/im);
           if (anchor) {
             const insertAt = anchor.index + anchor[0].length;
             md = md.slice(0, insertAt) + "\n" + canonical + md.slice(insertAt);
+          } else {
+            // No mandate heading at all — prepend to whole document.
+            md = canonical + "\n\n" + md;
           }
         }
       }
