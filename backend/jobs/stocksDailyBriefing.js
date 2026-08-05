@@ -1592,7 +1592,21 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   if (combinedMandatory.length === 0) {
     chunks.push("None. Portfolio is inside all hard rules today.");
   } else {
-    combinedMandatory.forEach((line, i) => chunks.push(`${i + 1}. ${line}`));
+    // Paired sub-items (REDEPLOY, CORE DEPLOY, etc.) are emitted as
+    // separate mandatory[] entries but MUST render as indented children
+    // of the preceding numbered mandate, not as their own top-level
+    // items. Detect them by their leading whitespace + arrow and skip
+    // renumbering.
+    let n = 0;
+    combinedMandatory.forEach(line => {
+      const isPairedSub = /^\s+→\s/.test(line);
+      if (isPairedSub) {
+        chunks.push(line); // preserve leading indent
+      } else {
+        n += 1;
+        chunks.push(`${n}. ${line}`);
+      }
+    });
   }
   chunks.push("");
 
