@@ -261,6 +261,7 @@ export async function monitorOpenRecs(email) {
 
   const targetAlerts = [];
   const stopAlerts = [];
+  const stopHitRecs = [];
   const updates = [];
   const supersededIds = [];
   let inRangeCount = 0;
@@ -328,6 +329,20 @@ export async function monitorOpenRecs(email) {
       stopAlerts.push(
         `🛑 **${rec.ticker} hit stop.** Rec from ${dateStr}: ${rec.action} @ $${rec.entryPrice} with stop $${rec.stopPrice}. Current $${px.toFixed(2)} ${ccyMarker}. ${exit}`
       );
+      // Structured record so the §1 renderer can cross-check against
+      // held positions and emit a concrete SELL AT MARKET mandate for
+      // any actually-held ticker that a stop-hit rec names. Grok Aug 5
+      // audit: ENB stop-hit alert lived only in §3 — if a position
+      // exists it belongs in §1 mandatory.
+      stopHitRecs.push({
+        ticker: rec.ticker,
+        base: baseTicker(rec.ticker),
+        action: rec.action,
+        entryPrice: rec.entryPrice,
+        stopPrice: rec.stopPrice,
+        currentPrice: px,
+        currency: ccyMarker,
+      });
     } else {
       updates.push({ id: rec._id, set: { lastCheckedAt: now, lastCheckedPrice: px } });
       inRangeCount++;
@@ -342,7 +357,7 @@ export async function monitorOpenRecs(email) {
   }
 
   const alerts = [...stopAlerts, ...targetAlerts]; // stops first — more urgent
-  return { alerts, hits: alerts.length, inRange: inRangeCount };
+  return { alerts, hits: alerts.length, inRange: inRangeCount, stopHitRecs };
 }
 
 // Lightweight markdown → HTML for email bodies, with a second pass that
@@ -956,7 +971,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals }) {
+function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
   // these lines as the authoritative version in the final briefing —
@@ -1404,6 +1419,46 @@ function renderDeterministicPrefix({ monitorAlerts, stopMonitor, sleeveBalance, 
           `   → **CORE DEPLOY (paired with SELL above)** — After the ${r.ticker} SELL settles, use the ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds to BUY ${coreTicker} in **${r.account}** (same account, same currency). CORE gap is ${coreGapPp.toFixed(1)}pp — required destination.`
         );
       }
+    }
+  }
+
+  // Rec-stop-hit mandate: any open rec whose stopPrice was breached AND
+  // whose ticker is actually held right now → emit a §1 SELL AT MARKET.
+  // Grok Aug 5 audit: "ENB stop-hit alert lived only in §3 Open rec
+  // alerts. It should sit in the Mandatory Actions section, not only as
+  // an Open rec alert." Rationale — when a rec's stop is hit and the
+  // user IS holding the ticker, the position-monitor's cost-basis-based
+  // check may not fire (missing basis data), but the rec's own stop is
+  // authoritative for that thesis. Cross-reference here so §1 catches
+  // it. Skip if the position-monitor already flagged this ticker
+  // (confirmedStops handles it) or if the ticker isn't held (rec alert
+  // in §3 is sufficient — nothing to SELL).
+  const stopHitTickersInConfirmed = new Set(
+    confirmedStops.map(r => String(r.ticker || "").toUpperCase().replace(/\..*$/, ""))
+  );
+  const acctNameById = new Map();
+  for (const a of (cashAccounts || [])) {
+    if (a?.id && a?.name) acctNameById.set(String(a.id), String(a.name));
+  }
+  for (const stopRec of (monitorStopHitRecs || [])) {
+    if (stopRec.action !== "BUY") continue; // SELL/TRIM stops are re-entry signals, not exit mandates
+    if (stopHitTickersInConfirmed.has(stopRec.base)) continue; // already in §1 via position monitor
+    // Find held position matching this rec's base ticker.
+    const matchingPositions = (positions || []).filter(p => {
+      const posBase = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+      return posBase === stopRec.base && (p.qty || 0) > 0;
+    });
+    if (matchingPositions.length === 0) continue; // no position → §3 alert is enough
+    for (const p of matchingPositions) {
+      const acctLabel = acctNameById.get(String(p.acct || "")) || String(p.acct || "account");
+      const px = stopRec.currentPrice;
+      const basisPx = stopRec.currency === "USD" ? p.costBasisUsd : p.costBasisCad;
+      const basisStr = Number.isFinite(basisPx) && basisPx > 0
+        ? ` · basis $${basisPx.toFixed(2)} ${stopRec.currency}, now $${px.toFixed(2)} ${stopRec.currency} (${(((px - basisPx) / basisPx) * 100).toFixed(1)}%)`
+        : ` · rec entry $${stopRec.entryPrice} ${stopRec.currency}, now $${px.toFixed(2)} ${stopRec.currency}`;
+      mandatory.push(
+        `**SELL AT MARKET** — ${p.ticker} in ${acctLabel}: ${p.qty} sh${basisStr}. **Rec-stop breached** (stop $${stopRec.stopPrice}, now $${px.toFixed(2)}). Thesis invalidated per the ${stopRec.ticker} rec. Sell at market or LIMIT at ~1% below current.`
+      );
     }
   }
 
@@ -2270,6 +2325,7 @@ export async function generateBriefing(profile) {
     computeCalibration(profile.email).catch((e) => { console.warn("[computeCalibration] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
+  const monitorStopHitRecs = monitorRes?.stopHitRecs || [];
   // Horizon review — per-open-rec status against its stated window.
   // Runs in a separate step because it fetches prices per rec symbol
   // and benefits from the priceMap that monitorOpenRecs already
@@ -2498,6 +2554,7 @@ export async function generateBriefing(profile) {
   } catch (e) { console.warn("[mandate-live-prices] fetch warn:", e?.message); }
   const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates } = renderDeterministicPrefix({
     monitorAlerts,
+    monitorStopHitRecs,
     stopMonitor,
     sleeveBalance: sleeveBalanceForPrefix,
     positions: profile.positions || [],
