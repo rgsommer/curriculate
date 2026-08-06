@@ -48,6 +48,7 @@ import { compareTranscriptsQoQ } from "./stocksEarningsTranscripts.js";
 import { getPatentsSignal } from "./stocksPatentsUspto.js";
 import { verifyPicksBatch } from "./stocksAdversarialVerify.js";
 import { getChartVisionAnalysis } from "./stocksChartVision.js";
+import { computeLessons } from "./stocksLessonsLearned.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -601,7 +602,40 @@ async function saveAiOnlyCandidates({ email, candidates, sharedSources, excludeS
 // back to the AI-only path so the user gets candidates without paying for
 // FMP Starter. The response includes a `mode` field ("fmp-screened" or
 // "ai-only") plus an `upgradeRecommendation` string the UI can show.
+// Kill-switch thresholds mirror the daily-pick engine (see
+// stocksDailyPickEngine.js). Same rationale: don't keep piling new
+// SPEC-sleeve candidates into the pool while the last 30 days show
+// the discretionary engine is destroying capital. Silent empty
+// return; the caller (briefing) reads it as "no discovery pool today".
+const KILL_MIN_HIT_RATE_PCT = 40;
+const KILL_MIN_AVG_PNL_PCT = -1.5;
+const KILL_MIN_SAMPLE_SIZE = 5;
+async function shouldSuppressDiscovery(email) {
+  try {
+    const lessons = await computeLessons(email);
+    const t30 = lessons?.trend?.["30d"];
+    if (!t30 || t30.total < KILL_MIN_SAMPLE_SIZE) return { suppress: false, reason: `sample too small (${t30?.total || 0})` };
+    if (t30.hitRate < KILL_MIN_HIT_RATE_PCT) return { suppress: true, reason: `30d hit rate ${t30.hitRate.toFixed(0)}% < ${KILL_MIN_HIT_RATE_PCT}% floor` };
+    if (t30.avgPnl < KILL_MIN_AVG_PNL_PCT) return { suppress: true, reason: `30d avg PnL ${t30.avgPnl.toFixed(1)}% < ${KILL_MIN_AVG_PNL_PCT}% floor` };
+    return { suppress: false, reason: `30d ${t30.wins}/${t30.total} = ${t30.hitRate.toFixed(0)}%, avg ${t30.avgPnl.toFixed(1)}%` };
+  } catch (e) {
+    console.warn("[discovery-kill-switch] lessons compute failed:", e?.message);
+    return { suppress: false, reason: `lessons unavailable (${e?.message})` };
+  }
+}
+
 export async function runDiscoveryScan({ email, excludeTickers = [], sectors = null, topN = 8, opts = {} }) {
+  // Kill-switch gate. Same rationale as generateDailyPicksForUser —
+  // stop feeding new SPEC candidates when the discretionary engine is
+  // demonstrably losing money. Returns an empty scan (0 candidates)
+  // rather than throwing, so the briefing shows "no discovery pool
+  // today" cleanly.
+  const gate = await shouldSuppressDiscovery(email);
+  if (gate.suppress) {
+    console.warn(`[discovery-kill-switch] SUPPRESSED for ${email}: ${gate.reason}`);
+    return { candidates: [], mode: "suppressed", suppressReason: gate.reason };
+  }
+  console.log(`[discovery-kill-switch] pass for ${email}: ${gate.reason}`);
   const excl = new Set((excludeTickers || []).map((t) => String(t).toUpperCase()));
   // Pull recently-dismissed candidates so we don't keep re-surfacing them
   const recentlyDismissed = await StocksDiscoveryCandidate.find({

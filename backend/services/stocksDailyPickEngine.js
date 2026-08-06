@@ -10,9 +10,51 @@
 // LLM judgment involved.
 
 import { getTechnicals } from "./stocksTechnicals.js";
+import { computeLessons } from "./stocksLessonsLearned.js";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
+
+// Kill-switch thresholds for the discretionary pick engine. If the
+// user's recent track record shows the engine is destroying capital
+// (low hit rate on scored recs, or the mark-to-market average is
+// deeply negative), stop emitting NEW picks until performance
+// recovers. Rationale: every pick we emit gets executed, sized, and
+// tracked to close — a losing engine that keeps emitting is a
+// capital-shredder. Silent suppression here is preferable to
+// piling more losers into the pool.
+//
+// Per user directive (Aug 5): "fix the systemic barrier to finding
+// wins" — the barrier IS this engine when its expectancy is negative.
+// Kill switch is automatic on the metric, not manual, so it takes
+// effect the moment the numbers go bad without waiting for a manual
+// flip.
+const KILL_MIN_HIT_RATE_PCT = 40;    // 30d hit rate must clear this
+const KILL_MIN_AVG_PNL_PCT = -1.5;   // 30d avg pnl must clear this
+const KILL_MIN_SAMPLE_SIZE = 5;      // need at least this many scored recs to judge
+async function shouldSuppressPicks(email) {
+  try {
+    const lessons = await computeLessons(email);
+    const t30 = lessons?.trend?.["30d"];
+    if (!t30 || t30.total < KILL_MIN_SAMPLE_SIZE) {
+      // Not enough data to judge — let the engine run. Once ≥5 scored
+      // recs land in the 30d window the metric-based gate takes over.
+      return { suppress: false, reason: `sample too small (${t30?.total || 0} < ${KILL_MIN_SAMPLE_SIZE})` };
+    }
+    if (t30.hitRate < KILL_MIN_HIT_RATE_PCT) {
+      return { suppress: true, reason: `30d hit rate ${t30.hitRate.toFixed(0)}% < ${KILL_MIN_HIT_RATE_PCT}% floor (${t30.wins}/${t30.total} wins). Engine is destroying capital — no new picks until recovery.` };
+    }
+    if (t30.avgPnl < KILL_MIN_AVG_PNL_PCT) {
+      return { suppress: true, reason: `30d avg PnL ${t30.avgPnl.toFixed(1)}% < ${KILL_MIN_AVG_PNL_PCT}% floor. Ideas are averaging losses — no new picks until recovery.` };
+    }
+    return { suppress: false, reason: `30d ${t30.wins}/${t30.total} = ${t30.hitRate.toFixed(0)}%, avg ${t30.avgPnl.toFixed(1)}%` };
+  } catch (e) {
+    // Fail-open: if lessons computation errors, don't silently block
+    // the engine — that would look identical to legitimate suppression.
+    console.warn("[pick-engine-kill-switch] lessons compute failed:", e?.message);
+    return { suppress: false, reason: `lessons unavailable (${e?.message})` };
+  }
+}
 
 // A small hand-curated universe of large-cap liquid names for cases
 // when the user's own portfolio + recent recs give too few candidates.
@@ -139,6 +181,17 @@ async function resolveUniverseForUser(email) {
 // warning) — the pick is simply not a candidate for a NEW entry, though
 // the AI's "Signals per holding" section still manages the position.
 export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = null, excludeTickers = [] } = {}) {
+  // Kill-switch gate. If the discretionary engine has been losing money
+  // over the last 30 days, stop feeding new picks — waiting for the
+  // user's actual performance to recover before emitting more. Silent
+  // return of an empty array; the caller ((briefing / cron)) handles
+  // "no picks today" naturally.
+  const gate = await shouldSuppressPicks(email);
+  if (gate.suppress) {
+    console.warn(`[pick-engine-kill-switch] SUPPRESSED for ${email}: ${gate.reason}`);
+    return [];
+  }
+  console.log(`[pick-engine-kill-switch] pass for ${email}: ${gate.reason}`);
   const rawUniverse = await resolveUniverseForUser(email);
   // Normalize BOTH sides — exclude sets built from portfolio positions
   // may hold "RY" while the universe carries "RY.TO". Strip exchange
