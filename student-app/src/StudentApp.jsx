@@ -5256,7 +5256,7 @@ function StudentApp() {
                     onChange={() => {}}
                     style={{ accentColor: "#3b82f6", width: 16, height: 16, cursor: "pointer" }}
                   />
-                  Earn streak points &amp; get personal reports
+                  Optional — email me my results &amp; save my streak (free)
                 </label>
               </div>
 
