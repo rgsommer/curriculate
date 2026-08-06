@@ -174,6 +174,71 @@ router.post("/", express.json({ limit: "16kb" }), async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
+// POST /api/stocks-prices/day-change
+//   Body: { tickers: [...] }   (max 50)
+//   Resp: { data: { TICKER: { current, priorClose, changePct, currency } },
+//           failed: [...] }
+//
+// Lightweight endpoint that returns just the day-change tuple. Used by the
+// Positions view to render ▲/▼ trend arrows next to P/L%. Reuses the same
+// 60s cache Map as the main /stocks-prices path (so a page that hits both
+// endpoints doesn't double-fetch). Fail-open per-ticker — Yahoo hiccups
+// leave the ticker in `failed` rather than breaking the whole batch.
+// ─────────────────────────────────────────────────────────────────────
+const DAYCHANGE_CACHE = new Map(); // ticker -> { current, priorClose, changePct, currency, fetchedAt }
+const DAYCHANGE_TTL_MS = 60 * 1000;
+
+router.post("/day-change", express.json({ limit: "16kb" }), async (req, res) => {
+  try {
+    const raw = Array.isArray(req.body?.tickers) ? req.body.tickers : null;
+    if (!raw) return res.status(400).json({ error: "tickers[] required" });
+    const tickers = [
+      ...new Set(
+        raw
+          .map((t) => (typeof t === "string" ? t.trim().toUpperCase() : ""))
+          .filter((t) => /^[A-Z0-9.\-]{1,16}$/.test(t))
+      ),
+    ].slice(0, MAX_TICKERS_PER_CALL);
+
+    const now = Date.now();
+    const data = {};
+    const failed = [];
+    const toFetch = [];
+    for (const t of tickers) {
+      const c = DAYCHANGE_CACHE.get(t);
+      if (c && now - c.fetchedAt < DAYCHANGE_TTL_MS) {
+        data[t] = { current: c.current, priorClose: c.priorClose, changePct: c.changePct, currency: c.currency };
+      } else {
+        toFetch.push(t);
+      }
+    }
+    await Promise.all(
+      toFetch.map(async (t) => {
+        try {
+          // Yahoo-only path — FMP is redundant here since day-change is a
+          // visual cue, not a book-writing operation. Skips the cross-check
+          // cost for the same reason the /history endpoint does.
+          const r = await fetchOneYahoo(t);
+          const rec = {
+            current: r.price,
+            priorClose: r.priorClose ?? null,
+            changePct: r.changePct ?? null,
+            currency: r.currency || null,
+            fetchedAt: now,
+          };
+          DAYCHANGE_CACHE.set(t, rec);
+          data[t] = { current: rec.current, priorClose: rec.priorClose, changePct: rec.changePct, currency: rec.currency };
+        } catch { failed.push(t); }
+      })
+    );
+    res.json({ data, failed, cachedAt: now });
+  } catch (err) {
+    console.error("stocks-prices day-change error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
 // POST /api/stocks-prices/premarket
 //   Body: { tickers: [...] }   (max 50)
 //   Resp: { data: {

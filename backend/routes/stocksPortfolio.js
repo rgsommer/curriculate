@@ -677,6 +677,69 @@ router.get("/indicators", requireStocksAuth, async (req, res) => {
 });
 
 // ──────────────────────────────────────────────────────────────────────
+// POST /api/stocks-portfolio/derived-stops
+// Body: { tickers: [{ ticker, currency }, ...] }   (up to 30 entries)
+// Resp: { stops: { TICKER: { derivedStop, high60d, atr14, currency, last,
+//                             stopDistancePct } | null } }
+//
+// Returns the 2.5×ATR trailing-stop level (from the 60-day high) for each
+// requested ticker, computed by services/stocksTechnicals.getTechnicals.
+// SWING/SPEC positions without an explicit rec-set stop use these to fill
+// the Positions view Stop column. Fail-open: any per-ticker error yields a
+// null entry rather than blocking the whole batch. getTechnicals maintains
+// its own 4-hour ticker cache, so repeat calls (e.g. two page loads within
+// the same session) don't re-hit Yahoo.
+// ──────────────────────────────────────────────────────────────────────
+router.post("/derived-stops", requireStocksAuth, express.json({ limit: "8kb" }), async (req, res) => {
+  try {
+    const rawList = Array.isArray(req.body?.tickers) ? req.body.tickers : [];
+    // Accept both `["AAPL", "MSFT"]` and `[{ ticker, currency }]` shapes so
+    // the client can pass whichever is convenient.
+    const norm = rawList.slice(0, 30).map((entry) => {
+      if (typeof entry === "string") return { ticker: entry.trim().toUpperCase(), currency: null };
+      if (entry && typeof entry === "object") {
+        return {
+          ticker: String(entry.ticker || "").trim().toUpperCase(),
+          currency: entry.currency === "CAD" ? "CAD" : entry.currency === "USD" ? "USD" : null,
+        };
+      }
+      return { ticker: "", currency: null };
+    }).filter((e) => /^[A-Z0-9.\-]{1,16}$/.test(e.ticker));
+    // Dedupe by (ticker|currency) — same ticker in CAD and USD accounts are
+    // separate lookups (different exchange listings).
+    const seen = new Set();
+    const unique = [];
+    for (const e of norm) {
+      const key = `${e.ticker}|${e.currency || ""}`;
+      if (!seen.has(key)) { seen.add(key); unique.push(e); }
+    }
+    const stops = {};
+    await Promise.all(unique.map(async (e) => {
+      try {
+        const tech = await getTechnicals(e.ticker, e.currency);
+        if (!tech?.ok) { stops[e.ticker] = null; return; }
+        const derivedStop = tech.trailStopAtrAdjusted ?? null;
+        const last = tech.last ?? null;
+        const stopDistancePct = (derivedStop != null && Number.isFinite(last) && last > 0)
+          ? ((derivedStop - last) / last) * 100 : null;
+        stops[e.ticker] = {
+          derivedStop,
+          high60d: tech.high60d ?? null,
+          atr14: tech.atr14 ?? null,
+          currency: tech.currency || e.currency || null,
+          last,
+          stopDistancePct,
+        };
+      } catch { stops[e.ticker] = null; }
+    }));
+    res.json({ ok: true, stops, generatedAt: new Date() });
+  } catch (err) {
+    console.error("stocks-portfolio derived-stops error:", err);
+    res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────
 // GET /api/stocks-portfolio/compliance
 // Discipline compliance report for the last 90 days: take rate, hard-
 // stop compliance, no-repeat pattern. Silent metrics on quiet weeks.

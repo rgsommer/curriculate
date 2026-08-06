@@ -3113,6 +3113,91 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
     (s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0
   );
 
+  // Auto-derived trailing stops for SWING/SPEC positions that lack an
+  // explicit stop from a Curriculate BUY rec. Fetched from
+  // /api/stocks-portfolio/derived-stops which delegates to
+  // services/stocksTechnicals — 60-day high minus 2.5×ATR. Keyed by the
+  // ORIGINAL (exchange-qualified) ticker so ENB.TO vs ENB (US ADR) get
+  // separate lookups. CORE positions are excluded (buy-and-hold — a
+  // stop is not the right primitive there).
+  const [derivedStopsByTicker, setDerivedStopsByTicker] = useState({});
+  useEffect(() => {
+    if (!sessionToken) return;
+    const need = [...new Set(
+      (user.positions || [])
+        .filter((p) => (p.qty || 0) > 0)
+        .filter((p) => {
+          const sleeve = sleeveOfTicker(p.ticker);
+          return sleeve === "swing" || sleeve === "spec";
+        })
+        .map((p) => ({ ticker: String(p.ticker || "").toUpperCase(), currency: p.ccy }))
+        .filter((e) => e.ticker)
+        .map((e) => JSON.stringify(e))
+    )].map((s) => JSON.parse(s));
+    if (need.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/derived-stops`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+          body: JSON.stringify({ tickers: need }),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        setDerivedStopsByTicker(j.stops || {});
+      } catch { /* silent — Stop cells just show "—" as before */ }
+    })();
+    return () => { cancelled = true; };
+    // Only refetch when the set of (ticker,ccy) pairs actually changes —
+    // avoid re-firing on every price tick coming through the 45s poll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionToken, (user.positions || []).map((p) => `${p.ticker}|${p.ccy}|${(p.qty || 0) > 0 ? "1" : "0"}`).join(",")]);
+
+  // Day-change (current vs prior close) for every held ticker — drives the
+  // ▲/▼ trend arrow next to P/L%. Fetched once on mount; 60s server-side
+  // cache means a page reload doesn't re-hit Yahoo. Fail-open — a missing
+  // entry renders as ▬ (grey/dash) so a Yahoo hiccup doesn't block the row.
+  const [dayChangeByTicker, setDayChangeByTicker] = useState({});
+  useEffect(() => {
+    const heldTickers = [...new Set(
+      (user.positions || [])
+        .filter((p) => (p.qty || 0) > 0)
+        .map((p) => resolveChartTicker(p.ticker, p.ccy))
+        .filter(Boolean)
+    )];
+    if (heldTickers.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-prices/day-change`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tickers: heldTickers }),
+        });
+        if (!r.ok) return;
+        const j = await r.json();
+        if (cancelled) return;
+        // Re-key by ORIGINAL (unqualified) ticker so the render loop can
+        // look up by p.ticker directly. resolveChartTicker maps ENB CAD
+        // → ENB.TO; we invert here.
+        const byOrig = {};
+        for (const p of (user.positions || [])) {
+          if ((p.qty || 0) <= 0) continue;
+          const ex = resolveChartTicker(p.ticker, p.ccy);
+          const q = j.data?.[ex];
+          if (q) byOrig[`${p.ticker}|${p.ccy}`] = q;
+        }
+        setDayChangeByTicker(byOrig);
+      } catch { /* silent — arrows just render as ▬ */ }
+    })();
+    return () => { cancelled = true; };
+    // Same dependency guard as derived-stops — only refetch on holdings change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(user.positions || []).map((p) => `${p.ticker}|${p.ccy}|${(p.qty || 0) > 0 ? "1" : "0"}`).join(",")]);
+
   // Ticker filter — when set, only rows whose ticker matches (case-
   // insensitive substring) are rendered. Handy for hunting a mystery
   // symbol the briefing referenced but you can't spot in the list.
@@ -3142,6 +3227,31 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
     return { account: a, items, equityCad, cashCadEquiv, total: equityCad + cashCadEquiv };
   }).sort((a, b) => b.total - a.total);
 
+  // Total unrealized P/L split by NATIVE currency. CAD holdings summed in
+  // CAD, USD in USD — never combined (an aggregated single-currency line
+  // would misrepresent risk since it hides which side of the border the
+  // exposure lives on). Percentage denominator is total cost basis in the
+  // same currency, so a USD position with a 10% gain on $10k basis reads
+  // consistently regardless of the CAD/USD rate.
+  const pnlByCcy = (() => {
+    const acc = {
+      CAD: { pnl: 0, basis: 0, count: 0 },
+      USD: { pnl: 0, basis: 0, count: 0 },
+    };
+    for (const p of (user.positions || [])) {
+      if ((p.qty || 0) <= 0) continue;
+      const ccy = p.ccy === "USD" ? "USD" : "CAD";
+      const price = ccy === "USD" ? p.priceUsd : p.priceCad;
+      const basis = ccy === "USD" ? p.costBasisUsd : p.costBasisCad;
+      if (price == null || basis == null || !(basis > 0)) continue;
+      const pnl = (price - basis) * (p.qty || 0);
+      acc[ccy].pnl += pnl;
+      acc[ccy].basis += basis * (p.qty || 0);
+      acc[ccy].count += 1;
+    }
+    return acc;
+  })();
+
   return (
     <div>
       <h2>Positions</h2>
@@ -3149,6 +3259,36 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
         {user.positions.length} position{user.positions.length === 1 ? "" : "s"} across {accountSummaries.length} account{accountSummaries.length === 1 ? "" : "s"}
         {unassigned.length > 0 && ` · ${unassigned.length} unassigned`}
       </div>
+      {(pnlByCcy.CAD.count > 0 || pnlByCcy.USD.count > 0) && (
+        <div className="sa-breadcrumb" style={{ fontSize: 12.5, marginTop: 2 }}>
+          <span style={{ color: "var(--sa-muted)" }}>Unrealized P/L: </span>
+          {(() => {
+            const parts = [];
+            for (const ccy of ["CAD", "USD"]) {
+              const bkt = pnlByCcy[ccy];
+              if (bkt.count === 0) continue;
+              const pct = bkt.basis > 0 ? (bkt.pnl / bkt.basis) * 100 : null;
+              const col = bkt.pnl > 0 ? "var(--sa-green)" : bkt.pnl < 0 ? "var(--sa-red)" : "var(--sa-muted)";
+              parts.push(
+                <span key={ccy} style={{ color: col, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                  <span className="sa-amount">
+                    {bkt.pnl >= 0 ? "+" : "−"}{fmtMoney(Math.abs(bkt.pnl), ccy)}
+                  </span>
+                  {pct != null && <span style={{ marginLeft: 4 }}>({pct >= 0 ? "+" : ""}{pct.toFixed(1)}%)</span>}
+                </span>
+              );
+            }
+            // Interleave with a " · " separator between currency buckets so
+            // the two show as siblings, not stacked.
+            const out = [];
+            parts.forEach((el, i) => {
+              if (i > 0) out.push(<span key={`sep-${i}`} style={{ color: "var(--sa-muted)", margin: "0 6px" }}>·</span>);
+              out.push(el);
+            });
+            return out;
+          })()}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
         <button className="sa-btn" onClick={() => onOpenModal(null)}>+ Add position</button>
         <button className="sa-btn secondary" onClick={onAddAccount}>+ Add account</button>
@@ -3262,7 +3402,28 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                       <td>{price != null ? price.toFixed(4) : "—"}</td>
                       <td>{p.ccy}</td>
                       <td>{basis != null ? basis.toFixed(2) : <span className="sa-muted">—</span>}</td>
-                      <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "—"}</td>
+                      <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                        {pnlPct != null ? `${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(1)}%` : "—"}
+                        {(() => {
+                          // Day-change trend arrow — green ▲ / red ▼ / grey ▬.
+                          // Purely visual — never blocks the row when the
+                          // feed is unavailable (fail-open to ▬).
+                          const dc = dayChangeByTicker[`${p.ticker}|${p.ccy}`];
+                          const chg = dc?.changePct;
+                          const arrow = chg == null ? "▬" : chg > 0.05 ? "▲" : chg < -0.05 ? "▼" : "▬";
+                          const col = chg == null ? "var(--sa-muted)"
+                            : chg > 0.05 ? "var(--sa-green)"
+                            : chg < -0.05 ? "var(--sa-red)"
+                            : "var(--sa-muted)";
+                          const label = chg == null ? "" : ` ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`;
+                          return (
+                            <span
+                              title={chg == null ? "Day change unavailable" : `Today: ${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% vs prior close`}
+                              style={{ marginLeft: 6, fontSize: 10.5, color: col, fontWeight: 500, fontVariantNumeric: "tabular-nums" }}
+                            >{arrow}{label}</span>
+                          );
+                        })()}
+                      </td>
                       <td style={{ color: pnlColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{pnlCad != null ? <span className="sa-amount">{pnlCad >= 0 ? "+" : "−"}{fmtMoney(Math.abs(pnlCad), "CAD")}</span> : "—"}</td>
                       {(() => {
                         // Target / Stop from the most-recent open BUY rec on
@@ -3276,7 +3437,45 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                           const d = ((to - from) / from) * 100;
                           return ` (${d >= 0 ? "+" : ""}${d.toFixed(1)}%)`;
                         };
+                        // Auto-derived trail-stop fallback — surfaces the
+                        // 60d-high − 2.5×ATR level for SWING/SPEC positions
+                        // that have no user-set stop yet (i.e. no open BUY
+                        // rec, or a rec that never set one). CORE ETFs
+                        // stay "—" — buy-and-hold, stop isn't the right
+                        // primitive. Rendered in muted colour with an
+                        // "(auto)" tag so the user can see at a glance
+                        // which stops came from a Curriculate rec vs the
+                        // algorithm.
+                        const sleeve = sleeveOfTicker(p.ticker);
+                        const wantAuto = (sleeve === "swing" || sleeve === "spec");
+                        const auto = wantAuto ? derivedStopsByTicker[String(p.ticker || "").toUpperCase()] : null;
                         if (!rec || !Number.isFinite(cur)) {
+                          const autoStp = auto?.derivedStop;
+                          const autoDistPct = auto?.stopDistancePct;
+                          if (Number.isFinite(autoStp) && Number.isFinite(cur)) {
+                            const breach = cur <= autoStp;
+                            return (
+                              <>
+                                <td className="sa-muted">—</td>
+                                <td
+                                  style={{
+                                    color: breach ? "#991b1b" : "var(--sa-muted)",
+                                    fontVariantNumeric: "tabular-nums",
+                                    fontWeight: breach ? 700 : 400,
+                                  }}
+                                  title={`Auto-derived from technicals: 60d high $${auto.high60d?.toFixed(2) ?? "?"} − 2.5×ATR14 $${auto.atr14?.toFixed(2) ?? "?"}. No Curriculate BUY rec on this position; this is the algorithm's suggested trail-stop level.${breach ? " ⚠ BREACHED." : ""}`}
+                                >
+                                  ${autoStp.toFixed(2)} {auto.currency || p.ccy || ""}
+                                  {Number.isFinite(autoDistPct) && (
+                                    <span style={{ fontSize: 10, color: "var(--sa-muted)", marginLeft: 4 }}>
+                                      ({autoDistPct >= 0 ? "+" : ""}{autoDistPct.toFixed(1)}%)
+                                    </span>
+                                  )}
+                                  <span style={{ fontSize: 9, color: "var(--sa-muted)", marginLeft: 4, fontStyle: "italic" }}>(auto)</span>
+                                </td>
+                              </>
+                            );
+                          }
                           return (
                             <>
                               <td className="sa-muted">—</td>
@@ -3298,8 +3497,32 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                               {tgt != null && <span style={{ fontSize: 10, color: "var(--sa-muted)" }}>{fmtDist(cur, tgt)}</span>}
                             </td>
                             <td style={{ color: stopColor, fontVariantNumeric: "tabular-nums", fontWeight: stopBreached ? 700 : 400 }} title={stopBreached ? "🛑 Stop breached — hard-stop discipline says exit" : stopNear ? "⚠ Within 3% of stop" : undefined}>
-                              {stp != null ? `$${stp.toFixed(2)}` : "—"}
-                              {stp != null && <span style={{ fontSize: 10, color: "var(--sa-muted)" }}>{fmtDist(cur, stp)}</span>}
+                              {stp != null
+                                ? (<>${stp.toFixed(2)}<span style={{ fontSize: 10, color: "var(--sa-muted)" }}>{fmtDist(cur, stp)}</span></>)
+                                : (() => {
+                                    // Rec exists but has no explicit stop — fall
+                                    // back to the auto-derived trail stop for
+                                    // SWING/SPEC. Same muted-with-(auto)-tag
+                                    // treatment as the "no rec at all" branch.
+                                    const autoStp = auto?.derivedStop;
+                                    const autoDistPct = auto?.stopDistancePct;
+                                    if (!Number.isFinite(autoStp)) return "—";
+                                    const breach = cur <= autoStp;
+                                    return (
+                                      <span
+                                        style={{ color: breach ? "#991b1b" : "var(--sa-muted)", fontWeight: breach ? 700 : 400 }}
+                                        title={`Auto-derived from technicals: 60d high $${auto.high60d?.toFixed(2) ?? "?"} − 2.5×ATR14 $${auto.atr14?.toFixed(2) ?? "?"}. The BUY rec on this position did not set an explicit stop; this is the algorithm's suggested trail-stop level.${breach ? " ⚠ BREACHED." : ""}`}
+                                      >
+                                        ${autoStp.toFixed(2)} {auto.currency || p.ccy || ""}
+                                        {Number.isFinite(autoDistPct) && (
+                                          <span style={{ fontSize: 10, color: "var(--sa-muted)", marginLeft: 4 }}>
+                                            ({autoDistPct >= 0 ? "+" : ""}{autoDistPct.toFixed(1)}%)
+                                          </span>
+                                        )}
+                                        <span style={{ fontSize: 9, color: "var(--sa-muted)", marginLeft: 4, fontStyle: "italic" }}>(auto)</span>
+                                      </span>
+                                    );
+                                  })()}
                             </td>
                           </>
                         );
