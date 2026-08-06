@@ -8,6 +8,8 @@
 // Cost: near-zero. Value: shows up on every briefing as a tilt hint.
 
 import { fetchDailyOhlcForBacktest } from "./stocksTechnicals.js";
+import StocksSectorRankingSnapshot from "../models/StocksSectorRankingSnapshot.js";
+import { classifyPosition } from "./stocksSleeveEnforcer.js";
 
 const SECTOR_ETFS = [
   { symbol: "XLK",  name: "Technology" },
@@ -94,7 +96,138 @@ export async function getSectorRotation() {
   };
   CACHE.data = data;
   CACHE.fetchedAt = now;
+
+  // Lazy-write this week's ranking snapshot (one row per ET week, keyed
+  // to Monday). Enables the week-over-week 🔄 Rotation line without a
+  // dedicated cron. Fail-open — a hiccup here never blocks the briefing.
+  upsertWeeklySnapshot(rows).catch((e) => {
+    console.warn("[sector-snapshot] upsert warn:", e?.message);
+  });
+
   return data;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Week-over-week snapshot store — one Mongo doc per Monday-of-ET-week.
+// Used by computeSectorTransitions to detect which sectors rotated IN or
+// OUT of the leader / laggard cohorts.
+// ─────────────────────────────────────────────────────────────────────
+
+function mondayOfCurrentWeekEt() {
+  // Compute the calendar date (ET) of the Monday that starts the current
+  // ET week. Store the resulting Date as midnight-UTC of that date so the
+  // unique index behaves predictably regardless of DST.
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    weekday: "short",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  const weekday = get("weekday"); // "Mon", "Tue", ...
+  const y = parseInt(get("year"), 10);
+  const m = parseInt(get("month"), 10);
+  const d = parseInt(get("day"), 10);
+  const dayIndex = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[weekday];
+  // Days to subtract to reach Monday (treat Sunday as belonging to the
+  // prior ET week so a Sun snapshot compares to *last* Monday).
+  const offset = dayIndex === 0 ? 6 : dayIndex - 1;
+  const midnightUtc = Date.UTC(y, m - 1, d) - offset * 86400000;
+  return new Date(midnightUtc);
+}
+
+function isTodayMondayEt() {
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/New_York",
+      weekday: "short",
+    });
+    return fmt.format(new Date()) === "Mon";
+  } catch { return false; }
+}
+
+async function upsertWeeklySnapshot(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  const monday = mondayOfCurrentWeekEt();
+  const ranking = rows.map((r) => ({
+    symbol: r.symbol,
+    name: r.name,
+    rank: r.rank60d ?? null,
+    rel20d: r.rs20d ?? null,
+    rel60d: r.rs60d ?? null,
+  }));
+  const isMon = isTodayMondayEt();
+  if (isMon) {
+    // On Monday: refresh this week's snapshot with today's ranking.
+    await StocksSectorRankingSnapshot.updateOne(
+      { snapshotDate: monday },
+      { $set: { ranking } },
+      { upsert: true }
+    );
+  } else {
+    // Tue-Sun: only create if this week's snapshot doesn't yet exist.
+    // Prevents overwriting Monday's snapshot with a mid-week ranking.
+    await StocksSectorRankingSnapshot.updateOne(
+      { snapshotDate: monday },
+      { $setOnInsert: { snapshotDate: monday, ranking } },
+      { upsert: true }
+    );
+  }
+}
+
+// Compare the current ranking against the most recent snapshot older
+// than 6 days. Returns { enteredLeaders, leftLeaders, enteredLaggards,
+// leftLaggards, promotions, demotions } or null when nothing to compare.
+// Fail-open: DB error → returns null and the caller skips the line.
+export async function computeSectorTransitions(currentRanking) {
+  try {
+    if (!Array.isArray(currentRanking) || currentRanking.length === 0) return null;
+    const sixDaysAgo = new Date(Date.now() - 6 * 86400000);
+    const prior = await StocksSectorRankingSnapshot.findOne({
+      snapshotDate: { $lt: sixDaysAgo },
+    }).sort({ snapshotDate: -1 }).lean();
+    if (!prior?.ranking?.length) return null;
+
+    const priorRank = new Map();
+    for (const r of prior.ranking) priorRank.set(r.symbol, r.rank);
+
+    const total = currentRanking.length;
+    const isLeader = (rank) => rank != null && rank <= 3;
+    const isLaggard = (rank) => rank != null && rank >= total - 2;
+
+    const enteredLeaders = [];
+    const leftLeaders = [];
+    const enteredLaggards = [];
+    const leftLaggards = [];
+    const promotions = [];
+    const demotions = [];
+
+    for (const cur of currentRanking) {
+      const sym = cur.symbol;
+      const curR = cur.rank60d ?? cur.rank;
+      const prevR = priorRank.get(sym);
+      if (prevR == null || curR == null) continue;
+      const wasLeader = isLeader(prevR);
+      const nowLeader = isLeader(curR);
+      const wasLaggard = isLaggard(prevR);
+      const nowLaggard = isLaggard(curR);
+      if (!wasLeader && nowLeader) enteredLeaders.push({ symbol: sym, from: prevR, to: curR });
+      if (wasLeader && !nowLeader) leftLeaders.push({ symbol: sym, from: prevR, to: curR });
+      if (!wasLaggard && nowLaggard) enteredLaggards.push({ symbol: sym, from: prevR, to: curR });
+      if (wasLaggard && !nowLaggard) leftLaggards.push({ symbol: sym, from: prevR, to: curR });
+      const delta = curR - prevR;
+      if (Math.abs(delta) >= 2) {
+        if (delta < 0) promotions.push({ symbol: sym, from: prevR, to: curR });
+        else demotions.push({ symbol: sym, from: prevR, to: curR });
+      }
+    }
+    return { enteredLeaders, leftLeaders, enteredLaggards, leftLaggards, promotions, demotions };
+  } catch (e) {
+    console.warn("[sector-transitions] compute warn:", e?.message);
+    return null;
+  }
 }
 
 export function formatSectorRotationBlock(rot) {
@@ -252,4 +385,91 @@ export function formatSectorTiltLine(rot) {
   const leaderStr = leaders.map(r => r.symbol).join(" / ");
   const laggardStr = laggards.map(r => r.symbol).join(" / ");
   return `SECTOR TILT: Leaders ${leaderStr} · Laggards ${laggardStr} · New buys: prefer leaders; avoid laggards.`;
+}
+
+// One-line week-over-week rotation callout for the deterministic prefix.
+// Renders "🔄 Rotation: XLE joined leaders (was #7); XLK dropped to #5
+// (was #2); XLU joined laggards." — includes only material moves
+// (in/out of top-3 / bottom-3, or a rank change ≥ 2 slots). Returns ""
+// when there are no transitions to report so the line silently omits.
+export function formatSectorTransitionLine(rot, transitions) {
+  if (!transitions) return "";
+  const seen = new Set();
+  const parts = [];
+  for (const t of transitions.enteredLeaders || []) {
+    parts.push(`${t.symbol} joined leaders (was #${t.from})`);
+    seen.add(t.symbol);
+  }
+  for (const t of transitions.leftLeaders || []) {
+    if (seen.has(t.symbol)) continue;
+    parts.push(`${t.symbol} dropped to #${t.to} (was #${t.from})`);
+    seen.add(t.symbol);
+  }
+  for (const t of transitions.enteredLaggards || []) {
+    if (seen.has(t.symbol)) continue;
+    parts.push(`${t.symbol} joined laggards`);
+    seen.add(t.symbol);
+  }
+  for (const t of transitions.leftLaggards || []) {
+    if (seen.has(t.symbol)) continue;
+    parts.push(`${t.symbol} climbed out of laggards (was #${t.from})`);
+    seen.add(t.symbol);
+  }
+  // Any remaining big movers not already surfaced via the leader/laggard
+  // transitions above (e.g. a promotion inside the middle-of-pack).
+  for (const t of transitions.promotions || []) {
+    if (seen.has(t.symbol)) continue;
+    parts.push(`${t.symbol} rose to #${t.to} (was #${t.from})`);
+    seen.add(t.symbol);
+  }
+  for (const t of transitions.demotions || []) {
+    if (seen.has(t.symbol)) continue;
+    parts.push(`${t.symbol} fell to #${t.to} (was #${t.from})`);
+    seen.add(t.symbol);
+  }
+  if (parts.length === 0) return "";
+  return `🔄 Rotation: ${parts.join("; ")}.`;
+}
+
+// Small per-holding sector map for the AI prompt — used by the §A2
+// "sector cooling" rotation flag directive. Only surfaces SWING and
+// SPEC holdings (CORE/INCOME are diversified across sectors or picked
+// for yield, not sector momentum). Skips tickers whose sector isn't in
+// the SPDR map — the AI is told to reason without them.
+//
+// Returns "" when there are no relevant holdings so the block silently
+// omits from the prompt.
+function baseTickerForMap(t) {
+  return String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+}
+
+export function formatPerHoldingSectorMap(positions, rotation) {
+  if (!Array.isArray(positions) || positions.length === 0) return "";
+  if (!rotation?.rows?.length) return "";
+  const total = rotation.rows.length;
+  const sectorBySym = new Map();
+  for (const r of rotation.rows) sectorBySym.set(r.symbol, r);
+
+  const seen = new Set();
+  const lines = [];
+  for (const p of positions) {
+    let sleeve;
+    try { sleeve = classifyPosition(p); } catch { sleeve = null; }
+    if (sleeve !== "swing" && sleeve !== "spec") continue;
+    const base = baseTickerForMap(p.ticker);
+    if (!base || seen.has(base)) continue;
+    const sectorSym = mapTickerToSector(p.ticker);
+    if (!sectorSym) continue;
+    const sector = sectorBySym.get(sectorSym);
+    if (!sector) continue;
+    seen.add(base);
+    const rank = sector.rank60d;
+    let status = "NEUTRAL";
+    let mark = "";
+    if (rank != null && rank <= 3) status = "LEADER";
+    else if (rank != null && rank >= total - 2) { status = "LAGGARD"; mark = " ⚠"; }
+    lines.push(`- ${base} → ${sector.name} (currently ${status} rank #${rank ?? "?"}${mark})`);
+  }
+  if (lines.length === 0) return "";
+  return `\nPER-HOLDING SECTOR MAP (for §A2 rotation flag decisions):\n${lines.join("\n")}\n`;
 }

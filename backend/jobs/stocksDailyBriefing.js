@@ -33,7 +33,7 @@ import { getShortInterest, formatShortInterestLine } from "../services/stocksSho
 import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
 import { generateDailyPicksForUser, getPickEngineStatus } from "../services/stocksDailyPickEngine.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
-import { getSectorRotation, formatSectorRotationBlock, formatSectorTiltLine, getSectorLaggards } from "../services/stocksSectorRotation.js";
+import { getSectorRotation, formatSectorRotationBlock, formatSectorTiltLine, getSectorLaggards, computeSectorTransitions, formatSectorTransitionLine, formatPerHoldingSectorMap } from "../services/stocksSectorRotation.js";
 import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
 import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedLiquidity.js";
 import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
@@ -998,7 +998,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null }) {
+function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
   // these lines as the authoritative version in the final briefing —
@@ -1772,6 +1772,11 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // when sector data is unavailable (silent, not a "n/a" line).
   const sectorTilt = formatSectorTiltLine(sectorRotation);
   if (sectorTilt) chunks.push(sectorTilt);
+  // Week-over-week rotation callout. Empty when there are no material
+  // transitions (or when the prior snapshot is missing). Fail-open —
+  // the SECTOR TILT line above always renders regardless.
+  const sectorTransitionLine = formatSectorTransitionLine(sectorRotation, sectorTransitions);
+  if (sectorTransitionLine) chunks.push(sectorTransitionLine);
   // Pick-engine gates status line — makes the invisible visible even
   // on quiet days when no new pick fires. Grok Aug 6: "an external
   // reader can't confirm the gates are live from the briefing alone."
@@ -2008,6 +2013,7 @@ ${formatRecentTradesBlock(recentTrades)}
 ${formatDailyPicksBlock(dailyPicks)}
 ${formatDiscoveryPoolBlock(discoveryPool)}
 ${formatSectorRotationBlock(sectorRotation)}
+${formatPerHoldingSectorMap(profile.positions || [], sectorRotation)}
 ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
@@ -2090,6 +2096,8 @@ APPENDIX (## 📎 Appendix — research & context) — comes AFTER §4 + §0b, b
         - **TICKER** [SLEEVE · WEIGHT · P/L · stop-dist] — STATUS
         Example: - **ENB** [SWING · 14.4% · +2% · 4.4% slack] — HOLD — earnings intact
         Each ticker gets its own bullet on its own line. Blank line between bullets is optional. Only expand into paragraph form for tickers that had NEW material info today (earnings result, downgrade, headline). Everything else stays one bullet.
+
+        **SECTOR-COOLING FLAG (rotation-triggered reconsideration):** For each held SWING or SPEC position whose sector is currently in the bottom 3 (see the SECTOR TILT laggards above and the PER-HOLDING SECTOR MAP block for exact ticker→sector→rank mapping), tag the bullet with \`⚠ sector cooling — reconsider hold\` at the end of the STATUS clause. CORE and INCOME positions are exempt (they're either diversified across sectors or picked for yield, not sector momentum). Do NOT tag if the position was ALREADY a laggard-sector name at entry — the tag is a rotation-triggered reconsideration, not a permanent scarlet letter. If unsure, still tag — false positives on a held-review flag are cheap; false negatives silently keep money in cooling positions.
    §A3. Watch list — 2-3 GTC-alert levels the user might set (NOT intraday triggers).
    §A4. Performance snapshot — 1 line week/month/YTD alpha vs SPY/XIC.
    §A5. Any THESIS DISCIPLINE flag from horizon review that didn't already surface in §1.
@@ -2832,6 +2840,16 @@ export async function generateBriefing(profile) {
   // gate list. Never throws.
   const pickGateStatus = await getPickEngineStatus(profile.email)
     .catch(e => { console.warn("[pick-gate-status] warn:", e?.message); return null; });
+  // Week-over-week sector transitions — compare current ranking to the
+  // most recent weekly snapshot older than 6 days. Feeds the "🔄
+  // Rotation:" line in §3 Status. Never throws — fail-open returns null
+  // and the transition line is silently omitted.
+  const sectorTransitions = sectorRotation?.rows?.length
+    ? await computeSectorTransitions(sectorRotation.rows).catch(e => {
+        console.warn("[sector-transitions] warn:", e?.message);
+        return null;
+      })
+    : null;
   const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates } = renderDeterministicPrefix({
     monitorAlerts,
     monitorStopHitRecs,
@@ -2843,6 +2861,7 @@ export async function generateBriefing(profile) {
     horizonRows,
     tradingRegime,
     sectorRotation,
+    sectorTransitions,
     recentExits,
     mandateLivePrices,
     riskVar,
