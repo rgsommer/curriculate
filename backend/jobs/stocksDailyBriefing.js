@@ -63,6 +63,7 @@ import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecy
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 import { computeDeterministicFactors, deterministicComposite, fetchYahooDaily } from "../services/stocksDiscoveryScore.js";
+import { computeMarketPulse, formatMarketPulseBlock } from "../services/stocksMarketPulse.js";
 
 // Lazy dynamic import for the four validators — routes/stocksAdvice.js also
 // imports from THIS file (generateBriefing, emailBriefing, etc), so a static
@@ -2518,6 +2519,7 @@ export async function generateBriefing(profile) {
         setupName: p.setupName,
         mtfConfluence: p.mtfConfluence,
         rationale: `Injected from morning briefing · ${p.rationale}`,
+        viaCanary: p.viaCanary === true,
       });
     }
   } catch (e) { console.warn("[daily-picks briefing persist]:", e?.message); }

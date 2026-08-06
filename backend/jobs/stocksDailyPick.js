@@ -55,6 +55,7 @@ export async function generateAndPersistPicksForUser(profile, { n = 2 } = {}) {
         setupName: p.setupName,
         mtfConfluence: p.mtfConfluence,
         rationale: p.rationale,
+        viaCanary: p.viaCanary === true,
       });
       inserted.push(doc.toObject());
     } catch (e) { console.warn(`[daily-pick] persist ${p.ticker} failed: ${e?.message}`); }

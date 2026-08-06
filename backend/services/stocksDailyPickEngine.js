@@ -104,30 +104,33 @@ async function shouldSuppressPicks(email) {
       return { suppress: false, reason: `30d ${t30.wins}/${t30.total} = ${t30.hitRate.toFixed(0)}%, avg ${t30.avgPnl.toFixed(1)}%`, canary: false };
     }
     // Kill switch WOULD fire, but check canary — if we haven't emitted
-    // any pick in the last CANARY_WINDOW_DAYS days, let ONE through.
-    // Rationale: a fully-suppressed engine has no way to close new
-    // trades and recover the hit rate, so gate stays shut forever.
-    // The canary allows the pipeline to keep sampling new setups so
-    // performance CAN recover instead of freezing at 38%.
+    // any CANARY-flagged pick in the last CANARY_WINDOW_DAYS days, let
+    // ONE through. Rationale: a fully-suppressed engine has no way to
+    // close new trades and recover the hit rate, so the gate stays shut
+    // forever. Counting only viaCanary===true picks means the canary
+    // isn't blocked by pre-kill-switch cron output (from before the
+    // kill switch shipped) — those existing docs just sit in the DB
+    // and the canary can still fire against a fresh sample.
     const cutoff = new Date(Date.now() - CANARY_WINDOW_DAYS * 86400 * 1000);
-    const recentPicks = await StocksDailyPick.countDocuments({
+    const recentCanaryPicks = await StocksDailyPick.countDocuments({
       email: email.toLowerCase(),
       pickDate: { $gte: cutoff },
+      viaCanary: true,
     });
     const suppressReason = failsHitRate
       ? `30d hit rate ${t30.hitRate.toFixed(0)}% < ${KILL_MIN_HIT_RATE_PCT}% floor (${t30.wins}/${t30.total} wins)`
       : `30d avg PnL ${t30.avgPnl.toFixed(1)}% < ${KILL_MIN_AVG_PNL_PCT}% floor`;
-    if (recentPicks < CANARY_MAX_PICKS) {
+    if (recentCanaryPicks < CANARY_MAX_PICKS) {
       return {
         suppress: false,
         canary: true,
-        reason: `CANARY: ${suppressReason} would suppress, but ${recentPicks}/${CANARY_MAX_PICKS} picks in last ${CANARY_WINDOW_DAYS}d → letting 1 through to keep sampling. Engine STILL under review — all other gates (SPEC, theme, per-setup ban) remain enforced.`,
+        reason: `CANARY: ${suppressReason} would suppress, but ${recentCanaryPicks}/${CANARY_MAX_PICKS} viaCanary picks in last ${CANARY_WINDOW_DAYS}d → letting 1 through to keep sampling. Engine STILL under review — all other gates (SPEC, theme, per-setup ban) remain enforced.`,
       };
     }
     return {
       suppress: true,
       canary: false,
-      reason: `${suppressReason}. Canary already fired this window (${recentPicks}/${CANARY_MAX_PICKS} picks in last ${CANARY_WINDOW_DAYS}d).`,
+      reason: `${suppressReason}. Canary already fired this window (${recentCanaryPicks}/${CANARY_MAX_PICKS} viaCanary picks in last ${CANARY_WINDOW_DAYS}d).`,
     };
   } catch (e) {
     // Fail-open: if lessons computation errors, don't silently block
@@ -356,7 +359,14 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   }
 
   scored.sort((a, b) => b.deterministicScore - a.deterministicScore);
-  return scored.slice(0, n);
+  const top = scored.slice(0, n);
+  // Tag each pick with viaCanary so the persist site can flag it in
+  // Mongo. The canary window counter (shouldSuppressPicks) reads this
+  // to avoid old pre-kill-switch cron picks holding the canary shut.
+  if (gate.canary) {
+    for (const p of top) p.viaCanary = true;
+  }
+  return top;
 }
 
 export { scoreCandidate }; // exported for Test B reuse

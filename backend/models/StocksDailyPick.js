@@ -58,6 +58,13 @@ const StocksDailyPickSchema = new mongoose.Schema(
     // 2 = added at +2R. Incremented when an add-on trade is recorded
     // against this pick. Max 2 (see stocksPyramidingMonitor.js).
     pyramidLayersAdded: { type: Number, default: 0, min: 0, max: 2 },
+    // True when this pick was emitted in canary mode — i.e. the kill
+    // switch would otherwise have suppressed the engine but let one
+    // sample through per rolling window. Existing picks default to
+    // false. The canary gate in stocksDailyPickEngine.shouldSuppressPicks
+    // counts only viaCanary===true picks against the CANARY_WINDOW_DAYS
+    // budget, so pre-kill-switch cron picks don't hold the canary shut.
+    viaCanary: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
