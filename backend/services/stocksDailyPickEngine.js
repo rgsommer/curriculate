@@ -140,6 +140,43 @@ async function shouldSuppressPicks(email) {
   }
 }
 
+// Summarise the current pick-engine state for surfacing in §3 Status
+// of the briefing. Grok Aug 6 audit — "an external reader can't
+// confirm the gates are live from the briefing alone." A one-line
+// status makes the invisible visible: kill-switch state, banned
+// setup names, count of always-active gates.
+//
+// Never throws — degrades to { active: [static list], killSwitch:
+// "unknown", bannedSetups: [] } on any error.
+export async function getPickEngineStatus(email) {
+  const alwaysActive = [
+    "SPEC-thesisHorizonMonths",
+    "SPEC-structuralDriver",
+    "per-setup-ban",
+    "theme-first",
+    "kill-switch",
+    "canary",
+  ];
+  try {
+    const [gate, banned] = await Promise.all([
+      shouldSuppressPicks(email),
+      computeBannedSetups(email),
+    ]);
+    const killSwitch = gate.suppress ? "SUPPRESSED"
+                     : gate.canary   ? "CANARY"
+                                     : "CLEAR";
+    return {
+      active: alwaysActive,
+      killSwitch,
+      killSwitchReason: gate.reason || "",
+      bannedSetups: [...banned],
+    };
+  } catch (e) {
+    console.warn("[pick-engine-status] compute failed:", e?.message);
+    return { active: alwaysActive, killSwitch: "UNKNOWN", killSwitchReason: e?.message, bannedSetups: [] };
+  }
+}
+
 // A small hand-curated universe of large-cap liquid names for cases
 // when the user's own portfolio + recent recs give too few candidates.
 // Not "the best stocks" — just "always-tradeable defaults" so the cron

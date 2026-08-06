@@ -31,7 +31,7 @@ import { getFundamentals, formatFundamentalsLine } from "../services/stocksFunda
 import { getCatalysts, formatCatalystsLine } from "../services/stocksCatalystsFmp.js";
 import { getShortInterest, formatShortInterestLine } from "../services/stocksShortInterest.js";
 import { enrichRecsWithExitDefaults, insertAutoSellTrail } from "../services/stocksRecTrail.js";
-import { generateDailyPicksForUser } from "../services/stocksDailyPickEngine.js";
+import { generateDailyPicksForUser, getPickEngineStatus } from "../services/stocksDailyPickEngine.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import { getSectorRotation, formatSectorRotationBlock, formatSectorTiltLine, getSectorLaggards } from "../services/stocksSectorRotation.js";
 import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
@@ -697,6 +697,7 @@ CANONICAL TICKER RULE (use exchange tickers, not brand acronyms):
 
 PRICE INTEGRITY (mandatory — accuracy over completeness):
 - HELD-POSITION TICKERS ARE PRE-VERIFIED. Any ticker in the holdings table is REAL and TRADABLE — the backend validated it before this prompt was built. NEVER produce a "Ticker Not Found" / "UNABLE TO VERIFY" card for a held name (PLTR, NVDA, TSLA, SOUN, RUM, DJT, ENB, etc. are all real). If web_search fails on a held ticker, use the holdings-table price as authoritative and move on.
+- CURRENCY CONSISTENCY on held names. When you cite a current price for a held position, use the currency of the ticker's PRIMARY listing (the currency shown for that ticker in the holdings table and QUANT_SIGNALS block). NEVER mix currencies in the same narrative — e.g. don't cite "CNQ $44.75 USD" while the holdings table and stop math are in CAD ($63.35 CAD). The two values are the US ADR vs the TSX listing of the same company and using the wrong one silently corrupts the stop / target / P/L math the reader is going to reason from. Rule: if the holdings-table row says "CAD", every current-price quote in that ticker's narrative is CAD. Period.
 - For ANY ticker NOT in holdings, web_search "<TICKER> stock price" and use ONLY the retrieved live quote. NEVER quote a price from memory — training data is stale by 30-200%.
 - Verify a new name is currently tradable before recommending. Watch renamed/delisted symbols (SQ→XYZ 2025, FB→META, TWTR delisted). Any sub-mega-cap from training → verify first.
 - If web_search can't confirm a live quote for a NEW ticker → don't recommend it, pick a different name, don't emit a failure card. Silently move on.
@@ -995,7 +996,7 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
-function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals }) {
+function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
   // these lines as the authoritative version in the final briefing —
@@ -1728,6 +1729,22 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // when sector data is unavailable (silent, not a "n/a" line).
   const sectorTilt = formatSectorTiltLine(sectorRotation);
   if (sectorTilt) chunks.push(sectorTilt);
+  // Pick-engine gates status line — makes the invisible visible even
+  // on quiet days when no new pick fires. Grok Aug 6: "an external
+  // reader can't confirm the gates are live from the briefing alone."
+  // Now they can: this line names the active gates, the current
+  // kill-switch state (SUPPRESSED / CANARY / CLEAR), and any setup
+  // names currently banned by the per-setup expectancy filter.
+  if (pickGateStatus && pickGateStatus.active) {
+    const bannedStr = pickGateStatus.bannedSetups?.length
+      ? pickGateStatus.bannedSetups.join(", ")
+      : "none";
+    const ksTone = pickGateStatus.killSwitch === "CLEAR" ? "🟢"
+                 : pickGateStatus.killSwitch === "CANARY" ? "🟡"
+                 : pickGateStatus.killSwitch === "SUPPRESSED" ? "🔴"
+                 : "⚪";
+    chunks.push(`GATES: ${pickGateStatus.active.join(" · ")} · kill-switch ${ksTone} ${pickGateStatus.killSwitch} · banned setups: ${bannedStr}`);
+  }
   chunks.push("");
 
   // ─── § 4. OPTIONAL ideas — placeholder heading, AI fills below ───
@@ -2749,6 +2766,12 @@ export async function generateBriefing(profile) {
       MANDATE_DEFAULT_TICKERS.map(t => ({ ticker: t }))
     );
   } catch (e) { console.warn("[mandate-live-prices] fetch warn:", e?.message); }
+  // Pick-engine gates status for §3 Status "GATES" line — makes the
+  // filters visible to auditors even on quiet days when no pick
+  // fires. Kill-switch state + banned setup names + always-active
+  // gate list. Never throws.
+  const pickGateStatus = await getPickEngineStatus(profile.email)
+    .catch(e => { console.warn("[pick-gate-status] warn:", e?.message); return null; });
   const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates } = renderDeterministicPrefix({
     monitorAlerts,
     monitorStopHitRecs,
@@ -2764,6 +2787,7 @@ export async function generateBriefing(profile) {
     mandateLivePrices,
     riskVar,
     quantSignals,
+    pickGateStatus,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow, marketPulse);
