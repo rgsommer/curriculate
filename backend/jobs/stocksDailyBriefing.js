@@ -22,6 +22,7 @@ import cron from "node-cron";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
 import { writeDailySnapshot } from "../routes/stocksPortfolio.js";
+import { getRealtimeQuote } from "../services/stocksIntradayFmp.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksAdviceSnapshot from "../models/StocksAdviceSnapshot.js";
 import StocksBriefingHistory from "../models/StocksBriefingHistory.js";
@@ -4279,12 +4280,54 @@ export async function runDiscoveryOutcomeTracker(opts = {}) {
 export async function runDailyPortfolioSnapshotJob(opts = {}) {
   const query = opts.onlyEmail ? { email: opts.onlyEmail.toLowerCase() } : {};
   const docs = await StocksPortfolio.find(query);
-  let ok = 0, fail = 0;
+  let ok = 0, fail = 0, priceRefreshes = 0;
   for (const doc of docs) {
-    try { await writeDailySnapshot(doc); ok++; } catch (e) { fail++; console.warn("[stocks-portfolio-snapshot] fail:", doc.email, e?.message); }
+    try {
+      // Refresh live prices BEFORE snapshotting — otherwise the snapshot
+      // freezes at whatever priceUsd/priceCad happened to be persisted the
+      // last time the user clicked "Refresh prices" in the UI. That leaves
+      // Performance-tab tiles (WoW, Max Growth, 14d avg) reading 0.0%
+      // because every daily snapshot writes the same totalCad. The
+      // intraday poller, stop monitor, and rec-applier deliberately keep
+      // their refreshes in-memory — this cron is the one place we DO want
+      // to persist the fresh quote to disk. Same fail-open pattern as
+      // processPositionStopsOnce in stocksAlerts.js.
+      const positions = doc.positions || [];
+      let refreshedCount = 0;
+      for (const pos of positions) {
+        if (!pos?.ticker || !(pos.qty > 0)) continue;
+        const ccy = pos.ccy || "USD";
+        try {
+          const rt = await getRealtimeQuote(pos.ticker, ccy);
+          const live = rt?.price;
+          if (Number.isFinite(live) && live > 0) {
+            if (ccy === "USD") pos.priceUsd = live;
+            else pos.priceCad = live;
+            refreshedCount++;
+          } else {
+            const tech = await getTechnicals(pos.ticker, ccy);
+            if (tech?.ok && Number.isFinite(tech.last) && tech.last > 0) {
+              if (ccy === "USD") pos.priceUsd = tech.last;
+              else pos.priceCad = tech.last;
+              refreshedCount++;
+            }
+          }
+        } catch { /* fall through — writeDailySnapshot will use stored price */ }
+      }
+      if (refreshedCount > 0) {
+        doc.markModified("positions");
+        await doc.save();
+        priceRefreshes += refreshedCount;
+      }
+      await writeDailySnapshot(doc);
+      ok++;
+    } catch (e) {
+      fail++;
+      console.warn("[stocks-portfolio-snapshot] fail:", doc.email, e?.message);
+    }
   }
-  console.log(`[stocks-portfolio-snapshot] wrote ${ok}, failed ${fail}`);
-  return { ok, fail };
+  console.log(`[stocks-portfolio-snapshot] wrote ${ok}, failed ${fail}, refreshed ${priceRefreshes} prices`);
+  return { ok, fail, priceRefreshes };
 }
 
 export function scheduleDailyPortfolioSnapshot() {
