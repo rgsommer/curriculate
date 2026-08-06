@@ -361,7 +361,10 @@ async function fetchHistory(ticker, uiRange) {
 router.post("/history", express.json({ limit: "16kb" }), async (req, res) => {
   try {
     const raw = Array.isArray(req.body?.tickers) ? req.body.tickers : null;
-    const range = ["1d", "3d", "7d", "30d", "1y", "2y"].includes(req.body?.range) ? req.body.range : "1d";
+    // Whitelist mirrors the frontend range buttons in TickerPerformanceCard.
+    // "1h" and "4h" were missing and silently coerced to "1d", so the two
+    // shortest buttons broke silently. yahooRangeFor already handles both.
+    const range = ["1h", "4h", "1d", "3d", "7d", "30d", "1y", "2y"].includes(req.body?.range) ? req.body.range : "1d";
     if (!raw) return res.status(400).json({ error: "tickers[] required" });
     const tickers = [
       ...new Set(

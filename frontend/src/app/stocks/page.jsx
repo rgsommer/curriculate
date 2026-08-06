@@ -9435,7 +9435,15 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
       </div>
       {err && <div className="sa-err">{err}</div>}
       {busy && !labels.length && <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>Loading prices…</div>}
-      {!busy && !labels.length && !err && <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>No data returned.</div>}
+      {!busy && !labels.length && !err && (
+        <div className="sa-muted" style={{ padding: 20, textAlign: "center" }}>
+          {failed.length > 0
+            ? <>No data returned. Price feed failed for: <code>{failed.join(", ")}</code>. Try a different range or check the backend log for the specific fetch errors.</>
+            : tickers.length === 0
+              ? <>No tickers to chart. Add positions first, then reload.</>
+              : <>No data returned. Backend accepted the request but returned zero series — likely a Yahoo Finance blip; retry in a minute.</>}
+        </div>
+      )}
       {labels.length > 0 && (
         <>
           <MultiLineChart series={labels.map((t, i) => ({ ticker: t, points: data[t].points, color: colorFor(tickers.indexOf(t)), currency: data[t].currency }))} range={range} mode={mode} />
