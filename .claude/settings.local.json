@@ -930,7 +930,21 @@
       "Bash(awk -F: '$1>1738 && $1<2043')",
       "Bash(node --check services/stocksMarketPulse.js)",
       "Bash(grep -n \"TRIM CONCENTRATION\\\\*\\\\* — \\\\*\\\\*\\\\${base}\\\\*\\\\*\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
-      "Bash(grep -n \"TRAIL STOP REVIEW.*\\\\${r.ticker}\\\\|for \\(const r of trailReviews\\)\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
+      "Bash(grep -n \"TRAIL STOP REVIEW.*\\\\${r.ticker}\\\\|for \\(const r of trailReviews\\)\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
+      "Bash(node --check backend/services/stocksRecValidator.js)",
+      "Bash(node --check backend/jobs/stocksDailyBriefing.js)",
+      "Bash(node --check backend/models/StocksInstitutional13F.js)",
+      "Bash(node --check backend/services/stocks13F.js)",
+      "Bash(node --check backend/jobs/stocks13FSync.js)",
+      "Bash(node --check backend/services/stocksSectorRotation.js)",
+      "Bash(node --check backend/models/StocksSectorRankingSnapshot.js)",
+      "Bash(node --check /Users/richardsommer/dev/curriculate/backend/services/stocksSectorRotation.js)",
+      "Bash(node --check /Users/richardsommer/dev/curriculate/backend/models/StocksSectorRankingSnapshot.js)",
+      "Bash(git -C /Users/richardsommer/dev/curriculate status)",
+      "Bash(git -C /Users/richardsommer/dev/curriculate diff --stat)",
+      "Bash(git -C /Users/richardsommer/dev/curriculate log --oneline main)",
+      "Bash(git -C /Users/richardsommer/dev/curriculate add backend/models/StocksSectorRankingSnapshot.js backend/services/stocksSectorRotation.js backend/jobs/stocksDailyBriefing.js)",
+      "Bash(grep -n \"BUY \\\\*\\\\*\\\\${.*shares}\\\\|BUY \\\\*\\\\*\\\\${pairTicket\\\\|BUY \\\\*\\\\*\\\\${redeployTicket\\\\|BUY \\\\*\\\\*\\\\${rebalTicket\\\\|BUY \\\\*\\\\*\\\\${t\\\\.ticket\\\\|BUY \\\\*\\\\*\\\\${trimTicket\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
     ]
   }
 }

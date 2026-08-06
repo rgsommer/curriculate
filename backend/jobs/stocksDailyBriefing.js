@@ -998,6 +998,66 @@ function formatDiscoveryPoolBlock(discoveryPool) {
 //     implausible-loss (≤-50%) hard-stops are converted to VERIFY MANUALLY.
 //   • CORE-under-70% locks new discretionary buys via §2.
 //   • Sleeve/concentration rules are structural, not advisory.
+// Concentration cap thresholds — single source of truth. Both the
+// prefix mandate emitter and the post-gen canonical re-computer read
+// these so the tolerance band applies consistently across paths.
+// SINGLE_NAME_CAP_PCT = hard target the trim tries to bring you to.
+// SINGLE_NAME_CAP_TOLERANCE_PP = don't fire the mandate until the
+// position is materially over (avoids a $700 trim on 20.9% that
+// would land 19.8% and rack up commission + FX drag for nothing).
+// SINGLE_NAME_CAP_FIRING_PCT = threshold that actually triggers.
+const SINGLE_NAME_CAP_PCT = 20;
+// User Aug 8: "the 20% should be for the setup, but trim recs should
+// have a 2% tolerance." So the mandate fires only when a position
+// crosses 22% (materially over) and then trims to bring it back to
+// ≤ 20% (the setup target). The 20-22% band is a no-fire dead zone.
+const SINGLE_NAME_CAP_TOLERANCE_PP = 2.0;
+const SINGLE_NAME_CAP_FIRING_PCT = SINGLE_NAME_CAP_PCT + SINGLE_NAME_CAP_TOLERANCE_PP;
+
+// One-line description of every ticker the mandate emitters can
+// suggest via pickDefaultTicket. Rendered inline in the mandate so
+// the operator sees WHAT the ETF actually is (holdings, MER,
+// geography, thesis) instead of a bare symbol. User Aug 8: "if you
+// are going to make a rec like XEQT, then at least say what it is
+// and why it is a good setup!" — this closes that gap.
+const MANDATE_TICKER_DESCRIPTIONS = {
+  // CORE CAD-listed — hoped-for return ≈ global/US/CDN equity long-term averages; horizon multi-decade
+  "XEQT.TO": { what: "iShares Core Equity ETF Portfolio — all-equity global mix (~45% US, 25% CAD, 25% intl, 5% EM), 0.20% MER, one-ticker diversified equity core", ret: "~7-9% annualized (global equity long-term)", horizon: "10+ yrs · buy-and-hold; expect -20 to -40% drawdowns" },
+  "VUN.TO": { what: "Vanguard US Total Market (CAD-listed unhedged) — full US market ~3600 stocks, 0.16% MER, US exposure without FX conversion", ret: "~8-10% annualized (US equity long-term)", horizon: "10+ yrs · buy-and-hold; unhedged FX is +/-" },
+  "XIU.TO": { what: "iShares S&P/TSX 60 — Canada's 60 largest, 0.18% MER, home-market large-cap core", ret: "~6-8% annualized (TSX long-term, ~1/3 financials + energy)", horizon: "10+ yrs · buy-and-hold" },
+  "XIC.TO": { what: "iShares Core S&P/TSX Capped Composite — broader Canadian market (~230 names), 0.06% MER", ret: "~6-8% annualized (TSX long-term)", horizon: "10+ yrs · buy-and-hold" },
+  // CORE USD-listed
+  "VOO": { what: "Vanguard S&P 500 ETF — 500 largest US companies, 0.03% MER, cheapest S&P vehicle", ret: "~8-10% annualized (S&P long-term)", horizon: "10+ yrs · buy-and-hold" },
+  "VTI": { what: "Vanguard Total US Market — ~3600 US stocks, 0.03% MER, broader than S&P", ret: "~8-10% annualized (US equity)", horizon: "10+ yrs · buy-and-hold" },
+  "QQQ": { what: "Invesco QQQ Trust — NASDAQ-100 (AAPL/MSFT/NVDA/GOOG/AMZN weight ~40%), 0.20% MER, tech-heavy", ret: "~10-13% annualized long-term but higher vol (tech beta)", horizon: "10+ yrs · higher-vol equity core" },
+  // INCOME CAD-listed dividend payers
+  "RY.TO": { what: "Royal Bank of Canada — largest Canadian bank, eligible dividend, dividend growth 20+ yrs", ret: "~4% yield + ~4-6% growth = ~8-10% total", horizon: "5-10+ yrs · income compounder" },
+  "TD.TO": { what: "Toronto-Dominion Bank — Canada's #2 bank + major US retail, eligible dividend", ret: "~5% yield + ~3-5% growth = ~8-10% total", horizon: "5-10+ yrs · income compounder" },
+  "BMO.TO": { what: "Bank of Montreal — Canada's 4th largest bank, eligible dividend", ret: "~4.5% yield + ~3-5% growth = ~7-9% total", horizon: "5-10+ yrs · income compounder" },
+  "BNS.TO": { what: "Bank of Nova Scotia — international footprint (Latin America), eligible dividend, higher yield reflects LatAm risk", ret: "~6% yield + ~2-4% growth = ~8-10% total, higher variance", horizon: "5-10+ yrs · income + turnaround" },
+  "TRP.TO": { what: "TC Energy — pipeline/midstream infrastructure, eligible dividend, regulated rate base", ret: "~7% yield + ~2-3% growth = ~9-10% total", horizon: "5-10+ yrs · regulated income" },
+  "ENB.TO": { what: "Enbridge — largest North American pipeline network, eligible dividend, 28+ yrs of hikes", ret: "~7% yield + ~3% growth = ~10% total", horizon: "5-10+ yrs · regulated income compounder" },
+  // INCOME USD-listed dividend aristocrats
+  "KO": { what: "Coca-Cola — dividend aristocrat 60+ yrs, defensive consumer staples", ret: "~3% yield + ~5% growth = ~8% total", horizon: "5-10+ yrs · defensive compounder" },
+  "PEP": { what: "PepsiCo — dividend aristocrat 50+ yrs, snacks + beverages", ret: "~3% yield + ~5% growth = ~8% total", horizon: "5-10+ yrs · defensive compounder" },
+  "JNJ": { what: "Johnson & Johnson — dividend aristocrat 60+ yrs, healthcare defensive", ret: "~3% yield + ~4-6% growth = ~7-9% total", horizon: "5-10+ yrs · defensive healthcare" },
+  "PG": { what: "Procter & Gamble — dividend aristocrat 65+ yrs, consumer staples", ret: "~2.5% yield + ~5-7% growth = ~8-10% total", horizon: "5-10+ yrs · quality compounder" },
+  "MO": { what: "Altria — high-yield tobacco, dividend aristocrat", ret: "~8% yield + 0-2% growth = ~8-10% total, terminal-decline risk", horizon: "5+ yrs · yield-heavy, low growth" },
+  "ABBV": { what: "AbbVie — pharma with Humira patent risk mitigated by Skyrizi/Rinvoq ramp, dividend aristocrat via Abbott spinoff", ret: "~4% yield + ~3-5% growth = ~7-9% total", horizon: "5-10+ yrs · large pharma" },
+  "MRK": { what: "Merck — pharma with Keytruda oncology franchise", ret: "~3% yield + ~5-8% growth = ~8-11% total, Keytruda LOE 2028", horizon: "5-10+ yrs · large pharma" },
+  "XOM": { what: "ExxonMobil — integrated oil major, dividend aristocrat", ret: "~3.5% yield + ~3-5% growth = ~7-9% total, oil-price sensitive", horizon: "5-10+ yrs · energy defensive" },
+  "CVX": { what: "Chevron — integrated oil major, dividend aristocrat 35+ yrs", ret: "~4% yield + ~3-5% growth = ~7-9% total", horizon: "5-10+ yrs · energy defensive" },
+  "O": { what: "Realty Income — monthly-pay REIT, retail net-lease", ret: "~5.5% yield + ~2-4% growth = ~8-10% total, rate-sensitive", horizon: "5-10+ yrs · income" },
+  "VZ": { what: "Verizon — telecom, high yield reflects modest growth outlook", ret: "~6.5% yield + ~0-2% growth = ~7-9% total", horizon: "3-7 yrs · yield-heavy" },
+  "MMM": { what: "3M — dividend aristocrat, industrial conglomerate with litigation overhang", ret: "~6% yield + uncertain growth (litigation drag)", horizon: "5+ yrs · turnaround/yield" },
+};
+
+function describeTicker(ticker) {
+  const t = MANDATE_TICKER_DESCRIPTIONS[ticker];
+  if (!t) return "";
+  return `\n     ↳ **What:** ${t.what}\n     ↳ **Expected return:** ${t.ret}\n     ↳ **Horizon:** ${t.horizon}`;
+}
+
 function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
@@ -1110,7 +1170,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     if (rebalTicket) {
       const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
       mandatoryLater.push(
-        `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}. **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}`
+        `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}. **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}${describeTicker(rebalTicket.ticker)}`
       );
     } else {
       mandatoryLater.push(
@@ -1223,7 +1283,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           const usedNative = t.ticket.shares * t.ticket.livePrice;
           const altStr = t.ticket.alternatives ? ` · Alternatives: ${t.ticket.alternatives}` : "";
           mandatoryLater.push(
-            `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${altStr}`
+            `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${altStr}${describeTicker(t.ticket.ticker)}`
           );
         });
       } else if (pools.length > 0) {
@@ -1269,16 +1329,13 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // regime (TSX 60 for XIU, S&P for VOO, Russell 2000 for IWM). Two
   // ETFs at 25%+ each concentrates the same beta twice. Better to
   // spread CORE across 3-4 ETFs so no single one is >20%.
-  const SINGLE_NAME_CAP_PCT = 20;
-  // Tolerance band above the cap — a rounding-level breach (e.g.
-  // VOO at 20.9%) triggering a $700 trim is worse than the breach
-  // itself once you factor in commission + FX + settlement drag on
-  // the paired REDEPLOY. Only fire the mandate when the position
-  // is materially over (≥ CAP + TOLERANCE_PP). User Aug 6 directive:
-  // "20.9 vs 20% is petty — the trim would likely land 19.8% and
-  // incur fees unnecessarily."
-  const SINGLE_NAME_CAP_TOLERANCE_PP = 1.0;
-  const SINGLE_NAME_CAP_FIRING_PCT = SINGLE_NAME_CAP_PCT + SINGLE_NAME_CAP_TOLERANCE_PP;
+  // Constants sourced from module scope (SINGLE_NAME_CAP_PCT +
+  // SINGLE_NAME_CAP_TOLERANCE_PP + SINGLE_NAME_CAP_FIRING_PCT) so
+  // the prefix and post-gen recompute paths share one source of
+  // truth. Aug 8 bug: post-gen re-enforcer had its own hardcoded
+  // `pct <= 20` check which fired mandates for e.g. XIU at 20.4%
+  // even though the prefix's tolerance-adjusted filter correctly
+  // skipped them.
   const concByBase = {};
   for (const row of (b?.byPosition || [])) {
     if (!(row.cadValue > 0)) continue;
@@ -1397,7 +1454,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           const acctStr = acctLabel ? ` in **${acctLabel}**` : "";
           const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
           const usedNative = pairTicket.shares * pairTicket.livePrice;
-          const pairedLine = `   → **REDEPLOY (paired with TRIM above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}**${acctStr} @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${positionCcy} of the ~$${Math.round(excessNative).toLocaleString()} ${positionCcy} proceeds from ${base} TRIM. ${destSleeveLabel} sleeve — required destination.${altStr}`;
+          const pairedLine = `   → **REDEPLOY (paired with TRIM above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}**${acctStr} @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${positionCcy} of the ~$${Math.round(excessNative).toLocaleString()} ${positionCcy} proceeds from ${base} TRIM. ${destSleeveLabel} sleeve — required destination.${altStr}${describeTicker(pairTicket.ticker)}`;
           mandatory.push(pairedLine);
         }
       }
@@ -1486,7 +1543,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           ? ` ${redirect.sleeve.toUpperCase()} sleeve is ${redirect.gap.toFixed(1)}pp underweight — this closes two gaps at once.`
           : "";
         mandatory.push(
-          `   → **IF EXIT — REDEPLOY** — Selling ${r.qty} sh ${r.ticker} at ~$${r.last.toFixed(2)} ${r.currency} raises ~$${Math.round(proceedsNative).toLocaleString()} ${r.currency}. After settle, BUY **${redeployTicket.shares} sh ${redeployTicket.ticker}** in **${acctLabel}** @ ~$${redeployTicket.livePrice.toFixed(2)} ${redeployTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${r.currency} of the proceeds. ${redirect.sleeve.toUpperCase()} sleeve — required destination.${gapNote}${altStr}`
+          `   → **IF EXIT — REDEPLOY** — Selling ${r.qty} sh ${r.ticker} at ~$${r.last.toFixed(2)} ${r.currency} raises ~$${Math.round(proceedsNative).toLocaleString()} ${r.currency}. After settle, BUY **${redeployTicket.shares} sh ${redeployTicket.ticker}** in **${acctLabel}** @ ~$${redeployTicket.livePrice.toFixed(2)} ${redeployTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${r.currency} of the proceeds. ${redirect.sleeve.toUpperCase()} sleeve — required destination.${gapNote}${altStr}${describeTicker(redeployTicket.ticker)}`
         );
       }
     }
@@ -1568,7 +1625,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       if (pairTicket) {
         const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
         mandatory.push(
-          `   → **CORE DEPLOY (paired with SELL above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}** in **${r.account}** @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds from ${r.ticker} SELL (pro-forma). CORE gap ${coreGapPp.toFixed(1)}pp — required destination.${altStr}`
+          `   → **CORE DEPLOY (paired with SELL above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}** in **${r.account}** @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds from ${r.ticker} SELL (pro-forma). CORE gap ${coreGapPp.toFixed(1)}pp — required destination.${altStr}${describeTicker(pairTicket.ticker)}`
         );
       } else {
         const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";
@@ -1654,7 +1711,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       if (trimTicket) {
         const altStr = trimTicket.alternatives ? ` · Alternatives: ${trimTicket.alternatives}` : "";
         mandatory.push(
-          `   → **CORE DEPLOY (paired with TRIM above)** — After the SPEC trim settles, BUY **${trimTicket.shares} sh ${trimTicket.ticker}** @ ~$${trimTicket.livePrice.toFixed(2)} ${trimTicket.liveCcy} (live). Uses ~${m(excessCad)} trim proceeds. Same-account CAD deploy. CORE gap ${coreGapPp.toFixed(1)}pp — required destination, not cash.${altStr}`
+          `   → **CORE DEPLOY (paired with TRIM above)** — After the SPEC trim settles, BUY **${trimTicket.shares} sh ${trimTicket.ticker}** @ ~$${trimTicket.livePrice.toFixed(2)} ${trimTicket.liveCcy} (live). Uses ~${m(excessCad)} trim proceeds. Same-account CAD deploy. CORE gap ${coreGapPp.toFixed(1)}pp — required destination, not cash.${altStr}${describeTicker(trimTicket.ticker)}`
         );
       } else {
         mandatory.push(
@@ -3180,19 +3237,22 @@ export async function generateBriefing(profile) {
       const mCad = (v) => `$${Math.round(v).toLocaleString()} CAD`;
       for (const [base, info] of Object.entries(perBase)) {
         const pct = (info.cad / bookForRebuild) * 100;
-        if (pct <= 20) continue;
-        const excessCad = info.cad - 0.20 * bookForRebuild;
+        // Use the same tolerance-adjusted firing threshold the prefix
+        // uses, not a hardcoded 20% — otherwise this recompute silently
+        // re-adds mandates the prefix correctly skipped as trivial.
+        if (pct <= SINGLE_NAME_CAP_FIRING_PCT) continue;
+        const excessCad = info.cad - (SINGLE_NAME_CAP_PCT / 100) * bookForRebuild;
         if (excessCad < 100) continue;
         let sleeveNote;
         if (redirect && redirect.sleeve !== info.sleeve) {
           const listStr = redirect.list.slice(0, 4).join(" / ");
           sleeveNote = ` Redeploy proceeds into **${redirect.sleeve.toUpperCase()} sleeve** (${listStr}) — ${redirect.sleeve.toUpperCase()} is ${redirect.gap.toFixed(1)}pp underweight, so this trim closes two gaps at once.`;
         } else if (info.sleeve === "core") {
-          sleeveNote = " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve.";
+          sleeveNote = ` CORE ETFs are not exempt — ${pct.toFixed(1)}% in one broad-market ETF is still ${pct.toFixed(1)}% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve.`;
         } else {
           sleeveNote = " Single-name blow-ups are the loss zone.";
         }
-        const line = `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the 20% single-name cap. Trim ~${mCad(excessCad)} to bring it to ≤ 20%.${sleeveNote}`;
+        const line = `**TRIM CONCENTRATION** — **${base}** is ${pct.toFixed(1)}% of book, over the ${SINGLE_NAME_CAP_PCT}% single-name cap (${SINGLE_NAME_CAP_TOLERANCE_PP}pp tolerance). Trim ~${mCad(excessCad)} to bring it to ≤ ${SINGLE_NAME_CAP_PCT}%.${sleeveNote}`;
         // Prefix's canonical wins if it exists (already stored above);
         // otherwise use this freshly-computed one.
         if (!canonicalsByBase.has(base)) canonicalsByBase.set(base, line);
