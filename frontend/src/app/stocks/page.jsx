@@ -8843,6 +8843,8 @@ function PerformanceView({ sessionToken, user }) {
 
       <BacktestCard sessionToken={sessionToken} />
 
+      <InsiderSignalsCard sessionToken={sessionToken} />
+
       <DisciplineBacktestCard sessionToken={sessionToken} />
 
       <TradeJournalAnalysisCard sessionToken={sessionToken} />
@@ -11280,6 +11282,109 @@ function BacktestCard({ sessionToken }) {
           <div style={{ marginTop: 14, fontSize: 10.5, color: "var(--sa-muted)", background: "var(--sa-panel-2)", padding: "8px 10px", borderRadius: 6 }}>
             ⚠ {result.disclaimer}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// SEC Form 4 insider cluster signals — daily-cron-detected clusters of
+// insider buys/sells across held tickers + starred watchlist. Backend
+// route: GET /api/stocks-insider-signals/recent.
+function InsiderSignalsCard({ sessionToken }) {
+  const [days, setDays] = useState(30);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [data, setData] = useState(null);
+
+  const load = async () => {
+    if (busy) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-insider-signals/recent?days=${days}`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setData(j);
+    } catch (e) { setErr(e?.message || "Load failed"); }
+    finally { setBusy(false); }
+  };
+
+  const signals = (data?.signals || []).slice().sort((a, b) => (b.strength || 0) - (a.strength || 0));
+  return (
+    <div className="sa-card" style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <div>
+          <h3 style={{ margin: 0 }}>🕵 Insider signals (SEC Form 4)</h3>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3, maxWidth: 780 }}>
+            Cluster BUY / SELL patterns detected across your holdings + starred watchlist. A cluster BUY (≥ 3 insiders, exec-weighted score ≥ 5) is a well-documented positive forward signal. Data comes from a nightly EDGAR sync; click a row to open the SEC filing.
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, display: "flex", gap: 10, alignItems: "end" }}>
+        <label style={{ fontSize: 11 }}>
+          <div style={{ color: "var(--sa-muted)", marginBottom: 2 }}>Lookback (days)</div>
+          <input type="number" value={days} onChange={(e) => setDays(Number(e.target.value))} min={1} max={90} style={{ width: 110, padding: "6px 8px", border: "1px solid var(--sa-border)", borderRadius: 6, fontSize: 13 }} />
+        </label>
+        <button className="sa-btn" onClick={load} disabled={busy}>{busy ? "Loading…" : "Load signals"}</button>
+      </div>
+
+      {err && <div className="sa-err" style={{ marginTop: 12 }}>{err}</div>}
+      {data && !err && signals.length === 0 && (
+        <div style={{ marginTop: 12, fontSize: 13, color: "var(--sa-muted)" }}>
+          No cluster signals in the last {data.days}d across {data.tickers?.length || 0} tracked tickers. The nightly sync (03:00 ET) refills.
+        </div>
+      )}
+
+      {signals.length > 0 && (
+        <div style={{ marginTop: 14, overflowX: "auto" }}>
+          <table style={{ width: "100%", fontSize: 13, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ color: "var(--sa-muted)", textAlign: "left" }}>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--sa-border)" }}>Ticker</th>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--sa-border)" }}>Kind</th>
+                <th style={{ padding: "6px 8px", textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Score</th>
+                <th style={{ padding: "6px 8px", textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Insiders</th>
+                <th style={{ padding: "6px 8px", textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Shares</th>
+                <th style={{ padding: "6px 8px", textAlign: "right", borderBottom: "1px solid var(--sa-border)" }}>Value USD</th>
+                <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--sa-border)" }}>Detected</th>
+              </tr>
+            </thead>
+            <tbody>
+              {signals.map((s) => {
+                const isBuy = s.kind === "cluster_buy";
+                const secUrl = `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&type=4&dateb=&owner=include&count=20&CIK=${encodeURIComponent(s.ticker)}`;
+                return (
+                  <tr key={s._id} style={{ borderTop: "1px solid #f1f5f9" }}>
+                    <td style={{ padding: "6px 8px", fontWeight: 700 }}>
+                      <a href={secUrl} target="_blank" rel="noreferrer" style={{ color: "#1d4ed8", textDecoration: "none" }}>{s.ticker} ↗</a>
+                    </td>
+                    <td style={{ padding: "6px 8px" }}>
+                      <span style={{ background: isBuy ? "#dcfce7" : "#fee2e2", color: isBuy ? "#065f46" : "#991b1b", padding: "2px 8px", borderRadius: 99, fontSize: 11, fontWeight: 700 }}>
+                        {isBuy ? "🔥 BUY" : "⚠ SELL"}
+                      </span>
+                    </td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{s.strength}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{s.uniqueInsiderCount}{s.execCount > 0 ? ` (${s.execCount} exec)` : ""}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{s.totalSharesTraded?.toLocaleString?.() ?? "—"}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                      {s.totalValueUsd
+                        ? s.totalValueUsd >= 1e6
+                          ? `$${(s.totalValueUsd / 1e6).toFixed(2)}M`
+                          : `$${Math.round(s.totalValueUsd / 1000)}k`
+                        : "—"}
+                    </td>
+                    <td style={{ padding: "6px 8px", fontSize: 12, color: "var(--sa-muted)" }}>
+                      {new Date(s.detectedAt).toISOString().slice(0, 10)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

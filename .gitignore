@@ -65,3 +65,6 @@ __pycache__/
 /feedback-fieldday.txt
 /feedback-grading.txt
 .vercel
+
+# Smoke-test scratch scripts (backend/smoke-*.mjs) — run + delete pattern.
+backend/smoke-*.mjs

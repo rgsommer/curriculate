@@ -142,6 +142,7 @@ import stocksTradeRouter from "./routes/stocksTrade.js";
 import stocksPendingOrdersRouter from "./routes/stocksPendingOrders.js";
 import stocksDiscoverRouter from "./routes/stocksDiscover.js";
 import stocksReconcileRouter from "./routes/stocksReconcile.js";
+import stocksInsiderSignalsRouter from "./routes/stocksInsiderSignals.js";
 import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
 import { scheduleIntradayUpdates } from "./jobs/stocksIntradayUpdate.js";
@@ -151,6 +152,7 @@ import { scheduleHorizonExpiry } from "./jobs/stocksHorizonExpiryCron.js";
 import { scheduleStocksAlerts } from "./jobs/stocksAlerts.js";
 import { scheduleEightKPoll } from "./jobs/stocksEightKPoll.js";
 import { scheduleDailyPickCron } from "./jobs/stocksDailyPick.js";
+import { scheduleInsiderSync } from "./jobs/stocksInsiderSync.js";
 // Substitute-teacher staffing app (/subs)
 import subsAuthRouter from "./routes/subsAuth.js";
 import subsAdminRouter from "./routes/subsAdmin.js";
@@ -614,6 +616,7 @@ app.use("/api/stocks-trade", stocksTradeRouter);
 app.use("/api/stocks-pending-orders", stocksPendingOrdersRouter);
 app.use("/api/stocks-discover", stocksDiscoverRouter);
 app.use("/api/stocks-reconcile", stocksReconcileRouter);
+app.use("/api/stocks-insider-signals", stocksInsiderSignalsRouter);
 
 // Substitute-teacher staffing app on curriculate.net/subs.
 // Passwordless email-PIN auth (subs_session cookie); the escalation engine
@@ -19822,6 +19825,7 @@ server.listen(PORT, () => {
   scheduleStocksAlerts();
   scheduleEightKPoll();
   scheduleDailyPickCron();
+  scheduleInsiderSync();
   scheduleIntradayUpdates();
   scheduleEodRecap();
   scheduleEmailPoller();
