@@ -8240,7 +8240,8 @@ function DiscoverView({ sessionToken, user }) {
   const [candidates, setCandidates] = useState([]);
   const [starredOlder, setStarredOlder] = useState([]);
   const [scanDate, setScanDate] = useState(null);
-  const [scanMode, setScanMode] = useState(null); // "fmp-screened" | "ai-only"
+  const [scanMode, setScanMode] = useState(null); // "fmp-screened" | "ai-only" | "suppressed"
+  const [suppressReason, setSuppressReason] = useState(null);
   const [upgradeMessage, setUpgradeMessage] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -8309,6 +8310,7 @@ function DiscoverView({ sessionToken, user }) {
       setScanDate(j.scanDate || new Date().toISOString());
       setScanMode(j.mode || null);
       setUpgradeMessage(j.upgradeRecommendation || null);
+      setSuppressReason(j.suppressReason || null);
     } catch (e) {
       setError(e?.message || "Scan failed");
     } finally {
@@ -8576,6 +8578,17 @@ function DiscoverView({ sessionToken, user }) {
       </div>
 
       {error && <div className="sa-err" style={{ marginBottom: 14 }}>{error}</div>}
+      {scanMode === "suppressed" && (
+        <div className="sa-card" style={{ marginBottom: 14, padding: "12px 16px", background: "var(--sa-red-soft, #fef2f2)", borderColor: "var(--sa-red, #dc2626)" }}>
+          <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>🛡 Discovery suppressed by kill switch</div>
+          <div className="sa-muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+            The discretionary discovery engine is currently paused because recent performance is below the recovery threshold:<br/><br/>
+            <code style={{ background: "var(--sa-panel-2)", padding: "2px 6px", borderRadius: 4 }}>{suppressReason || "kill switch active"}</code><br/><br/>
+            <b>Why:</b> when the 30d hit rate falls below 40% or the average PnL falls below −1.5%, the engine stops surfacing new SPEC candidates — every new pick would just add to the loss pile. It reopens automatically once performance clears the floor (or a canary pick fires once per rolling week to keep sampling).<br/><br/>
+            <b>Also active:</b> theme-first gate (SPEC candidates outside your enabled themes are dropped), per-setup ban (setup types with ≥10 closed samples and &lt;30% win rate are filtered), and the high-conviction SPEC gate (requires thesisHorizonMonths ≥ 3 and a structural driver). See the §3 GATES line in your daily briefing for live status.
+          </div>
+        </div>
+      )}
       {scanMode === "ai-only" && (
         <div className="sa-card" style={{ marginBottom: 14, padding: "12px 16px", background: "var(--sa-amber-soft)", borderColor: "var(--sa-amber)" }}>
           <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>⚠ AI-only mode — FMP screener unavailable on your plan</div>
