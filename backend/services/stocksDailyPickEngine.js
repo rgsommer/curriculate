@@ -11,6 +11,8 @@
 
 import { getTechnicals } from "./stocksTechnicals.js";
 import { computeLessons } from "./stocksLessonsLearned.js";
+import { getApprovedTickers, themesContainingTicker } from "./stocksThemesService.js";
+import { classifyPosition } from "./stocksSleeveEnforcer.js";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
@@ -249,6 +251,12 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   // candidates whose setupName has a demonstrably losing history
   // (see computeBannedSetups thresholds).
   const bannedSetups = await computeBannedSetups(email);
+  // Theme-first gate for SPEC candidates (Aug 5 overhaul §3). A
+  // chart-pattern setup can no longer generate a SPEC pick on its
+  // own — the ticker must be a member of at least one enabled
+  // structural theme. CORE / SWING / INCOME picks are unaffected;
+  // themes only gate the SPEC funnel.
+  const approvedThemeTickers = await getApprovedTickers(email);
   const rawUniverse = await resolveUniverseForUser(email);
   // Normalize BOTH sides — exclude sets built from portfolio positions
   // may hold "RY" while the universe carries "RY.TO". Strip exchange
@@ -277,6 +285,19 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       if (bullSetup?.name && bannedSetups.has(bullSetup.name)) {
         console.log(`[pick-engine-per-setup] SKIP ${ticker} — setup "${bullSetup.name}" is banned`);
         continue;
+      }
+      // Theme-first gate — SPEC candidates must be members of an
+      // approved theme. CORE / SWING / INCOME pass through
+      // untouched. Ticker classifier decides the sleeve so no AI
+      // declaration needed. baseTicker() strips exchange suffixes
+      // so XIU.TO and XIU collapse to the same theme lookup.
+      const sleeve = classifyPosition({ ticker });
+      if (sleeve === "spec") {
+        const baseCandidate = String(ticker).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+        if (!approvedThemeTickers.has(baseCandidate)) {
+          console.log(`[pick-engine-theme-gate] SKIP ${ticker} — not a member of any enabled theme (SPEC only via themes)`);
+          continue;
+        }
       }
       // Entry = current close. Target = swing high or +2×ATR. Stop = 2.5×ATR below.
       const target = tech.fib?.swingHigh

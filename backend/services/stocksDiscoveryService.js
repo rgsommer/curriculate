@@ -49,6 +49,8 @@ import { getPatentsSignal } from "./stocksPatentsUspto.js";
 import { verifyPicksBatch } from "./stocksAdversarialVerify.js";
 import { getChartVisionAnalysis } from "./stocksChartVision.js";
 import { computeLessons } from "./stocksLessonsLearned.js";
+import { getApprovedTickers } from "./stocksThemesService.js";
+import { classifyPosition } from "./stocksSleeveEnforcer.js";
 
 const FMP_BASE = "https://financialmodelingprep.com";
 const SCREENER_CACHE = new Map(); // key → { fetchedAt, data }
@@ -680,7 +682,27 @@ export async function runDiscoveryScan({ email, excludeTickers = [], sectors = n
 
   // 2. Filter out names the user already holds OR has previously dismissed
   // (excl Set was built at the top of this function)
-  const filtered = universe.filter((u) => !excl.has(String(u.symbol || "").toUpperCase()));
+  let filtered = universe.filter((u) => !excl.has(String(u.symbol || "").toUpperCase()));
+
+  // 2b. Theme-first gate for SPEC-classified candidates. Per user
+  // Aug 5 overhaul §3: a chart-pattern setup can no longer generate
+  // a SPEC discovery pick on its own — the ticker must be a member
+  // of at least one enabled structural theme. CORE/SWING/INCOME
+  // names pass through untouched.
+  const approvedThemeTickers = await getApprovedTickers(email);
+  const beforeThemeCount = filtered.length;
+  filtered = filtered.filter((u) => {
+    const sym = String(u.symbol || "").toUpperCase();
+    if (!sym) return false;
+    const sleeve = classifyPosition({ ticker: sym });
+    if (sleeve !== "spec") return true; // non-SPEC untouched
+    const base = sym.replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+    return approvedThemeTickers.has(base);
+  });
+  const droppedByTheme = beforeThemeCount - filtered.length;
+  if (droppedByTheme > 0) {
+    console.log(`[discovery-theme-gate] dropped ${droppedByTheme} SPEC candidates not in any enabled theme (kept ${filtered.length}/${beforeThemeCount})`);
+  }
 
   // 3. Fetch fundamentals for a pre-rank slice. To keep cost manageable,
   // limit to top ~80 by market cap × volume liquidity proxy before doing
