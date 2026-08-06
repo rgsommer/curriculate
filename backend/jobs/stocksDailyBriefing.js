@@ -1428,6 +1428,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     trailReviews.push({
       ticker: p.ticker,
       account: p.acct,
+      qty: p.qty,
       last: tech.last,
       high60d: tech.high60d,
       trailStop: tech.trailStopAtrAdjusted,
@@ -1447,6 +1448,46 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     mandatory.push(
       `**TRAIL STOP REVIEW** — **${r.ticker}**. Current price is below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **Decide today and record ONE of:** (1) **EXIT** — lock in the remaining gain or cut the drawdown; (2) **TIGHTEN** — move hard stop to break-even or 1×ATR below current; (3) **HOLD with documented reason** — must include a concrete new-evidence trigger AND a new review date. No fourth option. "Hold through earnings" or "thesis intact" alone are NOT acceptable — write out the specific trigger.`
     );
+    // Paired IF-EXIT REDEPLOY hint. TRAIL STOP REVIEW is a decision
+    // mandate (three options) so no forced SELL — but if the operator
+    // picks EXIT, there's real cash to redeploy. User Aug 6: "I took
+    // the SU sell; why no BUY rec for the freed cash?" Compute the
+    // hypothetical proceeds + emit a specific redeploy ticket right
+    // under the review so the redeploy is visible in the same brief,
+    // not deferred until tomorrow's DEPLOY CASH mandate.
+    if (r.qty > 0 && r.last > 0) {
+      const proceedsNative = r.qty * r.last;
+      const proceedsCad = r.currency === "CAD" ? proceedsNative : proceedsNative * (fxUsdCad || 1.37);
+      // Route to the most-underweight sleeve, currency-matched. Same
+      // logic as TRIM CONCENTRATION paired REDEPLOY.
+      const routableGaps = sleeveBalance?.deviations ? [
+        { sleeve: "income", gap: -sleeveBalance.deviations.income },
+        { sleeve: "core",   gap: -sleeveBalance.deviations.core },
+      ].filter(x => x.gap > 5).sort((a, b) => b.gap - a.gap) : [];
+      const redirect = routableGaps[0] || { sleeve: "core", gap: 0 };
+      const incomeCadList = ["RY.TO", "TD.TO", "BMO.TO", "BNS.TO", "TRP.TO", "ENB.TO"];
+      const incomeUsdList = ["KO", "PEP", "JNJ", "PG", "MO", "ABBV", "MRK", "XOM", "CVX", "O", "VZ", "MMM"];
+      const coreCadList = ["XEQT.TO", "VUN.TO", "XIU.TO"];
+      const coreUsdList = ["VOO", "VTI", "QQQ"];
+      let destList;
+      if (redirect.sleeve === "income") {
+        destList = r.currency === "CAD" ? incomeCadList : incomeUsdList;
+      } else {
+        destList = r.currency === "CAD" ? coreCadList : coreUsdList;
+      }
+      const redeployTicket = pickDefaultTicket(destList, proceedsCad, r.currency);
+      if (redeployTicket) {
+        const acctLabel = (cashAccounts || []).find(a => String(a.id) === String(r.account))?.name || String(r.account || "account");
+        const usedNative = redeployTicket.shares * redeployTicket.livePrice;
+        const altStr = redeployTicket.alternatives ? ` · Alternatives: ${redeployTicket.alternatives}` : "";
+        const gapNote = redirect.gap > 5
+          ? ` ${redirect.sleeve.toUpperCase()} sleeve is ${redirect.gap.toFixed(1)}pp underweight — this closes two gaps at once.`
+          : "";
+        mandatory.push(
+          `   → **IF EXIT — REDEPLOY** — Selling ${r.qty} sh ${r.ticker} at ~$${r.last.toFixed(2)} ${r.currency} raises ~$${Math.round(proceedsNative).toLocaleString()} ${r.currency}. After settle, BUY **${redeployTicket.shares} sh ${redeployTicket.ticker}** in **${acctLabel}** @ ~$${redeployTicket.livePrice.toFixed(2)} ${redeployTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${r.currency} of the proceeds. ${redirect.sleeve.toUpperCase()} sleeve — required destination.${gapNote}${altStr}`
+        );
+      }
+    }
   }
 
   // Force-shrink mandate: when ANY sleeve is severely underweight
@@ -2042,10 +2083,10 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
 APPENDIX (## 📎 Appendix — research & context) — comes AFTER §4 + §0b, before the trailing <RECS> block. Everything below is optional depth for readers who want it, NOT primary action content:
 
    §A1. Overnight & macro (1 short paragraph — futures, VIX, USD/CAD, oil, Fed/BoC)
-   §A2. Per-holding compact table — ONE line per held ticker:
-        TICKER | SLEEVE | WEIGHT | P/L | STOP DIST | STATUS
-        Example: ENB | SWING | 14.4% | +2% | 4.4% slack | HOLD — earnings intact
-        Only expand into paragraph form for tickers that had NEW material info today (earnings result, downgrade, headline). Everything else stays one line.
+   §A2. Per-holding signals — ONE BULLET per held ticker. **BULLETED LIST, NOT A PIPE TABLE** — pipe tables reliably collapse into a single unreadable line in the email renderer. Format each row as:
+        - **TICKER** [SLEEVE · WEIGHT · P/L · stop-dist] — STATUS
+        Example: - **ENB** [SWING · 14.4% · +2% · 4.4% slack] — HOLD — earnings intact
+        Each ticker gets its own bullet on its own line. Blank line between bullets is optional. Only expand into paragraph form for tickers that had NEW material info today (earnings result, downgrade, headline). Everything else stays one bullet.
    §A3. Watch list — 2-3 GTC-alert levels the user might set (NOT intraday triggers).
    §A4. Performance snapshot — 1 line week/month/YTD alpha vs SPY/XIC.
    §A5. Any THESIS DISCIPLINE flag from horizon review that didn't already surface in §1.

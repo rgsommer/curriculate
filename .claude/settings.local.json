@@ -929,7 +929,8 @@
       "Bash(grep -nE \"formatQuantSignalsBlock|formatMacroBlock|quantSignalsBlock|\\\\\\\\\\\\$\\\\{.*[Bb]lock\\\\}\" jobs/stocksDailyBriefing.js)",
       "Bash(awk -F: '$1>1738 && $1<2043')",
       "Bash(node --check services/stocksMarketPulse.js)",
-      "Bash(grep -n \"TRIM CONCENTRATION\\\\*\\\\* — \\\\*\\\\*\\\\${base}\\\\*\\\\*\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
+      "Bash(grep -n \"TRIM CONCENTRATION\\\\*\\\\* — \\\\*\\\\*\\\\${base}\\\\*\\\\*\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
+      "Bash(grep -n \"TRAIL STOP REVIEW.*\\\\${r.ticker}\\\\|for \\(const r of trailReviews\\)\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
     ]
   }
 }
