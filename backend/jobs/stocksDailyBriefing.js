@@ -1058,6 +1058,15 @@ function describeTicker(ticker) {
   return `\n     ↳ **What:** ${t.what}\n     ↳ **Expected return:** ${t.ret}\n     ↳ **Horizon:** ${t.horizon}`;
 }
 
+// Every BUY-ticket emitter appends this so the operator never has to
+// place a rec without a stop level. Sleeve-derived pct is on the
+// ticket already (pickDefaultTicket adds derivedStop + label). User
+// Aug 8: "in all BUY recs, I want the stop to be stated as well."
+function stopClause(ticket) {
+  if (!ticket || !(ticket.derivedStop > 0)) return "";
+  return ` · **Stop:** $${ticket.derivedStop.toFixed(2)} ${ticket.liveCcy} (${ticket.derivedStopPctLabel})`;
+}
+
 function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
@@ -1106,6 +1115,20 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     const usedCad = liveCcy === "CAD" ? usedNative
       : liveCcy === "USD" ? usedNative * fx : usedNative;
     const alternatives = filtered.slice(1, 4).join(" / ");
+    // Derived stop for every default-ticket BUY. Sleeve-aware because
+    // "if this breaks I'm wrong" means different things for a broad
+    // ETF vs a dividend bank vs a swing name. User Aug 8: "in all
+    // BUY recs, I want the stop to be stated as well." Percentage
+    // below live price:
+    //   CORE ETF   → -15% (regime-level break)
+    //   INCOME     → -12% (dividend cut / cost-basis broken)
+    //   SWING/SPEC → -8%  (matches sleeve enforcer hard stop)
+    const stopSleeve = classifyPosition({ ticker });
+    const stopPct = stopSleeve === "core" ? 0.15
+                  : stopSleeve === "income" ? 0.12
+                  : 0.08;
+    const derivedStop = live.price * (1 - stopPct);
+    const derivedStopPctLabel = `-${(stopPct * 100).toFixed(0)}%`;
     return {
       ticker,
       livePrice: live.price,
@@ -1114,6 +1137,8 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       usedNative,
       usedCad,
       alternatives,
+      derivedStop,
+      derivedStopPctLabel,
     };
   };
   const chunks = [];
@@ -1170,7 +1195,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     if (rebalTicket) {
       const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
       mandatoryLater.push(
-        `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}. **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}${describeTicker(rebalTicket.ticker)}`
+        `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}.${stopClause(rebalTicket)} **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}${describeTicker(rebalTicket.ticker)}`
       );
     } else {
       mandatoryLater.push(
@@ -1283,7 +1308,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           const usedNative = t.ticket.shares * t.ticket.livePrice;
           const altStr = t.ticket.alternatives ? ` · Alternatives: ${t.ticket.alternatives}` : "";
           mandatoryLater.push(
-            `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${altStr}${describeTicker(t.ticket.ticker)}`
+            `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${stopClause(t.ticket)}${altStr}${describeTicker(t.ticket.ticker)}`
           );
         });
       } else if (pools.length > 0) {
@@ -1454,7 +1479,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           const acctStr = acctLabel ? ` in **${acctLabel}**` : "";
           const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
           const usedNative = pairTicket.shares * pairTicket.livePrice;
-          const pairedLine = `   → **REDEPLOY (paired with TRIM above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}**${acctStr} @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${positionCcy} of the ~$${Math.round(excessNative).toLocaleString()} ${positionCcy} proceeds from ${base} TRIM. ${destSleeveLabel} sleeve — required destination.${altStr}${describeTicker(pairTicket.ticker)}`;
+          const pairedLine = `   → **REDEPLOY (paired with TRIM above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}**${acctStr} @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${positionCcy} of the ~$${Math.round(excessNative).toLocaleString()} ${positionCcy} proceeds from ${base} TRIM. ${destSleeveLabel} sleeve — required destination.${stopClause(pairTicket)}${altStr}${describeTicker(pairTicket.ticker)}`;
           mandatory.push(pairedLine);
         }
       }
@@ -1543,7 +1568,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           ? ` ${redirect.sleeve.toUpperCase()} sleeve is ${redirect.gap.toFixed(1)}pp underweight — this closes two gaps at once.`
           : "";
         mandatory.push(
-          `   → **IF EXIT — REDEPLOY** — Selling ${r.qty} sh ${r.ticker} at ~$${r.last.toFixed(2)} ${r.currency} raises ~$${Math.round(proceedsNative).toLocaleString()} ${r.currency}. After settle, BUY **${redeployTicket.shares} sh ${redeployTicket.ticker}** in **${acctLabel}** @ ~$${redeployTicket.livePrice.toFixed(2)} ${redeployTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${r.currency} of the proceeds. ${redirect.sleeve.toUpperCase()} sleeve — required destination.${gapNote}${altStr}${describeTicker(redeployTicket.ticker)}`
+          `   → **IF EXIT — REDEPLOY** — Selling ${r.qty} sh ${r.ticker} at ~$${r.last.toFixed(2)} ${r.currency} raises ~$${Math.round(proceedsNative).toLocaleString()} ${r.currency}. After settle, BUY **${redeployTicket.shares} sh ${redeployTicket.ticker}** in **${acctLabel}** @ ~$${redeployTicket.livePrice.toFixed(2)} ${redeployTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${r.currency} of the proceeds. ${redirect.sleeve.toUpperCase()} sleeve — required destination.${stopClause(redeployTicket)}${gapNote}${altStr}${describeTicker(redeployTicket.ticker)}`
         );
       }
     }
@@ -1625,7 +1650,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       if (pairTicket) {
         const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
         mandatory.push(
-          `   → **CORE DEPLOY (paired with SELL above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}** in **${r.account}** @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds from ${r.ticker} SELL (pro-forma). CORE gap ${coreGapPp.toFixed(1)}pp — required destination.${altStr}${describeTicker(pairTicket.ticker)}`
+          `   → **CORE DEPLOY (paired with SELL above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}** in **${r.account}** @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds from ${r.ticker} SELL (pro-forma). CORE gap ${coreGapPp.toFixed(1)}pp — required destination.${stopClause(pairTicket)}${altStr}${describeTicker(pairTicket.ticker)}`
         );
       } else {
         const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";
@@ -1711,7 +1736,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       if (trimTicket) {
         const altStr = trimTicket.alternatives ? ` · Alternatives: ${trimTicket.alternatives}` : "";
         mandatory.push(
-          `   → **CORE DEPLOY (paired with TRIM above)** — After the SPEC trim settles, BUY **${trimTicket.shares} sh ${trimTicket.ticker}** @ ~$${trimTicket.livePrice.toFixed(2)} ${trimTicket.liveCcy} (live). Uses ~${m(excessCad)} trim proceeds. Same-account CAD deploy. CORE gap ${coreGapPp.toFixed(1)}pp — required destination, not cash.${altStr}${describeTicker(trimTicket.ticker)}`
+          `   → **CORE DEPLOY (paired with TRIM above)** — After the SPEC trim settles, BUY **${trimTicket.shares} sh ${trimTicket.ticker}** @ ~$${trimTicket.livePrice.toFixed(2)} ${trimTicket.liveCcy} (live). Uses ~${m(excessCad)} trim proceeds. Same-account CAD deploy. CORE gap ${coreGapPp.toFixed(1)}pp — required destination, not cash.${stopClause(trimTicket)}${altStr}${describeTicker(trimTicket.ticker)}`
         );
       } else {
         mandatory.push(
