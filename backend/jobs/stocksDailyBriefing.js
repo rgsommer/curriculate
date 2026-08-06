@@ -56,6 +56,9 @@ import { computeCompliance, formatComplianceBlock } from "../services/stocksComp
 import { computeAttribution, formatAttributionBlock } from "../services/stocksAttribution.js";
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
 import { getMacroContext, formatMacroBlock } from "../services/stocksMacroContext.js";
+import { getMacroFred, formatMacroFredBlock } from "../services/stocksMacroFred.js";
+import { getInsiderSignalsForUser, formatInsiderSignalsBlock } from "../services/stocksInsiderSignals.js";
+import { getOptionsFlowForUser, formatOptionsFlowBlock } from "../services/stocksOptionsFlow.js";
 import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecycle.js";
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
@@ -597,6 +600,8 @@ F. TECHNICAL / FLOW (web_search Finviz / StockAnalysis / TradingView): 50/200-da
 G. MACRO: Fed/BoC rate decisions or commentary today; oil moves (ENB, SU, CNQ); USD/CAD daily move (any USD holding); VIX level (>20 elevated, >25 risk-off).
 
 Each top-7 holding must NAME at least one specific signal from A-G that informs the BUY/HOLD/TRIM/SELL call. No generic prose — cite the actual signal.
+
+Cross-reference insider transactions (INSIDER TRANSACTIONS block) and options flow (OPTIONS FLOW block) against the per-holding signals — a cluster buy PLUS unusual call volume PLUS positive sector rotation is a much stronger conviction signal than any one alone. Say so explicitly when two or more of these align on the same ticker.
 `;
 
 // Canadian tax + account-placement guidance — applied to every prompt
@@ -1730,7 +1735,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   return { md: chunks.join("\n").trim(), concentrationMandates };
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null, macroFred = null, insiderSignals = null, optionsFlow = null) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -1921,10 +1926,13 @@ ${summary.table}
 ${cashBlock}
 ${alertsBlock}
 ${formatLessonsBlock(lessons)}
+${formatMacroFredBlock(macroFred)}
 ${formatMacroBlock(macro)}
 ${formatFactorBlock(factors)}
 ${formatLifecycleBlock(lifecycle)}
 ${formatQuantSignalsBlock(quantSignals)}
+${formatInsiderSignalsBlock(insiderSignals)}
+${formatOptionsFlowBlock(optionsFlow)}
 ${formatRecentTradesBlock(recentTrades)}
 ${formatDailyPicksBlock(dailyPicks)}
 ${formatDiscoveryPoolBlock(discoveryPool)}
@@ -2382,7 +2390,7 @@ export async function generateBriefing(profile) {
   })();
 
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, macroFred, insiderSignals, optionsFlow] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -2454,6 +2462,18 @@ export async function generateBriefing(profile) {
     // score band + setup + MTF confluence so the AI can tilt toward
     // combinations that have historically paid off for them.
     computeCalibration(profile.email).catch((e) => { console.warn("[computeCalibration] warn:", e?.message); return null; }),
+    // Phase 2: FRED macro regime — deterministic yield-curve / credit /
+    // vol / FX numbers. Gated by FRED_API_KEY + FRED_DISABLED kill-switch;
+    // returns ok:false when off and formatter silent-omits.
+    getMacroFred().catch((e) => { console.warn("[macroFred] warn:", e?.message); return null; }),
+    // Phase 1: SEC Form 4 cluster-buy / cluster-sell signals for held +
+    // starred tickers. Signals are pre-computed by the nightly
+    // insider-sync cron; this just reads recent rows.
+    getInsiderSignalsForUser(profile).catch((e) => { console.warn("[insiderSignals] warn:", e?.message); return null; }),
+    // Phase 4: options-flow signals (UW-primary + Yahoo-fallback). Scans
+    // held + starred universe and persists results. Formatter silent-omits
+    // when no signals returned.
+    getOptionsFlowForUser(profile).catch((e) => { console.warn("[optionsFlow] warn:", e?.message); return null; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   const monitorStopHitRecs = monitorRes?.stopHitRecs || [];
@@ -2731,7 +2751,7 @@ export async function generateBriefing(profile) {
     quantSignals,
   });
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown);
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
