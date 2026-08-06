@@ -2380,9 +2380,13 @@ function PortfolioHealthChip({ user, regimeAndUoa }) {
     (max, [k, v]) => v > max.v ? { k, v } : max, { k: null, v: 0 }
   );
   const concPct = posTotal > 0 ? (largest.v / posTotal) * 100 : 0;
+  // Concentration tolerance band mirrors the §1 TRIM CONCENTRATION
+  // mandate (SINGLE_NAME_CAP_PCT 20% + 1pp tolerance). Rounding-level
+  // breaches (VOO at 20.9%) don't scream ACT — they're a "watch."
+  // Only ≥ 21% flips to red and matches the mandate firing.
   const concStatus = posTotal <= 0 ? null
     : concPct < 10 ? "ok"
-    : concPct < 20 ? "watch" : "act";
+    : concPct < 21 ? "watch" : "act";
 
   // 4) Cash zone — same LEAN / HEALTHY / AMPLE / HIGH bands the
   //    briefing enforcer uses. HEALTHY = 3-10%. AMPLE = 10-15%.

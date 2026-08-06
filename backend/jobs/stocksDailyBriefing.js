@@ -1267,6 +1267,15 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // ETFs at 25%+ each concentrates the same beta twice. Better to
   // spread CORE across 3-4 ETFs so no single one is >20%.
   const SINGLE_NAME_CAP_PCT = 20;
+  // Tolerance band above the cap — a rounding-level breach (e.g.
+  // VOO at 20.9%) triggering a $700 trim is worse than the breach
+  // itself once you factor in commission + FX + settlement drag on
+  // the paired REDEPLOY. Only fire the mandate when the position
+  // is materially over (≥ CAP + TOLERANCE_PP). User Aug 6 directive:
+  // "20.9 vs 20% is petty — the trim would likely land 19.8% and
+  // incur fees unnecessarily."
+  const SINGLE_NAME_CAP_TOLERANCE_PP = 1.0;
+  const SINGLE_NAME_CAP_FIRING_PCT = SINGLE_NAME_CAP_PCT + SINGLE_NAME_CAP_TOLERANCE_PP;
   const concByBase = {};
   for (const row of (b?.byPosition || [])) {
     if (!(row.cadValue > 0)) continue;
@@ -1319,7 +1328,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     // Sort worst-first so the largest concentration lands at the top of §1.
     const overCap = Object.entries(concByBase)
       .map(([base, info]) => ({ base, info, pct: (info.cad / bookForConc) * 100 }))
-      .filter(x => x.pct > SINGLE_NAME_CAP_PCT)
+      .filter(x => x.pct > SINGLE_NAME_CAP_FIRING_PCT)
       .sort((a, b) => b.pct - a.pct);
     for (const { base, info, pct } of overCap) {
       const excessCad = info.cad - (SINGLE_NAME_CAP_PCT / 100) * bookForConc;
