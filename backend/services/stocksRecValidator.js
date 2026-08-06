@@ -953,23 +953,51 @@ export async function computeUserExpectancy({ email, days = 90 }) {
   };
 }
 
+// Resolve the exchange symbol used to hit Yahoo/FMP. Mirrors resolveSymbol
+// in stocksTechnicals.js so a CAD-currency rec (e.g. TD @ CAD) fetches the
+// TSX listing (TD.TO) instead of the US ADR. Without this, the drift check
+// compares a rec entry priced in CAD against a US-listing price returned by
+// the bare ticker fetch — a systemic mismatch that misfires on every CAD
+// name (Aug 6 briefing showed TD current price coming from the US listing).
+function resolveExchangeSymbol(ticker, currency) {
+  const t = String(ticker || "").toUpperCase().trim();
+  if (!t) return t;
+  if (t.includes(".")) return t; // already exchange-qualified
+  if (currency === "CAD") return `${t}.TO`;
+  return t;
+}
+
 // Pre-fetch live cross-checked prices for the tickers a rec batch
 // references. Pass through to ctx.livePrices via buildValidatorContext
 // so ruleLivePriceDrift can consult per-ticker prices synchronously.
 // Rejects nothing on fetch failure — a ticker with no live data just
-// disables the drift check for that rec (the rule already no-ops).
+// disables the drift check for that rule (the rule already no-ops).
+//
+// Keyed by the BARE rec ticker (the rule reads livePrices[rec.ticker]),
+// but the fetch itself uses the currency-aware exchange symbol so the
+// price actually reflects the exchange the rec was authored against.
 //
 // fetchOne is imported lazily to avoid the routes → services import
 // cycle that would form if this file top-level imported stocksPrices.
 export async function fetchLivePricesForRecs(recs) {
   if (!Array.isArray(recs) || recs.length === 0) return {};
   const { fetchOne } = await import("../routes/stocksPrices.js");
-  const uniqueTickers = [...new Set(recs.map(r => String(r.ticker || "").toUpperCase()).filter(Boolean))];
-  const entries = await Promise.all(uniqueTickers.map(async (t) => {
+  // Dedupe per (rec-ticker, currency). Two recs on the same bare ticker
+  // in different currency accounts (rare but possible) both get their
+  // correct listings; the keyed output still maps back to the bare
+  // ticker the drift rule looks up.
+  const bareByExchange = new Map(); // exchangeSym → bare rec ticker
+  for (const r of recs) {
+    const bare = String(r.ticker || "").toUpperCase().trim();
+    if (!bare) continue;
+    const sym = resolveExchangeSymbol(bare, r.entryCurrency || "USD");
+    if (!bareByExchange.has(sym)) bareByExchange.set(sym, bare);
+  }
+  const entries = await Promise.all([...bareByExchange.entries()].map(async ([sym, bare]) => {
     try {
-      const live = await fetchOne(t);
-      return [t, live];
-    } catch { return [t, null]; }
+      const live = await fetchOne(sym);
+      return [bare, live];
+    } catch { return [bare, null]; }
   }));
   const out = {};
   for (const [t, live] of entries) if (live) out[t] = live;

@@ -399,6 +399,20 @@ export function computeTechnicalsFromPoints(points, currency = null) {
   if (!Array.isArray(points) || points.length < 50) return { ok: false, reason: "insufficient history" };
   const closes = points.map((p) => p.close);
   const last = closes[closes.length - 1];
+  // Flat-close data guard. When Yahoo returns a data hole (e.g. only
+  // today's bar populated with the rest padded to the same value, or a
+  // scraped page that keeps yielding "current price" for every bar in
+  // the series), the last 60 closes come back identical. That makes
+  // ATR == 0 → trailStopAtrAdjusted == high60d == last → trailStopBreach
+  // = TRUE for every held position with the bad fetch. The August 6
+  // briefing showed SU and CNQ firing false trail-stop reviews with
+  // "60d high == current, drawdown 0.0%" — exactly this shape. Refuse
+  // to compute anything on a flat series so the mandate skips these
+  // positions instead of misfiring.
+  const last60 = closes.slice(-60);
+  if (last60.length > 0 && last60.every((c) => c === last)) {
+    return { ok: false, reason: "flat-close-history" };
+  }
   const sma20 = sma(closes, 20);
   const sma50 = sma(closes, 50);
   const sma200 = sma(closes, 200);
@@ -430,7 +444,6 @@ export function computeTechnicalsFromPoints(points, currency = null) {
   // below the trailing stop → position has given back its recent gains
   // and the operator must decide: EXIT / TIGHTEN / DOCUMENT a hold.
   // Drives the §1 TRAIL STOP REVIEW mandate in the daily briefing.
-  const last60 = closes.slice(-60);
   const high60d = last60.length > 0 ? Math.max(...last60) : null;
   const trailStopAtrAdjusted = (high60d != null && atr14 != null)
     ? high60d - 2.5 * atr14 : null;
@@ -482,6 +495,22 @@ export async function getTechnicals(ticker, currency = null, opts = {}) {
     const { points, currency: nativeCcy } = await fetchDailyOHLC(sym, 260);
     if (points.length < 50) {
       data = { ok: false, reason: "insufficient history" };
+    } else if ((function () {
+      // Flat-close data guard: last 60 closes all identical → the fetch
+      // returned dummy data (or a service returned only today's price
+      // repeatedly). ATR collapses to 0, trailStopAtrAdjusted collapses
+      // to high60d == last, and trailStopBreach fires for every held
+      // position. Refuse to compute technicals so the §1 TRAIL STOP
+      // REVIEW mandate skips these positions instead of emitting a
+      // "60d high = current, drawdown 0.0%" false positive (see the
+      // Aug 6 briefing for SU and CNQ).
+      const c = points.map(p => p.close);
+      const l = c[c.length - 1];
+      const w = c.slice(-60);
+      return w.length > 0 && w.every(x => x === l);
+    })()) {
+      console.warn(`[technicals] ${sym}: flat-close-history detected (all last-60 closes == ${points[points.length - 1].close}) — skipping compute`);
+      data = { ok: false, reason: "flat-close-history" };
     } else {
       const closes = points.map(p => p.close);
       const last = closes[closes.length - 1];
