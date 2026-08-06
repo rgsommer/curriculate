@@ -37,6 +37,7 @@ import { getSectorRotation, formatSectorRotationBlock, formatSectorTiltLine, get
 import { computeCorrelations, formatCorrelationBlock } from "../services/stocksPortfolioCorrelation.js";
 import { getFedLiquidity, formatFedLiquidityBlock } from "../services/stocksFedLiquidity.js";
 import { getCongressionalTradesForTickers, formatCongressionalBlock } from "../services/stocksCongressional.js";
+import { getLatestWhaleFilings, format13FBlock } from "../services/stocks13F.js";
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
@@ -1804,7 +1805,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   return { md: chunks.join("\n").trim(), concentrationMandates };
 }
 
-function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null, macroFred = null, insiderSignals = null, optionsFlow = null, marketPulse = null) {
+function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null, macroFred = null, insiderSignals = null, optionsFlow = null, marketPulse = null, whale13F = []) {
   const today = new Date().toISOString().slice(0, 10);
   const commission = Number(profile.commissionPerTrade ?? 9.95);
   const fxSpread = Number(profile.fxSpreadPct ?? 1.5);
@@ -2010,6 +2011,7 @@ ${formatSectorRotationBlock(sectorRotation)}
 ${formatCorrelationBlock(correlations)}
 ${formatFedLiquidityBlock(fedLiquidity)}
 ${formatCongressionalBlock(congressional)}
+${format13FBlock(whale13F)}
 ${formatPositionStopBlock(monitorPositionStops(profile.positions || [], profile.accounts || []))}
 ${formatSleeveBalanceBlock(computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets))}
 ${formatCalibrationBlock(calibration)}
@@ -2472,7 +2474,7 @@ export async function generateBriefing(profile) {
   })();
 
   // Run all upstream signals in parallel
-  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, macroFred, insiderSignals, optionsFlow, marketPulse] = await Promise.all([
+  const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, macroFred, insiderSignals, optionsFlow, marketPulse, whale13F] = await Promise.all([
     monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
     computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
     getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
@@ -2559,6 +2561,10 @@ export async function generateBriefing(profile) {
     // Time-of-day-aware price pulse — pre-market gap / intraday last-few-hours /
     // last-session-into-close, per holding, with %chg + momentum + rel-volume.
     computeMarketPulse(profile).catch((e) => { console.warn("[computeMarketPulse] warn:", e?.message); return null; }),
+    // 13F institutional whale filings (curated list, weekly-sync'd from SEC EDGAR,
+    // 45-day filing lag). Read-only here; the stocks13FSync cron populates the
+    // collection. Formatter silent-omits when no whales persisted yet.
+    getLatestWhaleFilings().catch((e) => { console.warn("[whale13F] warn:", e?.message); return []; }),
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   const monitorStopHitRecs = monitorRes?.stopHitRecs || [];
@@ -2844,7 +2850,7 @@ export async function generateBriefing(profile) {
     pickGateStatus,
   });
 
-  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow, marketPulse);
+  const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow, marketPulse, whale13F);
 
   // Anthropic call with retry-on-truncation + prompt caching. The static
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
