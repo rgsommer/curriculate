@@ -373,6 +373,50 @@ function ruleHorizonDeclaration({ rec, ctx }) {
 // are what regime hostility is meant to suppress. Composes cleanly
 // with ruleSectorLaggardBuy (which handles a narrower "hostile AND
 // laggard sector" case for CORE-adjacent tickers).
+// Horizon ↔ stop-regime matching. The forbidden combos are (a) a
+// short horizon with a wide stop (thesis clock runs out long before
+// the stop matters — you're really running a long-hold with a fake
+// exit plan) and (b) a long horizon with a tight stop (normal noise
+// stops you out weeks before the thesis has time to work). Per user
+// Aug 5 overhaul spec §2 — the primary source of the well-behind
+// cluster is horizon/stop mismatch on entry.
+//
+// Bands (stop distance = |entry - stop| / entry × 100):
+//   short  ≤ 45d  → 3–8% stop  (tight ATR/percentage — no overrides)
+//   medium 46–180d → 5–15% stop
+//   long   ≥ 181d → 8–30% stop (volatility stop or time-based review)
+//
+// Skips SELL/TRIM/EXIT (exit-side has no horizon concept) and any
+// rec where entryPrice or stopPrice is missing (other rules catch
+// those).
+function ruleHorizonStopMatch({ rec, ctx }) {
+  const action = String(rec.action || "").toUpperCase();
+  if (action === "HOLD" || action === "SELL" || action === "TRIM" || action === "EXIT") return { ok: true };
+  if (!(rec.horizonDays > 0)) return { ok: true }; // ruleHorizonDeclaration handles this
+  if (!(rec.entryPrice > 0) || !(rec.stopPrice > 0)) return { ok: true }; // stop rule handles
+  const stopPct = Math.abs(rec.entryPrice - rec.stopPrice) / rec.entryPrice * 100;
+  const h = rec.horizonDays;
+  let allowedMin, allowedMax, band;
+  if (h <= 45) { allowedMin = 3; allowedMax = 8; band = "short (≤45d)"; }
+  else if (h <= 180) { allowedMin = 5; allowedMax = 15; band = "medium (46-180d)"; }
+  else { allowedMin = 8; allowedMax = 30; band = "long (≥181d)"; }
+  if (stopPct < allowedMin) {
+    return {
+      ok: false,
+      reason: "horizon-stop-mismatch-too-tight",
+      detail: `${rec.action} ${rec.ticker} horizon ${h}d (${band}) with stop only ${stopPct.toFixed(1)}% from entry. Too tight for the holding period — normal noise will stop you out weeks before the thesis has time to work. Minimum for this horizon: ${allowedMin}%. Either widen the stop or shorten the horizon.`,
+    };
+  }
+  if (stopPct > allowedMax) {
+    return {
+      ok: false,
+      reason: "horizon-stop-mismatch-too-wide",
+      detail: `${rec.action} ${rec.ticker} horizon ${h}d (${band}) with stop ${stopPct.toFixed(1)}% from entry. Too wide for the horizon — the thesis clock runs out long before the stop matters. Maximum for this horizon: ${allowedMax}%. Either tighten the stop or lengthen the horizon.`,
+    };
+  }
+  return { ok: true };
+}
+
 function ruleRegimeHostileNoNewSwingSpec({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   const regimeLabel = String(ctx.tradingRegime?.label || ctx.tradingRegime?.regime || "").toLowerCase();
@@ -393,6 +437,7 @@ const RULES = [
   // classifier / live-price / sleeve rules.
   ruleSleeveDeclaration,
   ruleHorizonDeclaration,
+  ruleHorizonStopMatch,
   ruleSpecCapHard,
   ruleCoreGapWidening,
   ruleSingleNameCap,

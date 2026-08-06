@@ -1327,9 +1327,15 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         destSleeveLabel = underweightRedirect.sleeve.toUpperCase();
       } else if (info.sleeve === "core") {
         sleeveNote = ` CORE ETFs are not exempt — ${pct.toFixed(1)}% in one broad-market ETF is still ${pct.toFixed(1)}% of book tied to one index. Redeploy the trim into a DIFFERENT CORE ETF (prefer a different geography — trimming a US ETF like VOO/VTI/QQQ into another US ETF just rotates the same beta; route to XEQT / VUN / XIU for real diversification) rather than a new sleeve.`;
+        // Cross-currency CORE routing: when trimming a US CORE ETF for
+        // concentration, prefer a CAD-listed global/Canadian CORE ETF
+        // to actually reduce US-market beta. Accepts the FX conversion
+        // cost — it's a one-time hit vs the ongoing risk of doubled US
+        // beta by rotating VOO → VTI (both US total-market). Trimming
+        // a CAD CORE ETF keeps the current same-currency routing.
         destList = positionCcy === "CAD"
           ? ["XEQT.TO", "VUN.TO", "XIU.TO"].filter(t => t.split(".")[0] !== base)
-          : ["VOO", "VTI", "QQQ"].filter(t => t !== base);
+          : ["XEQT.TO", "VUN.TO", "XIU.TO"]; // USD sale → CAD non-US CORE (FX-convert)
         destSleeveLabel = "CORE";
       } else {
         sleeveNote = " Single-name blow-ups are the loss zone.";
@@ -1638,6 +1644,15 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   const regimeHostile = /risk[- ]?off|hostile|bear|contract|distribut/i.test(regimeLabel);
   if (regimeHostile) {
     forbidden.push(`**No new SWING or SPEC entries** — regime detector flags **${tradingRegime?.label || tradingRegime?.regime}**. Only CORE ETF adds allowed until regime turns constructive.`);
+  }
+  // Cash cap by regime (user Aug 5 overhaul §5). Trending regime =
+  // 12% cash max; risk-off = 18% max. Above the cap → deploy per §1
+  // DEPLOY CASH (auto-fired above CASH_HIGH_PCT). Cap here is a hard
+  // rule surface so the reader sees "you're over the cap" explicitly.
+  // Uses cashPct + regimeHostile computed above.
+  const cashCapPct = regimeHostile ? 18 : 12;
+  if (cashPct > cashCapPct) {
+    forbidden.push(`**Cash over ${cashCapPct}% cap** — currently ${cashPct.toFixed(1)}% (${regimeHostile ? "risk-off" : "trending"} regime cap: ${cashCapPct}%). Idle cash is opportunity-cost drag; deploy per §1 DEPLOY CASH mandate, do not accumulate more.`);
   }
   // Sector-hostile gate: when regime is hostile AND we have sector
   // rotation data, block any new BUY whose sector is in the bottom-3
@@ -3018,7 +3033,16 @@ export async function generateBriefing(profile) {
         return false;
       }).join("\n");
       md = md.replace(/\n{3,}/g, "\n\n");
-      console.log(`[concentration] enforced ${canonicalsByBase.size} canonical mandate line(s): ${remainingKeys.join(", ")}`);
+      // Anti-drift telemetry (user Aug 5 overhaul §5 — "make sizing
+      // stable"). Log the exact excess dollar figure enforced for each
+      // ticker so any future divergence between briefs is immediately
+      // visible in log grep, not inferred from the email output.
+      const summaryParts = [];
+      for (const [base, canonical] of canonicalsByBase.entries()) {
+        const excessMatch = canonical.match(/Trim\s+~\$([\d,]+)\s+CAD/i);
+        summaryParts.push(`${base}=${excessMatch ? "$" + excessMatch[1] : "?"}`);
+      }
+      console.log(`[concentration] enforced ${canonicalsByBase.size} canonical mandate line(s) — ${summaryParts.join(" · ")}`);
     }
 
     // Phantom-ticker guard: drop any line whose SELL/EXIT/TRIM action
