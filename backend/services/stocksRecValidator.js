@@ -79,6 +79,22 @@ function baseTicker(t) {
   return String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
 }
 
+// Whitelist of allowed smart-money signal sources. When a SPEC BUY
+// declares one of these, the thesis IS "follow the smart money" —
+// congressional trades / Form 4 insider clusters / unusual options
+// flow — and the standard SPEC gate (thesisHorizonMonths + structural
+// driver text) is bypassed. In exchange, position size is HARD-CAPPED
+// at 0.5% of book per rec (per-rec) and 2% of book aggregate across
+// the batch. This prevents the AI from rebadging a chart-pattern pick
+// as a smart-money-follow to sneak past the SPEC gate.
+const SMART_MONEY_SIGNAL_SOURCES = new Set([
+  "congressional-follow",
+  "insider-cluster-buy",
+  "unusual-options-flow",
+]);
+const SMART_MONEY_PER_REC_CAP_PCT = 0.5;   // 0.5% of book per position
+const SMART_MONEY_AGGREGATE_CAP_PCT = 2.0; // 2% of book across all smart-money BUYs in the batch
+
 // ─────────────────────────────────────────────────────────────────────
 // Individual gate functions. Each: (rec, ctx) → { ok, reason?, detail? }
 // ─────────────────────────────────────────────────────────────────────
@@ -452,6 +468,16 @@ function ruleHighConvictionSpecGate({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   const sleeve = String(rec.sleeve || "").toLowerCase();
   if (sleeve !== "spec") return { ok: true };
+  // Smart-money-follow bypass. When the SPEC thesis IS "piggyback a
+  // public congressional / insider / options-flow filing", the SPEC
+  // gate's thesisHorizonMonths + structuralDriver checks don't apply
+  // — the smart-money signal IS the thesis. Size is capped separately
+  // by ruleSmartMoneySizeCap (per-rec) + ruleBatchSmartMoneyAggregateCap
+  // (batch), so the bypass can't be abused to load up on a name.
+  if (SMART_MONEY_SIGNAL_SOURCES.has(String(rec.signalSource || "").toLowerCase())) {
+    console.log(`[spec-gate] smart-money bypass for BUY ${rec.ticker} via ${rec.signalSource}`);
+    return { ok: true };
+  }
   const months = Number(rec.thesisHorizonMonths);
   if (!Number.isFinite(months) || months < 3) {
     return {
@@ -505,6 +531,33 @@ function ruleHighConvictionSpecGate({ rec, ctx }) {
   return { ok: true };
 }
 
+// Smart-money-follow position size cap. When a BUY declares a
+// signalSource in SMART_MONEY_SIGNAL_SOURCES, the SPEC gate is
+// bypassed but the position is HARD-CAPPED at 0.5% of book. This
+// prevents the bypass from being abused to size a nominal-thesis
+// BUY at normal SPEC weight. Missing sleeveBalance.book → no-op
+// (don't block on missing data). The 2% aggregate cap across all
+// smart-money BUYs in a batch is enforced by ruleBatchSmartMoneyAggregateCap.
+function ruleSmartMoneySizeCap({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  const src = String(rec.signalSource || "").toLowerCase();
+  if (!SMART_MONEY_SIGNAL_SOURCES.has(src)) return { ok: true };
+  const bookCad = ctx.sleeveBalance?.book;
+  if (!(bookCad > 0)) return { ok: true };
+  const shares = rec.shares;
+  const price = rec.entryPrice;
+  if (!(shares > 0) || !(price > 0)) return { ok: true }; // unsized rec — skip
+  const fx = ctx.fxUsdCad || 1.37;
+  const positionCad = rec.entryCurrency === "USD" ? shares * price * fx : shares * price;
+  const positionPct = (positionCad / bookCad) * 100;
+  if (positionPct <= SMART_MONEY_PER_REC_CAP_PCT) return { ok: true };
+  return {
+    ok: false,
+    reason: "smart-money-position-cap",
+    detail: `BUY ${shares} sh ${rec.ticker} @ $${price} (${rec.entryCurrency || "USD"}) via ${src} would size to ${positionPct.toFixed(2)}% of book, above the ${SMART_MONEY_PER_REC_CAP_PCT}% per-position cap for smart-money-follow entries. Piggyback trades ride other people's conviction — size accordingly. Downsize to ≤ ${Math.floor((SMART_MONEY_PER_REC_CAP_PCT / 100 * bookCad) / (rec.entryCurrency === "USD" ? price * fx : price))} shares or drop the rec.`,
+  };
+}
+
 function ruleRegimeHostileNoNewSwingSpec({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   const regimeLabel = String(ctx.tradingRegime?.label || ctx.tradingRegime?.regime || "").toLowerCase();
@@ -527,6 +580,7 @@ const RULES = [
   ruleHorizonDeclaration,
   ruleHorizonStopMatch,
   ruleHighConvictionSpecGate,
+  ruleSmartMoneySizeCap,
   ruleSpecCapHard,
   ruleCoreGapWidening,
   ruleSingleNameCap,
@@ -764,9 +818,53 @@ function ruleSectorLaggardBuy({ rec, ctx }) {
 // ctx.tradingRegime; both are optional (rule no-ops if absent).
 RULES.push(ruleSectorLaggardBuy);
 
+// Aggregate smart-money-follow exposure cap. Sums the CAD value of
+// every accepted BUY that declares a smart-money signalSource; if the
+// batch total exceeds SMART_MONEY_AGGREGATE_CAP_PCT of book, reject
+// the smallest-first until the pool fits under the cap. Rejecting
+// smallest-first (rather than largest-first) keeps the highest-signal
+// / highest-conviction smart-money entries and drops the marginal
+// piles-on. Missing sleeveBalance.book → no-op.
+function ruleBatchSmartMoneyAggregateCap(recs, ctx) {
+  const bookCad = ctx.sleeveBalance?.book;
+  if (!(bookCad > 0)) return [];
+  const fx = ctx.fxUsdCad || 1.37;
+  const list = recs || [];
+  const smart = [];
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (r.action !== "BUY") continue;
+    const src = String(r.signalSource || "").toLowerCase();
+    if (!SMART_MONEY_SIGNAL_SOURCES.has(src)) continue;
+    const shares = r.shares || 0;
+    const price = r.entryPrice || 0;
+    if (!(shares > 0) || !(price > 0)) continue;
+    const cad = r.entryCurrency === "USD" ? shares * price * fx : shares * price;
+    smart.push({ recIndex: i, cad, rec: r });
+  }
+  const totalCad = smart.reduce((s, x) => s + x.cad, 0);
+  const capCad = (SMART_MONEY_AGGREGATE_CAP_PCT / 100) * bookCad;
+  if (totalCad <= capCad) return [];
+  // Sort ascending — reject smallest-first until we fit under the cap.
+  smart.sort((a, b) => a.cad - b.cad);
+  const rejections = [];
+  let running = totalCad;
+  for (const entry of smart) {
+    if (running <= capCad) break;
+    rejections.push({
+      recIndex: entry.recIndex,
+      reason: "smart-money-aggregate-cap",
+      detail: `BUY ${entry.rec.ticker} rejected — batch smart-money-follow exposure ($${Math.round(totalCad).toLocaleString()} CAD across ${smart.length} recs) exceeds the ${SMART_MONEY_AGGREGATE_CAP_PCT}% aggregate cap ($${Math.round(capCad).toLocaleString()} CAD). Smart-money piggybacks are HIGH-VOL by construction — the aggregate cap prevents them from becoming a stealth sleeve. Dropped smallest-first; keep the highest-conviction few.`,
+    });
+    running -= entry.cad;
+  }
+  return rejections;
+}
+
 const BATCH_RULES = [
   ruleBatchPairedRedeploy,
   ruleAccountFragmentation,
+  ruleBatchSmartMoneyAggregateCap,
 ];
 
 // ─────────────────────────────────────────────────────────────────────

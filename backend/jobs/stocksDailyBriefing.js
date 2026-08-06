@@ -678,6 +678,7 @@ Block rules:
 - orderTiming = one of the four values above (REQUIRED — same vocabulary the narrative uses).
 - thesisHorizonMonths = REQUIRED for any BUY where sleeve = "spec". Integer months (≥ 3) the thesis is expected to play out independent of intraday noise. Prevents chart patterns from being sold as multi-quarter theses. Missing or < 3 → validator rejects the rec.
 - structuralDriver = REQUIRED for any BUY where sleeve = "spec". Short string (≥ 15 chars) naming the durable catalyst: regulatory tailwind, secular demand shift, macro regime shift, new product cycle, etc. "Pocket pivot scored 84" / "bull flag" / "RSI oversold" are NOT structural drivers — they are chart patterns. If the SPEC bet doesn't have a multi-quarter forcing function, don't emit it.
+- signalSource = OPTIONAL, one of "congressional-follow" | "insider-cluster-buy" | "unusual-options-flow". Set this ONLY when the SPEC BUY thesis IS literally "follow the smart money" — the CONGRESSIONAL TRADES / INSIDER SIGNALS / OPTIONS FLOW blocks above surfaced a real signal on THIS ticker and you're piggybacking that filing. When set, the SPEC gate bypasses thesisHorizonMonths + structuralDriver (the smart-money signal IS the thesis), BUT the position is HARD-CAPPED at 0.5% of book per rec and 2% of book aggregate across all smart-money-follow BUYs in the batch. Do NOT set signalSource when the thesis is your own analysis — only when literally piggybacking a public smart-money filing. Do NOT set it to sneak a chart-pattern pick past the SPEC gate — the size cap makes it not worth it, and mislabelling is process fraud.
 - No code fences, no prose inside <RECS>...</RECS>, nothing after </RECS>.
 - Zero actionable recs → emit "<RECS>[]</RECS>". Never omit the block.
 `;
@@ -2363,6 +2364,18 @@ function extractRecsFromJsonBlock(text) {
       thesisHorizonMonths: Number.isFinite(+r.thesisHorizonMonths) ? +r.thesisHorizonMonths : null,
       structuralDriver: typeof r.structuralDriver === "string" && r.structuralDriver.trim()
         ? r.structuralDriver.trim() : null,
+      // Smart-money-follow bypass field. Set only when the SPEC thesis
+      // IS piggybacking a public smart-money filing (congressional
+      // trade / Form 4 cluster / unusual options flow). When present
+      // (and a member of the whitelist), the validator bypasses the
+      // SPEC gate but hard-caps position size at 0.5% of book per rec
+      // + 2% aggregate across the batch. Anything not in the
+      // whitelist parses to null so the bypass can't be triggered
+      // with an arbitrary string.
+      signalSource: (function () {
+        const s = typeof r.signalSource === "string" ? r.signalSource.trim().toLowerCase() : "";
+        return ["congressional-follow", "insider-cluster-buy", "unusual-options-flow"].includes(s) ? s : null;
+      })(),
     });
   }
   return out;
