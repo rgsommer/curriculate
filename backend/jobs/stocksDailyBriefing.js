@@ -891,13 +891,29 @@ function formatRecentTradesBlock(recentTrades) {
 
 function formatDailyPicksBlock(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
-  const lines = dailyPicks.map((p, i) => {
-    const sleeveTag = classifyPosition({ ticker: p.ticker });
-    return `Pick ${i + 1} [sleeve=${sleeveTag}]: ${p.ticker} @ $${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · score ${p.deterministicScore}${p.setupName ? ` · setup: ${p.setupName}` : ""}${p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : ""}\n    · ${p.rationale}`;
-  });
-  return `\nTODAY'S ${dailyPicks.length} SWING-TRADE PICKS (deterministic composite, sleeve-tagged — must appear in briefing under a "## 🎯 Today's Swing-Trade Picks" section, one narrative paragraph per pick, and MUST appear in the trailing <RECS> block):
-${lines.join("\n")}
-`;
+  // Split into allowed vs blocked. Blocked picks are demoted to a
+  // one-line Watch List entry in §A3 only — no §4 narrative, no
+  // scoring paragraph, no <RECS> entry. Per user Aug 5 directive:
+  // "recommending something and simultaneously saying it's forbidden"
+  // creates cognitive noise + encourages override — silent surface
+  // as Watch List only.
+  const allowed = dailyPicks.filter(p => !p.blockedReason);
+  const blocked = dailyPicks.filter(p => p.blockedReason);
+  const parts = [];
+  if (allowed.length > 0) {
+    const lines = allowed.map((p, i) => {
+      const sleeveTag = classifyPosition({ ticker: p.ticker });
+      return `Pick ${i + 1} [sleeve=${sleeveTag}]: ${p.ticker} @ $${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · score ${p.deterministicScore}${p.setupName ? ` · setup: ${p.setupName}` : ""}${p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : ""}\n    · ${p.rationale}`;
+    });
+    parts.push(`\nTODAY'S ${allowed.length} SWING-TRADE PICKS (deterministic composite, sleeve-tagged — must appear in briefing under a "## 🎯 Today's Swing-Trade Picks" section, one narrative paragraph per pick, and MUST appear in the trailing <RECS> block):
+${lines.join("\n")}`);
+  }
+  if (blocked.length > 0) {
+    const lines = blocked.map(p => `  ${p.ticker} @ ~$${p.entryPrice.toFixed(2)} — BLOCKED (${p.blockedReason}).`);
+    parts.push(`\nBLOCKED DAILY-PICK CANDIDATES — DO NOT SURFACE AS SWING PICKS. For each, emit EXACTLY ONE line inside §A3 Watch List: "TICKER — set GTC alert near ~$X, unblocks when [condition]." NO §4 narrative, NO §7/§8 SPEC/SWING entry, NO scoring rationale, NO setup-name paragraph, NO entry in the trailing <RECS> block. If they wouldn't already have a Watch List entry, this is their ONLY appearance in the brief. Emitting these as anything other than a one-line Watch List alert is a compliance violation.
+${lines.join("\n")}`);
+  }
+  return parts.join("\n") + "\n";
 }
 
 // Top Discovery candidates — sourcing pool for the SPEC sleeve in
@@ -2613,6 +2629,37 @@ export async function generateBriefing(profile) {
   // for the scope + rationale.
   const stopMonitor = monitorPositionStops(profile.positions || [], profile.accounts || []);
   const sleeveBalanceForPrefix = computeSleeveBalance(profile.positions || [], profile.fxUsdCad || 1.37, profile.sleeveTargets);
+
+  // Annotate each daily pick with a blockedReason if the current
+  // portfolio state would prevent it being placed today. Blocked
+  // picks are demoted to Watch List one-liners only — no §4/§7
+  // narrative, no <RECS> entry. Same gates the prefix uses:
+  // coreLockActive (>10pp under target), specOver (over cap),
+  // regime hostile. Sleeve derived from ticker classifier so no
+  // AI declaration needed. Mutates dailyPicks in place — the same
+  // array is passed to buildBriefingPrompt below and to persisted
+  // pick storage elsewhere, so annotation is visible everywhere.
+  {
+    const _b = sleeveBalanceForPrefix;
+    const _coreGapPp = _b?.actualPct?.core != null && _b?.targetsPct?.core != null
+      ? _b.targetsPct.core - _b.actualPct.core : 0;
+    const _coreLockActive = _coreGapPp > 10;
+    const _specOver = !!_b?.specOverLimit;
+    const _regimeLabel = String(tradingRegime?.label || tradingRegime?.regime || "").toLowerCase();
+    const _regimeHostile = /risk[- ]?off|hostile|bear|contract|distribut/i.test(_regimeLabel);
+    let blockedCount = 0;
+    for (const pick of (dailyPicks || [])) {
+      const sleeve = classifyPosition({ ticker: pick.ticker });
+      let reason = null;
+      if (_coreLockActive && sleeve !== "core") reason = `CORE ${_coreGapPp.toFixed(1)}pp underweight — only CORE ETF buys allowed today`;
+      else if (_specOver && sleeve === "spec") reason = `SPEC sleeve at/over 5% cap`;
+      else if (_regimeHostile && (sleeve === "swing" || sleeve === "spec")) reason = `regime ${tradingRegime?.label || tradingRegime?.regime} — no new SWING/SPEC entries`;
+      if (reason) { pick.blockedReason = reason; blockedCount++; }
+    }
+    if (blockedCount > 0) {
+      console.log(`[pick-gate] ${blockedCount}/${(dailyPicks || []).length} daily picks demoted to Watch List — ${(dailyPicks || []).filter(p => p.blockedReason).map(p => `${p.ticker}=${p.blockedReason}`).join("; ")}`);
+    }
+  }
   // Derive base-ticker list of names the operator SOLD in the last
   // ~7 days so the DEPLOY CASH mandate doesn't suggest a ticker they
   // just hard-stopped out of. Same-day recommend-what-you-just-exited
