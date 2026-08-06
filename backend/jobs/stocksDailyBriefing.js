@@ -1097,7 +1097,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // below the SELL/TRIM section so proceeds are available.
   if (coreLockActive) {
     const gap = Math.abs(b.rebalanceCad?.core || 0);
-    const rebalTicket = pickDefaultTicket(["XEQT", "VUN", "XIU"], gap, "CAD");
+    const rebalTicket = pickDefaultTicket(["XEQT.TO", "VUN.TO", "XIU.TO"], gap, "CAD");
     if (rebalTicket) {
       const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
       mandatoryLater.push(
@@ -1501,7 +1501,10 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     );
     if (coreLockActive && proceeds > 0) {
       const proceedsCad = r.currency === "CAD" ? proceeds : proceeds * (fxUsdCad || 1.37);
-      const coreList = r.currency === "CAD" ? ["XEQT", "VUN", "XIU"] : ["VOO", "VTI", "QQQ"];
+      // .TO suffix on CAD tickers so price lookup matches how
+      // MANDATE_DEFAULT_TICKERS pre-fetches them; bare "XEQT" would
+      // miss and fall through to the "pick manually" degrade path.
+      const coreList = r.currency === "CAD" ? ["XEQT.TO", "VUN.TO", "XIU.TO"] : ["VOO", "VTI", "QQQ"];
       const pairTicket = pickDefaultTicket(coreList, proceedsCad, r.currency);
       if (pairTicket) {
         const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
@@ -1588,7 +1591,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       `**TRIM SPEC** — SPEC sleeve is ${m(excessCad)} over the ${b.targetsPct.spec.toFixed(0)}% cap (currently ${b.actualPct.spec.toFixed(1)}%).${largest ? ` Largest spec name: **${largest[0]}** (${m(largest[1])}) — trim first.` : ""} Proceeds route to CORE (see rebalance mandate) or cash.`
     );
     if (coreLockActive) {
-      const trimTicket = pickDefaultTicket(["XEQT", "VUN", "XIU"], excessCad, "CAD");
+      const trimTicket = pickDefaultTicket(["XEQT.TO", "VUN.TO", "XIU.TO"], excessCad, "CAD");
       if (trimTicket) {
         const altStr = trimTicket.alternatives ? ` · Alternatives: ${trimTicket.alternatives}` : "";
         mandatory.push(

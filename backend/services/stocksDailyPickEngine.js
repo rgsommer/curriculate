@@ -87,6 +87,8 @@ async function computeBannedSetups(email) {
 const KILL_MIN_HIT_RATE_PCT = 40;    // 30d hit rate must clear this
 const KILL_MIN_AVG_PNL_PCT = -1.5;   // 30d avg pnl must clear this
 const KILL_MIN_SAMPLE_SIZE = 5;      // need at least this many scored recs to judge
+const CANARY_WINDOW_DAYS = 7;        // always let at least 1 pick through per rolling window
+const CANARY_MAX_PICKS = 1;          // even when the kill switch is suppressing
 async function shouldSuppressPicks(email) {
   try {
     const lessons = await computeLessons(email);
@@ -94,20 +96,44 @@ async function shouldSuppressPicks(email) {
     if (!t30 || t30.total < KILL_MIN_SAMPLE_SIZE) {
       // Not enough data to judge — let the engine run. Once ≥5 scored
       // recs land in the 30d window the metric-based gate takes over.
-      return { suppress: false, reason: `sample too small (${t30?.total || 0} < ${KILL_MIN_SAMPLE_SIZE})` };
+      return { suppress: false, reason: `sample too small (${t30?.total || 0} < ${KILL_MIN_SAMPLE_SIZE})`, canary: false };
     }
-    if (t30.hitRate < KILL_MIN_HIT_RATE_PCT) {
-      return { suppress: true, reason: `30d hit rate ${t30.hitRate.toFixed(0)}% < ${KILL_MIN_HIT_RATE_PCT}% floor (${t30.wins}/${t30.total} wins). Engine is destroying capital — no new picks until recovery.` };
+    const failsHitRate = t30.hitRate < KILL_MIN_HIT_RATE_PCT;
+    const failsPnl = t30.avgPnl < KILL_MIN_AVG_PNL_PCT;
+    if (!failsHitRate && !failsPnl) {
+      return { suppress: false, reason: `30d ${t30.wins}/${t30.total} = ${t30.hitRate.toFixed(0)}%, avg ${t30.avgPnl.toFixed(1)}%`, canary: false };
     }
-    if (t30.avgPnl < KILL_MIN_AVG_PNL_PCT) {
-      return { suppress: true, reason: `30d avg PnL ${t30.avgPnl.toFixed(1)}% < ${KILL_MIN_AVG_PNL_PCT}% floor. Ideas are averaging losses — no new picks until recovery.` };
+    // Kill switch WOULD fire, but check canary — if we haven't emitted
+    // any pick in the last CANARY_WINDOW_DAYS days, let ONE through.
+    // Rationale: a fully-suppressed engine has no way to close new
+    // trades and recover the hit rate, so gate stays shut forever.
+    // The canary allows the pipeline to keep sampling new setups so
+    // performance CAN recover instead of freezing at 38%.
+    const cutoff = new Date(Date.now() - CANARY_WINDOW_DAYS * 86400 * 1000);
+    const recentPicks = await StocksDailyPick.countDocuments({
+      email: email.toLowerCase(),
+      pickDate: { $gte: cutoff },
+    });
+    const suppressReason = failsHitRate
+      ? `30d hit rate ${t30.hitRate.toFixed(0)}% < ${KILL_MIN_HIT_RATE_PCT}% floor (${t30.wins}/${t30.total} wins)`
+      : `30d avg PnL ${t30.avgPnl.toFixed(1)}% < ${KILL_MIN_AVG_PNL_PCT}% floor`;
+    if (recentPicks < CANARY_MAX_PICKS) {
+      return {
+        suppress: false,
+        canary: true,
+        reason: `CANARY: ${suppressReason} would suppress, but ${recentPicks}/${CANARY_MAX_PICKS} picks in last ${CANARY_WINDOW_DAYS}d → letting 1 through to keep sampling. Engine STILL under review — all other gates (SPEC, theme, per-setup ban) remain enforced.`,
+      };
     }
-    return { suppress: false, reason: `30d ${t30.wins}/${t30.total} = ${t30.hitRate.toFixed(0)}%, avg ${t30.avgPnl.toFixed(1)}%` };
+    return {
+      suppress: true,
+      canary: false,
+      reason: `${suppressReason}. Canary already fired this window (${recentPicks}/${CANARY_MAX_PICKS} picks in last ${CANARY_WINDOW_DAYS}d).`,
+    };
   } catch (e) {
     // Fail-open: if lessons computation errors, don't silently block
     // the engine — that would look identical to legitimate suppression.
     console.warn("[pick-engine-kill-switch] lessons compute failed:", e?.message);
-    return { suppress: false, reason: `lessons unavailable (${e?.message})` };
+    return { suppress: false, reason: `lessons unavailable (${e?.message})`, canary: false };
   }
 }
 
@@ -247,6 +273,13 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     return [];
   }
   console.log(`[pick-engine-kill-switch] pass for ${email}: ${gate.reason}`);
+  // Canary mode: force n=1 so the sampling stays small while the
+  // engine is technically underperforming. When performance
+  // recovers (kill switch stops firing), full n is restored.
+  if (gate.canary && n > 1) {
+    console.log(`[pick-engine-kill-switch] canary mode — capping n from ${n} to 1`);
+    n = 1;
+  }
   // Per-setup surgical kill — even if the overall engine passes, drop
   // candidates whose setupName has a demonstrably losing history
   // (see computeBannedSetups thresholds).

@@ -333,6 +333,15 @@ function ruleSleeveDeclaration({ rec, ctx }) {
   // AI omitted the field), there's no "declared vs derived" to
   // cross-check — they're the same value by construction. Skip.
   if (rec._sleeveAutoFilled) return { ok: true };
+  // Exits (SELL / TRIM / EXIT) close whatever position exists — the
+  // AI's declared sleeve is largely cosmetic since the trade will
+  // affect whichever sleeve the position is actually in. Rejecting
+  // a SELL for sleeve-mismatch blocks the user from getting rid of
+  // a losing position over a classification quibble. Only enforce
+  // the classifier match on new BUY-side entries where sleeve
+  // caps / gap rules downstream actually depend on it.
+  const action = String(rec.action || "").toUpperCase();
+  if (action === "SELL" || action === "TRIM" || action === "EXIT") return { ok: true };
   const derived = classifyPosition({ ticker: rec.ticker });
   if (String(declared).toLowerCase() !== derived) {
     return {
