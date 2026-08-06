@@ -1326,7 +1326,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         }
         destSleeveLabel = underweightRedirect.sleeve.toUpperCase();
       } else if (info.sleeve === "core") {
-        sleeveNote = " CORE ETFs are not exempt — 26% in one broad-market ETF is still 26% of book tied to one index. Redeploy the trim into a different CORE ETF (XEQT / VUN / XIC) rather than a new sleeve.";
+        sleeveNote = ` CORE ETFs are not exempt — ${pct.toFixed(1)}% in one broad-market ETF is still ${pct.toFixed(1)}% of book tied to one index. Redeploy the trim into a DIFFERENT CORE ETF (prefer a different geography — trimming a US ETF like VOO/VTI/QQQ into another US ETF just rotates the same beta; route to XEQT / VUN / XIU for real diversification) rather than a new sleeve.`;
         destList = positionCcy === "CAD"
           ? ["XEQT.TO", "VUN.TO", "XIU.TO"].filter(t => t.split(".")[0] !== base)
           : ["VOO", "VTI", "QQQ"].filter(t => t !== base);
