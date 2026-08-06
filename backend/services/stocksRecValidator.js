@@ -430,6 +430,15 @@ function ruleHorizonStopMatch({ rec, ctx }) {
 //   (regulatory tailwind, secular demand shift, macro regime, new
 //   product cycle). "Pocket pivot scored 84" is NOT a structural
 //   driver — it's a chart pattern.
+// Chart-pattern / short-term language that CANNOT stand alone as a
+// structural driver. If the driver text is dominated by these terms,
+// the "thesis" is really a technical trigger dressed up — reject.
+const DRIVER_TECHNICAL_PATTERNS = /\b(pocket\s*pivot|bull\s*flag|bear\s*flag|coiled\s*spring|coil|vcp|cup\s*and\s*handle|inside\s*day|breakout\s*above|breakdown\s*below|rvol\s*spike|rvol\s*>?\s*\d|rsi\s*(over|under|<|>)|chart\s*pattern|moving\s*average\s*cross|golden\s*cross|death\s*cross|macd\s*cross|fibonacci\s*retrace|fib\s*level|sma\s*\d+|ema\s*\d+|rsi\s*\d+|technical\s*setup|setup\s*(scored|scoring)|momentum\s*(strong|is\s*strong)|hot\s*sector|sector\s*is\s*hot|earnings\s*tomorrow|earnings\s*next\s*week|analyst\s*upgrade\s*today|price\s*action\s*(strong|good)|volume\s*spike\s*today)\b/gi;
+// Durable-driver vocabulary — at least one hit REQUIRED. Signals the
+// thesis references business fundamentals, industry structure, supply/
+// demand, competitive position, regulatory/policy change, or a
+// multi-year / secular horizon.
+const DRIVER_DURABLE_VOCAB = /\b(multi[- ]?year|secular|structural|durable|regulatory|policy|legislation|supply[- ]?demand|supply\s*constraint|demand\s*shift|capex\s*cycle|capital\s*cycle|infrastructure\s*build|infrastructure\s*shift|competitive\s*advantage|moat|market\s*share|pricing\s*power|switching\s*cost|network\s*effect|monopoly|oligopoly|dislocation|mispricing|balance\s*sheet|free\s*cash\s*flow|fcf|return\s*on\s*capital|roic|roce|dividend\s*(growth|history)|capital\s*allocation|management\s*quality|earnings\s*power|margin\s*expansion|tailwind|demographic|adoption\s*curve|penetration|reshoring|onshoring|energy\s*transition|electrification|ai\s*infrastructure|data\s*center|cloud\s*build[- ]?out|semiconductor\s*cycle|inventory\s*cycle|commodity\s*cycle|interest[- ]?rate\s*cycle|rate\s*cycle|monetary\s*regime|inflation\s*regime|deflation)\b/i;
 function ruleHighConvictionSpecGate({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   const sleeve = String(rec.sleeve || "").toLowerCase();
@@ -438,7 +447,7 @@ function ruleHighConvictionSpecGate({ rec, ctx }) {
   if (!Number.isFinite(months) || months < 3) {
     return {
       ok: false,
-      reason: "spec-thesis-horizon-missing",
+      reason: "thesisHorizonMonths_below_3",
       detail: `BUY ${rec.ticker} rejected — SPEC sleeve requires thesisHorizonMonths ≥ 3 (multi-month hold thesis). Got ${rec.thesisHorizonMonths ?? "missing"}. A SPEC entry is a bet on a durable driver, not a technical pattern; if you can't state months, you don't have a SPEC thesis.`,
     };
   }
@@ -446,8 +455,42 @@ function ruleHighConvictionSpecGate({ rec, ctx }) {
   if (!driver || driver.length < 15) {
     return {
       ok: false,
-      reason: "spec-structural-driver-missing",
+      reason: "missing_or_invalid_structuralDriver",
       detail: `BUY ${rec.ticker} rejected — SPEC sleeve requires a structuralDriver field (regulatory tailwind, secular demand shift, macro regime, product cycle, etc). Got "${rec.structuralDriver ?? "missing"}". "Pocket pivot scored 84" or "bull flag" is NOT a structural driver — it's a chart pattern. Every SPEC bet must name the multi-quarter forcing function.`,
+    };
+  }
+  if (driver.length > 300) {
+    return {
+      ok: false,
+      reason: "missing_or_invalid_structuralDriver",
+      detail: `BUY ${rec.ticker} rejected — structuralDriver is ${driver.length} characters, over the 300-char limit. State the driver crisply in 15-300 characters; walls of text usually mean the thesis isn't clear.`,
+    };
+  }
+  // Lightweight quality check on the driver text itself. Per user
+  // Aug 5 overhaul §2:
+  //   (a) Reject if dominated by short-term chart-pattern language.
+  //   (b) Reject if it contains no durable-driver vocabulary (no
+  //       reference to business, industry structure, supply/demand,
+  //       regulation, secular horizon, etc).
+  const patternHits = (driver.match(DRIVER_TECHNICAL_PATTERNS) || []).length;
+  const durableHit = DRIVER_DURABLE_VOCAB.test(driver);
+  // "Dominated by pattern language" = ≥2 pattern references AND no
+  // durable-driver reference. One casual chart-mention alongside a
+  // real driver is fine ("secular AI infra tailwind + bull flag
+  // setup for entry"), but "bull flag with pocket pivot on RVOL
+  // spike" is chart-only.
+  if (patternHits >= 2 && !durableHit) {
+    return {
+      ok: false,
+      reason: "missing_or_invalid_structuralDriver",
+      detail: `BUY ${rec.ticker} rejected — structuralDriver text is dominated by short-term chart-pattern language ("${driver}"). Chart patterns are timing, not thesis. Name the multi-quarter business driver: regulatory shift, supply/demand inflection, capital-allocation quality, secular adoption curve, etc.`,
+    };
+  }
+  if (!durableHit) {
+    return {
+      ok: false,
+      reason: "missing_or_invalid_structuralDriver",
+      detail: `BUY ${rec.ticker} rejected — structuralDriver text ("${driver}") contains no reference to business fundamentals, industry structure, supply/demand, competitive position, regulation, or a multi-year horizon. State the durable forcing function explicitly, not just "AI is big" / "sector is hot" / "momentum is strong".`,
     };
   }
   return { ok: true };
