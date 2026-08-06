@@ -417,6 +417,42 @@ function ruleHorizonStopMatch({ rec, ctx }) {
   return { ok: true };
 }
 
+// High-conviction SPEC gate. New SPEC-sleeve BUYs must declare a
+// multi-month thesis AND a structural driver — otherwise it's just a
+// technical pattern dressed up as a swing thesis, which is where the
+// bleed came from. Per user Aug 5 overhaul §3: silent auto-reject
+// pre-persist; the AI must write both fields or drop the rec.
+//
+// thesisHorizonMonths: integer months you'd hold the thesis independent
+//   of intraday noise (≥3 = quarter-plus). Prevents the "5-day pocket
+//   pivot" from being sold as a SPEC hold.
+// structuralDriver: one-line description of the durable catalyst
+//   (regulatory tailwind, secular demand shift, macro regime, new
+//   product cycle). "Pocket pivot scored 84" is NOT a structural
+//   driver — it's a chart pattern.
+function ruleHighConvictionSpecGate({ rec, ctx }) {
+  if (rec.action !== "BUY") return { ok: true };
+  const sleeve = String(rec.sleeve || "").toLowerCase();
+  if (sleeve !== "spec") return { ok: true };
+  const months = Number(rec.thesisHorizonMonths);
+  if (!Number.isFinite(months) || months < 3) {
+    return {
+      ok: false,
+      reason: "spec-thesis-horizon-missing",
+      detail: `BUY ${rec.ticker} rejected — SPEC sleeve requires thesisHorizonMonths ≥ 3 (multi-month hold thesis). Got ${rec.thesisHorizonMonths ?? "missing"}. A SPEC entry is a bet on a durable driver, not a technical pattern; if you can't state months, you don't have a SPEC thesis.`,
+    };
+  }
+  const driver = String(rec.structuralDriver || "").trim();
+  if (!driver || driver.length < 15) {
+    return {
+      ok: false,
+      reason: "spec-structural-driver-missing",
+      detail: `BUY ${rec.ticker} rejected — SPEC sleeve requires a structuralDriver field (regulatory tailwind, secular demand shift, macro regime, product cycle, etc). Got "${rec.structuralDriver ?? "missing"}". "Pocket pivot scored 84" or "bull flag" is NOT a structural driver — it's a chart pattern. Every SPEC bet must name the multi-quarter forcing function.`,
+    };
+  }
+  return { ok: true };
+}
+
 function ruleRegimeHostileNoNewSwingSpec({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   const regimeLabel = String(ctx.tradingRegime?.label || ctx.tradingRegime?.regime || "").toLowerCase();
@@ -438,6 +474,7 @@ const RULES = [
   ruleSleeveDeclaration,
   ruleHorizonDeclaration,
   ruleHorizonStopMatch,
+  ruleHighConvictionSpecGate,
   ruleSpecCapHard,
   ruleCoreGapWidening,
   ruleSingleNameCap,

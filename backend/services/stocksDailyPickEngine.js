@@ -14,6 +14,59 @@ import { computeLessons } from "./stocksLessonsLearned.js";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
+import StocksDailyPick from "../models/StocksDailyPick.js";
+
+// Per-setup expectancy — surgical kill of losing setup types. The
+// engine-wide kill switch (shouldSuppressPicks) either lets all
+// picks through or blocks all of them; that lets a proven setup
+// (say, ETF trend follow) get suppressed just because a losing
+// setup (e.g. pocket pivot) is dragging the aggregate down. This
+// finer gate reads closed StocksDailyPick history grouped by
+// setupName and returns a Set of setups to REMOVE from generation.
+//
+// Thresholds: ≥10 closed samples AND (win rate < 30% OR avg PnL
+// < -3.0%) → banned until the sample recovers. Sub-sample setups
+// (< 10 closed) are given the benefit of the doubt.
+const SETUP_BAN_MIN_SAMPLE = 10;
+const SETUP_BAN_MAX_HIT_RATE = 30;
+const SETUP_BAN_MAX_AVG_PNL = -3.0;
+async function computeBannedSetups(email) {
+  try {
+    const closed = await StocksDailyPick.find({
+      email: email.toLowerCase(),
+      status: { $in: ["target-hit", "stop-hit", "horizon-exit", "closed-manual"] },
+      setupName: { $ne: null },
+      pnlPct: { $ne: null },
+    }).select("setupName pnlPct").lean();
+    const stats = new Map();
+    for (const p of closed) {
+      const name = String(p.setupName || "").trim();
+      if (!name) continue;
+      if (!stats.has(name)) stats.set(name, { total: 0, wins: 0, sumPnl: 0 });
+      const s = stats.get(name);
+      s.total += 1;
+      s.sumPnl += p.pnlPct;
+      if (p.pnlPct > 0) s.wins += 1;
+    }
+    const banned = new Set();
+    const summary = [];
+    for (const [name, s] of stats.entries()) {
+      const hitRate = s.total > 0 ? (s.wins / s.total) * 100 : 0;
+      const avgPnl = s.total > 0 ? s.sumPnl / s.total : 0;
+      const isBanned = s.total >= SETUP_BAN_MIN_SAMPLE
+        && (hitRate < SETUP_BAN_MAX_HIT_RATE || avgPnl < SETUP_BAN_MAX_AVG_PNL);
+      if (isBanned) banned.add(name);
+      summary.push(`${name}=${s.wins}/${s.total} (${hitRate.toFixed(0)}%, avg ${avgPnl.toFixed(1)}%)${isBanned ? " BANNED" : ""}`);
+    }
+    if (summary.length > 0) {
+      console.log(`[pick-engine-per-setup] ${email}: ${summary.join(" · ")}`);
+    }
+    return banned;
+  } catch (e) {
+    console.warn("[pick-engine-per-setup] compute failed:", e?.message);
+    return new Set();
+  }
+}
 
 // Kill-switch thresholds for the discretionary pick engine. If the
 // user's recent track record shows the engine is destroying capital
@@ -192,6 +245,10 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     return [];
   }
   console.log(`[pick-engine-kill-switch] pass for ${email}: ${gate.reason}`);
+  // Per-setup surgical kill — even if the overall engine passes, drop
+  // candidates whose setupName has a demonstrably losing history
+  // (see computeBannedSetups thresholds).
+  const bannedSetups = await computeBannedSetups(email);
   const rawUniverse = await resolveUniverseForUser(email);
   // Normalize BOTH sides — exclude sets built from portfolio positions
   // may hold "RY" while the universe carries "RY.TO". Strip exchange
@@ -213,6 +270,14 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       const { score, contributors } = scoreCandidate(tech);
       if (score < minScore) continue;
       const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
+      // Per-setup surgical kill — drop candidates whose detected setup
+      // is in the user's banned set (proven losing history over ≥10
+      // closed samples). Silent skip; the candidate simply doesn't
+      // enter the scored list.
+      if (bullSetup?.name && bannedSetups.has(bullSetup.name)) {
+        console.log(`[pick-engine-per-setup] SKIP ${ticker} — setup "${bullSetup.name}" is banned`);
+        continue;
+      }
       // Entry = current close. Target = swing high or +2×ATR. Stop = 2.5×ATR below.
       const target = tech.fib?.swingHigh
         ? Math.max(tech.last * 1.02, tech.fib.swingHigh)

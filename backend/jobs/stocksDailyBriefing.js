@@ -670,6 +670,8 @@ Block rules:
 - entry / target / stop = the numbers cited in the narrative, native currency. target and stop are REQUIRED for every BUY (not null).
 - currency = "USD" or "CAD", matches native listing.
 - orderTiming = one of the four values above (REQUIRED — same vocabulary the narrative uses).
+- thesisHorizonMonths = REQUIRED for any BUY where sleeve = "spec". Integer months (≥ 3) the thesis is expected to play out independent of intraday noise. Prevents chart patterns from being sold as multi-quarter theses. Missing or < 3 → validator rejects the rec.
+- structuralDriver = REQUIRED for any BUY where sleeve = "spec". Short string (≥ 15 chars) naming the durable catalyst: regulatory tailwind, secular demand shift, macro regime shift, new product cycle, etc. "Pocket pivot scored 84" / "bull flag" / "RSI oversold" are NOT structural drivers — they are chart patterns. If the SPEC bet doesn't have a multi-quarter forcing function, don't emit it.
 - No code fences, no prose inside <RECS>...</RECS>, nothing after </RECS>.
 - Zero actionable recs → emit "<RECS>[]</RECS>". Never omit the block.
 `;
@@ -2275,6 +2277,12 @@ function extractRecsFromJsonBlock(text) {
         ? String(r.currency || r.entryCurrency).toUpperCase()
         : "USD",
       orderTiming,
+      // High-conviction SPEC gate fields — validator uses these to
+      // reject SPEC BUYs that lack a multi-quarter thesis. Preserved
+      // as-parsed so `null` / missing = rejection signal (per spec).
+      thesisHorizonMonths: Number.isFinite(+r.thesisHorizonMonths) ? +r.thesisHorizonMonths : null,
+      structuralDriver: typeof r.structuralDriver === "string" && r.structuralDriver.trim()
+        ? r.structuralDriver.trim() : null,
     });
   }
   return out;
