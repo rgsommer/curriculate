@@ -907,7 +907,29 @@
       "Bash(node /private/tmp/claude-501/-Users-richardsommer-dev-curriculate/9bf64dcc-2eee-46eb-890a-b1c8881c8edf/scratchpad/strip_test2.mjs)",
       "Bash(awk 'NR>=1540 && NR<=1580' /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)",
       "Bash(node --check models/StocksThemes.js)",
-      "Bash(node --check services/stocksThemesService.js)"
+      "Bash(node --check services/stocksThemesService.js)",
+      "Bash(node smoke-insider.mjs)",
+      "Bash(node --check services/stocksInsiderSignals.js)",
+      "Bash(node --check models/StocksInsiderTransaction.js)",
+      "Bash(node --check models/StocksInsiderSignal.js)",
+      "Bash(node --check jobs/stocksInsiderSync.js)",
+      "Bash(node --check routes/stocksInsiderSignals.js)",
+      "Bash(node smoke-fred.mjs)",
+      "Bash(node --check services/stocksMacroFred.js)",
+      "Bash(node --check services/fredEnabled.js)",
+      "Bash(node smoke-options.mjs)",
+      "Bash(node --check services/stocksOptionsFlow.js)",
+      "Bash(node --check services/optionsFlowEnabled.js)",
+      "Bash(node --check models/StocksOptionsSignal.js)",
+      "Bash(node --check routes/stocksOptionsFlow.js)",
+      "Bash(npx --no-install tsc --noEmit)",
+      "Bash(node --check /Users/richardsommer/dev/curriculate/backend/services/stocksTechnicals.js)",
+      "Bash(node --check /Users/richardsommer/dev/curriculate/backend/services/stocksRecValidator.js)",
+      "Bash(awk 'NR>=2443 && NR<=2500 {print NR\": \"$0}' jobs/stocksDailyBriefing.js)",
+      "Bash(grep -nE \"formatQuantSignalsBlock|formatMacroBlock|quantSignalsBlock|\\\\\\\\\\\\$\\\\{.*[Bb]lock\\\\}\" jobs/stocksDailyBriefing.js)",
+      "Bash(awk -F: '$1>1738 && $1<2043')",
+      "Bash(node --check services/stocksMarketPulse.js)",
+      "Bash(grep -n \"TRIM CONCENTRATION\\\\*\\\\* — \\\\*\\\\*\\\\${base}\\\\*\\\\*\" /Users/richardsommer/dev/curriculate/backend/jobs/stocksDailyBriefing.js)"
     ]
   }
 }

@@ -2983,6 +2983,18 @@ export async function generateBriefing(profile) {
       const hasOverride = /(?:do\s*not\s*exit|don['’]?t\s*exit|do\s*not\s*sell|don['’]?t\s*sell|hold\s+despite|monitor,?\s*do\s*not\s*churn|acknowledge[^.]*but\s*(?:hold|do\s*not)|no\s+exit\s+(?:action\s+)?today|(?:hold|held|holding).{0,40}(?:because|due\s+to|given|until|before)\s+(?:earnings|catalyst|event|announcement|q[1-4]|guidance)|earnings.{0,30}(?:hold|no\s+exit|monitor)|(?:catalyst|earnings).{0,40}intact)/i.test(line);
       return !hasOverride;
     }).join("\n");
+    // Unconditional strip of the two override phrases the TRAIL STOP
+    // REVIEW mandate literally bans by name. Grok Aug 6: "AI still
+    // writes 'HOLD through earnings' and 'thesis intact' in §A5
+    // despite the mandate forbidding them." The stop-flag-gated strip
+    // above misses these because §A5 narrative can carry the phrase
+    // without co-locating "stop hit" on the same line. These phrases
+    // have zero legitimate use in the brief — the mandate says
+    // exactly that. Any line containing either gets dropped.
+    md = md.split("\n").filter(line => {
+      const banned = /\bhold\s+through\s+earnings\b|\bthesis\s+intact\b/i.test(line);
+      return !banned;
+    }).join("\n");
     // Strip AI-written meta-commentary on my §1 mandates. AI was
     // observed appending lines like "Revised deployment: Deploy 17 sh
     // RY only..." or "0 sh SKIP — insufficient cash" that rewrite my
