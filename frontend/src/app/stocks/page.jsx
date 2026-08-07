@@ -1290,6 +1290,7 @@ export default function StocksAdvisorPage() {
               ["positions", "Positions", "Pos"],
               ["advice", "Advice", "Advice"],
               ["discover", "Discover", "Find"],
+              ["news", "News", "News"],
               ["performance", "Performance", "Perf"],
               ["trades", "Trades", "Trades"],
               ["reconcile", "Reconcile", "↻"],
@@ -1403,6 +1404,7 @@ export default function StocksAdvisorPage() {
             />
           )}
           {currentTab === "discover" && <DiscoverView sessionToken={auth.sessionToken} user={user} />}
+          {currentTab === "news" && <NewsView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
           {currentTab === "reconcile" && (
@@ -9530,6 +9532,212 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} })
           </tbody>
         </table>
       </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// News tab — per-ticker headlines + general market wire
+// =============================================================================
+function formatNewsTimestamp(iso) {
+  if (!iso) return "";
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return "";
+  const ageMs = Date.now() - t;
+  const min = Math.floor(ageMs / 60000);
+  if (min < 60) return `${Math.max(0, min)}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function NewsItem({ item }) {
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        display: "block",
+        padding: "10px 12px",
+        borderRadius: 8,
+        border: "1px solid var(--sa-border)",
+        marginBottom: 8,
+        textDecoration: "none",
+        color: "inherit",
+        background: "var(--sa-card-bg, #fff)",
+      }}
+    >
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        {item.image ? (
+          <img
+            src={item.image}
+            alt=""
+            width={64}
+            height={64}
+            style={{ objectFit: "cover", borderRadius: 6, flexShrink: 0, background: "#f1f5f9" }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }}
+          />
+        ) : null}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, lineHeight: 1.35, marginBottom: 4 }}>
+            {item.title}
+          </div>
+          {item.snippet ? (
+            <div style={{ fontSize: 12, color: "var(--sa-muted)", lineHeight: 1.45, marginBottom: 4, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+              {item.snippet}
+            </div>
+          ) : null}
+          <div style={{ fontSize: 11, color: "var(--sa-muted)", display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {item.publisher ? <span style={{ fontWeight: 500 }}>{item.publisher}</span> : null}
+            {item.publisher && item.publishedAt ? <span>·</span> : null}
+            {item.publishedAt ? <span>{formatNewsTimestamp(item.publishedAt)}</span> : null}
+          </div>
+        </div>
+      </div>
+    </a>
+  );
+}
+
+function NewsView({ sessionToken, user }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [activeTicker, setActiveTicker] = useState("ALL"); // "ALL" | "GENERAL" | ticker
+  const [refreshTick, setRefreshTick] = useState(0);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    let cancelled = false;
+    setBusy(true); setErr(null);
+    (async () => {
+      try {
+        const r = await fetch(`${BACKEND_URL}/api/stocks-news`, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${sessionToken}` },
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        if (cancelled) return;
+        setData(j);
+      } catch (e) {
+        if (!cancelled) setErr(e?.message || "Failed to load news");
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [sessionToken, refreshTick]);
+
+  const perTicker = data?.perTicker || {};
+  const general = Array.isArray(data?.general) ? data.general : [];
+  const heldTickers = (user?.positions || [])
+    .filter((p) => (p.qty || 0) > 0)
+    .map((p) => p.ticker)
+    .filter((t, i, arr) => arr.indexOf(t) === i)
+    .sort();
+
+  // Merged/all view — flatten per-ticker items with symbol context, newest first
+  const allTickerItems = [];
+  for (const t of heldTickers) {
+    for (const item of (perTicker[t] || [])) {
+      allTickerItems.push({ ...item, _ticker: t });
+    }
+  }
+  allTickerItems.sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
+
+  let renderItems = [];
+  let renderHeader = "";
+  if (activeTicker === "ALL") {
+    renderItems = allTickerItems;
+    renderHeader = `${allTickerItems.length} items across ${heldTickers.length} held tickers`;
+  } else if (activeTicker === "GENERAL") {
+    renderItems = general;
+    renderHeader = `${general.length} market-wide items`;
+  } else {
+    renderItems = perTicker[activeTicker] || [];
+    renderHeader = `${renderItems.length} items for ${activeTicker}`;
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>News</h2>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 4 }}>
+            Per-ticker headlines for every held name, plus the general market wire.
+            {data?.generatedAt ? <> · Fetched {new Date(data.generatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</> : null}
+          </div>
+        </div>
+        <button className="sa-btn secondary" onClick={() => setRefreshTick((n) => n + 1)} disabled={busy}>
+          {busy ? "Refreshing…" : "↻ Refresh"}
+        </button>
+      </div>
+
+      {data && data.fmpEnabled === false ? (
+        <div className="sa-card" style={{ marginBottom: 14, padding: 12, background: "#fef3c7", border: "1px solid #fbbf24" }}>
+          FMP integration is disabled (no <code>FMP_API_KEY</code> or <code>FMP_DISABLED=1</code>). News feed requires FMP.
+        </div>
+      ) : null}
+
+      {/* Ticker filter chips */}
+      <div className="sa-card" style={{ padding: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {[
+            { key: "ALL", label: "All portfolio", count: allTickerItems.length },
+            { key: "GENERAL", label: "Market", count: general.length },
+            ...heldTickers.map((t) => ({ key: t, label: t, count: (perTicker[t] || []).length })),
+          ].map(({ key, label, count }) => (
+            <button
+              key={key}
+              onClick={() => setActiveTicker(key)}
+              style={{
+                border: "1px solid var(--sa-border)",
+                background: activeTicker === key ? "var(--sa-primary, #2563eb)" : "transparent",
+                color: activeTicker === key ? "#fff" : "inherit",
+                padding: "4px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: activeTicker === key ? 600 : 500,
+                cursor: "pointer",
+              }}
+              title={`${count} item${count === 1 ? "" : "s"}`}
+            >
+              {label}{count > 0 ? <span style={{ marginLeft: 6, opacity: 0.75 }}>{count}</span> : null}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {err ? (
+        <div className="sa-card" style={{ padding: 12, color: "var(--sa-red)" }}>
+          Error loading news: {err}
+        </div>
+      ) : busy && !data ? (
+        <div className="sa-empty">Loading news…</div>
+      ) : renderItems.length === 0 ? (
+        <div className="sa-empty">
+          {activeTicker === "ALL" && heldTickers.length === 0
+            ? "No held positions — add some in the Positions tab and news will populate."
+            : "No items found for this filter."}
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 8 }}>{renderHeader}</div>
+          {renderItems.map((item, i) => (
+            <div key={`${item.url || item.title}-${i}`}>
+              {activeTicker === "ALL" && item._ticker ? (
+                <div style={{ fontSize: 11, fontWeight: 600, color: "var(--sa-muted)", marginBottom: 4, marginTop: i === 0 ? 0 : 4 }}>
+                  {item._ticker}
+                </div>
+              ) : null}
+              <NewsItem item={item} />
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

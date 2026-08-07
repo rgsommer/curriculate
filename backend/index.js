@@ -143,6 +143,7 @@ import stocksPendingOrdersRouter from "./routes/stocksPendingOrders.js";
 import stocksDiscoverRouter from "./routes/stocksDiscover.js";
 import stocksReconcileRouter from "./routes/stocksReconcile.js";
 import stocksInsiderSignalsRouter from "./routes/stocksInsiderSignals.js";
+import stocksNewsRouter from "./routes/stocksNews.js";
 import stocksOptionsFlowRouter from "./routes/stocksOptionsFlow.js";
 import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
@@ -619,6 +620,7 @@ app.use("/api/stocks-pending-orders", stocksPendingOrdersRouter);
 app.use("/api/stocks-discover", stocksDiscoverRouter);
 app.use("/api/stocks-reconcile", stocksReconcileRouter);
 app.use("/api/stocks-insider-signals", stocksInsiderSignalsRouter);
+app.use("/api/stocks-news", stocksNewsRouter);
 app.use("/api/stocks-options-flow", stocksOptionsFlowRouter);
 
 // Substitute-teacher staffing app on curriculate.net/subs.
