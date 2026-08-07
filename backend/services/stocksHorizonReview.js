@@ -47,10 +47,16 @@ async function fetchCurrentPrice(ticker) {
 }
 
 function classifyStatus({ daysElapsed, horizonDays, entry, current, target, stop }) {
+  // Time expiry is checked BEFORE the price-required checks so a Yahoo
+  // whiff (thin ticker, delisted, transient 429) doesn't leave the rec
+  // permanently open. Users saw BBAI (Jul 18) and DJT (Jul 20) sitting
+  // in "Next 7 days" three weeks past their horizon because the fetcher
+  // returned null and the classifier short-circuited to "unknown" —
+  // which the expiry cron skips.
+  if (daysElapsed >= horizonDays) return "expired";
   if (!Number.isFinite(current)) return "unknown";
   if (Number.isFinite(stop) && current <= stop) return "hit-stop";
   if (Number.isFinite(target) && current >= target) return "hit-target";
-  if (daysElapsed >= horizonDays) return "expired";
   if (!Number.isFinite(entry) || !Number.isFinite(target) || target <= entry) return "unknown";
   const expected = daysElapsed / horizonDays;
   const actual = (current - entry) / (target - entry);

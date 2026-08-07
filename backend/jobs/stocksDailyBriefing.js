@@ -1068,7 +1068,7 @@ function stopClause(ticket) {
   return ` · **Stop:** $${ticket.derivedStop.toFixed(2)} ${ticket.liveCcy} (${ticket.derivedStopPctLabel})`;
 }
 
-function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null }) {
+function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null, dailyPicks = [] }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
   // these lines as the authoritative version in the final briefing —
@@ -1573,6 +1573,98 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         );
       }
     }
+  }
+
+  // SWAP mandate — replace a weak SWING/SPEC holding with a fresh
+  // high-conviction Test A pick in one paired order. Answers the user
+  // question "if a Test A pick is truly that good, why not exit a
+  // laggard swing/spec and rotate in?" Conservative gates so this
+  // fires rarely and only when both sides are decisively lopsided:
+  //
+  //   Weak-holder side (SELL):
+  //     • sleeve ∈ {swing, spec} (CORE / INCOME are never candidates)
+  //     • unrealized P/L ≤ -5%
+  //     • horizon-review status ∈ {well-behind, hit-stop, expired}
+  //
+  //   Pick side (BUY):
+  //     • Test A open pick, not blocked, deterministicScore ≥ 70
+  //     • mtfConfluence === "aligned" (trend confirmed across timeframes)
+  //     • same currency as the weak-holder (avoid forced FX)
+  //     • not a ticker we already hold (would be add-to-position, not swap)
+  //
+  // Cap: 3 swap mandates per brief so a laggard-heavy week doesn't
+  // turn into a churn factory. Sorted worst-P/L first.
+  const heldBaseSet = new Set(
+    (positions || [])
+      .filter(p => p.qty > 0)
+      .map(p => String(p.ticker || "").toUpperCase().replace(/\..*$/, ""))
+  );
+  const swapCandidates = [];
+  for (const p of (positions || [])) {
+    if (!p.ticker || !(p.qty > 0)) continue;
+    const sleeve = classifyPosition({ ticker: p.ticker });
+    if (sleeve !== "swing" && sleeve !== "spec") continue;
+    const price = p.ccy === "USD" ? p.priceUsd : p.priceCad;
+    if (!(price > 0) || !(p.avgCost > 0)) continue;
+    const pnlPct = ((price - p.avgCost) / p.avgCost) * 100;
+    if (pnlPct > -5) continue;
+    const baseHeld = String(p.ticker).toUpperCase().replace(/\..*$/, "");
+    const horizonRow = (horizonRows || []).find(r =>
+      String(r.ticker || "").toUpperCase().replace(/\..*$/, "") === baseHeld
+    );
+    if (!horizonRow || !["well-behind", "hit-stop", "expired"].includes(horizonRow.status)) continue;
+    swapCandidates.push({
+      weakTicker: p.ticker,
+      weakBase: baseHeld,
+      weakAccount: p.acct,
+      weakQty: p.qty,
+      weakPrice: price,
+      weakCcy: p.ccy || "USD",
+      weakPnlPct: pnlPct,
+      weakStatus: horizonRow.status,
+      weakSleeve: sleeve,
+    });
+  }
+  const usedPickTickers = new Set();
+  let swapEmitCount = 0;
+  for (const cand of swapCandidates.sort((a, b) => a.weakPnlPct - b.weakPnlPct)) {
+    if (swapEmitCount >= 3) break;
+    const pick = (dailyPicks || []).find(pk => {
+      if (!pk || !pk.ticker || pk.blockedReason) return false;
+      if ((pk.deterministicScore || 0) < 70) return false;
+      if (pk.mtfConfluence !== "aligned") return false;
+      if ((pk.currency || "USD") !== cand.weakCcy) return false;
+      if (usedPickTickers.has(pk.ticker)) return false;
+      const pickBase = String(pk.ticker).toUpperCase().replace(/\..*$/, "");
+      if (heldBaseSet.has(pickBase)) return false;
+      return true;
+    });
+    if (!pick) continue;
+    const pickLive = pick.entryPrice; // fresh at generation time — the
+    // pick engine runs at 09:15 ET each briefing so this is same-day
+    // close-of-yesterday, close enough for sizing.
+    if (!(pickLive > 0)) continue;
+    const proceedsNative = cand.weakQty * cand.weakPrice;
+    const shares = Math.floor(proceedsNative / pickLive);
+    if (!(shares > 0)) continue;
+    usedPickTickers.add(pick.ticker);
+    swapEmitCount++;
+    const usedNative = shares * pickLive;
+    const acctLabel = (cashAccounts || []).find(a => String(a.id) === String(cand.weakAccount))?.name
+      || String(cand.weakAccount || "account");
+    // Sleeve-derived stop for the pick (same rule as pickDefaultTicket).
+    const pickSleeve = classifyPosition({ ticker: pick.ticker });
+    const pickStopPct = pickSleeve === "core" ? 0.15
+                      : pickSleeve === "income" ? 0.12
+                      : 0.08;
+    const pickStop = pickLive * (1 - pickStopPct);
+    const pickStopStr = `**Stop:** $${pickStop.toFixed(2)} ${cand.weakCcy} (-${(pickStopPct * 100).toFixed(0)}%)`;
+    const pickTarget = pick.targetPrice > pickLive
+      ? ` · **Target:** $${pick.targetPrice.toFixed(2)} ${cand.weakCcy} (+${(((pick.targetPrice - pickLive) / pickLive) * 100).toFixed(1)}%)`
+      : "";
+    mandatory.push(
+      `**SWAP** — SELL all **${cand.weakQty} sh ${cand.weakTicker}** in **${acctLabel}** at market (P/L ${cand.weakPnlPct >= 0 ? "+" : ""}${cand.weakPnlPct.toFixed(1)}% · horizon **${cand.weakStatus}**). Raises ~$${Math.round(proceedsNative).toLocaleString()} ${cand.weakCcy}. Then BUY **${shares} sh ${pick.ticker}** @ ~$${pickLive.toFixed(2)} ${cand.weakCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${cand.weakCcy}. Test A conviction **${pick.deterministicScore}** · MTF aligned${pick.setupName ? ` · ${pick.setupName}` : ""}. · ${pickStopStr}${pickTarget}${describeTicker(pick.ticker)}`
+    );
   }
 
   // Force-shrink mandate: when ANY sleeve is severely underweight
@@ -2950,6 +3042,7 @@ export async function generateBriefing(profile) {
     riskVar,
     quantSignals,
     pickGateStatus,
+    dailyPicks,
   });
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow, marketPulse, whale13F);

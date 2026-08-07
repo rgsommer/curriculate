@@ -1261,6 +1261,11 @@ router.get("/week-in-review", requireStocksAuth, async (req, res) => {
       const horizonMs = (r.horizonDays || 30) * 86400000;
       const expiresAt = new Date(generated + horizonMs);
       if (expiresAt > forwardWindowEnd) continue;
+      // Also exclude anything already past expiry — the horizon-expiry
+      // cron is best-effort (skips when the price fetch fails) so a
+      // straggler open rec whose expiresAt is in the past would
+      // otherwise leak through as a phantom "Next 7 days" item.
+      if (expiresAt.getTime() <= now.getTime()) continue;
       const key = `${baseTicker(r.ticker)}::${r.action}`;
       const prior = freshestByPair.get(key);
       if (!prior || generated > prior._generated) {
