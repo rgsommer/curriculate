@@ -439,6 +439,11 @@ router.post("/history", express.json({ limit: "16kb" }), async (req, res) => {
       ),
     ].slice(0, MAX_TICKERS_PER_CALL);
 
+    // nocache=true bypasses the 60s HISTORY_CACHE read (still writes fresh
+    // results back). Frontend sends this when the user clicks "Refresh
+    // prices" so the Per-ticker performance chart picks up new bars
+    // without waiting out the TTL.
+    const skipCache = req.body?.nocache === true;
     const now = Date.now();
     const data = {};
     const failed = [];
@@ -447,7 +452,7 @@ router.post("/history", express.json({ limit: "16kb" }), async (req, res) => {
     for (const t of tickers) {
       const key = `${t}::${range}`;
       const cached = HISTORY_CACHE.get(key);
-      if (cached && now - cached.fetchedAt < HISTORY_TTL_MS) {
+      if (!skipCache && cached && now - cached.fetchedAt < HISTORY_TTL_MS) {
         data[t] = { points: cached.points, currency: cached.currency };
       } else {
         toFetch.push(t);

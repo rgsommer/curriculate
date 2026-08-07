@@ -2637,6 +2637,10 @@ function TodaysActionCard({ sessionToken, onGoToAdvice }) {
 function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEmailBriefing, onMonthlyReport, onEditPosition, pendingOrders, onFillPendingOrder, onCancelPendingOrder, sessionToken }) {
   const [busyRefresh, setBusyRefresh] = useState(false);
   const [busyAi, setBusyAi] = useState(false);
+  // Bumped after every successful Refresh Prices — passed to
+  // TickerPerformanceCard so the chart re-fetches with nocache=true
+  // instead of sitting on the 60s server-side history cache.
+  const [perfChartTick, setPerfChartTick] = useState(0);
   // Values stat row starts collapsed — privacy + reduces visual noise on load
   const [valuesCollapsed, setValuesCollapsed] = useState(true);
   // Pre/post-market data per ticker — refreshed on mount and every 60s
@@ -2730,7 +2734,13 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   const handleRefresh = async () => {
     if (busyRefresh) return;
     setBusyRefresh(true);
-    try { await onRefresh(); } finally { setBusyRefresh(false); }
+    try {
+      await onRefresh();
+      // Bump so TickerPerformanceCard re-fetches with nocache=true and
+      // the chart reflects the same fresh Yahoo bars that just landed
+      // on the position cost-basis P/L.
+      setPerfChartTick((n) => n + 1);
+    } finally { setBusyRefresh(false); }
   };
   const handleAi = async () => {
     if (busyAi) return;
@@ -2991,6 +3001,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
         holdings={agg.slice(0, 10).map(a => ({ ...a, ticker: a.chartTicker || a.ticker }))}
         fx={fx}
         sessionToken={sessionToken}
+        refreshTick={perfChartTick}
       />
 
       <div className="sa-grid-2">
@@ -9532,7 +9543,7 @@ const TICKER_COLORS = [
   "#ec4899", "#84cc16", "#f97316", "#6366f1", "#14b8a6", "#a855f7",
 ];
 
-function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken = null }) {
+function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken = null, refreshTick = 0 }) {
   const [range, setRange] = useState("1d");
   const [mode, setMode] = useState("pct"); // "pct" = % change | "price" = native $ price
   const [busy, setBusy] = useState(false);
@@ -9569,10 +9580,14 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
     setBusy(true); setErr(null);
     (async () => {
       try {
+        // nocache when the user just clicked Refresh Prices — bypasses
+        // the 60s server-side HISTORY_CACHE so fresh bars land in the
+        // chart immediately instead of after the TTL expires. Bumped
+        // refreshTick is the signal.
         const r = await fetch(`${BACKEND_URL}/api/stocks-prices/history`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ tickers, range }),
+          body: JSON.stringify({ tickers, range, nocache: refreshTick > 0 }),
         });
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
         const j = await r.json();
@@ -9586,7 +9601,7 @@ function TickerPerformanceCard({ tickers, holdings = [], fx = 1.37, sessionToken
       }
     })();
     return () => { cancelled = true; };
-  }, [tickers.join(","), range]);
+  }, [tickers.join(","), range, refreshTick]);
 
   const labels = tickers.filter(t => data[t]?.points?.length > 0);
   const colorFor = (i) => TICKER_COLORS[i % TICKER_COLORS.length];
