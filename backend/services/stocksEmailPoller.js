@@ -425,3 +425,47 @@ export async function pollUserMailbox(userEmail) {
     return { fatal: fatal?.message || String(fatal) };
   }
 }
+
+// Drain the mailbox by calling pollUserMailbox in a loop until it
+// returns a batch that inserted+skipped 0 messages, capped at
+// `maxBatches` iterations (default 10 = up to 250 msgs). Used by the
+// rescan endpoint so a single click doesn't stop at the 25-per-tick
+// cap when the user has a lot of pending alerts. Aggregates the
+// details across all batches so the caller can render a total.
+export async function pollUserMailboxUntilEmpty(userEmail, { maxBatches = 10 } = {}) {
+  let batches = 0, totalInserted = 0, totalSkipped = 0, totalErrors = 0;
+  const insertedDetails = [], skippedDetails = [], errorDetails = [];
+  let lastFatal = null;
+  while (batches < maxBatches) {
+    const r = await pollUserMailbox(userEmail);
+    batches++;
+    if (r?.fatal) { lastFatal = r.fatal; break; }
+    if (r?.skipped === "not-configured" || r?.skipped === "disabled" || r?.skipped === "no-profile") {
+      // one of the early-return sentinels; nothing to drain
+      return { batches, skipped: r.skipped };
+    }
+    const gotInserted = Number(r?.inserted) || 0;
+    const gotSkipped = Number(r?.skipped) || 0;
+    const gotErrors = Number(r?.errors) || 0;
+    totalInserted += gotInserted;
+    totalSkipped += gotSkipped;
+    totalErrors += gotErrors;
+    if (Array.isArray(r?.details?.inserted)) insertedDetails.push(...r.details.inserted);
+    if (Array.isArray(r?.details?.skipped)) skippedDetails.push(...r.details.skipped);
+    if (Array.isArray(r?.details?.errors)) errorDetails.push(...r.details.errors);
+    // Empty batch → drained. errors alone don't mean drained (UID
+    // doesn't advance on error, so re-polling would just loop) — but
+    // pollUserMailbox already handles that by stopping the message
+    // loop; the OUTER loop breaks so we don't infinite-retry a
+    // persistent error.
+    if (gotInserted + gotSkipped === 0) break;
+  }
+  return {
+    batches,
+    inserted: totalInserted,
+    skipped: totalSkipped,
+    errors: totalErrors,
+    details: { inserted: insertedDetails, skipped: skippedDetails, errors: errorDetails },
+    ...(lastFatal ? { fatal: lastFatal } : {}),
+  };
+}

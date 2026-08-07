@@ -298,6 +298,45 @@ function privShort(value, privacy) { return privacy ? MASK_SHORT : value; }
 
 const fmtPct = (n) => (n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + "%");
 
+// Human-readable summary of a rescan-mailbox response. Backend returns
+// { inserted, skipped, errors, batches, queryStripped, currentQuery,
+//   details:{ inserted:[], skipped:[{reason,subject,from,...}], errors:[] } }.
+// We aggregate skipped[].reason into buckets so the operator can tell
+// dedup wins ("duplicate-poller", "matches-existing-trade") apart from
+// real drops ("not-a-cibc-alert", "no-source").
+function buildRescanBannerMessage(j) {
+  if (j?.fatal) return `Rescan failed: ${j.fatal}`;
+  if (j?.skipped === "not-configured") return "Rescan skipped — email integration not configured.";
+  if (j?.skipped === "disabled")       return "Rescan skipped — email integration is disabled.";
+  if (j?.skipped === "no-profile")     return "Rescan skipped — no portfolio profile.";
+  const parts = [];
+  if (Number.isFinite(j.inserted)) parts.push(`${j.inserted} inserted`);
+  if (Number.isFinite(j.skipped)) parts.push(`${j.skipped} skipped`);
+  if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
+  if (Number.isFinite(j.batches) && j.batches > 1) parts.push(`${j.batches} batches`);
+  let msg = `Rescan complete — ${parts.join(" · ") || "no matches"}`;
+  const skippedRows = Array.isArray(j.details?.skipped) ? j.details.skipped : [];
+  if (skippedRows.length > 0) {
+    const bucketLabels = {
+      "duplicate-poller":       "already recorded (reconcile-key)",
+      "matches-existing-trade": "already in journal (manual/CSV/prior)",
+      "not-a-cibc-alert":       "unrecognized format",
+      "no-source":              "empty message",
+    };
+    const counts = {};
+    for (const s of skippedRows) counts[s.reason] = (counts[s.reason] || 0) + 1;
+    const breakdown = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, n]) => `${n} ${bucketLabels[reason] || reason}`)
+      .join(" · ");
+    if (breakdown) msg += `\nSkipped: ${breakdown}`;
+  }
+  if (j.queryStripped) {
+    msg += `\n✓ Cleaned "is:unread" out of the mailbox filter — alerts you read on your phone will now be seen.`;
+  }
+  return msg;
+}
+
 function valueOfPosition(p, fx) {
   if (p.ccy === "USD") {
     const cad = (p.priceCad ?? (p.priceUsd * fx)) * p.qty;
@@ -5222,11 +5261,10 @@ function EmailIntegrationCard({ sessionToken }) {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `${r.status}`);
-      const parts = [];
-      if (Number.isFinite(j.inserted)) parts.push(`${j.inserted} inserted`);
-      if (Number.isFinite(j.skipped)) parts.push(`${j.skipped} skipped`);
-      if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
-      let msg = `Rescan complete — ${parts.join(" · ") || "no matches"}`;
+      let msg = buildRescanBannerMessage(j);
+      // Settings page keeps the extra per-row detail — useful for
+      // debugging parser edge-cases when you're actively iterating on
+      // the mailbox filter.
       const skippedRows = (j.details?.skipped || []).slice(0, 10);
       if (skippedRows.length > 0) {
         const lines = skippedRows.map(s => `  · ${s.reason} · "${(s.subject || "(no subject)").slice(0, 80)}"${s.from ? ` — from ${s.from}` : ""}`);
@@ -10702,11 +10740,10 @@ function TradesView({ sessionToken }) {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || `${r.status}`);
-      const parts = [];
-      if (Number.isFinite(j.inserted)) parts.push(`${j.inserted} inserted`);
-      if (Number.isFinite(j.skipped)) parts.push(`${j.skipped} skipped`);
-      if (Number.isFinite(j.errors)) parts.push(`${j.errors} errors`);
-      setRescanBanner({ kind: j.fatal ? "err" : "ok", msg: `Rescan complete — ${parts.join(" · ") || "no matches"}` });
+      setRescanBanner({
+        kind: j.fatal ? "err" : "ok",
+        msg: buildRescanBannerMessage(j),
+      });
       await load();
       await loadPendingReview();
     } catch (e) {

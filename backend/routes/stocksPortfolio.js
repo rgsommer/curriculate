@@ -1932,10 +1932,25 @@ router.post("/email-integration/rescan-mailbox", requireStocksAuth, async (req, 
     if (!integ) return res.status(404).json({ error: "No integration configured yet." });
     integ.lastProcessedUid = null;
     integ.lastPollError = "";
+    // Force-strip is:unread from the stored query on rescan. Without
+    // this, alerts you read on your phone before the cron polled
+    // remain invisible to the mailbox search (Gmail's is:unread is
+    // evaluated at query time, not per-UID). Since we already dedupe
+    // via UID watermark + brokerReconcileKey + fuzzy match, the
+    // read/unread state is redundant AND fragile. Strip and remember.
+    let queryStripped = false;
+    if (integ.imapSearchQuery && /(?:^|\s)is:unread(?:\s|$)/i.test(integ.imapSearchQuery)) {
+      const cleaned = integ.imapSearchQuery.replace(/(?:^|\s)is:unread(?=\s|$)/gi, "").replace(/\s+/g, " ").trim();
+      console.log(`[stocks-rescan] stripping is:unread from ${req.stocksUser.email}: "${integ.imapSearchQuery}" → "${cleaned}"`);
+      integ.imapSearchQuery = cleaned;
+      queryStripped = true;
+    }
     await integ.save();
-    const { pollUserMailbox } = await import("../services/stocksEmailPoller.js");
-    const result = await pollUserMailbox(req.stocksUser.email);
-    res.json({ ok: true, resetUid: true, ...result });
+    const { pollUserMailboxUntilEmpty } = await import("../services/stocksEmailPoller.js");
+    // Drain up to 10 batches (~250 messages) instead of stopping at
+    // the 25-per-tick cap that a single pollUserMailbox uses.
+    const result = await pollUserMailboxUntilEmpty(req.stocksUser.email, { maxBatches: 10 });
+    res.json({ ok: true, resetUid: true, queryStripped, currentQuery: integ.imapSearchQuery, ...result });
   } catch (err) {
     console.error("stocks-portfolio email-integration rescan error:", err);
     res.status(500).json({ error: `Internal error: ${err?.message || "unknown"}` });
