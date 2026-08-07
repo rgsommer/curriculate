@@ -1192,16 +1192,44 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // below the SELL/TRIM section so proceeds are available.
   if (coreLockActive) {
     const gap = Math.abs(b.rebalanceCad?.core || 0);
-    const rebalTicket = pickDefaultTicket(["XEQT.TO", "VUN.TO", "XIU.TO"], gap, "CAD");
-    if (rebalTicket) {
-      const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
+    // Cap the buy at available CAD cash across accounts. Negative
+    // per-account balances (margin / debit) don't offset positive cash
+    // in sibling accounts — brokerage cash can't cross registered ↔
+    // taxable borders freely. Sum ONLY positive cashCad. XEQT/VUN/XIU
+    // are CAD-listed so USD cash needs an FX conversion; the mandate
+    // discipline is "no forced FX", so exclude USD too. User reported
+    // Aug 8: "where does it think this $11k CAD is coming from?" when
+    // total deployable CAD was ~$427 across accounts.
+    const cadAvailable = (cashAccounts || [])
+      .reduce((s, a) => s + Math.max(0, a?.cashCad || 0), 0);
+    const CORE_REBAL_CASH_FLOOR = 500;   // below this, a naked BUY is undeliverable
+    const CORE_REBAL_BUFFER = 0.95;      // leave 5% for FX / settlement drift
+    if (cadAvailable < CORE_REBAL_CASH_FLOOR) {
+      // "Fund first" variant — no usable cash today. Emit a mandate
+      // that acknowledges the gap AND names the real next step (raise
+      // cash via a SELL). Otherwise the operator sees an $11k BUY
+      // mandate with no plausible source and either ignores it or
+      // funds it via margin.
       mandatoryLater.push(
-        `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}.${stopClause(rebalTicket)} **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}${describeTicker(rebalTicket.ticker)}`
+        `**CORE REBALANCE (fund first)** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). **Total deployable CAD cash across accounts: $${Math.round(cadAvailable).toLocaleString()}** — below the $${CORE_REBAL_CASH_FLOOR} floor. **Cannot fund a CORE BUY today without raising cash first.** Next step: trim a laggard SWING/SPEC position (see §A2 for candidates on cooling sectors or negative P/L) to raise CAD, then BUY XEQT / VUN / XIU with the proceeds. **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**`
       );
     } else {
-      mandatoryLater.push(
-        `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct all free cash AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.** (No live price for default ticker — pick one manually.)`
-      );
+      const cappedGap = Math.min(gap, cadAvailable * CORE_REBAL_BUFFER);
+      const rebalTicket = pickDefaultTicket(["XEQT.TO", "VUN.TO", "XIU.TO"], cappedGap, "CAD");
+      const cashCapped = cappedGap < gap - 100; // ignore rounding noise
+      if (rebalTicket) {
+        const altStr = rebalTicket.alternatives ? ` · Alternatives: ${rebalTicket.alternatives}` : "";
+        const capNote = cashCapped
+          ? ` **Cash-capped** at ~$${Math.round(cadAvailable).toLocaleString()} CAD available across accounts — remaining ~${m(gap - rebalTicket.usedCad)} of gap needs a laggard SELL to fund.`
+          : "";
+        mandatoryLater.push(
+          `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}.${capNote}${stopClause(rebalTicket)} **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}${describeTicker(rebalTicket.ticker)}`
+        );
+      } else {
+        mandatoryLater.push(
+          `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct available CAD cash (~$${Math.round(cadAvailable).toLocaleString()}) AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.** (No live price for default ticker — pick one manually.)`
+        );
+      }
     }
   }
 
