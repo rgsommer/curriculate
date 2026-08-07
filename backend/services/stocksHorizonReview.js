@@ -81,13 +81,35 @@ function emojiFor(status) {
 // is optional — pass it when the caller already has fresh prices,
 // otherwise the service fetches them.
 export async function computeHorizonReview(email, { priceMap = null } = {}) {
-  const recs = await StocksAdviceRec.find({
+  const rawRecs = await StocksAdviceRec.find({
     email,
     status: "open",
     action: "BUY",
     horizonDays: { $gt: 0 },
     entryPrice: { $gt: 0 },
   }).sort({ generatedAt: 1 }).lean();
+  if (rawRecs.length === 0) return [];
+  // Held-position filter — a rec whose base ticker no longer matches any
+  // held position is a stale open rec (the user sold but nothing closed
+  // the linked rec). Surfacing those as "well-behind" is noise. User
+  // Aug 8: "DUOL / ENB / XLU keep showing well-behind but I don't hold
+  // them". Cheap to fetch the profile positions here; keeps this
+  // service self-contained.
+  let recs = rawRecs;
+  try {
+    const { default: StocksPortfolio } = await import("../models/StocksPortfolio.js");
+    const profile = await StocksPortfolio.findOne({ email }).select({ positions: 1 }).lean();
+    const heldBases = new Set(
+      (profile?.positions || [])
+        .filter(p => (p?.qty || 0) > 0)
+        .map(p => String(p.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, ""))
+        .filter(Boolean)
+    );
+    if (heldBases.size > 0) {
+      const baseOf = t => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+      recs = rawRecs.filter(r => heldBases.has(baseOf(r.ticker)));
+    }
+  } catch { /* fail-open — if the portfolio fetch fails, show everything (old behavior) */ }
   if (recs.length === 0) return [];
 
   // Fetch prices per unique resolved symbol if not provided.

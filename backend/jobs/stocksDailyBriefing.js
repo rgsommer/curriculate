@@ -1074,6 +1074,30 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // these lines as the authoritative version in the final briefing —
   // even if the AI mimics the mandate format with downscaled numbers.
   const concentrationMandates = [];
+  // Mandate BUYs the prefix emits (CORE REBALANCE, CASH DEPLOY, paired
+  // CORE DEPLOY / REDEPLOY, IF-EXIT REDEPLOY, TRIM SPEC CORE DEPLOY).
+  // Persisted by the caller as StocksAdviceRec docs so the CIBC trade
+  // linker (findMatchingOpenRec) can attach a subsequent user-executed
+  // BUY to the mandate that told them to do it. User Aug 8: bought 74
+  // sh XEQT after the CORE REBALANCE mandate and briefing said "no
+  // linked rec" — because mandate BUYs lived only in markdown, never
+  // as searchable rec docs.
+  const mandateRecs = [];
+  const addMandateRec = (ticket, kind, accountName = null) => {
+    if (!ticket || !ticket.ticker || !(ticket.livePrice > 0)) return;
+    mandateRecs.push({
+      ticker: ticket.ticker,
+      action: "BUY",
+      entryPrice: ticket.livePrice,
+      entryCurrency: ticket.liveCcy,
+      stopPrice: ticket.derivedStop ?? null,
+      targetPrice: null, // mandates are structural rebalance BUYs, not target-hunts
+      horizonDays: 30,   // reasonable default; linker uses ±30d window anyway
+      sizeShares: ticket.shares,
+      account: accountName,
+      sourceLabel: `mandate:${kind}`,
+    });
+  };
   // Alias — kept as ctxRecentExits inside so callers don't have to
   // rebind if the param name changes later.
   const ctxRecentExits = recentExits || [];
@@ -1225,6 +1249,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         mandatoryLater.push(
           `**CORE REBALANCE** — BUY **${rebalTicket.shares} sh ${rebalTicket.ticker}** @ ~$${rebalTicket.livePrice.toFixed(2)} ${rebalTicket.liveCcy} (live) to close CORE gap ${coreGapPp.toFixed(1)}pp (~${m(gap)}). Currently CORE is ${b.actualPct.core.toFixed(1)}% vs ${b.targetsPct.core.toFixed(0)}% target. Uses ~${m(rebalTicket.usedCad)}.${capNote}${stopClause(rebalTicket)} **No new SWING/SPEC/INCOME buys until CORE ≥ 70%.**${altStr}${describeTicker(rebalTicket.ticker)}`
         );
+        addMandateRec(rebalTicket, "core-rebalance");
       } else {
         mandatoryLater.push(
           `**CORE REBALANCE** — CORE is ${b.actualPct.core.toFixed(1)}% of book vs ${b.targetsPct.core.toFixed(0)}% target (gap ${coreGapPp.toFixed(1)}pp, ~${m(gap)}). Direct available CAD cash (~$${Math.round(cadAvailable).toLocaleString()}) AND proceeds from any sale today into XEQT / VUN / XIU. **No new SWING or SPEC buys until CORE ≥ 70%.** (No live price for default ticker — pick one manually.)`
@@ -1339,6 +1364,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           mandatoryLater.push(
             `   ${i + 1}. BUY **${t.ticket.shares} sh ${t.ticket.ticker}** in **${acctLabel}** (${t.effectiveSleeve} sleeve) @ ~$${t.ticket.livePrice.toFixed(2)} ${t.ticket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${t.pool.ccy} · reserve ~$${Math.round(t.reserveInCcy).toLocaleString()} ${t.pool.ccy} kept in ${acctLabel}.${stopClause(t.ticket)}${altStr}${describeTicker(t.ticket.ticker)}`
           );
+          addMandateRec(t.ticket, "cash-deploy", acctLabel);
         });
       } else if (pools.length > 0) {
         // Fallback: had pools but no ticket generated (no live prices).
@@ -1510,6 +1536,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           const usedNative = pairTicket.shares * pairTicket.livePrice;
           const pairedLine = `   → **REDEPLOY (paired with TRIM above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}**${acctStr} @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${positionCcy} of the ~$${Math.round(excessNative).toLocaleString()} ${positionCcy} proceeds from ${base} TRIM. ${destSleeveLabel} sleeve — required destination.${stopClause(pairTicket)}${altStr}${describeTicker(pairTicket.ticker)}`;
           mandatory.push(pairedLine);
+          addMandateRec(pairTicket, "trim-redeploy", acctLabel);
         }
       }
     }
@@ -1599,6 +1626,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         mandatory.push(
           `   → **IF EXIT — REDEPLOY** — Selling ${r.qty} sh ${r.ticker} at ~$${r.last.toFixed(2)} ${r.currency} raises ~$${Math.round(proceedsNative).toLocaleString()} ${r.currency}. After settle, BUY **${redeployTicket.shares} sh ${redeployTicket.ticker}** in **${acctLabel}** @ ~$${redeployTicket.livePrice.toFixed(2)} ${redeployTicket.liveCcy} (live). Uses ~$${Math.round(usedNative).toLocaleString()} ${r.currency} of the proceeds. ${redirect.sleeve.toUpperCase()} sleeve — required destination.${stopClause(redeployTicket)}${gapNote}${altStr}${describeTicker(redeployTicket.ticker)}`
         );
+        addMandateRec(redeployTicket, "trail-stop-if-exit-redeploy", acctLabel);
       }
     }
   }
@@ -1773,6 +1801,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         mandatory.push(
           `   → **CORE DEPLOY (paired with SELL above)** — After settle, BUY **${pairTicket.shares} sh ${pairTicket.ticker}** in **${r.account}** @ ~$${pairTicket.livePrice.toFixed(2)} ${pairTicket.liveCcy} (live). Uses ~$${Math.round(proceeds).toLocaleString()} ${r.currency} proceeds from ${r.ticker} SELL (pro-forma). CORE gap ${coreGapPp.toFixed(1)}pp — required destination.${stopClause(pairTicket)}${altStr}${describeTicker(pairTicket.ticker)}`
         );
+        addMandateRec(pairTicket, "confirmed-stop-core-deploy", r.account);
       } else {
         const coreTicker = r.currency === "CAD" ? "XEQT / VUN / XIU" : "VOO / QQQ / VTI";
         mandatory.push(
@@ -1859,6 +1888,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         mandatory.push(
           `   → **CORE DEPLOY (paired with TRIM above)** — After the SPEC trim settles, BUY **${trimTicket.shares} sh ${trimTicket.ticker}** @ ~$${trimTicket.livePrice.toFixed(2)} ${trimTicket.liveCcy} (live). Uses ~${m(excessCad)} trim proceeds. Same-account CAD deploy. CORE gap ${coreGapPp.toFixed(1)}pp — required destination, not cash.${stopClause(trimTicket)}${altStr}${describeTicker(trimTicket.ticker)}`
         );
+        addMandateRec(trimTicket, "trim-spec-core-deploy");
       } else {
         mandatory.push(
           `   → **CORE DEPLOY (paired with TRIM above)** — Route the SPEC-trim proceeds (~${m(excessCad)} needed to reach cap) into XEQT / VUN / XIU in the same account and currency as the SELL. CORE gap is ${coreGapPp.toFixed(1)}pp — required destination, not cash.`
@@ -2010,7 +2040,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     chunks.push("");
   }
 
-  return { md: chunks.join("\n").trim(), concentrationMandates };
+  return { md: chunks.join("\n").trim(), concentrationMandates, mandateRecs };
 }
 
 function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null, macroFred = null, insiderSignals = null, optionsFlow = null, marketPulse = null, whale13F = []) {
@@ -3053,7 +3083,7 @@ export async function generateBriefing(profile) {
         return null;
       })
     : null;
-  const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates } = renderDeterministicPrefix({
+  const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates, mandateRecs: prefixMandateRecs } = renderDeterministicPrefix({
     monitorAlerts,
     monitorStopHitRecs,
     stopMonitor,
@@ -3518,6 +3548,35 @@ export async function generateBriefing(profile) {
       md = md.replace(/\n{3,}/g, "\n\n");
       console.warn(`[phantom-sell] dropped ${phantomDropped} line(s) mandating SELL/EXIT/TRIM on non-held ticker(s): ${[...phantomDroppedTickers].join(", ")}`);
     }
+    // Second guard — §A2 per-holding bullets whose LEADING ticker isn't
+    // held. User Aug 8: "I do not own HIT" — a phantom "HIT [INCOME
+    // 0.9% · +4.1%] — HOLD" bullet had appeared in A2. Sell-verb guard
+    // above doesn't catch this because the line is a HOLD. Match the
+    // A2 format:
+    //     * TICKER [SLEEVE · N.N% · +X.X%] — HOLD — ...
+    //     * TICKER.TO [SLEEVE ...] — HOLD/action —
+    // If the leading token isn't in the held set (or the known-ETF
+    // fallback list for defensible mentions), drop the whole bullet.
+    let phantomHoldDropped = 0;
+    const phantomHoldTickers = new Set();
+    md = md.split("\n").filter(line => {
+      // A2 bullet with a TICKER-then-[SLEEVE...] prefix. Anchor loose
+      // enough to survive optional bold/italic markdown around the
+      // ticker (`* **AAPL** [...]`) while precise enough not to eat
+      // ordinary narrative bullets.
+      const m = line.match(/^\s*[*-]\s+(?:\*\*|__)?([A-Z]{1,6})(?:\.(?:TO|V|NE))?(?:\*\*|__)?\s*\[/);
+      if (!m) return true;
+      const base = m[1].toUpperCase();
+      if (TICKER_STOPWORDS.has(base)) return true;
+      if (heldBasesForPhantomGuard.has(base)) return true;
+      phantomHoldTickers.add(base);
+      phantomHoldDropped++;
+      return false;
+    }).join("\n");
+    if (phantomHoldDropped > 0) {
+      md = md.replace(/\n{3,}/g, "\n\n");
+      console.warn(`[phantom-hold] dropped ${phantomHoldDropped} A2 bullet(s) for non-held ticker(s): ${[...phantomHoldTickers].join(", ")}`);
+    }
   }
 
   // ─── Post-generation validation ───
@@ -3727,7 +3786,7 @@ export async function generateBriefing(profile) {
   // Return signals + accepted/rejected recs alongside the markdown so
   // persist sites can insertMany directly without re-parsing or
   // re-validating. Callers that only want the string use `.md`.
-  return { md: md.trim(), sectorRotation, tradingRegime, acceptedRecs, rejectedRecs };
+  return { md: md.trim(), sectorRotation, tradingRegime, acceptedRecs, rejectedRecs, mandateRecs: prefixMandateRecs };
 }
 
 // Plain-English fix instructions per validator reason slug. Reader
@@ -3966,6 +4025,42 @@ export async function runDailyBriefing(opts = {}) {
       }
       if (rejectedRecs.length > 0) {
         console.warn(`[stocks-briefing] ${p.email}: ${rejectedRecs.length} rec(s) rejected by validator, ${acceptedRecs.length} accepted`);
+      }
+      // Persist mandate BUYs (CORE REBALANCE / CASH DEPLOY / paired
+      // REDEPLOYs / CORE DEPLOYs / TRIM SPEC CORE DEPLOY) as
+      // searchable AdviceRec docs so the CIBC trade linker
+      // (findMatchingOpenRec) can attach a user-executed BUY to the
+      // mandate that told them to do it. Otherwise these mandates
+      // live only in briefing markdown and every trade against them
+      // shows "no linked rec". User Aug 8: bought 74 sh XEQT after
+      // the CORE REBALANCE mandate; briefing had no idea they were
+      // linked.
+      const mandateRecs = gen.mandateRecs || [];
+      if (mandateRecs.length > 0) {
+        try {
+          await StocksAdviceRec.insertMany(
+            mandateRecs.map((r) => ({
+              email: p.email,
+              generatedAt: new Date(),
+              status: "open",
+              source: "mandate",
+              sourceLabel: r.sourceLabel || "mandate",
+              action: r.action,
+              ticker: r.ticker,
+              entryPrice: r.entryPrice,
+              entryCurrency: r.entryCurrency,
+              stopPrice: r.stopPrice ?? undefined,
+              targetPrice: r.targetPrice ?? undefined,
+              horizonDays: r.horizonDays ?? 30,
+              account: r.account || undefined,
+              rationale: `Deterministic ${r.sourceLabel || "mandate"} — briefing cron`,
+            })),
+            { ordered: false } // one insert failure shouldn't block the rest
+          );
+          console.log(`[stocks-briefing] ${p.email}: persisted ${mandateRecs.length} mandate rec(s) for trade-linking`);
+        } catch (e) {
+          console.warn(`[stocks-briefing] ${p.email}: mandate-rec persistence warn: ${e?.message}`);
+        }
       }
       console.log(`[stocks-briefing] ✓ ${p.email} — ${recs.length} recs tracked`);
     } catch (err) {
