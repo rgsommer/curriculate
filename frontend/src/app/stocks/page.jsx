@@ -1291,7 +1291,8 @@ export default function StocksAdvisorPage() {
               ["advice", "Advice", "Advice"],
               ["discover", "Discover", "Find"],
               ["news", "News", "News"],
-              ["performance", "Performance", "Perf"],
+              ["health", "Health", "Health"],
+              ["returns", "Returns", "Ret"],
               ["trades", "Trades", "Trades"],
               ["reconcile", "Reconcile", "↻"],
               ["settings", "Settings", "⚙"],
@@ -1405,7 +1406,8 @@ export default function StocksAdvisorPage() {
           )}
           {currentTab === "discover" && <DiscoverView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "news" && <NewsView sessionToken={auth.sessionToken} user={user} />}
-          {currentTab === "performance" && <PerformanceView sessionToken={auth.sessionToken} user={user} />}
+          {currentTab === "returns" && <PerformanceView sessionToken={auth.sessionToken} user={user} />}
+          {currentTab === "health" && <HealthView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
           {currentTab === "reconcile" && (
             <ReconcileView
@@ -9735,6 +9737,306 @@ function NewsView({ sessionToken, user }) {
                 </div>
               ) : null}
               <NewsItem item={item} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// =============================================================================
+// Health tab — structural allocation + AI narrative review
+// =============================================================================
+const SLEEVE_COLORS = { core: "#2563eb", swing: "#7c3aed", income: "#059669", spec: "#dc2626" };
+
+// Health-view scoped formatters — `fmtPct` and `fmtCad` are already
+// defined at module scope with different signatures. Prefix with `hv`
+// to keep those overloads distinct.
+function hvFmtCad(n) {
+  if (!Number.isFinite(n)) return "—";
+  return `$${Math.round(n).toLocaleString()} CAD`;
+}
+function hvFmtPct(n, digits = 1) {
+  if (!Number.isFinite(n)) return "—";
+  return `${n.toFixed(digits)}%`;
+}
+
+// Very small inline markdown renderer — enough for headers, lists,
+// paragraphs, and bold. Avoids pulling in a dependency for a single
+// analysis section. Escapes HTML on the source.
+function renderNarrative(md) {
+  if (!md) return null;
+  const escapeHtml = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const inline = (line) => escapeHtml(line)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`]+)`/g, '<code style="background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:0.9em">$1</code>');
+  const lines = md.split(/\r?\n/);
+  const html = [];
+  let inUl = false, inOl = false;
+  const closeLists = () => {
+    if (inUl) { html.push("</ul>"); inUl = false; }
+    if (inOl) { html.push("</ol>"); inOl = false; }
+  };
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { closeLists(); continue; }
+    if (line.startsWith("### ")) { closeLists(); html.push(`<h4 style="margin:16px 0 6px;font-size:15px;font-weight:700">${inline(line.slice(4))}</h4>`); continue; }
+    if (line.startsWith("## ")) { closeLists(); html.push(`<h3 style="margin:18px 0 8px;font-size:17px;font-weight:700">${inline(line.slice(3))}</h3>`); continue; }
+    if (/^\s*[-*]\s+/.test(line)) {
+      if (!inUl) { closeLists(); html.push('<ul style="margin:4px 0 4px 20px;padding:0">'); inUl = true; }
+      html.push(`<li style="margin:4px 0;line-height:1.5">${inline(line.replace(/^\s*[-*]\s+/, ""))}</li>`);
+      continue;
+    }
+    if (/^\s*\d+\.\s+/.test(line)) {
+      if (!inOl) { closeLists(); html.push('<ol style="margin:4px 0 4px 22px;padding:0">'); inOl = true; }
+      html.push(`<li style="margin:4px 0;line-height:1.5">${inline(line.replace(/^\s*\d+\.\s+/, ""))}</li>`);
+      continue;
+    }
+    closeLists();
+    html.push(`<p style="margin:6px 0;line-height:1.55">${inline(line)}</p>`);
+  }
+  closeLists();
+  return <div dangerouslySetInnerHTML={{ __html: html.join("") }} />;
+}
+
+function HealthView({ sessionToken, user }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeErr, setAnalyzeErr] = useState(null);
+
+  const load = async () => {
+    if (!sessionToken) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-health`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      setData(j);
+    } catch (e) {
+      setErr(e?.message || "Failed to load health snapshot");
+    } finally {
+      setBusy(false);
+    }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sessionToken]);
+
+  const runAnalysis = async () => {
+    if (!sessionToken || analyzing) return;
+    setAnalyzing(true); setAnalyzeErr(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-health/analysis`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setData((prev) => ({ ...(prev || {}), snapshot: j.snapshot, lastAnalysis: j.analysis }));
+    } catch (e) {
+      setAnalyzeErr(e?.message || "Analysis failed");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  if (busy && !data) return <div className="sa-empty">Loading portfolio health…</div>;
+  if (err) return <div className="sa-card" style={{ padding: 12, color: "var(--sa-red)" }}>Error: {err}</div>;
+  if (!data) return <div className="sa-empty">No data.</div>;
+
+  const s = data.snapshot;
+  const analysis = data.lastAnalysis;
+  const analysisStale = analysis?.generatedAt ? (Date.now() - new Date(analysis.generatedAt).getTime()) > 24 * 60 * 60 * 1000 : true;
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Portfolio Health</h2>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 4 }}>
+            Structural review: allocations, overlaps, concentrations, sector exposure.
+            Book: <strong>{hvFmtCad(s.bookTotalCad)}</strong> · {s.positionCount} positions across {s.accountCount} accounts.
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)" }}>Deterministic health</div>
+          <div style={{ fontSize: 32, fontWeight: 800, color: s.healthScore >= 8 ? "var(--sa-green)" : s.healthScore >= 6 ? "#d97706" : "var(--sa-red)", lineHeight: 1 }}>
+            {s.healthScore.toFixed(1)}<span style={{ fontSize: 16, color: "var(--sa-muted)", fontWeight: 400 }}>/10</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Sleeve balance */}
+      <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Sleeve balance</div>
+        <div style={{ display: "flex", height: 22, borderRadius: 6, overflow: "hidden", marginBottom: 8, border: "1px solid var(--sa-border)" }}>
+          {["core", "swing", "income", "spec"].map((k) => {
+            const pct = s.sleeves?.actualPct?.[k] || 0;
+            if (pct < 0.5) return null;
+            return (
+              <div key={k} title={`${k.toUpperCase()}: ${hvFmtPct(pct)}`}
+                   style={{ background: SLEEVE_COLORS[k], width: `${pct}%`, display: "flex", alignItems: "center", justifyContent: "center", color: "#fff", fontSize: 11, fontWeight: 600 }}>
+                {pct >= 8 ? `${k.toUpperCase()} ${pct.toFixed(0)}%` : ""}
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, fontSize: 12 }}>
+          {["core", "swing", "income", "spec"].map((k) => {
+            const actual = s.sleeves?.actualPct?.[k];
+            const target = s.sleeves?.targetsPct?.[k];
+            const dev = s.sleeves?.deviations?.[k];
+            const devSign = dev > 0 ? "+" : "";
+            const devColor = Math.abs(dev || 0) < 3 ? "var(--sa-muted)" : dev < 0 ? "var(--sa-red)" : "#d97706";
+            return (
+              <div key={k} style={{ padding: 8, border: "1px solid var(--sa-border)", borderRadius: 6 }}>
+                <div style={{ fontWeight: 700, textTransform: "uppercase", fontSize: 11, color: SLEEVE_COLORS[k] }}>{k}</div>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{hvFmtPct(actual)}</div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)" }}>target {hvFmtPct(target, 0)}</div>
+                <div style={{ fontSize: 11, color: devColor, fontWeight: 600 }}>{devSign}{dev?.toFixed(1)}pp</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* AI narrative */}
+      <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>AI Health Review</div>
+            <div style={{ fontSize: 11, color: "var(--sa-muted)" }}>
+              {analysis?.generatedAt
+                ? <>Last analyzed {new Date(analysis.generatedAt).toLocaleString()} {analysis.aiScore != null ? `· AI score ${analysis.aiScore}/10` : ""} {analysisStale ? "· ⚠ stale (>24h)" : ""}</>
+                : "No analysis yet — generate one when you're ready."}
+            </div>
+          </div>
+          <button className="sa-btn" onClick={runAnalysis} disabled={analyzing || s.positionCount === 0}>
+            {analyzing ? "Analyzing…" : analysis ? "↻ Regenerate" : "Analyze"}
+          </button>
+        </div>
+        {analyzeErr ? <div style={{ color: "var(--sa-red)", fontSize: 12, marginTop: 6 }}>Error: {analyzeErr}</div> : null}
+        {analysis?.aiNarrative ? (
+          <div style={{ marginTop: 10, fontSize: 13, color: "var(--sa-text)" }}>
+            {renderNarrative(analysis.aiNarrative)}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 10 }}>
+            Click <strong>Analyze</strong> to generate a written review of your portfolio's structure — overlaps, hidden problems, concentration flags, and 3-5 ranked next moves.
+          </div>
+        )}
+      </div>
+
+      {/* Concentrations */}
+      {s.concentrations.length > 0 && (
+        <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Concentration flags</div>
+          {s.concentrations.map((c) => (
+            <div key={c.base} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid var(--sa-border)" }}>
+              <div>
+                <strong>{c.base}</strong>
+                <span style={{ marginLeft: 8, fontSize: 11, padding: "1px 6px", borderRadius: 4, background: c.severity === "breach" ? "#fee2e2" : "#fef3c7", color: c.severity === "breach" ? "#991b1b" : "#92400e", fontWeight: 600 }}>
+                  {c.severity === "breach" ? "BREACH" : "WARN"}
+                </span>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)" }}>
+                  {c.tickers.length > 1 ? `across ${c.tickers.join(", ")} · ` : ""}sleeve: {c.sleeves.join("/")}
+                </div>
+              </div>
+              <div style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                <div style={{ fontWeight: 700 }}>{hvFmtPct(c.pctOfBook)}</div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)" }}>{hvFmtCad(c.cadValue)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Overlaps */}
+      {s.overlaps.length > 0 && (
+        <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Overlap flags</div>
+          {s.overlaps.map((o, i) => (
+            <div key={i} style={{ padding: "8px 0", borderBottom: "1px solid var(--sa-border)" }}>
+              {o.kind === "etf-family" ? (
+                <>
+                  <div style={{ fontWeight: 600 }}>{o.label}</div>
+                  <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 2 }}>Held: <strong>{o.held.join(" + ")}</strong> · combined {hvFmtPct(o.totalPctOfBook)} of book</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>{o.note}</div>
+                </>
+              ) : (
+                <>
+                  <div style={{ fontWeight: 600 }}>{o.ticker} owned directly AND via {o.heldInEtfs.join(" / ")}</div>
+                  <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 2 }}>Direct: {hvFmtPct(o.singleNamePctOfBook)} of book · Implied via ETF: ~{hvFmtPct(o.impliedEtfExposurePctOfBook)}</div>
+                  <div style={{ fontSize: 12, marginTop: 4 }}>{o.note}</div>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Allocations table */}
+      <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>All positions</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "var(--sa-muted)", borderBottom: "1px solid var(--sa-border)" }}>
+                <th style={{ padding: "6px 8px" }}>Ticker</th>
+                <th style={{ padding: "6px 8px" }}>Sleeve</th>
+                <th style={{ padding: "6px 8px" }}>Account</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>Value (CAD)</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>% book</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>P/L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {s.allocations.map((a) => (
+                <tr key={`${a.ticker}-${a.account}`} style={{ borderBottom: "1px solid var(--sa-border)" }}>
+                  <td style={{ padding: "6px 8px", fontWeight: 600 }}>{a.ticker} <span style={{ fontSize: 10, color: "var(--sa-muted)" }}>{a.currency}</span></td>
+                  <td style={{ padding: "6px 8px", textTransform: "uppercase", fontSize: 11, color: SLEEVE_COLORS[a.sleeve] || "var(--sa-muted)", fontWeight: 600 }}>{a.sleeve}</td>
+                  <td style={{ padding: "6px 8px", color: "var(--sa-muted)" }}>{a.account}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{hvFmtCad(a.cadValue)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", fontWeight: 600 }}>{hvFmtPct(a.pctOfBook)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontVariantNumeric: "tabular-nums", color: a.pnlPct == null ? "var(--sa-muted)" : a.pnlPct >= 0 ? "var(--sa-green)" : "var(--sa-red)" }}>
+                    {a.pnlPct == null ? "—" : `${a.pnlPct >= 0 ? "+" : ""}${a.pnlPct.toFixed(1)}%`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Sector exposure */}
+      <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Sector exposure</div>
+        {s.sectorExposure.map((se) => (
+          <div key={se.sector} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0" }}>
+            <span>{se.sector}</span>
+            <span style={{ fontVariantNumeric: "tabular-nums" }}>{hvFmtPct(se.pctOfBook)} <span style={{ color: "var(--sa-muted)", fontSize: 11 }}>({hvFmtCad(se.cadValue)})</span></span>
+          </div>
+        ))}
+        <div style={{ fontSize: 11, color: "var(--sa-muted)", marginTop: 6 }}>
+          Broad ETFs (VOO/XIU/XEQT/etc.) group into "Multi-sector" — assigning them to a single sector would misrepresent the underlying exposure.
+        </div>
+      </div>
+
+      {/* Deductions */}
+      {s.deductions.length > 0 && (
+        <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>How the {s.healthScore.toFixed(1)}/10 broke down</div>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 6 }}>Start at 10; deductions are rule-based and transparent.</div>
+          {s.deductions.map((d, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", fontSize: 12 }}>
+              <span>{d.reason}</span>
+              <span style={{ color: "var(--sa-red)", fontVariantNumeric: "tabular-nums" }}>{d.points.toFixed(2)}</span>
             </div>
           ))}
         </div>
