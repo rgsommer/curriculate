@@ -3591,6 +3591,46 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                       </td>
                     </tr>
                   )];
+                  // Persistent visual position bar under every ticker row.
+                  // User Aug 8: "for each held ticker, I want a visual bar
+                  // with an indicator showing where along the bar the
+                  // position is, showing loss zone, entry, stop, profitable,
+                  // target, current position." Reuses the same rec / auto-
+                  // stop resolution as the Target/Stop cells above so a
+                  // single source of truth drives both.
+                  {
+                    const rec = openBuyRecsByBase[baseKey];
+                    const sleeve = sleeveOfTicker(p.ticker);
+                    const wantAuto = (sleeve === "swing" || sleeve === "spec");
+                    const auto = wantAuto ? derivedStopsByTicker[String(p.ticker || "").toUpperCase()] : null;
+                    const barEntry = basis;
+                    const barCurrent = price;
+                    const recStop = rec?.stopPrice;
+                    const autoStop = auto?.derivedStop;
+                    const barStop = Number.isFinite(recStop) ? recStop
+                      : Number.isFinite(autoStop) ? autoStop
+                      : null;
+                    const stopSource = Number.isFinite(recStop) ? "rec" : "auto";
+                    const barTarget = Number.isFinite(rec?.targetPrice) ? rec.targetPrice : null;
+                    // Only render the sub-row when we have enough to plot.
+                    if (Number.isFinite(barEntry) && Number.isFinite(barCurrent) &&
+                        (Number.isFinite(barStop) || Number.isFinite(barTarget))) {
+                      rows.push(
+                        <tr key={`${p._origIdx}-bar`}>
+                          <td colSpan={13} style={{ padding: 0, borderTop: "none" }}>
+                            <PositionBar
+                              entry={barEntry}
+                              stop={barStop}
+                              target={barTarget}
+                              current={barCurrent}
+                              currency={p.ccy}
+                              stopSource={stopSource}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    }
+                  }
                   if (isExpanded) {
                     rows.push(
                       <tr key={`${p._origIdx}-trades`} style={{ background: "var(--sa-panel-2)" }}>
@@ -9573,6 +9613,133 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} })
         </table>
       </div>
       )}
+    </div>
+  );
+}
+
+// =============================================================================
+// PositionBar — one-line visual per held ticker
+//
+// Layout, left→right, on a price scale from `scaleMin` to `scaleMax`:
+//
+//   [ below-stop ][ loss (stop→entry) ][ profit (entry→target) ][ above-target ]
+//         │              │                       │                     │
+//        stop         entry                    target                  ▲ current marker
+//
+// Colors mirror the P/L convention: red family below entry, green above.
+// The "below stop" and "above target" bands only appear when current
+// actually drifts into them, so a healthy position doesn't visually
+// scream at the edges. When target is null (many CORE ETFs) the profit
+// zone is open-ended right. When stop is null the loss zone anchors at
+// scaleMin. If BOTH are null we return null (nothing meaningful to plot).
+// =============================================================================
+function PositionBar({ entry, stop, target, current, currency, stopSource = "rec" }) {
+  if (!Number.isFinite(entry) || !Number.isFinite(current)) return null;
+  if (!Number.isFinite(stop) && !Number.isFinite(target)) return null;
+
+  // Scale endpoints — 10% padding beyond the outer of stop/target so
+  // the marker still has room to move when current is at a boundary.
+  let scaleMin, scaleMax;
+  if (Number.isFinite(stop) && Number.isFinite(target)) {
+    const span = Math.max(target - stop, 0.01);
+    scaleMin = Math.min(stop, current) - span * 0.05;
+    scaleMax = Math.max(target, current) + span * 0.05;
+  } else if (Number.isFinite(stop)) {
+    const span = Math.max(entry - stop, 0.01);
+    scaleMin = Math.min(stop, current) - span * 0.1;
+    scaleMax = Math.max(entry, current) + span * 0.5;
+  } else {
+    const span = Math.max(target - entry, 0.01);
+    scaleMin = Math.min(entry, current) - span * 0.3;
+    scaleMax = Math.max(target, current) + span * 0.1;
+  }
+  const pos = (v) => Math.max(0, Math.min(100, ((v - scaleMin) / (scaleMax - scaleMin)) * 100));
+  const cP = pos(current);
+  const eP = pos(entry);
+  const sP = Number.isFinite(stop) ? pos(stop) : null;
+  const tP = Number.isFinite(target) ? pos(target) : null;
+
+  // Segments — non-overlapping absolute-positioned strips [0..100].
+  const segs = [];
+  if (sP != null) {
+    if (sP > 0) segs.push({ from: 0, to: sP, color: "#fecaca" });      // below-stop danger
+    segs.push({ from: sP, to: eP, color: "#fee2e2" });                 // stop→entry loss
+  } else {
+    segs.push({ from: 0, to: eP, color: "#fee2e2" });                  // no stop → below-entry is all loss
+  }
+  if (tP != null) {
+    segs.push({ from: eP, to: tP, color: "#d1fae5" });                 // entry→target profit
+    if (tP < 100) segs.push({ from: tP, to: 100, color: "#bbf7d0" });  // above-target bonus
+  } else {
+    segs.push({ from: eP, to: 100, color: "#d1fae5" });                // no target → profit open-ended
+  }
+
+  // Marker color reflects the CURRENT zone.
+  let markerColor, markerLabel;
+  if (sP != null && current <= stop) { markerColor = "#991b1b"; markerLabel = "🛑 stop breached"; }
+  else if (current < entry)          { markerColor = "#b91c1c"; markerLabel = "loss"; }
+  else if (tP != null && current >= target) { markerColor = "#065f46"; markerLabel = "🎯 at/above target"; }
+  else                               { markerColor = "#059669"; markerLabel = "profit"; }
+
+  const fmt = (v) => Number.isFinite(v) ? `$${v.toFixed(2)}` : "—";
+  const stopLabel = Number.isFinite(stop) ? (stopSource === "auto" ? `stop ${fmt(stop)} (auto)` : `stop ${fmt(stop)}`) : null;
+
+  // Sanity check — a bar where entry sits at or beyond the edge of the
+  // scale gets rendered zero-width and looks broken. Skip when the
+  // computed positions collapse.
+  if (Math.abs(scaleMax - scaleMin) < 0.001) return null;
+
+  return (
+    <div style={{ padding: "6px 30px 10px 30px" }} title={`${markerLabel} · current ${fmt(current)} ${currency || ""}`}>
+      {/* Bar */}
+      <div style={{ position: "relative", height: 12, marginBottom: 20 }}>
+        {segs.map((s, i) => (
+          <div key={i} style={{
+            position: "absolute",
+            left: `${s.from}%`,
+            width: `${Math.max(0, s.to - s.from)}%`,
+            top: 3, height: 6, background: s.color, borderRadius: 1,
+          }} />
+        ))}
+        {/* Vertical tick markers */}
+        {sP != null && (
+          <div style={{ position: "absolute", left: `calc(${sP}% - 1px)`, top: 0, width: 2, height: 12, background: "#991b1b" }} />
+        )}
+        <div style={{ position: "absolute", left: `calc(${eP}% - 1px)`, top: 0, width: 2, height: 12, background: "#334155" }} />
+        {tP != null && (
+          <div style={{ position: "absolute", left: `calc(${tP}% - 1px)`, top: 0, width: 2, height: 12, background: "#065f46" }} />
+        )}
+        {/* Current-position marker (triangle above the bar with $ label) */}
+        <div style={{
+          position: "absolute", left: `calc(${cP}% - 6px)`, top: -8,
+          width: 0, height: 0,
+          borderLeft: "6px solid transparent", borderRight: "6px solid transparent",
+          borderTop: `10px solid ${markerColor}`,
+        }} />
+        <div style={{
+          position: "absolute",
+          left: `${cP}%`, transform: `translateX(${cP > 90 ? "-100%" : cP < 10 ? "0%" : "-50%"})`,
+          top: -22, fontSize: 10, fontWeight: 700, color: markerColor,
+          background: "var(--sa-panel-1, #fff)", padding: "0 4px", whiteSpace: "nowrap",
+          border: `1px solid ${markerColor}`, borderRadius: 3,
+        }}>
+          now {fmt(current)}
+        </div>
+        {/* Tick labels under the bar */}
+        {sP != null && (
+          <div style={{ position: "absolute", left: `${sP}%`, transform: `translateX(${sP > 90 ? "-100%" : sP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#991b1b", whiteSpace: "nowrap" }}>
+            {stopLabel}
+          </div>
+        )}
+        <div style={{ position: "absolute", left: `${eP}%`, transform: `translateX(${eP > 90 ? "-100%" : eP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#334155", whiteSpace: "nowrap" }}>
+          entry {fmt(entry)}
+        </div>
+        {tP != null && (
+          <div style={{ position: "absolute", left: `${tP}%`, transform: `translateX(${tP > 90 ? "-100%" : tP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#065f46", whiteSpace: "nowrap" }}>
+            target {fmt(target)}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
