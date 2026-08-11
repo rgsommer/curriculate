@@ -10619,6 +10619,53 @@ function HealthView({ sessionToken, user }) {
         </div>
       </div>
 
+      {/* Tax placement — US-dividend / US-ETF holdings vs account type */}
+      {s.taxPlacement?.flagged?.length > 0 && (
+        <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 700 }}>Tax placement</div>
+            {s.taxPlacement.totalAnnualDragCad > 0 && (
+              <div style={{ fontSize: 12, color: "#7f1d1d", fontVariantNumeric: "tabular-nums" }}>
+                ~<b>{hvFmtCad(s.taxPlacement.totalAnnualDragCad)}/yr</b> unrecoverable drag
+              </div>
+            )}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 8 }}>
+            Canada-US tax treaty exempts US dividends in RRSP/RRIF from 15% US withholding. Same holdings in TFSA/FHSA pay the withholding permanently (unrecoverable); in taxable accounts it&#39;s recoverable via T1 Foreign Tax Credit.
+          </div>
+          {s.taxPlacement.flagged.map((f, i) => (
+            <div key={`${f.ticker}-${f.accountId}-${i}`} style={{ padding: "8px 0", borderTop: i === 0 ? "none" : "1px solid var(--sa-border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <div>
+                  <strong>{f.ticker}</strong>
+                  <span style={{ marginLeft: 6, fontSize: 10, padding: "1px 6px", borderRadius: 4, fontWeight: 600,
+                    background: f.severity === "warn" ? "#fee2e2" : "#e0e7ff",
+                    color: f.severity === "warn" ? "#991b1b" : "#3730a3",
+                  }}>{f.severity === "warn" ? "MISPLACED" : "INFO"}</span>
+                  <span style={{ marginLeft: 8, fontSize: 11, color: "var(--sa-muted)" }}>
+                    in {f.account} ({f.accountType || "unset type"})
+                  </span>
+                </div>
+                <div style={{ fontVariantNumeric: "tabular-nums", fontSize: 12 }}>
+                  {f.annualDragCad > 0 && (
+                    <span style={{ color: f.severity === "warn" ? "#7f1d1d" : "var(--sa-muted)", fontWeight: 600 }}>
+                      ~{hvFmtCad(f.annualDragCad)}/yr
+                    </span>
+                  )}
+                  <span style={{ marginLeft: 8, color: "var(--sa-muted)" }}>{hvFmtCad(f.valueCad)}</span>
+                </div>
+              </div>
+              <div style={{ fontSize: 11.5, color: "var(--sa-muted)", marginTop: 4, lineHeight: 1.45 }}>{f.note}</div>
+            </div>
+          ))}
+          {s.taxPlacement.coverage?.unclassifiedAccounts > 0 && (
+            <div style={{ marginTop: 10, padding: 8, background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 4, fontSize: 11, color: "#78350f" }}>
+              ⚠ {s.taxPlacement.coverage.unclassifiedAccounts} account{s.taxPlacement.coverage.unclassifiedAccounts === 1 ? "" : "s"} without a type set — tax-placement flags may be incomplete. Set each account&#39;s type in Positions view or Settings.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Sector exposure */}
       <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Sector exposure</div>

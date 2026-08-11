@@ -21,6 +21,7 @@
 // always gets the same score independent of Claude's temperature.
 
 import { classifyPosition, computeSleeveBalance } from "./stocksSleeveEnforcer.js";
+import { analyzeTaxPlacement } from "./stocksTaxPlacement.js";
 
 // Known ETF families that overlap heavily. Groups are transitive —
 // holding two members of the same group is a redundancy flag.
@@ -317,6 +318,27 @@ export function computePortfolioHealth(profile) {
     deductions.push({ reason: `Debit cash balance in one or more accounts`, points: -0.5 });
     score -= 0.5;
   }
+  // Tax placement — US-dividend / US-ETF positions in the wrong
+  // account. Only "warn"-severity items count against the score
+  // (recoverable-via-FTC "info" items are noted but not penalized).
+  const taxPlacement = analyzeTaxPlacement(positions, accounts, { fxUsdCad: fx });
+  const warnPlacements = taxPlacement.flagged.filter(f => f.severity === "warn");
+  if (warnPlacements.length > 0) {
+    const dragBps = bookTotalCad > 0
+      ? (warnPlacements.reduce((s, f) => s + f.annualDragCad, 0) / bookTotalCad) * 10000
+      : 0;
+    // Small deduction proportional to book-level drag, capped so a
+    // single misplaced $500 KO position doesn't move the needle
+    // more than a broken sleeve target.
+    const d = Math.min(1.0, dragBps / 20); // 20 bps drag → 1.0 point
+    if (d >= 0.1) {
+      deductions.push({
+        reason: `${warnPlacements.length} US-dividend/ETF position(s) in TFSA — ~${dragBps.toFixed(0)}bps annual drag from unrecoverable US withholding`,
+        points: -d,
+      });
+      score -= d;
+    }
+  }
   score = Math.max(0, Math.round(score * 10) / 10);
 
   return {
@@ -335,6 +357,7 @@ export function computePortfolioHealth(profile) {
     concentrations,
     overlaps,
     sectorExposure,
+    taxPlacement,
     deductions,
     healthScore: score,
     positionCount: allocations.length,
