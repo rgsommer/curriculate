@@ -298,6 +298,28 @@ function privShort(value, privacy) { return privacy ? MASK_SHORT : value; }
 
 const fmtPct = (n) => (n == null || isNaN(n) ? "—" : (n >= 0 ? "+" : "") + n.toFixed(2) + "%");
 
+// Registered / tax-treatment classifications for a brokerage account.
+// Shared by the Positions view account-header dropdown and the Settings
+// per-account editor so the two never drift out of sync. Mirror of the
+// enum on the backend AccountSchema — keep in lockstep on any change.
+// The short label lives in badges/chips; the long label in dropdowns.
+const ACCOUNT_TYPES = [
+  { value: "individual",   short: "Individual",   long: "Individual (taxable non-registered)" },
+  { value: "joint",        short: "Joint",        long: "Joint (taxable non-registered)" },
+  { value: "rrsp",         short: "RRSP",         long: "RRSP — Registered Retirement Savings Plan" },
+  { value: "spousal-rrsp", short: "Spousal RRSP", long: "Spousal RRSP" },
+  { value: "tfsa",         short: "TFSA",         long: "TFSA — Tax-Free Savings Account" },
+  { value: "fhsa",         short: "FHSA",         long: "FHSA — First Home Savings Account" },
+  { value: "rrif",         short: "RRIF",         long: "RRIF — Registered Retirement Income Fund" },
+  { value: "lira",         short: "LIRA",         long: "LIRA — Locked-In Retirement Account" },
+  { value: "lif",          short: "LIF",          long: "LIF — Life Income Fund" },
+  { value: "resp",         short: "RESP",         long: "RESP — Registered Education Savings Plan" },
+  { value: "corporate",    short: "Corporate",    long: "Corporate (holding/opco)" },
+  { value: "trust",        short: "Trust",        long: "Trust" },
+  { value: "other",        short: "Other",        long: "Other" },
+];
+const ACCOUNT_TYPE_SHORT = Object.fromEntries(ACCOUNT_TYPES.map(t => [t.value, t.short]));
+
 // Human-readable summary of a rescan-mailbox response. Backend returns
 // { inserted, skipped, errors, batches, queryStripped, currentQuery,
 //   details:{ inserted:[], skipped:[{reason,subject,from,...}], errors:[] } }.
@@ -1425,6 +1447,12 @@ export default function StocksAdvisorPage() {
                 updateUser((u) => ({ accounts: [...u.accounts, { id: "acct" + Date.now(), name }] }));
               }}
               onRefreshPrices={refreshPrices}
+              onChangeAccountType={(accountId, accountType) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map(a => a.id === accountId ? { ...a, accountType: accountType || null } : a),
+                }));
+                showToast("Account type updated");
+              }}
             />
           )}
           {currentTab === "advice" && (
@@ -1570,6 +1598,12 @@ export default function StocksAdvisorPage() {
                   accounts: u.accounts.map(a => a.id === accountId ? { ...a, riskTolerance: riskLevel } : a),
                 }));
                 showToast("Account risk updated");
+              }}
+              onChangeAccountType={(accountId, accountType) => {
+                updateUser((u) => ({
+                  accounts: u.accounts.map(a => a.id === accountId ? { ...a, accountType: accountType || null } : a),
+                }));
+                showToast("Account type updated");
               }}
               onChangeAccountMonthlyReport={(accountId, enabled) => {
                 updateUser((u) => ({
@@ -3090,7 +3124,7 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
   );
 }
 
-function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount, onRefreshPrices }) {
+function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount, onRefreshPrices, onChangeAccountType }) {
   // Open BUY recs per held base-ticker — populates the Target / Stop
   // columns so the trader can see exit levels without opening the
   // briefing. Fetches once on mount, per-ticker keyed by BASE (XIU vs
@@ -3377,7 +3411,37 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
         <div key={account.id} className="sa-card" style={{ padding: 0, marginBottom: 14, overflow: "hidden" }}>
           <div style={{ padding: "12px 16px", background: "var(--sa-panel-2)", borderBottom: "1px solid var(--sa-border)", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{account.name}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>{account.name}</div>
+                {/* Inline account-type dropdown — one authoritative
+                    control per account. When unset, the select shows
+                    a subtle amber "set type" prompt so ambiguous labels
+                    like "Non-Spousal" (which might really be an
+                    Individual taxable account) don't hide the
+                    ground-truth classification. */}
+                {onChangeAccountType && (
+                  <select
+                    value={account.accountType || ""}
+                    onChange={(e) => onChangeAccountType(account.id, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    title="Registered / tax-treatment classification for this account"
+                    style={{
+                      fontSize: 11,
+                      padding: "2px 6px",
+                      border: `1px solid ${account.accountType ? "var(--sa-border)" : "#f59e0b"}`,
+                      background: account.accountType ? "transparent" : "#fef3c7",
+                      color: account.accountType ? "inherit" : "#78350f",
+                      borderRadius: 4,
+                      fontWeight: 500,
+                    }}
+                  >
+                    <option value="">— set type —</option>
+                    {ACCOUNT_TYPES.map(t => (
+                      <option key={t.value} value={t.value}>{t.short}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
               <div className="sa-muted" style={{ fontSize: 11, marginTop: 2 }}>
                 {items.length} position{items.length === 1 ? "" : "s"} · cash <span className="sa-amount">{fmtMoney(account.cashCad || 0, "CAD")}</span> + <span className="sa-amount">{fmtMoney(account.cashUsd || 0, "USD")}</span>
               </div>
@@ -6070,7 +6134,7 @@ function QuestradeIntegrationCard({ sessionToken, user }) {
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeVolSizing, onChangeRiskPerTrade, onChangeKellyCap, onChangePyramiding, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountType, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeVolSizing, onChangeRiskPerTrade, onChangeKellyCap, onChangePyramiding, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -6236,22 +6300,33 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
           ))}
         </div>
 
-        {/* Per-account risk overrides */}
+        {/* Per-account risk overrides + tax-treatment classification */}
         {(user.accounts || []).length > 0 && (
           <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px dashed var(--sa-border)" }}>
-            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Per-account risk override</div>
+            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>Per-account overrides</div>
             <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
-              Set a different risk level per account — e.g. aggressive Non-Spousal, conservative RRSP for retirement runway. Default = inherit global.
+              Set each account&#39;s <b>type</b> (registered/tax classification) and optional risk override. Account name is a nickname (e.g. &quot;Non-Spousal&quot;); type is what actually determines tax treatment downstream — RRSP US-dividend handling, TFSA growth focus, taxable capital-gains realization, contribution-room tracking.
             </div>
             <div style={{ display: "grid", gap: 6 }}>
               {user.accounts.map(a => (
-                <div key={a.id} style={{ display: "grid", gridTemplateColumns: "1fr 200px", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--sa-border)" }}>
+                <div key={a.id} style={{ display: "grid", gridTemplateColumns: "1fr 220px 200px", gap: 10, alignItems: "center", padding: "6px 0", borderBottom: "1px solid var(--sa-border)" }}>
                   <span style={{ fontWeight: 500, fontSize: 13 }}>{a.name}</span>
+                  <select
+                    value={a.accountType || ""}
+                    onChange={(e) => onChangeAccountType(a.id, e.target.value)}
+                    title="Registered / tax-treatment classification"
+                  >
+                    <option value="">— unset —</option>
+                    {ACCOUNT_TYPES.map(t => (
+                      <option key={t.value} value={t.value}>{t.long}</option>
+                    ))}
+                  </select>
                   <select
                     value={a.riskTolerance || ""}
                     onChange={(e) => onChangeAccountRisk(a.id, e.target.value || null)}
+                    title="Risk override — leave inherited unless a specific account has a different mandate"
                   >
-                    <option value="">— inherit global ({user.riskTolerance}) —</option>
+                    <option value="">— risk: inherit ({user.riskTolerance}) —</option>
                     <option value="conservative">Conservative</option>
                     <option value="moderate">Moderate</option>
                     <option value="aggressive">Aggressive</option>

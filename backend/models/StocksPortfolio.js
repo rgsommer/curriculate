@@ -123,6 +123,34 @@ const AccountSchema = new mongoose.Schema(
   {
     id: { type: String, required: true },
     name: { type: String, required: true },
+    // Registered / tax-treatment classification of the underlying broker
+    // account. Names are user-editable and often leftover-labeled (a
+    // "Non-Spousal" account may actually be a taxable individual account,
+    // an RRSP, or a corporate account). This field is the ground truth
+    // for anything tax-aware downstream — dividend-withholding
+    // considerations for US names in RRSPs vs TFSAs, gain-realization
+    // tax hits in taxable accounts, contribution-room tracking, etc.
+    // Enum kept intentionally broad; null = "unspecified / please set".
+    accountType: {
+      type: String,
+      enum: [
+        "individual",       // taxable non-registered (default)
+        "joint",            // joint non-registered
+        "rrsp",             // Registered Retirement Savings Plan
+        "spousal-rrsp",     // Spousal RRSP (contributor's spouse is annuitant)
+        "tfsa",             // Tax-Free Savings Account
+        "fhsa",             // First Home Savings Account
+        "rrif",             // Registered Retirement Income Fund
+        "lira",             // Locked-In Retirement Account
+        "lif",              // Life Income Fund
+        "resp",             // Registered Education Savings Plan
+        "corporate",        // Holding company / opco
+        "trust",            // Family trust or similar
+        "other",
+        null,
+      ],
+      default: null,
+    },
     // Sweep-account cash held within this brokerage account. Most Canadian
     // brokers (CIBC Investor's Edge, RBC Direct, TD Direct) keep separate
     // USD and CAD cash balances per account.
