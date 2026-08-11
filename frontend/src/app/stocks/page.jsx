@@ -5747,6 +5747,329 @@ function EmailIntegrationCard({ sessionToken }) {
   );
 }
 
+// =============================================================================
+// QuestradeIntegrationCard — connect / manage a read-only Questrade
+// integration for account activity reconciliation. Explicitly NO
+// order-execution UI: our backend has no `POST /orders` code and this
+// card never asks for anything that could execute a trade. Reads
+// Questrade activities, maps accounts, reconciles fills to the trade
+// journal same as the CIBC email poller.
+// =============================================================================
+function QuestradeIntegrationCard({ sessionToken, user }) {
+  const [state, setState] = useState({ loading: true });
+  const [refreshToken, setRefreshToken] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [toggling, setToggling] = useState(false);
+  const [polling, setPolling] = useState(false);
+  const [rescanning, setRescanning] = useState(false);
+  const [banner, setBanner] = useState(null);
+  const [liveAccounts, setLiveAccounts] = useState(null);
+  const [linkDraft, setLinkDraft] = useState({}); // { questradeAccountNumber: curriculateAccountId }
+  const [savingLinks, setSavingLinks] = useState(false);
+
+  const load = async () => {
+    if (!sessionToken) return;
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/questrade/status`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      setState({ loading: false, ...j });
+      if (j.accountLinks?.length) {
+        const draft = {};
+        for (const l of j.accountLinks) draft[l.questradeAccountNumber] = l.curriculateAccountId;
+        setLinkDraft(draft);
+      }
+    } catch (e) {
+      setState({ loading: false, configured: false });
+    }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [sessionToken]);
+
+  const connect = async () => {
+    if (!refreshToken.trim()) return;
+    setBanner(null); setConnecting(true);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/questrade/connect`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ refreshToken: refreshToken.trim() }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setRefreshToken(""); // clear immediately from memory
+      setBanner({ kind: "ok", msg: `Connected. API server: ${j.apiServer}. Now map your Questrade accounts below.` });
+      await load();
+      await loadLiveAccounts();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Connect failed: ${e?.message || e}` });
+    } finally { setConnecting(false); }
+  };
+
+  const disconnect = async () => {
+    if (!window.confirm("Disconnect Questrade? Your account links are preserved but the poller stops and the refresh token is wiped. You can reconnect with a fresh App Hub token later.")) return;
+    setBanner(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/questrade/disconnect`, {
+        method: "POST", credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBanner({ kind: "ok", msg: "Disconnected." });
+      setLiveAccounts(null); setLinkDraft({});
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Disconnect failed: ${e?.message || e}` });
+    }
+  };
+
+  const toggleEnabled = async () => {
+    setToggling(true); setBanner(null);
+    try {
+      const next = !state.enabled;
+      const r = await fetch(`${BACKEND_URL}/api/questrade/toggle-enabled`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ enabled: next }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBanner({ kind: "ok", msg: `Poller ${j.enabled ? "enabled" : "paused"}.` });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Toggle failed: ${e?.message || e}` });
+    } finally { setToggling(false); }
+  };
+
+  const loadLiveAccounts = async () => {
+    setBanner(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/questrade/accounts`, {
+        credentials: "include", headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setLiveAccounts(j.accounts || []);
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Fetch accounts failed: ${e?.message || e}` });
+    }
+  };
+
+  const saveLinks = async () => {
+    if (!liveAccounts) return;
+    setSavingLinks(true); setBanner(null);
+    try {
+      const links = liveAccounts
+        .map(a => ({
+          questradeAccountNumber: a.number,
+          curriculateAccountId: linkDraft[a.number] || "",
+          questradeType: a.type || "",
+          questradeStatus: a.status || "",
+          enabled: true,
+        }))
+        .filter(l => l.curriculateAccountId);
+      const r = await fetch(`${BACKEND_URL}/api/questrade/account-links`, {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ links }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBanner({ kind: "ok", msg: `Saved ${j.accountLinks?.length || 0} account link(s).` });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Save failed: ${e?.message || e}` });
+    } finally { setSavingLinks(false); }
+  };
+
+  const pollNow = async () => {
+    setPolling(true); setBanner(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/questrade/poll-now`, {
+        method: "POST", credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      if (j.skipped) setBanner({ kind: "ok", msg: `Poll skipped: ${j.skipped}` });
+      else setBanner({ kind: "ok", msg: `Polled: ${j.inserted} inserted · ${j.skipped} skipped · ${j.errors} errors` });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Poll failed: ${e?.message || e}` });
+    } finally { setPolling(false); }
+  };
+
+  const rescan = async () => {
+    if (!window.confirm("Rescan the last 90 days of Questrade activities? Uses reconcile-key + fuzzy dedup so no double-inserts.")) return;
+    setRescanning(true); setBanner(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/questrade/rescan`, {
+        method: "POST", credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setBanner({ kind: "ok", msg: `Rescan: ${j.inserted} inserted · ${j.skipped} skipped · ${j.errors} errors` });
+      await load();
+    } catch (e) {
+      setBanner({ kind: "err", msg: `Rescan failed: ${e?.message || e}` });
+    } finally { setRescanning(false); }
+  };
+
+  const accounts = user?.accounts || [];
+
+  return (
+    <div className="sa-card" style={{ marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 8 }}>
+        <div>
+          <h3 style={{ margin: 0 }}>Questrade integration</h3>
+          <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+            Read-only. Polls your Questrade account activity every 5 min and reconciles fills to the trade journal.
+            <br /><b>Order execution stays in Questrade&#39;s UI</b> — this integration never places, modifies, or cancels orders.
+          </div>
+        </div>
+      </div>
+
+      {banner && (
+        <div style={{
+          marginTop: 10, padding: "8px 12px", borderRadius: 8, fontSize: 12, whiteSpace: "pre-wrap",
+          background: banner.kind === "ok" ? "#dcfce7" : "#fee2e2",
+          color: banner.kind === "ok" ? "#166534" : "#7f1d1d",
+          border: `1px solid ${banner.kind === "ok" ? "#86efac" : "#fecaca"}`,
+        }}>{banner.msg}</div>
+      )}
+
+      {state.loading ? (
+        <div className="sa-muted" style={{ fontSize: 12, marginTop: 10 }}>Loading Questrade status…</div>
+      ) : !state.configured ? (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginBottom: 8 }}>
+            Not connected. Register a Personal App at <a href="https://apphub.questrade.com/UI/UserApps.aspx" target="_blank" rel="noopener noreferrer">apphub.questrade.com</a>, generate a device token, and paste it below. The token is single-use — our backend rotates it to a fresh encrypted token the moment you click Connect.
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+            <input
+              type="password" autoComplete="off" spellCheck={false}
+              placeholder="Paste Questrade refresh token"
+              value={refreshToken}
+              onChange={(e) => setRefreshToken(e.target.value)}
+              style={{ flex: 1, minWidth: 240, padding: "6px 8px", fontFamily: "monospace", fontSize: 13, border: "1px solid var(--sa-border)", borderRadius: 4 }}
+            />
+            <button className="sa-btn" onClick={connect} disabled={connecting || !refreshToken.trim()}>
+              {connecting ? "Connecting…" : "Connect"}
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={{ marginTop: 12, display: "grid", gap: 8, fontSize: 13 }}>
+          <div>
+            <b>Status:</b>{" "}
+            {state.needsReconnect ? (
+              <span style={{ color: "#7f1d1d" }}>reconnect required</span>
+            ) : state.enabled === false ? (
+              <span style={{ color: "#78350f" }}>paused</span>
+            ) : state.lastPolledAt ? (
+              state.lastPollSucceeded
+                ? <span style={{ color: "#14532d" }}>last poll ✓ {new Date(state.lastPolledAt).toLocaleString()}</span>
+                : <span style={{ color: "#7f1d1d" }}>last poll ✗ {state.lastPollError || "unknown"}</span>
+            ) : <span className="sa-muted">connected, never polled</span>}
+          </div>
+          <div><b>Refresh token:</b> <span style={{ fontFamily: "monospace" }}>{state.tokenMask || "•••"}</span> <span className="sa-muted" style={{ fontSize: 11 }}>(rotates on every exchange)</span></div>
+          <div><b>API server:</b> <code style={{ fontSize: 11 }}>{state.apiServer || "—"}</code></div>
+          <div><b>Reconciled trades:</b> {state.reconciledCount || 0} since connect</div>
+          <div><b>Watermark:</b> <span className="sa-muted" style={{ fontSize: 11 }}>{state.lastActivityTs || "no activities processed yet"}</span></div>
+
+          {/* Account link mapper */}
+          <div style={{ marginTop: 10, padding: 10, background: "var(--sa-panel-2)", borderRadius: 6 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+              <b>Account mapping</b>
+              <button className="sa-btn ghost" onClick={loadLiveAccounts}>↻ Fetch Questrade accounts</button>
+            </div>
+            {!liveAccounts && state.accountLinks?.length > 0 ? (
+              <div style={{ fontSize: 12 }}>
+                {state.accountLinks.map((l) => {
+                  const local = accounts.find(a => a.id === l.curriculateAccountId);
+                  return (
+                    <div key={l.questradeAccountNumber} style={{ padding: "3px 0" }}>
+                      <code>{l.questradeAccountNumber}</code> ({l.questradeType || "?"}) → <b>{local?.name || l.curriculateAccountId}</b>
+                    </div>
+                  );
+                })}
+                <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Click "Fetch Questrade accounts" to edit.</div>
+              </div>
+            ) : liveAccounts ? (
+              <div>
+                <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 8 }}>
+                  For each Questrade account, pick the matching Curriculate account. Leave unset to skip that account.
+                </div>
+                {liveAccounts.length === 0 ? (
+                  <div className="sa-muted" style={{ fontSize: 12 }}>No accounts returned.</div>
+                ) : liveAccounts.map((a) => (
+                  <div key={a.number} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 0", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, minWidth: 200 }}>
+                      <code>{a.number}</code> · {a.type} · {a.status} {a.isPrimary ? "· primary" : ""}
+                    </span>
+                    <select
+                      value={linkDraft[a.number] || ""}
+                      onChange={(e) => setLinkDraft({ ...linkDraft, [a.number]: e.target.value })}
+                      style={{ padding: "4px 6px", border: "1px solid var(--sa-border)", borderRadius: 4, fontSize: 12 }}
+                    >
+                      <option value="">— skip —</option>
+                      {accounts.map(la => (
+                        <option key={la.id} value={la.id}>{la.name} ({la.id})</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+                <button className="sa-btn" style={{ marginTop: 8 }} onClick={saveLinks} disabled={savingLinks}>
+                  {savingLinks ? "Saving…" : "Save mapping"}
+                </button>
+              </div>
+            ) : (
+              <div className="sa-muted" style={{ fontSize: 12 }}>
+                No account links yet. Click "Fetch Questrade accounts" to load your Questrade account list, then map each to a Curriculate account.
+              </div>
+            )}
+          </div>
+
+          {/* Actions */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <button className="sa-btn ghost" onClick={toggleEnabled} disabled={toggling}>
+              {toggling ? "…" : state.enabled === false ? "▶ Enable poller" : "⏸ Pause poller"}
+            </button>
+            <button className="sa-btn ghost" onClick={pollNow} disabled={polling || state.enabled === false}>
+              {polling ? "Polling…" : "↻ Poll now"}
+            </button>
+            <button className="sa-btn ghost" onClick={rescan} disabled={rescanning || state.enabled === false}>
+              {rescanning ? "Rescanning…" : "⟳ Rescan last 90 days"}
+            </button>
+            <button className="sa-btn ghost" onClick={disconnect} style={{ color: "#7f1d1d" }}>
+              Disconnect
+            </button>
+          </div>
+
+          {state.needsReconnect && (
+            <div style={{ padding: 8, background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 6, marginTop: 8, fontSize: 12 }}>
+              Refresh token invalid — reconnect with a fresh App Hub device token.
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6 }}>
+                <input
+                  type="password" autoComplete="off" spellCheck={false}
+                  placeholder="Paste fresh Questrade refresh token"
+                  value={refreshToken} onChange={(e) => setRefreshToken(e.target.value)}
+                  style={{ flex: 1, padding: "6px 8px", fontFamily: "monospace", fontSize: 13, border: "1px solid var(--sa-border)", borderRadius: 4 }}
+                />
+                <button className="sa-btn" onClick={connect} disabled={connecting || !refreshToken.trim()}>Reconnect</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeVolSizing, onChangeRiskPerTrade, onChangeKellyCap, onChangePyramiding, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
@@ -6127,6 +6450,8 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
       </div>
 
       <EmailIntegrationCard sessionToken={sessionToken} />
+
+      <QuestradeIntegrationCard sessionToken={sessionToken} user={user} />
 
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Contribution goals</h3>
