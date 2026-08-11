@@ -20,7 +20,7 @@ const PLAY_URL =
   "https://play.google.com/store/apps/details?id=net.curriculate.student";
 
 // Numeric Apple ID (e.g. "6501234567"). Empty string ⇒ "Coming soon".
-const APP_STORE_ID = "";
+const APP_STORE_ID = "6788738826";
 const APP_STORE_URL = APP_STORE_ID
   ? `https://apps.apple.com/app/id${APP_STORE_ID}`
   : "";
