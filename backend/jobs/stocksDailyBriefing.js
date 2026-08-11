@@ -1083,6 +1083,11 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // linked rec" — because mandate BUYs lived only in markdown, never
   // as searchable rec docs.
   const mandateRecs = [];
+  // Base-ticker set for stops classified TRAIL_SOFT — surfaced up to
+  // the caller so DO TODAY / AI-accepted SELL recs on these tickers
+  // can be filtered out before they hit the reader. TRAIL_SOFT means
+  // "REVIEW only — no MANDATORY EXIT".
+  const trailSoftTickers = new Set();
   const addMandateRec = (ticket, kind, accountName = null) => {
     if (!ticket || !ticket.ticker || !(ticket.livePrice > 0)) return;
     mandateRecs.push({
@@ -1184,6 +1189,40 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     }
   }
   const withinStops = stopMonitor?.withinStop || [];
+
+  // ─── Stop severity classifier (user spec 2026-08-11) ───
+  // Single source of truth so §1 mandate, DO TODAY, and prose can't
+  // contradict each other on the same ticker.
+  //   HARD        = cost-basis breach (position-monitor hardStopHit)
+  //   TRAIL_HARD  = trail hit AND drawdown from 60d peak ≥ TRAIL_HARD_DRAWDOWN_PCT
+  //   TRAIL_SOFT  = trail hit, drawdown < TRAIL_HARD_DRAWDOWN_PCT, no hard-stop breach
+  //
+  // TRAIL_SOFT is a REVIEW event ONLY — never emits SELL AT MARKET,
+  // never populates DO TODAY, never triggers CORE DEPLOY pairing.
+  // The RY case 2026-08-07 / 2026-08-11 (through trail by <1%,
+  // drawdown ~4%): current code emitted SELL AT MARKET via the
+  // rec-stop path AND TRAIL STOP REVIEW via the trail path — three
+  // contradictory instructions for one ticker.
+  const TRAIL_HARD_DRAWDOWN_PCT = 6; // ≥ 6% drawdown from 60d peak
+  const classifyStopSeverity = ({ ticker, drawdownPct, isHardStopHit }) => {
+    if (isHardStopHit) return "HARD";
+    const dd = Number.isFinite(drawdownPct) ? Math.abs(drawdownPct) : null;
+    if (dd != null && dd >= TRAIL_HARD_DRAWDOWN_PCT) return "TRAIL_HARD";
+    return "TRAIL_SOFT";
+  };
+  // Look up 60d drawdown for a ticker from quantSignals (already
+  // gathered for the trailReviews loop). Returns null if unavailable.
+  const drawdownForTicker = (ticker) => {
+    const key = String(ticker || "").toUpperCase();
+    const sig = (quantSignals || {})[key] || (quantSignals || {})[key.replace(/\..*$/, "")];
+    return sig?.tech?.drawdownFromHigh60dPct ?? null;
+  };
+  // Base-ticker set of positions already in the hardStopHit list — used
+  // to decide whether a rec-stop hit is HARD (position-monitor also
+  // fired) or a trail-level breach.
+  const hardStopHitBaseSet = new Set(
+    confirmedStops.map(r => String(r.ticker || "").toUpperCase().replace(/\..*$/, ""))
+  );
 
   // ─── Sleeve status flags ───
   const b = sleeveBalance;
@@ -1579,6 +1618,19 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // Sort worst-first by drawdown magnitude (most-negative first).
   trailReviews.sort((a, b) => (a.drawdownPct ?? 0) - (b.drawdownPct ?? 0));
   for (const r of trailReviews) {
+    // Register base-ticker as TRAIL_SOFT unless drawdown is severe
+    // enough to elevate to TRAIL_HARD (in which case downstream code
+    // may still accept a SELL for it). Per spec: HARD/TRAIL_HARD
+    // emit SELL; TRAIL_SOFT emits REVIEW only.
+    {
+      const base = String(r.ticker || "").toUpperCase().replace(/\..*$/, "");
+      const sev = classifyStopSeverity({
+        ticker: base,
+        drawdownPct: r.drawdownPct,
+        isHardStopHit: hardStopHitBaseSet.has(base),
+      });
+      if (sev === "TRAIL_SOFT") trailSoftTickers.add(base);
+    }
     const drawdownStr = r.drawdownPct != null
       ? `${r.drawdownPct.toFixed(1)}%` : "n/a";
     const trailStopStr = r.trailStop != null
@@ -1832,6 +1884,24 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   for (const stopRec of (monitorStopHitRecs || [])) {
     if (stopRec.action !== "BUY") continue; // SELL/TRIM stops are re-entry signals, not exit mandates
     if (stopHitTickersInConfirmed.has(stopRec.base)) continue; // already in §1 via position monitor
+    // Severity gate — a rec-stop breach that's really a trail-level
+    // tick (drawdown from 60d peak < TRAIL_HARD_DRAWDOWN_PCT and not a
+    // cost-basis hard-stop hit) is TRAIL_SOFT: it belongs in the
+    // TRAIL STOP REVIEW block below, NOT here as a MANDATORY EXIT.
+    // The RY case 2026-08-07: rec-set stop $294.15, current $292.94,
+    // drawdown from 60d peak ~4.1% — was emitting both SELL AT MARKET
+    // (from this loop) and TRAIL STOP REVIEW (from trailReviews),
+    // three different instructions to the reader.
+    const stopSeverity = classifyStopSeverity({
+      ticker: stopRec.base,
+      drawdownPct: drawdownForTicker(stopRec.base),
+      isHardStopHit: hardStopHitBaseSet.has(stopRec.base),
+    });
+    if (stopSeverity === "TRAIL_SOFT") {
+      console.log(`[stop-severity] ${stopRec.base}: TRAIL_SOFT (drawdown ${drawdownForTicker(stopRec.base)?.toFixed(1) ?? "?"}%, no cost-basis hit) — skipping SELL AT MARKET, TRAIL STOP REVIEW will handle`);
+      trailSoftTickers.add(stopRec.base);
+      continue;
+    }
     // Find held position matching this rec's base ticker.
     const matchingPositions = (positions || []).filter(p => {
       const posBase = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
@@ -1978,11 +2048,17 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     const laggardStr = laggards.map(l => `${l.symbol} (${l.name})`).join(", ");
     forbidden.push(`**No new BUYs in laggard sectors** (${laggardStr}) — regime is hostile AND these sectors are in the bottom 3 by 60d RS vs SPY. CORE ETFs (XEQT/VUN/XIU/VOO) still allowed regardless of sector.`);
   }
+  // Always emit §2, even when no rule is active — a missing section
+  // makes numbers jump 1 → 3 and readers assume the block was skipped
+  // for a reason. "None." is unambiguous. User Aug 11: "§2 FORBIDDEN
+  // often missing (section numbers jump 1 → 3)."
+  chunks.push("## 2. 🛑 FORBIDDEN TODAY");
   if (forbidden.length > 0) {
-    chunks.push("## 2. 🛑 FORBIDDEN TODAY");
     for (const line of forbidden) chunks.push(`- ${line}`);
-    chunks.push("");
+  } else {
+    chunks.push("- None.");
   }
+  chunks.push("");
 
   // ─── § 3. ONE-LINE STATUS (5-second scan) ───
   // Moved above §4 Optional so the reader can glance at portfolio
@@ -2040,7 +2116,12 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     chunks.push("");
   }
 
-  return { md: chunks.join("\n").trim(), concentrationMandates, mandateRecs };
+  return {
+    md: chunks.join("\n").trim(),
+    concentrationMandates,
+    mandateRecs,
+    trailSoftTickers: [...trailSoftTickers],
+  };
 }
 
 function buildBriefingPrompt(profile, summary, monitorAlerts = [], quantSignals = null, macro = null, lifecycle = null, factors = null, lessons = null, transcripts = null, watchListBlock = "", dailyPicks = [], recentTrades = [], sectorRotation = null, correlations = null, fedLiquidity = null, congressional = null, discoveryPool = [], calibration = null, benchmarkBundle = null, sizingAdjustments = [], overlaySuggestions = [], compliance = null, isMondayEt = false, attribution = null, horizonRows = [], briefingHistory = [], sizedPicks = [], pyramidingSignals = [], tradingRegime = null, unusualOptions = [], riskVar = null, lossCooldown = null, macroFred = null, insiderSignals = null, optionsFlow = null, marketPulse = null, whale13F = []) {
@@ -2298,6 +2379,10 @@ Behavioural rules the pre-rendered §1/§2 imply that you must respect:
    • **NO HEDGE VOCAB IN §1–§4.** Banned phrases in the primary action sections: "consider", "or cash", "cleanest path", "patience > forcing", "better:", "actually:", "wait for a clean setup", "skip today", "pending a...", "or FX convert". If a rec doesn't qualify, DON'T write it and DON'T narrate the alternatives — just omit. Multi-account "deliberation" sections that walk through NVDA→IWM→CNQ→"actually skip TFSA" are forbidden. §1 already says exactly what to deploy where; §4 executes with one order ticket per accepted line and NO alternative-narratives.
    • **DO NOT WRITE A "## 5. 💵 Cash deployment" SECTION.** §1 DEPLOY CASH is the single source of truth for cash deployment. Any per-account tickets go directly in §4 as compact order lines (no §5 header, no hedgy per-account walkthrough).
    • **NEVER OVERRIDE §1 STOP MANDATES IN PROSE.** If §1 emits SELL AT MARKET for a ticker, §A2 / Appendix must NOT write "acknowledge stop hit but DO NOT exit" or "hold despite stop" or any variant that argues against the mandated exit. Long-horizon or dividend theses do NOT override the hard-stop rule — if that framing applies to a name, the name belongs in a different sleeve with wider stops, not in narrative loopholes. Reframing a stop hit as "monitor, do not churn" is a compliance violation.
+   • **TRAIL STOP REVIEW ≠ MANDATORY EXIT.** If §1 shows "TRAIL STOP REVIEW" for a ticker (three-way choice: EXIT / TIGHTEN / HOLD-with-trigger) — do NOT emit a SELL rec for it in §4, do NOT write "mandatory exit at market" for it, and do NOT queue a DO TODAY ticket. TRAIL_SOFT means drawdown from 60d peak is <6% and no cost-basis hard-stop hit — this is a decision review, not an automatic fundamental sell. If you were about to write a SELL rec on that ticker: don't. Note in §A2 that trail is under review, one line.
+   • **BLOCKED TICKERS ARE DEAD FOR THIS BRIEFING.** If the validator BLOCKS a rec for a ticker (surfaces in §5 as BLOCKED), do NOT re-suggest that ticker in §4 OPTIONAL, §A3 Watch list, layer/pullback entry plans, or anywhere else as an action. Not "when it dips to $X we could layer", not "funded by TICKER proceeds", not "would be a great pullback add." Blocked = one line under §5 only; the ticker vanishes from all action language until the next briefing.
+   • **NO SWING/SPEC FUNDING FROM MANDATORY CORE-GAP EXITS.** If §1 shows a mandatory SELL (HARD or TRAIL_HARD severity) AND CORE is >5pp underweight, the proceeds MUST be routed to CORE ETFs (XEQT / VUN / XIU / VOO / VTI by account currency) — never to a SWING or SPEC name. Do NOT write "SELL X → BUY GOOGL with the proceeds" or similar. §1 already emits the CORE DEPLOY paired ticket; §4 executes exactly that, no substitutions.
+   • **DO NOT INVENT ANALYST NUMBERS.** If you can't cite a specific EPS beat / miss / analyst PT with confidence, OMIT the number — write "beat" / "raised guidance" without a fake precise figure. Do NOT write "EPS $2.00 vs $20.59 estimate" (the estimate is not that). Better silent than confidently wrong.
 
 §4 OPTIONAL ideas — **BULLETED / TABLE ONLY. NO PROSE PARAGRAPHS.**
    ONE line per idea, priority-ordered, compact table format:
@@ -3083,7 +3168,12 @@ export async function generateBriefing(profile) {
         return null;
       })
     : null;
-  const { md: deterministicPrefix, concentrationMandates: prefixConcentrationMandates, mandateRecs: prefixMandateRecs } = renderDeterministicPrefix({
+  const {
+    md: deterministicPrefix,
+    concentrationMandates: prefixConcentrationMandates,
+    mandateRecs: prefixMandateRecs,
+    trailSoftTickers: prefixTrailSoftTickers,
+  } = renderDeterministicPrefix({
     monitorAlerts,
     monitorStopHitRecs,
     stopMonitor,
@@ -3628,6 +3718,38 @@ export async function generateBriefing(profile) {
     acceptedRecs = result.accepted || [];
     rejectedRecs = result.rejected || [];
 
+    // Stop-severity gate — per user spec 2026-08-11 single-authority
+    // rule. Any AI-accepted SELL/EXIT/TRIM rec on a TRAIL_SOFT ticker
+    // gets demoted to the rejected list with a review-only reason.
+    // Prevents §1 TRAIL STOP REVIEW ("choose EXIT / TIGHTEN / HOLD")
+    // from coexisting with a DO TODAY "SELL AT MARKET" ticket for
+    // the same name.
+    if (Array.isArray(prefixTrailSoftTickers) && prefixTrailSoftTickers.length > 0) {
+      const softSet = new Set(prefixTrailSoftTickers.map(t => String(t || "").toUpperCase().replace(/\..*$/, "")));
+      const kept = [];
+      const demoted = [];
+      for (const r of acceptedRecs) {
+        const base = String(r.ticker || "").toUpperCase().replace(/\..*$/, "");
+        const isExit = r.action === "SELL" || r.action === "EXIT" || r.action === "TRIM";
+        if (isExit && softSet.has(base)) {
+          demoted.push({
+            rec: r,
+            rejections: [{
+              reason: "trail-soft-review-only",
+              detail: `${r.action} ${r.ticker} rejected — ticker is under §1 TRAIL STOP REVIEW (soft: drawdown < 6% from 60d peak, no cost-basis hard-stop hit). REVIEW is a decision mandate, not a forced exit. Choose one of EXIT / TIGHTEN / HOLD-with-trigger; do not queue an automatic SELL ticket.`,
+            }],
+          });
+        } else {
+          kept.push(r);
+        }
+      }
+      if (demoted.length > 0) {
+        console.warn(`[stop-severity] demoted ${demoted.length} AI-accepted SELL/EXIT/TRIM rec(s) on TRAIL_SOFT tickers to REVIEW-only`);
+        acceptedRecs = kept;
+        rejectedRecs = [...rejectedRecs, ...demoted];
+      }
+    }
+
     // Same-ticker dedupe: if any rec for TICKER was blocked, suppress
     // ALL accepted recs for that same TICKER. Mixed signals for one
     // ticker in one briefing almost always mean the AI got confused —
@@ -3686,14 +3808,30 @@ export async function generateBriefing(profile) {
         rejectedRecs.map(x => String(x.rec?.ticker || "").toUpperCase()).filter(Boolean)
       );
       if (blockedTickers.size > 0) {
+        // Widened action / entry patterns — the earlier regex only caught
+        // BUY/SELL/TRIM/EXIT/ADD verbs but let through "GOOGL layer
+        // $199/$196", "GOOGL pullback add", "GOOGL breakout trigger",
+        // "GOOGL entry", or "GOOGL funded by RY proceeds". User Aug 11:
+        // "OPTIONAL / TODAY'S IDEAS still pitches GOOGL after validator
+        // blocked it". Also strips any line where a blocked ticker
+        // appears with a dollar price pattern (`$NNN`) — that's an
+        // action row by construction, whatever the verb.
+        const ACTION_RE = /\b(?:BUY|SELL|TRIM|EXIT|LIMIT\s+(?:BUY|SELL)|ADD|LAYER|ENTRY|PULLBACK|BREAKOUT|POCKET\s*PIVOT|TRIGGER|GTC|FUND(?:ED|ING)?\s+BY|FUND\s+FROM|ROUTE\s+INTO|INTO\s+[A-Z]{2,5}|WITH\s+[A-Z]{2,5}\s+PROCEEDS)\b/;
         md = md.split("\n").filter(line => {
           const upperLine = line.toUpperCase();
-          const hasActionVerb = /\b(?:BUY|SELL|TRIM|EXIT|LIMIT\s+(?:BUY|SELL)|ADD)\b/.test(upperLine);
-          if (!hasActionVerb) return true;
+          // Does the line reference any blocked ticker?
+          let hitTicker = null;
           for (const t of blockedTickers) {
             const re = new RegExp(`\\b${t.replace(/\./g, "\\.")}\\b`);
-            if (re.test(upperLine)) return false;
+            if (re.test(upperLine)) { hitTicker = t; break; }
           }
+          if (!hitTicker) return true;
+          // Ticker referenced — kill if it has an action verb OR a
+          // dollar-price pattern near it (both are actionable-idea
+          // markers). Pure prose that mentions the ticker in an
+          // analytical bullet (e.g. "GOOGL earnings Aug 20") survives.
+          if (ACTION_RE.test(upperLine)) return false;
+          if (/\$\s?\d/.test(line)) return false;
           return true;
         }).join("\n");
       }
@@ -4206,7 +4344,11 @@ export async function sendBriefingForUser(p, sendKey) {
       );
     } catch (e) { await recordFail("stampSuccess", e); throw e; }
 
-    console.log(`[stocks-briefing] ✓ ${p.email} @ ${sendKey} — ${recs.length} recs tracked`);
+    // FIXED: was `recs.length` — undefined identifier that threw a
+    // ReferenceError after every successful send, then the outer catch
+    // re-stamped lastBriefingErrorAt as "unknown", making the diagnostic
+    // panel report failures for every send that actually delivered.
+    console.log(`[stocks-briefing] ✓ ${p.email} @ ${sendKey} — ${acceptedRecs.length} recs tracked`);
   } catch (err) {
     // If none of the inner catches labeled the stage, this outer catch
     // records it as "unknown" — the message still tells us what actually
