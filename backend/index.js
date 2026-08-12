@@ -16164,10 +16164,9 @@ function buildRubricInstructions({
       });
 
     } catch (err) {
-      console.error("🔥 /grading failed:", err?.message || err);
       return res.status(500).json({
         error: "Grading failed",
-        details: safeErrDetail(err)
+        ...reportServerErr("/grading", err),
       });
     }
   });
@@ -16773,10 +16772,9 @@ Do NOT include any text outside the JSON array.`,
 
       res.json({ classifications, groups, answerKeyPages: answerKeyPageNumbers, rotatedPages });
     } catch (err) {
-      console.error("🔥 /grading/classify-pages failed:", err?.message || err);
       return res.status(500).json({
         error: "Page classification failed",
-        details: safeErrDetail(err),
+        ...reportServerErr("/grading/classify-pages", err),
       });
     }
   });
@@ -17154,10 +17152,9 @@ Return valid JSON matching this exact schema.`;
 
       res.status(200).set("Content-Type", "text/plain").send(paragraph);
     } catch (err) {
-      console.error("🔥 /grading/session-summary failed:", err?.message || err);
       return res.status(500).json({
         error: "Session summary failed",
-        details: safeErrDetail(err),
+        ...reportServerErr("/grading/session-summary", err),
       });
     }
   });
@@ -17439,6 +17436,43 @@ function clientIpFromGlobal(req) {
 function safeErrDetail(err, fallback = "unknown error") {
   if (process.env.NODE_ENV !== "production") return err?.message || fallback;
   return fallback;
+}
+
+// Generate a short human-shareable correlation id for a failed request and log
+// the underlying error prefixed with that id. In production the client sees
+// only { errorId, code } — pasting the id lets us grep the server logs to the
+// exact failure without ever leaking stack/internals over the wire.
+function newErrorId() {
+  // 6 chars, uppercase alphanumeric — short enough to say aloud, long enough
+  // to be unique across the rate-limited request volume.
+  return crypto.randomBytes(4).toString("base64url").replace(/[_-]/g, "").slice(0, 6).toUpperCase();
+}
+// Classify a thrown error into a stable, non-sensitive short code so the
+// client can render a helpful hint even in production.
+function classifyErr(err) {
+  const status = err?.status ?? err?.response?.status;
+  const name = String(err?.name || "");
+  const msg = String(err?.message || "").toLowerCase();
+  if (name === "AbortError" || msg.includes("aborted")) return "aborted";
+  if (status === 429 || msg.includes("rate limit")) return "openai_rate_limited";
+  if (status === 401 || status === 403 || msg.includes("api key")) return "openai_auth";
+  if (status === 400 && msg.includes("token")) return "openai_too_large";
+  if (status === 400) return "openai_bad_request";
+  if (status === 408 || msg.includes("timeout") || msg.includes("timed out")) return "openai_timeout";
+  if (status >= 500 && status < 600) return "openai_server";
+  if (msg.includes("invalid json") || msg.includes("json")) return "invalid_json";
+  if (msg.includes("network") || msg.includes("fetch")) return "network";
+  return "unknown";
+}
+// Build the response body for a failed request. Also logs the error with a
+// correlation id so the user can share the id and we can find the line.
+function reportServerErr(tag, err, extra = {}) {
+  const errorId = newErrorId();
+  const code = classifyErr(err);
+  // Log the id, code, and the actual message + stack — always, in every env.
+  console.error(`🔥 ${tag} failed [${errorId}] code=${code}:`, err?.message || err);
+  if (err?.stack && process.env.NODE_ENV !== "production") console.error(err.stack);
+  return { errorId, code, details: safeErrDetail(err), ...extra };
 }
 
 // In-memory geo cache so we don't hit ipapi.co (free tier ~1k/day) on every
