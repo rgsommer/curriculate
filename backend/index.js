@@ -15750,39 +15750,34 @@ function buildRubricInstructions({
         `.trim();
 
       let imageRefs = [];
+      // captureWarning surfaces an S3 outage back to the client so grading
+      // still succeeds but the teacher (and the logs) can see something is
+      // wrong. Silently swallowing this would hide a real infra problem.
+      let captureWarning = null;
 
       if (hasImages) {
+        // Validate every image up front — invalid data URLs are a client
+        // bug and we still return 400 for those (nothing to grade).
+        for (let i = 0; i < images.length; i++) {
+          if (!parseDataUrlImage(images[i])) {
+            return res.status(400).json({ error: `Image ${i + 1} is not a valid data URL.` });
+          }
+        }
+
         const s3 = getS3Client();
         if (!s3) {
-          return res.status(400).json({
-            error: "S3 is not configured (missing S3_BUCKET). Cannot save grading captures.",
-          });
-        }
-
-        const keys = [];
-        for (let i = 0; i < images.length; i++) {
-          const parsed = parseDataUrlImage(images[i]);
-          if (!parsed) return res.status(400).json({ error: `Image ${i + 1} is not a valid data URL.` });
-
-          const key = `grading/${submissionId}/image-${i + 1}.jpg`;
-          keys.push(key);
-
-          await s3.send(new PutObjectCommand({
-            Bucket: S3_BUCKET,
-            Key: key,
-            Body: parsed.buf,
-            ContentType: "image/jpeg",
-            CacheControl: "private, max-age=0, no-store",
-            Metadata: { submissionid: submissionId, kind: "grading-capture" },
-          }));
-        }
-
-        // Also upload answer key images to S3 if present
-        if (hasAnswerKeyImages) {
-          for (let i = 0; i < answerKeyImages.length; i++) {
-            const parsed = parseDataUrlImage(answerKeyImages[i]);
-            if (parsed) {
-              const key = `grading/${submissionId}/answer-key-${i + 1}.jpg`;
+          captureWarning = "Server storage (S3) is not configured — this grade succeeded but the shareable capture link was not saved.";
+          console.warn("[grading] captureWarning:", captureWarning);
+        } else {
+          // Try the S3 uploads. If they fail (bad AWS credentials, bucket
+          // missing, network hiccup, etc.), log loudly and continue with
+          // no capture links — grading itself doesn't depend on S3, the
+          // model receives the same in-memory image data URLs either way.
+          try {
+            const keys = [];
+            for (let i = 0; i < images.length; i++) {
+              const parsed = parseDataUrlImage(images[i]);
+              const key = `grading/${submissionId}/image-${i + 1}.jpg`;
               keys.push(key);
               await s3.send(new PutObjectCommand({
                 Bucket: S3_BUCKET,
@@ -15790,18 +15785,49 @@ function buildRubricInstructions({
                 Body: parsed.buf,
                 ContentType: "image/jpeg",
                 CacheControl: "private, max-age=0, no-store",
-                Metadata: { submissionid: submissionId, kind: "answer-key" },
+                Metadata: { submissionid: submissionId, kind: "grading-capture" },
               }));
             }
+
+            // Also upload answer key images to S3 if present.
+            if (hasAnswerKeyImages) {
+              for (let i = 0; i < answerKeyImages.length; i++) {
+                const parsed = parseDataUrlImage(answerKeyImages[i]);
+                if (parsed) {
+                  const key = `grading/${submissionId}/answer-key-${i + 1}.jpg`;
+                  keys.push(key);
+                  await s3.send(new PutObjectCommand({
+                    Bucket: S3_BUCKET,
+                    Key: key,
+                    Body: parsed.buf,
+                    ContentType: "image/jpeg",
+                    CacheControl: "private, max-age=0, no-store",
+                    Metadata: { submissionid: submissionId, kind: "answer-key" },
+                  }));
+                }
+              }
+            }
+
+            await GradingCapture.create({ submissionId, keys, createdAt: new Date() });
+
+            imageRefs = images.map((_, i) => ({
+              index: i + 1,
+              url: `https://www.curriculate.net/grading/capture/${submissionId}/image-${i + 1}.jpg`,
+            }));
+          } catch (s3Err) {
+            const code = classifyErr(s3Err);
+            const warnId = newErrorId();
+            console.warn(`⚠️ [grading] S3 capture upload failed [${warnId}] code=${code}:`, s3Err?.message || s3Err);
+            captureWarning = code === "aws_auth"
+              ? "Storage credentials are invalid — this grade succeeded but the shareable capture link was not saved. Ask an admin to refresh AWS credentials."
+              : code === "aws_no_bucket"
+                ? "Storage bucket is missing — this grade succeeded but the shareable capture link was not saved. Ask an admin to check S3_BUCKET."
+                : code === "aws_denied"
+                  ? "Storage access denied — this grade succeeded but the shareable capture link was not saved. Ask an admin to check IAM permissions."
+                  : "Server storage is unavailable — this grade succeeded but the shareable capture link was not saved.";
+            imageRefs = [];
           }
         }
-
-        await GradingCapture.create({ submissionId, keys, createdAt: new Date() });
-
-        imageRefs = images.map((_, i) => ({
-          index: i + 1,
-          url: `https://www.curriculate.net/grading/capture/${submissionId}/image-${i + 1}.jpg`,
-        }));
       }
 
       const userContent = [{ type: "input_text", text: instructionsWithInferenceFinal }];
@@ -15894,6 +15920,7 @@ function buildRubricInstructions({
           error: "Grading returned invalid JSON",
           raw: response.output_text || "",
           assignment_images: imageRefs,
+          captureWarning: captureWarning || undefined,
           meta: { submissionId, gradeBand: band }
         });
       }
@@ -16160,6 +16187,9 @@ function buildRubricInstructions({
         assignment_images: imageRefs,
         assignment_links: assignmentLinks,
         submitted_text: submittedTextEvidence, // can be null
+        // Non-fatal S3 outage — grade is real, but the shareable capture link
+        // wasn't saved. Undefined (dropped from JSON) on the happy path.
+        captureWarning: captureWarning || undefined,
         meta: { submissionId, gradeBand: band }
       });
 
@@ -17451,9 +17481,26 @@ function newErrorId() {
 // client can render a helpful hint even in production.
 function classifyErr(err) {
   const status = err?.status ?? err?.response?.status;
+  const httpStatus = err?.$metadata?.httpStatusCode; // AWS SDK v3
   const name = String(err?.name || "");
   const msg = String(err?.message || "").toLowerCase();
+
   if (name === "AbortError" || msg.includes("aborted")) return "aborted";
+
+  // AWS SDK v3 errors — S3 auth / bucket problems have named `.name` values
+  // (InvalidAccessKeyId, SignatureDoesNotMatch, AccessDenied, NoSuchBucket)
+  // and populate err.$metadata.httpStatusCode. Fall back to message match if
+  // the SDK didn't tag the error type. Check BEFORE OpenAI patterns because
+  // some AWS errors also carry 401/403 statuses that would misclassify.
+  if (name === "InvalidAccessKeyId" || name === "SignatureDoesNotMatch"
+      || name === "CredentialsProviderError"
+      || msg.includes("access key id you provided does not exist")
+      || msg.includes("signature we calculated does not match")) return "aws_auth";
+  if (name === "AccessDenied" || (name.startsWith("AWS") && httpStatus === 403)) return "aws_denied";
+  if (name === "NoSuchBucket" || msg.includes("does not exist") && msg.includes("bucket")) return "aws_no_bucket";
+  if (name === "NoSuchKey") return "aws_no_key";
+  if (httpStatus >= 500 && httpStatus < 600) return "aws_server";
+
   if (status === 429 || msg.includes("rate limit")) return "openai_rate_limited";
   if (status === 401 || status === 403 || msg.includes("api key")) return "openai_auth";
   if (status === 400 && msg.includes("token")) return "openai_too_large";
