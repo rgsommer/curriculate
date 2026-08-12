@@ -3072,10 +3072,17 @@ function DashboardView({ user, onTab, onRefresh, onAiAdvice, onRecordTrade, onEm
 
       {/* Per-ticker performance — multi-line chart, range tabs.
           Use chartTicker (e.g. "ENB.TO" for CAD-held Enbridge) so the
-          chart reflects the exchange the user actually trades on. */}
+          chart reflects the exchange the user actually trades on.
+          Previously top-10 only; now covers ALL held positions so the
+          header %/$ is dollar-weighted over the full book instead of
+          a top-10 subset. User Aug 12: "cover all positions, not
+          top-10". Line-count cost: 12-color palette cycles at N>12
+          (positions 13+ repeat colors from positions 1+); acceptable
+          for the ~15-position typical book. Fetch cost is small —
+          one Yahoo /history call per ticker, cached 60s server-side.*/}
       <TickerPerformanceCard
-        tickers={agg.slice(0, 10).map(a => a.chartTicker || a.ticker)}
-        holdings={agg.slice(0, 10).map(a => ({ ...a, ticker: a.chartTicker || a.ticker }))}
+        tickers={agg.map(a => a.chartTicker || a.ticker)}
+        holdings={agg.map(a => ({ ...a, ticker: a.chartTicker || a.ticker }))}
         fx={fx}
         sessionToken={sessionToken}
         refreshTick={perfChartTick}
