@@ -3783,6 +3783,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                               currency={p.ccy}
                               stopSource={stopSource}
                               targetSource={targetSource}
+                              recs={recsHistoryByBase[baseKey] || []}
                             />
                           </td>
                         </tr>
@@ -10127,7 +10128,7 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} })
 // zone is open-ended right. When stop is null the loss zone anchors at
 // scaleMin. If BOTH are null we return null (nothing meaningful to plot).
 // =============================================================================
-function PositionBar({ entry, stop, target, current, currency, stopSource = "rec", targetSource = "rec" }) {
+function PositionBar({ entry, stop, target, current, currency, stopSource = "rec", targetSource = "rec", recs = [] }) {
   if (!Number.isFinite(entry) || !Number.isFinite(current)) return null;
   if (!Number.isFinite(stop) && !Number.isFinite(target)) return null;
   // Sanity guard — a target that isn't above the stop breaks the
@@ -10194,8 +10195,11 @@ function PositionBar({ entry, stop, target, current, currency, stopSource = "rec
 
   return (
     <div style={{ padding: "6px 30px 10px 30px" }} title={`${markerLabel} · current ${fmt(current)} ${currency || ""}`}>
-      {/* Bar */}
-      <div style={{ position: "relative", height: 12, marginBottom: 20 }}>
+      {/* Bar. marginBottom accommodates staggered tick labels (up to
+          two 12px rows) + a 14px rec-history dots strip when recs
+          array is populated. Kept generous so the caller row below
+          doesn't hug our labels. */}
+      <div style={{ position: "relative", height: 12, marginBottom: recs.length > 0 ? 46 : 32 }}>
         {segs.map((s, i) => (
           <div key={i} style={{
             position: "absolute",
@@ -10266,6 +10270,64 @@ function PositionBar({ entry, stop, target, current, currency, stopSource = "rec
               {t.text}
             </div>
           ));
+        })()}
+        {/* Rec-history dots — user Aug 13 "show BUY and SELL rec
+            points". For each rec in the 30-day window on this base
+            ticker, plot a small dot at its entryPrice on the same
+            price scale as the main bar. Green = BUY, red = SELL /
+            EXIT / TRIM. Tooltip on hover shows action + price + date.
+            Positioned below the tick-labels strip so it never
+            collides with them. Off-scale recs (entryPrice outside
+            scaleMin..scaleMax) are clamped to the edges rather
+            than dropped, since the "we've been calling entries in
+            this zone" signal matters even when a specific rec is
+            outside today's stop/target frame. */}
+        {recs.length > 0 && (() => {
+          const strip = [];
+          for (const r of recs) {
+            if (!Number.isFinite(r.entryPrice) || r.entryPrice <= 0) continue;
+            const p = Math.max(0, Math.min(100, ((r.entryPrice - scaleMin) / (scaleMax - scaleMin)) * 100));
+            const isBuy = r.action === "BUY";
+            const isSell = r.action === "SELL" || r.action === "EXIT" || r.action === "TRIM";
+            if (!isBuy && !isSell) continue;
+            const dotColor = isBuy ? "#059669" : "#b91c1c";
+            const when = r.generatedAt ? new Date(r.generatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+            const title = `${r.action} rec @ ${fmt(r.entryPrice)}${when ? ` · ${when}` : ""}`;
+            strip.push({ p, dotColor, title });
+          }
+          if (strip.length === 0) return null;
+          const stripTop = 14 + (2 * 12) + 4; // below label row 1 + small gap
+          return (
+            <>
+              {strip.map((d, i) => (
+                <div
+                  key={`rec-${i}`}
+                  title={d.title}
+                  style={{
+                    position: "absolute",
+                    left: `${d.p}%`,
+                    top: stripTop,
+                    transform: "translateX(-50%)",
+                    width: 6, height: 6, borderRadius: "50%",
+                    background: d.dotColor,
+                    border: "1px solid #fff",
+                    boxSizing: "content-box",
+                  }}
+                />
+              ))}
+              {/* Muted legend on the right so the dots aren't
+                  cryptic on first sight. Only render when there's
+                  actually a rec — no dots, no legend. */}
+              <div style={{
+                position: "absolute",
+                right: 0, top: stripTop + 8,
+                fontSize: 9, color: "var(--sa-muted)",
+                whiteSpace: "nowrap",
+              }}>
+                ● BUY  ● SELL  (past 30d, {strip.length})
+              </div>
+            </>
+          );
         })()}
       </div>
     </div>
