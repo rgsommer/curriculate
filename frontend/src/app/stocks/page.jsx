@@ -3139,6 +3139,12 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
   // USD listings of the same name. 30-day window covers the swing
   // horizon; longer-horizon recs re-fetch when the view remounts.
   const [openBuyRecsByBase, setOpenBuyRecsByBase] = useState({});
+  // Full 30-day rec history per base ticker, all actions. Populated
+  // alongside openBuyRecsByBase from the same fetch. Consumed by
+  // PositionBar to plot little dots below the bar showing where past
+  // BUY / SELL / EXIT / TRIM recs were emitted along the price axis
+  // — "the AI has been calling entries around here" at a glance.
+  const [recsHistoryByBase, setRecsHistoryByBase] = useState({});
   useEffect(() => {
     if (!sessionToken) return;
     const heldBases = [...new Set(
@@ -3159,15 +3165,26 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
         if (!r.ok) return;
         const j = await r.json();
         if (cancelled) return;
-        const byBase = {};
+        const buyByBase = {};
+        const histByBase = {};
         for (const rec of j.recs || []) {
-          if (rec.action !== "BUY") continue; // only long-side targets/stops surface here
           const base = String(rec.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
           if (!base) continue;
-          const prior = byBase[base];
-          if (!prior || new Date(rec.generatedAt) > new Date(prior.generatedAt)) byBase[base] = rec;
+          if (rec.action === "BUY") {
+            const prior = buyByBase[base];
+            if (!prior || new Date(rec.generatedAt) > new Date(prior.generatedAt)) buyByBase[base] = rec;
+          }
+          if (Number.isFinite(rec.entryPrice) && rec.entryPrice > 0) {
+            if (!histByBase[base]) histByBase[base] = [];
+            histByBase[base].push({
+              action: rec.action,
+              entryPrice: rec.entryPrice,
+              generatedAt: rec.generatedAt,
+            });
+          }
         }
-        setOpenBuyRecsByBase(byBase);
+        setOpenBuyRecsByBase(buyByBase);
+        setRecsHistoryByBase(histByBase);
       } catch { /* silent — Target / Stop cells just show "—" */ }
     })();
     return () => { cancelled = true; };
@@ -3444,7 +3461,14 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
       )}
 
       {accountSummaries.map(({ account, items, equityCad, cashCadEquiv, total: accTotal }) => (
-        <div key={account.id} className="sa-card" style={{ padding: 0, marginBottom: 14, overflow: "hidden" }}>
+        // Card was `overflow: hidden` which trapped the table under
+        // the right margin on wide books — user Aug 13 couldn't reach
+        // the edit/delete buttons. Switch to `overflow-x: auto` so the
+        // table (and the full-width position bar sub-rows with
+        // colSpan={13}) scroll horizontally when they exceed viewport
+        // width, while keeping the vertical `hidden` for rounded-
+        // corner clipping on the account header.
+        <div key={account.id} className="sa-card" style={{ padding: 0, marginBottom: 14, overflowX: "auto", overflowY: "hidden" }}>
           <div style={{ padding: "12px 16px", background: "var(--sa-panel-2)", borderBottom: "1px solid var(--sa-border)", display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
@@ -3705,11 +3729,11 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                     const auto = wantAuto ? derivedStopsByTicker[String(p.ticker || "").toUpperCase()] : null;
                     const barEntry = basis;
                     const barCurrent = price;
-                    const recStop = rec?.stopPrice;
-                    const autoStop = auto?.derivedStop;
-                    const barStop = Number.isFinite(recStop) ? recStop
-                      : Number.isFinite(autoStop) ? autoStop
-                      : null;
+                    // A $0 stop is bad data — never plot it. Downstream
+                    // scale math and the "stop $0.00" label look broken.
+                    const recStop = Number.isFinite(rec?.stopPrice) && rec.stopPrice > 0 ? rec.stopPrice : null;
+                    const autoStop = Number.isFinite(auto?.derivedStop) && auto.derivedStop > 0 ? auto.derivedStop : null;
+                    const barStop = recStop ?? autoStop ?? null;
                     const stopSource = Number.isFinite(recStop) ? "rec" : "auto";
                     // Target: prefer rec.targetPrice; else derive as
                     // entry + 2R (2× risk from entry to stop) for
@@ -10204,20 +10228,45 @@ function PositionBar({ entry, stop, target, current, currency, stopSource = "rec
         }}>
           now {fmt(current)}
         </div>
-        {/* Tick labels under the bar */}
-        {sP != null && (
-          <div style={{ position: "absolute", left: `${sP}%`, transform: `translateX(${sP > 90 ? "-100%" : sP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#991b1b", whiteSpace: "nowrap" }}>
-            {stopLabel}
-          </div>
-        )}
-        <div style={{ position: "absolute", left: `${eP}%`, transform: `translateX(${eP > 90 ? "-100%" : eP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#334155", whiteSpace: "nowrap" }}>
-          entry {fmt(entry)}
-        </div>
-        {tP != null && (
-          <div style={{ position: "absolute", left: `${tP}%`, transform: `translateX(${tP > 90 ? "-100%" : tP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#065f46", whiteSpace: "nowrap" }}>
-            {targetLabel}
-          </div>
-        )}
+        {/* Tick labels under the bar. Stagger onto row 1 vs row 2 when
+            two labels would horizontally overlap. Sort ticks by
+            position; walk left→right, giving each new tick row 0 by
+            default but bumping to row 1 if its position is within
+            OVERLAP_PP percentage points of the previously-placed
+            tick on the same row. Fixes BNS/NVDA case where
+            stop/entry landed within 10% of each other and rendered
+            as unreadable "et.pyh.$$110st|op $122.25" garbage. */}
+        {(() => {
+          const OVERLAP_PP = 18; // rough px estimate of label width in % of bar
+          const ROW_H = 12;      // px between staggered rows
+          const ticks = [];
+          if (sP != null) ticks.push({ pos: sP, color: "#991b1b", text: stopLabel });
+          ticks.push({ pos: eP, color: "#334155", text: `entry ${fmt(entry)}` });
+          if (tP != null) ticks.push({ pos: tP, color: "#065f46", text: targetLabel });
+          ticks.sort((a, b) => a.pos - b.pos);
+          const rowsLastPos = [-999, -999]; // last-placed pos for row 0 and row 1
+          for (const t of ticks) {
+            const row = (t.pos - rowsLastPos[0]) < OVERLAP_PP ? 1 : 0;
+            t.row = row;
+            rowsLastPos[row] = t.pos;
+          }
+          return ticks.map((t, i) => (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: `${t.pos}%`,
+                transform: `translateX(${t.pos > 90 ? "-100%" : t.pos < 10 ? "0%" : "-50%"})`,
+                top: 14 + t.row * ROW_H,
+                fontSize: 9.5,
+                color: t.color,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t.text}
+            </div>
+          ));
+        })()}
       </div>
     </div>
   );
