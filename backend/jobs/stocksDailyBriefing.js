@@ -4231,6 +4231,22 @@ function dateInTz(date, tz) {
 // Find every user whose configured briefingTimes contains the current
 // minute (in their own timezone) and hasn't been sent for that
 // (date, time) tuple yet. Used by the per-minute scheduler tick.
+//
+// Self-healing catch-up (added 2026-08-13): a slot missed because
+// the server was restarting / redeploying at exactly the scheduled
+// minute gets caught up on the next healthy tick, provided we're
+// still within CATCHUP_MAX_MIN of the scheduled time. Diagnosed
+// after user's 07:30 ET brief silently skipped on a Render redeploy
+// day; every other tick was healthy and diagnostics all-green, but
+// that one minute happened to overlap the process restart.
+//
+// Retry cooldown prevents error hammering: if a slot has been
+// attempted recently (within RETRY_COOLDOWN_MIN) and hasn't
+// succeeded, we skip it. So at most ~20 attempts across the whole
+// 60-min catch-up window even if Anthropic is down the whole time.
+const CATCHUP_MAX_MIN = 60;
+const RETRY_COOLDOWN_MIN = 3;
+
 async function findUsersDueForBriefing(now) {
   // Only users with at least one configured time + non-empty positions
   const portfolios = await StocksPortfolio.find({
@@ -4242,11 +4258,41 @@ async function findUsersDueForBriefing(now) {
   for (const p of portfolios) {
     const tz = p.briefingTz || "America/New_York";
     const hhmm = timeOfDayInTz(now, tz);
-    if (!Array.isArray(p.briefingTimes) || !p.briefingTimes.includes(hhmm)) continue;
     const ymd = dateInTz(now, tz);
-    const key = `${ymd}|${hhmm}`;
-    if (p.lastBriefingSentKey === key) continue; // already sent this slot
-    due.push({ portfolio: p, sendKey: key });
+    if (!Array.isArray(p.briefingTimes) || p.briefingTimes.length === 0) continue;
+    const [nowH, nowM] = hhmm.split(":").map(Number);
+    const nowMinutes = nowH * 60 + nowM;
+
+    // Walk configured slots. Pick the most-recent past slot still
+    // within the catch-up window that hasn't been sent yet. Preferring
+    // the freshest slot means an all-day outage recovered at noon
+    // catches up on the noon-ish slot (if any), not the 07:30 one —
+    // sending yesterday-morning's advice to someone reading it 5 hours
+    // later would be worse than skipping.
+    let best = null;
+    for (const slot of p.briefingTimes) {
+      if (!/^\d{2}:\d{2}$/.test(slot)) continue;
+      const [sh, sm] = slot.split(":").map(Number);
+      const slotMinutes = sh * 60 + sm;
+      const delta = nowMinutes - slotMinutes;
+      if (delta < 0 || delta > CATCHUP_MAX_MIN) continue;
+      const key = `${ymd}|${slot}`;
+      if (p.lastBriefingSentKey === key) continue;
+      // Retry cooldown — don't hammer on persistent failures.
+      if (p.lastBriefingAttemptKey === key && p.lastBriefingAttemptAt) {
+        const attemptAgeMs = now.getTime() - new Date(p.lastBriefingAttemptAt).getTime();
+        if (attemptAgeMs < RETRY_COOLDOWN_MIN * 60 * 1000) continue;
+      }
+      if (!best || delta < best.delta) best = { slot, key, delta };
+    }
+    if (!best) continue;
+    // Log catch-up events distinctly so they're greppable in Render
+    // logs. delta === 0 is the normal current-minute case — silent
+    // to keep the log volume sane.
+    if (best.delta > 0) {
+      console.log(`[stocks-briefing] catch-up: ${p.email} slot ${best.slot} (${best.delta}min late)`);
+    }
+    due.push({ portfolio: p, sendKey: best.key });
   }
   return due;
 }
