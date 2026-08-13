@@ -3380,6 +3380,35 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
               if (i > 0) out.push(<span key={`sep-${i}`} style={{ color: "var(--sa-muted)", margin: "0 6px" }}>·</span>);
               out.push(el);
             });
+            // Combined = CAD-bucket P&L + USD-bucket P&L converted at
+            // current fx. Same for the basis denominator so the %
+            // stays consistent with the split-by-currency numbers.
+            // User Aug 13: "add a combined value and combined %". Note
+            // in muted tone that this line moves with FX even when no
+            // stock ticked — so a reader eyeballing "portfolio return"
+            // knows why it drifts intraday. Show only when both
+            // buckets have activity (otherwise it's redundant with
+            // the single-ccy line above).
+            if (pnlByCcy.CAD.count > 0 && pnlByCcy.USD.count > 0) {
+              const combinedPnlCad = pnlByCcy.CAD.pnl + pnlByCcy.USD.pnl * fx;
+              const combinedBasisCad = pnlByCcy.CAD.basis + pnlByCcy.USD.basis * fx;
+              const combinedPct = combinedBasisCad > 0 ? (combinedPnlCad / combinedBasisCad) * 100 : null;
+              const combinedCol = combinedPnlCad > 0 ? "var(--sa-green)" : combinedPnlCad < 0 ? "var(--sa-red)" : "var(--sa-muted)";
+              out.push(
+                <span key="combined-sep" style={{ color: "var(--sa-muted)", margin: "0 6px" }}>·</span>
+              );
+              out.push(
+                <span key="combined" title={`CAD P/L + (USD P/L × fx ${fx.toFixed(4)}). Moves with FX even when no stock ticked.`}>
+                  <span style={{ color: "var(--sa-muted)", fontSize: 11.5 }}>combined </span>
+                  <span style={{ color: combinedCol, fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>
+                    <span className="sa-amount">
+                      {combinedPnlCad >= 0 ? "+" : "−"}{fmtMoney(Math.abs(combinedPnlCad), "CAD")}
+                    </span>
+                    {combinedPct != null && <span style={{ marginLeft: 4 }}>({combinedPct >= 0 ? "+" : ""}{combinedPct.toFixed(1)}%)</span>}
+                  </span>
+                </span>
+              );
+            }
             return out;
           })()}
         </div>
@@ -3696,11 +3725,25 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                     let targetSource = "rec";
                     if (!Number.isFinite(barTarget)
                         && (sleeve === "swing" || sleeve === "spec" || sleeve === "income")
-                        && Number.isFinite(barEntry) && Number.isFinite(barStop)
-                        && barEntry > barStop) {
-                      const risk = barEntry - barStop;
-                      barTarget = barEntry + R_MULT_DEFAULT * risk;
-                      targetSource = "auto";
+                        && Number.isFinite(barStop)
+                        && Number.isFinite(barCurrent)) {
+                      // Anchor the R-multiple on whichever is higher —
+                      // entry or current. For a fresh position (current
+                      // ≈ entry) this gives entry + 2R = classic target.
+                      // For a winner whose trail-stop has ratcheted
+                      // above entry (BNS/NVDA case Aug 13: entry $110,
+                      // stop $122 auto, current $125), the entry-based
+                      // formula would put target below stop and
+                      // collapse the bar scale. Anchor on current
+                      // instead: current + 2×(current − stop) → target
+                      // makes sense in the "if I got in here, where
+                      // would I aim" sense.
+                      const anchor = Number.isFinite(barEntry) ? Math.max(barEntry, barCurrent) : barCurrent;
+                      const risk = anchor - barStop;
+                      if (risk > 0) {
+                        barTarget = anchor + R_MULT_DEFAULT * risk;
+                        targetSource = "auto";
+                      }
                     }
                     // Only render the sub-row when we have enough to plot.
                     if (Number.isFinite(barEntry) && Number.isFinite(barCurrent) &&
@@ -10063,6 +10106,14 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} })
 function PositionBar({ entry, stop, target, current, currency, stopSource = "rec", targetSource = "rec" }) {
   if (!Number.isFinite(entry) || !Number.isFinite(current)) return null;
   if (!Number.isFinite(stop) && !Number.isFinite(target)) return null;
+  // Sanity guard — a target that isn't above the stop breaks the
+  // profit-zone segment math and collapses the scale (all ticks land
+  // near position 0, labels stack unreadably). Silently drop the
+  // target and render as stop+entry+current only; caller's derivation
+  // is broken but we shouldn't render garbage.
+  if (Number.isFinite(target) && Number.isFinite(stop) && target <= stop) {
+    target = null;
+  }
 
   // Scale endpoints — 10% padding beyond the outer of stop/target so
   // the marker still has room to move when current is at a boundary.
