@@ -3682,7 +3682,26 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                       : Number.isFinite(autoStop) ? autoStop
                       : null;
                     const stopSource = Number.isFinite(recStop) ? "rec" : "auto";
-                    const barTarget = Number.isFinite(rec?.targetPrice) ? rec.targetPrice : null;
+                    // Target: prefer rec.targetPrice; else derive as
+                    // entry + 2R (2× risk from entry to stop) for
+                    // SWING/SPEC/INCOME positions where R-multiple
+                    // targets make sense. CORE ETFs are buy-and-hold —
+                    // 2R above a -15% regime stop is +30%, a multi-
+                    // year target, not useful as a bar reference.
+                    // User Aug 13: "should show target" — bar had a
+                    // stop tick and a current marker but no target
+                    // tick for names where the rec never set one.
+                    const R_MULT_DEFAULT = 2;
+                    let barTarget = Number.isFinite(rec?.targetPrice) ? rec.targetPrice : null;
+                    let targetSource = "rec";
+                    if (!Number.isFinite(barTarget)
+                        && (sleeve === "swing" || sleeve === "spec" || sleeve === "income")
+                        && Number.isFinite(barEntry) && Number.isFinite(barStop)
+                        && barEntry > barStop) {
+                      const risk = barEntry - barStop;
+                      barTarget = barEntry + R_MULT_DEFAULT * risk;
+                      targetSource = "auto";
+                    }
                     // Only render the sub-row when we have enough to plot.
                     if (Number.isFinite(barEntry) && Number.isFinite(barCurrent) &&
                         (Number.isFinite(barStop) || Number.isFinite(barTarget))) {
@@ -3696,6 +3715,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                               current={barCurrent}
                               currency={p.ccy}
                               stopSource={stopSource}
+                              targetSource={targetSource}
                             />
                           </td>
                         </tr>
@@ -10040,7 +10060,7 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} })
 // zone is open-ended right. When stop is null the loss zone anchors at
 // scaleMin. If BOTH are null we return null (nothing meaningful to plot).
 // =============================================================================
-function PositionBar({ entry, stop, target, current, currency, stopSource = "rec" }) {
+function PositionBar({ entry, stop, target, current, currency, stopSource = "rec", targetSource = "rec" }) {
   if (!Number.isFinite(entry) || !Number.isFinite(current)) return null;
   if (!Number.isFinite(stop) && !Number.isFinite(target)) return null;
 
@@ -10090,6 +10110,7 @@ function PositionBar({ entry, stop, target, current, currency, stopSource = "rec
 
   const fmt = (v) => Number.isFinite(v) ? `$${v.toFixed(2)}` : "—";
   const stopLabel = Number.isFinite(stop) ? (stopSource === "auto" ? `stop ${fmt(stop)} (auto)` : `stop ${fmt(stop)}`) : null;
+  const targetLabel = Number.isFinite(target) ? (targetSource === "auto" ? `target ${fmt(target)} (auto)` : `target ${fmt(target)}`) : null;
 
   // Sanity check — a bar where entry sits at or beyond the edge of the
   // scale gets rendered zero-width and looks broken. Skip when the
@@ -10143,7 +10164,7 @@ function PositionBar({ entry, stop, target, current, currency, stopSource = "rec
         </div>
         {tP != null && (
           <div style={{ position: "absolute", left: `${tP}%`, transform: `translateX(${tP > 90 ? "-100%" : tP < 10 ? "0%" : "-50%"})`, top: 14, fontSize: 9.5, color: "#065f46", whiteSpace: "nowrap" }}>
-            target {fmt(target)}
+            {targetLabel}
           </div>
         )}
       </div>
