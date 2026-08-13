@@ -3661,8 +3661,13 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                             </>
                           );
                         }
-                        const tgt = rec.targetPrice;
-                        const stp = rec.stopPrice;
+                        // Reject $0 targets/stops as bad data — mandate-
+                        // persisted recs sometimes have targetPrice=0 in
+                        // the DB (from a null→0 coercion path); rendering
+                        // "$0.00 (-100.0%)" in the column is meaningless.
+                        // User Aug 13: "target $0? same in column 8".
+                        const tgt = Number.isFinite(rec.targetPrice) && rec.targetPrice > 0 ? rec.targetPrice : null;
+                        const stp = Number.isFinite(rec.stopPrice) && rec.stopPrice > 0 ? rec.stopPrice : null;
                         const stopBreached = stp != null && cur <= stp;
                         const stopNear = stp != null && !stopBreached && ((cur - stp) / cur) * 100 <= 3;
                         const targetHit = tgt != null && cur >= tgt;
@@ -3745,7 +3750,9 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                     // stop tick and a current marker but no target
                     // tick for names where the rec never set one.
                     const R_MULT_DEFAULT = 2;
-                    let barTarget = Number.isFinite(rec?.targetPrice) ? rec.targetPrice : null;
+                    // Same > 0 guard as barStop above — reject $0
+                    // targets as bad data (mandate persistence coercion).
+                    let barTarget = Number.isFinite(rec?.targetPrice) && rec.targetPrice > 0 ? rec.targetPrice : null;
                     let targetSource = "rec";
                     if (!Number.isFinite(barTarget)
                         && (sleeve === "swing" || sleeve === "spec" || sleeve === "income")
@@ -3769,9 +3776,13 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                         targetSource = "auto";
                       }
                     }
-                    // Only render the sub-row when we have enough to plot.
-                    if (Number.isFinite(barEntry) && Number.isFinite(barCurrent) &&
-                        (Number.isFinite(barStop) || Number.isFinite(barTarget))) {
+                    // Render the sub-row for every held ticker with a
+                    // basis + live price. Even CORE ETFs (no stop, no
+                    // target) get a minimal entry-vs-current strip so
+                    // the reader gets a consistent visual per row.
+                    // User Aug 13: "why do not all tickers have this
+                    // bar" — was CORE ETFs by design; now universal.
+                    if (Number.isFinite(barEntry) && Number.isFinite(barCurrent)) {
                       rows.push(
                         <tr key={`${p._origIdx}-bar`}>
                           <td colSpan={13} style={{ padding: 0, borderTop: "none" }}>
@@ -10130,7 +10141,6 @@ function HoldingsBreakdownCard({ user, fx, onEditPosition, horizonByBase = {} })
 // =============================================================================
 function PositionBar({ entry, stop, target, current, currency, stopSource = "rec", targetSource = "rec", recs = [] }) {
   if (!Number.isFinite(entry) || !Number.isFinite(current)) return null;
-  if (!Number.isFinite(stop) && !Number.isFinite(target)) return null;
   // Sanity guard — a target that isn't above the stop breaks the
   // profit-zone segment math and collapses the scale (all ticks land
   // near position 0, labels stack unreadably). Silently drop the
@@ -10151,10 +10161,20 @@ function PositionBar({ entry, stop, target, current, currency, stopSource = "rec
     const span = Math.max(entry - stop, 0.01);
     scaleMin = Math.min(stop, current) - span * 0.1;
     scaleMax = Math.max(entry, current) + span * 0.5;
-  } else {
+  } else if (Number.isFinite(target)) {
     const span = Math.max(target - entry, 0.01);
     scaleMin = Math.min(entry, current) - span * 0.3;
     scaleMax = Math.max(target, current) + span * 0.1;
+  } else {
+    // No stop, no target — CORE-ETF / buy-and-hold fallback. Scale
+    // by ~15% around the wider of entry/current so the reader gets
+    // "am I up or down and by how much" at a glance. Same visual
+    // grammar as the other cases (red left of entry, green right,
+    // "now" pill above the current marker) minus the tick decoration.
+    const anchor = Math.max(Math.abs(entry), Math.abs(current), 0.01);
+    const half = anchor * 0.15;
+    scaleMin = Math.min(entry, current) - half;
+    scaleMax = Math.max(entry, current) + half;
   }
   const pos = (v) => Math.max(0, Math.min(100, ((v - scaleMin) / (scaleMax - scaleMin)) * 100));
   const cP = pos(current);

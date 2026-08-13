@@ -2677,10 +2677,15 @@ function extractRecsFromJsonBlock(text) {
       _sleeveAutoFilled: sleeveWasAutoFilled,
       shares: Number.isFinite(+r.shares) ? Math.floor(+r.shares) : null,
       entryPrice,
-      targetPrice: Number.isFinite(+r.target) ? +r.target
-        : Number.isFinite(+r.targetPrice) ? +r.targetPrice : null,
-      stopPrice: Number.isFinite(+r.stop) ? +r.stop
-        : Number.isFinite(+r.stopPrice) ? +r.stopPrice : null,
+      // targetPrice / stopPrice: require > 0 not just finite —
+      // otherwise `+"0"` = 0 passes the finite check and gets stored
+      // as $0.00, which renders as garbage in the Positions view
+      // Target/Stop columns and collapses the position-bar scale.
+      // User Aug 13 flagged XEQT rendering "target $0.00".
+      targetPrice: (Number.isFinite(+r.target) && +r.target > 0) ? +r.target
+        : (Number.isFinite(+r.targetPrice) && +r.targetPrice > 0) ? +r.targetPrice : null,
+      stopPrice: (Number.isFinite(+r.stop) && +r.stop > 0) ? +r.stop
+        : (Number.isFinite(+r.stopPrice) && +r.stopPrice > 0) ? +r.stopPrice : null,
       horizonDays,
       entryCurrency: ["USD", "CAD"].includes(String(r.currency || r.entryCurrency || "").toUpperCase())
         ? String(r.currency || r.entryCurrency).toUpperCase()
