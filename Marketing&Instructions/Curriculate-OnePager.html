@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Curriculate — Executive One-Pager</title>
+<style>
+  @page { size: letter; margin: 0.5in; }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: #0f172a;
+    font-size: 10.5pt;
+    line-height: 1.4;
+  }
+  .page {
+    width: 7.5in;
+    margin: 0 auto;
+  }
+  /* Header */
+  .hdr {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-bottom: 8px;
+    border-bottom: 3px solid #0f2544;
+    margin-bottom: 12px;
+  }
+  .brand { font-size: 26pt; font-weight: 800; letter-spacing: -0.5px; color: #0f2544; line-height: 1; }
+  .tag { font-size: 10pt; color: #64748b; margin-top: 3px; }
+  .meta { text-align: right; font-size: 9pt; color: #475569; line-height: 1.35; }
+  .meta a { color: #0f2544; text-decoration: none; font-weight: 600; }
+
+  /* Two-product row */
+  .products {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin: 8px 0 12px;
+  }
+  .prod {
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #f8fafc;
+    border-left: 4px solid #0f2544;
+  }
+  .prod.grade { border-left-color: #0891b2; }
+  .prod.live  { border-left-color: #7c3aed; }
+  .prod h3 {
+    margin: 0 0 4px;
+    font-size: 11pt;
+    color: #0f2544;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .prod p { margin: 0; font-size: 9.5pt; line-height: 1.45; color: #334155; }
+
+  h2 {
+    font-size: 10pt;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #7c3aed;
+    margin: 12px 0 6px;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 3px;
+  }
+
+  .cols3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+  }
+
+  ul.tight { margin: 0; padding-left: 16px; }
+  ul.tight li { margin-bottom: 3px; font-size: 9.5pt; }
+
+  /* Stat strip */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin: 6px 0 10px;
+  }
+  .stat {
+    background: #0f2544;
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 5px;
+    text-align: center;
+  }
+  .stat .n { font-size: 15pt; font-weight: 800; line-height: 1; }
+  .stat .l { font-size: 8pt; margin-top: 3px; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  .callout {
+    background: #fef3c7;
+    border: 1px solid #fbbf24;
+    border-radius: 5px;
+    padding: 8px 12px;
+    margin: 8px 0 0;
+    font-size: 9.5pt;
+    color: #78350f;
+  }
+  .callout strong { color: #78350f; }
+
+  .ask {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: #0f2544;
+    color: #e2e8f0;
+    border-radius: 5px;
+    font-size: 9.5pt;
+    line-height: 1.5;
+  }
+  .ask strong { color: #fbbf24; }
+
+  .footer {
+    margin-top: 10px;
+    font-size: 8pt;
+    color: #94a3b8;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="hdr">
+    <div>
+      <div class="brand">Curriculate</div>
+      <div class="tag">Active learning, live classrooms.</div>
+    </div>
+    <div class="meta">
+      <div><a href="https://curriculate.net">curriculate.net</a></div>
+      <div>Hamilton, ON · K–12 EdTech</div>
+    </div>
+  </div>
+
+  <div class="products">
+    <div class="prod grade">
+      <h3>🎯 Pulse Grading</h3>
+      <p>AI grading for teachers. Photograph, paste, or batch-upload a whole class PDF; pick a rubric; get scored feedback in seconds. Handles handwritten work, video and audio performance, and exports to Edsby.</p>
+    </div>
+    <div class="prod live">
+      <h3>🎮 Curriculate Live Sessions</h3>
+      <p>AI-generated in-classroom scavenger hunts. Teachers describe a topic; Curriculate builds a live team game with 30+ task types. Kids play on any device while the teacher runs a GameMaster projector dashboard.</p>
+    </div>
+  </div>
+
+  <h2>The Problem</h2>
+  <div class="cols3">
+    <div><strong>Teachers grade nights and weekends.</strong> A single class set can eat 2–4 hours; the feedback loop for students stretches to a week.</div>
+    <div><strong>Lecture-mode loses students fast.</strong> Traditional whole-class instruction disengages most kids within 15 minutes.</div>
+    <div><strong>EdTech is fragmented.</strong> Teachers stitch together six tools that don't talk to each other — nothing bridges assessment and active learning.</div>
+  </div>
+
+  <h2>The Solution — one platform, two workflows</h2>
+  <div class="cols3">
+    <div><strong>Pulse Grading</strong> turns 3 hours of grading into 20 minutes with rubric-matched AI feedback teachers can trust.</div>
+    <div><strong>Live Sessions</strong> turn any lesson into a 30-minute team game — 30+ interactive task types spanning all six Bloom's levels.</div>
+    <div><strong>Shared class roster</strong> means grades from Live Sessions flow directly into per-student progress reports for parents.</div>
+  </div>
+
+  <h2>Traction &amp; Stage</h2>
+  <div class="stats">
+    <div class="stat"><div class="n">2</div><div class="l">Live Products</div></div>
+    <div class="stat"><div class="n">30+</div><div class="l">Task Types</div></div>
+    <div class="stat"><div class="n">2</div><div class="l">App Stores Live</div></div>
+    <div class="stat"><div class="n">6/6</div><div class="l">Bloom's Levels</div></div>
+  </div>
+  <ul class="tight">
+    <li>Both products in production with paying subscribers · Stripe billing live</li>
+    <li>Native mobile apps published on Google Play and the Apple App Store</li>
+    <li>Active teacher beta program driving weekly feature iteration</li>
+    <li>Standards-aligned to the Ontario curriculum; framework-extensible to other jurisdictions</li>
+  </ul>
+
+  <h2>Technology &amp; Moat</h2>
+  <ul class="tight">
+    <li><strong>Proprietary AI pipelines</strong> — task generation, rubric matching, grading, and a 5-layer content-safety moderation stack</li>
+    <li><strong>Multi-device architecture</strong> — phones, Chromebooks, tablets, and hidden-QR laptop mode all coexist in one session</li>
+    <li><strong>Full stack</strong> — Next.js web · React (Vite) teacher and student apps · Node/Express + Socket.IO backend · MongoDB · Capacitor 6 mobile · OpenAI</li>
+  </ul>
+
+  <div class="callout">
+    <strong>IP position:</strong> Pending US patent application (filed under micro entity status). Registered Canadian trademark. Copyright in ~250K lines of proprietary source across web, mobile, and backend. Trade-secret AI prompt engineering and rubric-matching pipelines.
+  </div>
+
+  <div class="ask">
+    <strong>What we're looking for from Innovation Factory:</strong> warm intros to Hamilton-area school boards and independent schools for pilots · guidance on non-dilutive funding fit (IRAP, OCI, Mitacs) · advisory on the Canadian K–12 procurement cycle.
+  </div>
+
+  <div class="footer">
+    Curriculate · curriculate.net · Prepared for Innovation Factory intake · 2026
+  </div>
+
+</div>
+</body>
+</html>
