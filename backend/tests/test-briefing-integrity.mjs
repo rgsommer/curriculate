@@ -276,6 +276,60 @@ async function testRenderedSleeveOmitsSleeve() {
   assertBlocked(audit, "rendered-sleeve-missing", "12. AI-rendered sleeve line missing SWING fires blocker");
 }
 
+// ─── 13. Account-label mismatch (223) ──────────────────────────────
+async function testAccountLabelMismatch() {
+  const profile = {
+    ...baseProfile(),
+    accounts: [
+      { id: "59659702", name: "RRSP", cashCad: 1000, cashUsd: 0, type: "rrsp" },
+      { id: "12345678", name: "Non-Spousal", cashCad: 0, cashUsd: 500, type: "individual" },
+    ],
+  };
+  // Bug scenario from real briefing: same account id "59659702"
+  // labeled both Non-Spousal and RRSP.
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nBUY 5 sh XEQT in Non-Spousal (59659702).\nBUY 3 sh XEQT in RRSP (59659702).\n`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "account-label-mismatch", "13. Same account id labeled as two different account names fires blocker");
+}
+
+// ─── 14. Cross-section contradiction (224) ─────────────────────────
+async function testCrossSectionContradiction() {
+  const profile = baseProfile();
+  // §1 has a SELL mandate on AAPL; later section says HOLD AAPL —
+  // without any "as resolved above" marker.
+  const badMd = `## 1. 🚨 MANDATORY ACTIONS
+1. **SELL AT MARKET** — AAPL: hard stop breached at $190. SELL 10 sh AAPL @ market.
+
+## A2. Per-holding signals
+- AAPL: mechanical noise on a long-horizon hold; HOLD.
+`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "mandate-vs-noaction-contradiction", "14. §1 SELL mandate + later HOLD without resolution marker fires blocker");
+}
+
+// ─── 15. Cross-section: resolution marker allows softening ────────
+async function testCrossSectionResolutionMarker() {
+  const profile = baseProfile();
+  // Same conflict as #14 BUT with explicit "as resolved above" marker.
+  // Should NOT block — that phrasing legitimately refers to the §1
+  // decision instead of contradicting it.
+  const okMd = `## 1. 🚨 MANDATORY ACTIONS
+1. **TRAIL STOP REVIEW** — AAPL. Decide today.
+
+## A2. Per-holding signals
+- AAPL: trail-under-review; per §1 review, HOLD pending decision below.
+`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: okMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  const hit = (audit.blockers || []).some(b => b.check === "mandate-vs-noaction-contradiction");
+  assert(!hit, "15. HOLD with 'per §1 review' resolution marker does NOT block");
+}
+
 // ─── Runner ──────────────────────────────────────────────────────────
 async function main() {
   console.log("Briefing integrity injection-fault suite (Phase 5)");
@@ -293,6 +347,9 @@ async function main() {
   testPercentageReconciliation();
   await testRedeployExceedsCash();
   await testRenderedSleeveOmitsSleeve();
+  await testAccountLabelMismatch();
+  await testCrossSectionContradiction();
+  await testCrossSectionResolutionMarker();
 
   console.log("─".repeat(60));
   for (const r of results) console.log(`  ${r.status === "PASS" ? "✓" : "✗"} ${r.name}`);

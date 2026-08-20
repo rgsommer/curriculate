@@ -221,6 +221,71 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── 8b (audit fix #224): cross-section contradiction gate.
+  // A briefing cannot say MANDATORY ACTION on ticker X in §1 AND
+  // "no action / HOLD / mechanical noise" on X in §A2/§0f/Horizon
+  // Review. User's XEQT briefing did exactly this and it needs to
+  // block, not just log a warning.
+  //
+  // Method:
+  //  1. Extract every ticker mentioned in §1 MANDATORY (any verb —
+  //     SELL / EXIT / TRIM / BUY / TRAIL STOP REVIEW).
+  //  2. Extract HOLD/no-action mentions of the same ticker anywhere
+  //     ELSE in the md.
+  //  3. If a ticker appears in both, block — unless the §A2/§0f
+  //     mention is explicitly positioned as the resolution of the
+  //     mandate (contains phrase "documented resolution", "as
+  //     resolved above", "per §1 review", etc.).
+  if (md && typeof md === "string") {
+    // Extract §1 mandatory section — anything from "## 1. MANDATORY"
+    // up to the next "## " heading.
+    const mandatoryMatch = md.match(/##\s*1\.[^\n]*MANDATORY[\s\S]*?(?=\n##\s|\n$)/i);
+    if (mandatoryMatch) {
+      const mandatoryBlock = mandatoryMatch[0];
+      // Everything after the mandatory block — later sections.
+      const laterMd = md.slice(md.indexOf(mandatoryBlock) + mandatoryBlock.length);
+      // Extract tickers from mandatory items. Match TRAIL STOP REVIEW,
+      // MANDATORY EXIT, SELL/TRIM/BUY <N> sh TICKER patterns.
+      const mandateTickers = new Set();
+      const ticksInMandate = [
+        ...mandatoryBlock.matchAll(/\*\*TRAIL STOP REVIEW[^*]*\*\*\s*—\s*\*\*([A-Z]{1,5}(?:\.[A-Z]{1,3})?)/g),
+        ...mandatoryBlock.matchAll(/\*\*(?:MANDATORY EXIT|SELL AT MARKET|TIGHTEN STOP|CORE REBALANCE|CASH DEPLOY|SWAP)[^*]*\*\*[^\n]*?([A-Z]{2,5}(?:\.[A-Z]{1,3})?)/g),
+        ...mandatoryBlock.matchAll(/\b(?:BUY|SELL|EXIT|TRIM|ADD)\s+\d+\s+sh\s+([A-Z]{1,5}(?:\.[A-Z]{1,3})?)/g),
+      ];
+      for (const m of ticksInMandate) {
+        const base = String(m[1]).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+        if (base && base.length >= 1) mandateTickers.add(base);
+      }
+      // For each ticker, look for HOLD/no-action language in later
+      // sections. Allowed exceptions: "resolved above", "per §1",
+      // "as documented above" — those are legitimate references TO
+      // the mandate rather than contradicting it.
+      const RESOLUTION_MARKERS = /(resolved above|as (?:documented|resolved) above|per\s*§\s*1|per\s*section\s*1|as decided (?:above|in §1))/i;
+      for (const base of mandateTickers) {
+        // Only look for HOLD/no-action bullets that name this ticker.
+        // Ticker in the later section AND accompanied by no-action
+        // language on the same-or-next line.
+        const tickerRe = new RegExp(`\\b${base}(?:\\.[A-Z]{1,3})?\\b`, "g");
+        let lm;
+        while ((lm = tickerRe.exec(laterMd)) !== null) {
+          // Grab a small window around the match — 120 chars each side.
+          const windowStart = Math.max(0, lm.index - 120);
+          const windowEnd = Math.min(laterMd.length, lm.index + 240);
+          const window = laterMd.slice(windowStart, windowEnd);
+          const noActionRe = /\b(no action|HOLD(?:ING)?|mechanical noise|do not (?:exit|trim|sell)|informational only|long-horizon (?:CORE|hold))\b/i;
+          if (!noActionRe.test(window)) continue;
+          if (RESOLUTION_MARKERS.test(window)) continue; // OK — explicitly references the mandate
+          blockers.push({
+            check: "mandate-vs-noaction-contradiction",
+            reason: `${base} appears in §1 MANDATORY but a later section says HOLD / no-action / mechanical noise without referencing the mandate`,
+            detail: `Excerpt: …${window.replace(/\s+/g, " ").trim().slice(0, 200)}…\n\nA mandate can only be softened by an explicit "as resolved above" reference to §1 itself. Silent contradictions leave the operator with two opposite instructions on the same ticker. Fix upstream: either drop the §1 mandate (if the later analysis is right) or strip the later HOLD language (if the mandate is right).`,
+          });
+          break; // one contradiction per ticker is enough — don't spam
+        }
+      }
+    }
+  }
+
   // ─── 9 (Phase 4): impossible-stop detector on every held position.
   // Per spec §24: "A case such as a stock trading near $207 while the
   // system claims a $274 hard stop was breached should trigger a
@@ -302,6 +367,91 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
             detail: "Cross-section consistency: every rec must reference the same canonical position weight. Recompute via portfolioCalcEngine before emitting.",
           });
         }
+      }
+    }
+  }
+
+  // ─── 11a (audit fix #223): canonical account labeling.
+  // AI prose can drift the same account_id under multiple names —
+  // user flagged "buy XEQT in Non-Spousal (59659702)" and "buy XEQT
+  // in RRSP (59659702)" for the same account. That is a data-
+  // integrity failure: the account_id → account_type mapping is
+  // canonical (lives on profile.accounts), the AI must never rename.
+  //
+  // Scan md for any "<label> (<accountId>)" pattern and cross-check
+  // the label against the canonical account name for that id. Also
+  // catch the mirror bug: same label used for two different ids.
+  if (md && typeof md === "string" && profile?.accounts?.length) {
+    // Build the canonical maps once.
+    const canonicalByIdSuffix = new Map(); // last-4-digit suffix → canonical name
+    const canonicalById = new Map();
+    for (const a of profile.accounts) {
+      if (!a?.id || !a?.name) continue;
+      const idStr = String(a.id);
+      canonicalById.set(idStr, a.name);
+      // Also index by trailing digits so recs that cite the short id
+      // (last 4-8 digits) still match. AI often shortens account
+      // numbers in prose for readability.
+      const trail4 = idStr.slice(-4);
+      const trail8 = idStr.slice(-8);
+      if (trail4.length === 4) canonicalByIdSuffix.set(trail4, a.name);
+      if (trail8.length === 8) canonicalByIdSuffix.set(trail8, a.name);
+    }
+    // Match patterns like "Non-Spousal (59659702)" or "RRSP (12345678)".
+    // Account labels are alpha + hyphen; ids are 4-12 digits.
+    const labelIdRe = /\b([A-Z][A-Za-z\- ]{2,24}?)\s*\((\d{4,12})\)/g;
+    const observed = new Map(); // idStr → Set<label>
+    let m;
+    while ((m = labelIdRe.exec(md)) !== null) {
+      const rawLabel = String(m[1]).trim();
+      const idStr = String(m[2]).trim();
+      // Skip false-positive labels that clearly aren't account names.
+      if (/^(Note|CAD|USD|Est|Ref|Cash|Total|Buy|Sell|Trim|Add|Exit|Hold|Target|Stop|Entry)$/i.test(rawLabel)) continue;
+      if (!observed.has(idStr)) observed.set(idStr, new Set());
+      observed.get(idStr).add(rawLabel);
+    }
+    for (const [idStr, labelsSet] of observed) {
+      const labels = [...labelsSet];
+      // Look up canonical: full id first, then trailing suffix.
+      const canonical = canonicalById.get(idStr) || canonicalByIdSuffix.get(idStr);
+      // Sanity: if id doesn't match any known account, skip (could be a
+      // random parenthetical number in the AI's prose).
+      if (!canonical) continue;
+      // Normalize labels for comparison (case-insensitive, strip
+      // punctuation). Any variance that doesn't collapse to the same
+      // token is a real conflict.
+      const norm = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+      const canonicalNorm = norm(canonical);
+      const nonMatching = labels.filter(l => norm(l) !== canonicalNorm);
+      if (nonMatching.length > 0) {
+        blockers.push({
+          check: "account-label-mismatch",
+          reason: `Account id ${idStr} labeled as ${JSON.stringify(labels)} in prose but canonical name is "${canonical}"`,
+          detail: "AI must not rename accounts. account_id → account_name is canonical from profile.accounts; the rec body must cite the canonical name or omit the label. Bug scenario: two recs on the same account get labeled with different names, misdirecting the operator to the wrong destination.",
+        });
+      }
+    }
+    // Mirror check: same label pointing at two different account_ids
+    // that both exist in canonical. If Non-Spousal (12345678) and
+    // Non-Spousal (87654321) both appear but both ids are real, one is
+    // wrong.
+    const labelToIds = new Map();
+    for (const [idStr, labelsSet] of observed) {
+      for (const l of labelsSet) {
+        const key = String(l).toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (!labelToIds.has(key)) labelToIds.set(key, new Set());
+        labelToIds.get(key).add(idStr);
+      }
+    }
+    for (const [labelKey, idsSet] of labelToIds) {
+      if (idsSet.size <= 1) continue;
+      const idsInCanonical = [...idsSet].filter(id => canonicalById.has(id) || canonicalByIdSuffix.has(id));
+      if (idsInCanonical.length > 1) {
+        blockers.push({
+          check: "account-label-collision",
+          reason: `Label "${labelKey}" applied to multiple distinct account ids: ${idsInCanonical.join(", ")}`,
+          detail: "One label mapping to two real account ids is definitionally wrong — pick the correct id for that account and re-emit.",
+        });
       }
     }
   }
