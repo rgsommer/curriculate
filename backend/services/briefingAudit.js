@@ -221,6 +221,27 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── 8-ND (audit fix #229): MANDATORY "None" contradicting a
+  // populated DO TODAY / order-ticket section. The rendered briefing
+  // said "MANDATORY ACTIONS: None. Portfolio is inside all hard rules
+  // today." then two sections later listed a SELL 234 DJT ticket.
+  // If DO TODAY has any BUY/SELL/EXIT/TRIM line, MANDATORY cannot say
+  // "None" — the accepted rec IS a mandatory action for the operator.
+  if (md && typeof md === "string") {
+    const mandatoryNone = /##\s*1\.[^\n]*MANDATORY[\s\S]{0,300}?None\.\s*Portfolio is inside all hard rules today/i.test(md);
+    if (mandatoryNone) {
+      const doTodayBlock = md.match(/DO TODAY[^\n]*[\s\S]{0,2000}?(?=\n##\s|\n📎|\n$)/i);
+      const hasOrderTicket = doTodayBlock && /\b(?:BUY|SELL|EXIT|TRIM|ADD)\s+\d+\s+(?:sh\s+)?[A-Z]{1,5}/.test(doTodayBlock[0]);
+      if (hasOrderTicket) {
+        blockers.push({
+          check: "mandatory-none-with-do-today-tickets",
+          reason: "MANDATORY ACTIONS says 'None' but DO TODAY contains at least one BUY/SELL/EXIT/TRIM order ticket",
+          detail: "The accepted rec ticket IS a mandatory action for the operator; MANDATORY must reflect it, not declare 'None'. Fix: either drop the ticket (if not truly mandatory) or update the MANDATORY message to reference the accepted-rec ticket(s) below.",
+        });
+      }
+    }
+  }
+
   // ─── 8a (audit fix #227.1): future-dated "open violation" is
   // temporally impossible. A briefing dated today can't say a
   // violation on some future date is "still open" — that date
@@ -406,7 +427,66 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
         });
       }
     }
-    for (const b of contaminationBlockers.slice(0, 5)) blockers.push(b);
+    // Pattern D (audit fix #229): cross-ticker analyst-PT contamination.
+    // A value cited as "PT raised to $XXX" / "target $XXX" in ticker
+    // A's paragraph that matches another held ticker B's current
+    // price is almost certainly cross-contamination. Real bug:
+    // "RY … TD Securities to C$161.36" where $161.36 was TD's price,
+    // not RY's target.
+    // Method: find sentences containing a target/PT citation, extract
+    // ticker context (nearest preceding all-caps token), check the
+    // value against every OTHER held ticker's canonical price.
+    const ptRe = /\b(?:PT|price target|target)\s+(?:raised to|of|at|to)\s+\$?(?:C|CA|CAD|USD|US)?\$?\s*(\d+(?:\.\d+)?)/gi;
+    let pmt;
+    while ((pmt = ptRe.exec(md)) !== null) {
+      const ptVal = Number(pmt[1]);
+      if (!Number.isFinite(ptVal)) continue;
+      // Look back up to ~200 chars to find the ticker context.
+      const start = Math.max(0, pmt.index - 200);
+      const contextBefore = md.slice(start, pmt.index);
+      const tickerMatch = [...contextBefore.matchAll(/\b([A-Z]{1,5})\b/g)];
+      const contextTicker = tickerMatch.length ? tickerMatch[tickerMatch.length - 1][1] : null;
+      if (!contextTicker) continue;
+      const contextBase = contextTicker.replace(/\..*$/, "");
+      for (const [otherBase, otherPrice] of priceByBase) {
+        if (otherBase === contextBase) continue;
+        if (!Number.isFinite(otherPrice) || otherPrice <= 0) continue;
+        const drift = Math.abs(ptVal - otherPrice) / otherPrice;
+        if (drift < 0.005) {   // within 0.5%
+          contaminationBlockers.push({
+            check: "analyst-target-matches-other-ticker-price",
+            reason: `${contextBase}: cited analyst target $${ptVal} matches ${otherBase}'s current price $${otherPrice.toFixed(2)} — cross-ticker field contamination`,
+            detail: `Excerpt: "${pmt[0].slice(0, 100).replace(/\s+/g, " ")}". An analyst target for ${contextBase} should NOT equal ${otherBase}'s stock price. This is exactly the field-cross-contamination bug where prices from other holdings get inserted as PT values.`,
+          });
+          break;
+        }
+      }
+    }
+    // Pattern E (audit fix #229): stop level equals cited analyst PT.
+    // AI wrote "tighten stop to $216.80" and cited "analyst PT $216.80"
+    // in the same paragraph. Stops must come from ATR / support /
+    // thesis, never from analyst targets. Two regex orderings — either
+    // stop-then-PT or PT-then-stop in the same paragraph.
+    const stopThenPtRe = /\b(?:stop|tighten stop|stop-loss)[^\n]{0,40}?\$?(\d+(?:\.\d+)?)[^\n]{0,80}?\b(?:PT|price target|analyst)[^\n]{0,40}?\$?(\d+(?:\.\d+)?)/gi;
+    const ptThenStopRe = /\b(?:PT|price target|analyst)[^\n]{0,40}?\$?(\d+(?:\.\d+)?)[^\n]{0,80}?\b(?:stop|tighten stop|stop-loss)[^\n]{0,40}?\$?(\d+(?:\.\d+)?)/gi;
+    const checkPair = (re) => {
+      let sm;
+      while ((sm = re.exec(md)) !== null) {
+        const a = Number(sm[1]);
+        const b = Number(sm[2]);
+        if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+        if (Math.abs(a - b) / Math.max(a, b) < 0.01) {
+          contaminationBlockers.push({
+            check: "stop-equals-analyst-target",
+            reason: `Cited stop and analyst target both $${a} — stops must come from risk rules (ATR, support, thesis), never from analyst targets`,
+            detail: `Excerpt: "${sm[0].slice(0, 160).replace(/\s+/g, " ")}". Analyst PT and stop-loss are unrelated concepts. A PT is where analysts think the stock will go; a stop is where the thesis invalidates. Deriving a stop from a PT means the position exits at the analyst's target, which is the OPPOSITE of a stop.`,
+          });
+        }
+      }
+    };
+    checkPair(stopThenPtRe);
+    checkPair(ptThenStopRe);
+    for (const b of contaminationBlockers.slice(0, 8)) blockers.push(b);
   }
 
   // ─── 8f (audit fix #228.2): stale P/L snapshot.

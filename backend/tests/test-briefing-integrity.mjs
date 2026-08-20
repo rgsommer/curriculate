@@ -393,6 +393,49 @@ async function testDividendExceedsPct() {
   assertBlocked(audit, "dividend-per-share-exceeds-10pct-of-price", "20. Dividend $/share > 10% of stock price fires blocker");
 }
 
+// ─── 21. Cross-ticker analyst-PT contamination (RY→TD price) ─────
+async function testAnalystTargetMatchesOtherTickerPrice() {
+  // Set up profile with AAPL @ $200 and MSFT @ $400. Simulate briefing
+  // where AAPL's analyst target is cited as $400 (matches MSFT's price).
+  const profile = {
+    ...baseProfile(),
+    positions: [
+      { ticker: "AAPL", qty: 10, priceUsd: 200, avgCost: 180, acct: "a1", ccy: "USD" },
+      { ticker: "MSFT", qty: 5, priceUsd: 400, avgCost: 350, acct: "a1", ccy: "USD" },
+    ],
+  };
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nAAPL Q2 solid; PT raised to $400 at BofA.`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "analyst-target-matches-other-ticker-price", "21. AAPL analyst PT matching MSFT's stock price fires blocker");
+}
+
+// ─── 22. Stop equals cited analyst PT ────────────────────────────
+async function testStopEqualsAnalystTarget() {
+  const profile = baseProfile();
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nAAPL earnings soon; analyst PT $216.80; tighten stop to $216.80 USD to protect gains.`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "stop-equals-analyst-target", "22. Stop level equals cited analyst PT fires blocker");
+}
+
+// ─── 23. MANDATORY None + DO TODAY has order ticket ──────────────
+async function testMandatoryNoneWithDoTodayTicket() {
+  const profile = baseProfile();
+  const badMd = `## 1. 🚨 MANDATORY ACTIONS (do these today)
+None. Portfolio is inside all hard rules today.
+
+## 🎯 DO TODAY — order tickets (1)
+1. SELL 234 sh DJT · TFSA · limit $8.35 USD · GTC
+`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "mandatory-none-with-do-today-tickets", "23. MANDATORY None + DO TODAY SELL ticket fires blocker");
+}
+
 // ─── Runner ──────────────────────────────────────────────────────────
 async function main() {
   console.log("Briefing integrity injection-fault suite (Phase 5)");
@@ -418,6 +461,9 @@ async function main() {
   await testStrongLanguageInsufficientSample();
   await testFundamentalValueMatchesPrice();
   await testDividendExceedsPct();
+  await testAnalystTargetMatchesOtherTickerPrice();
+  await testStopEqualsAnalystTarget();
+  await testMandatoryNoneWithDoTodayTicket();
 
   console.log("─".repeat(60));
   for (const r of results) console.log(`  ${r.status === "PASS" ? "✓" : "✗"} ${r.name}`);

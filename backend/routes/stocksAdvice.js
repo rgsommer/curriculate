@@ -2670,7 +2670,11 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
   const workPromise = (async () => {
     const genResult = await generateBriefing(profile);
     let markdown = genResult.md;
-    await saveAdviceSnapshot({ email, markdown, source: "on-demand" });
+    // NOTE: snapshot save moved to AFTER the audit gate below. Prior
+    // ordering saved the raw AI markdown here first, which meant the
+    // Advice tab (and any other reader of the snapshot) still displayed
+    // briefings the audit later rejected. Snapshot must only capture
+    // audit-passing briefings.
 
     // generateBriefing already ran parse + enrich + validate; §5
     // section is in the returned markdown. Persist accepted directly.
@@ -2742,6 +2746,8 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
         // can show WHY the send would be refused. auditFailure!==null
         // is the UI's signal to render the amber banner instead of the
         // full markdown.
+        // DO NOT save the snapshot — the Advice tab must never surface
+        // a briefing the audit rejected.
         return { markdown, tracked, priceWarnings, auditFailure: { blockers: preSendAudit.blockers, summary } };
       }
     } catch (e) {
@@ -2749,6 +2755,9 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
       // Fail-open here — audit crash is a bug in the audit itself,
       // not a signal to suppress the briefing. Fix the audit.
     }
+
+    // Audit passed (or crashed fail-open) — safe to snapshot.
+    await saveAdviceSnapshot({ email, markdown, source: "on-demand" }).catch(() => {});
 
     return { markdown, tracked, priceWarnings };
   })();

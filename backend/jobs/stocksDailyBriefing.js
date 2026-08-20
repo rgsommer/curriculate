@@ -4269,6 +4269,29 @@ export async function generateBriefing(profile) {
     }
   }
 
+  // Deterministic upswitch injection — the §1b PORTFOLIO UPGRADE
+  // OPPORTUNITIES block must ALWAYS render, whether or not the AI
+  // chose to include it. Prior approach embedded the block in the
+  // AI prompt template, which the AI could drop silently. Now the
+  // block is injected into md AFTER §1 MANDATORY (or right at the
+  // top if no §1 exists), so the operator always sees either the
+  // upswitch recommendation or the explicit "NONE — no challenger
+  // cleared the hurdle" line.
+  try {
+    const upswitchBlock = formatUpswitchBlockSafe(summary?.upswitch);
+    if (upswitchBlock) {
+      // Find the end of §1 (up to but not including the next "## " heading).
+      const s1Re = /(##\s*1\.[^\n]*\n[\s\S]*?)(?=\n##\s)/;
+      const m = md.match(s1Re);
+      if (m) {
+        md = md.replace(s1Re, m[1] + "\n" + upswitchBlock + "\n");
+      } else {
+        // No §1 header found — prepend the block.
+        md = upswitchBlock + "\n\n" + md;
+      }
+    }
+  } catch (e) { console.warn("[upswitch-inject] warn:", e?.message); }
+
   // Return signals + accepted/rejected recs alongside the markdown so
   // persist sites can insertMany directly without re-parsing or
   // re-validating. Callers that only want the string use `.md`.
