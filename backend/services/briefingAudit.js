@@ -29,6 +29,7 @@
 //   { ok: false, blockers: [{check, reason, detail}], warnings: [...] }
 
 import { verifyRecPrice, getVerifiedPrice } from "./marketDataIntegrity.js";
+import { computeCanonicalPortfolio, getCanonicalPosition, getCanonicalSleeve } from "./portfolioCalcEngine.js";
 
 function baseOf(t) {
   return String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
@@ -38,7 +39,10 @@ function baseOf(t) {
 // `positions` = live portfolio positions. `acceptedRecs` = post-validator
 // recs the briefing intends to persist. `rejectedRecs` = for the §5
 // BLOCKED cross-check. `md` = final markdown for text-level scans.
-export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], rejectedRecs = [], positions = [] }) {
+// `profile` = optional; when provided, runs the Phase 3+4 canonical
+// portfolio checks (impossible-stop detector, percentage reconciliation,
+// cross-section consistency).
+export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], rejectedRecs = [], positions = [], profile = null }) {
   const t0 = Date.now();
   const blockers = [];
   const warnings = [];
@@ -48,6 +52,15 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
       .map(p => baseOf(p.ticker))
       .filter(Boolean)
   );
+
+  // Compute canonical portfolio once — every downstream check reads
+  // from the same object so no section can invent its own number.
+  // Prefer the full profile (has accounts + fx + sleeve targets); fall
+  // back to a minimal shape from positions if profile isn't provided.
+  const canonicalProfile = profile || { positions, accounts: [], fxUsdCad: 1.37 };
+  let canonical = null;
+  try { canonical = computeCanonicalPortfolio(canonicalProfile); }
+  catch (e) { console.warn("[audit] canonical portfolio compute failed:", e?.message); }
 
   // ─── 1 & 2: verify every accepted rec's entryPrice against the
   // integrity layer. This is the "no fabricated prices" gate.
@@ -180,6 +193,124 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
         check: "section-2-missing",
         detail: "§2 FORBIDDEN TODAY not found. Prefix renderer should always emit it, even 'None.'",
       });
+    }
+  }
+
+  // ─── 9 (Phase 4): impossible-stop detector on every held position.
+  // Per spec §24: "A case such as a stock trading near $207 while the
+  // system claims a $274 hard stop was breached should trigger a
+  // HIGH-SEVERITY DATA/LOGIC ERROR requiring validation before
+  // producing an EXIT instruction." Also catches trailing stop > HWM.
+  if (canonical) {
+    for (const pos of canonical.positions) {
+      if (pos.hard_stop_above_current) {
+        blockers.push({
+          check: "impossible-hard-stop",
+          reason: `${pos.ticker} hard stop $${pos.hard_stop_price?.toFixed(2)} is ABOVE current price $${pos.current_price?.toFixed(2)}`,
+          detail: "Long-side hard stop above current price is either bad data or a short-side rec mis-classified as long. Fix upstream before emitting any EXIT signal.",
+        });
+      }
+      if (pos.trailing_stop_above_current) {
+        blockers.push({
+          check: "impossible-trailing-stop",
+          reason: `${pos.ticker} trailing stop $${pos.trailing_stop_price?.toFixed(2)} is ABOVE current price $${pos.current_price?.toFixed(2)}`,
+          detail: "Trailing stop above current price cannot be right for a long.",
+        });
+      }
+      if (pos.trail_stop_above_hwm) {
+        blockers.push({
+          check: "trailing-stop-exceeds-hwm",
+          reason: `${pos.ticker} trailing stop $${pos.trailing_stop_price?.toFixed(2)} exceeds HWM $${pos.trailing_hwm?.toFixed(2)}`,
+          detail: "Trailing stop cannot legitimately exceed the high-water mark it's trailing.",
+        });
+      }
+    }
+  }
+
+  // ─── 10 (Phase 4): percentage reconciliation via canonical engine.
+  // Per spec §24: portfolio weights reconcile to ~100%; sleeve weights
+  // to (100 - cash%); account weights to 100%. Any drift beyond
+  // tolerance surfaces as an audit warning (not a blocker — rounding
+  // is normal — but the diagnostic panel needs to see it).
+  if (canonical?.reconciliation) {
+    for (const w of canonical.reconciliation.warnings || []) {
+      // Only impossible-in-code drifts block; data-shape warnings are
+      // informational. Empty-portfolio + missing-price cases are
+      // logged as warnings so the caller isn't blocked by an edge
+      // case in a fresh account.
+      if (w.code === "empty-portfolio" || w.code === "positions-missing-price") {
+        warnings.push({ check: `reconciliation-${w.code}`, detail: w.message });
+      } else if (w.code === "concentration-breach") {
+        // Concentration breach is already surfaced upstream by
+        // ruleSingleNameCap; only re-warn (never block) here so the
+        // audit doesn't double-suppress.
+        warnings.push({ check: `reconciliation-${w.code}`, detail: w.message });
+      } else {
+        blockers.push({
+          check: `reconciliation-${w.code}`,
+          reason: w.message,
+          detail: "Percentages must reconcile before a briefing can be trusted. If this fires, a calc-site is computing weights outside the canonical engine.",
+        });
+      }
+    }
+  }
+
+  // ─── 11 (Phase 4): cross-section consistency for accepted recs.
+  // Per spec §24 "Cross-Section Consistency": if RY has 6.0% weight in
+  // holdings, it cannot appear as 5.4% elsewhere. Every rec on a held
+  // ticker should agree with the canonical position weight.
+  if (canonical) {
+    for (const rec of (acceptedRecs || [])) {
+      if (!rec?.ticker) continue;
+      const canonPos = getCanonicalPosition(canonical, rec.ticker);
+      if (!canonPos) continue; // rec on non-held ticker — cross-section n/a
+      // If rec carries an explicit portfolio_weight_pct field, it must
+      // match canonical within tolerance. Recs today rarely stamp
+      // this field, so this rule only fires on the new structured-
+      // rec shape landing in Phase 3 — but it's now enforced.
+      if (Number.isFinite(rec.portfolio_weight_pct)) {
+        const drift = Math.abs(rec.portfolio_weight_pct - canonPos.position_weight_pct);
+        if (drift > 0.5) {
+          blockers.push({
+            check: "rec-weight-vs-canonical-drift",
+            reason: `${rec.action} ${rec.ticker}: rec cites portfolio_weight_pct=${rec.portfolio_weight_pct.toFixed(2)}%, canonical=${canonPos.position_weight_pct.toFixed(2)}%`,
+            detail: "Cross-section consistency: every rec must reference the same canonical position weight. Recompute via portfolioCalcEngine before emitting.",
+          });
+        }
+      }
+    }
+  }
+
+  // ─── 12 (Phase 4): sleeve-limit gate on BUY recs.
+  // Per spec §24 "Recommendation/Allocation Alignment": if a sleeve is
+  // at/above max, the system cannot issue another BUY into that sleeve
+  // without simultaneously recommending where the required allocation
+  // comes from. The Phase 5 trade-impact simulator will make this
+  // precise (portfolio pro-forma); this is the coarse pre-check.
+  if (canonical) {
+    for (const rec of (acceptedRecs || [])) {
+      if (rec.action !== "BUY" && rec.action !== "ADD") continue;
+      const sleeve = rec.sleeve ? String(rec.sleeve).toLowerCase() : null;
+      if (!sleeve) continue;
+      const canonSleeve = getCanonicalSleeve(canonical, sleeve);
+      if (!canonSleeve || canonSleeve.sleeve_target_pct == null) continue;
+      // 2pp tolerance matches the existing concentration tolerance
+      // used elsewhere in the codebase.
+      if (canonSleeve.sleeve_weight_pct > (canonSleeve.sleeve_target_pct + 2)) {
+        // Only block if this rec would push further into an already-
+        // over sleeve — check for a paired TRIM/SELL in the same batch.
+        const hasPairedTrim = (acceptedRecs || []).some(r =>
+          (r.action === "SELL" || r.action === "TRIM" || r.action === "EXIT") &&
+          String(r.sleeve || "").toLowerCase() === sleeve
+        );
+        if (!hasPairedTrim) {
+          blockers.push({
+            check: "sleeve-over-limit-buy",
+            reason: `${rec.action} ${rec.ticker} into sleeve="${sleeve}" (${canonSleeve.sleeve_weight_pct.toFixed(1)}%) which is over target (${canonSleeve.sleeve_target_pct}%) with no paired trim/sell in this batch`,
+            detail: "Sleeve is already over its configured target. A BUY into an over sleeve needs a paired TRIM/SELL specifying where the required allocation comes from.",
+          });
+        }
+      }
     }
   }
 

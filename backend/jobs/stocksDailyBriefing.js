@@ -4369,6 +4369,7 @@ export async function sendBriefingForUser(p, sendKey) {
         acceptedRecs: genResult.acceptedRecs || [],
         rejectedRecs: genResult.rejectedRecs || [],
         positions: p.positions || [],
+        profile: p, // Phase 3+4: canonical portfolio checks need full profile (accounts, fx, sleeveTargets)
       });
       if (!preSendAudit.ok) {
         const summary = summarizeAuditFailure(preSendAudit);
