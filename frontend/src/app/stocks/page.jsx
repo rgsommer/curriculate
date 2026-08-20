@@ -1354,6 +1354,7 @@ export default function StocksAdvisorPage() {
               ["news", "News", "News"],
               ["health", "Health", "Health"],
               ["returns", "Returns", "Ret"],
+              ["alpha", "Alpha", "α"],
               ["trades", "Trades", "Trades"],
               ["reconcile", "Reconcile", "↻"],
               ["settings", "Settings", "⚙"],
@@ -1474,6 +1475,7 @@ export default function StocksAdvisorPage() {
           {currentTab === "discover" && <DiscoverView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "news" && <NewsView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "returns" && <PerformanceView sessionToken={auth.sessionToken} user={user} />}
+          {currentTab === "alpha" && <AlphaView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "health" && <HealthView sessionToken={auth.sessionToken} user={user} />}
           {currentTab === "trades" && <TradesView sessionToken={auth.sessionToken} />}
           {currentTab === "reconcile" && (
@@ -10613,6 +10615,243 @@ function renderNarrative(md) {
   }
   closeLists();
   return <div dangerouslySetInnerHTML={{ __html: html.join("") }} />;
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AlphaView — Phase 2 measurement dashboard.
+// Reads GET /api/stocks-advice/alpha and renders the honest scorecard:
+// rec-population return vs SPY/QQQ/XIC over rolling windows, plus per-
+// source/setup/sleeve/regime buckets with confidence flags. This is the
+// tab the user opens to answer "is the engine actually adding alpha?"
+// ─────────────────────────────────────────────────────────────────────
+function AlphaView({ sessionToken, user }) {
+  const [data, setData] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lookback, setLookback] = useState(90);
+
+  const load = async () => {
+    if (!sessionToken) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/alpha?lookback=${lookback}`, {
+        credentials: "include",
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setData(await r.json());
+    } catch (e) { setErr(e?.message || "Failed to load alpha"); }
+    finally { setBusy(false); }
+  };
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [sessionToken, lookback]);
+
+  const refresh = async () => {
+    if (!sessionToken || refreshing) return;
+    setRefreshing(true); setErr(null);
+    try {
+      const r = await fetch(`${BACKEND_URL}/api/stocks-advice/alpha/refresh`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ lookback }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
+      setData(j.alpha || null);
+    } catch (e) { setErr(e?.message || "Refresh failed"); }
+    finally { setRefreshing(false); }
+  };
+
+  if (busy && !data) return <div className="sa-empty">Loading alpha rollup…</div>;
+  if (err) return <div className="sa-card" style={{ padding: 12, color: "var(--sa-red)" }}>Error: {err}</div>;
+  if (!data) return <div className="sa-empty">No data.</div>;
+
+  const fmtPct = (v, digits = 2) => (v == null || !Number.isFinite(v)) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(digits)}%`;
+  const fmtInt = (v) => (v == null || !Number.isFinite(v)) ? "—" : String(Math.round(v));
+  const pctColor = (v) => (v == null || !Number.isFinite(v)) ? "var(--sa-muted)" : v > 0 ? "var(--sa-green)" : v < 0 ? "var(--sa-red)" : "var(--sa-muted)";
+  const confidenceBadge = (c) => {
+    const bg = c === "high" ? "#10b981" : c === "medium" ? "#f59e0b" : "#6b7280";
+    return <span style={{ display: "inline-block", padding: "1px 6px", borderRadius: 4, background: bg, color: "white", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.4 }}>{c}</span>;
+  };
+
+  const qualityBanner = () => {
+    if (data.sampleQuality === "sufficient") return null;
+    const msg = data.sampleQuality === "warming-up"
+      ? `Sample warming up (${data.totalRecs} recs, ${lookback}d lookback). Numbers get more reliable at 100+ recs — check back in a week or two.`
+      : `Insufficient data (${data.totalRecs} recs, ${lookback}d lookback). Alpha bands are noise until the sample crosses 30 recs; anything below is trivia.`;
+    return (
+      <div style={{ padding: 10, marginBottom: 12, background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 6, fontSize: 12, color: "#78350f" }}>
+        ⚠ {msg}
+      </div>
+    );
+  };
+
+  return (
+    <div>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Advice Engine Alpha</h2>
+          <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 4 }}>
+            Rec population return vs SPY / QQQ / XIC. Measures the engine, not your execution.
+            {data.totalRecs > 0 && (
+              <> · {data.totalRecs} recs ({data.openCount} open, {data.closedCount} closed) · asof {new Date(data.asOf).toLocaleString()}</>
+            )}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <select value={lookback} onChange={(e) => setLookback(Number(e.target.value))}
+            style={{ padding: "4px 8px", fontSize: 12, borderRadius: 4, border: "1px solid var(--sa-border)" }}>
+            <option value={30}>30d lookback</option>
+            <option value={90}>90d lookback</option>
+            <option value={180}>180d lookback</option>
+            <option value={365}>1y lookback</option>
+          </select>
+          <button className="sa-btn" onClick={refresh} disabled={refreshing}>
+            {refreshing ? "Refreshing…" : "Mark to market"}
+          </button>
+        </div>
+      </div>
+
+      {qualityBanner()}
+
+      {/* Alpha vs benchmarks table */}
+      <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Rec-population alpha vs benchmarks</div>
+        <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 10 }}>
+          Equal-weighted mean return of BUY/HOLD recs in each window, minus benchmark's return over the same window.
+          Positive = engine beat the ETF. Negative = you'd have done better in the ETF.
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "var(--sa-card-alt)", textAlign: "left" }}>
+                <th style={{ padding: "6px 8px" }}>Window</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>n</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>Engine mean</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>SPY</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>α vs SPY</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>QQQ</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>α vs QQQ</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>XIC</th>
+                <th style={{ padding: "6px 8px", textAlign: "right" }}>α vs XIC</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data.alphaWindows || []).map((w) => (
+                <tr key={w.windowDays} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                  <td style={{ padding: "6px 8px", fontWeight: 600 }}>{w.windowDays}d</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right" }}>{w.n}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: pctColor(w.meanRecReturn) }}>{fmtPct(w.meanRecReturn)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{fmtPct(w.benchmarks?.SPY)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: pctColor(w.alpha?.SPY) }}>{fmtPct(w.alpha?.SPY)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{fmtPct(w.benchmarks?.QQQ)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: pctColor(w.alpha?.QQQ) }}>{fmtPct(w.alpha?.QQQ)}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--sa-muted)" }}>{fmtPct(w.benchmarks?.["XIC.TO"])}</td>
+                  <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 700, color: pctColor(w.alpha?.["XIC.TO"]) }}>{fmtPct(w.alpha?.["XIC.TO"])}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Bucket tables */}
+      <BucketTable title="By source" rows={data.bySource} formatKey={(k) => k || "unknown"} fmtPct={fmtPct} pctColor={pctColor} fmtInt={fmtInt} confidenceBadge={confidenceBadge} />
+      <BucketTable title="By action" rows={data.byAction} formatKey={(k) => k} fmtPct={fmtPct} pctColor={pctColor} fmtInt={fmtInt} confidenceBadge={confidenceBadge} />
+      <BucketTable title="By sleeve" rows={data.bySleeve} formatKey={(k) => k} fmtPct={fmtPct} pctColor={pctColor} fmtInt={fmtInt} confidenceBadge={confidenceBadge} />
+      <BucketTable title="By setup" rows={data.bySetup} formatKey={(k) => k} fmtPct={fmtPct} pctColor={pctColor} fmtInt={fmtInt} confidenceBadge={confidenceBadge} />
+      <BucketTable title="By regime" rows={data.byRegime} formatKey={(k) => k} fmtPct={fmtPct} pctColor={pctColor} fmtInt={fmtInt} confidenceBadge={confidenceBadge} />
+
+      {/* Recent closed recs — the "what actually happened" table */}
+      {data.recentRecs?.length > 0 && (
+        <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Recent recs ({data.recentRecs.length})</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "var(--sa-card-alt)", textAlign: "left" }}>
+                  <th style={{ padding: "6px 8px" }}>Ticker</th>
+                  <th style={{ padding: "6px 8px" }}>Action</th>
+                  <th style={{ padding: "6px 8px" }}>Status</th>
+                  <th style={{ padding: "6px 8px" }}>Source</th>
+                  <th style={{ padding: "6px 8px" }}>Setup</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Entry</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Current/Exit</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>P/L</th>
+                  <th style={{ padding: "6px 8px", textAlign: "right" }}>Days</th>
+                  <th style={{ padding: "6px 8px" }}>Opened</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.recentRecs.map((r, i) => (
+                  <tr key={i} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                    <td style={{ padding: "6px 8px", fontWeight: 600 }}>{r.ticker}</td>
+                    <td style={{ padding: "6px 8px" }}>{r.action}</td>
+                    <td style={{ padding: "6px 8px", color: r.status === "target-hit" ? "var(--sa-green)" : r.status === "stop-hit" ? "var(--sa-red)" : "var(--sa-muted)" }}>{r.status}</td>
+                    <td style={{ padding: "6px 8px", fontSize: 11, color: "var(--sa-muted)" }}>{r.source || "—"}</td>
+                    <td style={{ padding: "6px 8px", fontSize: 11 }}>{r.setup}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>${r.entryPrice?.toFixed(2) ?? "—"}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>${r.exitPrice?.toFixed(2) ?? "—"}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, color: pctColor(r.returnPct) }}>{fmtPct(r.returnPct)}</td>
+                    <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtInt(r.holdingDays)}</td>
+                    <td style={{ padding: "6px 8px", fontSize: 11, color: "var(--sa-muted)" }}>{r.generatedAt ? new Date(r.generatedAt).toLocaleDateString() : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Reusable bucket table for AlphaView. Renders one grouping (by-source,
+// by-setup, by-sleeve, by-regime) with n, hit rate, mean return, 95% CI,
+// and a confidence badge derived from sample size.
+function BucketTable({ title, rows, formatKey, fmtPct, pctColor, fmtInt, confidenceBadge }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>{title}</div>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>
+          <thead>
+            <tr style={{ background: "var(--sa-card-alt)", textAlign: "left" }}>
+              <th style={{ padding: "6px 8px" }}>Key</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>n</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>Open / Closed</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>Hit rate</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>Mean return</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>Median</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>95% CI</th>
+              <th style={{ padding: "6px 8px", textAlign: "right" }}>Avg days held</th>
+              <th style={{ padding: "6px 8px" }}>Confidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: "1px solid var(--sa-border)" }}>
+                <td style={{ padding: "6px 8px", fontWeight: 600 }}>{formatKey(r.key)}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.n}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: "var(--sa-muted)", fontSize: 11 }}>{r.openCount} / {r.closedCount}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }}>{r.hitRate == null ? "—" : `${(r.hitRate * 100).toFixed(0)}%`}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", fontWeight: 600, color: pctColor(r.meanReturn) }}>{fmtPct(r.meanReturn)}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", color: pctColor(r.medianReturn) }}>{fmtPct(r.medianReturn)}</td>
+                <td style={{ padding: "6px 8px", textAlign: "right", fontSize: 11, color: "var(--sa-muted)" }}>
+                  {r.ci95 ? `[${fmtPct(r.ci95[0])}, ${fmtPct(r.ci95[1])}]` : "—"}
+                </td>
+                <td style={{ padding: "6px 8px", textAlign: "right" }}>{fmtInt(r.avgHoldingDays)}</td>
+                <td style={{ padding: "6px 8px" }}>{confidenceBadge(r.confidence)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 function HealthView({ sessionToken, user }) {

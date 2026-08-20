@@ -152,6 +152,7 @@ import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
 import { scheduleIntradayUpdates } from "./jobs/stocksIntradayUpdate.js";
 import { scheduleEodRecap } from "./jobs/stocksEodRecap.js";
+import { scheduleRecOutcomeNightly, runRecOutcomeSweep } from "./jobs/stocksRecOutcomeNightly.js";
 import { scheduleEmailPoller } from "./jobs/stocksEmailPollerCron.js";
 import { scheduleHorizonExpiry } from "./jobs/stocksHorizonExpiryCron.js";
 import { scheduleStocksAlerts } from "./jobs/stocksAlerts.js";
@@ -19923,4 +19924,5 @@ server.listen(PORT, () => {
   scheduleEmailPoller();
   scheduleQuestradePoll();
   scheduleHorizonExpiry();
+  scheduleRecOutcomeNightly();
 })

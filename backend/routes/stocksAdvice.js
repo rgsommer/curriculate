@@ -61,6 +61,8 @@ import { computeLifecycle, formatLifecycleBlock } from "../services/stocksLifecy
 import { computeFactorTilts, formatFactorBlock } from "../services/stocksFactorAnalysis.js";
 import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLearned.js";
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
+import { computeRecAlpha } from "../services/stocksRecAlpha.js";
+import { runRecOutcomeSweep } from "../jobs/stocksRecOutcomeNightly.js";
 
 const router = express.Router();
 
@@ -1950,6 +1952,50 @@ router.post("/stream", requireStocksAuth, async (req, res) => {
 //   - skipped:  hypothetical P/L from recs the user did NOT execute
 // Plus the legacy `avgPnlPct` (all-recs average) for the old tile.
 // ─────────────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /stocks/alpha
+// Phase 2 measurement dashboard.
+// Returns the rec-population alpha rollup for the current user —
+// per-source / per-setup / per-sleeve / per-regime bucket stats plus
+// rolling 7/30/90d rec-population return vs SPY/QQQ/XIC. See
+// backend/services/stocksRecAlpha.js for the calculation.
+//
+// This measures the ADVICE ENGINE, not the user's execution. If the
+// engine has alpha, this tab shows it — positive alpha means the
+// engine is beating the boring option; negative means "cash the
+// ideas, buy the ETF."
+// ─────────────────────────────────────────────────────────────────────
+router.get("/alpha", requireStocksAuth, async (req, res) => {
+  try {
+    const lookbackDays = Math.min(Math.max(Number(req.query.lookback) || 90, 30), 365);
+    const alpha = await computeRecAlpha({ email: req.stocksUser.email, lookbackDays });
+    res.json(alpha || { error: "no data" });
+  } catch (e) {
+    console.error("[GET /stocks/alpha]", e);
+    res.status(500).json({ error: e?.message || "alpha compute failed" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// POST /stocks/alpha/refresh
+// Force-run the nightly rec-outcome sweep on-demand (updates
+// lastCheckedPrice / lastPnlPct / status for every open rec), then
+// return the fresh alpha rollup. Useful when the user wants to see
+// current-market snapshot without waiting for the 04:15 tick.
+// ─────────────────────────────────────────────────────────────────────
+router.post("/alpha/refresh", requireStocksAuth, async (req, res) => {
+  try {
+    const sweep = await runRecOutcomeSweep();
+    const lookbackDays = Math.min(Math.max(Number(req.body?.lookback) || 90, 30), 365);
+    const alpha = await computeRecAlpha({ email: req.stocksUser.email, lookbackDays });
+    res.json({ sweep, alpha: alpha || null });
+  } catch (e) {
+    console.error("[POST /stocks/alpha/refresh]", e);
+    res.status(500).json({ error: e?.message || "alpha refresh failed" });
+  }
+});
+
 router.get("/performance", requireStocksAuth, async (req, res) => {
   try {
     const windows = [7, 30, 90, 365];
