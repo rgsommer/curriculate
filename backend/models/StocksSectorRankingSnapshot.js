@@ -29,16 +29,24 @@ const RankingRowSchema = new mongoose.Schema(
 const StocksSectorRankingSnapshotSchema = new mongoose.Schema(
   {
     // Monday of the ET week this snapshot represents. One doc per week.
-    snapshotDate: { type: Date, required: true, unique: true, index: true },
+    // Field-level `unique`/`index` intentionally OMITTED — the
+    // schema.index() below combines uniqueness with TTL in a single
+    // index declaration. Declaring both here and via schema.index()
+    // triggers Mongoose "Duplicate schema index" warnings and
+    // occasionally leaves an orphan index at boot.
+    snapshotDate: { type: Date, required: true },
     ranking: { type: [RankingRowSchema], default: [] },
   },
   { timestamps: true }
 );
 
-// Auto-expire after 90 days — comparison only ever looks 6-8 days back.
+// Single canonical index on snapshotDate: unique (one doc per week)
+// AND TTL-expiring after 90 days (comparison only ever looks 6-8
+// days back). Kept as a schema.index() so all options live in one
+// place — makes it obvious when someone edits either side.
 StocksSectorRankingSnapshotSchema.index(
   { snapshotDate: 1 },
-  { expireAfterSeconds: 90 * 24 * 60 * 60 }
+  { unique: true, expireAfterSeconds: 90 * 24 * 60 * 60 }
 );
 
 const StocksSectorRankingSnapshot =
