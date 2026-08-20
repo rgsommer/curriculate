@@ -1083,7 +1083,14 @@ export default function StocksAdvisorPage() {
         await new Promise((r) => setTimeout(r, 1500));
         j = await attempt();
       }
-      setBriefingPreview({ html: j.html, markdown: j.markdown, subject: j.subject, sent: false, cacheHit: j.cacheHit });
+      // Audit gate refused this briefing — surface the blocker list
+      // so the operator sees WHY the send would fail, rather than
+      // getting an empty modal or a bad briefing.
+      if (j.auditFailure) {
+        setBriefingPreview({ auditFailure: j.auditFailure, markdown: j.markdown });
+      } else {
+        setBriefingPreview({ html: j.html, markdown: j.markdown, subject: j.subject, sent: false, cacheHit: j.cacheHit });
+      }
     } catch (e) {
       setBriefingPreview({ error: e?.message || "Failed to generate briefing" });
     }
@@ -7580,7 +7587,7 @@ const recCellLeft = { ...recCell, textAlign: "left", paddingLeft: 14 };
 // Briefing preview modal — shows what the daily email will look like
 // =============================================================================
 function BriefingPreviewModal({ preview, recipient, onClose, onSend, onRetry, title, loadingLabel, loadingDetail }) {
-  const { busy, html, error, sent, sendError, subject, messageId, ccSends } = preview;
+  const { busy, html, error, sent, sendError, subject, messageId, ccSends, auditFailure } = preview;
   const headerTitle = title || "Email Briefing — Preview";
   const loadLabel = loadingLabel || "Generating briefing…";
   const loadDetail = loadingDetail || "Pulling news, fundamentals, technicals, macro context, and earnings signals across your holdings · 20-40s";
@@ -7695,6 +7702,41 @@ function BriefingPreviewModal({ preview, recipient, onClose, onSend, onRetry, ti
             </div>
           );
         })()}
+
+        {/* Audit-refused — pre-send gate blocked this briefing. Render
+            the specific blockers so the operator sees WHY, rather than
+            an empty modal. Send is disabled; user must retry after
+            the upstream data / code path that produced the bad content
+            is fixed. */}
+        {auditFailure && !html && (
+          <div style={{ padding: "16px 18px", background: "#fef3c7", border: "1px solid #fbbf24", borderRadius: 8, color: "#78350f" }}>
+            <div style={{ fontWeight: 700, marginBottom: 8, fontSize: 14 }}>
+              ⚠ Briefing suppressed by pre-send audit
+            </div>
+            <div style={{ fontSize: 12, marginBottom: 10 }}>
+              The audit gate refused this briefing. Each blocker below identifies a specific data-integrity or logic problem that would have shipped to the operator. Fix the upstream cause, then click Retry.
+            </div>
+            <div style={{ marginTop: 10, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 6, padding: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
+                Blockers ({(auditFailure.blockers || []).length})
+              </div>
+              {(auditFailure.blockers || []).map((b, i) => (
+                <div key={i} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: i < auditFailure.blockers.length - 1 ? "1px dashed #fde68a" : "none" }}>
+                  <div style={{ fontSize: 11, fontFamily: "SF Mono, Menlo, monospace", color: "#92400e" }}>{b.check}</div>
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{b.reason}</div>
+                  {b.detail && (
+                    <div style={{ fontSize: 11, color: "#78350f", opacity: 0.85, marginTop: 3, whiteSpace: "pre-wrap" }}>{b.detail}</div>
+                  )}
+                </div>
+              ))}
+            </div>
+            {onRetry && (
+              <button className="sa-btn" onClick={onRetry} style={{ marginTop: 12 }}>
+                Retry after fix
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Preview ready */}
         {html && (

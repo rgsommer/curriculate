@@ -175,6 +175,7 @@ export function computeCanonicalPortfolio(profile, opts = {}) {
       base: baseTicker(p.ticker),
       account_id: p.acct || null,
       account_name: acct?.name || p.acct || null,
+      account_type: acct?.type || null,
       currency: p.ccy || "USD",
       qty: p.qty,
       price: Number.isFinite(p.priceCad) ? p.priceCad : Number.isFinite(p.priceUsd) ? p.priceUsd : null,

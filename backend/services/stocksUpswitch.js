@@ -24,6 +24,11 @@
 //     for capital-gain drag; the exact number depends on unrealized P/L
 //     and marginal rate; 5-point handicap keeps the engine honest without
 //     needing per-user tax data)
+// Tax-advantaged detection uses BOTH accountType (canonical field) AND
+// accountName as a fallback — older accounts sometimes have null type
+// even though the name clearly says "TFSA" / "RRSP" / etc. Getting this
+// wrong was surfacing "Taxable — 5-pt handicap applied" on registered
+// accounts, penalizing a swap that had zero actual tax cost.
 //
 // Transaction cost adjustment: 1 point per side (2 total for a swap).
 //
@@ -64,9 +69,50 @@ const TAXABLE_HANDICAP = 5; // deducted when account is not tax-advantaged
 const TAX_ADVANTAGED_TYPES = new Set([
   "rrsp", "spousal-rrsp", "spousalrrsp", "tfsa", "fhsa", "rrif", "lira", "lif", "resp",
 ]);
-function isTaxAdvantaged(accountType) {
-  if (!accountType) return false;
-  return TAX_ADVANTAGED_TYPES.has(String(accountType).toLowerCase());
+function isTaxAdvantaged(accountType, accountName = "") {
+  // Primary check — canonical account_type from the schema.
+  if (accountType && TAX_ADVANTAGED_TYPES.has(String(accountType).toLowerCase())) return true;
+  // Fallback — pattern-match the human-readable account name. Real
+  // portfolios in production have accounts whose `type` was never
+  // populated (schema was extended later), but whose `name` clearly
+  // says "TFSA" / "RRSP" / etc. Without this fallback the tax
+  // handicap was being applied to registered accounts and penalizing
+  // swaps that had no tax cost at all.
+  const nm = String(accountName || "").toLowerCase();
+  if (/\b(tfsa|rrsp|rrif|lira|lif|fhsa|resp)\b/.test(nm)) return true;
+  if (/spousal[\s-]?rrsp/.test(nm)) return true;
+  return false;
+}
+
+// Tolerance for challenger.entryPrice vs the challenger's independently
+// fetched live price. 3% is loose enough to accommodate a briefing
+// generated during premarket where the entry was captured against the
+// prior close, but tight enough to catch the pathological case where
+// the entry was populated with an unrelated ticker's price.
+const CHALLENGER_PRICE_TOLERANCE_PCT = 3;
+
+// Reject a challenger candidate whose entry / target / stop trio is
+// impossible or degenerate. Real bug: AI-hallucinated recs where all
+// three values are the same (typically copied from the incumbent's
+// price). Also rejects: missing values, zero values, and BUYs where
+// target <= entry or stop >= entry (which invert reward/risk).
+function challengerLevelsValid(c) {
+  const e = Number(c?.entryPrice);
+  const t = Number(c?.targetPrice);
+  const s = Number(c?.stopPrice);
+  if (!Number.isFinite(e) || e <= 0) return { ok: false, reason: "entry-missing-or-zero" };
+  if (!Number.isFinite(t) || t <= 0) return { ok: false, reason: "target-missing-or-zero" };
+  if (!Number.isFinite(s) || s <= 0) return { ok: false, reason: "stop-missing-or-zero" };
+  // All three equal is nonsense — zero upside, zero downside, undefined R/R.
+  if (Math.abs(e - t) < 0.001 && Math.abs(e - s) < 0.001) return { ok: false, reason: "entry-target-stop-all-equal" };
+  if (t <= e) return { ok: false, reason: "target-not-above-entry-for-buy" };
+  if (s >= e) return { ok: false, reason: "stop-not-below-entry-for-buy" };
+  // Minimum reward/risk: target-entry vs entry-stop must be >= 1.0
+  // (permissive threshold; validator's ruleMinRewardRisk enforces
+  // 1.5 downstream — this is a first-pass sanity check).
+  const rr = (t - e) / Math.max(0.01, e - s);
+  if (rr < 1.0) return { ok: false, reason: "reward-below-risk" };
+  return { ok: true };
 }
 
 // Score one ticker with the full multi-factor composite. Reuses every
@@ -204,10 +250,12 @@ export async function computeUpswitchOpportunities({ canonical, candidates = [] 
   for (const holdRow of scoredHeld) {
     const pos = holdRow.holding;
     const posSleeve = (pos.sleeve || classifyPosition({ ticker: pos.ticker }) || "spec").toLowerCase();
-    const hurdle = UPSWITCH_HURDLES[posSleeve] ?? UPSWITCH_HURDLES.swing;
     // Tax handicap — challenger's advantage takes a 5-point hit when
     // the sell would realize a capital gain in a taxable account.
-    const taxAdvantaged = isTaxAdvantaged(pos.account_type);
+    // Registered accounts (TFSA/RRSP/etc.) get 0 handicap. Uses BOTH
+    // account_type and account_name so accounts missing the newer
+    // `type` field still classify correctly.
+    const taxAdvantaged = isTaxAdvantaged(pos.account_type, pos.account_name);
     const taxHandicap = taxAdvantaged ? 0 : TAXABLE_HANDICAP;
 
     // Preferred pool: same-currency challengers not already earmarked.
@@ -230,14 +278,65 @@ export async function computeUpswitchOpportunities({ canonical, candidates = [] 
     const challengerScore = challenger.multiFactorScore ?? challenger.compositeRank ?? challenger.deterministicScore ?? 0;
     const heldScore = holdRow.composite.score ?? 0;
     const deltaScore = challengerScore - heldScore;
+    // Hurdle by CHALLENGER's own sleeve — inheriting the incumbent
+    // sleeve's hurdle produced nonsense pairings (e.g. TD INCOME →
+    // SSRM mining challenger scored against INCOME hurdle). The
+    // relevant question is "does the challenger's sleeve context
+    // justify a swap given its own risk profile?" — use its own
+    // classification.
+    const challengerSleeve = (classifyPosition({ ticker: challenger.ticker }) || "spec").toLowerCase();
+    const hurdle = UPSWITCH_HURDLES[challengerSleeve] ?? UPSWITCH_HURDLES.swing;
+    const sleeveRotation = challengerSleeve !== posSleeve;
     const totalCost = (TX_COST_POINTS * 2) + taxHandicap;
     const netAdvantage = deltaScore - totalCost;
 
+    // Independent price verification — fetch the challenger's OWN
+    // technicals and compare the incoming entryPrice to the live
+    // last price. If they diverge beyond tolerance, the entry is
+    // suspect (cross-ticker contamination, stale rec, or hallucinated
+    // level) and the upswitch cannot be trusted. This runs BEFORE
+    // level-shape validation so a price mismatch takes precedence
+    // over other issues.
+    let priceVerifyReason = null;
+    try {
+      const cTech = await getTechnicals(challenger.ticker, challenger.currency || "USD", { includeMultiTimeframe: false });
+      const livePrice = Number(cTech?.last);
+      const incomingEntry = Number(challenger.entryPrice);
+      if (!Number.isFinite(livePrice) || livePrice <= 0) {
+        priceVerifyReason = "live-price-unavailable";
+      } else if (Number.isFinite(incomingEntry) && incomingEntry > 0) {
+        const driftPct = Math.abs(livePrice - incomingEntry) / livePrice * 100;
+        if (driftPct > CHALLENGER_PRICE_TOLERANCE_PCT) {
+          priceVerifyReason = `entry-price-off-market (rec entry $${incomingEntry.toFixed(2)} vs live $${livePrice.toFixed(2)}, ${driftPct.toFixed(1)}% drift, tolerance ${CHALLENGER_PRICE_TOLERANCE_PCT}%)`;
+        }
+      }
+    } catch { priceVerifyReason = "live-price-fetch-failed"; }
+
+    // Reject challengers with degenerate entry/target/stop. Real bug:
+    // AI-hallucinated recs where all three were the incumbent's price.
+    const levels = challengerLevelsValid(challenger);
+
     let recommendation;
     let rationale;
-    if (netAdvantage >= hurdle) {
+    if (priceVerifyReason) {
+      // Live-price verify failed BEFORE any level-shape check —
+      // means the challenger's entry price does not agree with its
+      // own live market price. Root cause is usually cross-ticker
+      // contamination (a rec picked up an unrelated ticker's price).
+      // Cannot trust ANY of the challenger's numbers, so downgrade.
+      recommendation = "SCREENED";
+      rationale = `${challenger.ticker} rejected by live-price verification: ${priceVerifyReason}. Score Δ+${deltaScore} vs ${pos.ticker} is not actionable until the rec is regenerated from clean data.`;
+    } else if (!levels.ok) {
+      // Score cleared the hurdle but the trade itself doesn't pass
+      // basic entry/target/stop sanity. Downgrade to SCREENED so the
+      // operator sees the engine found something but couldn't
+      // actually build a valid order.
+      recommendation = "SCREENED";
+      rationale = `${challenger.ticker} composite ${challengerScore} vs ${pos.ticker} ${heldScore} (Δ+${deltaScore}) would clear the hurdle, but the challenger's entry/target/stop failed a basic sanity check: ${levels.reason}. No actionable swap. Investigate the challenger's rec source (likely AI-hallucinated levels).`;
+    } else if (netAdvantage >= hurdle) {
       recommendation = "UPSWITCH";
-      rationale = `${challenger.ticker} composite ${challengerScore} vs ${pos.ticker} ${heldScore} (Δ+${deltaScore}). ${taxAdvantaged ? "Tax-advantaged account — no capital-gain drag." : `Taxable — ${TAXABLE_HANDICAP}-pt handicap applied.`} Sleeve="${posSleeve}" hurdle +${hurdle}. Net advantage +${netAdvantage.toFixed(0)} clears the hurdle.`;
+      const rotationNote = sleeveRotation ? ` NOTE: sleeve rotation (incumbent=${posSleeve}, challenger=${challengerSleeve}) — this changes portfolio sleeve mix.` : "";
+      rationale = `${challenger.ticker} composite ${challengerScore} vs ${pos.ticker} ${heldScore} (Δ+${deltaScore}). ${taxAdvantaged ? "Tax-advantaged account — no capital-gain drag." : `Taxable — ${TAXABLE_HANDICAP}-pt handicap applied.`} Challenger sleeve="${challengerSleeve}" hurdle +${hurdle}. Net advantage +${netAdvantage.toFixed(0)} clears the hurdle.${rotationNote}`;
       usedChallengers.add(String(challenger.ticker || "").toUpperCase());
     } else if (heldScore < 35 && deltaScore < hurdle) {
       // Weakness without a good replacement — flag EXIT_TO_CASH so the
@@ -282,15 +381,17 @@ export async function computeUpswitchOpportunities({ canonical, candidates = [] 
     });
   }
 
-  // Show UPSWITCH first, then EXIT_TO_CASH, then KEEP. Within each group,
-  // sort by netAdvantage desc so the biggest opportunity leads.
-  const rank = { UPSWITCH: 0, EXIT_TO_CASH: 1, KEEP: 2 };
+  // Show UPSWITCH first, then SCREENED (would-clear-but-invalid),
+  // then EXIT_TO_CASH, then KEEP. Within each group, sort by
+  // netAdvantage desc so the biggest opportunity leads.
+  const rank = { UPSWITCH: 0, SCREENED: 1, EXIT_TO_CASH: 2, KEEP: 3 };
   opportunities.sort((a, b) => (rank[a.recommendation] - rank[b.recommendation]) || (b.netAdvantage - a.netAdvantage));
 
   const summary = {
     heldScored: scoredHeld.length,
     candidatesConsidered: rankedCandidates.length,
     upswitchCount: opportunities.filter(o => o.recommendation === "UPSWITCH").length,
+    screenedCount: opportunities.filter(o => o.recommendation === "SCREENED").length,
     exitToCashCount: opportunities.filter(o => o.recommendation === "EXIT_TO_CASH").length,
     keepCount: opportunities.filter(o => o.recommendation === "KEEP").length,
   };
@@ -306,13 +407,19 @@ export async function computeUpswitchOpportunities({ canonical, candidates = [] 
 export function formatUpswitchBlock(result) {
   if (!result || !Array.isArray(result.opportunities)) return "";
   const upswitches = result.opportunities.filter(o => o.recommendation === "UPSWITCH");
+  const screened   = result.opportunities.filter(o => o.recommendation === "SCREENED");
   const exitToCash = result.opportunities.filter(o => o.recommendation === "EXIT_TO_CASH");
 
   const lines = ["", "## 1b. 🔄 PORTFOLIO UPGRADE OPPORTUNITIES", ""];
 
-  if (upswitches.length === 0 && exitToCash.length === 0) {
-    lines.push(`_NONE — no challenger cleared the sleeve replacement hurdle (SWING +${result.hurdles.swing} · SPEC +${result.hurdles.spec} · INCOME +${result.hurdles.income} · CORE +${result.hurdles.core}). ${result.summary?.heldScored ?? 0} holdings scored vs ${result.summary?.candidatesConsidered ?? 0} candidates._`);
+  if (upswitches.length === 0 && screened.length === 0 && exitToCash.length === 0) {
+    lines.push(`_Actionable upgrades: NONE — no challenger cleared the sleeve replacement hurdle (SWING +${result.hurdles.swing} · SPEC +${result.hurdles.spec} · INCOME +${result.hurdles.income} · CORE +${result.hurdles.core}). ${result.summary?.heldScored ?? 0} holdings scored vs ${result.summary?.candidatesConsidered ?? 0} candidates._`);
     return lines.join("\n");
+  }
+
+  if (upswitches.length === 0) {
+    lines.push(`_Actionable upgrades: NONE._`);
+    lines.push("");
   }
 
   for (const o of upswitches) {
@@ -322,6 +429,18 @@ export function formatUpswitchBlock(result) {
     lines.push(`   ${o.rationale}`);
     if (o.challenger.entryPrice) {
       lines.push(`   Challenger levels: entry $${o.challenger.entryPrice.toFixed(2)}${o.challenger.targetPrice ? ` / target $${o.challenger.targetPrice.toFixed(2)}` : ""}${o.challenger.stopPrice ? ` / stop $${o.challenger.stopPrice.toFixed(2)}` : ""} ${o.challenger.currency}`);
+    }
+    lines.push("");
+  }
+  // SCREENED — cleared score hurdle but the trade itself is not
+  // actionable (invalid levels, negative reward/risk, etc.). Emit so
+  // the operator sees WHY the engine considered but discarded these
+  // pairings instead of an unexplained absence.
+  if (screened.length > 0) {
+    const names = screened.map(o => o.challenger.ticker).join(", ");
+    lines.push(`**UPSWITCH SCREENED — NO ACTION**: higher-scoring challengers rejected: ${names} — entry/risk gates failed. No actionable swap for these pairings.`);
+    for (const o of screened) {
+      lines.push(`   ${o.rationale}`);
     }
     lines.push("");
   }
