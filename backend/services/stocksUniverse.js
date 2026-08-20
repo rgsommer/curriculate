@@ -159,10 +159,46 @@ async function loadCaUniverse() {
   return unique;
 }
 
+// Interleave two arrays proportional to a ratio so slice(0, N) always
+// takes both markets in the intended mix. Round-robin picks from US
+// with weight caRatio.us and CA with weight caRatio.ca; when one
+// stream exhausts, the remainder from the other stream fills in.
+// Example: ratioUs=0.70, ratioCa=0.30 → for every 10 slots, 7 US + 3 CA.
+function interleaveProportional(us, ca, { ratioUs = 0.70, ratioCa = 0.30 } = {}) {
+  const out = [];
+  const seen = new Set();
+  let i = 0, j = 0;
+  // Running "credits" — each iteration adds the ratio and, whichever
+  // side crosses 1.0 first, emit from that stream and subtract 1.
+  let creditUs = 0, creditCa = 0;
+  const push = (arr, idx) => {
+    const t = arr[idx];
+    if (t && !seen.has(t)) { out.push(t); seen.add(t); }
+  };
+  while (i < us.length || j < ca.length) {
+    creditUs += ratioUs;
+    creditCa += ratioCa;
+    if (creditUs >= creditCa) {
+      if (i < us.length) { push(us, i); i++; creditUs -= 1; }
+      else if (j < ca.length) { push(ca, j); j++; creditCa -= 1; }
+    } else {
+      if (j < ca.length) { push(ca, j); j++; creditCa -= 1; }
+      else if (i < us.length) { push(us, i); i++; creditUs -= 1; }
+    }
+  }
+  return out;
+}
+
 // Public: return the broad US+CA universe. Merges in-memory cache
 // (~24h) → Mongo (~24h/ymd) → live FMP screener. Never throws —
 // returns empty array on total failure so the pick engine can fall
 // back to its curated default.
+//
+// Interleaves US and CA proportionally so a downstream `slice(0, cap)`
+// never silently drops the entire TSX universe when US name-count
+// exceeds the cap (audit finding: US alone can return >500 rows).
+// Default 70/30 mix; override via STOCKS_UNIVERSE_US_RATIO env
+// (accepts 0..1; CA gets the complement).
 export async function getBroadUniverse() {
   const now = Date.now();
   if (MEM_CACHE.tickers && now - MEM_CACHE.at < CACHE_TTL_MS) return MEM_CACHE.tickers;
@@ -177,10 +213,18 @@ export async function getBroadUniverse() {
       loadUsUniverse().catch(e => { console.warn("[universe] US load failed:", e?.message); return null; }),
       loadCaUniverse().catch(e => { console.warn("[universe] CA load failed:", e?.message); return null; }),
     ]);
-    const merged = [...new Set([...(us || []), ...(ca || [])])].slice(0, MAX_UNIVERSE_SIZE);
+    const usArr = us || [];
+    const caArr = ca || [];
+    const envRatio = Number(process.env.STOCKS_UNIVERSE_US_RATIO);
+    const ratioUs = Number.isFinite(envRatio) && envRatio >= 0.1 && envRatio <= 0.95 ? envRatio : 0.70;
+    const ratioCa = 1 - ratioUs;
+    const merged = interleaveProportional(usArr, caArr, { ratioUs, ratioCa }).slice(0, MAX_UNIVERSE_SIZE);
     MEM_CACHE.at = now;
     MEM_CACHE.tickers = merged;
-    console.log(`[universe] loaded broad universe — US=${(us || []).length}, CA=${(ca || []).length}, merged=${merged.length}`);
+    // Log the CA share of the top-500 to prove the fix is behaving.
+    const top500 = merged.slice(0, 500);
+    const caInTop500 = top500.filter(t => t.endsWith(".TO") || t.endsWith(".V")).length;
+    console.log(`[universe] loaded broad universe — US=${usArr.length}, CA=${caArr.length}, merged=${merged.length}, top500 has ${caInTop500} CA (ratio ${ratioUs.toFixed(2)}/${ratioCa.toFixed(2)})`);
     return merged;
   } catch (e) {
     console.warn("[universe] getBroadUniverse failed:", e?.message);

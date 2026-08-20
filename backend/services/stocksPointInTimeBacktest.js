@@ -22,6 +22,8 @@ import { scoreCandidate } from "./stocksDailyPickEngine.js";
 import { getBroadUniverse } from "./stocksUniverse.js";
 import { computeMultiFactorScore, computeRelativeStrengthFromBars } from "./stocksMultiFactorScore.js";
 import { getFundamentals } from "./stocksFundamentals.js";
+import { getGrowth, getEstimateRevisions } from "./stocksGrowthRevisions.js";
+import { getRecentInsiderSignals } from "./stocksInsiderSignals.js";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 
@@ -183,10 +185,24 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
     // the production pick engine runs. Applied per-day so the
     // backtest actually models the algorithm production trades.
     // For point-in-time RS, uses bars sliced to as-of-D (no
-    // lookahead). Fundamentals are as-of-today (mild lookahead —
-    // called out in caveats[]).
+    // lookahead). Fundamentals, growth, revisions, and insider
+    // signals are as-of-today (mild lookahead — called out in
+    // caveats[]).
     const MF_TOP_K = Math.min(30, scored.length);
     const stage2 = scored.slice(0, MF_TOP_K);
+    // Batch insider lookup so the loop below is O(1) per candidate.
+    const stage2Bases = stage2.map(s => String(s.ticker).replace(/\..*$/, ""));
+    let insiderByBase = new Map();
+    try {
+      const signals = await getRecentInsiderSignals(stage2Bases, { days: 30, limit: 60 });
+      for (const s of signals || []) {
+        const b = String(s.ticker || "").toUpperCase().replace(/\..*$/, "");
+        const prev = insiderByBase.get(b) || { clusterBuy: false, clusterSell: false };
+        if (s.kind === "cluster_buy") prev.clusterBuy = true;
+        if (s.kind === "cluster_sell") prev.clusterSell = true;
+        insiderByBase.set(b, prev);
+      }
+    } catch { /* fall back to no-insider */ }
     for (const cand of stage2) {
       try {
         // Point-in-time RS using bars sliced through D.
@@ -200,18 +216,24 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
               bench.map(p => ({ close: p.close }))
             )
           : { ok: false };
-        // Fundamentals (cached, as-of-today).
+        // Fundamentals + growth + revisions cached, as-of-today.
         if (!(cand.ticker in fundamentalsByTicker)) {
           fundamentalsByTicker[cand.ticker] = await getFundamentals(cand.ticker, "USD").catch(() => null);
         }
         const fundamentals = fundamentalsByTicker[cand.ticker];
+        const [growth, revisions] = await Promise.all([
+          getGrowth(cand.ticker).catch(() => null),
+          getEstimateRevisions(cand.ticker).catch(() => null),
+        ]);
+        const base = String(cand.ticker).replace(/\..*$/, "");
+        const insider = insiderByBase.get(base) || null;
         const composite = computeMultiFactorScore({
           technicalScore: cand.score,
           fundamentals,
-          growth: null,
-          revisions: null,
+          growth,
+          revisions,
           rs,
-          insider: null,
+          insider,
         });
         cand.compositeRank = composite.score;
         cand.factorBreakdown = Object.fromEntries(
@@ -318,7 +340,9 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
       caveats: [
         "Broad universe membership is AS-OF-TODAY — a stock that grew past $500M mcap during the backtest window will still appear in the pool (mild survivorship bias). Tickers without bars back to the window start are skipped, which mitigates the worst cases.",
         "Fundamentals (ROE, D/E, FCF yield, PE) are AS-OF-TODAY, not as-of-D. For a 30-day backtest this is minor; for longer windows the bias grows. Production uses current fundamentals too, so this is consistent with what a live trade would see today — but not what a live trade would have seen 30 days ago.",
-        "EPS estimate revisions and growth acceleration are neutral (0.5) in both production and backtest until dedicated FMP endpoints are plumbed.",
+        "Growth (revenue YoY, revenue accel, EPS YoY) uses the latest 8 quarterly income statements — for very recent backtest windows this includes results published DURING the window, a mild look-ahead. For older windows the last-8-Q view still reflects only quarters that would have been public at some point in the recent past.",
+        "Estimate revisions (4w change in analyst consensus target) uses TODAY's target vs a stored snapshot ~4 weeks ago — for backtest days inside the last month this is honest; for older backtest days the comparison is still today-vs-4w-ago and may not match what analysts had projected as of D.",
+        "Insider cluster-buy/sell signals are from the persistent insider-signals collection, filtered to the last 30 days at query time — for a backtest of day D 60 days ago, the signals in scope are AS-OF-TODAY, not as-of-D. Signal presence is a mild look-ahead for the same reason.",
       ],
     },
   };

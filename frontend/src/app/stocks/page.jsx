@@ -120,6 +120,24 @@ async function apiGetPortfolio(sessionToken) {
   return r.json();
 }
 
+// Fetch the canonical portfolio snapshot — the single source of truth
+// for every %, allocation, sleeve weight, sector weight, and stop
+// distance. Consumed by sleeveBalanceFromCanonical /
+// sleeveOfTickerCanonical so the frontend cannot drift from the
+// backend's briefing / validator / audit / alpha numbers. Never
+// throws — returns null on any failure so the caller keeps rendering
+// (with sleeve chips showing "-" instead of wrong numbers).
+async function apiGetCanonical(sessionToken) {
+  try {
+    const r = await fetch(`${BACKEND_URL}/api/stocks-portfolio/canonical`, {
+      credentials: "include",
+      headers: { Authorization: `Bearer ${sessionToken}` },
+    });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
 async function apiPutPortfolio(sessionToken, profile) {
   // NOTE: every persistable field MUST be listed here. The server sanitizer
   // ignores fields it doesn't recognize, but it cannot recover fields the
@@ -862,6 +880,12 @@ export default function StocksAdvisorPage() {
           // Persist the seed back to the server immediately
           await apiPutPortfolio(auth.sessionToken, p);
         }
+        // Fetch the canonical portfolio in parallel so downstream
+        // components can consume authoritative sleeve/sector/weight
+        // numbers instead of the client mirror. Non-blocking — null on
+        // failure so the profile still renders.
+        const canon = await apiGetCanonical(auth.sessionToken);
+        if (canon) p = { ...p, canonical: canon };
         if (!cancelled) setProfile(p);
       } catch (e) {
         if (cancelled) return;
@@ -916,6 +940,11 @@ export default function StocksAdvisorPage() {
             lastSyncedAt: fresh.lastSyncedAt || prev.lastSyncedAt,
           };
         });
+        // Also refresh the canonical snapshot so sleeve chips, headroom,
+        // and health numbers stay in lock-step with the (possibly updated)
+        // positions / accounts.
+        const canon = await apiGetCanonical(auth.sessionToken);
+        if (canon) setProfile((prev) => (prev ? { ...prev, canonical: canon } : prev));
       } catch { /* silent — this is a background refresh */ }
     };
 
@@ -3241,7 +3270,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
       (user.positions || [])
         .filter((p) => (p.qty || 0) > 0)
         .filter((p) => {
-          const sleeve = sleeveOfTicker(p.ticker);
+          const sleeve = sleeveOfTicker(p.ticker, user);
           return sleeve === "swing" || sleeve === "spec";
         })
         .map((p) => ({ ticker: String(p.ticker || "").toUpperCase(), currency: p.ccy }))
@@ -3553,7 +3582,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                           // Sleeve badge — same colour scheme the Test A
                           // and sleeve-balance blocks use, so every surface
                           // in the app labels a ticker's role identically.
-                          const sleeve = sleeveOfTicker(p.ticker);
+                          const sleeve = sleeveOfTicker(p.ticker, user);
                           const bg = sleeve === "core" ? "#dbeafe"
                             : sleeve === "swing" ? "#dcfce7"
                             : "#fef3c7";
@@ -3626,7 +3655,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                         // "(auto)" tag so the user can see at a glance
                         // which stops came from a Curriculate rec vs the
                         // algorithm.
-                        const sleeve = sleeveOfTicker(p.ticker);
+                        const sleeve = sleeveOfTicker(p.ticker, user);
                         const wantAuto = (sleeve === "swing" || sleeve === "spec");
                         const auto = wantAuto ? derivedStopsByTicker[String(p.ticker || "").toUpperCase()] : null;
                         if (!rec || !Number.isFinite(cur)) {
@@ -3731,7 +3760,7 @@ function PositionsView({ user, sessionToken, onOpenModal, onDelete, onAddAccount
                   // single source of truth drives both.
                   {
                     const rec = openBuyRecsByBase[baseKey];
-                    const sleeve = sleeveOfTicker(p.ticker);
+                    const sleeve = sleeveOfTicker(p.ticker, user);
                     const wantAuto = (sleeve === "swing" || sleeve === "spec");
                     const auto = wantAuto ? derivedStopsByTicker[String(p.ticker || "").toUpperCase()] : null;
                     const barEntry = basis;
@@ -6745,55 +6774,62 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
       <div className="sa-card" style={{ marginBottom: 14 }}>
         <h3>Sleeve targets (auto-enforced in briefing)</h3>
         <div className="sa-muted" style={{ fontSize: 12, marginBottom: 10 }}>
-          Split the book into three disciplinary sleeves. Every morning the briefing checks actual vs target and prevents new speculative BUYs when the SPEC sleeve is full. Values must sum to 100.
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }}>
-          <div>
-            <label>Core (%)</label>
-            <input
-              type="number" step="1" min="0" max="100"
-              defaultValue={user.sleeveTargets?.core ?? 80}
-              onChange={(e) => onChangeSleeveTargets({ ...(user.sleeveTargets || { core: 80, swing: 15, spec: 5 }), core: parseFloat(e.target.value) || 0 })}
-            />
-            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
-              Broad ETFs + bonds (buy-and-hold anchor).
-            </div>
-          </div>
-          <div>
-            <label>Swing (%)</label>
-            <input
-              type="number" step="1" min="0" max="100"
-              defaultValue={user.sleeveTargets?.swing ?? 15}
-              onChange={(e) => onChangeSleeveTargets({ ...(user.sleeveTargets || { core: 80, swing: 15, spec: 5 }), swing: parseFloat(e.target.value) || 0 })}
-            />
-            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
-              Canadian large-caps (your proven template).
-            </div>
-          </div>
-          <div>
-            <label>Spec (% CAP)</label>
-            <input
-              type="number" step="1" min="0" max="100"
-              defaultValue={user.sleeveTargets?.spec ?? 5}
-              onChange={(e) => onChangeSleeveTargets({ ...(user.sleeveTargets || { core: 80, swing: 15, spec: 5 }), spec: parseFloat(e.target.value) || 0 })}
-            />
-            <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>
-              High-vol / meme US names. Hard cap.
-            </div>
-          </div>
+          Split the book into four disciplinary sleeves. Every morning the briefing checks actual vs target and blocks BUYs into an over-target sleeve without a paired trim. Values must sum to 100.
         </div>
         {(() => {
-          const t = user.sleeveTargets || { core: 80, swing: 15, spec: 5 };
-          const sum = (t.core || 0) + (t.swing || 0) + (t.spec || 0);
-          const off = Math.abs(sum - 100) > 0.01;
-          return off ? (
-            <div style={{ fontSize: 12, color: "var(--sa-amber)", marginTop: 10, padding: "8px 10px", background: "var(--sa-amber-soft)", borderRadius: 6 }}>
-              ⚠ Current sum: {sum.toFixed(0)}%. Enforcer will normalize to 100% ({((t.core || 0) / sum * 100).toFixed(0)} / {((t.swing || 0) / sum * 100).toFixed(0)} / {((t.spec || 0) / sum * 100).toFixed(0)}). For predictable enforcement, edit so the values sum to 100 exactly.
-            </div>
-          ) : (
-            <div style={{ fontSize: 11.5, color: "var(--sa-muted)", marginTop: 8 }}>
-              ✓ Sums to 100%. Default: 80 / 15 / 5. Journal analysis basis: your Canadian book is 7-for-7; spec sleeve is where all prior losses came from — the SPEC cap is the load-bearing rule.
-            </div>
+          // Sleeve default matches the backend canonical engine
+          // (75/5/15/5). Was 80/15/5 in the pre-audit UI; that missed
+          // INCOME entirely and could disagree with the briefing's
+          // sleeve chart.
+          const DEFAULTS = { core: 75, swing: 5, income: 15, spec: 5 };
+          const t = user.sleeveTargets || DEFAULTS;
+          const set = (patch) => onChangeSleeveTargets({ ...DEFAULTS, ...t, ...patch });
+          return (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+                <div>
+                  <label>Core (%)</label>
+                  <input type="number" step="1" min="0" max="100"
+                    defaultValue={t.core ?? DEFAULTS.core}
+                    onChange={(e) => set({ core: parseFloat(e.target.value) || 0 })} />
+                  <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Broad ETFs + bonds (buy-and-hold anchor).</div>
+                </div>
+                <div>
+                  <label>Swing (%)</label>
+                  <input type="number" step="1" min="0" max="100"
+                    defaultValue={t.swing ?? DEFAULTS.swing}
+                    onChange={(e) => set({ swing: parseFloat(e.target.value) || 0 })} />
+                  <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>US mega-caps + trend swings.</div>
+                </div>
+                <div>
+                  <label>Income (%)</label>
+                  <input type="number" step="1" min="0" max="100"
+                    defaultValue={t.income ?? DEFAULTS.income}
+                    onChange={(e) => set({ income: parseFloat(e.target.value) || 0 })} />
+                  <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>Dividend payers (Cdn banks, energy, utilities, KO etc.).</div>
+                </div>
+                <div>
+                  <label>Spec (% CAP)</label>
+                  <input type="number" step="1" min="0" max="100"
+                    defaultValue={t.spec ?? DEFAULTS.spec}
+                    onChange={(e) => set({ spec: parseFloat(e.target.value) || 0 })} />
+                  <div className="sa-muted" style={{ fontSize: 11, marginTop: 4 }}>High-vol / meme US names. Hard cap.</div>
+                </div>
+              </div>
+              {(() => {
+                const sum = (t.core || 0) + (t.swing || 0) + (t.income || 0) + (t.spec || 0);
+                const off = Math.abs(sum - 100) > 0.01;
+                return off ? (
+                  <div style={{ fontSize: 12, color: "var(--sa-amber)", marginTop: 10, padding: "8px 10px", background: "var(--sa-amber-soft)", borderRadius: 6 }}>
+                    ⚠ Current sum: {sum.toFixed(0)}%. Enforcer will normalize to 100% ({((t.core || 0) / sum * 100).toFixed(0)} / {((t.swing || 0) / sum * 100).toFixed(0)} / {((t.income || 0) / sum * 100).toFixed(0)} / {((t.spec || 0) / sum * 100).toFixed(0)}). For predictable enforcement, edit so the values sum to 100 exactly.
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 11.5, color: "var(--sa-muted)", marginTop: 8 }}>
+                    ✓ Sums to 100%. Default: 75 / 5 / 15 / 5 (core / swing / income / spec). Journal-analysis basis: your Canadian dividend book is the proven template — INCOME sleeve holds those separately from opportunistic SWING trades.
+                  </div>
+                );
+              })()}
+            </>
           );
         })()}
       </div>
@@ -12230,45 +12266,86 @@ const SLEEVE_SPEC_TICKERS = new Set([
   "PLTR","RKLB","IONQ","SMCI","COIN","MSTR","HOOD",
   "NIO","XPEV","LI","BABA","PDD",
 ]);
-function sleeveOfTicker(ticker) {
-  const raw = String(ticker || "").toUpperCase();
-  const base = raw.replace(/\..*$/, "");
-  if (SLEEVE_CORE_ETFS.has(base)) return "core";
-  if (SLEEVE_SWING_TICKERS.has(base)) return "swing";
-  if (SLEEVE_SPEC_TICKERS.has(base)) return "spec";
-  if (/\.(TO|V|NE|CN)$/i.test(raw)) return "swing";
-  return "spec";
-}
-// Compute sleeve balance from user.positions. Mirrors
-// stocksSleeveEnforcer.computeSleeveBalance but stays skinny.
-function computeSleeveBalanceClient(user) {
-  const fx = user?.fxUsdCad || 1.37;
-  const targets = user?.sleeveTargets || { core: 80, swing: 15, spec: 5 };
-  const sum = (targets.core || 0) + (targets.swing || 0) + (targets.spec || 0);
-  const targetPct = sum > 0
-    ? { core: (targets.core / sum) * 100, swing: (targets.swing / sum) * 100, spec: (targets.spec / sum) * 100 }
-    : { core: 80, swing: 15, spec: 5 };
-  const totals = { core: 0, swing: 0, spec: 0 };
-  for (const p of (user?.positions || [])) {
-    const sleeve = sleeveOfTicker(p.ticker);
-    const cad = (Number.isFinite(p.priceCad) ? p.priceCad : (Number.isFinite(p.priceUsd) ? p.priceUsd * fx : 0)) * (p.qty || 0);
-    totals[sleeve] += cad;
+// ─────────────────────────────────────────────────────────────────────
+// Canonical-portfolio consumers.
+//
+// Previously the frontend maintained its own hand-rolled 3-sleeve
+// (core/swing/spec) mirror of the backend classifier + a parallel
+// weight calculator. That drifted from the backend's canonical
+// 4-sleeve (core/swing/income/spec) engine — a dividend name the
+// backend classified as INCOME could show as SWING in the browser,
+// with different variance/headroom numbers. Exactly the % alignment
+// problem §24 was designed to eliminate.
+//
+// Fix: consume the /api/stocks-portfolio/canonical endpoint (which
+// runs computeCanonicalPortfolio server-side, same object the audit
+// gate + briefing prompt see). sleeveOfTicker + computeSleeveBalanceClient
+// are now thin shims that read from that canonical object.
+// ─────────────────────────────────────────────────────────────────────
+
+// Shape-compatible with the old computeSleeveBalanceClient output but
+// derived from a canonical portfolio object (from /canonical endpoint).
+// All 4 sleeves supported. Callers that still pass a `user` object
+// with no canonical attached get a safe empty shape.
+function sleeveBalanceFromCanonical(canonical) {
+  if (!canonical) {
+    return {
+      book: 0, cashCad: 0, fx: 1.37,
+      totals: { core: 0, swing: 0, income: 0, spec: 0 },
+      targetsCad: { core: 0, swing: 0, income: 0, spec: 0 },
+      targetPct: { core: 75, swing: 5, income: 15, spec: 5 },
+      headroomCad: { core: 0, swing: 0, income: 0, spec: 0 },
+    };
   }
-  const cashCad = (user?.accounts || []).reduce((s, a) => s + (a.cashCad || 0) + (a.cashUsd || 0) * fx, 0);
-  const book = totals.core + totals.swing + totals.spec + cashCad;
-  const targetsCad = {
-    core: book * targetPct.core / 100,
-    swing: book * targetPct.swing / 100,
-    spec: book * targetPct.spec / 100,
-  };
+  const totals = { core: 0, swing: 0, income: 0, spec: 0 };
+  const targetPct = { core: 75, swing: 5, income: 15, spec: 5 };
+  const targetsCad = { core: 0, swing: 0, income: 0, spec: 0 };
+  for (const s of (canonical.sleeves || [])) {
+    if (!(s.sleeve in totals)) continue;
+    totals[s.sleeve] = s.cad_value || 0;
+    if (Number.isFinite(s.sleeve_target_pct)) targetPct[s.sleeve] = s.sleeve_target_pct;
+  }
+  const book = canonical.totals?.portfolio_total_cad || 0;
+  for (const k of Object.keys(targetPct)) targetsCad[k] = book * targetPct[k] / 100;
   return {
-    book, cashCad, fx, totals, targetsCad, targetPct,
+    book,
+    cashCad: canonical.cash?.cash_cad_equiv || 0,
+    fx: canonical.fxUsdCad || 1.37,
+    totals,
+    targetsCad,
+    targetPct,
     headroomCad: {
       core: targetsCad.core - totals.core,
       swing: targetsCad.swing - totals.swing,
+      income: targetsCad.income - totals.income,
       spec: targetsCad.spec - totals.spec,
     },
+    // Full canonical payload attached for callers that need positions /
+    // sectors / accounts / reconciliation.
+    canonical,
   };
+}
+
+// Look up a position's sleeve from the canonical portfolio object.
+// Returns null when the ticker isn't in the canonical positions —
+// caller should treat null as "unknown" (never render as SWING/SPEC
+// by guess). If canonical isn't loaded yet, callers pass user=null
+// and this returns null, which the display sites handle as "-".
+function sleeveOfTickerCanonical(canonical, ticker) {
+  if (!canonical || !ticker) return null;
+  const base = String(ticker).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+  const hit = (canonical.positions || []).find(p => p.base === base);
+  return hit?.sleeve || null;
+}
+
+// Backwards-compatible aliases. Callers pass user; if user.canonical is
+// present we use it, otherwise return the safe empty shape. All render
+// sites are gradually migrating to accept a canonical prop directly.
+function sleeveOfTicker(ticker, user = null) {
+  return sleeveOfTickerCanonical(user?.canonical, ticker);
+}
+function computeSleeveBalanceClient(user) {
+  return sleeveBalanceFromCanonical(user?.canonical);
 }
 
 // Baseball cards — per-source performance table (task #128). Aggregates
@@ -12751,7 +12828,7 @@ function DailyPickCard({ sessionToken, user }) {
         const fmtCad = (n) => `$${Math.round(Math.abs(n)).toLocaleString()}`;
         return (
           <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
-            {["core", "swing", "spec"].map((k) => {
+            {["core", "swing", "income", "spec"].map((k) => {
               const h = bal.headroomCad[k];
               const isOver = h < 0;
               const label = k.toUpperCase();
@@ -12861,7 +12938,7 @@ function DailyPickCard({ sessionToken, user }) {
                     <td style={{ padding: "5px 8px", fontSize: 10.5 }}>
                       {(() => {
                         if (!user) return "—";
-                        const sleeve = sleeveOfTicker(p.ticker);
+                        const sleeve = sleeveOfTicker(p.ticker, user);
                         const bal = computeSleeveBalanceClient(user);
                         const headroom = bal.headroomCad[sleeve];
                         const sleeveTagBg = sleeve === "core" ? "#dbeafe"

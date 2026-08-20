@@ -338,11 +338,17 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // Sleeve targets for the auto-enforced 80/15/5 core/swing/spec
     // structure. Editable in Settings. Percentages must sum to 100 —
     // the enforcer normalizes if they drift. Default reflects the
-    // "80 buy-and-hold / 15 Canadian large-caps / 5 speculative cap"
-    // recommendation from the journal-analysis follow-up.
+    // canonical portfolio engine's 4-sleeve model:
+    //   • CORE 75% — broad ETFs + bonds (buy-and-hold anchor)
+    //   • SWING 5% — US mega-caps + trend swings
+    //   • INCOME 15% — dividend payers (Cdn banks/energy/utilities, KO etc.)
+    //   • SPEC 5% cap — high-vol / meme US names
+    // INCOME was added when the classifier gained a dividend-holding
+    // sleeve separate from opportunistic SWING trades.
     sleeveTargets: {
-      core: { type: Number, default: 80, min: 0, max: 100 },
-      swing: { type: Number, default: 15, min: 0, max: 100 },
+      core: { type: Number, default: 75, min: 0, max: 100 },
+      swing: { type: Number, default: 5, min: 0, max: 100 },
+      income: { type: Number, default: 15, min: 0, max: 100 },
       spec: { type: Number, default: 5, min: 0, max: 100 },
     },
     // Idempotency: last time we sent each scheduled brief, keyed by

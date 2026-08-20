@@ -27,6 +27,7 @@ import { computeTwrr, annualizeTwrr } from "../services/stocksTwrr.js";
 import { computeBenchmarkReturns } from "../services/stocksBenchmark.js";
 import { computeCompliance } from "../services/stocksCompliance.js";
 import { computeAttribution } from "../services/stocksAttribution.js";
+import { computeCanonicalPortfolio } from "../services/portfolioCalcEngine.js";
 import StocksRecIntent from "../models/StocksRecIntent.js";
 import StocksEmailIntegration from "../models/StocksEmailIntegration.js";
 import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
@@ -455,6 +456,34 @@ router.delete("/", requireStocksAuth, async (req, res) => {
   } catch (err) {
     console.error("stocks-portfolio DELETE error:", err);
     res.status(500).json({ error: "Internal error" });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/stocks-portfolio/canonical
+//
+// Returns the canonical portfolio snapshot per portfolioCalcEngine —
+// same object the pre-send audit gate, briefing prompt, and daily-pick
+// engine consume. This is the SINGLE SOURCE OF TRUTH for every
+// percentage, allocation, sleeve weight, sector weight, and stop
+// distance the frontend renders.
+//
+// Retires the frontend's parallel 3-sleeve mirror (sleeveOfTicker /
+// computeSleeveBalanceClient). Dashboard chips, Settings targets,
+// Daily-Picks headroom, Health calculations all read from this
+// response so browser numbers cannot drift from what the briefing /
+// validator / audit / alpha dashboard see.
+// ─────────────────────────────────────────────────────────────────────
+router.get("/canonical", requireStocksAuth, async (req, res) => {
+  try {
+    const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
+    if (!profile) return res.status(404).json({ error: "No portfolio." });
+    const canonical = computeCanonicalPortfolio(profile);
+    if (!canonical) return res.status(500).json({ error: "canonical compute returned null" });
+    res.json(canonical);
+  } catch (err) {
+    console.error("stocks-portfolio canonical error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
   }
 });
 

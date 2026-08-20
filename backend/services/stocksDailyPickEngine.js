@@ -432,17 +432,38 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   let top;
   if (scored.length > 0) {
     const stage2Input = scored.slice(0, MULTI_FACTOR_TOP_K);
-    const [{ getFundamentals }, mfMod] = await Promise.all([
+    const [{ getFundamentals }, mfMod, growthMod, insiderMod] = await Promise.all([
       import("./stocksFundamentals.js"),
       import("./stocksMultiFactorScore.js"),
+      import("./stocksGrowthRevisions.js"),
+      import("./stocksInsiderSignals.js"),
     ]);
     const { computeMultiFactorScore, computeRelativeStrengthFromBars } = mfMod;
+    const { getGrowth, getEstimateRevisions } = growthMod;
+    const { getRecentInsiderSignals } = insiderMod;
+
     // Load benchmark bars once, reused across the top-K.
     let spyBars = null, xicBars = null;
     try {
       spyBars = await fetchYahooDaily("SPY", "1y");
       xicBars = await fetchYahooDaily("XIC.TO", "1y");
     } catch { /* fall back to no-RS */ }
+
+    // Insider signals: one batch query for the whole top-K rather than
+    // per-ticker Mongo hits inside the loop. Bucket by ticker so per-
+    // candidate lookup is O(1) below.
+    const stage2Bases = stage2Input.map(c => String(c.ticker).replace(/\..*$/, ""));
+    let insiderByBase = new Map();
+    try {
+      const signals = await getRecentInsiderSignals(stage2Bases, { days: 30, limit: 60 });
+      for (const s of signals || []) {
+        const b = String(s.ticker || "").toUpperCase().replace(/\..*$/, "");
+        const prev = insiderByBase.get(b) || { clusterBuy: false, clusterSell: false };
+        if (s.kind === "cluster_buy") prev.clusterBuy = true;
+        if (s.kind === "cluster_sell") prev.clusterSell = true;
+        insiderByBase.set(b, prev);
+      }
+    } catch (e) { console.warn("[pick-engine-multi-factor] insider batch failed:", e?.message); }
 
     // Parallelize per-candidate fetches with a small concurrency cap so
     // the top-K composite doesn't sequentially wait on 30× fundamentals.
@@ -453,23 +474,24 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         try {
           const ccy = cand.currency || "USD";
           const bench = ccy === "CAD" ? xicBars : spyBars;
-          const [tickerBars, fundamentals] = await Promise.all([
+          const base = String(cand.ticker).replace(/\..*$/, "");
+          const [tickerBars, fundamentals, growth, revisions] = await Promise.all([
             fetchYahooDaily(cand.ticker, "1y").catch(() => null),
             getFundamentals(cand.ticker, ccy).catch(() => null),
+            getGrowth(cand.ticker).catch(() => null),
+            getEstimateRevisions(cand.ticker).catch(() => null),
           ]);
           const rs = (tickerBars && bench)
             ? computeRelativeStrengthFromBars(tickerBars, bench)
             : { ok: false };
-          // Growth-acceleration and EPS-estimate-revisions still return
-          // neutral 0.5 pending dedicated FMP plumbing; the composite is
-          // honest about that via factor.contributors.
+          const insider = insiderByBase.get(base) || null;
           const composite = computeMultiFactorScore({
             technicalScore: cand.deterministicScore,
             fundamentals,
-            growth: null,
-            revisions: null,
+            growth,        // wired: revenue YoY + accel + EPS YoY (FMP quarterly income)
+            revisions,     // wired: 4w change in analyst consensus target (day-snapshot Mongo)
             rs,
-            insider: null,
+            insider,       // wired: cluster_buy / cluster_sell from insider-signals collection
           });
           cand.multiFactorScore = composite.score;
           cand.multiFactorContributors = composite.contributors;
@@ -488,7 +510,7 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // Re-rank on multi-factor composite. Fallback (rare) is technical.
     stage2Input.sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore));
     top = stage2Input.slice(0, n);
-    console.log(`[pick-engine-multi-factor] scored ${stage2Input.length} candidates, final top ${top.length}`);
+    console.log(`[pick-engine-multi-factor] scored ${stage2Input.length} candidates w/ growth+revisions+insider, final top ${top.length}`);
   } else {
     top = [];
   }
