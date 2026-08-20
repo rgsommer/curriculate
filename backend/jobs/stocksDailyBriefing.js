@@ -1713,6 +1713,7 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     (stopMonitor?.hardStopHit || []).map(r => String(r.ticker || "").toUpperCase())
   );
   const trailReviews = [];
+  const coreTrailInformational = []; // CORE positions that breached — surfaced as A2 line only
   for (const p of (positions || [])) {
     const ticker = String(p.ticker || "").toUpperCase();
     if (!ticker || !(p.qty > 0)) continue;
@@ -1720,6 +1721,27 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     const sig = (quantSignals || {})[ticker] || (quantSignals || {})[ticker.replace(/\..*$/, "")];
     const tech = sig?.tech;
     if (!tech || !tech.trailStopBreach) continue;
+
+    // Sleeve-specific policy (audit fix — no more XEQT MANDATORY EXIT):
+    //   CORE   → informational only. A 60d-peak-minus-2.5×ATR breach on
+    //            a long-horizon ETF like XEQT/VOO/XIU is mechanical
+    //            noise, not a decision trigger. Surface as one A2 line;
+    //            do NOT create a §1 mandatory review.
+    //   INCOME → thesis-review framing (dividend/valuation angle), not
+    //            an "EXIT/TIGHTEN/HOLD" action mandate.
+    //   SWING  → mandatory action review (DJT-style EXIT/TIGHTEN/HOLD).
+    //   SPEC   → mandatory action review (same).
+    const posSleeve = classifyPosition(p) || "spec";
+    if (posSleeve === "core") {
+      coreTrailInformational.push({
+        ticker: p.ticker,
+        drawdownPct: tech.drawdownFromHigh60dPct,
+        last: tech.last,
+        high60d: tech.high60d,
+      });
+      continue; // don't put on the mandatory list
+    }
+
     trailReviews.push({
       ticker: p.ticker,
       account: p.acct,
@@ -1729,8 +1751,25 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       trailStop: tech.trailStopAtrAdjusted,
       drawdownPct: tech.drawdownFromHigh60dPct,
       currency: p.ccy || "USD",
+      sleeve: posSleeve,  // downstream copy chooses framing (INCOME vs SWING/SPEC)
     });
   }
+  // De-dup mandatory reviews by base ticker so XEQT in 3 accounts isn't
+  // 3 identical §1 mandates. Keep the worst-drawdown row; caller can
+  // list per-account holdings underneath from p.acct via `positions`
+  // if it wants the breakout.
+  const seenBase = new Set();
+  const trailReviewsDeduped = [];
+  const baseOfT = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+  trailReviews.sort((a, b) => (a.drawdownPct ?? 0) - (b.drawdownPct ?? 0));
+  for (const r of trailReviews) {
+    const b = baseOfT(r.ticker);
+    if (seenBase.has(b)) continue;
+    seenBase.add(b);
+    trailReviewsDeduped.push(r);
+  }
+  trailReviews.length = 0;
+  for (const r of trailReviewsDeduped) trailReviews.push(r);
   // Sort worst-first by drawdown magnitude (most-negative first).
   trailReviews.sort((a, b) => (a.drawdownPct ?? 0) - (b.drawdownPct ?? 0));
   for (const r of trailReviews) {
@@ -1753,9 +1792,19 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       ? `$${r.trailStop.toFixed(2)} ${r.currency}` : "n/a";
     const highStr = r.high60d != null
       ? `$${r.high60d.toFixed(2)} ${r.currency}` : "n/a";
-    mandatory.push(
-      `**TRAIL STOP REVIEW** — **${r.ticker}**. Current price is below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **Decide today and record ONE of:** (1) **EXIT** — lock in the remaining gain or cut the drawdown; (2) **TIGHTEN** — move hard stop to break-even or 1×ATR below current; (3) **HOLD with documented reason** — must include a concrete new-evidence trigger AND a new review date. No fourth option. "Hold through earnings" or "thesis intact" alone are NOT acceptable — write out the specific trigger.`
-    );
+    // Sleeve-specific mandate copy. INCOME gets a thesis-review
+    // framing (dividend/valuation angle, no forced EXIT/TIGHTEN
+    // decision); SWING/SPEC gets the DJT-style tactical decision
+    // review. CORE was already filtered out above.
+    if (r.sleeve === "income") {
+      mandatory.push(
+        `**TRAIL STOP REVIEW (INCOME)** — **${r.ticker}**. Current price below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **INCOME framing — review the dividend/thesis, not an automatic exit:** (1) is the payout still safe (payout ratio, coverage)? (2) has the valuation multiple compressed structurally? (3) is the sector view intact? Document ONE of: **HOLD — thesis and yield intact**, **TRIM to reduce single-name weight**, or **EXIT — thesis broken**. HOLD requires a specific yield/coverage number and a review date, not "long-term dividend payer".`
+      );
+    } else {
+      mandatory.push(
+        `**TRAIL STOP REVIEW** — **${r.ticker}**. Current price is below the 60d-peak-minus-2.5×ATR trailing stop (${trailStopStr}). 60d high: ${highStr}. Drawdown from peak: ${drawdownStr}. **Decide today and record ONE of:** (1) **EXIT** — lock in the remaining gain or cut the drawdown; (2) **TIGHTEN** — move hard stop to break-even or 1×ATR below current; (3) **HOLD with documented reason** — must include a concrete new-evidence trigger AND a new review date. No fourth option. "Hold through earnings" or "thesis intact" alone are NOT acceptable — write out the specific trigger.`
+      );
+    }
     // Paired IF-EXIT REDEPLOY hint. TRAIL STOP REVIEW is a decision
     // mandate (three options) so no forced SELL — but if the operator
     // picks EXIT, there's real cash to redeploy. User Aug 6: "I took
@@ -1783,6 +1832,15 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       } else {
         destList = r.currency === "CAD" ? coreCadList : coreUsdList;
       }
+      // Guard against sell-X → buy-X self-swap. If the destination
+      // list contains the very ticker being reviewed (base-ticker
+      // match, exchange-suffix agnostic), strip it. Was producing
+      // "SELL 21 sh XEQT.TO … BUY 21 sh XEQT.TO" for CORE ETFs
+      // before we filtered CORE out entirely; keep this guard as a
+      // second layer so any future non-CORE redeploy can't self-swap
+      // either (e.g. a swing XLK trail-review shouldn't redeploy to XLK).
+      const reviewBase = baseOfT(r.ticker);
+      destList = destList.filter(t => baseOfT(t) !== reviewBase);
       const redeployTicket = pickDefaultTicket(destList, proceedsCad, r.currency);
       if (redeployTicket) {
         const acctLabel = (cashAccounts || []).find(a => String(a.id) === String(r.account))?.name || String(r.account || "account");
@@ -2112,6 +2170,28 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         chunks.push(`${n}. ${line}`);
       }
     });
+  }
+  // CORE trail-breach informational block — appears BELOW mandatory items,
+  // clearly labeled "informational only" so it can't be misread as a
+  // required action. A 2-3% dip on XEQT/VOO/XIU from a 60d peak is
+  // mechanical noise on a 10+ year holding, not a decision trigger.
+  // Aggregated by base ticker so XEQT-in-3-accounts is ONE line, not three.
+  if (coreTrailInformational.length > 0) {
+    const byBase = new Map();
+    for (const r of coreTrailInformational) {
+      const b = String(r.ticker || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+      if (!byBase.has(b)) byBase.set(b, { ticker: r.ticker, worstDrawdownPct: r.drawdownPct, count: 0 });
+      const agg = byBase.get(b);
+      agg.count += 1;
+      if ((r.drawdownPct ?? 0) < (agg.worstDrawdownPct ?? 0)) agg.worstDrawdownPct = r.drawdownPct;
+    }
+    chunks.push("");
+    chunks.push("_Informational only — CORE trail-breach (no action; 60d-peak-minus-2.5×ATR is a tactical metric, not a long-horizon exit trigger):_");
+    for (const [, agg] of byBase) {
+      const dd = Number.isFinite(agg.worstDrawdownPct) ? agg.worstDrawdownPct.toFixed(1) + "%" : "n/a";
+      const acctNote = agg.count > 1 ? ` (${agg.count} accts)` : "";
+      chunks.push(`- ${agg.ticker}${acctNote}: drawdown ${dd} from 60d peak — long-horizon CORE, HOLD.`);
+    }
   }
   chunks.push("");
 

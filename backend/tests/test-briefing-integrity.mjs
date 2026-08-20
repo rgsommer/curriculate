@@ -181,6 +181,22 @@ async function testBuyOfBlockedTicker() {
   assertBlocked(audit, "buy-of-blocked-ticker", "7. BUY of a ticker also in rejectedRecs fires blocker");
 }
 
+// ─── 7b. Same-ticker self-swap ───────────────────────────────────────
+async function testSameTickerSelfSwap() {
+  const profile = baseProfile();
+  const audit = await auditBriefingBeforeSend({
+    email: "test",
+    md: "## 2. 🛑 FORBIDDEN TODAY\nNone.\n",
+    acceptedRecs: [
+      { ticker: "AAPL", action: "SELL", entryPrice: 200, stopPrice: 190, targetPrice: 210, sleeve: "swing", account: "a1", entryCurrency: "USD" },
+      { ticker: "AAPL", action: "BUY", entryPrice: 200, stopPrice: 190, targetPrice: 220, sleeve: "swing", account: "a1", entryCurrency: "USD" },
+    ],
+    positions: profile.positions,
+    profile,
+  });
+  assertBlocked(audit, "same-ticker-self-swap", "7b. SELL AAPL + BUY AAPL in same batch fires blocker");
+}
+
 // ─── 8. Phantom SELL on non-held ticker ──────────────────────────────
 async function testPhantomSell() {
   const profile = baseProfile();
@@ -238,6 +254,7 @@ async function main() {
   testSleeveOvershoot();
   testConcentrationBreach();
   await testBuyOfBlockedTicker();
+  await testSameTickerSelfSwap();
   await testPhantomSell();
   await testCurrencyMismatchWarn();
   testPercentageReconciliation();

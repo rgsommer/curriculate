@@ -140,6 +140,31 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── 5b: same-ticker self-swap. A batch that contains both
+  // SELL/EXIT/TRIM X AND BUY/ADD X (same base ticker) is nonsense —
+  // it's telling the operator to sell shares and buy them right back.
+  // This produced the "SELL 21 sh XEQT.TO … BUY 21 sh XEQT.TO"
+  // pattern users flagged in the CORE-trail-review IF-EXIT REDEPLOY
+  // block. The paired-REDEPLOY generator now filters its destination
+  // list, but the audit is a defense in depth.
+  const sellBases = new Set();
+  const buyBases = new Set();
+  for (const rec of (acceptedRecs || [])) {
+    if (!rec?.action || !rec?.ticker) continue;
+    const b = baseOf(rec.ticker);
+    if (["SELL", "EXIT", "TRIM"].includes(rec.action)) sellBases.add(b);
+    if (["BUY", "ADD"].includes(rec.action)) buyBases.add(b);
+  }
+  for (const b of sellBases) {
+    if (buyBases.has(b)) {
+      blockers.push({
+        check: "same-ticker-self-swap",
+        reason: `Batch contains both SELL/TRIM/EXIT and BUY/ADD of ${b} — sell-then-rebuy of the same security is nonsense`,
+        detail: "Either the sell is wrong or the buy is wrong. Rebuys of the same security within one batch should never happen; if the operator really wants to rebalance a holding, express it as a single ADD/TRIM with the net delta, not a sell+buy pair.",
+      });
+    }
+  }
+
   // ─── 6: DO TODAY vs TRAIL STOP REVIEW contradiction. Text-level
   // scan of the final md for tickers that appear in both.
   if (md && typeof md === "string") {
