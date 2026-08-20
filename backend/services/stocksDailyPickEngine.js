@@ -359,6 +359,13 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   );
   const universe = rawUniverse.filter((t) => !excludeSet.has(normalizeTicker(t)));
   const scored = [];
+  // Aggregate skip counters so a 500-ticker universe doesn't dump
+  // 300+ per-ticker SKIP log lines every tick. Individual reasons
+  // are still reachable via STOCKS_PICK_ENGINE_VERBOSE=1 for debug.
+  const verbose = process.env.STOCKS_PICK_ENGINE_VERBOSE === "1";
+  const skipCounts = { techFail: 0, belowMinScore: 0, bannedSetup: 0, themeGate: 0 };
+  const bannedSetupTickers = [];   // captured for the summary log
+  const themeGateTickers = [];
 
   for (const ticker of universe) {
     try {
@@ -367,16 +374,17 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       // overrides when a caller wants to force it.
       const ccy = currency || currencyFromTicker(ticker);
       const tech = await getTechnicals(ticker, ccy, { includeMultiTimeframe: true });
-      if (!tech?.ok || tech.last == null) continue;
+      if (!tech?.ok || tech.last == null) { skipCounts.techFail++; continue; }
       const { score, contributors } = scoreCandidate(tech);
-      if (score < minScore) continue;
+      if (score < minScore) { skipCounts.belowMinScore++; continue; }
       const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
       // Per-setup surgical kill — drop candidates whose detected setup
       // is in the user's banned set (proven losing history over ≥10
-      // closed samples). Silent skip; the candidate simply doesn't
-      // enter the scored list.
+      // closed samples).
       if (bullSetup?.name && bannedSetups.has(bullSetup.name)) {
-        console.log(`[pick-engine-per-setup] SKIP ${ticker} — setup "${bullSetup.name}" is banned`);
+        skipCounts.bannedSetup++;
+        if (bannedSetupTickers.length < 20) bannedSetupTickers.push(`${ticker}(${bullSetup.name})`);
+        if (verbose) console.log(`[pick-engine-per-setup] SKIP ${ticker} — setup "${bullSetup.name}" is banned`);
         continue;
       }
       // Theme-first gate — SPEC candidates must be members of an
@@ -388,7 +396,9 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       if (sleeve === "spec") {
         const baseCandidate = String(ticker).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
         if (!approvedThemeTickers.has(baseCandidate)) {
-          console.log(`[pick-engine-theme-gate] SKIP ${ticker} — not a member of any enabled theme (SPEC only via themes)`);
+          skipCounts.themeGate++;
+          if (themeGateTickers.length < 20) themeGateTickers.push(ticker);
+          if (verbose) console.log(`[pick-engine-theme-gate] SKIP ${ticker} — not a member of any enabled theme (SPEC only via themes)`);
           continue;
         }
       }
@@ -414,6 +424,27 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       });
     } catch { /* skip this ticker this tick */ }
   }
+
+  // Single aggregate skip summary — replaces the per-ticker SKIP spam
+  // that used to fire hundreds of times per tick once the universe
+  // opened up to 500+ names. Set STOCKS_PICK_ENGINE_VERBOSE=1 to see
+  // per-ticker reasons back in the log.
+  const skipTotal = skipCounts.techFail + skipCounts.belowMinScore + skipCounts.bannedSetup + skipCounts.themeGate;
+  const skipParts = [
+    `tech-fail=${skipCounts.techFail}`,
+    `below-minScore(${minScore})=${skipCounts.belowMinScore}`,
+    `banned-setup=${skipCounts.bannedSetup}`,
+    `SPEC-theme-gate=${skipCounts.themeGate}`,
+  ].join(" · ");
+  const sampleParts = [];
+  if (skipCounts.bannedSetup > 0 && bannedSetupTickers.length) {
+    sampleParts.push(`banned-setup sample: ${bannedSetupTickers.slice(0, 8).join(", ")}${bannedSetupTickers.length > 8 ? "…" : ""}`);
+  }
+  if (skipCounts.themeGate > 0 && themeGateTickers.length) {
+    sampleParts.push(`theme-gate sample: ${themeGateTickers.slice(0, 8).join(", ")}${themeGateTickers.length > 8 ? "…" : ""}`);
+  }
+  console.log(`[pick-engine] scan complete — universe=${universe.length} scored=${scored.length} skipped=${skipTotal} (${skipParts})`);
+  if (sampleParts.length) console.log(`[pick-engine]   ${sampleParts.join(" | ")}`);
 
   scored.sort((a, b) => b.deterministicScore - a.deterministicScore);
 
