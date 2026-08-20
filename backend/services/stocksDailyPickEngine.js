@@ -292,29 +292,25 @@ async function resolveUniverseForUser(email) {
     for (const r of recs) universe.add(String(r.ticker).toUpperCase());
   } catch { /* ignore */ }
 
-  // Phase-2 audit fix #2: broad universe from FMP screener. Gated on
-  // STOCKS_BROAD_UNIVERSE_ENABLED=1 so it stays off until deliberately
-  // enabled (avoids surprise API-cost spike on deploy). When enabled,
-  // adds up to STOCKS_BROAD_UNIVERSE_CAP names (default 300) of the
-  // most-liquid US+CA equities, on top of the curated set.
-  const broadEnabled = process.env.STOCKS_BROAD_UNIVERSE_ENABLED === "1";
-  if (broadEnabled) {
-    try {
-      const cap = Math.max(50, Math.min(2000, Number(process.env.STOCKS_BROAD_UNIVERSE_CAP) || 300));
-      const { getBroadUniverse } = await import("./stocksUniverse.js");
-      const broad = await getBroadUniverse();
-      // Sample the broad universe up to `cap`. Deterministic slice
-      // (not random) so the same tick sees the same universe.
-      for (const t of broad.slice(0, cap)) universe.add(t);
-      console.log(`[pick-engine-universe] broad universe enabled — added ${Math.min(cap, broad.length)} tickers (total ${universe.size})`);
-    } catch (e) { console.warn("[pick-engine-universe] broad load failed:", e?.message); }
-  }
+  // Broad universe from FMP screener — always on. The curated
+  // DEFAULT_UNIVERSE + user holdings + past discovery/rec sets stay
+  // in the mix so a broad-load failure never leaves the pick engine
+  // with an empty universe. STOCKS_BROAD_UNIVERSE_CAP is a tuning
+  // knob (500 default) not an on/off switch.
+  const cap = Math.max(100, Math.min(2000, Number(process.env.STOCKS_BROAD_UNIVERSE_CAP) || 500));
+  try {
+    const { getBroadUniverse } = await import("./stocksUniverse.js");
+    const broad = await getBroadUniverse();
+    for (const t of broad.slice(0, cap)) universe.add(t);
+    console.log(`[pick-engine-universe] broad universe merged — +${Math.min(cap, broad.length)} tickers (total ${universe.size})`);
+  } catch (e) { console.warn("[pick-engine-universe] broad load failed (falling back to curated + user):", e?.message); }
 
-  // Hard cap. Old code capped at 80 which was the actual audit
-  // complaint. Bumped to allow the broad universe to matter; caller-
-  // side two-stage pipeline (see generateDailyPicksForUser) prevents
-  // the technical scan from becoming too expensive.
-  return [...universe].slice(0, broadEnabled ? 500 : 80);
+  // Hard cap on final universe. Was 80 in the pre-audit version —
+  // that was the exact audit complaint (algorithm can only discover
+  // stocks it already knows about). The two-stage pipeline downstream
+  // (see generateDailyPicksForUser) prevents the technical scan from
+  // becoming too expensive at 500 tickers.
+  return [...universe].slice(0, cap);
 }
 
 // Pick top N (default 2) — the honest discipline that this feature exists to
@@ -421,21 +417,20 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
 
   scored.sort((a, b) => b.deterministicScore - a.deterministicScore);
 
-  // Phase-2 audit fix #1: two-stage ranking. Stage 1 (above) is the
-  // fast technical pre-screen — cheap and already run for every
-  // ticker. Stage 2 (below) applies the multi-factor composite
-  // (fundamentals + growth + estimate revisions + relative strength
-  // + insider) to the top MULTI_FACTOR_TOP_K candidates ONLY. This
-  // caps expensive FMP calls at ~30 tickers per tick regardless of
-  // universe size.
+  // Two-stage ranking — always on. Stage 1 (above) is the fast
+  // technical pre-screen scanned over the whole (possibly broad)
+  // universe. Stage 2 (below) applies the multi-factor composite
+  // (technical + fundamentals + growth + estimate revisions + relative
+  // strength + insider) to the top MULTI_FACTOR_TOP_K candidates, then
+  // re-ranks the final picks on the composite. This caps expensive
+  // FMP calls at ~30 tickers per tick regardless of universe size.
   //
-  // Gated on STOCKS_MULTI_FACTOR_ENABLED=1 (opt-in) to keep the
-  // shipping default identical to the pre-audit behavior until we
-  // deliberately turn it on for measurement.
-  const multiFactorEnabled = process.env.STOCKS_MULTI_FACTOR_ENABLED === "1";
+  // The daily-pick output is now driven by the composite. Stage 2 runs
+  // unconditionally so the algorithm the UI backtest promises is the
+  // same one the production pick engine uses.
   const MULTI_FACTOR_TOP_K = Math.max(10, Math.min(60, Number(process.env.STOCKS_MULTI_FACTOR_TOP_K) || 30));
   let top;
-  if (multiFactorEnabled && scored.length > 0) {
+  if (scored.length > 0) {
     const stage2Input = scored.slice(0, MULTI_FACTOR_TOP_K);
     const [{ getFundamentals }, mfMod] = await Promise.all([
       import("./stocksFundamentals.js"),
@@ -449,42 +444,53 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       xicBars = await fetchYahooDaily("XIC.TO", "1y");
     } catch { /* fall back to no-RS */ }
 
-    for (const cand of stage2Input) {
-      try {
-        const ccy = cand.currency || "USD";
-        const bench = ccy === "CAD" ? xicBars : spyBars;
-        const tickerBars = await fetchYahooDaily(cand.ticker, "1y").catch(() => null);
-        const rs = (tickerBars && bench)
-          ? computeRelativeStrengthFromBars(tickerBars, bench)
-          : { ok: false };
-        const fundamentals = await getFundamentals(cand.ticker, ccy).catch(() => null);
-        // TODO(next-slice): plumb estimate revisions + growth acceleration
-        // from a dedicated FMP endpoint. For now those factors return
-        // neutral (0.5) which keeps the composite honest without
-        // fabricating data.
-        const composite = computeMultiFactorScore({
-          technicalScore: cand.deterministicScore,
-          fundamentals,
-          growth: null,
-          revisions: null,
-          rs,
-          insider: null,
-        });
-        cand.multiFactorScore = composite.score;
-        cand.multiFactorContributors = composite.contributors;
-        cand.factorBreakdown = Object.fromEntries(
-          Object.entries(composite.factors).map(([k, v]) => [k, v.score])
-        );
-      } catch (e) {
-        console.warn(`[pick-engine-multi-factor] ${cand.ticker} skipped:`, e?.message);
-      }
+    // Parallelize per-candidate fetches with a small concurrency cap so
+    // the top-K composite doesn't sequentially wait on 30× fundamentals.
+    const CONC = 5;
+    for (let i = 0; i < stage2Input.length; i += CONC) {
+      const slice = stage2Input.slice(i, i + CONC);
+      await Promise.all(slice.map(async (cand) => {
+        try {
+          const ccy = cand.currency || "USD";
+          const bench = ccy === "CAD" ? xicBars : spyBars;
+          const [tickerBars, fundamentals] = await Promise.all([
+            fetchYahooDaily(cand.ticker, "1y").catch(() => null),
+            getFundamentals(cand.ticker, ccy).catch(() => null),
+          ]);
+          const rs = (tickerBars && bench)
+            ? computeRelativeStrengthFromBars(tickerBars, bench)
+            : { ok: false };
+          // Growth-acceleration and EPS-estimate-revisions still return
+          // neutral 0.5 pending dedicated FMP plumbing; the composite is
+          // honest about that via factor.contributors.
+          const composite = computeMultiFactorScore({
+            technicalScore: cand.deterministicScore,
+            fundamentals,
+            growth: null,
+            revisions: null,
+            rs,
+            insider: null,
+          });
+          cand.multiFactorScore = composite.score;
+          cand.multiFactorContributors = composite.contributors;
+          cand.factorBreakdown = Object.fromEntries(
+            Object.entries(composite.factors).map(([k, v]) => [k, v.score])
+          );
+          // The composite IS the primary rank now. Preserve the pure
+          // technical score in a side field for auditability + backtest
+          // comparisons, but let compositeRank drive selection.
+          cand.compositeRank = composite.score;
+        } catch (e) {
+          console.warn(`[pick-engine-multi-factor] ${cand.ticker} skipped:`, e?.message);
+        }
+      }));
     }
-    // Re-rank on multi-factor when available; fall back to technical.
-    stage2Input.sort((a, b) => (b.multiFactorScore ?? b.deterministicScore) - (a.multiFactorScore ?? a.deterministicScore));
+    // Re-rank on multi-factor composite. Fallback (rare) is technical.
+    stage2Input.sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore));
     top = stage2Input.slice(0, n);
-    console.log(`[pick-engine-multi-factor] applied to top-${MULTI_FACTOR_TOP_K}, final top ${top.length}`);
+    console.log(`[pick-engine-multi-factor] scored ${stage2Input.length} candidates, final top ${top.length}`);
   } else {
-    top = scored.slice(0, n);
+    top = [];
   }
 
   // Tag each pick with viaCanary so the persist site can flag it in

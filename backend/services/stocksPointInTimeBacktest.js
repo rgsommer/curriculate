@@ -19,6 +19,9 @@
 
 import { computeTechnicalsFromPoints, fetchDailyOhlcForBacktest } from "./stocksTechnicals.js";
 import { scoreCandidate } from "./stocksDailyPickEngine.js";
+import { getBroadUniverse } from "./stocksUniverse.js";
+import { computeMultiFactorScore, computeRelativeStrengthFromBars } from "./stocksMultiFactorScore.js";
+import { getFundamentals } from "./stocksFundamentals.js";
 import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 
@@ -27,7 +30,15 @@ const DEFAULT_UNIVERSE = [
   "SPY", "QQQ", "IWM",
 ];
 
-async function resolveUniverse(email) {
+// Universe resolver — SAME source of tickers as the production pick
+// engine (broad FMP screener + user positions + past recs), capped
+// at BACKTEST_UNIVERSE_MAX so per-day per-ticker bar fetches remain
+// tractable. Point-in-time caveat: the broad-screener membership is
+// AS OF TODAY, so a stock that IPO'd or grew past $500M mcap during
+// the backtest window will still appear in the pool. Best-effort
+// mitigation: skip tickers whose bar series doesn't extend back
+// through the backtest start (checked in the loop below).
+async function resolveUniverse(email, { cap = 400 } = {}) {
   const u = new Set(DEFAULT_UNIVERSE);
   try {
     const p = await StocksPortfolio.findOne({ email }).select({ "positions.ticker": 1 }).lean();
@@ -38,7 +49,11 @@ async function resolveUniverse(email) {
     const recs = await StocksAdviceRec.find({ email, generatedAt: { $gte: since } }).select({ ticker: 1 }).lean().limit(200);
     for (const r of recs) u.add(String(r.ticker).toUpperCase().replace(/\..*$/, ""));
   } catch { /* ignore */ }
-  return [...u].slice(0, 60);
+  try {
+    const broad = await getBroadUniverse();
+    for (const t of broad) u.add(String(t).toUpperCase());
+  } catch (e) { console.warn("[pit-backtest] broad universe load failed:", e?.message); }
+  return [...u].slice(0, cap);
 }
 
 // Yahoo timestamp is unix seconds. Convert to Date, drop time to UTC-midnight
@@ -102,14 +117,17 @@ async function tradingDaysBetween(startYmd, endYmd) {
   return days;
 }
 
-export async function runPointInTimeBacktest({ email, capital = 50000, days = 30, picksPerDay = 2, horizonDays = 10, maxConcurrent = 10 } = {}) {
+export async function runPointInTimeBacktest({ email, capital = 50000, days = 30, picksPerDay = 2, horizonDays = 10, maxConcurrent = 10, universeCap } = {}) {
   const perTradeCapital = capital / maxConcurrent;
   const endD = new Date();
   const startD = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const startYmd = startD.toISOString().slice(0, 10);
   const endYmd = endD.toISOString().slice(0, 10);
 
-  const universe = await resolveUniverse(email);
+  // Same universe source as production pick engine. Default cap 400
+  // caps the per-ticker 1Y bar pre-fetch at a tractable number for a
+  // point-in-time run.
+  const universe = await resolveUniverse(email, { cap: Math.max(50, Math.min(1000, universeCap || 400)) });
 
   // Pre-fetch each ticker's 1Y bars ONCE — huge speedup vs re-fetching per day.
   const barsByTicker = {};
@@ -117,6 +135,16 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
     const { points } = await fetchDailyOhlcForBacktest(t, "USD", 400);
     if (points?.length) barsByTicker[t] = points;
   }));
+
+  // Pre-fetch fundamentals + benchmark bars for the top-of-universe
+  // multi-factor composite. Fundamentals are AS-OF-TODAY (mild
+  // lookahead for a 30-90 day backtest window — flagged in the
+  // response caveats). Benchmark bars re-used across per-day RS calcs.
+  const [spyBars, xicBars] = await Promise.all([
+    fetchDailyOhlcForBacktest("SPY", "USD", 400).then(r => r.points).catch(() => null),
+    fetchDailyOhlcForBacktest("XIC.TO", "CAD", 400).then(r => r.points).catch(() => null),
+  ]);
+  const fundamentalsByTicker = {};
 
   const tradingDays = await tradingDaysBetween(startYmd, endYmd);
   if (tradingDays.length === 0) return { ok: false, reason: "No trading days in window." };
@@ -151,9 +179,54 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
     }
     scored.sort((a, b) => b.score - a.score);
 
+    // Multi-factor uplift on the top-K technicals — SAME composite
+    // the production pick engine runs. Applied per-day so the
+    // backtest actually models the algorithm production trades.
+    // For point-in-time RS, uses bars sliced to as-of-D (no
+    // lookahead). Fundamentals are as-of-today (mild lookahead —
+    // called out in caveats[]).
+    const MF_TOP_K = Math.min(30, scored.length);
+    const stage2 = scored.slice(0, MF_TOP_K);
+    for (const cand of stage2) {
+      try {
+        // Point-in-time RS using bars sliced through D.
+        const bars = barsByTicker[cand.ticker];
+        const asOfIdx = cand.asOfIdx;
+        const tSlice = bars.slice(0, asOfIdx + 1);
+        const bench = spyBars ? spyBars.slice(0, indexAsOf(spyBars, D) + 1) : null;
+        const rs = (bench && bench.length > 130)
+          ? computeRelativeStrengthFromBars(
+              tSlice.map(p => ({ close: p.close })),
+              bench.map(p => ({ close: p.close }))
+            )
+          : { ok: false };
+        // Fundamentals (cached, as-of-today).
+        if (!(cand.ticker in fundamentalsByTicker)) {
+          fundamentalsByTicker[cand.ticker] = await getFundamentals(cand.ticker, "USD").catch(() => null);
+        }
+        const fundamentals = fundamentalsByTicker[cand.ticker];
+        const composite = computeMultiFactorScore({
+          technicalScore: cand.score,
+          fundamentals,
+          growth: null,
+          revisions: null,
+          rs,
+          insider: null,
+        });
+        cand.compositeRank = composite.score;
+        cand.factorBreakdown = Object.fromEntries(
+          Object.entries(composite.factors).map(([k, v]) => [k, v.score])
+        );
+      } catch { /* skip this ticker's uplift */ }
+    }
+    // Re-rank on composite where available; the residual (K+1..end)
+    // keeps its technical score.
+    stage2.sort((a, b) => (b.compositeRank ?? b.score) - (a.compositeRank ?? a.score));
+    const rankedForPicks = [...stage2, ...scored.slice(MF_TOP_K)];
+
     // Take top picksPerDay that aren't already open, respecting maxConcurrent.
     const daysPicks = [];
-    for (const s of scored) {
+    for (const s of rankedForPicks) {
       if (daysPicks.length >= picksPerDay) break;
       if (openSlots.has(s.ticker)) continue;
       if (openSlots.size >= maxConcurrent) continue;
@@ -182,6 +255,8 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
         pnlDollars,
         exitReason,
         deterministicScore: s.score,
+        compositeRank: s.compositeRank ?? null,
+        factorBreakdown: s.factorBreakdown ?? null,
         scoreContributors: s.contributors,
         setupName: (s.setups.find((x) => x.type === "bullish") || {}).name || null,
       });
@@ -235,5 +310,16 @@ export async function runPointInTimeBacktest({ email, capital = 50000, days = 30
     dayLog,
     generatedAt: new Date(),
     disclaimer: "POINT-IN-TIME PAPER TRADE. Uses only OHLC-derived signals (technicals, volume, Fib, named setups) — no MTF/catalysts/short-interest (those can't be reconstructed point-in-time). Fills at day-D close, exits at intraday target/stop-hit or horizon-day close. No slippage, no commissions. Trades ending after window are marked window-end-open.",
+    engineParity: {
+      universeSource: "broad FMP screener (same as production) + user positions + past recs",
+      universeCap: universe.length,
+      scoringPipeline: "technical pre-screen → multi-factor composite (top 30) — same as production",
+      pointInTimeSignals: ["technicals", "volume", "fib", "setups", "relative-strength (as-of-D)"],
+      caveats: [
+        "Broad universe membership is AS-OF-TODAY — a stock that grew past $500M mcap during the backtest window will still appear in the pool (mild survivorship bias). Tickers without bars back to the window start are skipped, which mitigates the worst cases.",
+        "Fundamentals (ROE, D/E, FCF yield, PE) are AS-OF-TODAY, not as-of-D. For a 30-day backtest this is minor; for longer windows the bias grows. Production uses current fundamentals too, so this is consistent with what a live trade would see today — but not what a live trade would have seen 30 days ago.",
+        "EPS estimate revisions and growth acceleration are neutral (0.5) in both production and backtest until dedicated FMP endpoints are plumbed.",
+      ],
+    },
   };
 }
