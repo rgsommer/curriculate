@@ -1753,6 +1753,33 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       continue; // don't put on the mandatory list
     }
 
+    // Drawdown / HWM invariants — a mandate line based on internally
+    // inconsistent math should never render. Three checks:
+    //  a) trailStop > high60d — the trail can't sit above its own HWM
+    //  b) current >= high60d but drawdownPct < 0 — arithmetically impossible
+    //  c) stated drawdownPct doesn't match (current/high60d - 1) within
+    //     0.5pp — either the high, the current, or the drawdown is bad
+    // Any of these = tech-signal corruption; silently drop the position
+    // from trail-review so we don't emit a mandate against bad numbers.
+    if (Number.isFinite(tech.trailStopAtrAdjusted) && Number.isFinite(tech.high60d)
+        && tech.trailStopAtrAdjusted > tech.high60d) {
+      console.warn(`[trail-review invariant] ${p.ticker} — trailStop $${tech.trailStopAtrAdjusted.toFixed(2)} > high60d $${tech.high60d.toFixed(2)} — suppressing`);
+      continue;
+    }
+    if (Number.isFinite(tech.last) && Number.isFinite(tech.high60d) && Number.isFinite(tech.drawdownFromHigh60dPct)
+        && tech.last >= tech.high60d && tech.drawdownFromHigh60dPct < 0) {
+      console.warn(`[trail-review invariant] ${p.ticker} — last $${tech.last} >= high60d $${tech.high60d} but drawdown ${tech.drawdownFromHigh60dPct.toFixed(2)}% — suppressing`);
+      continue;
+    }
+    if (Number.isFinite(tech.last) && Number.isFinite(tech.high60d) && tech.high60d > 0
+        && Number.isFinite(tech.drawdownFromHigh60dPct)) {
+      const impliedDrawdownPct = ((tech.last - tech.high60d) / tech.high60d) * 100;
+      const drift = Math.abs(impliedDrawdownPct - tech.drawdownFromHigh60dPct);
+      if (drift > 0.5) {
+        console.warn(`[trail-review invariant] ${p.ticker} — stated drawdown ${tech.drawdownFromHigh60dPct.toFixed(2)}% vs implied ${impliedDrawdownPct.toFixed(2)}% from ($${tech.last}/$${tech.high60d}) — suppressing`);
+        continue;
+      }
+    }
     trailReviews.push({
       ticker: p.ticker,
       account: p.acct,
@@ -1852,6 +1879,27 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       // either (e.g. a swing XLK trail-review shouldn't redeploy to XLK).
       const reviewBase = baseOfT(r.ticker);
       destList = destList.filter(t => baseOfT(t) !== reviewBase);
+      // Also drop destinations already at/above the single-name
+      // concentration cap. Redeploying into a name that's already
+      // 20%+ of the book pushes it further over — the concentration
+      // validator would reject the resulting BUY, so we shouldn't
+      // suggest it in the first place. Uses the aggregated same-base
+      // weight (RY in RRSP + RY in Non-Spousal counts as one).
+      const CONC_CAP_PCT = 20;
+      const concentrationByBase = new Map();
+      if (b?.byPosition) {
+        for (const bp of b.byPosition) {
+          const bBase = baseOfT(bp.ticker);
+          concentrationByBase.set(bBase, (concentrationByBase.get(bBase) || 0) + (bp.cadValue || 0));
+        }
+      }
+      const bookForConc = b?.book || 0;
+      destList = destList.filter(t => {
+        if (bookForConc <= 0) return true; // no book data — don't over-filter
+        const cadInBase = concentrationByBase.get(baseOfT(t)) || 0;
+        const pct = (cadInBase / bookForConc) * 100;
+        return pct < CONC_CAP_PCT;
+      });
       const redeployTicket = pickDefaultTicket(destList, proceedsCad, r.currency);
       if (redeployTicket) {
         const acctLabel = (cashAccounts || []).find(a => String(a.id) === String(r.account))?.name || String(r.account || "account");

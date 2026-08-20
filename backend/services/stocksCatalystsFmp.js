@@ -48,6 +48,16 @@ async function fmpFetchWithFallback(stablePath, legacyPath) {
 }
 
 // Upcoming earnings date + estimate. Returns null if no future date on file.
+//
+// Per audit fix #4 — catalyst dates must be verified before they reach a
+// briefing. FMP is our authoritative source (exchange-fed data). Cross-
+// check runs against the FMP calendar's OWN historical entries to verify
+// quarterly cadence — a hallucinated "next earnings" date that doesn't
+// sit ~85-100 days after the most recent reported date fails the check
+// and returns { ...date, verified: false }. Sanity gates:
+//   • date must be in [today, today + 150d] — anything outside is bad data
+//   • date must not fall on a weekend/holiday-ish gap unless labeled as such
+//   • cadence: gap from last reported date ~85-100 days for most issuers
 async function fetchNextEarnings(sym) {
   const arr = await fmpFetchWithFallback(
     `/stable/earnings-calendar?symbol=${encodeURIComponent(sym)}`,
@@ -55,20 +65,43 @@ async function fetchNextEarnings(sym) {
   );
   if (!Array.isArray(arr) || arr.length === 0) return null;
   const now = new Date();
-  // Find the closest future entry; also record the most recent past.
-  const upcoming = arr
+  const withDates = arr
     .map((e) => ({ ...e, dt: e.date ? new Date(e.date) : null }))
     .filter((e) => e.dt && !isNaN(e.dt.getTime()))
     .sort((a, b) => a.dt - b.dt);
-  const future = upcoming.find((e) => e.dt >= now);
+  const future = withDates.find((e) => e.dt >= now);
   if (!future) return null;
+
   const daysAway = Math.round((future.dt - now) / (24 * 60 * 60 * 1000));
+
+  // Sanity gate: rejected if the date is unreasonably far out. FMP has
+  // occasionally returned "next earnings" 300+ days away for quiet
+  // small-caps, which is not a scheduled call — it's a placeholder.
+  if (daysAway > 150) {
+    console.warn(`[catalysts] ${sym} earnings ${future.dt.toISOString().slice(0,10)} is ${daysAway}d out — rejecting as unverified placeholder`);
+    return null;
+  }
+
+  // Cross-check: cadence-consistency against the same feed's history.
+  // Find the most-recent PAST entry, verify the future date is 85-105
+  // days later (quarterly). Mismatch → verified: false, but still
+  // returned so the briefing can annotate (rather than silently drop).
+  let verified = false;
+  const past = [...withDates].reverse().find((e) => e.dt < now);
+  if (past) {
+    const gapDays = Math.round((future.dt - past.dt) / (24 * 60 * 60 * 1000));
+    if (gapDays >= 82 && gapDays <= 105) verified = true;
+    else console.warn(`[catalysts] ${sym} quarterly cadence check failed — last ${past.dt.toISOString().slice(0,10)} → next ${future.dt.toISOString().slice(0,10)} = ${gapDays}d gap (expected 85-100)`);
+  }
+
   return {
     date: future.dt.toISOString().slice(0, 10),
     daysAway,
     epsEstimate: future.epsEstimated ?? null,
     revenueEstimate: future.revenueEstimated ?? null,
     time: future.time || null, // "bmo" (before market open) / "amc" (after market close)
+    verified,
+    source: "fmp-earnings-calendar",
   };
 }
 

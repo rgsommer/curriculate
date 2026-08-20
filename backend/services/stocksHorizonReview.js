@@ -58,11 +58,30 @@ function classifyStatus({ daysElapsed, horizonDays, entry, current, target, stop
   if (Number.isFinite(stop) && current <= stop) return "hit-stop";
   if (Number.isFinite(target) && current >= target) return "hit-target";
   if (!Number.isFinite(entry) || !Number.isFinite(target) || target <= entry) return "unknown";
-  const expected = daysElapsed / horizonDays;
-  const actual = (current - entry) / (target - entry);
-  if (actual >= expected * 0.85) return "on-pace";
-  if (actual >= expected * 0.4) return "lagging";
-  return "well-behind";
+
+  // Pace = actual progress toward target ÷ expected progress at this
+  // elapsed fraction of the horizon.
+  //   expectedFraction = daysElapsed / horizonDays   (linear expectation)
+  //   actualFraction   = (current - entry) / (target - entry)
+  //   pace             = actualFraction / expectedFraction
+  //
+  // Per audit feedback: NEVER label a position "well-behind" purely
+  // because distance remains to target — it's about pace, not raw
+  // distance. Two guardrails:
+  //   1) During the first 40% of the horizon, a poor pace is downgraded
+  //      to "lagging" at worst (never "well-behind"). Early flat is not
+  //      thesis-broken.
+  //   2) A position that's above entry (actualFraction > 0) but running
+  //      slow is at worst "lagging", never "well-behind" — well-behind
+  //      requires the position to have regressed AGAINST entry.
+  const expectedFraction = daysElapsed / horizonDays;
+  const actualFraction = (current - entry) / (target - entry);
+  const pace = expectedFraction > 0 ? actualFraction / expectedFraction : 1;
+  if (pace >= 0.85) return "on-pace";
+  if (expectedFraction < 0.4) return "lagging";        // guardrail #1
+  if (actualFraction > 0 && pace >= 0.4) return "lagging";
+  if (actualFraction > 0) return "lagging";            // guardrail #2
+  return "well-behind";                                 // actualFraction ≤ 0 AND past 40% of horizon
 }
 
 function emojiFor(status) {

@@ -243,6 +243,39 @@ function testPercentageReconciliation() {
   assert(canonical.reconciliation.passed, "10d. reconciliation.passed on well-formed portfolio");
 }
 
+// ─── 11. Redeploy cost exceeds proceeds + starting cash ──────────────
+async function testRedeployExceedsCash() {
+  const profile = baseProfile();
+  // Non-Spousal starts with $5000 USD. SELL $1000, BUY $10000 → $4000 short.
+  const audit = await auditBriefingBeforeSend({
+    email: "test",
+    md: "## 2. 🛑 FORBIDDEN TODAY\nNone.\n",
+    acceptedRecs: [
+      { ticker: "PLTR", action: "SELL", shares: 5, entryPrice: 200, stopPrice: 190, targetPrice: 210, sleeve: "spec", account: "a1", entryCurrency: "USD" },
+      { ticker: "MSFT", action: "BUY", shares: 25, entryPrice: 400, stopPrice: 380, targetPrice: 440, sleeve: "core", account: "a1", entryCurrency: "USD" },
+    ],
+    positions: profile.positions,
+    profile,
+  });
+  assertBlocked(audit, "redeploy-exceeds-proceeds-plus-cash", "11. BUY cost > SELL proceeds + starting cash fires blocker");
+}
+
+// ─── 12. Rendered sleeve summary omits a sleeve ──────────────────────
+async function testRenderedSleeveOmitsSleeve() {
+  const profile = baseProfile();
+  // Simulate an AI rendering CORE + INCOME + SPEC + Cash but no SWING —
+  // exactly the alignment bug the audit is meant to catch.
+  const badMd = "CORE: 75% · INCOME: 15% · SPEC: 5% · Cash: 5%\n\n## 2. 🛑 FORBIDDEN TODAY\nNone.\n";
+  const audit = await auditBriefingBeforeSend({
+    email: "test",
+    md: badMd,
+    acceptedRecs: [],
+    positions: profile.positions,
+    profile,
+  });
+  assertBlocked(audit, "rendered-sleeve-missing", "12. AI-rendered sleeve line missing SWING fires blocker");
+}
+
 // ─── Runner ──────────────────────────────────────────────────────────
 async function main() {
   console.log("Briefing integrity injection-fault suite (Phase 5)");
@@ -258,6 +291,8 @@ async function main() {
   await testPhantomSell();
   await testCurrencyMismatchWarn();
   testPercentageReconciliation();
+  await testRedeployExceedsCash();
+  await testRenderedSleeveOmitsSleeve();
 
   console.log("─".repeat(60));
   for (const r of results) console.log(`  ${r.status === "PASS" ? "✓" : "✗"} ${r.name}`);

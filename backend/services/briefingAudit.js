@@ -306,6 +306,90 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── 11b (audit fix #6): rendered sleeve percentages + cash must
+  // reconcile to ~100% and enumerate all four sleeves. AI's sleeve
+  // one-liner in §0/§3 sometimes drops SWING or reports partial
+  // percentages. Canonical is authoritative — text must match.
+  if (md && typeof md === "string" && canonical) {
+    // Look for a line like "CORE: 78% · SWING: 5% · INCOME: 12% · SPEC: 5% · Cash: 3%"
+    // Loose regex — the AI can render varying separators / order.
+    const pctScan = (label) => {
+      const re = new RegExp(`${label}\\s*[:=]\\s*(-?\\d+(?:\\.\\d+)?)%`, "i");
+      const m = md.match(re);
+      return m ? Number(m[1]) : null;
+    };
+    const rendered = {
+      core: pctScan("CORE"),
+      swing: pctScan("SWING"),
+      income: pctScan("INCOME"),
+      spec: pctScan("SPEC"),
+      cash: pctScan("Cash"),
+    };
+    // Only fire when the AI clearly rendered a sleeve summary line
+    // (at least CORE + one other found). Portfolio-total-only briefings
+    // that skip the sleeve breakdown aren't the concern here.
+    const foundSleeves = Object.entries(rendered).filter(([k, v]) => k !== "cash" && v != null).length;
+    if (foundSleeves >= 2) {
+      for (const k of ["core", "swing", "income", "spec"]) {
+        if (rendered[k] == null) {
+          blockers.push({
+            check: "rendered-sleeve-missing",
+            reason: `Rendered sleeve summary omits ${k.toUpperCase()} (found: ${Object.keys(rendered).filter(x => rendered[x] != null).join(", ")})`,
+            detail: "All four sleeves must appear whenever any sleeve is rendered — omitting one (typically SWING or INCOME) is a display bug that hides real allocation.",
+          });
+        }
+      }
+      const renderedSum = ["core","swing","income","spec","cash"].reduce((s, k) => s + (rendered[k] || 0), 0);
+      if (renderedSum > 0 && Math.abs(renderedSum - 100) > 2.5) {
+        blockers.push({
+          check: "rendered-sleeve-cash-not-100",
+          reason: `Sleeve % + cash % sums to ${renderedSum.toFixed(1)}% (expected ~100%)`,
+          detail: `Rendered: CORE ${rendered.core ?? "?"}% · SWING ${rendered.swing ?? "?"}% · INCOME ${rendered.income ?? "?"}% · SPEC ${rendered.spec ?? "?"}% · Cash ${rendered.cash ?? "?"}%. Should reconcile. Check the AI's summary line against canonical.`,
+        });
+      }
+    }
+  }
+
+  // ─── 11c (audit fix #5): redeploy cost ≤ proceeds + available cash.
+  // For every SELL/TRIM/EXIT rec paired with a matching BUY/ADD rec in
+  // the same (account, currency), verify redeploy_cost <= sell_proceeds
+  // + starting_cash_in_that_account. Prevents "sell $2k / buy $8k" recs
+  // that assume phantom cash. Uses the canonical account cash + rec
+  // (shares × entryPrice) as the transaction estimates.
+  if (canonical && Array.isArray(acceptedRecs)) {
+    // Bucket recs by (account, currency).
+    const byBucket = new Map();
+    for (const rec of acceptedRecs) {
+      if (!rec?.account || !rec?.entryCurrency) continue;
+      const key = `${rec.account}|${rec.entryCurrency}`;
+      if (!byBucket.has(key)) byBucket.set(key, []);
+      byBucket.get(key).push(rec);
+    }
+    for (const [key, recs] of byBucket) {
+      const [acctId, ccy] = key.split("|");
+      const acct = canonical.accounts.find(a => String(a.account_id) === String(acctId));
+      const startingCash = ccy === "CAD" ? (acct?.cash_cad || 0) : (acct?.cash_usd || 0);
+      let proceeds = 0;
+      let cost = 0;
+      for (const r of recs) {
+        const shares = Number(r.shares) || 0;
+        const price = Number(r.entryPrice) || 0;
+        if (shares <= 0 || price <= 0) continue;
+        const val = shares * price;
+        if (["SELL", "TRIM", "EXIT"].includes(r.action)) proceeds += val;
+        else if (["BUY", "ADD"].includes(r.action)) cost += val;
+      }
+      const available = startingCash + proceeds;
+      if (cost > available + 1) { // $1 rounding tolerance
+        blockers.push({
+          check: "redeploy-exceeds-proceeds-plus-cash",
+          reason: `Bucket ${acctId}/${ccy}: BUY cost $${cost.toFixed(0)} > proceeds $${proceeds.toFixed(0)} + starting cash $${startingCash.toFixed(0)} ($${(cost - available).toFixed(0)} short)`,
+          detail: "A rec batch must fund itself. Either shrink the BUY, add an explicit trim, or cite cross-account cash movement (a WITHDRAW→DEPOSIT rec) — never assume phantom cash.",
+        });
+      }
+    }
+  }
+
   // ─── 12 (Phase 4): sleeve-limit gate on BUY recs.
   // Per spec §24 "Recommendation/Allocation Alignment": if a sleeve is
   // at/above max, the system cannot issue another BUY into that sleeve
