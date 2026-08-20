@@ -63,6 +63,7 @@ import { computeLessons, formatLessonsBlock } from "../services/stocksLessonsLea
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 import { computeRecAlpha } from "../services/stocksRecAlpha.js";
 import { runRecOutcomeSweep } from "../jobs/stocksRecOutcomeNightly.js";
+import { computeCanonicalPortfolio } from "../services/portfolioCalcEngine.js";
 
 const router = express.Router();
 
@@ -135,43 +136,56 @@ function aggregateByTicker(positions, fx) {
   return Object.values(m).sort((a, b) => b.cad - a.cad);
 }
 
+// Phase 3+ retrofit: portfolioSummary in the routes file is a thin
+// adapter over the canonical portfolio engine. Same return shape as
+// before (total, agg, text, cashUsd, cashCad, cashCadEquiv,
+// perAccountCash) — but every weight and total traces to
+// computeCanonicalPortfolio, matching the briefing/audit/alpha paths.
 function portfolioSummary(profile) {
+  const canonical = computeCanonicalPortfolio(profile);
   const fx = profile.fxUsdCad || 1.37;
-  const agg = aggregateByTicker(profile.positions || [], fx);
-  const total = agg.reduce((s, a) => s + a.cad, 0);
-
-  // Determine each ticker's native trading currency + last-known native price.
-  // Used to render prices in the SAME currency Richard trades them in.
-  const nativeCcy = {};
-  const nativePrice = {};
-  for (const p of profile.positions || []) {
-    if (!nativeCcy[p.ticker]) {
-      nativeCcy[p.ticker] = p.ccy;
-      nativePrice[p.ticker] = p.ccy === "USD" ? p.priceUsd : p.priceCad;
-    }
+  if (!canonical) {
+    return { total: 0, agg: [], text: "", cashUsd: 0, cashCad: 0, cashCadEquiv: 0, perAccountCash: [], canonical: null };
   }
 
-  const lines = agg.map((a) => {
-    const ccy = nativeCcy[a.ticker] || "USD";
-    const px = nativePrice[a.ticker];
-    const pxStr = px ? `@ $${px.toFixed(2)} ${ccy}` : "";
-    const pctStr = total > 0 ? `(${((a.cad / total) * 100).toFixed(1)}%)` : "";
-    return `${a.ticker} (${ccy}): ${a.qty.toLocaleString()} sh ${pxStr} ≈ $${Math.round(a.cad).toLocaleString()} CAD ${pctStr}`;
+  // Aggregate canonical positions by ticker for display (same ticker
+  // in different accounts merges — legacy behavior).
+  const byTicker = new Map();
+  for (const pos of canonical.positions) {
+    const key = pos.ticker;
+    if (!byTicker.has(key)) {
+      byTicker.set(key, { ticker: key, qty: 0, cad: 0, pct: 0, ccy: pos.currency, price: pos.price });
+    }
+    const a = byTicker.get(key);
+    a.qty += pos.qty || 0;
+    a.cad += pos.cad_value || 0;
+    a.pct += pos.position_weight_pct || 0;
+  }
+  const rows = [...byTicker.values()].sort((a, b) => b.cad - a.cad);
+
+  const lines = rows.map(r => {
+    const pxStr = r.price ? `@ $${r.price.toFixed(2)} ${r.ccy}` : "";
+    return `${r.ticker} (${r.ccy}): ${r.qty.toLocaleString()} sh ${pxStr} ≈ $${Math.round(r.cad).toLocaleString()} CAD (${r.pct.toFixed(1)}%)`;
   });
 
-  // Per-currency cash totals across all accounts
-  let cashUsd = 0, cashCad = 0;
   const perAccountCash = [];
   for (const a of profile.accounts || []) {
-    cashUsd += a.cashUsd || 0;
-    cashCad += a.cashCad || 0;
     if ((a.cashUsd || 0) > 0 || (a.cashCad || 0) > 0) {
       perAccountCash.push(`  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD, $${(a.cashUsd || 0).toFixed(0)} USD`);
     }
   }
-  const cashCadEquiv = cashCad + cashUsd * fx;
 
-  return { total, agg, text: lines.join("\n"), cashUsd, cashCad, cashCadEquiv, perAccountCash };
+  return {
+    total: canonical.totals.book_cad,
+    agg: rows.map(r => ({ ticker: r.ticker, qty: r.qty, cad: r.cad })),
+    text: lines.join("\n"),
+    cashUsd: canonical.cash.cash_usd_raw,
+    cashCad: canonical.cash.cash_cad_raw,
+    cashCadEquiv: canonical.cash.cash_cad_equiv,
+    perAccountCash,
+    canonical,
+    fxUsdCad: fx,
+  };
 }
 
 // Signals checklist — what the AI MUST search for and incorporate

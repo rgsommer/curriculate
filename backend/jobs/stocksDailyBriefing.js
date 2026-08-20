@@ -160,6 +160,7 @@ async function validateAndCorrectBriefing(md, portfolio) {
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
 import { auditBriefingBeforeSend, summarizeAuditFailure } from "../services/briefingAudit.js";
+import { computeCanonicalPortfolio } from "../services/portfolioCalcEngine.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 
 // Pull the user's starred discovery candidates and format them as a
@@ -542,51 +543,76 @@ function prettifyBriefing(html) {
   return html;
 }
 
+// Phase 3+ retrofit: portfolioSummary is now a thin adapter over the
+// canonical portfolio calculation engine. Same return shape (callers
+// keep working) but every number traces to computeCanonicalPortfolio —
+// no more local weight math that could disagree with the audit gate,
+// alpha dashboard, or Health tab.
 export function portfolioSummary(profile) {
+  const canonical = computeCanonicalPortfolio(profile);
   const fx = profile.fxUsdCad || 1.37;
-  const agg = {};
-  // Track native currency + last price per ticker (first position wins)
-  const nativeCcy = {};
-  const nativePrice = {};
-  for (const p of profile.positions || []) {
-    if (!nativeCcy[p.ticker]) {
-      nativeCcy[p.ticker] = p.ccy;
-      nativePrice[p.ticker] = p.ccy === "USD" ? p.priceUsd : p.priceCad;
-    }
-    const val =
-      p.ccy === "USD"
-        ? (p.priceCad ?? (p.priceUsd ? p.priceUsd * fx : 0)) * (p.qty || 0)
-        : (p.priceCad || 0) * (p.qty || 0);
-    if (!agg[p.ticker]) agg[p.ticker] = { ticker: p.ticker, qty: 0, cad: 0 };
-    agg[p.ticker].qty += p.qty || 0;
-    agg[p.ticker].cad += val;
-  }
-  const sorted = Object.values(agg).sort((a, b) => b.cad - a.cad);
-  const total = sorted.reduce((s, a) => s + a.cad, 0);
 
-  // Cash totals
-  let cashUsd = 0, cashCad = 0;
+  if (!canonical) {
+    return {
+      total: 0, table: "", cashUsd: 0, cashCad: 0, cashCadEquiv: 0,
+      perAccountCash: [], canonical: null,
+    };
+  }
+
+  // Aggregate canonical positions by ticker for the display table
+  // (same ticker in different accounts merges — matches legacy
+  // display behavior). Native currency + native price come from the
+  // first canonical position for that ticker in the sorted list.
+  const byTicker = new Map();
+  for (const pos of canonical.positions) {
+    const key = pos.ticker;
+    if (!byTicker.has(key)) {
+      byTicker.set(key, {
+        ticker: key,
+        qty: 0,
+        cad: 0,
+        pct: 0,
+        ccy: pos.currency,
+        price: pos.price,
+      });
+    }
+    const agg = byTicker.get(key);
+    agg.qty += pos.qty || 0;
+    agg.cad += pos.cad_value || 0;
+    agg.pct += pos.position_weight_pct || 0;
+  }
+  const rows = [...byTicker.values()].sort((a, b) => b.cad - a.cad);
+
+  // Total = book equity (positions only), matches the legacy
+  // semantics of summary.total — cash lives in cashCadEquiv.
+  const total = canonical.totals.book_cad;
+
+  // Per-account cash strings — same format as before.
   const perAccountCash = [];
   for (const a of profile.accounts || []) {
-    cashUsd += a.cashUsd || 0;
-    cashCad += a.cashCad || 0;
     if ((a.cashUsd || 0) > 0 || (a.cashCad || 0) > 0) {
       perAccountCash.push(`  ${a.name}: $${(a.cashCad || 0).toFixed(0)} CAD, $${(a.cashUsd || 0).toFixed(0)} USD`);
     }
   }
-  const cashCadEquiv = cashCad + cashUsd * fx;
 
   return {
     total,
-    table: sorted
-      .map((a) => {
-        const ccy = nativeCcy[a.ticker] || "USD";
-        const px = nativePrice[a.ticker];
-        const pxStr = px ? `@ $${px.toFixed(2)} ${ccy}` : "";
-        return `${a.ticker} (${ccy}): ${a.qty.toLocaleString()} sh ${pxStr} ≈ $${Math.round(a.cad).toLocaleString()} CAD (${total > 0 ? ((a.cad / total) * 100).toFixed(1) : "0"}%)`;
-      })
-      .join("\n"),
-    cashUsd, cashCad, cashCadEquiv, perAccountCash,
+    table: rows.map(r => {
+      const pxStr = r.price ? `@ $${r.price.toFixed(2)} ${r.ccy}` : "";
+      // Weight denominator is portfolio_total (positions+cash) per
+      // canonical engine — makes cash-inclusive vs cash-exclusive
+      // weights consistent across every section.
+      return `${r.ticker} (${r.ccy}): ${r.qty.toLocaleString()} sh ${pxStr} ≈ $${Math.round(r.cad).toLocaleString()} CAD (${r.pct.toFixed(1)}%)`;
+    }).join("\n"),
+    cashUsd: canonical.cash.cash_usd_raw,
+    cashCad: canonical.cash.cash_cad_raw,
+    cashCadEquiv: canonical.cash.cash_cad_equiv,
+    perAccountCash,
+    // Attach the full canonical object so downstream code (validators,
+    // audit, structured reports) can pull authoritative fields without
+    // recomputing.
+    canonical,
+    fxUsdCad: fx,
   };
 }
 
@@ -844,6 +870,59 @@ async function computeQuantSignals(profile, topN = 8) {
   );
   return out;
 }
+// Phase 3+4 retrofit: render the canonical portfolio snapshot as a
+// clearly-labeled block the LLM must consume verbatim. Per spec §24
+// "LLM Separation" — the AI may explain these numbers but MUST NOT
+// invent its own. Every percentage the AI cites downstream should
+// trace back to a field in this block.
+function formatCanonicalPortfolioBlock(canonical) {
+  if (!canonical) return "";
+  const parts = [];
+  parts.push("CANONICAL PORTFOLIO SNAPSHOT (source of truth — every % you cite MUST match this):");
+  parts.push(`  book_cad: $${Math.round(canonical.totals.book_cad).toLocaleString()}`);
+  parts.push(`  cash_cad_equiv: $${Math.round(canonical.totals.cash_cad_equiv).toLocaleString()}  (cash_pct: ${canonical.cash.cash_pct.toFixed(2)}%)`);
+  parts.push(`  portfolio_total_cad: $${Math.round(canonical.totals.portfolio_total_cad).toLocaleString()}`);
+  parts.push(`  fx_usd_cad: ${canonical.fxUsdCad.toFixed(4)}`);
+  parts.push("");
+  parts.push("POSITIONS (each: ticker, account, cad_value, position_weight_pct, sleeve, sector, position_return_pct):");
+  for (const p of canonical.positions) {
+    const stop = Number.isFinite(p.distance_to_hard_stop_pct)
+      ? ` · dist_to_stop=${p.distance_to_hard_stop_pct.toFixed(1)}%`
+      : "";
+    const trailStop = Number.isFinite(p.distance_to_trailing_stop_pct)
+      ? ` · dist_to_trail=${p.distance_to_trailing_stop_pct.toFixed(1)}%`
+      : "";
+    const ret = Number.isFinite(p.position_return_pct)
+      ? ` · ret=${p.position_return_pct >= 0 ? "+" : ""}${p.position_return_pct.toFixed(1)}%`
+      : "";
+    parts.push(`  ${p.ticker} · ${p.account_name || "?"} · $${Math.round(p.cad_value).toLocaleString()} CAD · ${p.position_weight_pct.toFixed(1)}% · sleeve=${p.sleeve} · sector=${p.sector}${ret}${stop}${trailStop}`);
+  }
+  parts.push("");
+  parts.push("SLEEVES (weight, target, variance in pp, remaining capacity):");
+  for (const s of canonical.sleeves) {
+    if (s.sleeve_target_pct == null) continue;
+    const varStr = s.sleeve_variance_pp != null ? `${s.sleeve_variance_pp >= 0 ? "+" : ""}${s.sleeve_variance_pp.toFixed(1)}pp` : "—";
+    parts.push(`  ${s.sleeve}: ${s.sleeve_weight_pct.toFixed(1)}% (target ${s.sleeve_target_pct}%, var ${varStr}, remaining_capacity ${s.sleeve_remaining_capacity_pct?.toFixed(1) ?? "—"}%)`);
+  }
+  parts.push("");
+  parts.push("CONCENTRATION (aggregated same-base across accounts):");
+  for (const c of canonical.concentration.filter(c => c.level !== "clean").slice(0, 8)) {
+    parts.push(`  ${c.base}: ${c.weight_pct.toFixed(1)}% [${c.level}]${c.tickers.length > 1 ? " (" + c.tickers.join(", ") + ")" : ""}`);
+  }
+  parts.push("");
+  parts.push("RECONCILIATION:");
+  parts.push(`  Σ position_weight_pct = ${canonical.reconciliation.sum_of_position_weights_pct.toFixed(2)}% (expected non-cash ${canonical.reconciliation.expected_non_cash_pct.toFixed(2)}%)`);
+  parts.push(`  Σ sleeve_weight_pct   = ${canonical.reconciliation.sum_of_sleeve_weights_pct.toFixed(2)}%`);
+  parts.push(`  Σ account_weight_pct  = ${canonical.reconciliation.sum_of_account_weights_pct.toFixed(2)}%`);
+  if ((canonical.reconciliation.warnings || []).length > 0) {
+    parts.push("  Warnings:");
+    for (const w of canonical.reconciliation.warnings) parts.push(`    - [${w.code}] ${w.message}`);
+  }
+  parts.push("");
+  parts.push("BINDING RULE (per §24 LLM Separation): You may narrate and interpret these numbers. You MAY NOT recompute, restate with different values, or invent new %-values. Every percentage you write in the briefing must equal a value from this block (or be the direct sum of specific values from it). If you need a % not here, say so; do not fabricate one.");
+  return parts.join("\n");
+}
+
 function formatQuantSignalsBlock(quantSignals) {
   if (!quantSignals || Object.keys(quantSignals).length === 0) return "";
   const lines = [];
@@ -2314,6 +2393,7 @@ Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR Y
 Holdings:
 ${summary.table}
 ${cashBlock}
+${formatCanonicalPortfolioBlock(canonical)}
 ${alertsBlock}
 ${formatLessonsBlock(lessons)}
 ${formatMacroFredBlock(macroFred)}
@@ -2768,7 +2848,15 @@ export function parseRecsFromBriefing(text) {
 
 export async function generateBriefing(profile) {
   if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY not set");
+  // Compute the canonical portfolio ONCE at the top of the briefing
+  // pipeline. Every downstream call that needs a position weight, sleeve
+  // weight, sector weight, or cash % now reads from `canonical` instead
+  // of recomputing. `summary` is a thin adapter over the same canonical
+  // (see portfolioSummary above) so all its .total/.table/.cashCadEquiv
+  // values are guaranteed consistent with `canonical.totals.book_cad`,
+  // canonical.cash.cash_cad_equiv, etc.
   const summary = portfolioSummary(profile);
+  const canonical = summary.canonical; // may be null on empty portfolios
   // Trades executed since the last successful briefing (or last 3 days if
   // none yet). Feeds the "TRADES YOU EXECUTED" prompt block so the AI can
   // acknowledge what the user actually took vs what was just recommended.
@@ -2841,14 +2929,21 @@ export async function generateBriefing(profile) {
     // concentration ("three names but one bet") that raw diversification-
     // count metrics miss. Compact: computed off held tickers only.
     (async () => {
-      const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase()).filter(Boolean);
+      // Retrofit: pull tickers / currencies / weights from the canonical
+      // portfolio so correlations use exactly the CAD-value weights the
+      // briefing (and every other section) is going to report. Previously
+      // this recomputed weights inline — a duplicate-calc site that could
+      // drift from portfolioSummary.
+      if (!canonical) return null;
+      const tickers = [];
       const currencies = {};
       const weights = {};
-      const fx = profile.fxUsdCad || 1.37;
-      for (const p of profile.positions || []) {
-        currencies[String(p.ticker || "").toUpperCase()] = p.ccy || "USD";
-        const cad = (p.ccy === "USD" ? (p.priceUsd || 0) * fx : (p.priceCad || 0)) * (p.qty || 0);
-        weights[String(p.ticker || "").toUpperCase()] = (weights[String(p.ticker || "").toUpperCase()] || 0) + cad;
+      for (const pos of canonical.positions) {
+        const t = String(pos.ticker || "").toUpperCase();
+        if (!t) continue;
+        tickers.push(t);
+        currencies[t] = pos.currency || "USD";
+        weights[t] = (weights[t] || 0) + (pos.cad_value || 0);
       }
       return await computeCorrelations({ tickers, currencies, weights });
     })().catch((e) => { console.warn("[correlations] warn:", e?.message); return null; }),
