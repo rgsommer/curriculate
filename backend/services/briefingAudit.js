@@ -320,6 +320,128 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── 8e (audit fix #228.1): fundamental-data contamination gate.
+  // The AI has been observed inserting current stock price into
+  // fundamental fields:
+  //   • BNS "reported $118.85B Q2 profit" (real: $2.6B — $118.85 is
+  //     the stock price)
+  //   • RY "distributed C$282.04 per share" (real: $1.76/qtr — $282
+  //     is the stock price)
+  //   • TD "annual dividend $160.50 per share" (real: ~$4.30/yr)
+  //
+  // These are LOAD-BEARING numbers for INCOME sleeve decisions. If
+  // the AI can fabricate dividend/coverage/profit numbers from prose,
+  // "dividend safe — HOLD" is worthless. Block any briefing where the
+  // fundamentals cited look like contamination.
+  if (md && typeof md === "string" && canonical) {
+    // Build ticker → current price map from canonical (authoritative).
+    const priceByBase = new Map();
+    for (const p of canonical.positions) {
+      if (p.base && Number.isFinite(p.price)) {
+        priceByBase.set(p.base, p.price);
+      }
+    }
+    const contaminationBlockers = [];
+    // Pattern A: "reported $X[B|M] ... profit|income|earnings|revenue"
+    // where X looks like a stock price ($10-$500 range) rather than
+    // a company-scale dollar figure. Legit big-bank net income for a
+    // quarter is billions; if we see "$118.85" without B/M suffix
+    // AND the ticker's stock price is close to that number, that's
+    // contamination.
+    const profitRe = /\b([A-Z]{1,5})\b[^\n]{0,80}?(?:reported|reported|posted|earned|profit|net income|revenue)\s*[^\n]{0,20}?\$?(\d+(?:\.\d+)?)\s*(?:B|billion|M|million)?\b/gi;
+    let pmm;
+    while ((pmm = profitRe.exec(md)) !== null) {
+      const t = String(pmm[1] || "").toUpperCase();
+      const num = Number(pmm[2]);
+      const currentPrice = priceByBase.get(t);
+      const withUnit = /\b(B|billion|M|million)\b/i.test(pmm[0]);
+      // If a "profit / revenue / net income" value is quoted WITHOUT
+      // a unit suffix AND its magnitude matches this ticker's stock
+      // price within 5%, that is almost certainly the price masquerading
+      // as a fundamental. A real quarterly profit for a public company
+      // is either sub-$1 (EPS) or in the billions — never a per-share
+      // stock-price-magnitude number without a unit.
+      if (!withUnit && Number.isFinite(currentPrice) && currentPrice > 5) {
+        const drift = Math.abs(num - currentPrice) / currentPrice;
+        if (drift < 0.05 && num > 5) {
+          contaminationBlockers.push({
+            check: "fundamental-value-matches-price",
+            reason: `${t}: cited profit/income/revenue value $${num} ≈ current stock price $${currentPrice.toFixed(2)} — almost certainly price data leaked into a fundamentals field`,
+            detail: `Excerpt: "${pmm[0].slice(0, 140).replace(/\s+/g, " ")}". Real quarterly profit for a public company is either sub-$1 (EPS) or billions ($B/$M suffix). A raw price-magnitude number without a unit is contamination. Strip the fabricated fundamentals before any INCOME thesis conclusion (dividend safe / payout intact / etc.) can be trusted.`,
+          });
+        }
+      }
+    }
+    // Pattern B: "distributed $X per share" / "dividend $X per share"
+    // where X > 10% of stock price. Real per-share dividends are
+    // typically <5% of price; anything > 20% is nonsense.
+    const divRe = /\b([A-Z]{1,5})\b[^\n]{0,80}?(?:distributed|dividend|paid|declared)\s*[^\n]{0,20}?\$?(?:C|CA|CAD|USD|US)?\$?\s*(\d+(?:\.\d+)?)\s*(?:per share|\/share|\/sh)/gi;
+    let dmm;
+    while ((dmm = divRe.exec(md)) !== null) {
+      const t = String(dmm[1] || "").toUpperCase();
+      const divPerShare = Number(dmm[2]);
+      const currentPrice = priceByBase.get(t);
+      if (Number.isFinite(currentPrice) && Number.isFinite(divPerShare)
+          && currentPrice > 0 && divPerShare / currentPrice > 0.10) {
+        contaminationBlockers.push({
+          check: "dividend-per-share-exceeds-10pct-of-price",
+          reason: `${t}: cited dividend $${divPerShare}/share is ${(divPerShare / currentPrice * 100).toFixed(1)}% of current stock price $${currentPrice.toFixed(2)}`,
+          detail: `Excerpt: "${dmm[0].slice(0, 140).replace(/\s+/g, " ")}". Real per-share dividends are almost always <5% of stock price. Anything >10% is almost certainly stock-price data pasted into a dividend field. If the ticker has an actual outsized special dividend, the source pipeline must supply {value, unit, asOf, source} — no free-text fabrications.`,
+        });
+      }
+    }
+    // Pattern C: "yield X%" where X > 15%. Real large-cap yields are
+    // <10%; >15% is either a REIT-in-distress or fabricated.
+    const yieldRe = /\b([A-Z]{1,5})\b[^\n]{0,80}?(?:dividend yield|yield)\s*[^\n]{0,10}?(\d+(?:\.\d+)?)\s*%/gi;
+    let ymm;
+    while ((ymm = yieldRe.exec(md)) !== null) {
+      const t = String(ymm[1] || "").toUpperCase();
+      const yld = Number(ymm[2]);
+      const currentPrice = priceByBase.get(t);
+      if (Number.isFinite(yld) && yld > 15) {
+        contaminationBlockers.push({
+          check: "implausible-yield-cited",
+          reason: `${t}: cited yield ${yld.toFixed(1)}% is implausible for a large-cap dividend name`,
+          detail: `Excerpt: "${ymm[0].slice(0, 140).replace(/\s+/g, " ")}". Anything >15% yield is either REIT-in-distress or fabricated. INCOME thesis conclusions cannot ride on this number without a verified source.`,
+        });
+      }
+    }
+    for (const b of contaminationBlockers.slice(0, 5)) blockers.push(b);
+  }
+
+  // ─── 8f (audit fix #228.2): stale P/L snapshot.
+  // A2 sometimes prints per-holding P/L% computed from a different
+  // snapshot than the current price the same section cites. If we
+  // can extract "<TICKER> [<SLEEVE> · X% · Y%]" AND we have both
+  // canonical current price + cost basis, verify Y ≈ (current−basis)/basis.
+  if (md && typeof md === "string" && canonical) {
+    const positionByBase = new Map();
+    for (const p of canonical.positions) {
+      if (p.base) positionByBase.set(p.base, p);
+    }
+    // Match A2 sleeve tags like "DJT [SPEC · 2.9% · -3.2% · ..."
+    // Third %-value in the bracket is P/L% by convention.
+    const a2Re = /\b([A-Z]{1,5})\s*\[[A-Z]+\s*·\s*[-\d.]+%\s*·\s*([-\d.]+)%/g;
+    let am;
+    while ((am = a2Re.exec(md)) !== null) {
+      const t = String(am[1]).toUpperCase();
+      const statedPnl = Number(am[2]);
+      const pos = positionByBase.get(t);
+      if (!pos || !Number.isFinite(statedPnl)) continue;
+      // Prefer canonical position_return_pct (already computed).
+      if (Number.isFinite(pos.position_return_pct)) {
+        const drift = Math.abs(statedPnl - pos.position_return_pct);
+        if (drift > 2.0) {
+          blockers.push({
+            check: "stale-pnl-snapshot",
+            reason: `${t} A2 shows P/L ${statedPnl.toFixed(1)}%, canonical is ${pos.position_return_pct.toFixed(1)}% (${drift.toFixed(1)}pp drift)`,
+            detail: "Per-holding P/L must be recomputed from the same current price + cost basis this briefing renders elsewhere. Mixing snapshots is exactly the alignment bug §24 was designed to eliminate.",
+          });
+        }
+      }
+    }
+  }
+
   // ─── 8b (audit fix #224): cross-section contradiction gate.
   // A briefing cannot say MANDATORY ACTION on ticker X in §1 AND
   // "no action / HOLD / mechanical noise" on X in §A2/§0f/Horizon

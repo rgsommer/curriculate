@@ -370,6 +370,29 @@ async function testStrongLanguageInsufficientSample() {
   assertBlocked(audit, "strong-language-insufficient-sample", "18. 'PUSH HARDER' with N<50 sample fires blocker");
 }
 
+// ─── 19. Fundamental value matches price (contamination) ──────────
+async function testFundamentalValueMatchesPrice() {
+  // Simulate BNS profit stated as $118.85 (matches stock price) with
+  // no unit. baseProfile has AAPL @ $200; use AAPL for the test.
+  const profile = baseProfile();
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nAAPL Q2 2026 EPS beat by 3.26%; raised dividend, reported $200.00 Q2 profit, up from earlier period.`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "fundamental-value-matches-price", "19. Profit value matching current stock price fires blocker");
+}
+
+// ─── 20. Dividend/share > 10% of stock price (contamination) ──────
+async function testDividendExceedsPct() {
+  const profile = baseProfile();
+  // AAPL @ $200; claim "dividend $50 per share" (25% of price)
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nAAPL distributed $50 per share in Q2.`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "dividend-per-share-exceeds-10pct-of-price", "20. Dividend $/share > 10% of stock price fires blocker");
+}
+
 // ─── Runner ──────────────────────────────────────────────────────────
 async function main() {
   console.log("Briefing integrity injection-fault suite (Phase 5)");
@@ -393,6 +416,8 @@ async function main() {
   await testFutureDatedViolation();
   await testCrossSectionPriceDrift();
   await testStrongLanguageInsufficientSample();
+  await testFundamentalValueMatchesPrice();
+  await testDividendExceedsPct();
 
   console.log("─".repeat(60));
   for (const r of results) console.log(`  ${r.status === "PASS" ? "✓" : "✗"} ${r.name}`);

@@ -2716,6 +2716,40 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
       }
     }
 
+    // Pre-send audit gate — SAME gate the cron path runs. Was
+    // previously wired only into sendBriefingForUser, which meant
+    // on-demand /send-briefing previews (the ones users see in the
+    // UI) shipped without the audit's ~20 invariant checks. That is
+    // how a briefing with an internally-inconsistent SWING sleeve
+    // (rendered CORE+INCOME+SPEC+Cash = 95.4%) reached the operator.
+    // Now every briefing path — cron OR on-demand — goes through the
+    // same gate before being persisted / previewed / sent.
+    try {
+      const { auditBriefingBeforeSend, summarizeAuditFailure } = await import("../services/briefingAudit.js");
+      const preSendAudit = await auditBriefingBeforeSend({
+        email,
+        md: markdown,
+        acceptedRecs: accepted,
+        rejectedRecs: rejected,
+        positions: profile.positions || [],
+        profile,
+      });
+      if (!preSendAudit.ok) {
+        const summary = summarizeAuditFailure(preSendAudit);
+        console.warn(`[send-briefing] ⛔ ${email} suppressed by pre-send audit (${preSendAudit.blockers.length} blocker(s))`);
+        for (const b of preSendAudit.blockers.slice(0, 5)) console.warn(`  [${b.check}] ${b.reason}`);
+        // Return the markdown alongside the blockers so the preview UI
+        // can show WHY the send would be refused. auditFailure!==null
+        // is the UI's signal to render the amber banner instead of the
+        // full markdown.
+        return { markdown, tracked, priceWarnings, auditFailure: { blockers: preSendAudit.blockers, summary } };
+      }
+    } catch (e) {
+      console.error(`[send-briefing] audit gate CRASHED for ${email}:`, e?.message);
+      // Fail-open here — audit crash is a bug in the audit itself,
+      // not a signal to suppress the briefing. Fix the audit.
+    }
+
     return { markdown, tracked, priceWarnings };
   })();
 
@@ -2763,6 +2797,24 @@ router.post("/send-briefing", requireStocksAuth, async (req, res) => {
       tracked = produced.tracked;
       priceWarnings = produced.priceWarnings;
       cacheHit = produced.cacheHit;
+      // Pre-send audit failure — surface to the caller before any
+      // send/preview render can happen. Refuse to send; return the
+      // block-list so the UI can render an amber "audit refused"
+      // banner instead of a bad briefing.
+      if (produced.auditFailure) {
+        return res.status(200).json({
+          markdown,
+          html: null,
+          subject: null,
+          sent: false,
+          sendError: null,
+          auditFailure: produced.auditFailure,
+          tracked,
+          reused: false,
+          priceWarnings,
+          cacheHit,
+        });
+      }
     }
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
