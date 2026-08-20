@@ -221,6 +221,105 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── 8a (audit fix #227.1): future-dated "open violation" is
+  // temporally impossible. A briefing dated today can't say a
+  // violation on some future date is "still open" — that date
+  // hasn't happened yet.
+  if (md && typeof md === "string") {
+    const today = new Date();
+    // Match "violation <Month> <D>[<suffix>]" or "violation on <date>"
+    // followed within ~80 chars by "still open" / "still active" /
+    // "open" / "unresolved".
+    const violationRe = /\bviolation[^\n\.]{0,80}?\b((?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?)[^\n\.]{0,80}?\b(still\s+open|still\s+active|open|unresolved)/gi;
+    let vm;
+    while ((vm = violationRe.exec(md)) !== null) {
+      const dateStr = vm[1];
+      const parsed = new Date(`${dateStr} ${today.getFullYear()}`);
+      if (!isNaN(parsed.getTime())) {
+        // If the parsed date is > 3 days in the future (some tolerance
+        // for time-zone edge cases), that's the temporal-consistency
+        // failure.
+        const daysAhead = (parsed - today) / (24 * 60 * 60 * 1000);
+        if (daysAhead > 3) {
+          blockers.push({
+            check: "future-dated-open-violation",
+            reason: `Briefing states a violation on ${dateStr} is "still open" but that date is ${Math.round(daysAhead)}d in the future`,
+            detail: "A violation cannot already be 'still open' on a date that hasn't arrived yet. Almost certainly a date-off-by-one-year or bad stringify from the alerts pipeline. Fix upstream before emitting.",
+          });
+          break;
+        }
+      }
+    }
+  }
+
+  // ─── 8c (audit fix #227.2): cross-section price drift.
+  // If the same ticker appears with two different current prices in
+  // different sections of the briefing (e.g. DJT @ $8.63 in §1 vs
+  // $8.45 in §A2), that's the "one canonical current price per
+  // ticker" rule violated. Tolerance: 2% — normal intraday move is
+  // small; 5%+ drift is a data source disagreement, not a real move.
+  if (md && typeof md === "string" && canonical) {
+    // Extract $<price> USD/CAD paired with a ticker mention. Grab
+    // context by scanning for "TICKER" then a $-price within ~200
+    // chars, then bucket all observations per ticker.
+    const priceByTicker = new Map(); // base → array of {price, ccy}
+    // Very loose but usable: find any TICKER token then look for
+    // a $-price with the same currency within 200 chars.
+    const heldBaseSet = new Set(canonical.positions.map(p => p.base));
+    for (const base of heldBaseSet) {
+      const tickerRe = new RegExp(`\\b${base}(?:\\.[A-Z]{1,3})?\\b`, "g");
+      let m;
+      while ((m = tickerRe.exec(md)) !== null) {
+        const window = md.slice(m.index, m.index + 200);
+        const priceMatch = window.match(/\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/);
+        if (!priceMatch) continue;
+        const px = Number(priceMatch[1]);
+        const ccy = priceMatch[2] || null;
+        if (!Number.isFinite(px) || px <= 0) continue;
+        if (!priceByTicker.has(base)) priceByTicker.set(base, []);
+        priceByTicker.get(base).push({ price: px, ccy });
+      }
+    }
+    for (const [base, observations] of priceByTicker) {
+      if (observations.length < 2) continue;
+      // Compare min vs max; if drift > 2% they disagree.
+      const prices = observations.map(o => o.price);
+      const minP = Math.min(...prices);
+      const maxP = Math.max(...prices);
+      const drift = ((maxP - minP) / minP) * 100;
+      if (drift > 2.0) {
+        blockers.push({
+          check: "cross-section-price-drift",
+          reason: `${base} referenced at multiple prices across sections: min $${minP.toFixed(2)}, max $${maxP.toFixed(2)} (${drift.toFixed(1)}% drift)`,
+          detail: "One canonical current price per ticker. If §1 cites one number and §A2 cites another for the same instrument, at least one is wrong or stale. Refetch and re-render both sections from the same source.",
+        });
+      }
+    }
+  }
+
+  // ─── 8d (audit fix #227.3): behavioural coaching phrases require
+  // adequate sample size. AI produced "PUSH HARDER on high-conviction
+  // recs" based on a small closed-rec sample where the difference
+  // between followed and skipped was well within noise. Strong
+  // behavioural imperatives shouldn't ride on a 7d hit rate.
+  if (md && typeof md === "string") {
+    const strongPhrases = /\b(PUSH HARDER|LEAN IN|TRUST THE (SIGNAL|SYSTEM|MODEL)|ACT (MORE )?AGGRESSIVELY|SIZE UP|BE (?:MORE )?DECISIVE)\b/i;
+    if (strongPhrases.test(md)) {
+      // Try to find the sample size that supports the claim. Look
+      // for "N closed" / "N recs" / "N samples" nearby. If we can't
+      // find one that's >= 50, block.
+      const nMatches = [...md.matchAll(/(\d+)\s+(?:closed|recs|samples|trades)\b/gi)].map(x => Number(x[1])).filter(Number.isFinite);
+      const maxSample = nMatches.length ? Math.max(...nMatches) : 0;
+      if (maxSample < 50) {
+        blockers.push({
+          check: "strong-language-insufficient-sample",
+          reason: `Briefing uses strong behavioural language ("PUSH HARDER" / "LEAN IN" etc.) but the largest cited sample size is ${maxSample} (< 50)`,
+          detail: "Behavioural imperatives require sample sizes and confidence intervals that support them. Anything under ~50 closed observations is noise. Strip the strong language or wait for enough data.",
+        });
+      }
+    }
+  }
+
   // ─── 8b (audit fix #224): cross-section contradiction gate.
   // A briefing cannot say MANDATORY ACTION on ticker X in §1 AND
   // "no action / HOLD / mechanical noise" on X in §A2/§0f/Horizon

@@ -1244,11 +1244,37 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // list: ordered by preference; first available wins.
   // targetCad: total CAD budget for the buy.
   // deployCurrency: "CAD" or "USD" — determines whether we FX-convert.
+  // Per-ticker sanity floors mirror marketDataIntegrity's SANITY_FLOORS.
+  // Local copy so a broken live price for VTI/VOO/etc. can never appear
+  // in a mandate — the integrity layer catches it too, but this is a
+  // second, independent line of defence at the render layer. Was
+  // producing "BUY 5 sh VTI @ $0.38 USD" mandates in a real briefing.
+  const PICK_SANITY_FLOORS = {
+    VTI: 100, VOO: 200, SPY: 300, QQQ: 300, IWM: 100, VUG: 200, SCHG: 20,
+    "XEQT.TO": 20, "XIU.TO": 30, "XIC.TO": 25, "VUN.TO": 60, "VFV.TO": 100,
+    "AAPL": 80, "MSFT": 200, "GOOGL": 100, "AMZN": 100, "META": 200, "NVDA": 50,
+  };
+  const passSanityFloor = (ticker, price) => {
+    const floor = PICK_SANITY_FLOORS[String(ticker || "").toUpperCase()];
+    return !Number.isFinite(floor) || price >= floor;
+  };
   const pickDefaultTicket = (list, targetCad, deployCurrency) => {
     if (!(targetCad > 0)) return null;
-    const filtered = (list || [])
+    const rawFiltered = (list || [])
       .filter(t => !ctxRecentExits.includes(t))
       .filter(t => ctxLivePrices[t]?.price > 0);
+    // Sanity-floor filter — drop any candidate whose live price
+    // dropped below its known-good floor. A failure here means the
+    // integrity layer would have caught this on the way to a rec,
+    // but we belt-and-brace at render time too.
+    const filtered = rawFiltered.filter(t => {
+      const p = ctxLivePrices[t]?.price;
+      if (!passSanityFloor(t, p)) {
+        console.warn(`[pickDefaultTicket] REJECT ${t} — live price $${p} below sanity floor`);
+        return false;
+      }
+      return true;
+    });
     if (filtered.length === 0) return null;
     const ticker = filtered[0];
     const live = ctxLivePrices[ticker];
@@ -1761,22 +1787,43 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     //     0.5pp — either the high, the current, or the drawdown is bad
     // Any of these = tech-signal corruption; silently drop the position
     // from trail-review so we don't emit a mandate against bad numbers.
+    // Trail invariant a): the trail stop must sit BELOW the 60d high
+    // whenever ATR > 0. Real-world "trail stop = high60d exactly" is
+    // arithmetically impossible for a `high - 2.5*ATR` stop unless
+    // ATR is 0 — a stuck / stale technical read. Reject.
     if (Number.isFinite(tech.trailStopAtrAdjusted) && Number.isFinite(tech.high60d)
-        && tech.trailStopAtrAdjusted > tech.high60d) {
-      console.warn(`[trail-review invariant] ${p.ticker} — trailStop $${tech.trailStopAtrAdjusted.toFixed(2)} > high60d $${tech.high60d.toFixed(2)} — suppressing`);
+        && Number.isFinite(tech.atr14) && tech.atr14 > 0
+        && tech.trailStopAtrAdjusted >= tech.high60d - 0.001) {
+      console.warn(`[trail-review invariant] ${p.ticker} — trailStop $${tech.trailStopAtrAdjusted.toFixed(2)} >= high60d $${tech.high60d.toFixed(2)} with ATR $${tech.atr14.toFixed(2)} > 0 — suppressing (arithmetic invariant)`);
       continue;
     }
+    // Trail invariant b): current >= high with negative drawdown is
+    // impossible. drawdown = (current - high) / high; if current >=
+    // high, drawdown >= 0.
     if (Number.isFinite(tech.last) && Number.isFinite(tech.high60d) && Number.isFinite(tech.drawdownFromHigh60dPct)
         && tech.last >= tech.high60d && tech.drawdownFromHigh60dPct < 0) {
       console.warn(`[trail-review invariant] ${p.ticker} — last $${tech.last} >= high60d $${tech.high60d} but drawdown ${tech.drawdownFromHigh60dPct.toFixed(2)}% — suppressing`);
       continue;
     }
+    // Trail invariant c): stated drawdown must match (current/high)-1
+    // within tight tolerance.
     if (Number.isFinite(tech.last) && Number.isFinite(tech.high60d) && tech.high60d > 0
         && Number.isFinite(tech.drawdownFromHigh60dPct)) {
       const impliedDrawdownPct = ((tech.last - tech.high60d) / tech.high60d) * 100;
       const drift = Math.abs(impliedDrawdownPct - tech.drawdownFromHigh60dPct);
       if (drift > 0.5) {
         console.warn(`[trail-review invariant] ${p.ticker} — stated drawdown ${tech.drawdownFromHigh60dPct.toFixed(2)}% vs implied ${impliedDrawdownPct.toFixed(2)}% from ($${tech.last}/$${tech.high60d}) — suppressing`);
+        continue;
+      }
+    }
+    // Trail invariant d): if current is at the 60d high (within 0.5%),
+    // there IS no drawdown — this is not a legitimate trail-stop
+    // review. RY / BNS bug: briefing showed "trail-breached" for
+    // positions sitting on their 60d peak with drawdown = -0.0%.
+    if (Number.isFinite(tech.last) && Number.isFinite(tech.high60d) && tech.high60d > 0) {
+      const pctFromHigh = Math.abs(tech.last - tech.high60d) / tech.high60d * 100;
+      if (pctFromHigh < 0.5) {
+        console.warn(`[trail-review invariant] ${p.ticker} — last $${tech.last} within 0.5% of high60d $${tech.high60d}; no meaningful drawdown — suppressing`);
         continue;
       }
     }

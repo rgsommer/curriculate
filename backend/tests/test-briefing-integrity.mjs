@@ -330,6 +330,46 @@ async function testCrossSectionResolutionMarker() {
   assert(!hit, "15. HOLD with 'per §1 review' resolution marker does NOT block");
 }
 
+// ─── 16. Future-dated open violation ──────────────────────────────
+async function testFutureDatedViolation() {
+  const profile = baseProfile();
+  const futureDate = new Date(Date.now() + 45 * 86400_000);
+  const monStr = futureDate.toLocaleString("en-US", { month: "short" });
+  const dayStr = futureDate.getDate();
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nNVDA has a hard-stop violation ${monStr} ${dayStr} still open per compliance block.\n`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "future-dated-open-violation", "16. Future-dated 'still open' violation fires blocker");
+}
+
+// ─── 17. Cross-section price drift ────────────────────────────────
+async function testCrossSectionPriceDrift() {
+  const profile = baseProfile();
+  // AAPL is in baseProfile positions. Simulate briefing quoting two
+  // materially different prices across sections.
+  const badMd = `## 1. 🚨 MANDATORY ACTIONS
+1. TRAIL STOP REVIEW — AAPL. Current $210 USD.
+
+## A2. Per-holding signals
+- AAPL [SWING] — Trading at $195 USD. HOLD.
+`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "cross-section-price-drift", "17. Same ticker with two different prices across sections fires blocker");
+}
+
+// ─── 18. Behavioural coaching without sample ──────────────────────
+async function testStrongLanguageInsufficientSample() {
+  const profile = baseProfile();
+  const badMd = `## 2. 🛑 FORBIDDEN TODAY\nNone.\n\nPUSH HARDER on high-conviction recs — 7d hit rate 89% on 12 closed samples.`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: badMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  assertBlocked(audit, "strong-language-insufficient-sample", "18. 'PUSH HARDER' with N<50 sample fires blocker");
+}
+
 // ─── Runner ──────────────────────────────────────────────────────────
 async function main() {
   console.log("Briefing integrity injection-fault suite (Phase 5)");
@@ -350,6 +390,9 @@ async function main() {
   await testAccountLabelMismatch();
   await testCrossSectionContradiction();
   await testCrossSectionResolutionMarker();
+  await testFutureDatedViolation();
+  await testCrossSectionPriceDrift();
+  await testStrongLanguageInsufficientSample();
 
   console.log("─".repeat(60));
   for (const r of results) console.log(`  ${r.status === "PASS" ? "✓" : "✗"} ${r.name}`);

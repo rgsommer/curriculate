@@ -77,11 +77,31 @@ function classifyStatus({ daysElapsed, horizonDays, entry, current, target, stop
   const expectedFraction = daysElapsed / horizonDays;
   const actualFraction = (current - entry) / (target - entry);
   const pace = expectedFraction > 0 ? actualFraction / expectedFraction : 1;
+
+  // A pace ≥ 0.85 is on-pace. A pace ≥ 1 is actually AHEAD of pace,
+  // but "on-pace" already covers that visually — no need for a
+  // separate "ahead" bucket.
   if (pace >= 0.85) return "on-pace";
-  if (expectedFraction < 0.4) return "lagging";        // guardrail #1
-  if (actualFraction > 0 && pace >= 0.4) return "lagging";
-  if (actualFraction > 0) return "lagging";            // guardrail #2
-  return "well-behind";                                 // actualFraction ≤ 0 AND past 40% of horizon
+
+  // Very early in the horizon (< 15% elapsed), pace is unreliable —
+  // the denominator is tiny and a single day's noise swings the ratio.
+  // The BNS bug was here: day 35/365 = 9.6% elapsed, pace of 4.68x
+  // should have returned on-pace, but if entry/target/current came in
+  // slightly different from what the user saw, pace could be below
+  // 0.85 while still being fine. Never call anything worse than
+  // on-pace this early.
+  if (expectedFraction < 0.15) return "on-pace";
+
+  // Below 40% elapsed → "lagging" is the worst status. Not enough
+  // signal for "well-behind".
+  if (expectedFraction < 0.4) return "lagging";
+
+  // Position is still above entry — never call that well-behind.
+  if (actualFraction > 0) return "lagging";
+
+  // Only WELL-behind: position has regressed against entry AND at
+  // least 40% of the horizon has elapsed.
+  return "well-behind";
 }
 
 function emojiFor(status) {

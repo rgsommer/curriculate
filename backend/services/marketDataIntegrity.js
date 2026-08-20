@@ -39,7 +39,19 @@ import { fetchOne } from "../routes/stocksPrices.js";
 
 // ─── Sanity thresholds — tuned to be aggressive on obvious bugs but
 // forgiving of legitimate market events (earnings gaps, halts) ────
-const DEVIATION_MAX_PCT = 25;      // reject if today's price is >25% off prevClose (earnings gaps happen; 25% is the "something's seriously wrong" line)
+const DEVIATION_MAX_PCT = 25;      // WARN if today's price is >25% off prevClose (earnings gaps happen; 25% is the "please verify" line)
+const DEVIATION_HARD_MAX_PCT = 50; // REJECT outright if deviation >50% — that's a stock-split/corporate-action processing bug, not a real move
+// Known large-cap price floors — a live quote below these values for
+// these tickers is definitely a feed bug (VTI @ $0.38 seen in prod).
+// Applied ONLY as a hard-refuse gate; well-behaved data passes through
+// unchanged.
+const SANITY_FLOORS = {
+  VTI: 100, VOO: 200, SPY: 300, QQQ: 300, IWM: 100, VUG: 200, SCHG: 20,
+  "XEQT.TO": 20, "XIU.TO": 30, "XIC.TO": 25, "VUN.TO": 60, "VFV.TO": 100,
+  "XBAL.TO": 25, "XGRO.TO": 25, "VBAL.TO": 25, "VGRO.TO": 25, "VEQT.TO": 30,
+  AAPL: 80, MSFT: 200, GOOGL: 100, GOOG: 100, AMZN: 100, META: 200, NVDA: 50,
+  AVGO: 500, TSLA: 100, AMD: 50, NFLX: 300,
+};
 const STALENESS_MAX_MS = 15 * 60 * 1000; // 15 min — anything older than that during market hours is "please refetch"
 const OFFHOURS_STALENESS_MAX_MS = 5 * 24 * 60 * 60 * 1000; // 5 days — trap "feed hasn't updated since last week" during off-hours
 const MIN_PRICE = 0.10;            // sub-dime prices are usually penny-stock chaos or feed bugs
@@ -181,6 +193,24 @@ export async function getVerifiedPrice(ticker, currency = "USD") {
   if (price < MIN_PRICE) {
     warnings.push(`sub-\$${MIN_PRICE.toFixed(2)} price ($${price.toFixed(4)}) — verify manually before acting`);
   }
+  // Gate 1c — sanity floor for known large-cap tickers. VTI, VOO,
+  // SPY, etc. have well-known trading ranges; a live quote below the
+  // floor is a feed bug regardless of what prevClose says (both
+  // fields can be stuck at the wrong value). Prevented the
+  // "BUY 5 sh VTI @ $0.38 USD" mandate that landed in a real briefing.
+  const floor = SANITY_FLOORS[String(resolvedTicker || "").toUpperCase()];
+  if (Number.isFinite(floor) && price < floor) {
+    const result = {
+      ok: false,
+      ticker: resolvedTicker,
+      requestedTicker: ticker,
+      reason: "below-sanity-floor",
+      detail: `Live price $${price.toFixed(2)} is below the known-good floor of $${floor} for ${resolvedTicker}. Very likely a feed bug (stuck split-adjustment, corporate-action mis-processing, or wrong-listing quote). Refusing to accept for any rec.`,
+      warnings,
+    };
+    CACHE.set(cacheKey, { at: now, result });
+    return result;
+  }
 
   // Gate 2 — currency mismatch. Requested USD, got CAD (or vice versa)
   // is a strong "the ticker resolved to the wrong exchange" signal.
@@ -188,11 +218,25 @@ export async function getVerifiedPrice(ticker, currency = "USD") {
     warnings.push(`currency mismatch: requested ${currency}, quote returned ${quotedCurrency}`);
   }
 
-  // Gate 3 — deviation from prev close. Non-fatal (earnings gaps
-  // legitimately exceed 20%) but flagged for the audit gate.
+  // Gate 3 — deviation from prev close. 25%+ warns (earnings gaps
+  // legitimately exceed 20%); 50%+ hard-refuses (a real 50% single-
+  // session move is almost always a stock split, corporate action,
+  // or bad feed — none of which we want an actionable rec against).
   let deviationPct = null;
   if (Number.isFinite(priorClose) && priorClose > 0) {
     deviationPct = ((price - priorClose) / priorClose) * 100;
+    if (Math.abs(deviationPct) > DEVIATION_HARD_MAX_PCT) {
+      const result = {
+        ok: false,
+        ticker: resolvedTicker,
+        requestedTicker: ticker,
+        reason: "deviation-exceeds-hard-max",
+        detail: `Price $${price.toFixed(2)} is ${deviationPct.toFixed(1)}% off prev close $${priorClose.toFixed(2)}. Hard limit ±${DEVIATION_HARD_MAX_PCT}%. Almost certainly a split / corporate-action / feed error, not a real market move. Refusing.`,
+        warnings,
+      };
+      CACHE.set(cacheKey, { at: now, result });
+      return result;
+    }
     if (Math.abs(deviationPct) > DEVIATION_MAX_PCT) {
       warnings.push(`extreme move: ${deviationPct.toFixed(1)}% from prevClose $${priorClose.toFixed(2)} — verify (earnings gap? bad feed? split?)`);
     }
