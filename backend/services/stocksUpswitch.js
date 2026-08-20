@@ -1,0 +1,334 @@
+// backend/services/stocksUpswitch.js
+//
+// Portfolio upswitch engine — the "am I holding X only because I already
+// own it, when Y is demonstrably better?" question.
+//
+// Every held position is scored on the SAME multi-factor composite the
+// candidate pool uses (technical + fundamentals + growth + estimate
+// revisions + relative strength + insider). For every weakest incumbent
+// we search the strongest challengers (same currency preferred), apply a
+// sleeve-specific replacement hurdle, factor in tax placement and
+// transaction cost, and emit an upswitch recommendation ONLY when the
+// net advantage clears the hurdle. When no challenger clears, we
+// explicitly return an empty opportunities list — no forced churn.
+//
+// Sleeve hurdles (composite-score delta the challenger must beat by):
+//   SWING   +15  (aggressive competition for capital)
+//   SPEC    +20  (require strong asymmetric upside AND respect the cap)
+//   INCOME  +25  (challenger must beat on income/fundamentals/total-return)
+//   CORE    +40  (extremely high; CORE is stability, not a rotation deck)
+//
+// Tax adjustment (subtracted from the challenger's advantage):
+//   TFSA / RRSP / RRIF / LIRA / LIF / FHSA / RESP → 0  (tax-advantaged)
+//   Individual / Non-Spousal / Corporate / Trust / Other → 5 (rough proxy
+//     for capital-gain drag; the exact number depends on unrealized P/L
+//     and marginal rate; 5-point handicap keeps the engine honest without
+//     needing per-user tax data)
+//
+// Transaction cost adjustment: 1 point per side (2 total for a swap).
+//
+// Output shape:
+//   {
+//     opportunities: [
+//       {
+//         holding: { ticker, sleeve, account, cad_value, position_weight_pct,
+//                    composite: {score, factors, contributors} },
+//         challenger: { ticker, sleeve, currency, composite: {...},
+//                       entryPrice, targetPrice, stopPrice },
+//         deltaScore, sleeveHurdle, taxHandicap, transactionCost,
+//         netAdvantage, recommendation: "UPSWITCH" | "KEEP" | "EXIT_TO_CASH",
+//         rationale: string,
+//       },
+//       ...
+//     ],
+//     hurdles: { core, income, swing, spec },
+//     summary: { heldScored, candidatesConsidered, upswitchCount, keepCount }
+//   }
+
+import { fetchYahooDaily } from "./stocksDiscoveryScore.js";
+import { getFundamentals } from "./stocksFundamentals.js";
+import { getGrowth, getEstimateRevisions } from "./stocksGrowthRevisions.js";
+import { getRecentInsiderSignals } from "./stocksInsiderSignals.js";
+import { computeMultiFactorScore, computeRelativeStrengthFromBars } from "./stocksMultiFactorScore.js";
+import { getTechnicals } from "./stocksTechnicals.js";
+import { classifyPosition } from "./stocksSleeveEnforcer.js";
+
+// ─── Hurdles ──────────────────────────────────────────────────────────
+export const UPSWITCH_HURDLES = { core: 40, income: 25, swing: 15, spec: 20 };
+const TX_COST_POINTS = 1;   // per side; a swap = 2 total
+const TAXABLE_HANDICAP = 5; // deducted when account is not tax-advantaged
+
+// Broad tax classification. Anything registered in Canada is treated as
+// tax-advantaged (no capital-gain event when selling). Individual /
+// Corporate / Trust / Non-Spousal-Individual pay tax on realized gains.
+const TAX_ADVANTAGED_TYPES = new Set([
+  "rrsp", "spousal-rrsp", "spousalrrsp", "tfsa", "fhsa", "rrif", "lira", "lif", "resp",
+]);
+function isTaxAdvantaged(accountType) {
+  if (!accountType) return false;
+  return TAX_ADVANTAGED_TYPES.has(String(accountType).toLowerCase());
+}
+
+// Score one ticker with the full multi-factor composite. Reuses every
+// existing service (technicals, fundamentals, growth, revisions, RS,
+// insider) so a held position is measured with the identical yardstick
+// as a candidate. Returns null when the ticker can't be scored (bars
+// missing) — caller skips it.
+async function scoreOneTicker(ticker, currency = "USD", insiderByBase = null, benchmarks = {}) {
+  try {
+    const tech = await getTechnicals(ticker, currency, { includeMultiTimeframe: true });
+    if (!tech?.ok) return null;
+    // Approximate the technical sub-score using the same 0-100 heuristic
+    // scoreCandidate does. Cheaper than importing scoreCandidate to avoid
+    // a circular import with stocksDailyPickEngine.
+    const technicalScore = approxTechnicalScore(tech);
+
+    const base = String(ticker).replace(/\..*$/, "");
+    const bench = currency === "CAD" ? benchmarks.xic : benchmarks.spy;
+    const [tickerBars, fundamentals, growth, revisions] = await Promise.all([
+      fetchYahooDaily(ticker, "1y").catch(() => null),
+      getFundamentals(ticker, currency).catch(() => null),
+      getGrowth(ticker).catch(() => null),
+      getEstimateRevisions(ticker).catch(() => null),
+    ]);
+    const rs = (tickerBars && bench)
+      ? computeRelativeStrengthFromBars(tickerBars, bench)
+      : { ok: false };
+    const insider = insiderByBase ? (insiderByBase.get(base) || null) : null;
+
+    const composite = computeMultiFactorScore({
+      technicalScore, fundamentals, growth, revisions, rs, insider,
+    });
+    return {
+      composite,
+      technicalScore,
+      currency,
+      lastPrice: tech.last,
+      atr14: tech.atr14,
+      suggested25AtrStop: tech.suggested25AtrStop,
+    };
+  } catch { return null; }
+}
+
+// Local approximation of the technical bucket score. Kept in sync with
+// the fields scoreCandidate looks at in stocksDailyPickEngine.js.
+function approxTechnicalScore(tech) {
+  if (!tech?.ok) return 0;
+  let score = 0;
+  if (tech.sma50 && tech.sma200 && tech.priceVsSma50 >= 0 && tech.sma50 > tech.sma200) score += 25;
+  else if (tech.priceVsSma50 >= 0) score += 10;
+  if (tech.rsi14 != null) {
+    if (tech.rsi14 >= 50 && tech.rsi14 <= 65) score += 15;
+    else if (tech.rsi14 >= 40 && tech.rsi14 < 50) score += 7;
+    else if (tech.rsi14 > 65 && tech.rsi14 <= 75) score += 3;
+    else if (tech.rsi14 > 75) score -= 30;
+  }
+  if (tech.volume?.rvol >= 1.5) score += 8;
+  if (tech.volume?.pocketPivot) score += 10;
+  if (tech.volume?.obvTrend === "accumulation") score += 4;
+  const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
+  if (bullSetup) score += Math.min(25, Math.round(bullSetup.score / 4));
+  if (tech.mtf?.confluence === "aligned" && tech.mtf.direction === "up") score += 15;
+  else if (tech.mtf?.confluence === "aligned" && tech.mtf.direction === "down") score -= 15;
+  else if (tech.mtf?.confluence === "conflicting") score -= 5;
+  if (tech.priceVsSma50 != null && tech.priceVsSma50 < -3) score -= 20;
+  return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+// Main entry. Requires an already-computed canonical portfolio + the
+// candidate pool (top Stage-2 candidates from the pick engine, each
+// carrying a composite score). Loads benchmark bars + a single batch
+// of insider signals per this call so the per-ticker composites don't
+// each hit the network separately.
+export async function computeUpswitchOpportunities({ canonical, candidates = [] } = {}) {
+  if (!canonical) return { opportunities: [], hurdles: UPSWITCH_HURDLES, summary: null };
+
+  // Only consider held equity positions (skip cash-ETF proxies etc.).
+  const held = (canonical.positions || []).filter(p => p.qty > 0 && p.cad_value > 0);
+  if (held.length === 0) {
+    return { opportunities: [], hurdles: UPSWITCH_HURDLES, summary: { heldScored: 0, candidatesConsidered: 0, upswitchCount: 0, keepCount: 0 } };
+  }
+
+  // Load benchmarks ONCE. Reused across every held-position + challenger
+  // RS calc so we don't refetch 20+ times per briefing.
+  const [spy, xic] = await Promise.all([
+    fetchYahooDaily("SPY", "1y").catch(() => null),
+    fetchYahooDaily("XIC.TO", "1y").catch(() => null),
+  ]);
+  const benchmarks = { spy, xic };
+
+  // Insider batch — cover held + challenger tickers in one query.
+  const heldBases = held.map(p => p.base);
+  const challengerBases = candidates.map(c => String(c.ticker || "").replace(/\..*$/, ""));
+  const insiderByBase = new Map();
+  try {
+    const signals = await getRecentInsiderSignals([...heldBases, ...challengerBases], { days: 30, limit: 90 });
+    for (const s of signals || []) {
+      const b = String(s.ticker || "").toUpperCase().replace(/\..*$/, "");
+      const prev = insiderByBase.get(b) || { clusterBuy: false, clusterSell: false };
+      if (s.kind === "cluster_buy") prev.clusterBuy = true;
+      if (s.kind === "cluster_sell") prev.clusterSell = true;
+      insiderByBase.set(b, prev);
+    }
+  } catch { /* no insider signals — factor stays neutral */ }
+
+  // Score every held position with the same composite. Concurrency-
+  // capped at 5 so a 20-position book doesn't melt the FMP quota.
+  const scoredHeld = [];
+  const CONC = 5;
+  for (let i = 0; i < held.length; i += CONC) {
+    const slice = held.slice(i, i + CONC);
+    const results = await Promise.all(slice.map(async (pos) => {
+      const s = await scoreOneTicker(pos.ticker, pos.currency, insiderByBase, benchmarks);
+      if (!s) return null;
+      return { holding: pos, ...s };
+    }));
+    for (const r of results) if (r) scoredHeld.push(r);
+  }
+
+  // Sort held from worst-scoring to best. The upswitch loop tries the
+  // weakest first — that's where the biggest replacement wins live.
+  scoredHeld.sort((a, b) => (a.composite.score ?? 0) - (b.composite.score ?? 0));
+
+  // Sort candidates by composite descending (they should already carry
+  // compositeRank from the pick engine; fall back to deterministicScore
+  // if not present).
+  const rankedCandidates = [...candidates].sort((a, b) =>
+    (b.multiFactorScore ?? b.compositeRank ?? b.deterministicScore ?? 0) -
+    (a.multiFactorScore ?? a.compositeRank ?? a.deterministicScore ?? 0)
+  );
+
+  const opportunities = [];
+  const usedChallengers = new Set();   // one challenger per opportunity per briefing
+
+  for (const holdRow of scoredHeld) {
+    const pos = holdRow.holding;
+    const posSleeve = (pos.sleeve || classifyPosition({ ticker: pos.ticker }) || "spec").toLowerCase();
+    const hurdle = UPSWITCH_HURDLES[posSleeve] ?? UPSWITCH_HURDLES.swing;
+    // Tax handicap — challenger's advantage takes a 5-point hit when
+    // the sell would realize a capital gain in a taxable account.
+    const taxAdvantaged = isTaxAdvantaged(pos.account_type);
+    const taxHandicap = taxAdvantaged ? 0 : TAXABLE_HANDICAP;
+
+    // Preferred pool: same-currency challengers not already earmarked.
+    // Fall back to any-currency if same-currency pool is empty.
+    const sameCcy = rankedCandidates.filter(c =>
+      !usedChallengers.has(String(c.ticker || "").toUpperCase()) &&
+      (c.currency || "USD") === (pos.currency || "USD")
+    );
+    const pool = sameCcy.length > 0 ? sameCcy : rankedCandidates.filter(c => !usedChallengers.has(String(c.ticker || "").toUpperCase()));
+
+    // Never suggest swapping to a ticker we already hold — that's not
+    // an upswitch, it's a stack.
+    const heldSet = new Set(held.map(h => h.base));
+    const eligible = pool.filter(c => !heldSet.has(String(c.ticker || "").replace(/\..*$/, "")));
+
+    if (eligible.length === 0) continue;
+
+    // Best challenger for this incumbent.
+    const challenger = eligible[0];
+    const challengerScore = challenger.multiFactorScore ?? challenger.compositeRank ?? challenger.deterministicScore ?? 0;
+    const heldScore = holdRow.composite.score ?? 0;
+    const deltaScore = challengerScore - heldScore;
+    const totalCost = (TX_COST_POINTS * 2) + taxHandicap;
+    const netAdvantage = deltaScore - totalCost;
+
+    let recommendation;
+    let rationale;
+    if (netAdvantage >= hurdle) {
+      recommendation = "UPSWITCH";
+      rationale = `${challenger.ticker} composite ${challengerScore} vs ${pos.ticker} ${heldScore} (Δ+${deltaScore}). ${taxAdvantaged ? "Tax-advantaged account — no capital-gain drag." : `Taxable — ${TAXABLE_HANDICAP}-pt handicap applied.`} Sleeve="${posSleeve}" hurdle +${hurdle}. Net advantage +${netAdvantage.toFixed(0)} clears the hurdle.`;
+      usedChallengers.add(String(challenger.ticker || "").toUpperCase());
+    } else if (heldScore < 35 && deltaScore < hurdle) {
+      // Weakness without a good replacement — flag EXIT_TO_CASH so the
+      // operator has the option to raise cash rather than force a
+      // marginal swap. Only for really weak holdings (score < 35) —
+      // don't nudge exits on average names just because no challenger
+      // was strong enough.
+      recommendation = "EXIT_TO_CASH";
+      rationale = `${pos.ticker} composite ${heldScore} is weak (<35) but no challenger cleared the +${hurdle} hurdle. Consider exit-to-cash instead of forcing a swap; redeploy when a real challenger appears.`;
+    } else {
+      recommendation = "KEEP";
+      rationale = `Best challenger ${challenger.ticker} at ${challengerScore} vs ${pos.ticker} ${heldScore} → net advantage +${netAdvantage.toFixed(0)} < +${hurdle} sleeve hurdle. HOLD ${pos.ticker}.`;
+    }
+
+    opportunities.push({
+      holding: {
+        ticker: pos.ticker,
+        base: pos.base,
+        sleeve: posSleeve,
+        account: pos.account_name,
+        accountType: pos.account_type,
+        cad_value: pos.cad_value,
+        position_weight_pct: pos.position_weight_pct,
+        composite: holdRow.composite,
+      },
+      challenger: {
+        ticker: challenger.ticker,
+        sleeve: challenger.sleeve || null,
+        currency: challenger.currency || "USD",
+        composite: { score: challengerScore, factors: challenger.factorBreakdown, contributors: challenger.multiFactorContributors },
+        entryPrice: challenger.entryPrice ?? null,
+        targetPrice: challenger.targetPrice ?? null,
+        stopPrice: challenger.stopPrice ?? null,
+      },
+      deltaScore,
+      sleeveHurdle: hurdle,
+      taxHandicap,
+      transactionCost: TX_COST_POINTS * 2,
+      netAdvantage: Number(netAdvantage.toFixed(1)),
+      recommendation,
+      rationale,
+    });
+  }
+
+  // Show UPSWITCH first, then EXIT_TO_CASH, then KEEP. Within each group,
+  // sort by netAdvantage desc so the biggest opportunity leads.
+  const rank = { UPSWITCH: 0, EXIT_TO_CASH: 1, KEEP: 2 };
+  opportunities.sort((a, b) => (rank[a.recommendation] - rank[b.recommendation]) || (b.netAdvantage - a.netAdvantage));
+
+  const summary = {
+    heldScored: scoredHeld.length,
+    candidatesConsidered: rankedCandidates.length,
+    upswitchCount: opportunities.filter(o => o.recommendation === "UPSWITCH").length,
+    exitToCashCount: opportunities.filter(o => o.recommendation === "EXIT_TO_CASH").length,
+    keepCount: opportunities.filter(o => o.recommendation === "KEEP").length,
+  };
+
+  return { opportunities, hurdles: UPSWITCH_HURDLES, summary };
+}
+
+// Formatter for briefing injection — emits the §1b PORTFOLIO UPGRADE
+// OPPORTUNITIES block. When no UPSWITCH recommendations survive, prints
+// an explicit "NONE — no challenger cleared the sleeve hurdle" line so
+// the briefing proves the engine actually looked, rather than silently
+// omitting the section.
+export function formatUpswitchBlock(result) {
+  if (!result || !Array.isArray(result.opportunities)) return "";
+  const upswitches = result.opportunities.filter(o => o.recommendation === "UPSWITCH");
+  const exitToCash = result.opportunities.filter(o => o.recommendation === "EXIT_TO_CASH");
+
+  const lines = ["", "## 1b. 🔄 PORTFOLIO UPGRADE OPPORTUNITIES", ""];
+
+  if (upswitches.length === 0 && exitToCash.length === 0) {
+    lines.push(`_NONE — no challenger cleared the sleeve replacement hurdle (SWING +${result.hurdles.swing} · SPEC +${result.hurdles.spec} · INCOME +${result.hurdles.income} · CORE +${result.hurdles.core}). ${result.summary?.heldScored ?? 0} holdings scored vs ${result.summary?.candidatesConsidered ?? 0} candidates._`);
+    return lines.join("\n");
+  }
+
+  for (const o of upswitches) {
+    lines.push(`**UPSWITCH CANDIDATE** — TRIM/SELL **${o.holding.ticker}** (${o.holding.sleeve.toUpperCase()}, ${o.holding.account || "?"}) → BUY **${o.challenger.ticker}**`);
+    lines.push(`   Composite: ${o.holding.ticker} ${o.holding.composite?.score ?? "?"} → ${o.challenger.ticker} ${o.challenger.composite?.score ?? "?"} (Δ +${o.deltaScore})`);
+    lines.push(`   Sleeve hurdle: +${o.sleeveHurdle} · Tax handicap: ${o.taxHandicap} · Transaction cost: ${o.transactionCost} · **Net advantage: +${o.netAdvantage.toFixed(0)}**`);
+    lines.push(`   ${o.rationale}`);
+    if (o.challenger.entryPrice) {
+      lines.push(`   Challenger levels: entry $${o.challenger.entryPrice.toFixed(2)}${o.challenger.targetPrice ? ` / target $${o.challenger.targetPrice.toFixed(2)}` : ""}${o.challenger.stopPrice ? ` / stop $${o.challenger.stopPrice.toFixed(2)}` : ""} ${o.challenger.currency}`);
+    }
+    lines.push("");
+  }
+  for (const o of exitToCash) {
+    lines.push(`**EXIT-TO-CASH CANDIDATE** — **${o.holding.ticker}** (${o.holding.sleeve.toUpperCase()}, composite ${o.holding.composite?.score ?? "?"})`);
+    lines.push(`   ${o.rationale}`);
+    lines.push("");
+  }
+  return lines.join("\n");
+}

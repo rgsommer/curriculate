@@ -161,6 +161,7 @@ import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../service
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
 import { auditBriefingBeforeSend, summarizeAuditFailure } from "../services/briefingAudit.js";
 import { computeCanonicalPortfolio } from "../services/portfolioCalcEngine.js";
+import { formatUpswitchBlock as formatUpswitchBlockImpl } from "../services/stocksUpswitch.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 
 // Pull the user's starred discovery candidates and format them as a
@@ -957,6 +958,16 @@ function formatCanonicalPortfolioBlock(canonical) {
   parts.push("");
   parts.push("BINDING RULE (per §24 LLM Separation): You may narrate and interpret these numbers. You MAY NOT recompute, restate with different values, or invent new %-values. Every percentage you write in the briefing must equal a value from this block (or be the direct sum of specific values from it). If you need a % not here, say so; do not fabricate one.");
   return parts.join("\n");
+}
+
+// Thin wrapper — swallows errors so the briefing pipeline never dies
+// on an upswitch-format bug. Safe to call with null/undefined; returns
+// empty string. The actual formatter is statically imported at the
+// top of this file.
+function formatUpswitchBlockSafe(upswitchResult) {
+  if (!upswitchResult) return "";
+  try { return formatUpswitchBlockImpl(upswitchResult); }
+  catch (e) { console.warn("[upswitch-format] warn:", e?.message); return ""; }
 }
 
 function formatQuantSignalsBlock(quantSignals) {
@@ -2510,6 +2521,7 @@ Holdings:
 ${summary.table}
 ${cashBlock}
 ${formatCanonicalPortfolioBlock(summary?.canonical)}
+${formatUpswitchBlockSafe(summary?.upswitch)}
 ${alertsBlock}
 ${formatLessonsBlock(lessons)}
 ${formatMacroFredBlock(macroFred)}
@@ -3111,6 +3123,30 @@ export async function generateBriefing(profile) {
   ]);
   const monitorAlerts = monitorRes?.alerts || [];
   const monitorStopHitRecs = monitorRes?.stopHitRecs || [];
+
+  // Portfolio upswitch engine — every held position scored on the same
+  // multi-factor composite as candidates, then each weakest incumbent
+  // paired with strongest challenger under a sleeve-specific hurdle
+  // (SWING +15, SPEC +20, INCOME +25, CORE +40). Renders §1b in the
+  // briefing OR an explicit "NONE — no challenger cleared the hurdle"
+  // line, so the briefing proves the engine actually looked rather
+  // than silently omitting the section. Fire-and-forget on error —
+  // upswitch is additive, never blocks the briefing.
+  let upswitchResult = null;
+  try {
+    const { computeUpswitchOpportunities } = await import("../services/stocksUpswitch.js");
+    upswitchResult = await computeUpswitchOpportunities({
+      canonical,
+      candidates: dailyPicks || [],
+    });
+    if (upswitchResult?.summary) {
+      console.log(`[upswitch] scored=${upswitchResult.summary.heldScored} vs ${upswitchResult.summary.candidatesConsidered} → upswitch=${upswitchResult.summary.upswitchCount} exit-to-cash=${upswitchResult.summary.exitToCashCount} keep=${upswitchResult.summary.keepCount}`);
+    }
+    // Attach to summary so buildBriefingPrompt can inject it into the
+    // AI prompt via ${summary?.upswitch}. Same pattern the canonical
+    // portfolio uses (summary.canonical).
+    if (summary) summary.upswitch = upswitchResult;
+  } catch (e) { console.warn("[upswitch] warn:", e?.message); }
   // Horizon review — per-open-rec status against its stated window.
   // Runs in a separate step because it fetches prices per rec symbol
   // and benefits from the priceMap that monitorOpenRecs already
