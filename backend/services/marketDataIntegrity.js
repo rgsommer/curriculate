@@ -40,10 +40,31 @@ import { fetchOne } from "../routes/stocksPrices.js";
 // ─── Sanity thresholds — tuned to be aggressive on obvious bugs but
 // forgiving of legitimate market events (earnings gaps, halts) ────
 const DEVIATION_MAX_PCT = 25;      // reject if today's price is >25% off prevClose (earnings gaps happen; 25% is the "something's seriously wrong" line)
-const STALENESS_MAX_MS = 15 * 60 * 1000; // 15 min — anything older than that is "please refetch"
+const STALENESS_MAX_MS = 15 * 60 * 1000; // 15 min — anything older than that during market hours is "please refetch"
+const OFFHOURS_STALENESS_MAX_MS = 5 * 24 * 60 * 60 * 1000; // 5 days — trap "feed hasn't updated since last week" during off-hours
 const MIN_PRICE = 0.10;            // sub-dime prices are usually penny-stock chaos or feed bugs
 const PRICE_MATCH_TOLERANCE_PCT = 3; // rec.entryPrice must be within 3% of verified price to survive validation
 const CROSS_SOURCE_HIGH_CONFIDENCE_MAX_PCT = 3; // per fetchOne
+
+// Coarse market-hours detector for US + CAN equities. Mon-Fri 09:30-16:00
+// America/New_York (broad — TSX runs the same 09:30-16:00 window in the
+// same timezone modulo DST). Not accounting for holidays; a holiday-day
+// quote will simply be "off-hours" which is the safer default.
+function isUsCanadaMarketOpen(nowMs = Date.now()) {
+  const d = new Date(nowMs);
+  // Use toLocaleString to get NY-local hours + weekday without a dep.
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/New_York",
+    hour: "numeric", minute: "numeric", weekday: "short", hour12: false,
+  }).formatToParts(d);
+  const get = (t) => parts.find(p => p.type === t)?.value;
+  const wd = get("weekday");            // "Mon".."Sun"
+  const hh = Number(get("hour"));
+  const mm = Number(get("minute"));
+  if (wd === "Sat" || wd === "Sun") return false;
+  const minutes = hh * 60 + mm;
+  return minutes >= 570 && minutes < 960; // 09:30 (570) to 16:00 (960)
+}
 
 const CACHE = new Map(); // key `${ticker}|${currency}` → { at: ms, result }
 const CACHE_TTL_MS = 60 * 1000;
@@ -106,7 +127,7 @@ export async function getVerifiedPrice(ticker, currency = "USD") {
     return result;
   }
 
-  const { price, priorClose, changePct, currency: quotedCurrency, confidence, sources, disagreementPct } = quote || {};
+  const { price, priorClose, changePct, currency: quotedCurrency, confidence, sources, disagreementPct, quoteTsMs } = quote || {};
 
   // Gate 1 — price must exist and be minimally sane.
   if (!Number.isFinite(price) || price <= 0) {
@@ -120,6 +141,42 @@ export async function getVerifiedPrice(ticker, currency = "USD") {
     };
     CACHE.set(cacheKey, { at: now, result });
     return result;
+  }
+
+  // Gate 1b — quote-freshness gate on the UPSTREAM observation
+  // timestamp (not fetch time). During market hours a quote older than
+  // STALENESS_MAX_MS means the feed itself is stale and we cannot
+  // trust it for an actionable rec — refuse. Off-hours we still trap
+  // "the feed hasn't updated in DAYS" via OFFHOURS_STALENESS_MAX_MS.
+  const marketOpen = isUsCanadaMarketOpen(now);
+  if (Number.isFinite(quoteTsMs) && quoteTsMs > 0) {
+    const ageMs = now - quoteTsMs;
+    const limitMs = marketOpen ? STALENESS_MAX_MS : OFFHOURS_STALENESS_MAX_MS;
+    if (ageMs > limitMs) {
+      const result = {
+        ok: false,
+        ticker: resolvedTicker,
+        requestedTicker: ticker,
+        reason: marketOpen ? "quote-stale-during-market-hours" : "quote-stale-offhours",
+        detail: `Upstream quote timestamp ${new Date(quoteTsMs).toISOString()} is ${Math.round(ageMs / 60000)} min old (limit ${Math.round(limitMs / 60000)} min, market ${marketOpen ? "OPEN" : "CLOSED"}). Source(s): ${(sources || []).join(",")}`,
+        warnings,
+        quoteTsMs,
+        quoteAgeMs: ageMs,
+      };
+      CACHE.set(cacheKey, { at: now, result });
+      return result;
+    }
+    // Not stale enough to block, but close-to-limit gets a warning.
+    if (marketOpen && ageMs > STALENESS_MAX_MS / 2) {
+      warnings.push(`quote is ${Math.round(ageMs / 60000)}min old (limit ${Math.round(STALENESS_MAX_MS / 60000)}min during market hours)`);
+    }
+  } else {
+    // Upstream didn't provide a timestamp — we can't verify freshness.
+    // This is a warning during market hours (feed provider issue) and
+    // silent off-hours (routine).
+    if (marketOpen) {
+      warnings.push("upstream quote missing observation timestamp — freshness cannot be verified");
+    }
   }
   if (price < MIN_PRICE) {
     warnings.push(`sub-\$${MIN_PRICE.toFixed(2)} price ($${price.toFixed(4)}) — verify manually before acting`);
@@ -156,7 +213,19 @@ export async function getVerifiedPrice(ticker, currency = "USD") {
     prevClose: Number.isFinite(priorClose) ? priorClose : null,
     changePct: Number.isFinite(changePct) ? changePct : deviationPct,
     currency: quotedCurrency || currency,
-    ts: new Date().toISOString(),
+    // `fetchedAt` = when WE observed the quote at our server.
+    // `quoteTsMs` / `quoteObservedAt` = when the EXCHANGE observed the
+    // quote (from Yahoo's regularMarketTime / FMP's timestamp). These
+    // are distinct and downstream staleness gates use the exchange
+    // observation time, not the fetch time. See Gate 1b above.
+    fetchedAt: new Date(now).toISOString(),
+    quoteTsMs: Number.isFinite(quoteTsMs) ? quoteTsMs : null,
+    quoteObservedAt: Number.isFinite(quoteTsMs) ? new Date(quoteTsMs).toISOString() : null,
+    quoteAgeMs: Number.isFinite(quoteTsMs) ? (now - quoteTsMs) : null,
+    marketOpen,
+    // Legacy `ts` field preserved for callers that read it — set to
+    // the exchange observation time when available, else fetch time.
+    ts: Number.isFinite(quoteTsMs) ? new Date(quoteTsMs).toISOString() : new Date(now).toISOString(),
     sources: sources || [],
     confidence: confidence || "unknown",
     deviationPct,
@@ -224,7 +293,13 @@ export async function verifyRecPrice(rec) {
 export const INTEGRITY_CONSTANTS = {
   DEVIATION_MAX_PCT,
   STALENESS_MAX_MS,
+  OFFHOURS_STALENESS_MAX_MS,
   MIN_PRICE,
   PRICE_MATCH_TOLERANCE_PCT,
   CROSS_SOURCE_HIGH_CONFIDENCE_MAX_PCT,
 };
+
+// Test helper: exposed for injection-fault tests to force the market-
+// open state without waiting for the clock. Not called by production
+// code paths.
+export const __TEST_ONLY__ = { isUsCanadaMarketOpen };

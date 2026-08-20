@@ -10720,8 +10720,9 @@ function AlphaView({ sessionToken, user }) {
       <div className="sa-card" style={{ padding: 14, marginBottom: 14 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Rec-population alpha vs benchmarks</div>
         <div style={{ fontSize: 11, color: "var(--sa-muted)", marginBottom: 10 }}>
-          Equal-weighted mean return of BUY/HOLD recs in each window, minus benchmark's return over the same window.
-          Positive = engine beat the ETF. Negative = you'd have done better in the ETF.
+          Recommendation-matched alpha: for every rec, benchmark return is measured over that rec's own <em>generatedAt → exit/asOf</em> window,
+          alpha = rec_return − matched_benchmark_return, then averaged across recs in the window.
+          Positive = engine beat the ETF over the same holding period. Negative = you'd have done better in the ETF.
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", fontSize: 12, borderCollapse: "collapse" }}>

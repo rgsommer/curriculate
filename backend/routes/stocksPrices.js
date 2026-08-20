@@ -41,7 +41,13 @@ async function fetchOneYahoo(ticker) {
       meta.regularMarketPreviousClose ??
       null;
     const changePct = prevClose ? ((price - prevClose) / prevClose) * 100 : null;
-    return { price, currency: meta.currency || "USD", changePct, priorClose: prevClose };
+    // regularMarketTime is Yahoo's own timestamp (epoch seconds) for
+    // WHEN the quote was observed at the exchange — distinct from
+    // when WE fetched it. Downstream staleness gates must compare
+    // against this, not fetch time. If Yahoo omits it (rare), leave
+    // null so callers can decide whether to trust the quote.
+    const quoteTsMs = Number.isFinite(meta.regularMarketTime) ? meta.regularMarketTime * 1000 : null;
+    return { price, currency: meta.currency || "USD", changePct, priorClose: prevClose, quoteTsMs };
   } finally {
     clearTimeout(tid);
   }
@@ -64,11 +70,16 @@ async function fetchOneFmp(ticker) {
     const j = await r.json();
     const row = Array.isArray(j) ? j[0] : null;
     if (!row || !Number.isFinite(row.price) || row.price <= 0) return null;
+    // FMP's `timestamp` is the observation time in epoch seconds.
+    // Same purpose as Yahoo's regularMarketTime — the moment the
+    // quote was measured, not when we fetched it.
+    const quoteTsMs = Number.isFinite(row.timestamp) ? row.timestamp * 1000 : null;
     return {
       price: row.price,
       currency: row.currency || null, // FMP doesn't always report — Yahoo is authoritative here
       changePct: Number.isFinite(row.changesPercentage) ? row.changesPercentage : null,
       priorClose: Number.isFinite(row.previousClose) ? row.previousClose : null,
+      quoteTsMs,
     };
   } catch { return null; } finally { clearTimeout(tid); }
 }
@@ -117,13 +128,22 @@ export async function fetchOne(ticker) {
   if (confidence === "medium") {
     console.log(`[stocks-prices] ${ticker}: Yahoo=$${yp} vs FMP=$${fp} — medium confidence (${(disagreementPct * 100).toFixed(1)}% apart)`);
   }
+  // Take the FRESHER of the two upstream timestamps. Downstream
+  // staleness gate uses this to decide whether the quote is trustable
+  // for an actionable rec (see marketDataIntegrity.js).
+  const quoteTsMs = Math.max(
+    Number.isFinite(yahoo.quoteTsMs) ? yahoo.quoteTsMs : 0,
+    Number.isFinite(fmp.quoteTsMs) ? fmp.quoteTsMs : 0,
+  ) || null;
   return {
     price: yp, // Yahoo remains the authoritative price value; FMP's role is verification.
     currency: yahoo.currency,
     changePct: yahoo.changePct,
+    priorClose: yahoo.priorClose ?? fmp.priorClose ?? null,
     confidence,
     sources: ["yahoo", "fmp"],
     disagreementPct: Number((disagreementPct * 100).toFixed(2)),
+    quoteTsMs,
   };
 }
 

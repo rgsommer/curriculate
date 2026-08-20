@@ -218,9 +218,24 @@ function safeClassify(rec) {
   } catch { return null; }
 }
 
-// Rec-population alpha vs a benchmark: mean rec return minus benchmark
-// return over the same [window-start, window-end] period. Uses only
-// BUY / HOLD recs (SELL exits aren't "alpha" positions to hold).
+// Rec-population alpha vs benchmarks — RECOMMENDATION-MATCHED window.
+//
+// The previous version compared the mean rec return against the
+// benchmark's return over the entire lookback window. That was
+// apples-to-oranges: a rec generated 8 days ago and a rec generated
+// 88 days ago were both compared to the same 90-day SPY return.
+//
+// Correct method (per audit feedback #3):
+//   for each rec r in window:
+//     bench_r = benchmark return over [r.generatedAt, r.exitOrAsOf]
+//     alpha_r = r.returnPct - bench_r
+//   report average alpha_r (with SE for a proper CI)
+//
+// This makes each rec its own honest comparison — "would you have done
+// better in SPY over the same holding period?" — and prevents the
+// misleading "engine +4% vs SPY +12%" artifact when the engine's recs
+// were all short-lived recent trades and SPY was up over the long
+// period.
 async function computeAlphaVsBenchmarks({ recs, windowDays, asOf }) {
   const windowStart = new Date(asOf.getTime() - windowDays * 86400000);
   const inWindow = recs.filter(r => {
@@ -229,28 +244,89 @@ async function computeAlphaVsBenchmarks({ recs, windowDays, asOf }) {
     return t >= windowStart && t <= asOf;
   });
   if (inWindow.length === 0) {
-    return { windowDays, n: 0, meanRecReturn: null, benchmarks: {}, alpha: {} };
+    return { windowDays, n: 0, meanRecReturn: null, meanBenchmark: {}, meanAlpha: {}, alphaSE: {}, alphaCI95: {} };
   }
   const meanRecReturn = inWindow.reduce((s, r) => s + r.returnPct, 0) / inWindow.length;
 
-  // Benchmark: compound return from windowStart→asOf. Approximation
-  // that each rec was held for the full window; refine later by
-  // horizon-matching if outcomes prove alpha exists.
-  const benchmarks = {};
-  const alpha = {};
-  const startYmd = windowStart.toISOString().slice(0, 10);
-  const endYmd = asOf.toISOString().slice(0, 10);
+  // Load benchmark maps once; reuse across recs.
+  const benchMaps = {};
   for (const bench of BENCHMARK_TICKERS) {
-    const map = await benchmarkDailyMap(bench).catch(() => null);
-    if (!map) { benchmarks[bench] = null; alpha[bench] = null; continue; }
-    const startClose = findAtOrBefore(map, startYmd);
-    const endClose = findAtOrBefore(map, endYmd);
-    if (!startClose || !endClose) { benchmarks[bench] = null; alpha[bench] = null; continue; }
-    const benchReturn = ((endClose - startClose) / startClose) * 100;
-    benchmarks[bench] = benchReturn;
-    alpha[bench] = meanRecReturn - benchReturn;
+    benchMaps[bench] = await benchmarkDailyMap(bench).catch(() => null);
   }
-  return { windowDays, n: inWindow.length, meanRecReturn, benchmarks, alpha };
+
+  // Per-rec alpha arrays, one per benchmark.
+  const perBenchAlphas = Object.fromEntries(BENCHMARK_TICKERS.map(b => [b, []]));
+  const perBenchReturns = Object.fromEntries(BENCHMARK_TICKERS.map(b => [b, []]));
+
+  for (const r of inWindow) {
+    const startTs = new Date(r.generatedAt);
+    // Exit time: hitAt if closed; else asOf for still-open recs.
+    const exitTs = r.hitAt ? new Date(r.hitAt) : asOf;
+    // Sanity: exit must be after start; otherwise skip this rec.
+    if (!(exitTs > startTs)) continue;
+    const startYmd = startTs.toISOString().slice(0, 10);
+    const endYmd = exitTs.toISOString().slice(0, 10);
+
+    for (const bench of BENCHMARK_TICKERS) {
+      const map = benchMaps[bench];
+      if (!map) continue;
+      const startClose = findAtOrBefore(map, startYmd);
+      const endClose = findAtOrBefore(map, endYmd);
+      if (!Number.isFinite(startClose) || !Number.isFinite(endClose) || startClose <= 0) continue;
+      const benchReturn = ((endClose - startClose) / startClose) * 100;
+      perBenchReturns[bench].push(benchReturn);
+      perBenchAlphas[bench].push(r.returnPct - benchReturn);
+    }
+  }
+
+  const meanBenchmark = {};
+  const meanAlpha = {};
+  const alphaSE = {};
+  const alphaCI95 = {};
+  const alphaN = {};
+
+  for (const bench of BENCHMARK_TICKERS) {
+    const alphas = perBenchAlphas[bench];
+    const rets = perBenchReturns[bench];
+    if (alphas.length === 0) {
+      meanBenchmark[bench] = null;
+      meanAlpha[bench] = null;
+      alphaSE[bench] = null;
+      alphaCI95[bench] = null;
+      alphaN[bench] = 0;
+      continue;
+    }
+    const meanRet = rets.reduce((s, x) => s + x, 0) / rets.length;
+    const meanAlp = alphas.reduce((s, x) => s + x, 0) / alphas.length;
+    meanBenchmark[bench] = meanRet;
+    meanAlpha[bench] = meanAlp;
+    alphaN[bench] = alphas.length;
+    if (alphas.length >= 2) {
+      const variance = alphas.reduce((s, x) => s + (x - meanAlp) ** 2, 0) / (alphas.length - 1);
+      const se = Math.sqrt(variance / alphas.length);
+      alphaSE[bench] = se;
+      alphaCI95[bench] = [meanAlp - 1.96 * se, meanAlp + 1.96 * se];
+    } else {
+      alphaSE[bench] = null;
+      alphaCI95[bench] = null;
+    }
+  }
+
+  return {
+    windowDays,
+    n: inWindow.length,
+    meanRecReturn,
+    meanBenchmark,
+    meanAlpha,
+    alphaSE,
+    alphaCI95,
+    alphaN,
+    method: "rec-matched-window",
+    // Legacy keys retained for backward-compatibility with any consumer
+    // that hasn't migrated to the new field names.
+    benchmarks: meanBenchmark,
+    alpha: meanAlpha,
+  };
 }
 
 function findAtOrBefore(map, ymd) {
