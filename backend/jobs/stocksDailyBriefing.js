@@ -2429,7 +2429,7 @@ Total portfolio (CAD): ~$${Math.round(summary.total).toLocaleString()} ← FOR Y
 Holdings:
 ${summary.table}
 ${cashBlock}
-${formatCanonicalPortfolioBlock(canonical)}
+${formatCanonicalPortfolioBlock(summary?.canonical)}
 ${alertsBlock}
 ${formatLessonsBlock(lessons)}
 ${formatMacroFredBlock(macroFred)}
