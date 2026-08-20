@@ -875,6 +875,42 @@ async function computeQuantSignals(profile, topN = 8) {
 // "LLM Separation" — the AI may explain these numbers but MUST NOT
 // invent its own. Every percentage the AI cites downstream should
 // trace back to a field in this block.
+// Compact variant for intraday / EOD prompts — sleeves + top-5 positions
+// + reconciliation only. Same binding rule ("narrate, don't recompute")
+// but keeps token count down for the ~1k-token intraday call.
+export function formatCanonicalPortfolioBlockCompact(canonical) {
+  if (!canonical) return "";
+  const parts = [];
+  parts.push("CANONICAL PORTFOLIO (source of truth — cite these numbers, don't invent your own):");
+  parts.push(`  portfolio_total_cad: $${Math.round(canonical.totals.portfolio_total_cad).toLocaleString()} · cash_pct: ${canonical.cash.cash_pct.toFixed(2)}%`);
+  const topN = canonical.positions.slice(0, 5);
+  if (topN.length > 0) {
+    parts.push("  Top positions (weight · sleeve · sector · dist_to_stop):");
+    for (const p of topN) {
+      const stop = Number.isFinite(p.distance_to_hard_stop_pct)
+        ? ` · stop ${p.distance_to_hard_stop_pct.toFixed(1)}%`
+        : "";
+      parts.push(`    ${p.ticker}: ${p.position_weight_pct.toFixed(1)}% · ${p.sleeve} · ${p.sector}${stop}`);
+    }
+  }
+  parts.push("  Sleeves (weight vs target):");
+  for (const s of canonical.sleeves) {
+    if (s.sleeve_target_pct == null) continue;
+    const varStr = s.sleeve_variance_pp != null
+      ? `${s.sleeve_variance_pp >= 0 ? "+" : ""}${s.sleeve_variance_pp.toFixed(1)}pp`
+      : "—";
+    parts.push(`    ${s.sleeve}: ${s.sleeve_weight_pct.toFixed(1)}% (target ${s.sleeve_target_pct}%, var ${varStr})`);
+  }
+  if ((canonical.reconciliation.warnings || []).length > 0) {
+    parts.push("  ⚠ Reconciliation warnings:");
+    for (const w of canonical.reconciliation.warnings.slice(0, 3)) {
+      parts.push(`    - [${w.code}] ${w.message}`);
+    }
+  }
+  parts.push("BINDING RULE: every % you cite in the recap must equal a value above; do not restate weights differently.");
+  return parts.join("\n");
+}
+
 function formatCanonicalPortfolioBlock(canonical) {
   if (!canonical) return "";
   const parts = [];

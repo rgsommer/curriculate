@@ -22,7 +22,7 @@ import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import StocksPositionStopFire from "../models/StocksPositionStopFire.js";
 import StocksSystemHeartbeat from "../models/StocksSystemHeartbeat.js";
-import { emailBriefing, portfolioSummary } from "./stocksDailyBriefing.js";
+import { emailBriefing, portfolioSummary, formatCanonicalPortfolioBlockCompact } from "./stocksDailyBriefing.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { getRealtimeQuote } from "../services/stocksIntradayFmp.js";
 
@@ -228,12 +228,15 @@ async function buildEodUserMessage(profile) {
     (stops?.hardStopHit?.length || 0) > 0;
 
   const summary = portfolioSummary(profile);
+  const canonical = summary.canonical; // Phase 3+ retrofit
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
   const userMessage = `End-of-day recap for ${profile.email}. Today: ${today}.
 
 Holdings (reference only — do NOT restate the full book):
 ${summary.table}
+
+${formatCanonicalPortfolioBlockCompact(canonical)}
 
 ${formatFillsBlock(fills)}
 

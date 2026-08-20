@@ -30,6 +30,7 @@ import {
   portfolioSummary,
   emailBriefing,
   monitorOpenRecs,
+  formatCanonicalPortfolioBlockCompact,
 } from "./stocksDailyBriefing.js";
 import {
   monitorPositionStops,
@@ -109,6 +110,7 @@ function buildIntradayUserMessage({ profile, slot, ymd, stops, freshEightKs, reg
       ).join("\n")}`;
 
   const summary = portfolioSummary(profile);
+  const canonical = summary.canonical; // Phase 3+ retrofit
   const noTouchNote = noTouchMode
     ? `\nNO-TOUCH MODE: this user cannot adjust orders during the session. Frame any action item as "queue for tomorrow morning before 8:45 AM ET" rather than "act now." The only intraday item worth flagging is a HARD-STOP hit — everything else should be brief and framed as tomorrow's queue.\n`
     : "";
@@ -116,6 +118,8 @@ function buildIntradayUserMessage({ profile, slot, ymd, stops, freshEightKs, reg
 ${noTouchNote}
 Holdings (for reference — do NOT restate the whole book, only tickers that show up in the blocks below):
 ${summary.table}
+
+${formatCanonicalPortfolioBlockCompact(canonical)}
 
 ${stopsBlock}
 
