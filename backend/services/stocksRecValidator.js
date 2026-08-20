@@ -304,6 +304,35 @@ function ruleExpectancyFloor({ rec, ctx }) {
 // generateBriefing, so validator rules stay synchronous). Missing
 // livePrices entry → rule no-ops (don't block on missing data).
 const PRICE_DRIFT_THRESHOLD = 0.006; // 0.6% — tightened again per Grok Aug rule set. Post-intraday recs (limit set from the current print) shouldn't drift more than 0.5-1.0% by the time validation runs. Anything wider almost always means AI wrote entry from stale technicals or a pre-market snapshot that has since moved.
+// Phase 1 hard gate: every BUY / ADD rec must have a verified live
+// price in ctx.livePrices (stamped provenance:"verified" by the
+// integrity layer). If the price isn't there, the market-data layer
+// refused it — likely a bad ticker resolution, cross-source
+// disagreement, or a sub-dime feed anomaly. Do not let a rec ride on
+// an unverified price. SELL / TRIM / EXIT skip the gate; those are
+// operator-mandated exits and shouldn't be blocked by transient feed
+// noise on the way out.
+function ruleMarketDataProvenance({ rec, ctx }) {
+  const action = String(rec.action || "").toUpperCase();
+  if (action !== "BUY" && action !== "ADD") return { ok: true };
+  const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
+  if (!live) {
+    return {
+      ok: false,
+      reason: "no-verified-price",
+      detail: `${rec.action} ${rec.ticker}: market-data integrity layer returned no verified price (bad ticker, cross-source disagreement, or feed anomaly). Refusing to accept a rec on an unverifiable price.`,
+    };
+  }
+  if (live.provenance !== "verified") {
+    return {
+      ok: false,
+      reason: "unverified-price-provenance",
+      detail: `${rec.action} ${rec.ticker}: live price present but provenance="${live.provenance || "unknown"}" (expected "verified"). Every rec must trace to marketDataIntegrity.getVerifiedPrice().`,
+    };
+  }
+  return { ok: true };
+}
+
 function ruleLivePriceDrift({ rec, ctx }) {
   if (!rec.entryPrice || !rec.ticker) return { ok: true };
   // Exits (SELL / TRIM / EXIT) are mandated exits — the operator
@@ -585,6 +614,7 @@ const RULES = [
   ruleCoreGapWidening,
   ruleSingleNameCap,
   ruleRegimeHostileNoNewSwingSpec,
+  ruleMarketDataProvenance,
   ruleLivePriceDrift,
   ruleGapExtension,
   ruleMinRewardRisk,
@@ -1079,22 +1109,42 @@ function resolveExchangeSymbol(ticker, currency) {
 // cycle that would form if this file top-level imported stocksPrices.
 export async function fetchLivePricesForRecs(recs) {
   if (!Array.isArray(recs) || recs.length === 0) return {};
-  const { fetchOne } = await import("../routes/stocksPrices.js");
-  // Dedupe per (rec-ticker, currency). Two recs on the same bare ticker
-  // in different currency accounts (rare but possible) both get their
-  // correct listings; the keyed output still maps back to the bare
+  // Phase 1: route every validator live-price lookup through the
+  // market-data integrity layer instead of raw fetchOne. Same source
+  // (fetchOne under the hood) plus explicit sanity gates + 60s cache
+  // dedup + a "provenance: verified" stamp downstream rules use to
+  // prove the price wasn't invented by the LLM.
+  const { getVerifiedPrice } = await import("./marketDataIntegrity.js");
+  // Dedupe per (bare rec-ticker, currency). Two recs on the same bare
+  // ticker in different currency accounts (rare but possible) each
+  // resolve independently; the output map keys back to the bare
   // ticker the drift rule looks up.
-  const bareByExchange = new Map(); // exchangeSym → bare rec ticker
+  const seen = new Map(); // `${bare}|${ccy}` → { bare, ccy }
   for (const r of recs) {
     const bare = String(r.ticker || "").toUpperCase().trim();
     if (!bare) continue;
-    const sym = resolveExchangeSymbol(bare, r.entryCurrency || "USD");
-    if (!bareByExchange.has(sym)) bareByExchange.set(sym, bare);
+    const ccy = r.entryCurrency || "USD";
+    const key = `${bare}|${ccy}`;
+    if (!seen.has(key)) seen.set(key, { bare, ccy });
   }
-  const entries = await Promise.all([...bareByExchange.entries()].map(async ([sym, bare]) => {
+  const entries = await Promise.all([...seen.values()].map(async ({ bare, ccy }) => {
     try {
-      const live = await fetchOne(sym);
-      return [bare, live];
+      const v = await getVerifiedPrice(bare, ccy);
+      if (!v.ok) return [bare, null];
+      // Shape-compatible with the previous fetchOne output so
+      // ruleLivePriceDrift keeps working; plus provenance + warnings
+      // for the new ruleMarketDataProvenance gate.
+      return [bare, {
+        price: v.price,
+        priorClose: v.prevClose,
+        changePct: v.changePct,
+        currency: v.currency,
+        sources: v.sources,
+        confidence: v.confidence,
+        provenance: "verified",
+        warnings: v.warnings || [],
+        resolvedTicker: v.ticker,
+      }];
     } catch { return [bare, null]; }
   }));
   const out = {};

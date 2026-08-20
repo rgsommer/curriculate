@@ -159,6 +159,7 @@ async function validateAndCorrectBriefing(md, portfolio) {
 }
 import { getTranscriptsForTopHoldings, formatTranscriptsBlock } from "../services/stocksEarningsTranscripts.js";
 import { buildAllAccountReports, formatAllReportsMarkdown, formatAccountReportMarkdown, isLastTradingDayOfMonth } from "../services/stocksMonthlyReport.js";
+import { auditBriefingBeforeSend, summarizeAuditFailure } from "../services/briefingAudit.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 
 // Pull the user's starred discovery candidates and format them as a
@@ -4353,6 +4354,43 @@ export async function sendBriefingForUser(p, sendKey) {
     // banner if any violations flag. Best-effort; never blocks.
     const audit = await auditBriefingWithCritic(md, p);
     md = audit.markdown;
+
+    // Phase 1 (spec §20 + §24): deterministic pre-send audit gate.
+    // Every price verified against the market-data integrity layer;
+    // every stop/target > 0; no phantom SELL; no BUY of a blocked
+    // ticker; no ticker contradicting itself across DO TODAY and
+    // TRAIL STOP REVIEW. If anything blocks, we DO NOT send.
+    // Stamp the failure so the diagnostic panel surfaces it and the
+    // next tick will retry after the underlying issue is fixed.
+    try {
+      const preSendAudit = await auditBriefingBeforeSend({
+        email: p.email,
+        md,
+        acceptedRecs: genResult.acceptedRecs || [],
+        rejectedRecs: genResult.rejectedRecs || [],
+        positions: p.positions || [],
+      });
+      if (!preSendAudit.ok) {
+        const summary = summarizeAuditFailure(preSendAudit);
+        await recordFail("preSendAudit", new Error(summary));
+        console.warn(`[stocks-briefing] ⛔ ${p.email} @ ${sendKey} — suppressed by pre-send audit (${preSendAudit.blockers.length} blocker(s))`);
+        for (const b of preSendAudit.blockers.slice(0, 5)) {
+          console.warn(`  [${b.check}] ${b.reason}`);
+        }
+        // Clear attempt key so the retry cooldown gate doesn't lock
+        // us out of retrying this same slot after a fix.
+        return;
+      }
+      if ((preSendAudit.warnings || []).length > 0) {
+        console.log(`[stocks-briefing] audit warnings for ${p.email}: ${preSendAudit.warnings.length}`);
+      }
+    } catch (e) {
+      // The audit itself crashed — that's a bug, but not one we want
+      // to convert into a permanent send-block. Log loudly and let
+      // the send proceed; the critic + validator gates upstream still
+      // apply.
+      console.error(`[stocks-briefing] pre-send audit crashed for ${p.email}:`, e?.message);
+    }
 
     const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
     try { await emailBriefing({ to: p.email, subject, md }); }
