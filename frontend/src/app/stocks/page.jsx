@@ -2427,15 +2427,68 @@ function RegimeAndUoaChips({ data }) {
 // Five guardrail dimensions rolled up into one traffic light, computed
 // entirely client-side from data the Dashboard already has in hand:
 //   • Risk budget (portfolio VaR vs the user's own limit)
-//   • Sleeve balance (drift from 80/15/5 targets)
+//   • Sleeve balance (drift from 75/5/15/5 CORE/SWING/INCOME/SPEC targets)
 //   • Concentration (largest single position as % of book)
 //   • Cash zone (LEAN / HEALTHY / AMPLE / IDLE-DRAG)
 //   • Loss cooldown (recent drawdown / streak triggering discipline pause)
 // Overall = worst of the five. Each tile is colour-coded and carries a
 // one-line "why" so the trader can act on the red ones without hunting
 // through five cards.
+//
+// FAIL-CLOSED: when canonical portfolio reconciliation itself fails
+// (sleeves + cash don't sum to 100%, or a position was skipped for a
+// missing price), the chip does NOT paint any of the five dimensions
+// green — it degrades to "DATA ISSUE" and outranks every other status.
+// Nothing worse than the operator reading "all guardrails clear" while
+// the underlying arithmetic doesn't add up.
 function PortfolioHealthChip({ user, regimeAndUoa }) {
   const fx = user.fxUsdCad || 1.37;
+
+  // Canonical reconciliation gate. If the backend's canonical engine
+  // failed to reconcile the portfolio (sleeves + cash off 100%, or a
+  // position dropped), do not paint any of the five guardrails green —
+  // the numbers they'd be based on are known-inconsistent.
+  const canonical = user?.canonical || null;
+  const reconciliationPassed = canonical?.reconciliation?.passed === true;
+  if (canonical && !reconciliationPassed) {
+    const recon = canonical.reconciliation || {};
+    const detailBits = [];
+    if (Number.isFinite(recon.checkTotalPct)) {
+      detailBits.push(`sleeves + cash = ${recon.checkTotalPct.toFixed(1)}% (expected 100%)`);
+    }
+    if (Array.isArray(recon.warnings) && recon.warnings.length > 0) {
+      detailBits.push(recon.warnings.slice(0, 2).join("; "));
+    }
+    const detail = detailBits.join(" · ") || "canonical reconciliation failed";
+    return (
+      <div style={{
+        marginBottom: 12,
+        background: "#fef2f2",
+        border: "1px solid #fecaca",
+        borderRadius: 10,
+        padding: "10px 12px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 6 }}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>🩺 Portfolio Health</span>
+          <span style={{
+            padding: "3px 10px",
+            borderRadius: 99,
+            fontWeight: 800,
+            fontSize: 11.5,
+            letterSpacing: ".04em",
+            background: "#991b1b",
+            color: "#fff",
+          }}>DATA ISSUE</span>
+        </div>
+        <div style={{ fontSize: 12, color: "#991b1b", lineHeight: 1.4 }}>
+          Portfolio reconciliation failed — the five guardrails cannot be trusted while the underlying totals disagree. Fix the upstream position / cash math (see Advice diagnostics) before treating any health signal as authoritative.
+        </div>
+        <div style={{ marginTop: 6, fontSize: 11, color: "#7f1d1d", opacity: 0.85 }}>
+          {detail}
+        </div>
+      </div>
+    );
+  }
 
   // Rounding-error tolerance in CAD. A guardrail whose dollar-magnitude
   // breach is under this floor gets treated as OK even if the % would

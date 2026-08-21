@@ -687,8 +687,14 @@ function ruleBatchPairedRedeploy(recs, ctx) {
   if (sells.length === 0 && list.filter(r => r.action === "BUY").length === 0) return [];
 
   // Pool of CORE BUYs available as redeploy destinations. Each CORE
-  // BUY can only cover ONE SELL (proceeds don't multiply); pairing
-  // preference is same-account-first, then any-account fallback.
+  // BUY can only cover ONE SELL (proceeds don't multiply). Pairing
+  // requires SAME ACCOUNT and SAME CURRENCY — no any-account fallback,
+  // no cross-currency fallback. Proceeds do not automatically cross
+  // account or currency boundaries; an any-account "match" that then
+  // relies on a downstream reject to save the trade is architecturally
+  // wrong. If no eligible destination exists in the exact bucket, the
+  // SELL is naked and the operator has to either add a matching BUY
+  // or drop the SELL.
   const coreBuys = list
     .map((r, i) => ({ r, i }))
     .filter(({ r }) => isCoreBuy(r));
@@ -696,41 +702,42 @@ function ruleBatchPairedRedeploy(recs, ctx) {
 
   const rejections = [];
 
-  // For each SELL: find a CORE BUY match, prefer same-account.
+  const ccyOf = (r) => String(r?.entryCurrency || r?.currency || "").toUpperCase();
+
+  // For each SELL: find a CORE BUY that is in the SAME account AND
+  // SAME currency. No fallback. Match one-to-one.
   for (const { r: sell, i: sellIdx } of sells) {
-    let match = coreBuys.find(({ r, i }) => !usedCoreBuyIdx.has(i) && sameAccount(sell.account, r.account));
-    if (!match) match = coreBuys.find(({ i }) => !usedCoreBuyIdx.has(i));
-    if (!match && coreBuys.length > 0) match = coreBuys[0]; // shared redeploy still better than none
+    const sellCcy = ccyOf(sell);
+    const match = coreBuys.find(({ r, i }) => {
+      if (usedCoreBuyIdx.has(i)) return false;
+      // Same account (or missing on both, treat as compatible pending
+      // full account threading — sameAccount already handles nulls).
+      if (!sameAccount(sell.account, r.account)) return false;
+      // Same currency. If either side is missing currency, require
+      // both to be missing — do NOT silently cross currencies.
+      const buyCcy = ccyOf(r);
+      if (sellCcy || buyCcy) {
+        if (sellCcy !== buyCcy) return false;
+      }
+      return true;
+    });
 
     if (!match) {
       rejections.push({
         recIndex: sellIdx,
-        reason: "sell-no-redeploy-core-underweight",
+        reason: "sell-no-same-bucket-redeploy",
         detail:
-          `${sell.action} ${sell.ticker} has no companion CORE BUY in the same batch, ` +
-          `but CORE is ${coreGap.toFixed(1)}pp underweight. Pair this ${sell.action} with a ` +
-          `CORE BUY (XEQT / VUN / XIU / VOO / VTI / …) in the same account and currency, ` +
-          `or drop the ${sell.action} until a redeploy target is defined. Naked ${sell.action} rejected.`,
+          `${sell.action} ${sell.ticker} in ${sell.account || "?"} (${sellCcy || "?"}) ` +
+          `has no companion CORE BUY in the SAME account AND SAME currency in this batch, ` +
+          `and CORE is ${coreGap.toFixed(1)}pp underweight. Proceeds cannot cross account ` +
+          `or currency boundaries without an explicit FX/transfer leg — no fallback pairing. ` +
+          `Either add a CORE BUY (XEQT / VUN / XIU / VOO / VTI / …) in the SAME ` +
+          `${sell.account || "?"} ${sellCcy || ""} bucket, or drop the ${sell.action}.`,
       });
       continue;
     }
 
     usedCoreBuyIdx.add(match.i);
-
-    // Same-account mismatch reject (dormant until parser preserves
-    // account — see sameAccount comment). Keeps the "proceeds don't
-    // cross accounts" invariant enforceable end-to-end once account
-    // is threaded through the pipeline.
-    if (sell.account && match.r.account && !sameAccount(sell.account, match.r.account)) {
-      rejections.push({
-        recIndex: sellIdx,
-        reason: "sell-redeploy-account-mismatch",
-        detail:
-          `${sell.action} ${sell.ticker} in ${sell.account} is paired with CORE BUY ` +
-          `${match.r.ticker} in ${match.r.account}. Redeploy must stay in the same account ` +
-          `(proceeds do not automatically cross accounts). Rejected.`,
-      });
-    }
   }
 
   // Belt-and-suspenders: reject any non-CORE BUY at batch level while
