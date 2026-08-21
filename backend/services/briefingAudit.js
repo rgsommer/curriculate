@@ -64,6 +64,17 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
 
   // ─── 1 & 2: verify every accepted rec's entryPrice against the
   // integrity layer. This is the "no fabricated prices" gate.
+  //
+  // Exit-side recs (SELL / EXIT / TRIM) are exempt from the drift
+  // check: entryPrice on an exit is a reference number, not an
+  // execution price — the operator takes the market, whatever it is.
+  // Applying the drift gate to exits was blocking legitimate SELL
+  // mandates when the reference price captured at rec-time drifted
+  // past 3% by rec-render-time. Contamination detection (fabricated
+  // ticker prices) is still handled by verifyRecPrice's market-data-*
+  // rejection reasons, which we keep enforcing for every action —
+  // only the drift-specific rejection is downgraded for exits.
+  const EXIT_ACTIONS = new Set(["SELL", "EXIT", "TRIM"]);
   for (const rec of (acceptedRecs || [])) {
     if (!rec?.ticker) continue;
     let verified;
@@ -77,6 +88,18 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
       continue;
     }
     if (!verified.ok) {
+      const isExit = EXIT_ACTIONS.has(String(rec.action || "").toUpperCase());
+      const isDriftOnly = verified.rejectionReason === "rec-price-drift";
+      if (isExit && isDriftOnly) {
+        // Downgrade to a warning — the exit is still valid; the price
+        // reference just moved. Do not block the whole briefing.
+        warnings.push({
+          check: "rec-price-drift-on-exit",
+          ticker: rec.ticker,
+          detail: `${rec.action} ${rec.ticker}: ${verified.detail} (downgraded — exit-side rec, market takes fill)`,
+        });
+        continue;
+      }
       blockers.push({
         check: "rec-price-invalid",
         reason: `${rec.action || "?"} ${rec.ticker}: ${verified.rejectionReason}`,

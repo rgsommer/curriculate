@@ -1746,15 +1746,46 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   //    over-riding the hard-stop logic."
   // Skips positions already in confirmedStops (§1 SELL AT MARKET
   // already handles those) so we don't double-mandate the same ticker.
+  //
+  // ALSO skips positions that will be sold by the rec-stop-hit path
+  // below (line ~2164). Real defect surfaced by audit:
+  //     "DJT appears in both DO TODAY (SELL) AND TRAIL STOP REVIEW"
+  // DJT had both a hard-stop-hit SELL AT MARKET AND a TRAIL STOP
+  // REVIEW mandate. Two contradictory instructions on one ticker.
+  // We pre-compute the base-ticker set that WILL emit SELL AT MARKET
+  // from any path (position-monitor, rec-stop-hit) and skip trail
+  // reviews for those tickers.
   const stopHitTickerSet = new Set(
     (stopMonitor?.hardStopHit || []).map(r => String(r.ticker || "").toUpperCase())
   );
+  // Add base-tickers from rec-stop-hit recs that will actually emit
+  // SELL AT MARKET (non-TRAIL_SOFT severity). Mirrors the gate at
+  // line ~2180 so the two decisions can't diverge.
+  const willEmitSellBases = new Set(
+    (stopMonitor?.hardStopHit || []).map(r => String(r.ticker || "").toUpperCase().replace(/\..*$/, ""))
+  );
+  for (const stopRec of (monitorStopHitRecs || [])) {
+    if (stopRec.action !== "BUY") continue;
+    // Held check — no SELL if not held.
+    const held = (positions || []).some(p =>
+      String(p.ticker || "").toUpperCase().replace(/\..*$/, "") === stopRec.base && (p.qty || 0) > 0
+    );
+    if (!held) continue;
+    const sev = classifyStopSeverity({
+      ticker: stopRec.base,
+      drawdownPct: drawdownForTicker(stopRec.base),
+      isHardStopHit: hardStopHitBaseSet.has(stopRec.base),
+    });
+    if (sev !== "TRAIL_SOFT") willEmitSellBases.add(stopRec.base);
+  }
   const trailReviews = [];
   const coreTrailInformational = []; // CORE positions that breached — surfaced as A2 line only
   for (const p of (positions || [])) {
     const ticker = String(p.ticker || "").toUpperCase();
     if (!ticker || !(p.qty > 0)) continue;
     if (stopHitTickerSet.has(ticker)) continue; // already a hard-stop SELL mandate
+    const posBase = ticker.replace(/\..*$/, "");
+    if (willEmitSellBases.has(posBase)) continue; // will emit SELL AT MARKET below — no REVIEW
     const sig = (quantSignals || {})[ticker] || (quantSignals || {})[ticker.replace(/\..*$/, "")];
     const tech = sig?.tech;
     if (!tech || !tech.trailStopBreach) continue;
