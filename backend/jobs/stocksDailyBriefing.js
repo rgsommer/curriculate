@@ -2365,20 +2365,43 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // ─── § 3. ONE-LINE STATUS (5-second scan) ───
   // Moved above §4 Optional so the reader can glance at portfolio
   // posture before deciding whether to read any AI ideas.
+  // All four sleeves must appear on the Status line — omitting even one
+  // (typically SWING or INCOME) is a display bug that hides real
+  // allocation, and the audit gate blocks it. Numbers come straight
+  // from canonical sleeveBalance; no AI touch.
   const corePct = b?.actualPct?.core != null ? `${b.actualPct.core.toFixed(1)}%` : "n/a";
+  const swingPct = b?.actualPct?.swing != null ? `${b.actualPct.swing.toFixed(1)}%` : "n/a";
   const incomePct = b?.actualPct?.income != null ? `${b.actualPct.income.toFixed(1)}%` : "n/a";
   const specPct = b?.actualPct?.spec != null ? `${b.actualPct.spec.toFixed(1)}%` : "n/a";
   const coreGapStr = coreGapPp > 0.5 ? ` (gap −${coreGapPp.toFixed(1)}pp)` : "";
   const incomeGapPp = b?.actualPct?.income != null && b?.targetsPct?.income != null
     ? b.targetsPct.income - b.actualPct.income : 0;
   const incomeGapStr = incomeGapPp > 0.5 ? ` (gap −${incomeGapPp.toFixed(1)}pp)` : "";
-  const cashPctStr = cashPct != null && Number.isFinite(cashPct) ? `${cashPct.toFixed(0)}%` : "n/a";
+  const cashPctStr = cashPct != null && Number.isFinite(cashPct) ? `${cashPct.toFixed(1)}%` : "n/a";
   const stopsTotal = confirmedStops.length;
   const suspectStr = suspectStops.length > 0 ? ` (${suspectStops.length} suspect)` : "";
   const regimeStr = tradingRegime?.label || tradingRegime?.regime || "neutral";
   const newIdeasAllowed = (!coreLockActive && !specOver && !regimeHostile) ? "YES" : "BLOCKED";
+  // Reconciliation check — the four sleeve %s + cash % must land within
+  // rounding tolerance of 100. If they don't, canonical itself is
+  // inconsistent and the Status line is suppressed rather than shipped
+  // with wrong numbers. Per user directive: "If canonical itself does
+  // not reconcile, suppress the status rather than asking the LLM to
+  // repair it."
+  const partsForSum = [b?.actualPct?.core, b?.actualPct?.swing, b?.actualPct?.income, b?.actualPct?.spec, cashPct]
+    .filter(x => Number.isFinite(x));
+  const sleeveSum = partsForSum.reduce((s, x) => s + x, 0);
+  const reconcilesToHundred = partsForSum.length === 5 && Math.abs(sleeveSum - 100) <= 2.5;
   chunks.push("## 3. 📊 Status");
-  chunks.push(`CORE: ${corePct}${coreGapStr} · INCOME: ${incomePct}${incomeGapStr} · SPEC: ${specPct} · Cash: ${cashPctStr} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  if (reconcilesToHundred) {
+    chunks.push(`CORE: ${corePct}${coreGapStr} · SWING: ${swingPct} · INCOME: ${incomePct}${incomeGapStr} · SPEC: ${specPct} · Cash: ${cashPctStr} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  } else {
+    // Suppress the mix line — but keep the operationally-critical
+    // stops/regime/new-ideas info visible so the operator isn't blind
+    // just because sleeve numbers happen to disagree with cash today.
+    chunks.push(`_Sleeve mix suppressed — canonical did not reconcile to 100% (sum=${sleeveSum.toFixed(1)}%, missing fields=${5 - partsForSum.length}). Fix upstream cash/position math before this line ships._`);
+    chunks.push(`Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
+  }
   // Sector tilt one-liner — deterministic, no AI prose needed. Empty
   // when sector data is unavailable (silent, not a "n/a" line).
   const sectorTilt = formatSectorTiltLine(sectorRotation);

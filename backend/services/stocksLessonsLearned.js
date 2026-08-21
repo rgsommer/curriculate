@@ -161,30 +161,75 @@ export function formatLessonsBlock(lessons) {
   }
   if (actionLines.length) lines.push(`  By action: ${actionLines.join(" · ")}`);
 
-  // Best tickers
+  // Sample-size tiering for behavioural language:
+  //   n < 20         → INSUFFICIENT DATA (strip imperatives, note it)
+  //   20 ≤ n < 50    → EARLY SIGNAL (informational only, no verbs)
+  //   n ≥ 50         → CONCLUSION (imperatives permitted; audit gate
+  //                     still enforces its own strong-language rule)
+  // Audit gate's "PUSH HARDER"/"LEAN IN" phrase check requires n ≥ 50.
+  // Producers here MUST match that threshold or the audit will block
+  // the whole briefing.
+  function tierFor(n) {
+    if (!Number.isFinite(n) || n < 20) return "INSUFFICIENT";
+    if (n < 50) return "EARLY";
+    return "CONCLUSION";
+  }
+
+  // Best tickers — the sample is the sum of t.total across surviving names.
   if (lessons.bestTickers.length > 0) {
     const top = lessons.bestTickers.filter(t => t.avgPnl > 0);
     if (top.length > 0) {
-      lines.push(`  ✅ Strongest recs: ${top.map(t => `${t.ticker} (${t.wins}/${t.total}, avg +${t.avgPnl.toFixed(0)}%)`).join(", ")} — lean into these signals.`);
+      const topN = top.reduce((s, t) => s + (t.total || 0), 0);
+      const tier = tierFor(topN);
+      const detail = top.map(t => `${t.ticker} (${t.wins}/${t.total}, avg +${t.avgPnl.toFixed(0)}%)`).join(", ");
+      if (tier === "INSUFFICIENT") {
+        lines.push(`  ✅ Best-so-far names (INSUFFICIENT DATA, n=${topN} < 20): ${detail}. No behavioural conclusion.`);
+      } else if (tier === "EARLY") {
+        lines.push(`  ✅ Best-so-far names (EARLY SIGNAL, n=${topN}): ${detail}. Informational only — sample is too small to justify a size directive.`);
+      } else {
+        lines.push(`  ✅ Strongest recs (n=${topN}): ${detail} — lean into these signals.`);
+      }
     }
   }
-  // Worst tickers
+  // Worst tickers — same tiering.
   if (lessons.worstTickers.length > 0) {
     const bot = lessons.worstTickers.filter(t => t.avgPnl < -5);
     if (bot.length > 0) {
-      lines.push(`  ❌ Weakest recs: ${bot.map(t => `${t.ticker} (${t.wins}/${t.total}, avg ${t.avgPnl.toFixed(0)}%)`).join(", ")} — be MORE conservative on these (smaller size, tighter stops, or sit out).`);
+      const botN = bot.reduce((s, t) => s + (t.total || 0), 0);
+      const tier = tierFor(botN);
+      const detail = bot.map(t => `${t.ticker} (${t.wins}/${t.total}, avg ${t.avgPnl.toFixed(0)}%)`).join(", ");
+      if (tier === "INSUFFICIENT") {
+        lines.push(`  ❌ Worst-so-far names (INSUFFICIENT DATA, n=${botN} < 20): ${detail}. No behavioural conclusion.`);
+      } else if (tier === "EARLY") {
+        lines.push(`  ❌ Worst-so-far names (EARLY SIGNAL, n=${botN}): ${detail}. Informational only — sample is too small to justify sizing changes.`);
+      } else {
+        lines.push(`  ❌ Weakest recs (n=${botN}): ${detail} — be MORE conservative on these (smaller size, tighter stops, or sit out).`);
+      }
     }
   }
 
-  // Followed-vs-skipped — is the user a good filter?
+  // Followed-vs-skipped — is the user a good filter? Effective n is the
+  // smaller of the two arms.
   if (lessons.followedCount >= 3 && lessons.skippedCount >= 3) {
+    const effectiveN = Math.min(lessons.followedCount, lessons.skippedCount);
+    const tier = tierFor(effectiveN);
     const userFollowEdge = (lessons.followedAvg ?? 0) - (lessons.skippedAvg ?? 0);
-    if (userFollowEdge > 3) {
-      lines.push(`  📊 User's followed-rec performance: avg +${lessons.followedAvg.toFixed(1)}% vs skipped +${lessons.skippedAvg.toFixed(1)}% — Richard's filter is ADDING value. Trust him to skip recs that don't fit.`);
-    } else if (userFollowEdge < -3) {
-      lines.push(`  📊 User's followed-rec performance: avg ${lessons.followedAvg.toFixed(1)}% vs skipped ${lessons.skippedAvg.toFixed(1)}% — Richard is skipping winners and following losers. PUSH HARDER on high-conviction recs; don't soften the case.`);
+    const followed = (lessons.followedAvg ?? 0).toFixed(1);
+    const skipped = (lessons.skippedAvg ?? 0).toFixed(1);
+    if (tier === "INSUFFICIENT") {
+      lines.push(`  📊 Followed vs skipped (INSUFFICIENT DATA, effective n=${effectiveN} < 20): followed avg ${followed}% vs skipped ${skipped}%. No behavioural conclusion.`);
+    } else if (tier === "EARLY") {
+      lines.push(`  📊 Followed vs skipped (EARLY SIGNAL, effective n=${effectiveN}): followed avg ${followed}% vs skipped ${skipped}%. Informational only — do NOT change conviction language on this alone.`);
     } else {
-      lines.push(`  📊 User follows-vs-skips have similar outcomes (within 3%). The decision filter is neutral.`);
+      // n ≥ 50 — audit gate permits imperatives, but only when the
+      // effect size is meaningful (>3pp gap).
+      if (userFollowEdge > 3) {
+        lines.push(`  📊 User's followed-rec performance (n=${effectiveN}): avg +${followed}% vs skipped +${skipped}% — Richard's filter is ADDING value. Trust him to skip recs that don't fit.`);
+      } else if (userFollowEdge < -3) {
+        lines.push(`  📊 User's followed-rec performance (n=${effectiveN}): avg ${followed}% vs skipped ${skipped}% — Richard is skipping winners and following losers. PUSH HARDER on high-conviction recs; don't soften the case.`);
+      } else {
+        lines.push(`  📊 User follows-vs-skips have similar outcomes (within 3%, n=${effectiveN}). The decision filter is neutral.`);
+      }
     }
   }
 
