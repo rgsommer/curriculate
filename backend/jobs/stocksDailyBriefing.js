@@ -1103,12 +1103,27 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       const sleeveTag = classifyPosition({ ticker: p.ticker }) || "spec";
       const setupTag = p.setupName ? ` · setup: **${p.setupName}**` : "";
       const mtfTag = p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : "";
-      const secName = MANDATE_TICKER_DESCRIPTIONS?.[p.ticker]
-        ? "" // ETFs already carry a description block downstream
-        : "";
-      // Identity line: ticker · currency · verified live price.
-      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${p.deterministicScore}${setupTag}${mtfTag}`);
-      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · verified live $${p.verifiedPrice.toFixed(2)}`);
+      // Tier the pick by composite score AND MTF confluence. A sub-60
+      // composite with conflicting MTF is a watchlist candidate, not
+      // an actionable BUY — presenting them identically was the
+      // "AC.TO composite 59 MTF conflicting" case the reviewer flagged.
+      const isConflict = String(p.mtfConfluence || "").toLowerCase() === "conflicting";
+      const tier = p.deterministicScore >= 70 && !isConflict ? "BUY"
+                 : p.deterministicScore >= 60 ? "WATCH"
+                 : "MONITOR";
+      const tierColor = tier === "BUY" ? "✅" : tier === "WATCH" ? "⚠️" : "🔍";
+      // Derived risk metrics — upside %, downside %, reward/risk.
+      const entry = p.entryPrice;
+      const upsidePct = entry > 0 ? ((p.targetPrice - entry) / entry) * 100 : 0;
+      const downsidePct = entry > 0 ? ((entry - p.stopPrice) / entry) * 100 : 0;
+      const rewardRisk = downsidePct > 0 ? (upsidePct / downsidePct) : null;
+      const rrStr = rewardRisk != null ? `${rewardRisk.toFixed(2)}:1` : "n/a";
+      // Identity line: ticker · currency · verified live price · tier.
+      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${p.deterministicScore}${setupTag}${mtfTag} · ${tierColor} **${tier}**`);
+      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%) · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
+      if (isConflict) {
+        lines.push(`   ⚠ MTF conflicting — treat as watchlist entry, wait for confluence to align before committing size.`);
+      }
       if (p.rationale) lines.push(`   ${p.rationale}`);
       lines.push("");
     }
@@ -2676,7 +2691,12 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
                  : pickGateStatus.killSwitch === "CANARY" ? "🟡"
                  : pickGateStatus.killSwitch === "SUPPRESSED" ? "🔴"
                  : "⚪";
-    chunks.push(`GATES: ${pickGateStatus.active.join(" · ")} · kill-switch ${ksTone} ${pickGateStatus.killSwitch} · banned setups: ${bannedStr}`);
+    // Filter out "kill-switch" from the active-gates list because the
+    // dedicated kill-switch chip below already renders its state — a
+    // duplicate name in the active list produced "... · kill-switch ·
+    // canary · kill-switch 🟢 CLEAR" in production output.
+    const activeFiltered = pickGateStatus.active.filter(a => String(a).toLowerCase() !== "kill-switch");
+    chunks.push(`GATES: ${activeFiltered.join(" · ")} · kill-switch ${ksTone} ${pickGateStatus.killSwitch} · banned setups: ${bannedStr}`);
   }
   chunks.push("");
 
@@ -3854,21 +3874,52 @@ export async function generateBriefing(profile) {
     // language so the operator doesn't act on a portfolio the engine
     // itself hasn't reconciled.
     const canonical = summary?.canonical || null;
-    const reconciliationOk = canonical?.reconciliation?.passed === true;
+    // Belt-and-suspenders reconciliation check: canonical.reconciliation.passed
+    // filters out several warning codes (positions-missing-price, empty-
+    // portfolio, concentration-breach), so it can be `true` even when
+    // the sleeve+cash sum doesn't hit 100%. Cross-check by re-computing
+    // sleeve% + cash% ourselves and treating any >2.5pp gap as a hard
+    // reconciliation failure. This is the same check §3 uses to
+    // suppress the sleeve mix line — if that fires, §1 must ALSO
+    // degrade to DATA ACTION.
+    let reconciliationOk = canonical?.reconciliation?.passed === true;
+    let sleeveCashSum = null;
+    if (canonical) {
+      const sleeves = canonical.sleeves || [];
+      const sleeveWeights = ["core", "swing", "income", "spec"].map(k => {
+        const s = sleeves.find(x => x.sleeve === k);
+        return s?.sleeve_weight_pct;
+      });
+      const cashCad = canonical.totals?.cash_cad_equiv;
+      const totalCad = canonical.totals?.portfolio_total_cad;
+      const cashPct = Number.isFinite(cashCad) && Number.isFinite(totalCad) && totalCad > 0
+        ? (cashCad / totalCad) * 100
+        : null;
+      const parts = [...sleeveWeights, cashPct].filter(x => Number.isFinite(x));
+      if (parts.length === 5) {
+        sleeveCashSum = parts.reduce((s, x) => s + x, 0);
+        if (Math.abs(sleeveCashSum - 100) > 2.5) reconciliationOk = false;
+      } else {
+        reconciliationOk = false;
+      }
+    }
     let mdPrefixForShip = deterministicPrefix;
     if (canonical && !reconciliationOk) {
-      const recon = canonical.reconciliation || {};
-      const sumStr = Number.isFinite(recon.checkTotalPct)
-        ? `${recon.checkTotalPct.toFixed(1)}%`
-        : "n/a";
-      // Rewrite §1 body: replace "None." + optional "Portfolio is inside all hard rules today." with a data-error mandate.
+      const sumStr = Number.isFinite(sleeveCashSum) ? `${sleeveCashSum.toFixed(1)}%` : "n/a";
       const dataMandate = `**⚠ MANDATORY DATA ACTION** — canonical portfolio reconciliation failed (sleeves + cash = ${sumStr}, expected 100%). Trading recommendations that require portfolio sizing, sleeve headroom, or hard-rule compliance are **SUSPENDED** for this slot. Fix the upstream cash/position math (see Advice diagnostics), then re-run the briefing. Everything below is informational only — do not treat as actionable orders.`;
       mdPrefixForShip = mdPrefixForShip
-        // Strip "None. Portfolio is inside all hard rules today." with or without the trailing sentence.
         .replace(/None\.\s*Portfolio is inside all hard rules today\./g, dataMandate)
-        // Also handle plain "- None." or "None." on its own in §1.
         .replace(/(##\s*1\.[^\n]*MANDATORY[^\n]*\n(?:[^\n]*\n)*?)-?\s*None\.?(\s*\n)/i, `$1${dataMandate}$2`);
     }
+    // Strip the §4 OPTIONAL ideas placeholder and its "AI writes..."
+    // template caption — deterministic mode has no AI to fill it in,
+    // and leaving the placeholder produces a duplicate §4 heading
+    // above the real "Daily picks" section below. Removes the block
+    // wholesale so the deterministic §4 sits cleanly on its own.
+    mdPrefixForShip = mdPrefixForShip.replace(
+      /##\s*4\.\s*💡?\s*OPTIONAL ideas[^\n]*\n_\(Only surface if all hard rules[^\n]*\)_\n?/g,
+      ""
+    );
 
     const parts = [
       `# 📉 Daily briefing — ${dateStr}`,
@@ -3894,11 +3945,9 @@ export async function generateBriefing(profile) {
       );
     }
 
-    parts.push(
-      "",
-      "---",
-      "_Research and education only. Not licensed investment advice._"
-    );
+    // Do NOT append our own "Research and education only" disclaimer —
+    // the email template appends its own footer. Duplicating it produced
+    // two consecutive disclaimer lines in production output.
     const md = parts.join("\n").trim();
     return {
       md,
