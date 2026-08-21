@@ -315,6 +315,20 @@ const StocksPortfolioSchema = new mongoose.Schema(
     // Turn the toggle on to have the sizes flow into daily briefings
     // (rec block + AI-emitted sizes must match).
     volSizingEnabled: { type: Boolean, default: false },
+    // Master briefing-mode toggle.
+    //   false (default) = DETERMINISTIC ONLY — the briefing is built
+    //     from canonical portfolio data + pick-engine output only.
+    //     No LLM call, no free-form narrative, no per-holding prose.
+    //     Every price / stop / sleeve / mandate traces to a
+    //     deterministic renderer. Pre-send audit still runs.
+    //   true           = AI-narrative on top — the Anthropic Sonnet
+    //     call generates §4 Optional ideas + A2 per-holding + A3/A4
+    //     macro/perf snapshot narrative. Opt-in because the LLM has
+    //     been observed to hallucinate numeric data (prices, PTs,
+    //     dividends) that the audit gate then rejects.
+    // Default off until the "LLM never emits a number" architectural
+    // fix lands (canonical block IDs + narrative-references-only).
+    aiNarrativeEnabled: { type: Boolean, default: false },
     riskPerTradePct: { type: Number, default: 1.0, min: 0.1, max: 5.0 },
     kellyFractionCap: { type: Number, default: 0.25, min: 0.1, max: 1.0 },
     // Systematic pyramiding — add-on signals for open positions that

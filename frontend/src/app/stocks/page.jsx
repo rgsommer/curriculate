@@ -162,6 +162,7 @@ async function apiPutPortfolio(sessionToken, profile) {
       optionsTradingEnabled: profile.optionsTradingEnabled,
       noTouchMode: profile.noTouchMode,
       disciplineCriticEnabled: profile.disciplineCriticEnabled,
+      aiNarrativeEnabled: profile.aiNarrativeEnabled,
       volSizingEnabled: profile.volSizingEnabled,
       riskPerTradePct: profile.riskPerTradePct,
       kellyFractionCap: profile.kellyFractionCap,
@@ -1680,6 +1681,10 @@ export default function StocksAdvisorPage() {
               onChangeDisciplineCritic={(v) => {
                 updateUser(() => ({ disciplineCriticEnabled: v }));
                 showToast(v ? "Discipline critic enabled — every briefing will be audited" : "Discipline critic disabled");
+              }}
+              onChangeAiNarrative={(v) => {
+                updateUser(() => ({ aiNarrativeEnabled: v }));
+                showToast(v ? "AI narrative on — briefings will include per-holding prose (may hallucinate numbers)" : "AI narrative off — briefings will be deterministic-only (recommended)");
               }}
               onChangeVolSizing={(v) => {
                 updateUser(() => ({ volSizingEnabled: v }));
@@ -6331,7 +6336,7 @@ function QuestradeIntegrationCard({ sessionToken, user }) {
   );
 }
 
-function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountType, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeVolSizing, onChangeRiskPerTrade, onChangeKellyCap, onChangePyramiding, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
+function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCommission, onChangeFxSpread, onChangeGoals, onChangeContributionGoals, onChangeAccountRisk, onChangeAccountType, onChangeAccountMonthlyReport, onChangeAccountCcEmail, onChangeBeneficiaryAgreement, onChangeConsensusMode, onChangeIntradayUpdates, onChangeOptionsTrading, onChangeNoTouchMode, onChangeDisciplineCritic, onChangeAiNarrative, onChangeVolSizing, onChangeRiskPerTrade, onChangeKellyCap, onChangePyramiding, onChangeBriefingTimes, onChangeBriefingTz, onChangeSleeveTargets, onAddPlannedWithdrawal, onRemovePlannedWithdrawal, onExecutePlannedWithdrawal, onReset }) {
   const [goalsDraft, setGoalsDraft] = useState(user.goals || "");
   const [goalsSavedAt, setGoalsSavedAt] = useState(null);
   // Contribution goals — each is { amount, period }. Legacy flat numbers are
@@ -6625,6 +6630,32 @@ function SettingsView({ user, sessionToken, onChangeRisk, onChangeFx, onChangeCo
                 <li>Intraday briefings (if enabled) quiet down to <b>hard-stop hits only</b> — informational signals aren&apos;t actionable when you can&apos;t touch orders</li>
                 <li>A short <b>EOD recap</b> emails at 4:15 PM ET Mon–Fri: what filled today, what stopped, what to queue tomorrow</li>
               </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="sa-card" style={{ marginBottom: 14, cursor: "pointer" }} onClick={() => onChangeAiNarrative(!user.aiNarrativeEnabled)}>
+        <h3>AI narrative sections (opt-in)</h3>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+          <input
+            type="checkbox"
+            checked={!!user.aiNarrativeEnabled}
+            readOnly
+            style={{ marginTop: 3, width: 16, height: 16, flexShrink: 0, accentColor: "#4f46e5", pointerEvents: "none" }}
+          />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>Let the LLM write per-holding prose, macro commentary, and optional ideas (§4 / A2 / A3 / A4)</div>
+            <div className="sa-muted" style={{ fontSize: 12, marginTop: 4 }}>
+              <b>Default: OFF.</b> With this toggle off, briefings are built entirely from canonical portfolio data + the deterministic pick engine — no Anthropic call, no free-form narrative, no chance of hallucinated prices / analyst PTs / dividend numbers. What you get:
+              <ul style={{ margin: "6px 0 0 0", paddingLeft: 18 }}>
+                <li><b>§1 Mandatory actions</b> — every SELL / TRIM / CORE-REBALANCE / TRAIL-STOP-REVIEW / SWAP mandate, deterministic, with fresh live prices</li>
+                <li><b>§1b Portfolio upswitch</b> — held-vs-challenger scored on the multi-factor composite, sleeve-hurdled</li>
+                <li><b>§2 Forbidden today</b> — every hard rule blocking new ideas</li>
+                <li><b>§3 Status</b> — CORE/SWING/INCOME/SPEC/Cash %, stops, regime, sector tilt, gate visibility</li>
+                <li><b>§4 Daily picks</b> — pick-engine output rendered directly (entry / target / stop / composite / setup)</li>
+              </ul>
+              Turning this on adds LLM-generated commentary on top. The audit gate has caught the LLM hallucinating stale prices, cross-ticker analyst targets, impossible upside arithmetic, and fabricated dividend numbers — those have all shipped as blockers or scrubbers, but the guaranteed-clean path is to leave the LLM out entirely until we architecturally restrict it to referencing pre-rendered blocks by ID.
             </div>
           </div>
         </div>

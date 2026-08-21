@@ -239,6 +239,9 @@ function sanitizePortfolioInput(body, email) {
   if (typeof body.volSizingEnabled === "boolean") {
     out.volSizingEnabled = body.volSizingEnabled;
   }
+  if (typeof body.aiNarrativeEnabled === "boolean") {
+    out.aiNarrativeEnabled = body.aiNarrativeEnabled;
+  }
   if (Number.isFinite(body.riskPerTradePct) && body.riskPerTradePct >= 0.1 && body.riskPerTradePct <= 5.0) {
     out.riskPerTradePct = body.riskPerTradePct;
   }

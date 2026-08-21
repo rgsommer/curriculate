@@ -1028,6 +1028,44 @@ function formatRecentTradesBlock(recentTrades) {
   return `\nTRADES YOU EXECUTED SINCE LAST BRIEFING — you must acknowledge each of these explicitly (see instruction below):\n${lines.join("\n")}\n`;
 }
 
+// Operator-facing daily-picks section for deterministic (no-AI)
+// briefing mode. Renders each pick as a compact bullet with all
+// numbers coming straight from the pick engine (composite score,
+// entry, target, stop, setup, rationale). No prose, no LLM narrative,
+// no chance of hallucinated numbers.
+function renderDailyPicksDeterministic(dailyPicks) {
+  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
+  const allowed = dailyPicks.filter(p => !p.blockedReason);
+  const blocked = dailyPicks.filter(p => p.blockedReason);
+  if (allowed.length === 0 && blocked.length === 0) return "";
+  const lines = ["", "## 4. 💡 Daily picks (deterministic, from pick engine)", ""];
+  if (allowed.length > 0) {
+    lines.push(`_${allowed.length} pick${allowed.length === 1 ? "" : "s"} passed every screen — deterministic scores + technical setup._`);
+    lines.push("");
+    for (let i = 0; i < allowed.length; i++) {
+      const p = allowed[i];
+      const sleeveTag = classifyPosition({ ticker: p.ticker }) || "spec";
+      const setupTag = p.setupName ? ` · setup: **${p.setupName}**` : "";
+      const mtfTag = p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : "";
+      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · composite ${p.deterministicScore}${setupTag}${mtfTag}`);
+      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} ${p.currency || "USD"} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)}`);
+      if (p.rationale) lines.push(`   ${p.rationale}`);
+      lines.push("");
+    }
+  } else {
+    lines.push("_None passed today's screens._");
+    lines.push("");
+  }
+  if (blocked.length > 0) {
+    lines.push(`_${blocked.length} candidate${blocked.length === 1 ? "" : "s"} blocked by validator — informational only:_`);
+    for (const p of blocked) {
+      lines.push(`- **${p.ticker}** @ ~$${p.entryPrice.toFixed(2)} — ${p.blockedReason}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
 function formatDailyPicksBlock(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   // Split into allowed vs blocked. Blocked picks are demoted to a
@@ -3725,6 +3763,48 @@ export async function generateBriefing(profile) {
   });
   if (fundingStripped.length > 0) {
     console.warn(`[funding-validator] stripped ${fundingStripped.length} unfundable BUY mandate(s):`, fundingStripped.map(f => `${f.ticker} in ${f.account}/${f.currency} (short $${Math.round(f.shortfall)})`).join("; "));
+  }
+
+  // ─── DETERMINISTIC-ONLY MODE (short-circuit) ───
+  // When the user hasn't opted in to AI narrative, ship the briefing
+  // built entirely from canonical portfolio data + deterministic
+  // pick-engine output. NO Anthropic call, NO critic, NO free-form
+  // AI narrative. Every number in the email traces to a renderer
+  // whose inputs are canonical or FMP-verified. Cost = zero LLM
+  // tokens. Zero-hallucination guarantee for the operator's action
+  // set (§1 mandates, §1b upswitch, §2 forbidden, §3 status, §4
+  // daily picks). The pre-send audit still runs — if canonical
+  // itself is inconsistent, the audit blocks and the degraded-
+  // fallback (already wired) ships the safest slice.
+  if (profile?.aiNarrativeEnabled !== true) {
+    console.log(`[stocks-briefing] ${profile.email}: aiNarrativeEnabled=false → deterministic-only mode (no LLM call)`);
+    const dateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const parts = [
+      `# 📉 Daily briefing — ${dateStr}`,
+      "",
+      `_Deterministic mode — every number below comes from canonical portfolio data or the pick engine, not from an LLM. To enable AI narrative sections, flip **AI narrative** on in Settings._`,
+      "",
+      deterministicPrefix,
+    ];
+    const picksBlock = renderDailyPicksDeterministic(dailyPicks);
+    if (picksBlock) parts.push(picksBlock);
+    // Deterministic upswitch already lives inside the prefix via
+    // formatUpswitchBlockSafe injection — no extra render needed.
+    parts.push(
+      "",
+      "---",
+      "_Research and education only. Not licensed investment advice._"
+    );
+    const md = parts.join("\n").trim();
+    return {
+      md,
+      sectorRotation,
+      tradingRegime,
+      acceptedRecs: [],          // structural mandates already surfaced in §1 text
+      rejectedRecs: [],          // no LLM output means no LLM rejections
+      mandateRecs: prefixMandateRecs,
+      deterministicPrefix,
+    };
   }
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow, marketPulse, whale13F);
