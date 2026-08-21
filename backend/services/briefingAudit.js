@@ -365,37 +365,63 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     // Sentence boundary — first ".", newline, table separator, or
     // bullet dot after the ticker occurrence, capped at 120 chars.
     const SENTENCE_STOPS = /[.\n|·]/;
-    // Words that mark a $-price as something other than "current
-    // price" — stops, targets, PTs, cost basis, trail levels, etc.
-    // A "current-price disagreement" check must ignore these or it
-    // flags legitimate designs (e.g. RY current $282 with a $270
-    // stop) as drift when they are not.
-    const NON_PRICE_CONTEXT = /\b(stop|target|PT|price target|trail|trailing|cost basis|entry|cost|hwm|high water mark|drawdown from|prior close|yesterday|book|hard\s*stop|resistance|support)\b/i;
+    // WHITELIST approach — only capture $-prices that are explicitly
+    // presented as a CURRENT-PRICE claim for this ticker. Everything
+    // else (stops, targets, PTs, 60d highs, cost basis) is ignored
+    // regardless of proximity. Prior blacklist approach kept missing
+    // context words ("60d high", analyst-upgrade phrasing, currency
+    // labels) and blocking legitimate briefings on false drift.
+    //
+    // Recognized current-price patterns after a ticker mention:
+    //   TICKER $X                  — bare
+    //   TICKER at $X               — natural language
+    //   TICKER trades at $X        — narrative
+    //   TICKER @ $X                — order-ticket style
+    //   TICKER (current $X)        — parenthetical
+    //   TICKER current price $X    — labeled
+    //   TICKER now $X              — post-move
+    // Patterns that name a distinct concept ("PT $X", "stop $X",
+    // "60d high $X") are never picked up because there is no explicit
+    // current-price signal between the ticker and the $-value.
+    const CURRENT_PRICE_PATTERNS = [
+      /(?:^|[^A-Za-z])\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?(?=[\s.,)]|$)/,       // bare "TICKER $X" or ". $X"
+      /\bat\s+~?\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,                         // "at $X" / "at ~$X"
+      /\btrad(?:e|es|ed|ing)\s+at\s+\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,     // "trades/trading at $X"
+      /\bpriced?\s+at\s+~?\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,               // "priced at $X"
+      /@\s*~?\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,                            // "@ $X" / "@ ~$X"
+      /\bcurrent(?:ly)?\s+price\s*(?:is\s+)?:?\s*\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i, // "current price $X"
+      /\bcurrent(?:ly)?\s*:?\s*\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,          // "Current $X" / "currently $X"
+      /\bnow\s+\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,                          // "now $X"
+      /\(\s*current\s*:?\s*\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?\s*\)/i,         // "(current $X)"
+      /\bprice\s+is\s+~?\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,                 // "price is $X"
+      /\bmarket\s+~?\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,                     // "market $X"
+      /\blive\s+~?\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/i,                       // "live $X"
+    ];
     for (const base of heldBaseSet) {
       const livePrice = livePriceByBase.get(base) || null;
       const tickerRe = new RegExp(`\\b${base}(?:\\.[A-Z]{1,3})?\\b`, "g");
       let m;
       while ((m = tickerRe.exec(md)) !== null) {
-        const raw = md.slice(m.index, m.index + 120);
-        const stopIdx = raw.slice(base.length).search(SENTENCE_STOPS);
-        const window = stopIdx > 0 ? raw.slice(0, base.length + stopIdx) : raw;
-        // For every $-price in the window, inspect the ~20 chars
-        // preceding it. If those chars name a non-price context
-        // (stop / target / PT / entry / trail), skip it — that
-        // number is not a claim about the current price.
-        const priceGlobal = /\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/g;
-        let pm;
-        while ((pm = priceGlobal.exec(window)) !== null) {
-          const preCtx = window.slice(Math.max(0, pm.index - 22), pm.index);
-          if (NON_PRICE_CONTEXT.test(preCtx)) continue;
+        // Bound the scan to the same sentence — 150 chars past the
+        // ticker, breaking only at hard newlines / table separators.
+        // We DO NOT stop at "." because "AAPL. Current price is $X"
+        // is a legitimate two-sentence current-price claim and the
+        // whitelist patterns already reject non-price contexts.
+        const raw = md.slice(m.index + base.length, m.index + base.length + 150);
+        const hardStop = raw.search(/[\n|·]/);
+        const after = hardStop > 0 ? raw.slice(0, hardStop) : raw;
+        for (const pat of CURRENT_PRICE_PATTERNS) {
+          const pm = pat.exec(after);
+          if (!pm) continue;
           const px = Number(pm[1]);
           const ccy = pm[2] || null;
           if (!Number.isFinite(px) || px <= 0) continue;
           // Reject observations >25% off live — cross-ticker contamination,
-          // caught properly by the PT-contamination checks upstream.
+          // caught by the PT-contamination checks upstream.
           if (livePrice && Math.abs(px - livePrice) / livePrice > 0.25) continue;
           if (!priceByTicker.has(base)) priceByTicker.set(base, []);
           priceByTicker.get(base).push({ price: px, ccy });
+          break; // one current-price claim per ticker mention
         }
       }
     }

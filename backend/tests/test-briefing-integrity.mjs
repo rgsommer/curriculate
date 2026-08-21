@@ -360,6 +360,25 @@ async function testCrossSectionPriceDrift() {
   assertBlocked(audit, "cross-section-price-drift", "17. Same ticker with two different prices across sections fires blocker");
 }
 
+// ─── 17b. Regression: TRAIL STOP REVIEW citing 60d high must NOT fire drift ─
+async function testTrailReviewNoDriftFalsePositive() {
+  const profile = baseProfile();
+  // AAPL live is $200 per baseProfile. Simulate a legit trail-stop
+  // review that cites "60d high: $250 USD" (historical extreme, not
+  // a current-price claim) alongside "current $199 USD" (real).
+  // The old blacklist filter would grab $250 as an AAPL current
+  // price and flag drift; the whitelist should ignore it entirely.
+  const goodMd = `## 1. 🚨 MANDATORY ACTIONS
+1. TRAIL STOP REVIEW — AAPL. Currently $199 USD. 60d high: $250 USD. Drawdown from peak: -20.4%.
+`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: goodMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  const drift = (audit.blockers || []).find(b => b.check === "cross-section-price-drift");
+  assert(!drift, "17b. TRAIL STOP REVIEW citing 60d high does NOT falsely trigger drift",
+         drift ? `unexpectedly blocked: ${drift.reason}` : "");
+}
+
 // ─── 18. Behavioural coaching without sample ──────────────────────
 async function testStrongLanguageInsufficientSample() {
   const profile = baseProfile();
@@ -458,6 +477,7 @@ async function main() {
   await testCrossSectionResolutionMarker();
   await testFutureDatedViolation();
   await testCrossSectionPriceDrift();
+  await testTrailReviewNoDriftFalsePositive();
   await testStrongLanguageInsufficientSample();
   await testFundamentalValueMatchesPrice();
   await testDividendExceedsPct();
