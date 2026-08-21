@@ -1195,6 +1195,98 @@ function stopClause(ticket) {
   return ` · **Stop:** $${ticket.derivedStop.toFixed(2)} ${ticket.liveCcy} (${ticket.derivedStopPctLabel})`;
 }
 
+// Pre-LLM funding validator. Post-processes the deterministic prefix
+// output to strip any BUY mandate whose (account, currency) bucket
+// can't fund it from starting cash + same-bucket SELL/TRIM proceeds.
+// The AI never sees the stripped ticket, so the impossible redeploy
+// can't survive into the briefing text or the audit gate.
+//
+// Contract:
+//   input : md (deterministic prefix), mandateRecs (structured recs),
+//           canonical portfolio (source of truth for per-account cash)
+//   output: filtered md + filtered mandateRecs + fundingStripped[]
+//           (audit trail — what got removed and why)
+export function validateMandateFunding({ md, mandateRecs, canonical }) {
+  const fundingStripped = [];
+  if (!canonical || !Array.isArray(mandateRecs) || mandateRecs.length === 0) {
+    return { md, mandateRecs, fundingStripped };
+  }
+  // Bucket every mandate rec by (account_name, currency). SELL/TRIM
+  // in a bucket generates proceeds; BUY/ADD spends. A bucket clears
+  // only when starting cash + proceeds >= cost.
+  const buckets = new Map();
+  for (const r of mandateRecs) {
+    const acct = String(r.account || "").trim();
+    const ccy  = String(r.entryCurrency || "").toUpperCase();
+    if (!acct || !ccy) continue; // no bucket → skip (audit will still catch)
+    const key = `${acct}|${ccy}`;
+    if (!buckets.has(key)) buckets.set(key, { account: acct, currency: ccy, recs: [] });
+    buckets.get(key).recs.push(r);
+  }
+  const droppedRecs = new Set();
+  for (const [, bucket] of buckets) {
+    // Starting cash for this bucket from canonical accounts.
+    const acctRow = (canonical.accounts || []).find(a =>
+      String(a.account_name || "").trim().toLowerCase() === bucket.account.toLowerCase()
+    );
+    const startingCash = bucket.currency === "CAD"
+      ? (acctRow?.cash_cad || 0)
+      : bucket.currency === "USD" ? (acctRow?.cash_usd || 0)
+      : 0;
+    let proceeds = 0;
+    let cost = 0;
+    for (const r of bucket.recs) {
+      const shares = Number(r.sizeShares) || 0;
+      const price  = Number(r.entryPrice) || 0;
+      if (shares <= 0 || price <= 0) continue;
+      const val = shares * price;
+      if (["SELL", "EXIT", "TRIM"].includes(r.action)) proceeds += val;
+      else if (["BUY", "ADD"].includes(r.action)) cost += val;
+    }
+    const available = startingCash + proceeds;
+    if (cost <= available + 1) continue; // clears with $1 rounding tolerance
+    // Bucket is underfunded — drop BUY recs one-at-a-time (LIFO)
+    // until cost fits available. LIFO because the LAST BUY added
+    // is the marginal one that pushed the bucket over.
+    let remainingCost = cost;
+    const buysReversed = bucket.recs
+      .filter(r => ["BUY", "ADD"].includes(r.action))
+      .reverse();
+    for (const buy of buysReversed) {
+      if (remainingCost <= available + 1) break;
+      const val = (Number(buy.sizeShares) || 0) * (Number(buy.entryPrice) || 0);
+      remainingCost -= val;
+      droppedRecs.add(buy);
+      fundingStripped.push({
+        ticker: buy.ticker,
+        account: bucket.account,
+        currency: bucket.currency,
+        shortfall: cost - available,
+        droppedShares: buy.sizeShares,
+        droppedCost: val,
+        sourceLabel: buy.sourceLabel,
+      });
+    }
+  }
+  if (droppedRecs.size === 0) return { md, mandateRecs, fundingStripped };
+  // Strip the corresponding mandate LINES from the prefix text.
+  // Each mandate rec has ticker + sizeShares; the mandate line
+  // contains "BUY <N> sh <TICKER>" (or ADD). Match and delete the
+  // whole line so the AI never sees the ticket. If we can't match,
+  // leave the line — the audit gate will still catch it.
+  let filteredMd = md;
+  for (const dropped of droppedRecs) {
+    const t = String(dropped.ticker || "").replace(/[.^$*+?()[\]{}|\\]/g, "\\$&");
+    const n = Number(dropped.sizeShares) || 0;
+    if (!t || !n) continue;
+    // Match a whole line containing e.g. "BUY 33 sh DPM.TO" or "ADD 12 sh AAPL".
+    const lineRe = new RegExp(`^.*\\b(?:BUY|ADD)\\s+${n}\\s+sh\\s+${t}\\b.*$`, "gmi");
+    filteredMd = filteredMd.replace(lineRe, `_[funding-stripped] ${dropped.ticker} BUY dropped — bucket underfunded_`);
+  }
+  const filteredRecs = mandateRecs.filter(r => !droppedRecs.has(r));
+  return { md: filteredMd, mandateRecs: filteredRecs, fundingStripped };
+}
+
 function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null, dailyPicks = [] }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
@@ -1260,9 +1352,27 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   };
   const pickDefaultTicket = (list, targetCad, deployCurrency) => {
     if (!(targetCad > 0)) return null;
+    const wantCcy = String(deployCurrency || "").toUpperCase();
     const rawFiltered = (list || [])
       .filter(t => !ctxRecentExits.includes(t))
-      .filter(t => ctxLivePrices[t]?.price > 0);
+      .filter(t => ctxLivePrices[t]?.price > 0)
+      // STRICT same-currency gate. Cross-currency picks implied an
+      // FX conversion / cross-account transfer that the operator was
+      // then expected to arrange. That produced "buy $1186 CAD of X"
+      // orders in RRSP/CAD buckets with no CAD cash, because the SELL
+      // proceeds were USD in a different account. Same currency only
+      // — no fallback. If no eligible ticker exists in the caller's
+      // currency, return null so the caller can degrade the mandate
+      // rather than shipping an unfundable ticket.
+      .filter(t => {
+        if (!wantCcy) return true; // caller didn't specify — permissive
+        const liveCcy = String(ctxLivePrices[t]?.currency || "USD").toUpperCase();
+        if (liveCcy !== wantCcy) {
+          console.warn(`[pickDefaultTicket] REJECT ${t} — live currency ${liveCcy} ≠ deploy currency ${wantCcy} (no cross-currency fallback)`);
+          return false;
+        }
+        return true;
+      });
     // Sanity-floor filter — drop any candidate whose live price
     // dropped below its known-good floor. A failure here means the
     // integrity layer would have caught this on the way to a rec,
@@ -1279,19 +1389,24 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     const ticker = filtered[0];
     const live = ctxLivePrices[ticker];
     const liveCcy = String(live.currency || deployCurrency || "USD").toUpperCase();
-    const fx = fxUsdCad || 1.37;
-    // Convert deploy budget to the LIVE PRICE's currency so share
-    // count math is correct: shares = budget_in_native / native_price.
-    let budgetInNative;
-    if (liveCcy === deployCurrency) {
-      budgetInNative = targetCad; // already same currency
-    } else if (liveCcy === "USD" && deployCurrency === "CAD") {
-      budgetInNative = targetCad / fx;
-    } else if (liveCcy === "CAD" && deployCurrency === "USD") {
-      budgetInNative = targetCad * fx;
-    } else {
-      budgetInNative = targetCad;
+    // Post-gate assertion — the filter above should have caught this,
+    // but a defense-in-depth check is cheap.
+    if (wantCcy && liveCcy !== wantCcy) {
+      console.warn(`[pickDefaultTicket] REJECT ${ticker} — currency assertion failed (${liveCcy} vs ${wantCcy})`);
+      return null;
     }
+    const fx = fxUsdCad || 1.37;
+    // Convert budget from the caller's supplied unit to the live
+    // price's currency so share count is correct. Historical callers
+    // pass a CAD-equivalent budget even when deploying into USD (or
+    // vice versa); the strict same-currency gate above ensures the
+    // picked ticker matches wantCcy, so this conversion is purely
+    // caller-convenience — the trade itself never crosses currency.
+    let budgetInNative;
+    if (liveCcy === deployCurrency) budgetInNative = targetCad;
+    else if (liveCcy === "USD" && deployCurrency === "CAD") budgetInNative = targetCad / fx;
+    else if (liveCcy === "CAD" && deployCurrency === "USD") budgetInNative = targetCad * fx;
+    else budgetInNative = targetCad;
     const shares = Math.floor(budgetInNative / live.price);
     if (!(shares > 0)) return null;
     const usedNative = shares * live.price;
@@ -3571,9 +3686,9 @@ export async function generateBriefing(profile) {
       })
     : null;
   const {
-    md: deterministicPrefix,
+    md: deterministicPrefixRaw,
     concentrationMandates: prefixConcentrationMandates,
-    mandateRecs: prefixMandateRecs,
+    mandateRecs: prefixMandateRecsRaw,
     trailSoftTickers: prefixTrailSoftTickers,
   } = renderDeterministicPrefix({
     monitorAlerts,
@@ -3594,6 +3709,23 @@ export async function generateBriefing(profile) {
     pickGateStatus,
     dailyPicks,
   });
+
+  // ─── Pre-LLM funding validation ───
+  // Group mandate BUYs by (account, currency) and verify each bucket is
+  // self-funding: BUY cost ≤ starting cash in that bucket + SELL/TRIM
+  // proceeds generated inside the same bucket. Any BUY that can't be
+  // funded is STRIPPED from the prefix text AND from the mandateRecs
+  // list before the AI is asked to describe the redeployment. Prevents
+  // "RRSP/CAD BUY $1186 with $0 cash + $0 proceeds" recs from surviving
+  // to the audit gate or, worse, to the operator.
+  const { md: deterministicPrefix, mandateRecs: prefixMandateRecs, fundingStripped } = validateMandateFunding({
+    md: deterministicPrefixRaw,
+    mandateRecs: prefixMandateRecsRaw,
+    canonical: summary?.canonical || null,
+  });
+  if (fundingStripped.length > 0) {
+    console.warn(`[funding-validator] stripped ${fundingStripped.length} unfundable BUY mandate(s):`, fundingStripped.map(f => `${f.ticker} in ${f.account}/${f.currency} (short $${Math.round(f.shortfall)})`).join("; "));
+  }
 
   const { system: staticSystem, user: userPrompt } = buildBriefingPrompt(profile, summary, monitorAlerts, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, benchmarkBundle, sizingAdjustments, overlaySuggestions, compliance, isMondayEt, attribution, horizonRows, briefingHistory, sizedPicks, pyramidingSignals, tradingRegime, unusualOptions, riskVar, lossCooldown, macroFred, insiderSignals, optionsFlow, marketPulse, whale13F);
 
@@ -4345,6 +4477,40 @@ export async function generateBriefing(profile) {
       }
     }
   } catch (e) { console.warn("[upswitch-inject] warn:", e?.message); }
+
+  // ─── Strip resolved TRAIL STOP REVIEW blocks ───
+  // If a TRAIL STOP REVIEW block for a ticker survives to this point
+  // AND the AI's later prose contains a resolution for that ticker
+  // (SELL / EXIT / TIGHTEN stop / HOLD-with-trigger — the four legal
+  // outcomes of a review), the review block is redundant and creates
+  // a contradiction. Strip it.
+  // Resolution language patterns include mandate-echo phrases and
+  // explicit action verbs applied to the review ticker.
+  try {
+    const trailBlockRe = /\*\*TRAIL STOP REVIEW(?:\s*\(INCOME\))?\*\*\s*—\s*\*\*([A-Z]{1,5}(?:\.[A-Z]{1,3})?)\*\*[\s\S]*?(?=\n\n|\n\*\*|\n## |\n### |$)/g;
+    const RESOLUTION_ACTIONS = /(SELL AT MARKET|MANDATORY EXIT|EXIT NOW|EXITING PER §|TIGHTEN STOP|TIGHTEN TO|HOLD WITH TRIGGER|HOLD — thesis|per §\s*1|as resolved above|resolved above)/i;
+    const reviewMatches = [...md.matchAll(trailBlockRe)];
+    for (const m of reviewMatches) {
+      const reviewTicker = String(m[1] || "").toUpperCase();
+      if (!reviewTicker) continue;
+      // Scan the rest of the md AFTER this review block for a
+      // resolution mentioning the ticker.
+      const afterIdx = m.index + m[0].length;
+      const laterMd = md.slice(afterIdx);
+      const tickerLineRe = new RegExp(`\\b${reviewTicker}(?:\\.[A-Z]{1,3})?\\b[^\\n]*`, "g");
+      let resolved = false;
+      let lm;
+      while ((lm = tickerLineRe.exec(laterMd)) !== null) {
+        const lineStart = laterMd.lastIndexOf("\n", lm.index);
+        const lineEnd = laterMd.indexOf("\n", lm.index);
+        const line = laterMd.slice(lineStart >= 0 ? lineStart + 1 : 0, lineEnd > 0 ? lineEnd : laterMd.length);
+        if (RESOLUTION_ACTIONS.test(line)) { resolved = true; break; }
+      }
+      if (resolved) {
+        md = md.replace(m[0], `_[trail-review resolved — see later mandate for **${reviewTicker}**]_`);
+      }
+    }
+  } catch (e) { console.warn("[trail-review-strip] warn:", e?.message); }
 
   // Return signals + accepted/rejected recs alongside the markdown so
   // persist sites can insertMany directly without re-parsing or

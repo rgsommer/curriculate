@@ -93,11 +93,28 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
       if (isExit && isDriftOnly) {
         // Downgrade to a warning — the exit is still valid; the price
         // reference just moved. Do not block the whole briefing.
-        warnings.push({
-          check: "rec-price-drift-on-exit",
-          ticker: rec.ticker,
-          detail: `${rec.action} ${rec.ticker}: ${verified.detail} (downgraded — exit-side rec, market takes fill)`,
-        });
+        //
+        // ALSO: overwrite the rec's stale entryPrice with the fresh
+        // verified price. Downstream renderers cite rec.entryPrice as
+        // the "reference" price on the ticket ("SELL @ ~$X"); shipping
+        // the stale price is misleading even though we accept the
+        // drift. This mutation is safe because the exit is at market
+        // — entryPrice on an exit is a display value, not an order.
+        if (verified.verifiedPrice != null && Number.isFinite(verified.verifiedPrice)) {
+          const stale = rec.entryPrice;
+          rec.entryPrice = verified.verifiedPrice;
+          warnings.push({
+            check: "rec-price-drift-on-exit",
+            ticker: rec.ticker,
+            detail: `${rec.action} ${rec.ticker}: entry $${Number(stale).toFixed(2)} → $${verified.verifiedPrice.toFixed(2)} (refreshed from live before render — exit-side rec, market takes fill)`,
+          });
+        } else {
+          warnings.push({
+            check: "rec-price-drift-on-exit",
+            ticker: rec.ticker,
+            detail: `${rec.action} ${rec.ticker}: ${verified.detail} (downgraded — exit-side rec, market takes fill)`,
+          });
+        }
         continue;
       }
       blockers.push({
