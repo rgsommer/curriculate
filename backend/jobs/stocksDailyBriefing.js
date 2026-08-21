@@ -4453,6 +4453,20 @@ export async function generateBriefing(profile) {
         md = injectBlock + "\n\n" + md;
       }
     }
+    // If §1 MANDATORY still says "None. Portfolio is inside all hard
+    // rules today." AND we just injected a DO TODAY section with
+    // accepted-rec tickets, that's an internal contradiction the
+    // audit catches (MANDATORY none + DO TODAY tickets). Rewrite the
+    // None sentence to reference the ticket count so §1 accurately
+    // reflects what the operator has to do. Prevents the "None" line
+    // from surviving to the audit and blocking the whole briefing.
+    if (Array.isArray(acceptedRecs) && acceptedRecs.length > 0 && doTodaySection) {
+      const noneLineRe = /None\.\s*Portfolio is inside all hard rules today\./;
+      if (noneLineRe.test(md)) {
+        const n = acceptedRecs.length;
+        md = md.replace(noneLineRe, `No structural §1 mandate today, but ${n} accepted-rec order ticket${n === 1 ? "" : "s"} follow in **DO TODAY** below — treat those as the mandatory actions for this slot.`);
+      }
+    }
   }
 
   // Deterministic upswitch injection — the §1b PORTFOLIO UPGRADE
