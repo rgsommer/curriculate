@@ -427,15 +427,27 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
     for (const [base, observations] of priceByTicker) {
       if (observations.length < 2) continue;
-      // Compare min vs max; if drift > 2% they disagree.
+      // Compare min vs max — tolerance scales with price band because
+      // a $0.25 swing on a $9 stock (2.7%) is normal intraday movement,
+      // while the same swing on a $250 stock (0.1%) would be. Bands:
+      //   < $10       → 5.0% (small-cap / low-priced, intraday swings)
+      //   $10–$50     → 3.5%
+      //   $50–$200    → 2.5%
+      //   ≥ $200      → 2.0%
+      // A drift bigger than the band means the two sections captured
+      // meaningfully different snapshots (or fabrication).
       const prices = observations.map(o => o.price);
       const minP = Math.min(...prices);
       const maxP = Math.max(...prices);
       const drift = ((maxP - minP) / minP) * 100;
-      if (drift > 2.0) {
+      const priceBand = maxP < 10 ? 5.0
+                     : maxP < 50 ? 3.5
+                     : maxP < 200 ? 2.5
+                     : 2.0;
+      if (drift > priceBand) {
         blockers.push({
           check: "cross-section-price-drift",
-          reason: `${base} referenced at multiple prices across sections: min $${minP.toFixed(2)}, max $${maxP.toFixed(2)} (${drift.toFixed(1)}% drift)`,
+          reason: `${base} referenced at multiple prices across sections: min $${minP.toFixed(2)}, max $${maxP.toFixed(2)} (${drift.toFixed(1)}% drift, tolerance ${priceBand.toFixed(1)}% for this price band)`,
           detail: "One canonical current price per ticker. If §1 cites one number and §A2 cites another for the same instrument, at least one is wrong or stale. Refetch and re-render both sections from the same source.",
         });
       }

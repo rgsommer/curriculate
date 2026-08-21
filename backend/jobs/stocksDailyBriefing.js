@@ -4526,6 +4526,69 @@ export async function generateBriefing(profile) {
     }
   } catch (e) { console.warn("[trail-review-strip] warn:", e?.message); }
 
+  // ─── Strip cross-ticker-contaminated analyst PT sentences ───
+  // AI has been observed hallucinating analyst PTs by pasting another
+  // held ticker's current price into a ticker's PT field ("TD PT
+  // raised to C$283.47" — where $283.47 was RY's current price, not
+  // TD's actual target). The audit gate catches this and blocks the
+  // whole briefing. Better: strip the offending sentence at the
+  // producer layer so the audit passes and the rest of the briefing
+  // ships. Sentence-level scalpel — leaves surrounding narrative alone.
+  try {
+    if (summary?.canonical) {
+      const heldPrices = new Map();
+      for (const p of summary.canonical.positions || []) {
+        const lp = Number(p.price);
+        if (Number.isFinite(lp) && lp > 0) heldPrices.set(p.base, lp);
+      }
+      if (heldPrices.size >= 2) {
+        // Sentence delimiter: split on ". " / newline. Rebuild only
+        // sentences that survive the contamination test.
+        const sentences = md.split(/(?<=[.!?])\s+|\n/);
+        const filtered = [];
+        let stripped = 0;
+        for (const s of sentences) {
+          // Only inspect sentences that mention a PT-like phrase.
+          if (!/\b(?:PT|price target|target)\s+(?:raised|of|at|to)/i.test(s)) {
+            filtered.push(s);
+            continue;
+          }
+          const ptMatch = s.match(/\b(?:PT|price target|target)\s+(?:raised to|of|at|to)\s+\$?(?:C|CA|CAD|USD|US)?\$?\s*(\d+(?:\.\d+)?)/i);
+          if (!ptMatch) { filtered.push(s); continue; }
+          const ptVal = Number(ptMatch[1]);
+          if (!Number.isFinite(ptVal)) { filtered.push(s); continue; }
+          // Which ticker is the sentence talking about? Nearest preceding
+          // all-caps token OR the first mentioned held ticker.
+          const tickersInSentence = [...s.matchAll(/\b([A-Z]{1,5})\b/g)]
+            .map(x => x[1].replace(/\..*$/, ""))
+            .filter(t => heldPrices.has(t));
+          const contextBase = tickersInSentence[0];
+          if (!contextBase) { filtered.push(s); continue; }
+          // Check the PT against every OTHER held ticker's current price.
+          let contaminated = false;
+          for (const [otherBase, otherPrice] of heldPrices) {
+            if (otherBase === contextBase) continue;
+            const drift = Math.abs(ptVal - otherPrice) / otherPrice;
+            if (drift < 0.005) {
+              contaminated = true;
+              break;
+            }
+          }
+          if (contaminated) {
+            stripped++;
+            filtered.push(`_[research suppressed — cited PT $${ptVal.toFixed(2)} for **${contextBase}** matched another holding's current price; likely field contamination]_`);
+          } else {
+            filtered.push(s);
+          }
+        }
+        if (stripped > 0) {
+          md = filtered.join(" ");
+          console.warn(`[pt-contamination-strip] removed ${stripped} PT sentence(s) that matched other-ticker prices`);
+        }
+      }
+    }
+  } catch (e) { console.warn("[pt-contamination-strip] warn:", e?.message); }
+
   // Return signals + accepted/rejected recs alongside the markdown so
   // persist sites can insertMany directly without re-parsing or
   // re-validating. Callers that only want the string use `.md`.
