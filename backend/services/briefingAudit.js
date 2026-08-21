@@ -277,26 +277,54 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
   // If the same ticker appears with two different current prices in
   // different sections of the briefing (e.g. DJT @ $8.63 in §1 vs
   // $8.45 in §A2), that's the "one canonical current price per
-  // ticker" rule violated. Tolerance: 2% — normal intraday move is
-  // small; 5%+ drift is a data source disagreement, not a real move.
+  // ticker" rule violated.
+  //
+  // Proximity: the $-price must be in the SAME sentence as the
+  // ticker mention (bounded by ".", "\n", "|", "·"). A 200-char
+  // free-form window was too generous and produced false positives
+  // when two tickers landed in the same paragraph — e.g. "AAPL
+  // trades at $215.31; DJT should follow." would attribute $215.31
+  // to DJT even though it belonged to AAPL.
+  //
+  // Tolerance: 2% for a real disagreement between sections. But
+  // reject any single observation whose implied price differs from
+  // the ticker's fresh live/canonical price by more than 25% — that
+  // is not intraday drift, it is cross-ticker contamination and
+  // should not survive to the drift comparison at all.
   if (md && typeof md === "string" && canonical) {
-    // Extract $<price> USD/CAD paired with a ticker mention. Grab
-    // context by scanning for "TICKER" then a $-price within ~200
-    // chars, then bucket all observations per ticker.
+    // Fresh live-price map for canonical positions — used to reject
+    // observations that are obviously another ticker's price.
+    const livePriceByBase = new Map();
+    for (const p of canonical.positions || []) {
+      const lp = Number(p.price);
+      if (Number.isFinite(lp) && lp > 0) livePriceByBase.set(p.base, lp);
+    }
     const priceByTicker = new Map(); // base → array of {price, ccy}
-    // Very loose but usable: find any TICKER token then look for
-    // a $-price with the same currency within 200 chars.
     const heldBaseSet = new Set(canonical.positions.map(p => p.base));
+    // Sentence boundary — first ".", newline, table separator, or
+    // bullet dot after the ticker occurrence, capped at 120 chars.
+    const SENTENCE_STOPS = /[.\n|·]/;
     for (const base of heldBaseSet) {
+      const livePrice = livePriceByBase.get(base) || null;
       const tickerRe = new RegExp(`\\b${base}(?:\\.[A-Z]{1,3})?\\b`, "g");
       let m;
       while ((m = tickerRe.exec(md)) !== null) {
-        const window = md.slice(m.index, m.index + 200);
+        const raw = md.slice(m.index, m.index + 120);
+        const stopIdx = raw.slice(base.length).search(SENTENCE_STOPS);
+        const window = stopIdx > 0 ? raw.slice(0, base.length + stopIdx) : raw;
         const priceMatch = window.match(/\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/);
         if (!priceMatch) continue;
         const px = Number(priceMatch[1]);
         const ccy = priceMatch[2] || null;
         if (!Number.isFinite(px) || px <= 0) continue;
+        // Reject observations that are >25% away from the ticker's
+        // real live price — that's not drift, it's contamination
+        // from another ticker's number bleeding into a sentence
+        // that also mentions this base ticker. Contamination itself
+        // is a bug, but a different one — surfaced by the fundamental-
+        // /PT-contamination checks upstream — so we ignore it here
+        // instead of double-counting.
+        if (livePrice && Math.abs(px - livePrice) / livePrice > 0.25) continue;
         if (!priceByTicker.has(base)) priceByTicker.set(base, []);
         priceByTicker.get(base).push({ price: px, ccy });
       }
