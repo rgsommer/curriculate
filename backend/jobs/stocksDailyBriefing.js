@@ -4318,7 +4318,11 @@ export async function generateBriefing(profile) {
   // Return signals + accepted/rejected recs alongside the markdown so
   // persist sites can insertMany directly without re-parsing or
   // re-validating. Callers that only want the string use `.md`.
-  return { md: md.trim(), sectorRotation, tradingRegime, acceptedRecs, rejectedRecs, mandateRecs: prefixMandateRecs };
+  // `deterministicPrefix` is exposed separately so callers can ship a
+  // degraded briefing when the AI portion is blocked by the audit —
+  // the prefix is pure canonical data (sleeves / status / mandates /
+  // trail reviews) and can safely go out on its own.
+  return { md: md.trim(), sectorRotation, tradingRegime, acceptedRecs, rejectedRecs, mandateRecs: prefixMandateRecs, deterministicPrefix };
 }
 
 // Plain-English fix instructions per validator reason slug. Reader
@@ -4693,6 +4697,37 @@ async function findUsersDueForBriefing(now) {
 
 // Send the briefing for a single user, then stamp lastBriefingSentKey so
 // the same slot doesn't fire again within the same minute window.
+// Assemble a degraded briefing that goes out when the deterministic
+// pre-send audit blocks the full briefing. Contains ONLY canonical
+// data (sleeve status, mandates, positions, trail reviews) + a banner
+// naming the exact blockers. AI-generated ideas are dropped. Better
+// than silence — the operator still receives the actionable canonical
+// picture, and the banner tells them exactly what stopped the full
+// briefing so the upstream defect can be traced.
+function buildDegradedBriefing({ deterministicPrefix, blockers = [], summary, dateStr }) {
+  const banner = [
+    "> ⚠ **DEGRADED BRIEFING — AI section suppressed by pre-send audit.**",
+    ">",
+    "> The deterministic pre-send audit found data-integrity or logic problems",
+    "> that would have made the full briefing misleading. The canonical portion",
+    "> below (mandates, stops, sleeves, positions) is safe to act on — the AI",
+    "> commentary and Optional Ideas section have been removed.",
+    ">",
+    `> **Blocker summary:** ${summary || `${blockers.length} check(s) failed.`}`,
+    ">",
+    "> **Individual blockers:**",
+  ];
+  for (const b of (blockers || []).slice(0, 20)) {
+    banner.push(`> - **${b.check}** — ${b.reason}`);
+    if (b.detail) banner.push(`>   ${String(b.detail).replace(/\n/g, " ").slice(0, 300)}`);
+  }
+  const header = `# 📉 Daily briefing — ${dateStr} (degraded)`;
+  const body = deterministicPrefix && deterministicPrefix.trim().length > 0
+    ? deterministicPrefix
+    : "_(Deterministic prefix unavailable — canonical engine returned no data. Check portfolio state.)_";
+  return [header, "", banner.join("\n"), "", body, "", "---", "_This is a degraded briefing. Fix the upstream issue named in the blocker list; the next cron slot will retry the full briefing._"].join("\n");
+}
+
 export async function sendBriefingForUser(p, sendKey) {
   // Stamp attempt-time FIRST thing so the diagnostic can prove the function
   // was actually entered (vs. the trigger's fire-and-forget never running,
@@ -4738,20 +4773,20 @@ export async function sendBriefingForUser(p, sendKey) {
     // Same price-validation + correction pass the manual /send-briefing uses.
     // Never throws — returns the (corrected or as-is) markdown.
     md = await validateAndCorrectBriefing(md, p);
-    // Independent OpenAI critic pass — prepends an amber discipline
-    // banner if any violations flag. Best-effort; never blocks.
-    const audit = await auditBriefingWithCritic(md, p);
-    md = audit.markdown;
 
     // Phase 1 (spec §20 + §24): deterministic pre-send audit gate.
     // Every price verified against the market-data integrity layer;
     // every stop/target > 0; no phantom SELL; no BUY of a blocked
     // ticker; no ticker contradicting itself across DO TODAY and
-    // TRAIL STOP REVIEW. If anything blocks, we DO NOT send.
-    // Stamp the failure so the diagnostic panel surfaces it and the
-    // next tick will retry after the underlying issue is fixed.
+    // TRAIL STOP REVIEW. Runs BEFORE the critic so a costly OpenAI
+    // call is not spent on a briefing that is going to be blocked.
+    // If anything blocks, we ship a DEGRADED briefing (deterministic
+    // prefix only + blocker list) rather than silently dropping the
+    // slot — the operator is never left with zero output.
+    let preSendAudit = null;
+    let auditCrashed = false;
     try {
-      const preSendAudit = await auditBriefingBeforeSend({
+      preSendAudit = await auditBriefingBeforeSend({
         email: p.email,
         md,
         acceptedRecs: genResult.acceptedRecs || [],
@@ -4759,32 +4794,74 @@ export async function sendBriefingForUser(p, sendKey) {
         positions: p.positions || [],
         profile: p, // Phase 3+4: canonical portfolio checks need full profile (accounts, fx, sleeveTargets)
       });
-      if (!preSendAudit.ok) {
-        const summary = summarizeAuditFailure(preSendAudit);
-        await recordFail("preSendAudit", new Error(summary));
-        console.warn(`[stocks-briefing] ⛔ ${p.email} @ ${sendKey} — suppressed by pre-send audit (${preSendAudit.blockers.length} blocker(s))`);
-        for (const b of preSendAudit.blockers.slice(0, 5)) {
-          console.warn(`  [${b.check}] ${b.reason}`);
-        }
-        // Clear attempt key so the retry cooldown gate doesn't lock
-        // us out of retrying this same slot after a fix.
-        return;
-      }
-      if ((preSendAudit.warnings || []).length > 0) {
-        console.log(`[stocks-briefing] audit warnings for ${p.email}: ${preSendAudit.warnings.length}`);
-      }
     } catch (e) {
       // The audit itself crashed — that's a bug, but not one we want
       // to convert into a permanent send-block. Log loudly and let
       // the send proceed; the critic + validator gates upstream still
       // apply.
+      auditCrashed = true;
       console.error(`[stocks-briefing] pre-send audit crashed for ${p.email}:`, e?.message);
     }
 
-    const subject = `Daily briefing — ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`;
+    const dateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    // Discipline critic (OpenAI). Skipped when audit blocked (no point
+    // paying to critique a briefing we're not shipping in full) OR
+    // when there are no accepted recs to critique (nothing for the
+    // critic to flag). Cost saved: 1 OpenAI call per suppressed or
+    // no-rec briefing.
+    const acceptedForCritic = genResult.acceptedRecs || [];
+    const shouldRunCritic = (preSendAudit?.ok || auditCrashed) && acceptedForCritic.length > 0;
+    let criticViolations = [];
+    if (shouldRunCritic) {
+      const audit = await auditBriefingWithCritic(md, p);
+      md = audit.markdown;
+      criticViolations = audit.violations || [];
+    } else {
+      const reason = !preSendAudit?.ok ? "audit-blocked" : "no-accepted-recs";
+      console.log(`[stocks-briefing] critic skipped for ${p.email} — ${reason}`);
+    }
+
+    if (preSendAudit && !preSendAudit.ok) {
+      const summary = summarizeAuditFailure(preSendAudit);
+      await recordFail("preSendAudit", new Error(summary));
+      console.warn(`[stocks-briefing] ⛔ ${p.email} @ ${sendKey} — suppressed by pre-send audit (${preSendAudit.blockers.length} blocker(s)); sending DEGRADED fallback`);
+      for (const b of preSendAudit.blockers.slice(0, 5)) {
+        console.warn(`  [${b.check}] ${b.reason}`);
+      }
+      // Degraded briefing: deterministic prefix (fully canonical —
+      // stops, mandates, sleeve status, positions, trail reviews) +
+      // an amber banner listing the audit blockers. The AI portion
+      // is dropped. Better than zero output — operator can still act
+      // on mandates and see the specific data-integrity issue.
+      const degradedMd = buildDegradedBriefing({
+        deterministicPrefix: genResult.deterministicPrefix || "",
+        blockers: preSendAudit.blockers,
+        summary,
+        dateStr,
+      });
+      const subject = `Daily briefing — ${dateStr} — degraded (audit suppressed AI section)`;
+      try { await emailBriefing({ to: p.email, subject, md: degradedMd }); }
+      catch (e) { console.warn(`[stocks-briefing] degraded email failed for ${p.email}:`, e?.message); }
+      try { await saveAdviceSnapshot({ email: p.email, markdown: degradedMd, source: "cron-degraded", criticViolations: [] }); }
+      catch (e) { /* best-effort snapshot */ }
+      // Stamp idempotency key so we don't loop on the same slot every
+      // minute — a degraded send still counts as "handled".
+      try {
+        await StocksPortfolio.updateOne(
+          { email: p.email },
+          { $set: { lastBriefingSentKey: sendKey } }
+        );
+      } catch { /* best-effort */ }
+      return;
+    }
+    if ((preSendAudit?.warnings || []).length > 0) {
+      console.log(`[stocks-briefing] audit warnings for ${p.email}: ${preSendAudit.warnings.length}`);
+    }
+
+    const subject = `Daily briefing — ${dateStr}`;
     try { await emailBriefing({ to: p.email, subject, md }); }
     catch (e) { await recordFail("emailBriefing", e); throw e; }
-    try { await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron", criticViolations: audit.violations }); }
+    try { await saveAdviceSnapshot({ email: p.email, markdown: md, source: "cron", criticViolations }); }
     catch (e) { await recordFail("saveAdviceSnapshot", e); throw e; }
 
     // generateBriefing already ran parse + enrich + validate; §5
