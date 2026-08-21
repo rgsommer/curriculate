@@ -2004,19 +2004,19 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // Sort worst-first by drawdown magnitude (most-negative first).
   trailReviews.sort((a, b) => (a.drawdownPct ?? 0) - (b.drawdownPct ?? 0));
   for (const r of trailReviews) {
-    // Register base-ticker as TRAIL_SOFT unless drawdown is severe
-    // enough to elevate to TRAIL_HARD (in which case downstream code
-    // may still accept a SELL for it). Per spec: HARD/TRAIL_HARD
-    // emit SELL; TRAIL_SOFT emits REVIEW only.
-    {
-      const base = String(r.ticker || "").toUpperCase().replace(/\..*$/, "");
-      const sev = classifyStopSeverity({
-        ticker: base,
-        drawdownPct: r.drawdownPct,
-        isHardStopHit: hardStopHitBaseSet.has(base),
-      });
-      if (sev === "TRAIL_SOFT") trailSoftTickers.add(base);
-    }
+    // Register the base-ticker to block any AI-emitted SELL for it —
+    // if we're emitting a REVIEW mandate (three-way choice: EXIT /
+    // TIGHTEN / HOLD), the operator hasn't yet decided, and no
+    // automatic SELL ticket should coexist with it. Previously we
+    // ONLY registered TRAIL_SOFT tickers, which let INCOME reviews
+    // (RY, drawdown 7.6%, classified TRAIL_HARD) coexist with an AI
+    // SELL rec in DO TODAY — a direct contradiction. Fix: register
+    // every emitted trail-review ticker regardless of severity.
+    // willEmitSellBases has already filtered out cases where a hard
+    // SELL AT MARKET is the correct action; anything reaching this
+    // loop is genuinely a REVIEW.
+    const base = String(r.ticker || "").toUpperCase().replace(/\..*$/, "");
+    trailSoftTickers.add(base);
     const drawdownStr = r.drawdownPct != null
       ? `${r.drawdownPct.toFixed(1)}%` : "n/a";
     const trailStopStr = r.trailStop != null
@@ -4270,7 +4270,7 @@ export async function generateBriefing(profile) {
             rec: r,
             rejections: [{
               reason: "trail-soft-review-only",
-              detail: `${r.action} ${r.ticker} rejected — ticker is under §1 TRAIL STOP REVIEW (soft: drawdown < 6% from 60d peak, no cost-basis hard-stop hit). REVIEW is a decision mandate, not a forced exit. Choose one of EXIT / TIGHTEN / HOLD-with-trigger; do not queue an automatic SELL ticket.`,
+              detail: `${r.action} ${r.ticker} rejected — ticker is under a trail-stop REVIEW mandate (drawdown-triggered decision point; not a forced exit). Choose one of EXIT / TIGHTEN / HOLD-with-trigger in the §1 review; do not queue an automatic SELL ticket in parallel.`,
             }],
           });
         } else {

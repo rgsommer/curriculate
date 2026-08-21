@@ -98,8 +98,29 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
         // verified price. Downstream renderers cite rec.entryPrice as
         // the "reference" price on the ticket ("SELL @ ~$X"); shipping
         // the stale price is misleading even though we accept the
-        // drift. This mutation is safe because the exit is at market
-        // — entryPrice on an exit is a display value, not an order.
+        // drift.
+        //
+        // BUT: a SELL limit ABOVE the current market is not a
+        // "reference" — it's an unfillable order. RY case: SELL @
+        // $294.10 CAD min when live was ~$282 CAD would never fill;
+        // the SELL SIDE limit must be AT OR BELOW live to execute
+        // immediately. If the stale rec.entryPrice violates that
+        // ordering AND stop was set below the stale reference, the
+        // whole ticket is nonsense — block, don't downgrade.
+        const isSellSide = String(rec.action).toUpperCase() === "SELL";
+        const live = verified.verifiedPrice;
+        if (isSellSide && Number.isFinite(rec.entryPrice) && Number.isFinite(live)
+            && rec.entryPrice > live * 1.01) {
+          // Rec entry is > 1% above live — this SELL limit will not
+          // fill at anything close to today's market. It's a broken
+          // ticket, not a refreshable one.
+          blockers.push({
+            check: "sell-limit-above-live-price",
+            reason: `SELL ${rec.ticker}: limit $${rec.entryPrice.toFixed(2)} is ${((rec.entryPrice - live) / live * 100).toFixed(1)}% ABOVE live $${live.toFixed(2)} — order will not fill`,
+            detail: `A SELL limit set above the current market only fills if price rises to it. If the intent is a market-take exit, the rec must cite a limit ≤ live price. Producer likely captured a stale rec.entryPrice that hasn't caught up to market. Regenerate the rec with a fresh live-based limit.`,
+          });
+          continue;
+        }
         if (verified.verifiedPrice != null && Number.isFinite(verified.verifiedPrice)) {
           const stale = rec.entryPrice;
           rec.entryPrice = verified.verifiedPrice;
@@ -563,7 +584,58 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     };
     checkPair(stopThenPtRe);
     checkPair(ptThenStopRe);
-    for (const b of contaminationBlockers.slice(0, 8)) blockers.push(b);
+    // Pattern F: analyst target arithmetically implausible vs current
+    // price. RY at ~$282 with cited PT of $161.28 is not a bullish
+    // "raised target" — it's contamination. Real bull-case PTs sit
+    // between 0.9× and 2× current; anything outside 0.5×–3× is either
+    // a downgrade + typo, a sector-different ticker's PT bleeding
+    // through, or a fabricated number.
+    const ptWithTickerRe = /\b([A-Z]{1,5})\b[^\n]{0,80}?(?:PT|price target|target)[^\n]{0,40}?\$?(?:C|CA|CAD|USD|US)?\$?\s*(\d+(?:\.\d+)?)/gi;
+    let ptmm;
+    while ((ptmm = ptWithTickerRe.exec(md)) !== null) {
+      const t = String(ptmm[1]).toUpperCase();
+      const ptVal = Number(ptmm[2]);
+      const currentPrice = priceByBase.get(t);
+      if (!Number.isFinite(currentPrice) || currentPrice <= 5) continue;
+      if (!Number.isFinite(ptVal) || ptVal <= 0) continue;
+      const ratio = ptVal / currentPrice;
+      if (ratio < 0.5 || ratio > 3.0) {
+        contaminationBlockers.push({
+          check: "analyst-target-implausible-vs-current",
+          reason: `${t}: cited analyst target $${ptVal.toFixed(2)} vs current price $${currentPrice.toFixed(2)} → ratio ${ratio.toFixed(2)}× (outside 0.5×–3.0× plausibility window)`,
+          detail: `Excerpt: "${ptmm[0].slice(0, 140).replace(/\s+/g, " ")}". Real analyst targets for a large-cap live somewhere between 0.9× and 2× current price. Anything outside 0.5×–3× is almost certainly cross-ticker contamination (the PT belongs to a different ticker) or a fabricated number. Strip the research claim before any decision rides on it.`,
+        });
+      }
+    }
+    // Pattern G: cited "N% upside" arithmetically disagrees with the
+    // PT and current-price in the same sentence. AI wrote "$200 PT
+    // (110% upside)" when current was ~$217 — 200/217-1 = -8%, not
+    // +110%. Check every "$X PT (Y% upside)" pattern.
+    const upsideRe = /\$?(?:C|CA|CAD|USD|US)?\$?\s*(\d+(?:\.\d+)?)\s*(?:PT|price target|target)?\s*\((\d+(?:\.\d+)?)%\s*upside\)/gi;
+    let umm;
+    while ((umm = upsideRe.exec(md)) !== null) {
+      const ptVal = Number(umm[1]);
+      const claimedUpside = Number(umm[2]);
+      if (!Number.isFinite(ptVal) || !Number.isFinite(claimedUpside)) continue;
+      // Find nearest preceding ticker to infer current price.
+      const start = Math.max(0, umm.index - 200);
+      const ctxBefore = md.slice(start, umm.index);
+      const tickerMatches = [...ctxBefore.matchAll(/\b([A-Z]{1,5})\b/g)];
+      const ctxTicker = tickerMatches.length ? tickerMatches[tickerMatches.length - 1][1] : null;
+      if (!ctxTicker) continue;
+      const currentPrice = priceByBase.get(ctxTicker.replace(/\..*$/, ""));
+      if (!Number.isFinite(currentPrice) || currentPrice <= 0) continue;
+      const actualUpside = (ptVal / currentPrice - 1) * 100;
+      // Allow ±3pp rounding tolerance.
+      if (Math.abs(actualUpside - claimedUpside) > 3) {
+        contaminationBlockers.push({
+          check: "upside-percent-arithmetic-mismatch",
+          reason: `${ctxTicker}: cited "${claimedUpside}% upside" from PT $${ptVal.toFixed(2)} vs current $${currentPrice.toFixed(2)} — actual is ${actualUpside.toFixed(1)}%`,
+          detail: `Excerpt: "${umm[0].replace(/\s+/g, " ")}". Upside% must equal (target/current − 1)×100. Cited percentage disagrees by ${Math.abs(actualUpside - claimedUpside).toFixed(1)}pp; either the target, the current price, or the % is wrong. Producer likely pasted an old or unrelated upside figure.`,
+        });
+      }
+    }
+    for (const b of contaminationBlockers.slice(0, 10)) blockers.push(b);
   }
 
   // ─── 8f (audit fix #228.2): stale P/L snapshot.

@@ -433,14 +433,37 @@ export function formatUpswitchBlock(result) {
     lines.push("");
   }
   // SCREENED — cleared score hurdle but the trade itself is not
-  // actionable (invalid levels, negative reward/risk, etc.). Emit so
-  // the operator sees WHY the engine considered but discarded these
-  // pairings instead of an unexplained absence.
+  // actionable (invalid levels, negative reward/risk, etc.).
+  // Deduplicate by challenger ticker: the same challenger will beat
+  // many incumbents on score but its own levels are still what they
+  // are, so listing "AC.TO vs DJT ... AC.TO vs TD ... AC.TO vs BNS"
+  // 13 times just spams the reader. Emit ONE line per challenger
+  // with the reason + the incumbents it outranked.
   if (screened.length > 0) {
-    const names = screened.map(o => o.challenger.ticker).join(", ");
-    lines.push(`**UPSWITCH SCREENED — NO ACTION**: higher-scoring challengers rejected: ${names} — entry/risk gates failed. No actionable swap for these pairings.`);
+    const byChallenger = new Map();
     for (const o of screened) {
-      lines.push(`   ${o.rationale}`);
+      const ct = String(o.challenger.ticker || "").toUpperCase();
+      if (!byChallenger.has(ct)) {
+        byChallenger.set(ct, {
+          challenger: o.challenger.ticker,
+          challengerScore: o.challenger.composite?.score ?? "?",
+          reason: null,
+          incumbents: [],
+        });
+      }
+      const entry = byChallenger.get(ct);
+      entry.incumbents.push(`${o.holding.ticker} (${o.holding.composite?.score ?? "?"})`);
+      // Extract the reason once from the first rationale that has it.
+      if (!entry.reason) {
+        const rm = /failed a basic sanity check:\s*([^.]+)/i.exec(o.rationale || "")
+                || /rejected by live-price verification:\s*([^.]+)/i.exec(o.rationale || "");
+        entry.reason = rm ? rm[1].trim() : "entry/risk gates failed";
+      }
+    }
+    const challengersList = [...byChallenger.values()].map(e => e.challenger).join(", ");
+    lines.push(`**UPSWITCH SCREENED — NO ACTION**: higher-scoring challengers rejected: ${challengersList} — entry/risk gates failed. No actionable swap for these pairings.`);
+    for (const e of byChallenger.values()) {
+      lines.push(`   ${e.challenger} (composite ${e.challengerScore}) outranked ${e.incumbents.length} incumbent${e.incumbents.length === 1 ? "" : "s"} (${e.incumbents.join(", ")}) but was rejected: ${e.reason}.`);
     }
     lines.push("");
   }
