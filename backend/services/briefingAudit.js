@@ -304,6 +304,12 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     // Sentence boundary — first ".", newline, table separator, or
     // bullet dot after the ticker occurrence, capped at 120 chars.
     const SENTENCE_STOPS = /[.\n|·]/;
+    // Words that mark a $-price as something other than "current
+    // price" — stops, targets, PTs, cost basis, trail levels, etc.
+    // A "current-price disagreement" check must ignore these or it
+    // flags legitimate designs (e.g. RY current $282 with a $270
+    // stop) as drift when they are not.
+    const NON_PRICE_CONTEXT = /\b(stop|target|PT|price target|trail|trailing|cost basis|entry|cost|hwm|high water mark|drawdown from|prior close|yesterday|book|hard\s*stop|resistance|support)\b/i;
     for (const base of heldBaseSet) {
       const livePrice = livePriceByBase.get(base) || null;
       const tickerRe = new RegExp(`\\b${base}(?:\\.[A-Z]{1,3})?\\b`, "g");
@@ -312,21 +318,24 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
         const raw = md.slice(m.index, m.index + 120);
         const stopIdx = raw.slice(base.length).search(SENTENCE_STOPS);
         const window = stopIdx > 0 ? raw.slice(0, base.length + stopIdx) : raw;
-        const priceMatch = window.match(/\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/);
-        if (!priceMatch) continue;
-        const px = Number(priceMatch[1]);
-        const ccy = priceMatch[2] || null;
-        if (!Number.isFinite(px) || px <= 0) continue;
-        // Reject observations that are >25% away from the ticker's
-        // real live price — that's not drift, it's contamination
-        // from another ticker's number bleeding into a sentence
-        // that also mentions this base ticker. Contamination itself
-        // is a bug, but a different one — surfaced by the fundamental-
-        // /PT-contamination checks upstream — so we ignore it here
-        // instead of double-counting.
-        if (livePrice && Math.abs(px - livePrice) / livePrice > 0.25) continue;
-        if (!priceByTicker.has(base)) priceByTicker.set(base, []);
-        priceByTicker.get(base).push({ price: px, ccy });
+        // For every $-price in the window, inspect the ~20 chars
+        // preceding it. If those chars name a non-price context
+        // (stop / target / PT / entry / trail), skip it — that
+        // number is not a claim about the current price.
+        const priceGlobal = /\$(\d+(?:\.\d{1,2})?)\s*(USD|CAD)?/g;
+        let pm;
+        while ((pm = priceGlobal.exec(window)) !== null) {
+          const preCtx = window.slice(Math.max(0, pm.index - 22), pm.index);
+          if (NON_PRICE_CONTEXT.test(preCtx)) continue;
+          const px = Number(pm[1]);
+          const ccy = pm[2] || null;
+          if (!Number.isFinite(px) || px <= 0) continue;
+          // Reject observations >25% off live — cross-ticker contamination,
+          // caught properly by the PT-contamination checks upstream.
+          if (livePrice && Math.abs(px - livePrice) / livePrice > 0.25) continue;
+          if (!priceByTicker.has(base)) priceByTicker.set(base, []);
+          priceByTicker.get(base).push({ price: px, ccy });
+        }
       }
     }
     for (const [base, observations] of priceByTicker) {
@@ -585,29 +594,38 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
         const base = String(m[1]).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
         if (base && base.length >= 1) mandateTickers.add(base);
       }
-      // For each ticker, look for HOLD/no-action language in later
-      // sections. Allowed exceptions: "resolved above", "per §1",
-      // "as documented above" — those are legitimate references TO
-      // the mandate rather than contradicting it.
-      const RESOLUTION_MARKERS = /(resolved above|as (?:documented|resolved) above|per\s*§\s*1|per\s*section\s*1|as decided (?:above|in §1))/i;
+      // For each ticker, look for HOLD/no-action language on THE SAME
+      // LINE/BULLET as the ticker mention. Cross-line windows produced
+      // false positives when one bullet said "HOLD into earnings" (for
+      // ticker A) and the NEXT bullet was ticker B's mandate echo —
+      // the check wrongly attributed A's HOLD to B.
+      //
+      // Allowed exceptions (bullet references the mandate rather than
+      // contradicting it): "resolved above", "per §N", "as resolved
+      // above", "EXITING PER §…", "TRAIL STOP REVIEW", "MANDATORY
+      // EXIT", "see §1/§0", "above". Bolded directive phrases that
+      // literally repeat a mandate header are echoes, not contradictions.
+      const RESOLUTION_MARKERS = /(resolved above|as (?:documented|resolved) above|per\s*§\s*\d|per\s*section\s*\d|as decided (?:above|in §\d)|exiting per\s*§|trail stop review|mandatory exit|see\s*§\s*\d|core rebalance|cash deploy|swap\s*[→\-]|as noted above|documented above|noted in\s*§\s*\d)/i;
       for (const base of mandateTickers) {
-        // Only look for HOLD/no-action bullets that name this ticker.
-        // Ticker in the later section AND accompanied by no-action
-        // language on the same-or-next line.
         const tickerRe = new RegExp(`\\b${base}(?:\\.[A-Z]{1,3})?\\b`, "g");
         let lm;
         while ((lm = tickerRe.exec(laterMd)) !== null) {
-          // Grab a small window around the match — 120 chars each side.
-          const windowStart = Math.max(0, lm.index - 120);
-          const windowEnd = Math.min(laterMd.length, lm.index + 240);
-          const window = laterMd.slice(windowStart, windowEnd);
+          // Extract JUST the ticker's own bullet/line. Walk back to
+          // the nearest "\n- ", "\n* ", or "\n" and forward to the
+          // next "\n". This is what the operator reads together, so
+          // a HOLD outside this range isn't attributable to this
+          // ticker.
+          const priorBreak = laterMd.lastIndexOf("\n", lm.index);
+          const lineStart = priorBreak >= 0 ? priorBreak + 1 : 0;
+          const lineEnd = laterMd.indexOf("\n", lm.index);
+          const line = laterMd.slice(lineStart, lineEnd > 0 ? lineEnd : laterMd.length);
           const noActionRe = /\b(no action|HOLD(?:ING)?|mechanical noise|do not (?:exit|trim|sell)|informational only|long-horizon (?:CORE|hold))\b/i;
-          if (!noActionRe.test(window)) continue;
-          if (RESOLUTION_MARKERS.test(window)) continue; // OK — explicitly references the mandate
+          if (!noActionRe.test(line)) continue;
+          if (RESOLUTION_MARKERS.test(line)) continue; // OK — the bullet explicitly references the mandate
           blockers.push({
             check: "mandate-vs-noaction-contradiction",
             reason: `${base} appears in §1 MANDATORY but a later section says HOLD / no-action / mechanical noise without referencing the mandate`,
-            detail: `Excerpt: …${window.replace(/\s+/g, " ").trim().slice(0, 200)}…\n\nA mandate can only be softened by an explicit "as resolved above" reference to §1 itself. Silent contradictions leave the operator with two opposite instructions on the same ticker. Fix upstream: either drop the §1 mandate (if the later analysis is right) or strip the later HOLD language (if the mandate is right).`,
+            detail: `Excerpt: …${line.replace(/\s+/g, " ").trim().slice(0, 200)}…\n\nA mandate can only be softened by an explicit reference to §1 (e.g. "as resolved above", "per §1", "EXITING PER §0c", "TRAIL STOP REVIEW"). Silent contradictions leave the operator with two opposite instructions on the same ticker. Fix upstream: either drop the §1 mandate (if the later analysis is right) or strip the later HOLD language (if the mandate is right).`,
           });
           break; // one contradiction per ticker is enough — don't spam
         }
