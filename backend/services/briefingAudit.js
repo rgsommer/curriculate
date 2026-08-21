@@ -300,6 +300,31 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
           detail: "The accepted rec ticket IS a mandatory action for the operator; MANDATORY must reflect it, not declare 'None'. Fix: either drop the ticket (if not truly mandatory) or update the MANDATORY message to reference the accepted-rec ticket(s) below.",
         });
       }
+      // Extended: MANDATORY None + later stop-hit / cover / hit target /
+      // exit-at-market alert = the same class of contradiction. A
+      // stop-hit alert IS an immediate action; §1 cannot claim None.
+      const actionSignalRe = /(hit stop|hit target|SELL AT MARKET|MANDATORY EXIT|EXITING PER §|Cover the position|Cover \/ re-evaluate|EXIT NOW)/i;
+      if (actionSignalRe.test(md)) {
+        blockers.push({
+          check: "mandatory-none-with-action-alert",
+          reason: "MANDATORY ACTIONS says 'None. Portfolio is inside all hard rules' but a later section names a stop-hit / target-hit / cover / SELL AT MARKET action alert",
+          detail: "Immediate-action alerts (stop hits, target hits, mandatory exits) ARE mandatory actions for the operator. §1 must reference them, not declare 'None'. Fix upstream so §1 aggregates every action alert emitted below, or so the alert is downgraded to informational if the action is not truly required.",
+        });
+      }
+    }
+  }
+
+  // ─── 8-CANONICAL (integrity gate for deterministic mode): if
+  // canonical.reconciliation.passed !== true AND §1 still claims
+  // "inside all hard rules today", the briefing is asserting
+  // compliance it cannot back up. Fail closed.
+  if (md && typeof md === "string" && canonical && canonical.reconciliation && canonical.reconciliation.passed !== true) {
+    if (/Portfolio is inside all hard rules today/i.test(md)) {
+      blockers.push({
+        check: "hard-rule-claim-vs-reconciliation-fail",
+        reason: `Briefing claims 'Portfolio is inside all hard rules today' but canonical reconciliation failed (${canonical.reconciliation.checkTotalPct != null ? canonical.reconciliation.checkTotalPct.toFixed(1) + '%' : 'no total'})`,
+        detail: "Portfolio compliance cannot be certified while the underlying sleeves + cash don't sum to 100%. Rewrite §1 to 'MANDATORY DATA ACTION — resolve reconciliation before compliance can be certified' and suppress every downstream section that depends on portfolio weights, sleeve headroom, or available cash (Daily Picks, sizing, sleeve mandates).",
+      });
     }
   }
 

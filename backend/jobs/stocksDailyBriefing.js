@@ -332,9 +332,26 @@ export async function monitorOpenRecs(email) {
       if (rec.action === "BUY") {
         await insertAutoSellTrail({ buyRec: rec, hitPrice: px, hitAt: now, reason: "stop-hit" });
       }
-      const exit = rec.action === "BUY"
-        ? `Thesis invalidated. **SELL the position** at market unless you have a high-conviction reason to override.`
-        : `Position is moving against you. **Cover / re-evaluate the SHORT thesis** now.`;
+      // SEMANTIC FIX: a SELL/EXIT/TRIM rec on an existing long is NOT
+      // an open short — it's an exit. Stops on exit-side recs are
+      // "if price rebounds back above X, exit didn't fill and we're
+      // still in the position" markers, not short-position stops.
+      // Prior wording "cover / re-evaluate the SHORT thesis" would
+      // trigger even for a plain SELL on a long. Only tag as a short
+      // when the rec was explicitly a SELL_SHORT / OPEN_SHORT action.
+      const isBuy = rec.action === "BUY";
+      const isExitOnLong = ["SELL", "EXIT", "TRIM"].includes(String(rec.action).toUpperCase());
+      const isShortOpen = ["SELL_SHORT", "OPEN_SHORT", "SHORT"].includes(String(rec.action).toUpperCase());
+      let exit;
+      if (isBuy) {
+        exit = `Thesis invalidated. **SELL the position** at market unless you have a high-conviction reason to override.`;
+      } else if (isShortOpen) {
+        exit = `Position is moving against you. **Cover / re-evaluate the SHORT thesis** now.`;
+      } else if (isExitOnLong) {
+        exit = `The exit-side rec's stop level was crossed on the way back up. The exit did NOT open a short position; treat this as informational — reassess whether to re-enter the long or leave it flat.`;
+      } else {
+        exit = `Stop crossed. Reassess the position.`;
+      }
       stopAlerts.push(
         `🛑 **${rec.ticker} hit stop.** Rec from ${dateStr}: ${rec.action} @ $${rec.entryPrice} with stop $${rec.stopPrice}. Current $${px.toFixed(2)} ${ccyMarker}. ${exit}`
       );
@@ -1033,32 +1050,82 @@ function formatRecentTradesBlock(recentTrades) {
 // numbers coming straight from the pick engine (composite score,
 // entry, target, stop, setup, rationale). No prose, no LLM narrative,
 // no chance of hallucinated numbers.
-function renderDailyPicksDeterministic(dailyPicks) {
+//
+// PRICE-VERIFICATION GATE: every pick is independently re-verified
+// against the market-data integrity layer before rendering. If the
+// pick's entryPrice differs from the fresh verified quote by more
+// than 5%, the pick is SUPPRESSED with "PRICE VERIFICATION FAILED".
+// Real defect: MU appeared at $967.74 (should be ~$110) — a data-
+// feed adjustment/split artifact that the pick engine let through.
+// Any pick whose price cannot be verified cannot ship.
+async function renderDailyPicksDeterministic(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
-  const allowed = dailyPicks.filter(p => !p.blockedReason);
-  const blocked = dailyPicks.filter(p => p.blockedReason);
-  if (allowed.length === 0 && blocked.length === 0) return "";
-  const lines = ["", "## 4. 💡 Daily picks (deterministic, from pick engine)", ""];
-  if (allowed.length > 0) {
-    lines.push(`_${allowed.length} pick${allowed.length === 1 ? "" : "s"} passed every screen — deterministic scores + technical setup._`);
+  const { verifyRecPrice } = await import("../services/marketDataIntegrity.js");
+  const PICK_PRICE_DRIFT_MAX_PCT = 5.0;
+  // Verify every allowed pick concurrently but cap concurrency so
+  // we don't burst the market-data provider.
+  const allowedRaw = dailyPicks.filter(p => !p.blockedReason);
+  const blockedRaw = dailyPicks.filter(p => p.blockedReason);
+  const verified = [];
+  const suppressed = [];
+  const CONC = 4;
+  for (let i = 0; i < allowedRaw.length; i += CONC) {
+    const slice = allowedRaw.slice(i, i + CONC);
+    const results = await Promise.all(slice.map(async (p) => {
+      try {
+        const v = await verifyRecPrice({
+          ticker: p.ticker,
+          entryCurrency: p.currency || "USD",
+          entryPrice: p.entryPrice,
+        });
+        return { p, v };
+      } catch (e) {
+        return { p, v: { ok: false, rejectionReason: `verify-threw:${e?.message || "unknown"}` } };
+      }
+    }));
+    for (const { p, v } of results) {
+      if (v.ok) {
+        verified.push({ ...p, verifiedPrice: v.verifiedPrice });
+      } else {
+        const detail = v.rejectionReason || "market-data-unavailable";
+        const driftDetail = v.detail || "";
+        suppressed.push({ ticker: p.ticker, reason: `${detail}${driftDetail ? ` — ${driftDetail}` : ""}` });
+      }
+    }
+  }
+  if (verified.length === 0 && blockedRaw.length === 0 && suppressed.length === 0) return "";
+  const lines = ["", "## 4. 💡 Daily picks (deterministic, price-verified)", ""];
+  if (verified.length > 0) {
+    lines.push(`_${verified.length} pick${verified.length === 1 ? "" : "s"} passed every screen AND independent live-price verification (drift < ${PICK_PRICE_DRIFT_MAX_PCT}%)._`);
     lines.push("");
-    for (let i = 0; i < allowed.length; i++) {
-      const p = allowed[i];
+    for (let i = 0; i < verified.length; i++) {
+      const p = verified[i];
       const sleeveTag = classifyPosition({ ticker: p.ticker }) || "spec";
       const setupTag = p.setupName ? ` · setup: **${p.setupName}**` : "";
       const mtfTag = p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : "";
-      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · composite ${p.deterministicScore}${setupTag}${mtfTag}`);
-      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} ${p.currency || "USD"} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)}`);
+      const secName = MANDATE_TICKER_DESCRIPTIONS?.[p.ticker]
+        ? "" // ETFs already carry a description block downstream
+        : "";
+      // Identity line: ticker · currency · verified live price.
+      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${p.deterministicScore}${setupTag}${mtfTag}`);
+      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} · stop $${p.stopPrice.toFixed(2)} · verified live $${p.verifiedPrice.toFixed(2)}`);
       if (p.rationale) lines.push(`   ${p.rationale}`);
       lines.push("");
     }
-  } else {
+  } else if (suppressed.length === 0 && blockedRaw.length === 0) {
     lines.push("_None passed today's screens._");
     lines.push("");
   }
-  if (blocked.length > 0) {
-    lines.push(`_${blocked.length} candidate${blocked.length === 1 ? "" : "s"} blocked by validator — informational only:_`);
-    for (const p of blocked) {
+  if (suppressed.length > 0) {
+    lines.push(`⚠ **${suppressed.length} pick${suppressed.length === 1 ? "" : "s"} SUPPRESSED — PRICE VERIFICATION FAILED** (independent quote disagreed with pick-engine price beyond tolerance). Do NOT act on these tickers until the data source is investigated:`);
+    for (const s of suppressed) {
+      lines.push(`- **${s.ticker}** — ${s.reason}`);
+    }
+    lines.push("");
+  }
+  if (blockedRaw.length > 0) {
+    lines.push(`_${blockedRaw.length} candidate${blockedRaw.length === 1 ? "" : "s"} blocked by validator — informational only:_`);
+    for (const p of blockedRaw) {
       lines.push(`- **${p.ticker}** @ ~$${p.entryPrice.toFixed(2)} — ${p.blockedReason}`);
     }
     lines.push("");
@@ -3779,17 +3846,54 @@ export async function generateBriefing(profile) {
   if (profile?.aiNarrativeEnabled !== true) {
     console.log(`[stocks-briefing] ${profile.email}: aiNarrativeEnabled=false → deterministic-only mode (no LLM call)`);
     const dateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+    // FAIL-CLOSED CASCADE: when canonical reconciliation fails, no
+    // downstream section can claim compliance or emit sizing. Rewrite
+    // §1 to a DATA ACTION mandate, suppress §4 daily picks (or mark
+    // them research-only), and strip any "inside all hard rules"
+    // language so the operator doesn't act on a portfolio the engine
+    // itself hasn't reconciled.
+    const canonical = summary?.canonical || null;
+    const reconciliationOk = canonical?.reconciliation?.passed === true;
+    let mdPrefixForShip = deterministicPrefix;
+    if (canonical && !reconciliationOk) {
+      const recon = canonical.reconciliation || {};
+      const sumStr = Number.isFinite(recon.checkTotalPct)
+        ? `${recon.checkTotalPct.toFixed(1)}%`
+        : "n/a";
+      // Rewrite §1 body: replace "None." + optional "Portfolio is inside all hard rules today." with a data-error mandate.
+      const dataMandate = `**⚠ MANDATORY DATA ACTION** — canonical portfolio reconciliation failed (sleeves + cash = ${sumStr}, expected 100%). Trading recommendations that require portfolio sizing, sleeve headroom, or hard-rule compliance are **SUSPENDED** for this slot. Fix the upstream cash/position math (see Advice diagnostics), then re-run the briefing. Everything below is informational only — do not treat as actionable orders.`;
+      mdPrefixForShip = mdPrefixForShip
+        // Strip "None. Portfolio is inside all hard rules today." with or without the trailing sentence.
+        .replace(/None\.\s*Portfolio is inside all hard rules today\./g, dataMandate)
+        // Also handle plain "- None." or "None." on its own in §1.
+        .replace(/(##\s*1\.[^\n]*MANDATORY[^\n]*\n(?:[^\n]*\n)*?)-?\s*None\.?(\s*\n)/i, `$1${dataMandate}$2`);
+    }
+
     const parts = [
       `# 📉 Daily briefing — ${dateStr}`,
       "",
-      `_Deterministic mode — every number below comes from canonical portfolio data or the pick engine, not from an LLM. To enable AI narrative sections, flip **AI narrative** on in Settings._`,
+      `_Deterministic mode — every number below comes from canonical portfolio data or the pick engine. To enable AI narrative sections, flip **AI narrative** on in Settings._`,
       "",
-      deterministicPrefix,
+      mdPrefixForShip,
     ];
-    const picksBlock = renderDailyPicksDeterministic(dailyPicks);
-    if (picksBlock) parts.push(picksBlock);
-    // Deterministic upswitch already lives inside the prefix via
-    // formatUpswitchBlockSafe injection — no extra render needed.
+
+    if (reconciliationOk) {
+      // Daily picks only ship when the portfolio itself is trustworthy.
+      // If canonical fails, the picks are still computed but not
+      // included in the send (they'd risk being interpreted as
+      // portfolio-aware sizing).
+      const picksBlock = await renderDailyPicksDeterministic(dailyPicks);
+      if (picksBlock) parts.push(picksBlock);
+    } else {
+      parts.push(
+        "",
+        "## 4. 💡 Daily picks — SUPPRESSED",
+        "",
+        "_Daily picks are suppressed while canonical portfolio reconciliation fails. Position sizing, sleeve compliance, and cash-availability checks all depend on canonical totals; publishing picks against an unreconciled portfolio would produce misleading order tickets. Picks will resume automatically once reconciliation passes._"
+      );
+    }
+
     parts.push(
       "",
       "---",
@@ -3800,10 +3904,10 @@ export async function generateBriefing(profile) {
       md,
       sectorRotation,
       tradingRegime,
-      acceptedRecs: [],          // structural mandates already surfaced in §1 text
-      rejectedRecs: [],          // no LLM output means no LLM rejections
+      acceptedRecs: [],
+      rejectedRecs: [],
       mandateRecs: prefixMandateRecs,
-      deterministicPrefix,
+      deterministicPrefix: mdPrefixForShip,
     };
   }
 
