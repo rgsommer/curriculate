@@ -478,6 +478,7 @@ async function main() {
   await testFutureDatedViolation();
   await testCrossSectionPriceDrift();
   await testTrailReviewNoDriftFalsePositive();
+  await testTrailStopParentheticalNoDriftFalsePositive();
   await testStrongLanguageInsufficientSample();
   await testFundamentalValueMatchesPrice();
   await testDividendExceedsPct();
@@ -492,6 +493,24 @@ async function main() {
   console.log("─".repeat(60));
   console.log(`Total: ${passed} passed, ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
+}
+
+// ─── 17c. Regression: TRAIL STOP REVIEW "(trailing stop $X)" must NOT fire drift ─
+async function testTrailStopParentheticalNoDriftFalsePositive() {
+  const profile = baseProfile();
+  // AAPL live is $200. Simulate a TRAIL STOP REVIEW mandate that cites
+  // "trailing stop ($198 CAD)" alongside "Currently $200 USD". Prior
+  // whitelist bare-$ pattern matched the parenthetical stop level as
+  // if it were a bare current-price claim.
+  const goodMd = `## 1. 🚨 MANDATORY ACTIONS
+1. TRAIL STOP REVIEW — AAPL. Currently $200 USD. Current price below the 60d-peak-minus-2.5×ATR trailing stop ($198.42 USD). 60d high: $220.00 USD.
+`;
+  const audit = await auditBriefingBeforeSend({
+    email: "test", md: goodMd, acceptedRecs: [], positions: profile.positions, profile,
+  });
+  const drift = (audit.blockers || []).find(b => b.check === "cross-section-price-drift");
+  assert(!drift, "17c. TRAIL STOP REVIEW citing '(trailing stop $X)' does NOT falsely trigger drift",
+         drift ? `unexpectedly blocked: ${drift.reason}` : "");
 }
 
 async function testMandatoryNoneWithActionAlert() {

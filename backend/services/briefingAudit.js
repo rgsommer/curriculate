@@ -441,6 +441,15 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
           const px = Number(pm[1]);
           const ccy = pm[2] || null;
           if (!Number.isFinite(px) || px <= 0) continue;
+          // Pre-context filter — even if the whitelist matched, if the
+          // ~40 chars before the $-value name a non-current concept
+          // (stop / trail / target / peak / 60d high / cost basis /
+          // analyst), skip it. This catches the "bare $X" pattern
+          // firing on "trailing stop ($293.53 CAD)" where the paren
+          // isn't excluded by the surrounding-char class. Belt-and-
+          // suspenders on top of the whitelist.
+          const preCtx = after.slice(Math.max(0, pm.index - 40), pm.index);
+          if (/\b(stop|target|PT|price target|trail|trailing|cost|basis|60d|high|low|peak|hwm|analyst|resistance|support|entry)\b/i.test(preCtx)) continue;
           // Reject observations >25% off live — cross-ticker contamination,
           // caught by the PT-contamination checks upstream.
           if (livePrice && Math.abs(px - livePrice) / livePrice > 0.25) continue;
