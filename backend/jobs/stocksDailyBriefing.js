@@ -1103,25 +1103,45 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       const sleeveTag = classifyPosition({ ticker: p.ticker }) || "spec";
       const setupTag = p.setupName ? ` · setup: **${p.setupName}**` : "";
       const mtfTag = p.mtfConfluence ? ` · MTF ${p.mtfConfluence}` : "";
-      // Tier the pick by composite score AND MTF confluence. A sub-60
-      // composite with conflicting MTF is a watchlist candidate, not
-      // an actionable BUY — presenting them identically was the
-      // "AC.TO composite 59 MTF conflicting" case the reviewer flagged.
-      const isConflict = String(p.mtfConfluence || "").toLowerCase() === "conflicting";
-      const tier = p.deterministicScore >= 70 && !isConflict ? "BUY"
-                 : p.deterministicScore >= 60 ? "WATCH"
-                 : "MONITOR";
-      const tierColor = tier === "BUY" ? "✅" : tier === "WATCH" ? "⚠️" : "🔍";
       // Derived risk metrics — upside %, downside %, reward/risk.
       const entry = p.entryPrice;
       const upsidePct = entry > 0 ? ((p.targetPrice - entry) / entry) * 100 : 0;
       const downsidePct = entry > 0 ? ((entry - p.stopPrice) / entry) * 100 : 0;
       const rewardRisk = downsidePct > 0 ? (upsidePct / downsidePct) : null;
       const rrStr = rewardRisk != null ? `${rewardRisk.toFixed(2)}:1` : "n/a";
+      // Tier the pick by (composite score AND MTF confluence AND R/R
+      // gate). A sub-60 composite OR conflicting MTF OR sub-1.5 R/R
+      // is a watchlist candidate, not an actionable BUY. Reviewer
+      // caught QSR.TO at composite 84 but R/R 0.34:1 being labeled
+      // BUY — the composite doesn't override the execution-quality
+      // gate. Match the validator's ruleMinRewardRisk threshold (1.5)
+      // for consistency across producers.
+      const MIN_RR_FOR_BUY = 1.5;
+      const isConflict = String(p.mtfConfluence || "").toLowerCase() === "conflicting";
+      const rrOk = rewardRisk != null && rewardRisk >= MIN_RR_FOR_BUY;
+      let tier;
+      if (p.deterministicScore >= 70 && !isConflict && rrOk) {
+        tier = "BUY";
+      } else if (p.deterministicScore >= 70 && !isConflict && !rrOk) {
+        // High-quality candidate but the current entry-target-stop
+        // structure doesn't clear the reward/risk gate. Distinct
+        // tier so the operator sees WHY a strong composite isn't a BUY.
+        tier = "SCREENED";
+      } else if (p.deterministicScore >= 60) {
+        tier = "WATCH";
+      } else {
+        tier = "MONITOR";
+      }
+      const tierColor = tier === "BUY" ? "✅"
+                      : tier === "SCREENED" ? "⛔"
+                      : tier === "WATCH" ? "⚠️"
+                      : "🔍";
       // Identity line: ticker · currency · verified live price · tier.
       lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${p.deterministicScore}${setupTag}${mtfTag} · ${tierColor} **${tier}**`);
       lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%) · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
-      if (isConflict) {
+      if (tier === "SCREENED") {
+        lines.push(`   ⛔ SCREENED — composite ${p.deterministicScore} is strong but current entry/target/stop only yields R/R ${rrStr} (BUY floor: ${MIN_RR_FOR_BUY}:1). Wait for pullback or improved target structure before treating as actionable.`);
+      } else if (isConflict) {
         lines.push(`   ⚠ MTF conflicting — treat as watchlist entry, wait for confluence to align before committing size.`);
       }
       if (p.rationale) lines.push(`   ${p.rationale}`);
@@ -3865,7 +3885,23 @@ export async function generateBriefing(profile) {
   // fallback (already wired) ships the safest slice.
   if (profile?.aiNarrativeEnabled !== true) {
     console.log(`[stocks-briefing] ${profile.email}: aiNarrativeEnabled=false → deterministic-only mode (no LLM call)`);
-    const dateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    // Weekend/holiday awareness. Use the user's briefingTz to compute
+    // "today" in their timezone; if the resulting day is Saturday or
+    // Sunday, the header + §1 language switches from "do these today"
+    // to "planning for the next trading session". Regular market
+    // holidays (Christmas, New Year's Day, etc.) would need a full
+    // NYSE calendar; for now, weekend is the common case that was
+    // shipping wrong (Aug-22-Saturday briefing saying "do these today").
+    const briefingTz = profile?.briefingTz || "America/Toronto";
+    let dayName = "";
+    let isWeekend = false;
+    try {
+      const now = new Date();
+      dayName = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: briefingTz }).format(now);
+      isWeekend = dayName === "Saturday" || dayName === "Sunday";
+    } catch {}
+    const dateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: briefingTz });
+    const dowDateStr = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: briefingTz });
 
     // FAIL-CLOSED CASCADE: when canonical reconciliation fails, no
     // downstream section can claim compliance or emit sizing. Rewrite
@@ -3920,11 +3956,43 @@ export async function generateBriefing(profile) {
       /##\s*4\.\s*💡?\s*OPTIONAL ideas[^\n]*\n_\(Only surface if all hard rules[^\n]*\)_\n?/g,
       ""
     );
+    // When canonical reconciliation fails, security-specific mandates
+    // (like a TRAIL STOP REVIEW based on price + technicals) are
+    // still valid — but any PAIRED redeployment ("IF EXIT — REDEPLOY
+    // — After settle, BUY N sh XEQT…") depends on portfolio-level
+    // sizing/sleeve headroom that we can't trust while sleeves+cash
+    // don't sum to 100. Strip those sub-items and replace with a
+    // suspension note. Also strips the CORE DEPLOY sub-items paired
+    // with SELL AT MARKET mandates.
+    if (!reconciliationOk) {
+      const suspensionNote = `   → **REDEPLOY SUSPENDED** — portfolio reconciliation failed; sizing and CORE/sleeve routing cannot be trusted. Reassess redeployment manually after canonical reconciles, or run the briefing again once the underlying cash/position math is fixed.`;
+      mdPrefixForShip = mdPrefixForShip
+        .replace(/\s*→\s*\*\*IF EXIT — REDEPLOY\*\*[^\n]*\n?/g, `\n${suspensionNote}\n`)
+        .replace(/\s*→\s*\*\*REDEPLOY \(paired with TRIM above\)\*\*[^\n]*\n?/g, `\n${suspensionNote}\n`)
+        .replace(/\s*→\s*\*\*CORE DEPLOY \(paired with SELL above\)\*\*[^\n]*\n?/g, `\n${suspensionNote}\n`);
+    }
 
+    // Rewrite "(do these today)" and similar today-execution language
+    // when the current day is a weekend — the market isn't open, so
+    // §1 mandates are planning for the next trading session, not
+    // "execute now" orders.
+    if (isWeekend) {
+      mdPrefixForShip = mdPrefixForShip
+        .replace(/\(do these today\)/gi, "(plan for next trading session)")
+        .replace(/Decide today and record/gi, "By the next trading session, decide and record")
+        .replace(/execute today/gi, "execute at next open");
+    }
+
+    const headerTitle = isWeekend
+      ? `# 📅 Weekend planning briefing — ${dowDateStr}`
+      : `# 📉 Daily briefing — ${dowDateStr}`;
+    const modeLine = isWeekend
+      ? `_Weekend planning mode — regular market is closed today. All §1 mandates are planning for the next trading session, not "do today" orders. Every number below comes from canonical portfolio data or the pick engine._`
+      : `_Deterministic mode — every number below comes from canonical portfolio data or the pick engine. To enable AI narrative sections, flip **AI narrative** on in Settings._`;
     const parts = [
-      `# 📉 Daily briefing — ${dateStr}`,
+      headerTitle,
       "",
-      `_Deterministic mode — every number below comes from canonical portfolio data or the pick engine. To enable AI narrative sections, flip **AI narrative** on in Settings._`,
+      modeLine,
       "",
       mdPrefixForShip,
     ];
