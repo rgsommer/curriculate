@@ -442,6 +442,7 @@ function MobileNav() {
     { href: "/how-it-works", label: "How it works" },
     { href: "/features", label: "Features" },
     { href: "/pulse", label: "Pulse" },
+    { href: "/campfirelive", label: "Campfire" },
     { href: "/pricing", label: "Pricing" },
     { href: "/compare", label: "Compare" },
     { href: "/reports", label: "Reports" },
@@ -699,6 +700,74 @@ export default function Home() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ============================================================ */}
+      {/*  THREE PRODUCTS BAND — Curriculate is more than games         */}
+      {/* ============================================================ */}
+      <section className="px-6 py-16 bg-white/60 border-y border-gray-200">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center mb-10">
+            <div className="inline-flex items-center gap-2 rounded-full bg-indigo-100 px-4 py-1.5 text-xs font-black tracking-wider text-indigo-900 uppercase mb-3">
+              <Sparkles className="w-3.5 h-3.5" /> Made by us
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3">
+              Three products, one team.
+            </h2>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Curriculate is our classroom scavenger-hunt engine. Alongside it we
+              build Pulse Grading for teachers who need to mark faster, and
+              Campfire for any group that wants to stay close.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Curriculate — you're here */}
+            <div className="relative rounded-3xl bg-gradient-to-br from-blue-50 to-indigo-100 border-2 border-indigo-300 p-6 shadow-lg">
+              <span className="absolute -top-2 right-5 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2.5 py-0.5 text-[10px] font-black tracking-wider text-white uppercase">
+                You&rsquo;re here
+              </span>
+              <div className="text-3xl mb-3" aria-hidden="true">🎮</div>
+              <h3 className="text-xl font-black text-gray-900 mb-2">Curriculate</h3>
+              <p className="text-sm font-black text-indigo-700 mb-3 uppercase tracking-wider">Live classroom scavenger hunts</p>
+              <p className="text-sm text-gray-700 leading-relaxed">
+                AI-generated task stations, real-time scoring, movement + collaboration built in. Turn any lesson into a room-wide game.
+              </p>
+            </div>
+
+            {/* Pulse Grading */}
+            <Link
+              href="/grading"
+              className="group relative rounded-3xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200 p-6 shadow-md hover:shadow-xl hover:-translate-y-0.5 transition"
+            >
+              <div className="text-3xl mb-3" aria-hidden="true">✅</div>
+              <h3 className="text-xl font-black text-gray-900 mb-2">Pulse Grading</h3>
+              <p className="text-sm font-black text-emerald-700 mb-3 uppercase tracking-wider">AI grading for teachers</p>
+              <p className="text-sm text-gray-700 leading-relaxed mb-4">
+                Snap a paper, batch a whole-class PDF, or upload video/audio — get rubric-matched feedback in seconds.
+              </p>
+              <span className="inline-flex items-center gap-1 text-sm font-bold text-emerald-700 group-hover:text-emerald-900">
+                Open Pulse <ArrowRight className="w-4 h-4" />
+              </span>
+            </Link>
+
+            {/* Campfire */}
+            <Link
+              href="/campfirelive"
+              className="group relative rounded-3xl bg-gradient-to-br from-orange-50 to-rose-50 border border-orange-200 p-6 shadow-md hover:shadow-xl hover:-translate-y-0.5 transition"
+            >
+              <div className="text-3xl mb-3" aria-hidden="true">🔥</div>
+              <h3 className="text-xl font-black text-gray-900 mb-2">Campfire</h3>
+              <p className="text-sm font-black text-orange-700 mb-3 uppercase tracking-wider">Making groups fun again</p>
+              <p className="text-sm text-gray-700 leading-relaxed mb-4">
+                Everyone in a group answers privately — reveal together. Polls, questions, superlatives, group gifts. For any circle: families, classes, teams.
+              </p>
+              <span className="inline-flex items-center gap-1 text-sm font-bold text-orange-700 group-hover:text-orange-900">
+                Open Campfire <ArrowRight className="w-4 h-4" />
+              </span>
+            </Link>
           </div>
         </div>
       </section>

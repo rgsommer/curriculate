@@ -167,6 +167,7 @@ export default function SiteHeader() {
           </div>
 
           <NavLink href="/pulse">Pulse</NavLink>
+          <NavLink href="/campfirelive">Campfire</NavLink>
           <NavLink href="/parties">Parties</NavLink>
           <NavLink href="/events">Events</NavLink>
           <NavLink href="/pricing">Pricing</NavLink>
