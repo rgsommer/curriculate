@@ -138,7 +138,7 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
 
-    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax, includeMosaic = false, mosaicMode = "balanced", market = "both" } = req.body || {};
+    const { riskMode = "balanced", sectors = null, marketCapMin, marketCapMax, includeMosaic = false, mosaicMode = "balanced", market = "both", source = "screener" } = req.body || {};
 
     const result = await runHighConvictionScan({
       email: req.stocksUser.email,
@@ -148,6 +148,7 @@ router.post("/high-conviction", requireStocksAuth, async (req, res) => {
       includeMosaic: !!includeMosaic,
       mosaicMode,
       market,
+      source: source === "pool" ? "pool" : "screener",
       opts: {
         excludeTickers: heldTickers,
         ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),
@@ -169,13 +170,14 @@ router.post("/moonshot", requireStocksAuth, async (req, res) => {
     }
     const profile = await StocksPortfolio.findOne({ email: req.stocksUser.email }).lean();
     const heldTickers = profile?.positions?.map((p) => p.ticker) || [];
-    const { sectors = null, marketCapMin, marketCapMax, market = "both", horizon = "long" } = req.body || {};
+    const { sectors = null, marketCapMin, marketCapMax, market = "both", horizon = "long", source = "screener" } = req.body || {};
 
     const result = await runMoonshotScan({
       email: req.stocksUser.email,
       sectors,
       market,
       horizon,
+      source: source === "pool" ? "pool" : "screener",
       opts: {
         excludeTickers: heldTickers,
         ...(typeof marketCapMin === "number" ? { marketCapMin } : {}),

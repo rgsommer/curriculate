@@ -901,6 +901,105 @@ async function buildShortlist({ email, sectors, opts, excl, shortlistN, market =
   }
 }
 
+// Shared-universe alternative to buildShortlist. Instead of running a
+// fresh FMP screener, this reads the caller's existing Discover pool
+// (StocksDiscoveryCandidate docs) and shapes each into the same
+// `{ticker, name, sector, ..., fundamentals}` structure the downstream
+// pipeline (computeDeterministicFactors → AI select → mosaic → verify)
+// expects. Same output contract as buildShortlist so callers can
+// swap between "screener" and "pool" without touching downstream code.
+//
+// Effect for the operator: High-Conviction and Moonshot score the
+// exact set of names the Discover engine already surfaced — the
+// three lists converge on one core universe instead of running three
+// independent screeners against the whole market.
+//
+// Filters applied at the pool layer (in priority order):
+//   1. exclude previously-dismissed and non-latest scan dates
+//   2. exclude caller's held tickers (excl set — matches buildShortlist)
+//   3. sector filter if requested
+//   4. market filter (US / Canada / both — matches buildShortlist)
+//   5. sort by score desc, take top `shortlistN`
+//   6. always keep starred docs (carryover) even if scanDate isn't latest
+async function buildShortlistFromDiscoverPool({ email, sectors, opts, excl, shortlistN, market = "both" }) {
+  const marketCapMin = opts?.marketCapMin ?? 0;
+  const marketCapMax = opts?.marketCapMax ?? Infinity;
+  const wantedSectors = (Array.isArray(sectors) && sectors.length > 0)
+    ? new Set(sectors.map(s => String(s).toLowerCase()))
+    : null;
+
+  // Load latest-scanDate docs + starred carryover. Same query family
+  // as GET /candidates so the input universe matches what the operator
+  // sees on the Discover tab.
+  const latestDoc = await StocksDiscoveryCandidate.findOne({ email, dismissed: { $ne: true } })
+    .sort({ scanDate: -1 })
+    .select("scanDate")
+    .lean();
+  const latestScanDate = latestDoc?.scanDate || null;
+  const query = { email, dismissed: { $ne: true } };
+  if (latestScanDate) {
+    query.$or = [{ scanDate: latestScanDate }, { starred: true }];
+  }
+  const poolDocs = await StocksDiscoveryCandidate.find(query).lean();
+
+  const preFiltered = poolDocs
+    .filter(d => d.ticker)
+    .filter(d => !excl.has(String(d.ticker).toUpperCase()))
+    .filter(d => {
+      if (!wantedSectors) return true;
+      return wantedSectors.has(String(d.sector || "").toLowerCase());
+    })
+    .filter(d => {
+      const cap = Number(d.marketCap);
+      if (!Number.isFinite(cap)) return true; // don't drop for missing cap
+      return cap >= marketCapMin && cap <= marketCapMax;
+    })
+    .filter(d => matchesMarket({ exchangeShortName: d.exchange, symbol: d.ticker }, market));
+
+  if (preFiltered.length === 0) {
+    return {
+      shortlist: [],
+      mode: "pool-empty",
+      upgradeRecommendation: `Discover pool is empty (or every candidate was filtered out by market/sector/cap). Run a fresh Discover scan first, or switch source back to "screener" to run against the broader FMP universe.`,
+    };
+  }
+
+  const top = preFiltered
+    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+    .slice(0, shortlistN)
+    .map(d => ({
+      ticker: String(d.ticker).toUpperCase(),
+      name: d.name || "",
+      sector: d.sector || "",
+      industry: d.industry || "",
+      exchange: d.exchange || "",
+      marketCap: d.marketCap ?? null,
+      price: d.priceAtDiscovery ?? null,
+      currency: d.currencyAtDiscovery || ((d.exchange === "TSX" || d.exchange === "TSXV") ? "CAD" : "USD"),
+      // Reconstruct the fundamentals shape from the signals field so
+      // downstream scoring works unchanged. Discover stores richer
+      // signals; we surface the subset buildShortlist emits.
+      fundamentals: {
+        revenueGrowthPct: d?.signals?.revenueGrowthPct ?? null,
+        grossMarginPct: d?.signals?.grossMarginPct ?? null,
+        operatingIncomeGrowthPct: d?.signals?.operatingIncomeGrowthPct ?? null,
+        netDebtToEquity: d?.signals?.netDebtToEquity ?? null,
+        freeCashFlowYieldPct: d?.signals?.freeCashFlowYieldPct ?? null,
+        psTTM: d?.signals?.psTTM ?? null,
+      },
+      _fromDiscoverPool: true,
+      _discoverScore: d.score ?? null,
+      _discoverConviction: d.thesis?.conviction ?? null,
+      _starred: !!d.starred,
+    }));
+
+  return {
+    shortlist: top,
+    mode: "discover-pool",
+    upgradeRecommendation: null,
+  };
+}
+
 // Single AI call: score catalysts + sentiment + narrative for the whole
 // shortlist and write the qualitative analysis, then pick + order the top 2-3.
 async function scoreCandidatesWithAI(candidatesForAI, riskMode, topN) {
@@ -981,7 +1080,7 @@ Return the ${topN} STRONGEST candidates only, ordered best-first. If fewer than 
   try { return JSON.parse(m[0]); } catch { return { picks: [] }; }
 }
 
-export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {}, includeMosaic = false, mosaicMode = "balanced", market = "both" }) {
+export async function runHighConvictionScan({ email, riskMode = "balanced", sectors = null, topN = 3, opts = {}, includeMosaic = false, mosaicMode = "balanced", market = "both", source = "screener" }) {
   const mode = ["conservative", "balanced", "aggressive", "speculative"].includes(riskMode) ? riskMode : "balanced";
   const mMode = ["conservative", "balanced", "aggressive"].includes(mosaicMode) ? mosaicMode : "balanced";
   const mkt = ["both", "us", "canada"].includes(market) ? market : "both";
@@ -997,9 +1096,14 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
   recentlyDismissed.forEach((d) => excl.add(d.ticker));
   (opts.excludeTickers || []).forEach((t) => excl.add(String(t).toUpperCase()));
 
-  const { shortlist, mode: scanMode, upgradeRecommendation } = await buildShortlist({ email, sectors, opts, excl, shortlistN, market: mkt });
+  // Shared-universe: when source="pool", use the caller's Discover
+  // pool docs instead of running a fresh FMP screener. Same output
+  // contract so the downstream pipeline (deterministic factors → AI
+  // catalyst/sentiment → mosaic → verify → chart) works unchanged.
+  const shortlistFn = source === "pool" ? buildShortlistFromDiscoverPool : buildShortlist;
+  const { shortlist, mode: scanMode, upgradeRecommendation } = await shortlistFn({ email, sectors, opts, excl, shortlistN, market: mkt });
   if (!shortlist.length) {
-    return { picks: [], riskMode: mode, mode: scanMode, upgradeRecommendation, disclaimer: HIGH_CONVICTION_DISCLAIMER, error: "No candidates cleared the pre-screen." };
+    return { picks: [], riskMode: mode, mode: scanMode, upgradeRecommendation, disclaimer: HIGH_CONVICTION_DISCLAIMER, error: source === "pool" ? "Discover pool is empty — run a fresh Discover scan first or switch source to screener." : "No candidates cleared the pre-screen." };
   }
 
   // Deterministic factors (parallel) — one shared SPY history for rel-strength
@@ -1265,7 +1369,7 @@ function normTicker(t) {
 // / reality-lag / synthetic-insider signals and a focused AI asymmetric-upside
 // layer with calibrated P(5x)/P(10x). Smaller-cap, higher-growth bias.
 // ═══════════════════════════════════════════════════════════════════════
-export async function runMoonshotScan({ email, market = "both", sectors = null, opts = {}, horizon = "long" }) {
+export async function runMoonshotScan({ email, market = "both", sectors = null, opts = {}, horizon = "long", source = "screener" }) {
   const mkt = ["both", "us", "canada"].includes(market) ? market : "both";
   const hz = horizon === "short" ? "short" : "long";
   // Moonshot bias: skew smaller-cap (more room to compound) unless overridden.
@@ -1283,7 +1387,10 @@ export async function runMoonshotScan({ email, market = "both", sectors = null, 
   (opts.excludeTickers || []).forEach((t) => excl.add(String(t).toUpperCase()));
 
   const shortlistN = 8;
-  const { shortlist, mode: scanMode, upgradeRecommendation } = await buildShortlist({ email, sectors, opts: moonshotOpts, excl, shortlistN, market: mkt });
+  // Shared-universe: same swap as HC. source="pool" scores the
+  // Discover pool docs; "screener" runs a fresh FMP screener.
+  const shortlistFn = source === "pool" ? buildShortlistFromDiscoverPool : buildShortlist;
+  const { shortlist, mode: scanMode, upgradeRecommendation } = await shortlistFn({ email, sectors, opts: moonshotOpts, excl, shortlistN, market: mkt });
   if (!shortlist.length) {
     return { picks: [], market: mkt, mode: scanMode, upgradeRecommendation, disclaimer: MOONSHOT_DISCLAIMER, error: "No candidates cleared the pre-screen." };
   }

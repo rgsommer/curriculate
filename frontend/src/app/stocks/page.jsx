@@ -9290,6 +9290,12 @@ function DiscoverView({ sessionToken, user }) {
   const [hcBusy, setHcBusy] = useState(false);
   const [hcError, setHcError] = useState(null);
   const [hcResult, setHcResult] = useState(null); // { picks, disclaimer, mode, upgradeRecommendation }
+  // Shared-universe input source for HC + Moonshot. "screener" runs a
+  // fresh FMP screener against the whole US/CA universe (current default);
+  // "pool" scores the caller's existing Discover pool docs. Pool mode
+  // guarantees the three lists (Discover / HC / Moonshot) converge on
+  // the same core universe instead of running independent screeners.
+  const [scanSource, setScanSource] = useState("screener");
 
   // Cross-source membership — the confluence signal the user asked for.
   // When a ticker shows up in Discover AND High-Conviction (or Moonshot),
@@ -9364,7 +9370,7 @@ function DiscoverView({ sessionToken, user }) {
     if (hcBusy) return;
     setHcBusy(true); setHcError(null);
     try {
-      const body = { riskMode: hcRiskMode, market: hcMarket, includeMosaic: hcMosaic, mosaicMode: hcMosaicMode };
+      const body = { riskMode: hcRiskMode, market: hcMarket, includeMosaic: hcMosaic, mosaicMode: hcMosaicMode, source: scanSource };
       if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
       const r = await fetch(`${BACKEND_URL}/api/stocks-discover/high-conviction`, {
         method: "POST",
@@ -9386,7 +9392,7 @@ function DiscoverView({ sessionToken, user }) {
     if (msBusy) return;
     setMsBusy(true); setMsError(null);
     try {
-      const body = { market: hcMarket, horizon: msHorizon };
+      const body = { market: hcMarket, horizon: msHorizon, source: scanSource };
       if (sectorsCsv.trim()) body.sectors = sectorsCsv.split(",").map((s) => s.trim()).filter(Boolean);
       const r = await fetch(`${BACKEND_URL}/api/stocks-discover/moonshot`, {
         method: "POST",
@@ -9433,6 +9439,43 @@ function DiscoverView({ sessionToken, user }) {
       <h2>Discover</h2>
       <div className="sa-breadcrumb">
         Multi-bagger candidate scanner — AI-written thesis for each. Honest expectation: most leads underperform; a small number 5-10×.
+      </div>
+
+      {/* ── Shared-universe input toggle (applies to both HC + Moonshot below) ── */}
+      <div className="sa-card" style={{ marginBottom: 14, padding: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>🔗 Shared-universe input</div>
+            <div style={{ fontSize: 11.5, color: "var(--sa-muted)", marginTop: 3, maxWidth: 560, lineHeight: 1.4 }}>
+              Controls what universe the High-Conviction and Moonshot screens run against. <b>Screener</b> runs a fresh FMP screener across US + Canada (current default). <b>Discover pool</b> scores only the candidates you already see on this tab — the three lists then converge on one core universe.
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 4, background: "var(--sa-panel-2)", padding: 3, borderRadius: 8 }}>
+            {[
+              ["screener", "🌐 Screener (fresh FMP)"],
+              ["pool", `🔍 Discover pool (${candidates.length})`],
+            ].map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => setScanSource(v)}
+                style={{
+                  padding: "6px 12px", fontSize: 12, fontWeight: 600, border: "none",
+                  borderRadius: 6, cursor: "pointer",
+                  background: scanSource === v ? "var(--sa-accent)" : "transparent",
+                  color: scanSource === v ? "#fff" : "var(--sa-text-2)",
+                }}
+                title={v === "pool" ? "Score only the Discover pool docs — same names you see above" : "Fresh FMP screener across US + Canada"}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {scanSource === "pool" && candidates.length === 0 && (
+          <div style={{ marginTop: 8, background: "var(--sa-amber-soft)", color: "#92400e", padding: "8px 12px", borderRadius: 6, fontSize: 11.5 }}>
+            ⚠ Discover pool is empty — run 🔍 Scan first, or switch back to Screener.
+          </div>
+        )}
       </div>
 
       {/* ── High-conviction multi-factor screen (top 2-3, transparent scoring) ── */}
