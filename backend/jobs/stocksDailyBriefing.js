@@ -3917,35 +3917,32 @@ export async function generateBriefing(profile) {
     // language so the operator doesn't act on a portfolio the engine
     // itself hasn't reconciled.
     const canonical = summary?.canonical || null;
-    // Belt-and-suspenders reconciliation check: canonical.reconciliation.passed
-    // filters out several warning codes (positions-missing-price, empty-
-    // portfolio, concentration-breach), so it can be `true` even when
-    // the sleeve+cash sum doesn't hit 100%. Cross-check by re-computing
-    // sleeve% + cash% ourselves and treating any >2.5pp gap as a hard
-    // reconciliation failure. This is the same check §3 uses to
-    // suppress the sleeve mix line — if that fires, §1 must ALSO
-    // degrade to DATA ACTION.
+    // Use the SAME sleeveBalance + cashPct the prefix's §3 uses so the
+    // two checks can never disagree. Prior attempt read from
+    // canonical.sleeves which is derived by a different code path
+    // (portfolioCalcEngine) — the two summed to different totals and
+    // §3 could suppress the sleeve line while the short-circuit still
+    // believed reconciliation was OK. This mirrors line 2684's
+    // partsForSum exactly.
     let reconciliationOk = canonical?.reconciliation?.passed === true;
     let sleeveCashSum = null;
-    if (canonical) {
-      const sleeves = canonical.sleeves || [];
-      const sleeveWeights = ["core", "swing", "income", "spec"].map(k => {
-        const s = sleeves.find(x => x.sleeve === k);
-        return s?.sleeve_weight_pct;
-      });
-      const cashCad = canonical.totals?.cash_cad_equiv;
-      const totalCad = canonical.totals?.portfolio_total_cad;
-      const cashPct = Number.isFinite(cashCad) && Number.isFinite(totalCad) && totalCad > 0
-        ? (cashCad / totalCad) * 100
-        : null;
-      const parts = [...sleeveWeights, cashPct].filter(x => Number.isFinite(x));
+    try {
+      const b = sleeveBalanceForPrefix;
+      const fxLocal = profile.fxUsdCad || 1.37;
+      const totalCashCadLocal = (profile.accounts || []).reduce(
+        (s, a) => s + (a?.cashCad || 0) + (a?.cashUsd || 0) * fxLocal, 0
+      );
+      const totalBookCadLocal = (b?.book || 0) + totalCashCadLocal;
+      const cashPctLocal = totalBookCadLocal > 0 ? (totalCashCadLocal / totalBookCadLocal) * 100 : 0;
+      const parts = [b?.actualPct?.core, b?.actualPct?.swing, b?.actualPct?.income, b?.actualPct?.spec, cashPctLocal]
+        .filter(x => Number.isFinite(x));
       if (parts.length === 5) {
         sleeveCashSum = parts.reduce((s, x) => s + x, 0);
         if (Math.abs(sleeveCashSum - 100) > 2.5) reconciliationOk = false;
       } else {
         reconciliationOk = false;
       }
-    }
+    } catch { reconciliationOk = false; }
     let mdPrefixForShip = deterministicPrefix;
     if (canonical && !reconciliationOk) {
       const sumStr = Number.isFinite(sleeveCashSum) ? `${sleeveCashSum.toFixed(1)}%` : "n/a";
