@@ -8705,7 +8705,46 @@ function ConvictionTrendBadge({ history }) {
   );
 }
 
-function MoonshotCard({ pick, rank }) {
+// Cross-source membership badges — shown next to a ticker name to
+// indicate that the same ticker also appears in one of the other
+// discovery lists (Discover pool / High-Conviction / Moonshot). Pure
+// confluence signal: no ranking change, just visibility. `myList` is
+// the source the caller is rendering IN, so we don't self-badge.
+function CrossSourceBadges({ ticker, myList, membership }) {
+  if (!ticker || !membership) return null;
+  const base = String(ticker).toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+  if (!base) return null;
+  const badges = [];
+  if (myList !== "discover" && membership.discSet?.has(base)) {
+    badges.push({ label: "🔍 Discover", bg: "#dbeafe", fg: "#1d4ed8", border: "#93c5fd" });
+  }
+  if (myList !== "hc" && membership.hcSet?.has(base)) {
+    badges.push({ label: "⭐ High-Conv.", bg: "#dcfce7", fg: "#15803d", border: "#86efac" });
+  }
+  if (myList !== "ms" && membership.msSet?.has(base)) {
+    badges.push({ label: "🚀 Moonshot", bg: "#f3e8ff", fg: "#7c3aed", border: "#c4b5fd" });
+  }
+  if (badges.length === 0) return null;
+  return (
+    <span style={{ display: "inline-flex", gap: 4, marginLeft: 6, flexWrap: "wrap", verticalAlign: "middle" }}>
+      {badges.map((b, i) => (
+        <span
+          key={i}
+          title={`Also surfaced in ${b.label.replace(/^[🔍⭐🚀]\s+/, "")} — confluence signal`}
+          style={{
+            background: b.bg, color: b.fg, border: `1px solid ${b.border}`,
+            fontSize: 9.5, padding: "1px 6px", borderRadius: 99, fontWeight: 700,
+            letterSpacing: ".02em", whiteSpace: "nowrap",
+          }}
+        >
+          {b.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function MoonshotCard({ pick, rank, membership }) {
   const m = pick.moonshot || {};
   const [open, setOpen] = useState(false);
   const ccy = pick.currencyAtDiscovery || "USD";
@@ -8727,6 +8766,7 @@ function MoonshotCard({ pick, rank }) {
         <div>
           <div style={{ fontSize: 16, fontWeight: 700 }}>
             <span style={{ color: "var(--sa-muted)", marginRight: 6 }}>#{rank}</span>{pick.ticker}
+            <CrossSourceBadges ticker={pick.ticker} myList="ms" membership={membership} />
             <span style={{ color: "var(--sa-text-2)", fontWeight: 500, marginLeft: 8, fontSize: 13 }}>{pick.name}</span>
           </div>
           <div style={{ fontSize: 12, color: "var(--sa-muted)", marginTop: 3 }}>
@@ -8875,7 +8915,7 @@ function MoonshotCard({ pick, rank }) {
   );
 }
 
-function HighConvictionCard({ pick, rank }) {
+function HighConvictionCard({ pick, rank, membership }) {
   const [showDetail, setShowDetail] = useState(false);
   const [livePrice, setLivePrice] = useState(null);
   const mf = pick.multiFactor || {};
@@ -8949,6 +8989,7 @@ function HighConvictionCard({ pick, rank }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: "var(--sa-muted)" }}>#{rank}</span>
             <span style={{ fontSize: 17, fontWeight: 700 }}>{pick.ticker}</span>
+            <CrossSourceBadges ticker={pick.ticker} myList="hc" membership={membership} />
             <span style={{ fontSize: 13, color: "var(--sa-text-2)" }}>{pick.name}</span>
             {mf.hypePenaltyApplied && (
               <span style={{ fontSize: 10.5, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "var(--sa-red-soft)", color: "var(--sa-red)" }}>HYPE-PENALIZED</span>
@@ -9250,6 +9291,21 @@ function DiscoverView({ sessionToken, user }) {
   const [hcError, setHcError] = useState(null);
   const [hcResult, setHcResult] = useState(null); // { picks, disclaimer, mode, upgradeRecommendation }
 
+  // Cross-source membership — the confluence signal the user asked for.
+  // When a ticker shows up in Discover AND High-Conviction (or Moonshot),
+  // that's a stronger signal than either alone. Compute a shared base-
+  // ticker map so each card can annotate itself with the other lists
+  // it belongs to. Base match strips exchange suffixes (KXS.TO ↔ KXS)
+  // and any non-alphanumeric so the sets align regardless of how each
+  // engine normalized the symbol.
+  const baseTicker = (t) => String(t || "").toUpperCase().replace(/\..*$/, "").replace(/[^A-Z0-9]/g, "");
+  const crossMembership = useMemo(() => {
+    const discSet = new Set((candidates || []).map(c => baseTicker(c.ticker)).filter(Boolean));
+    const hcSet   = new Set(((hcResult?.picks) || []).map(p => baseTicker(p.ticker)).filter(Boolean));
+    const msSet   = new Set(((msResult?.picks) || []).map(p => baseTicker(p.ticker)).filter(Boolean));
+    return { discSet, hcSet, msSet };
+  }, [candidates, hcResult, msResult]);
+
   // Load existing candidates on mount
   useEffect(() => {
     if (!sessionToken) return;
@@ -9457,7 +9513,7 @@ function DiscoverView({ sessionToken, user }) {
                   </div>
                 )}
                 {hcResult.picks.map((p, i) => (
-                  <HighConvictionCard key={p._id || p.ticker} pick={p} rank={i + 1} />
+                  <HighConvictionCard key={p._id || p.ticker} pick={p} rank={i + 1} membership={crossMembership} />
                 ))}
               </div>
             )}
@@ -9500,7 +9556,7 @@ function DiscoverView({ sessionToken, user }) {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 {msResult.picks.map((p, i) => (
-                  <MoonshotCard key={p._id || p.ticker} pick={p} rank={i + 1} />
+                  <MoonshotCard key={p._id || p.ticker} pick={p} rank={i + 1} membership={crossMembership} />
                 ))}
               </div>
             )}
@@ -9615,6 +9671,7 @@ function DiscoverView({ sessionToken, user }) {
             <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginBottom: 8 }}>
               <div>
                 <span style={{ fontWeight: 700, fontSize: 17 }}>{c.ticker}</span>
+                <CrossSourceBadges ticker={c.ticker} myList="discover" membership={crossMembership} />
                 <span style={{ marginLeft: 8, fontSize: 13, color: "var(--sa-muted)" }}>{c.name || ""}</span>
                 <span style={{ marginLeft: 8, fontSize: 11, color: "var(--sa-muted)" }}>· {c.sector || "—"} · ${(c.marketCap / 1_000_000).toFixed(0)}M cap</span>
               </div>
