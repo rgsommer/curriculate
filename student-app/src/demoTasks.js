@@ -631,7 +631,7 @@ const DEMO_TASKS = [
         extensionActivity: "Write a 3-sentence note to a scientist or thinker who would have loved today's lesson.",
         teacherNotes: "Demo / practice mode uses the evergreen library directly.",
         estimatedMinutes: 12,
-        sourceName: "Curriculate evergreen library",
+        sourceName: "Evergreen library",
         fallbackTier: "evergreen-demo",
       },
     },
@@ -822,7 +822,7 @@ const DEMO_TASKS = [
     taskType: "reading-comp",
     title: "Quick Read",
     prompt: "Read the passage and answer.",
-    passage: "Curriculate uses AI to generate interactive scavenger-hunt task sets for classrooms. Teachers describe their lesson, and AI creates stations with movement, collaboration, and creative tasks. Students join on their phones by scanning CurricQR codes — no app download needed.",
+    passage: "Interactive classroom game apps use AI to generate scavenger-hunt task sets. Teachers describe their lesson, and AI creates stations with movement, collaboration, and creative tasks. Students join on their phones by scanning QR codes — no app download needed.",
     items: [
       { prompt: "What do students scan to join?", answer: "CurricQR codes" },
       { prompt: "Do students need to download an app?", answer: "No" },

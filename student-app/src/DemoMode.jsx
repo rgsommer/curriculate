@@ -13,6 +13,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from "react"
 import TaskRunner from "./components/tasks/TaskRunner.jsx";
 import DEMO_TASKS_RAW from "./demoTasks.js";
 import { API_BASE_URL } from "./config.js";
+import { brandName } from "@shared/brandContext.js";
 
 // Task types that fundamentally need MULTIPLE live people (debate opponents,
 // a pass-around chain, peer teach-back/rating, mime guessers, a team selfie,
@@ -107,7 +108,7 @@ function Mascot({ category, size = 120, style = {} }) {
       style={{ ...mediaStyle, background: "transparent" }}
     />
   ) : (
-    <img src={imgSrc} alt="Curriculate mascot" style={mediaStyle} />
+    <img src={imgSrc} alt={`${brandName()} mascot`} style={mediaStyle} />
   );
 
   return <span style={wrapStyle}>{media}</span>;
@@ -302,7 +303,7 @@ function EmailCapture({ onStart, source, classroom, promoCode, conferenceName, c
           style={{ marginBottom: -8, filter: "drop-shadow(0 4px 12px rgba(0,0,0,0.15))" }}
         />
         <h1 style={styles.captureTitle}>
-          {isClassroom ? "Curriculate Practice Mode" : "Try Curriculate"}
+          {isClassroom ? `${brandName()} Practice Mode` : `Try ${brandName()}`}
         </h1>
         {/* Conference info banner */}
         {!isClassroom && conferenceName && (
@@ -1970,7 +1971,7 @@ function DemoPlayer({
       <div style={styles.topBar}>
         <div style={styles.topBarLeft}>
           <span style={{ fontWeight: 900, fontSize: 15 }}>
-            {isClassroom ? "Practice Mode" : "Curriculate Demo"}
+            {isClassroom ? "Practice Mode" : `${brandName()} Demo`}
           </span>
           <span style={styles.badge}>
             {hasCommitment
@@ -2479,16 +2480,16 @@ function SessionRating({ user, source = "practice" }) {
           Thank you for the feedback!
         </div>
         <div style={{ fontSize: 13, color: "#059669", marginTop: 2 }}>
-          It helps us make Curriculate better for your class.
+          It helps us make {brandName()} better for your class.
         </div>
       </div>
     );
   }
 
   const rows = [
-    { key: "overall", label: "Overall impression of Curriculate", value: overall, set: setOverall },
+    { key: "overall", label: `Overall impression of ${brandName()}`, value: overall, set: setOverall },
     { key: "teacher", label: "I'd like my teacher to use this in class", value: wantTeacherUse, set: setWantTeacherUse },
-    { key: "recommend", label: "I'd likely recommend Curriculate", value: recommend, set: setRecommend },
+    { key: "recommend", label: `I'd likely recommend ${brandName()}`, value: recommend, set: setRecommend },
   ];
 
   return (
@@ -2611,7 +2612,7 @@ function RecommendTeacher({ user, onPointsEarned }) {
           Recommendation Sent!
         </div>
         <div style={{ fontSize: 14, color: "#7c3aed" }}>
-          {teacherName || teacherEmail} will get an email from Curriculate with your name as the recommender.
+          {teacherName || teacherEmail} will get an email from {brandName()} with your name as the recommender.
         </div>
         <div style={{
           marginTop: 12,
@@ -2651,7 +2652,7 @@ function RecommendTeacher({ user, onPointsEarned }) {
           Recommend a Teacher — Earn {RECOMMEND_POINTS} pts!
         </span>
         <div style={{ fontSize: 12, color: "#7c3aed", marginTop: 4 }}>
-          Know a teacher who'd love Curriculate? Send them a recommendation!
+          Know a teacher who'd love {brandName()}? Send them a recommendation!
         </div>
       </button>
     );
@@ -2673,7 +2674,7 @@ function RecommendTeacher({ user, onPointsEarned }) {
         Recommend a Teacher
       </div>
       <div style={{ fontSize: 12, color: "#7c3aed", marginBottom: 16, textAlign: "center" }}>
-        They'll get an email from Curriculate with your name. Earn {RECOMMEND_POINTS} bonus points!
+        They'll get an email from {brandName()} with your name. Earn {RECOMMEND_POINTS} bonus points!
       </div>
 
       <form onSubmit={handleSubmit}>
@@ -2797,7 +2798,7 @@ const PRACTICE_SHARE_DAILY_CAP = 3;
 function buildPracticeInvite(name) {
   const me = (name || "").split(/\s+/)[0] || "I";
   return (
-    `Hey! ${me} just tried Curriculate Practice — it's a quick, ` +
+    `Hey! ${me} just tried ${brandName()} Practice — it's a quick, ` +
     `actually-fun way to stretch your brain between classes. ` +
     `60+ mini-tasks, free to try.\n\n` +
     `Heads up: they're in their testing phase right now and want ` +
@@ -2890,7 +2891,7 @@ function RecommendPractice({ user, onPointsEarned }) {
     }
     try {
       await navigator.share({
-        title: "Try Curriculate Practice",
+        title: `Try ${brandName()} Practice`,
         text: message,
         url: "https://curriculate.net/practice",
       });
@@ -2908,7 +2909,7 @@ function RecommendPractice({ user, onPointsEarned }) {
   }, [message, recordShare]);
 
   const handleEmail = useCallback(() => {
-    const subject = encodeURIComponent("Try this — Curriculate Practice");
+    const subject = encodeURIComponent(`Try this — ${brandName()} Practice`);
     const body = encodeURIComponent(message);
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
     recordShare("email");

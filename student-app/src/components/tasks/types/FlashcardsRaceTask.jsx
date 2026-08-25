@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { getPlayerName } from "../../../utils/playerName";
 import { useServerEventTimeout } from "../useServerEventTimeout.js";
+import { brandName } from "@shared/brandContext.js";
 import confetti from "canvas-confetti";
 
 /**
@@ -557,7 +558,7 @@ export default function FlashcardsRaceTask(props) {
             </div>
           ) : (
             <div style={{ fontWeight: 900, opacity: 0.85 }}>
-              Waiting for your next task… Get ready to Curriculate!
+              Waiting for your next task… Get ready to {brandName()}!
             </div>
           )}
         </div>

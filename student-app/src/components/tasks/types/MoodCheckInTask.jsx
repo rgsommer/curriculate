@@ -1,6 +1,7 @@
 // student-app/src/components/tasks/types/MoodCheckInTask.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useServerEventTimeout } from "../useServerEventTimeout.js";
+import { brandName } from "@shared/brandContext.js";
 
 const MOODS = [
   { emoji: "😄", label: "Super excited!" },
@@ -340,7 +341,7 @@ export default function MoodCheckInTask({
               letterSpacing: "0.3px",
             }}
           >
-            Let's Curriculate!
+            Let's {brandName()}!
           </button>
 
           {!allSelected && (

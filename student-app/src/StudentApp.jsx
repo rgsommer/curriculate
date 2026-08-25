@@ -18,7 +18,7 @@ import MysteryBoxGrid from "./components/MysteryBoxGrid.jsx";
 import { API_BASE_URL } from "./config.js";
 import FeedbackButton from "./components/FeedbackButton.jsx";
 import { COLORS } from "@shared/colors.js";
-import { brandName, brandUrl } from "@shared/brandContext.js";
+import { brandName, brandUrl, mascotName } from "@shared/brandContext.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 import AnimatedScore from "./components/ui/AnimatedScore.jsx";
 import ThemeBackground from "./components/ui/ThemeBackground.jsx";
@@ -693,7 +693,9 @@ function StudentApp() {
   // ─────────────────────────────────────────────
 
   useEffect(() => {
-    console.log("🚀 Curriculate StudentApp mounted. Build:", BUILD_MARKER);
+    console.log(`🚀 ${brandName()} StudentApp mounted. Build:`, BUILD_MARKER);
+    // Host-aware tab title (index.html ships a static default).
+    try { document.title = brandName(); } catch {}
   }, []);
 
   // ─────────────────────────────────────────────
@@ -4788,7 +4790,7 @@ function StudentApp() {
           {wildCardRolling && (
             <div data-testid="wild-card-rolling" style={superpowerPanel("#fdf4ff", "#f5d0fe", "#701a75")}>
               <strong>🃏 Rolling a fresh task…</strong> This takes a few seconds while
-              Curriculate crafts a new challenge on the same topic.
+              {brandName()} crafts a new challenge on the same topic.
             </div>
           )}
 
@@ -4910,7 +4912,7 @@ function StudentApp() {
                 color: "#ffffff",
               }}
             >
-              Curriculate – Team Station
+              {brandName()} – Team Station
             </h1>
             <p
               style={{
@@ -5126,7 +5128,7 @@ function StudentApp() {
         >
           <img
             src="/images/crue-badge.png"
-            alt="Crue"
+            alt={mascotName()}
             style={{
               width: 30,
               height: 30,
@@ -5176,11 +5178,11 @@ function StudentApp() {
             <div className="crue-greet">
               <img
                 src="/images/crue-badge.png"
-                alt="Crue the fox"
+                alt={`${mascotName()} the fox`}
                 className="crue-avatar"
               />
               <div className="crue-bubble">
-                Hi, I'm <strong>Crue!</strong> Pop in your room code and
+                Hi, I'm <strong>{mascotName()}!</strong> Pop in your room code and
                 let's play. 🦊
               </div>
             </div>
@@ -5936,11 +5938,11 @@ function StudentApp() {
         <div style={{ marginTop: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
           <img
             src="/images/crue-badge.png"
-            alt="Crue"
+            alt={mascotName()}
             style={{ width: 56, height: 56, borderRadius: "50%", animation: "crue-bob 3s ease-in-out infinite" }}
           />
           <div style={{ fontWeight: 700, opacity: 0.85, textAlign: "center" }}>
-            Crue's lining up your first task…
+            {mascotName()}'s lining up your first task…
           </div>
         </div>
       </section>
@@ -6394,7 +6396,7 @@ function StudentApp() {
         🎉 Had fun? Get the app!
       </div>
       <div style={{ fontSize: "0.82rem", color: "#4b5563", marginBottom: 10 }}>
-        Download Curriculate to jump into your next class game in seconds — on iPhone, iPad, or Android.
+        Download {brandName()} to jump into your next class game in seconds — on iPhone, iPad, or Android.
       </div>
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
         <button
@@ -6415,7 +6417,7 @@ function StudentApp() {
             boxShadow: "0 6px 16px rgba(234,88,12,0.35)",
           }}
         >
-          📲 Get the Curriculate App
+          📲 Get the {brandName()} App
         </button>
       </div>
       <div style={{ fontSize: "0.78rem", color: "#6b7280", marginBottom: 8 }}>
@@ -6561,7 +6563,7 @@ function StudentApp() {
       : currentTask?.taskType === TASK_TYPES.MAD_DASH ||
         currentTask?.taskType === TASK_TYPES.MAD_DASH_SEQUENCE
       ? "Scan only the next correct color."
-      : "Get ready to Curriculate!"}
+      : `Get ready to ${brandName()}!`}
   </div>
 
   <div
@@ -6611,10 +6613,10 @@ function StudentApp() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, pointerEvents: "none" }}>
                   <img
                     src="/images/crue-badge.png"
-                    alt="Crue"
+                    alt={mascotName()}
                     style={{ width: 68, height: 68, borderRadius: "50%", animation: "crue-bob 3s ease-in-out infinite" }}
                   />
-                  <div>Get ready — Crue's about to launch your hunt!</div>
+                  <div>Get ready — {mascotName()}'s about to launch your hunt!</div>
                 </div>
               )}
             </div>
@@ -7772,7 +7774,7 @@ function StudentApp() {
     {showConfetti && (
       <img
         src="/images/crue-badge.png"
-        alt="Crue cheering"
+        alt={`${mascotName()} cheering`}
         className="crue-cheer"
       />
     )}

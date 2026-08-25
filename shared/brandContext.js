@@ -26,7 +26,28 @@ function currentHost() {
   return window.location.hostname;
 }
 
+// Dev-only brand override so the games surface can be previewed as either
+// brand on localhost (production hosts always resolve by real hostname).
+//   http://localhost:5174/?brand=qrewzi   → force Qrewzi
+//   http://localhost:5174/?brand=curriculate → force Curriculate
+// Also honors localStorage "brandOverride". Ignored on any non-local host.
+function devBrandOverride() {
+  if (typeof window === "undefined") return null;
+  const host = currentHost();
+  const isLocal = host === "localhost" || host === "127.0.0.1" || host.endsWith(".local");
+  if (!isLocal) return null;
+  try {
+    const q = new URLSearchParams(window.location.search).get("brand");
+    if (q === "qrewzi" || q === "curriculate") return q;
+    const ls = window.localStorage.getItem("brandOverride");
+    if (ls === "qrewzi" || ls === "curriculate") return ls;
+  } catch {}
+  return null;
+}
+
 export function isQrewziHost() {
+  const ov = devBrandOverride();
+  if (ov) return ov === "qrewzi";
   return QREWZI_HOSTS.has(currentHost());
 }
 
