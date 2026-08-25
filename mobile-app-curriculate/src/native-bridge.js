@@ -24,7 +24,7 @@ import { ScreenOrientation } from "@capacitor/screen-orientation";
 
 // The origin the app is allowed to stay inside. Any navigation outside
 // this host opens in the phone's default browser instead of the WebView.
-const APP_HOST = "set.curriculate.net";
+const APP_HOST = "set.qrewzi.com";
 
 // ── Camera ──────────────────────────────────────────────────────
 // Native camera for QR/join-code scanning and photo entry — better UX

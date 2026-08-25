@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" width="640" height="160" role="img" aria-label="Qrewzi wordmark, color">
+  <defs>
+    <clipPath id="wm-outer">
+      <rect x="0" y="0" width="120" height="120" rx="28"/>
+    </clipPath>
+  </defs>
+  <!-- Mark (the Q) -->
+  <g transform="translate(20 20)">
+    <rect x="0" y="0" width="120" height="120" rx="28" fill="#FF4D5B"/>
+    <rect x="20" y="20" width="80" height="80" rx="16" fill="#FEF9F0"/>
+    <rect x="38" y="38" width="44" height="44" rx="10" fill="#FF4D5B"/>
+    <g clip-path="url(#wm-outer)">
+      <line x1="84" y1="84" x2="132" y2="132" stroke="#FF4D5B" stroke-width="16" stroke-linecap="round"/>
+    </g>
+    <line x1="108" y1="108" x2="132" y2="132" stroke="#FF4D5B" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  <!-- Wordmark letters "rewzi" -->
+  <text x="170" y="115"
+        font-family="'Unbounded', 'Nunito', system-ui, sans-serif"
+        font-weight="800" font-size="104" fill="#0B1F3A"
+        letter-spacing="-2">rewzi</text>
+</svg>

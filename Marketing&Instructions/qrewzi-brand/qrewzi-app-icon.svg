@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Qrewzi app icon">
+  <!-- App icon: mark on a coral rounded square. Foreground is cream so the QR
+       finder still reads even at small sizes. -->
+  <defs>
+    <clipPath id="app-outer">
+      <rect x="0" y="0" width="1024" height="1024" rx="220"/>
+    </clipPath>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="220" fill="#FF4D5B"/>
+  <g clip-path="url(#app-outer)">
+    <!-- Centered finder pattern in cream -->
+    <g transform="translate(256 256)">
+      <rect x="0" y="0" width="512" height="512" rx="112" fill="#FEF9F0"/>
+      <rect x="88" y="88" width="336" height="336" rx="72" fill="#FF4D5B"/>
+      <rect x="176" y="176" width="160" height="160" rx="40" fill="#FEF9F0"/>
+    </g>
+    <!-- Q tail, cream, poking past bottom-right corner -->
+    <line x1="720" y1="720" x2="960" y2="960" stroke="#FEF9F0" stroke-width="70" stroke-linecap="round"/>
+  </g>
+</svg>

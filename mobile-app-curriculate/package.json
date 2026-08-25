@@ -1,11 +1,11 @@
 {
-  "name": "curriculate-sessions",
+  "name": "qrewzi-teacher",
   "version": "1.0.0",
-  "description": "Curriculate — Live Session Game Master experience for teachers (Android + iOS Capacitor shell)",
+  "description": "Qrewzi Teacher — GameMaster experience for live classroom sessions (Android + iOS Capacitor shell)",
   "private": true,
   "scripts": {
     "build:web": "mkdir -p www && cp src/index.html www/index.html",
-    "cap:init": "npx cap init 'Curriculate' net.curriculate.sessions --web-dir www",
+    "cap:init": "npx cap init 'Qrewzi Teacher' net.curriculate.sessions --web-dir www",
     "cap:add:ios": "npx cap add ios",
     "cap:add:android": "npx cap add android",
     "cap:sync": "npm run build:web && npx cap sync",

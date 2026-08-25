@@ -1,10 +1,10 @@
-# Curriculate Student — App Store & Play Store Submission Guide
+# Qrewzi (Student) — App Store & Play Store Submission Guide
 
-Native shell wrapping the student play app at `https://play.curriculate.net`.
+Native shell wrapping the student play app at `https://play.qrewzi.com`.
 Students join a live session by room code (no login) and play task stations.
 Targets **iPhone + iPad + Android** from one Capacitor codebase.
 
-- **App name:** Curriculate Student
+- **App name:** Qrewzi
 - **Bundle ID / Package:** `net.curriculate.student`
 - **Apple Team:** Applicable Software Inc — `8XSHU49K2X`
 - **Splash / theme base:** `#f5f7ff` (light, to distinguish from the teacher app)

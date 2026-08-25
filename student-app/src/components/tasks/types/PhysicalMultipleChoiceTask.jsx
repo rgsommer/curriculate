@@ -296,7 +296,10 @@ export default function PhysicalMultipleChoiceTask({
       scanned = scanned.color || scanned.stationColor || scanned.stationId || "";
     }
 
-    if (typeof scanned === "string" && scanned.includes("play.curriculate.net/")) {
+    if (
+      typeof scanned === "string" &&
+      (scanned.includes("play.curriculate.net/") || scanned.includes("play.qrewzi.com/"))
+    ) {
       const parts = scanned.split("/");
       scanned = parts[parts.length - 1];
     }

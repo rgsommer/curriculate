@@ -7,6 +7,7 @@ import Confetti from "react-confetti";
 import { Trophy, Camera, Users, Sparkles, Volume2, VolumeX, Zap } from "lucide-react";
 import EndTimeControl from "../components/EndTimeControl";
 import { getTasksetEstimatedMinutes } from "../utils/tasksetDuration";
+import { brandDomain } from "@shared/brandContext.js";
 
 // ── Constants ────────────────────────────────────────────────
 const trophyEmojis = ["🥇", "🥈", "🥉"];
@@ -559,7 +560,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
           </button>
         </div>
 
-        {/* Header: Room Code + play.curriculate.net */}
+        {/* Header: Room Code + brand-aware play host */}
         <div className="text-center mb-6 select-none">
           <motion.div
             aria-hidden="true"
@@ -582,7 +583,7 @@ export default function HostView({ roomCode: roomCodeProp }) {
           </div>
 
           <div className="text-xl md:text-2xl font-bold opacity-95 tracking-wide">
-            play.curriculate.net
+            play.{brandDomain()}
           </div>
 
           {/* Taskset name */}

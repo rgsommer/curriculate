@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120" role="img" aria-label="Qrewzi mark B — pure rounded QR finder">
+  <!-- Mark B: Pure rounded QR finder pattern, no tail. Reads as "the QR product." -->
+  <g transform="translate(10 10)">
+    <rect x="0" y="0" width="100" height="100" rx="24" fill="#FF4D5B"/>
+    <rect x="16" y="16" width="68" height="68" rx="14" fill="#FEF9F0"/>
+    <rect x="32" y="32" width="36" height="36" rx="8" fill="#FF4D5B"/>
+  </g>
+</svg>

@@ -19,7 +19,7 @@ import { Browser } from "@capacitor/browser";
 import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { Network } from "@capacitor/network";
 
-const APP_HOST = "play.curriculate.net";
+const APP_HOST = "play.qrewzi.com";
 
 // ── Haptics ─────────────────────────────────────────────────────
 export async function hapticLight() {

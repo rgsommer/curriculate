@@ -17,9 +17,9 @@ no GPS; optional email; photo/audio upload for some task types).
 | Secondary Category | Games → Educational |
 | Age Rating | 4+ |
 | Content Rights | Does NOT use third-party content |
-| Support URL | `https://curriculate.net/contact` |
-| Marketing URL | `https://curriculate.net` |
-| Privacy Policy URL | `https://curriculate.net/privacy` |
+| Support URL | `https://qrewzi.com/contact` |
+| Marketing URL | `https://qrewzi.com` |
+| Privacy Policy URL | `https://qrewzi.com/privacy` |
 
 ---
 

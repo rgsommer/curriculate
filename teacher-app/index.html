@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Curriculate Teacher Dashboard — create AI-powered station-based lessons, manage live sessions, and generate student reports." />
     <title>Curriculate</title>
+    <script>
+      // Host-aware brand: when this same build is served at set.qrewzi.com
+      // (or any qrewzi.* variant), swap the tab title + meta description to
+      // Qrewzi BEFORE React mounts, so no Curriculate branding flashes.
+      // curriculate.net hosts see the original Curriculate title.
+      (function () {
+        var h = location.hostname;
+        var qrewziHosts = ["qrewzi.com","www.qrewzi.com","set.qrewzi.com","play.qrewzi.com","qrewzi.ca","www.qrewzi.ca"];
+        if (qrewziHosts.indexOf(h) === -1) return;
+        document.title = "Qrewzi";
+        var desc = document.querySelector('meta[name="description"]');
+        if (desc) desc.setAttribute("content", "Qrewzi — the classroom becomes the game. Live team scavenger hunts across 30+ interactive task types.");
+      })();
+    </script>
 
     <!-- Tailwind CSS (CDN — processes utility classes at runtime) -->
     <script src="https://cdn.tailwindcss.com"></script>

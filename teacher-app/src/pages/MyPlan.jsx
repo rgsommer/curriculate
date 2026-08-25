@@ -4,6 +4,7 @@ import axios from "axios";
 import { PageShell, PageHeader } from "../components/ui";
 
 import { API_BASE_URL } from "../config";
+import { brandUrl } from "@shared/brandContext.js";
 const API_BASE = API_BASE_URL;
 
 const PLAN_LABELS = {
@@ -145,7 +146,7 @@ export default function MyPlanPage() {
                 Teacher Plus adds student-level reporting, PDF exports, AI-themed selfies, and more AI generation.
               </p>
               <a
-                href="https://www.curriculate.net/pricing"
+                href={brandUrl("/pricing")}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{

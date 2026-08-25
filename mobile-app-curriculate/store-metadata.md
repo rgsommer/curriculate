@@ -1,7 +1,7 @@
-# App Store & Play Store Metadata — Curriculate
+# App Store & Play Store Metadata — Qrewzi Teacher
 
 ## App Name
-**Curriculate**
+**Qrewzi Teacher**
 
 ## Subtitle (App Store, 30 chars max)
 Live classroom game sessions
@@ -58,11 +58,11 @@ classroom,game,teacher,lesson,quiz,scavenger,hunt,interactive,students,learning,
 
 ## App Preview Video (optional, 30 seconds)
 - Show: describe a lesson → tasks generate → start session → students join → leaderboard moves → celebration
-- End screen: "Turn any lesson into a game. curriculate.net"
+- End screen: "Turn any lesson into a game. qrewzi.com"
 
 ## Store Listing Identifiers
 - **App ID / Package:** `net.curriculate.sessions`
-- **Live URL wrapped:** `https://set.curriculate.net?app=1`
-- **Support URL:** https://curriculate.net/contact
-- **Privacy Policy URL:** https://curriculate.net/privacy
-- **Marketing URL:** https://curriculate.net
+- **Live URL wrapped:** `https://set.qrewzi.com?app=1`
+- **Support URL:** https://qrewzi.com/contact
+- **Privacy Policy URL:** https://qrewzi.com/privacy
+- **Marketing URL:** https://qrewzi.com

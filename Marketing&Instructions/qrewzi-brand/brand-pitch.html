@@ -1,0 +1,638 @@
+<title>Qrewzi Brand</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Unbounded:wght@400;700;800&display=swap">
+<style>
+  :root {
+    --coral: #FF4D5B;
+    --coral-deep: #E63946;
+    --navy: #0B1F3A;
+    --butter: #FFD147;
+    --cream: #FEF9F0;
+    --cream-shade: #F1EADB;
+    --slate: #4A5B7A;
+    --slate-soft: #94A3B8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Nunito", system-ui, sans-serif;
+    background: var(--cream);
+    color: var(--navy);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 32px 96px; }
+
+  /* --- Type roles --- */
+  .eyebrow {
+    font-family: "Nunito", sans-serif;
+    font-weight: 900;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--coral);
+  }
+  h1.hero-wordmark { margin: 22px 0 0; line-height: 1; }
+  h1.hero-wordmark svg { display: block; max-width: 100%; height: auto; }
+  .tagline {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 700;
+    font-size: clamp(28px, 4.6vw, 44px);
+    letter-spacing: -0.02em;
+    text-wrap: balance;
+    color: var(--navy);
+    margin: 28px 0 12px;
+    max-width: 22ch;
+  }
+  .lede {
+    font-size: 17px;
+    max-width: 56ch;
+    color: var(--slate);
+  }
+
+  section { margin-top: 88px; }
+  .sec-hdr {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 24px; margin-bottom: 28px;
+    border-bottom: 2px solid var(--navy);
+    padding-bottom: 12px;
+  }
+  .sec-hdr h2 {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 800; font-size: 26px; letter-spacing: -0.01em;
+    margin: 0;
+  }
+  .sec-hdr .num {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 400; font-size: 13px; color: var(--slate-soft);
+    letter-spacing: 0.15em;
+  }
+  .sec-lede { font-size: 16px; color: var(--slate); margin: 0 0 32px; max-width: 62ch; }
+
+  /* --- Mark trio --- */
+  .mark-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+  }
+  .mark-card {
+    background: #fff;
+    border: 2px solid var(--navy);
+    border-radius: 20px;
+    padding: 28px 22px 22px;
+    display: flex; flex-direction: column; align-items: center;
+    text-align: center;
+    position: relative;
+  }
+  .mark-card.pick {
+    background: var(--butter);
+    border-color: var(--navy);
+  }
+  .mark-card .letter {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 800; font-size: 14px;
+    background: var(--navy); color: var(--cream);
+    width: 26px; height: 26px; border-radius: 50%;
+    display: grid; place-items: center;
+    position: absolute; top: -13px; left: 22px;
+  }
+  .mark-card .pill {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 700; font-size: 10px;
+    background: var(--coral); color: var(--cream);
+    padding: 4px 9px; border-radius: 999px;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    position: absolute; top: -12px; right: 22px;
+  }
+  .mark-card svg { width: 140px; height: 140px; margin-bottom: 16px; }
+  .mark-card .name {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 700; font-size: 15px; margin-bottom: 4px;
+  }
+  .mark-card .why {
+    font-size: 13.5px; color: var(--slate); line-height: 1.45;
+  }
+  @media (max-width: 720px) {
+    .mark-grid { grid-template-columns: 1fr; }
+  }
+
+  /* --- Wordmark stack --- */
+  .word-stack { display: grid; gap: 16px; }
+  .word-panel {
+    padding: 32px;
+    border-radius: 20px;
+    display: flex; align-items: center; gap: 28px;
+    overflow: hidden;
+  }
+  .word-panel.on-cream { background: #fff; border: 2px solid var(--navy); }
+  .word-panel.on-navy  { background: var(--navy); }
+  .word-panel svg { max-width: 100%; height: auto; flex: 1 1 auto; min-width: 0; }
+  .word-panel .cap {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 700; font-size: 11px;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--slate); flex: 0 0 auto;
+  }
+  .word-panel.on-navy .cap { color: var(--slate-soft); }
+
+  /* --- Applications --- */
+  .app-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 20px;
+  }
+  .app-card {
+    background: #fff;
+    border: 2px solid var(--navy);
+    border-radius: 20px;
+    padding: 28px 20px 22px;
+    text-align: center;
+  }
+  .app-card .cap {
+    font-family: "Unbounded", sans-serif;
+    font-weight: 700; font-size: 11px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--slate); margin-top: 14px;
+  }
+
+  /* Browser tab mockup */
+  .tab-mock {
+    background: var(--cream-shade);
+    border-radius: 8px 8px 0 0;
+    padding: 10px 14px;
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--navy); font-weight: 700;
+    max-width: 100%;
+  }
+  .tab-mock svg { flex: 0 0 auto; }
+
+  /* Phone home mockup */
+  .phone-mock {
+    width: 150px; height: 260px;
+    background: linear-gradient(180deg, #6366F1 0%, #A855F7 100%);
+    border-radius: 26px;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    align-content: start;
+    margin: 0 auto;
+    box-shadow: 0 8px 24px rgba(11, 31, 58, 0.18);
+  }
+  .phone-mock .icon-slot {
+    aspect-ratio: 1; border-radius: 10px;
+    background: rgba(255,255,255,0.25);
+  }
+  .phone-mock .qrewzi {
+    grid-column: 1; grid-row: 1;
+    padding: 0; background: none;
+  }
+  .phone-mock .qrewzi svg { width: 100%; height: auto; display: block; border-radius: 10px; }
+  .phone-mock .label-slot {
+    grid-column: 1; grid-row: 2; margin-top: -4px;
+    text-align: center; font-family: "Nunito"; font-weight: 700;
+    font-size: 10px; color: white;
+  }
+
+  /* Scale row */
+  .scale-row {
+    display: flex; align-items: flex-end; justify-content: center; gap: 24px;
+    padding: 20px 0;
+  }
+  .scale-row .item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .scale-row .item .label {
+    font-family: "Unbounded"; font-weight: 700; font-size: 10px;
+    letter-spacing: 0.12em; color: var(--slate);
+  }
+
+  @media (max-width: 720px) {
+    .app-grid { grid-template-columns: 1fr; }
+  }
+
+  /* --- Palette --- */
+  .pal-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+  }
+  .swatch {
+    border-radius: 16px;
+    padding: 20px 16px 14px;
+    aspect-ratio: 3 / 4;
+    display: flex; flex-direction: column; justify-content: space-between;
+    border: 2px solid var(--navy);
+  }
+  .swatch .role {
+    font-family: "Unbounded"; font-weight: 700; font-size: 10px;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    opacity: 0.75;
+  }
+  .swatch .name {
+    font-family: "Unbounded"; font-weight: 800; font-size: 18px;
+    letter-spacing: -0.01em; margin-top: 6px;
+  }
+  .swatch .hex {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 13px; font-weight: 700; margin-top: 6px;
+  }
+  @media (max-width: 720px) { .pal-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  /* --- Type --- */
+  .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .type-card {
+    background: #fff; border: 2px solid var(--navy); border-radius: 20px;
+    padding: 30px 28px;
+  }
+  .type-card .role {
+    font-family: "Unbounded"; font-weight: 700; font-size: 10px;
+    letter-spacing: 0.16em; text-transform: uppercase; color: var(--slate);
+  }
+  .type-card .face {
+    font-family: "Unbounded"; font-weight: 800; font-size: 24px;
+    margin: 6px 0 22px; letter-spacing: -0.01em;
+  }
+  .type-card .disp-sample {
+    font-family: "Unbounded"; font-weight: 800; font-size: 64px;
+    letter-spacing: -0.03em; color: var(--navy); line-height: 1;
+  }
+  .type-card .body-sample {
+    font-family: "Nunito"; font-weight: 400; font-size: 15.5px;
+    color: var(--navy); margin: 0;
+  }
+  .type-card .body-sample b { color: var(--coral); }
+  .ladder { margin-top: 22px; display: grid; gap: 6px; }
+  .ladder .r {
+    display: flex; align-items: baseline; gap: 14px;
+    font-family: "Nunito"; color: var(--slate); font-size: 12px;
+  }
+  .ladder .r span {
+    font-family: "Unbounded"; font-weight: 700; color: var(--navy);
+    line-height: 1;
+  }
+  @media (max-width: 720px) { .type-grid { grid-template-columns: 1fr; } }
+
+  /* --- Footer --- */
+  footer {
+    margin-top: 88px;
+    padding-top: 24px;
+    border-top: 1px solid var(--slate-soft);
+    color: var(--slate); font-size: 13px;
+    display: flex; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+  }
+
+  /* --- Shared SVG symbols --- */
+  .hidden-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+</style>
+
+<!-- Reusable SVG symbol definitions -->
+<svg class="hidden-defs" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Mark A: finder + Q tail -->
+    <symbol id="mark-a" viewBox="0 0 120 120">
+      <clipPath id="ca-out"><rect x="10" y="10" width="100" height="100" rx="24"/></clipPath>
+      <g transform="translate(10 10)">
+        <rect x="0" y="0" width="100" height="100" rx="24" fill="#FF4D5B"/>
+        <rect x="16" y="16" width="68" height="68" rx="14" fill="#FEF9F0"/>
+        <rect x="32" y="32" width="36" height="36" rx="8" fill="#FF4D5B"/>
+      </g>
+      <g clip-path="url(#ca-out)">
+        <line x1="80" y1="80" x2="128" y2="128" stroke="#FF4D5B" stroke-width="14" stroke-linecap="round"/>
+      </g>
+      <line x1="100" y1="100" x2="122" y2="122" stroke="#FF4D5B" stroke-width="14" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- Mark B: finder only -->
+    <symbol id="mark-b" viewBox="0 0 120 120">
+      <g transform="translate(10 10)">
+        <rect x="0" y="0" width="100" height="100" rx="24" fill="#FF4D5B"/>
+        <rect x="16" y="16" width="68" height="68" rx="14" fill="#FEF9F0"/>
+        <rect x="32" y="32" width="36" height="36" rx="8" fill="#FF4D5B"/>
+      </g>
+    </symbol>
+
+    <!-- Mark C: pixel-array Q letterform -->
+    <symbol id="mark-c" viewBox="0 0 120 120">
+      <g transform="translate(10 10)">
+        <path fill-rule="evenodd" fill="#FF4D5B" d="
+          M 20 0 L 80 0 Q 100 0 100 20 L 100 80 Q 100 100 80 100 L 20 100
+          Q 0 100 0 80 L 0 20 Q 0 0 20 0 Z
+          M 24 20 Q 20 20 20 24 L 20 76 Q 20 80 24 80 L 76 80 Q 80 80 80 76
+          L 80 24 Q 80 20 76 20 Z"/>
+        <g fill="#FF4D5B">
+          <rect x="30" y="30" width="10" height="10" rx="2"/>
+          <rect x="45" y="30" width="10" height="10" rx="2"/>
+          <rect x="60" y="30" width="10" height="10" rx="2"/>
+          <rect x="30" y="45" width="10" height="10" rx="2"/>
+          <rect x="60" y="45" width="10" height="10" rx="2"/>
+          <rect x="30" y="60" width="10" height="10" rx="2"/>
+          <rect x="45" y="60" width="10" height="10" rx="2"/>
+          <rect x="60" y="60" width="10" height="10" rx="2"/>
+        </g>
+        <line x1="80" y1="80" x2="108" y2="108" stroke="#FF4D5B" stroke-width="16" stroke-linecap="round"/>
+      </g>
+    </symbol>
+
+    <!-- Wordmark (parametric fill via currentColor for mono variants) -->
+    <symbol id="wm-mark" viewBox="0 0 140 140">
+      <clipPath id="wm-outer"><rect x="10" y="10" width="120" height="120" rx="28"/></clipPath>
+      <g transform="translate(10 10)">
+        <rect x="0" y="0" width="120" height="120" rx="28" fill="currentColor"/>
+        <rect x="20" y="20" width="80" height="80" rx="16" fill="var(--wm-hole)"/>
+        <rect x="38" y="38" width="44" height="44" rx="10" fill="currentColor"/>
+      </g>
+      <g clip-path="url(#wm-outer)">
+        <line x1="94" y1="94" x2="146" y2="146" stroke="currentColor" stroke-width="16" stroke-linecap="round"/>
+      </g>
+      <line x1="118" y1="118" x2="140" y2="140" stroke="currentColor" stroke-width="16" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- App icon (large) -->
+    <symbol id="app-icon" viewBox="0 0 200 200">
+      <clipPath id="ap-out"><rect x="0" y="0" width="200" height="200" rx="44"/></clipPath>
+      <rect x="0" y="0" width="200" height="200" rx="44" fill="#FF4D5B"/>
+      <g clip-path="url(#ap-out)">
+        <g transform="translate(50 50)">
+          <rect x="0" y="0" width="100" height="100" rx="22" fill="#FEF9F0"/>
+          <rect x="18" y="18" width="64" height="64" rx="14" fill="#FF4D5B"/>
+          <rect x="34" y="34" width="32" height="32" rx="8" fill="#FEF9F0"/>
+        </g>
+        <line x1="140" y1="140" x2="192" y2="192" stroke="#FEF9F0" stroke-width="14" stroke-linecap="round"/>
+      </g>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+
+  <!-- ==================== HERO ==================== -->
+  <header>
+    <div class="eyebrow">Brand pitch · v1 · Aug 2026</div>
+    <h1 class="hero-wordmark" style="color: var(--coral); --wm-hole: var(--cream);">
+      <svg viewBox="0 0 720 180" width="720" style="max-width:100%;">
+        <use href="#wm-mark" x="10" y="20" width="140" height="140"/>
+        <text x="176" y="130"
+              font-family="'Unbounded', 'Nunito', system-ui, sans-serif"
+              font-weight="800" font-size="116" fill="var(--navy)"
+              letter-spacing="-2">rewzi</text>
+      </svg>
+    </h1>
+    <p class="tagline">The classroom becomes the game.</p>
+    <p class="lede">
+      Qrewzi is the kid-facing rebrand of Curriculate's live-classroom
+      product — a QR-driven team scavenger hunt engine that turns any lesson
+      into a 30-minute room-wide game. This page lays out the mark options,
+      wordmark treatments, palette, and typography.
+    </p>
+  </header>
+
+  <!-- ==================== THE MARK ==================== -->
+  <section>
+    <div class="sec-hdr">
+      <h2>The Mark</h2>
+      <span class="num">01 · three directions</span>
+    </div>
+    <p class="sec-lede">
+      Every direction anchors on the QR-code finder pattern — the black square
+      with a smaller filled square inside that phone cameras look for. It's
+      instantly recognized worldwide, and it happens to look like a Q. That's the
+      thesis: the letter and the mechanic are the same shape.
+    </p>
+
+    <div class="mark-grid">
+      <div class="mark-card pick">
+        <span class="letter">A</span>
+        <span class="pill">Recommended</span>
+        <svg><use href="#mark-a"/></svg>
+        <div class="name">Finder + Tail</div>
+        <div class="why">Full QR finder pattern with a rounded diagonal kicker for the Q's tail. Reads as both symbol and letter — the strongest dual duty.</div>
+      </div>
+      <div class="mark-card">
+        <span class="letter">B</span>
+        <svg><use href="#mark-b"/></svg>
+        <div class="name">Pure Finder</div>
+        <div class="why">The finder pattern alone. Feels more like a system icon than a letter. Excellent as a favicon; weaker as a standalone mark.</div>
+      </div>
+      <div class="mark-card">
+        <span class="letter">C</span>
+        <svg><use href="#mark-c"/></svg>
+        <div class="name">Pixel Q</div>
+        <div class="why">A bold Q letterform with QR-pixel array inside the counter. Reads letter-first. Playful, but more work to render cleanly at small sizes.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== WORDMARK ==================== -->
+  <section>
+    <div class="sec-hdr">
+      <h2>The Wordmark</h2>
+      <span class="num">02 · three treatments</span>
+    </div>
+    <p class="sec-lede">
+      Mark A becomes the Q; Unbounded 800 carries "rewzi" with a tight −2
+      letter-spacing so the finder pattern locks visually into the word.
+      Three treatments cover the daily use cases.
+    </p>
+    <div class="word-stack">
+      <div class="word-panel on-cream" style="color: var(--coral); --wm-hole: var(--cream);">
+        <svg viewBox="0 0 680 160" preserveAspectRatio="xMinYMid meet">
+          <use href="#wm-mark" x="0" y="10" width="140" height="140"/>
+          <text x="166" y="122"
+                font-family="'Unbounded', 'Nunito', system-ui, sans-serif"
+                font-weight="800" font-size="108" fill="var(--navy)"
+                letter-spacing="-2">rewzi</text>
+        </svg>
+        <div class="cap">Primary · color</div>
+      </div>
+      <div class="word-panel on-cream" style="color: var(--navy); --wm-hole: var(--cream);">
+        <svg viewBox="0 0 680 160" preserveAspectRatio="xMinYMid meet">
+          <use href="#wm-mark" x="0" y="10" width="140" height="140"/>
+          <text x="166" y="122"
+                font-family="'Unbounded', 'Nunito', system-ui, sans-serif"
+                font-weight="800" font-size="108" fill="var(--navy)"
+                letter-spacing="-2">rewzi</text>
+        </svg>
+        <div class="cap">Mono · navy</div>
+      </div>
+      <div class="word-panel on-navy" style="color: var(--cream); --wm-hole: var(--navy);">
+        <svg viewBox="0 0 680 160" preserveAspectRatio="xMinYMid meet">
+          <use href="#wm-mark" x="0" y="10" width="140" height="140"/>
+          <text x="166" y="122"
+                font-family="'Unbounded', 'Nunito', system-ui, sans-serif"
+                font-weight="800" font-size="108" fill="var(--cream)"
+                letter-spacing="-2">rewzi</text>
+        </svg>
+        <div class="cap">Mono · cream on navy</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== APPLICATIONS ==================== -->
+  <section>
+    <div class="sec-hdr">
+      <h2>In Use</h2>
+      <span class="num">03 · applications</span>
+    </div>
+    <p class="sec-lede">
+      The mark shrinks cleanly. At favicon size the tail vanishes — the pure
+      finder pattern takes over. The app icon inverts to cream-on-coral so it
+      pops on any home-screen wallpaper.
+    </p>
+
+    <div class="app-grid">
+      <!-- Browser tab -->
+      <div class="app-card">
+        <div class="tab-mock">
+          <svg width="16" height="16" viewBox="0 0 32 32">
+            <rect x="2" y="2" width="28" height="28" rx="6" fill="#FF4D5B"/>
+            <rect x="6" y="6" width="20" height="20" rx="4" fill="#FEF9F0"/>
+            <rect x="11" y="11" width="10" height="10" rx="2" fill="#FF4D5B"/>
+          </svg>
+          <span>Qrewzi — classroom games</span>
+        </div>
+        <div class="cap">Favicon · 16 px</div>
+      </div>
+
+      <!-- Phone home screen -->
+      <div class="app-card">
+        <div class="phone-mock">
+          <div class="qrewzi"><svg viewBox="0 0 200 200"><use href="#app-icon"/></svg></div>
+          <div class="icon-slot"></div>
+          <div class="icon-slot"></div>
+          <div class="label-slot">Qrewzi</div>
+          <div class="icon-slot"></div>
+          <div class="icon-slot"></div>
+          <div class="icon-slot"></div>
+          <div class="icon-slot"></div>
+          <div class="icon-slot"></div>
+        </div>
+        <div class="cap">App icon · home screen</div>
+      </div>
+
+      <!-- Scale demo -->
+      <div class="app-card">
+        <div class="scale-row">
+          <div class="item">
+            <svg width="16" height="16" viewBox="0 0 32 32">
+              <rect x="2" y="2" width="28" height="28" rx="6" fill="#FF4D5B"/>
+              <rect x="6" y="6" width="20" height="20" rx="4" fill="#FEF9F0"/>
+              <rect x="11" y="11" width="10" height="10" rx="2" fill="#FF4D5B"/>
+            </svg>
+            <div class="label">16</div>
+          </div>
+          <div class="item">
+            <svg width="32" height="32" viewBox="0 0 32 32">
+              <rect x="2" y="2" width="28" height="28" rx="6" fill="#FF4D5B"/>
+              <rect x="6" y="6" width="20" height="20" rx="4" fill="#FEF9F0"/>
+              <rect x="11" y="11" width="10" height="10" rx="2" fill="#FF4D5B"/>
+            </svg>
+            <div class="label">32</div>
+          </div>
+          <div class="item">
+            <svg width="80" height="80" viewBox="0 0 120 120"><use href="#mark-a"/></svg>
+            <div class="label">80</div>
+          </div>
+        </div>
+        <div class="cap">Scale · 16 · 32 · 80 px</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== PALETTE ==================== -->
+  <section>
+    <div class="sec-hdr">
+      <h2>Palette</h2>
+      <span class="num">04 · five roles</span>
+    </div>
+    <p class="sec-lede">
+      Coral leads because kid-facing edtech is crowded with purples, blues,
+      and pastels — coral+navy stands out on a shelf. Butter yellow is the
+      spark reserved for interactive moments (buttons pressed, correct
+      answers, superpower reveals) so it never wears out.
+    </p>
+    <div class="pal-grid">
+      <div class="swatch" style="background: var(--coral); color: var(--cream);">
+        <div>
+          <div class="role">Primary</div>
+          <div class="name">Signal Coral</div>
+        </div>
+        <div class="hex">#FF4D5B</div>
+      </div>
+      <div class="swatch" style="background: var(--navy); color: var(--cream);">
+        <div>
+          <div class="role">Anchor</div>
+          <div class="name">Chalkboard Navy</div>
+        </div>
+        <div class="hex">#0B1F3A</div>
+      </div>
+      <div class="swatch" style="background: var(--butter); color: var(--navy);">
+        <div>
+          <div class="role">Spark</div>
+          <div class="name">Bell Butter</div>
+        </div>
+        <div class="hex">#FFD147</div>
+      </div>
+      <div class="swatch" style="background: var(--cream); color: var(--navy);">
+        <div>
+          <div class="role">Ground</div>
+          <div class="name">Recess Cream</div>
+        </div>
+        <div class="hex">#FEF9F0</div>
+      </div>
+      <div class="swatch" style="background: var(--slate); color: var(--cream);">
+        <div>
+          <div class="role">Text · sub</div>
+          <div class="name">Hall Slate</div>
+        </div>
+        <div class="hex">#4A5B7A</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ==================== TYPOGRAPHY ==================== -->
+  <section>
+    <div class="sec-hdr">
+      <h2>Typography</h2>
+      <span class="num">05 · two faces</span>
+    </div>
+    <p class="sec-lede">
+      Unbounded gives the wordmark and headlines an arcade-cabinet
+      geometry that reads as "game." Nunito's rounded terminals carry
+      body copy warmly for a K-6 audience without going childish.
+    </p>
+    <div class="type-grid">
+      <div class="type-card">
+        <div class="role">Display · headlines · wordmark</div>
+        <div class="face">Unbounded · 800</div>
+        <div class="disp-sample">Room 112<br>is live.</div>
+        <div class="ladder">
+          <div class="r"><span style="font-size:36px">Aa</span> 36 · section head</div>
+          <div class="r"><span style="font-size:24px">Aa</span> 24 · card head</div>
+          <div class="r"><span style="font-size:14px">Aa</span> 14 · eyebrow · uppercase · 0.16em</div>
+        </div>
+      </div>
+      <div class="type-card">
+        <div class="role">Body · UI · everywhere else</div>
+        <div class="face">Nunito · 400 / 700 / 900</div>
+        <p class="body-sample">
+          Ms. Thompson picks a topic — <b>the water cycle</b> — and Qrewzi
+          builds a live team game from it: eight stations, thirty task
+          types, real-time scoring. Kids scan QR codes taped around the
+          room, teams jockey for the lead on the projector, and the whole
+          thing wraps in half an hour.
+        </p>
+        <div class="ladder">
+          <div class="r"><span style="font-family:Nunito;font-weight:900;font-size:18px">Aa</span> 18 · button · 900</div>
+          <div class="r"><span style="font-family:Nunito;font-weight:700;font-size:16px">Aa</span> 16 · body emphasis · 700</div>
+          <div class="r"><span style="font-family:Nunito;font-weight:400;font-size:16px">Aa</span> 16 · body · 400</div>
+          <div class="r"><span style="font-family:Nunito;font-weight:400;font-size:13px">Aa</span> 13 · caption · 400</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div>Qrewzi · brand pitch v1 · assets in <code>Marketing&amp;Instructions/qrewzi-brand/</code></div>
+    <div>curriculate.net → qrewzi.com</div>
+  </footer>
+</div>

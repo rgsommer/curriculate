@@ -16,15 +16,15 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * (teacher Game Master console). Separate store listings, shared domain.
  */
 const config: CapacitorConfig = {
-  appId: "net.curriculate.student",
-  appName: "Curriculate Student",
+  appId: "net.curriculate.student", // DO NOT CHANGE — Play Store install lineage + pulse-grading-keystore.jks signing key are pinned to this appId
+  appName: "Qrewzi",
   webDir: "www",
 
   // ── Live URL mode ──────────────────────────────────────────────
   // The WebView loads the production student app directly. One codebase,
   // instant updates, no resubmission for content changes.
   server: {
-    url: "https://play.curriculate.net",
+    url: "https://play.qrewzi.com",
     cleartext: false,
     androidScheme: "https",
   },

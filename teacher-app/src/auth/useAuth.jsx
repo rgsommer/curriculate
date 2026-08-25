@@ -17,11 +17,14 @@ function getApiBase() {
     return String(envBase).trim().replace(/\/+$/, "");
   }
 
-  // 2) Hard fallback for production (prevents hitting set.curriculate.net)
-  // You can change this later, but this will immediately stop 405s.
+  // 2) Hard fallback for production teacher hosts (prevents 405s from hitting
+  //    the teacher-app deploy target as the API base). Backend is shared
+  //    across both brands, so both hosts resolve to the same API.
   if (typeof window !== "undefined") {
     const host = window.location.host;
-    if (host === "set.curriculate.net") return "https://api.curriculate.net";
+    if (host === "set.curriculate.net" || host === "set.qrewzi.com") {
+      return "https://api.curriculate.net";
+    }
   }
 
   // 3) Local dev fallback

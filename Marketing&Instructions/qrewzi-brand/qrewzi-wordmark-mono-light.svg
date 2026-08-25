@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" width="640" height="160" role="img" aria-label="Qrewzi wordmark, single-color cream on dark">
+  <defs>
+    <clipPath id="wml-outer">
+      <rect x="0" y="0" width="120" height="120" rx="28"/>
+    </clipPath>
+  </defs>
+  <g transform="translate(20 20)">
+    <rect x="0" y="0" width="120" height="120" rx="28" fill="#FEF9F0"/>
+    <rect x="20" y="20" width="80" height="80" rx="16" fill="#0B1F3A"/>
+    <rect x="38" y="38" width="44" height="44" rx="10" fill="#FEF9F0"/>
+    <g clip-path="url(#wml-outer)">
+      <line x1="84" y1="84" x2="132" y2="132" stroke="#FEF9F0" stroke-width="16" stroke-linecap="round"/>
+    </g>
+    <line x1="108" y1="108" x2="132" y2="132" stroke="#FEF9F0" stroke-width="16" stroke-linecap="round"/>
+  </g>
+  <text x="170" y="115"
+        font-family="'Unbounded', 'Nunito', system-ui, sans-serif"
+        font-weight="800" font-size="104" fill="#FEF9F0"
+        letter-spacing="-2">rewzi</text>
+</svg>

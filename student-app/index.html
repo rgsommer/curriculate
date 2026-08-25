@@ -5,6 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
     <meta name="description" content="Curriculate Student App — join team-based classroom activities via CurricQR code. No account needed." />
     <title>Curriculate Student</title>
+    <script>
+      // Host-aware brand: same build serves play.curriculate.net (Curriculate)
+      // and play.qrewzi.com (Qrewzi). Swap tab title + meta description before
+      // React mounts so no Curriculate branding flashes on Qrewzi hosts.
+      (function () {
+        var h = location.hostname;
+        var qrewziHosts = ["qrewzi.com","www.qrewzi.com","set.qrewzi.com","play.qrewzi.com","qrewzi.ca","www.qrewzi.ca"];
+        if (qrewziHosts.indexOf(h) === -1) return;
+        document.title = "Qrewzi";
+        var desc = document.querySelector('meta[name="description"]');
+        if (desc) desc.setAttribute("content", "Qrewzi — join your class game with a code. Live team scavenger hunts, no account needed.");
+      })();
+    </script>
 
     <!-- Tailwind CSS (CDN — processes utility classes at runtime) -->
     <script src="https://cdn.tailwindcss.com"></script>

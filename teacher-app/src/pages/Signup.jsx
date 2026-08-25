@@ -26,7 +26,9 @@ function pickApiBase() {
 
   if (typeof window !== "undefined") {
     const host = window.location.host;
-    if (host === "set.curriculate.net") return "https://api.curriculate.net";
+    if (host === "set.curriculate.net" || host === "set.qrewzi.com") {
+      return "https://api.curriculate.net";
+    }
   }
 
   return "";

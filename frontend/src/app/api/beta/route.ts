@@ -102,6 +102,12 @@ export async function POST(req: Request) {
       typeof body?.subject === "string" ? body.subject.trim() : "";
     const intent = typeof body?.intent === "string" ? body.intent.trim() : "";
     const hp = typeof body?.company === "string" ? body.company.trim() : "";
+
+    // Brand detection. qrewzi-web's proxy sets source:"qrewzi" in the body
+    // and x-forwarded-source:"qrewzi-web" in the headers. Either matches.
+    const forwardedSource = req.headers.get("x-forwarded-source") || "";
+    const bodySource = typeof body?.source === "string" ? body.source.toLowerCase() : "";
+    const isQrewzi = bodySource === "qrewzi" || forwardedSource === "qrewzi-web";
     if (hp) {
       // honeypot — silently accept
       return NextResponse.json({ ok: true });
@@ -138,24 +144,37 @@ export async function POST(req: Request) {
           referer: utm.source,
           userAgent: req.headers.get("user-agent") || "",
           createdAt: new Date(),
-          source: "beta-form",
+          source: isQrewzi ? "qrewzi-beta" : "beta-form",
+          brand: isQrewzi ? "qrewzi" : "curriculate",
         });
       } catch (mongoErr) {
         console.error("Mongo insert error:", mongoErr);
       }
     }
 
-    const from =
-      process.env.BETA_FROM ||
-      process.env.CONTACT_FROM ||
-      "Curriculate <noreply@curriculate.net>";
-    const supportReplyTo =
-      process.env.BETA_REPLYTO ||
-      process.env.CONTACT_REPLYTO ||
-      "support@curriculate.net";
+    // Brand-specific sender identity. Falls back to the Curriculate address
+    // when BETA_FROM_QREWZI is unset — this happens BEFORE qrewzi.com is
+    // verified in Resend. Once verified, set BETA_FROM_QREWZI in Vercel env
+    // (e.g. "Qrewzi <noreply@qrewzi.com>") to fully seal the leak.
+    const from = isQrewzi
+      ? (process.env.BETA_FROM_QREWZI ||
+         process.env.BETA_FROM ||
+         "Curriculate <noreply@curriculate.net>")
+      : (process.env.BETA_FROM ||
+         process.env.CONTACT_FROM ||
+         "Curriculate <noreply@curriculate.net>");
+    const supportReplyTo = isQrewzi
+      ? (process.env.BETA_REPLYTO_QREWZI ||
+         process.env.BETA_REPLYTO ||
+         "support@curriculate.net")
+      : (process.env.BETA_REPLYTO ||
+         process.env.CONTACT_REPLYTO ||
+         "support@curriculate.net");
 
     // Internal notification.
-    const internalSubject = `Beta sign-up: ${name} (${gradeBand} ${subject})`;
+    const internalSubject = isQrewzi
+      ? `[Qrewzi] Beta sign-up: ${name} (${gradeBand} ${subject})`
+      : `Beta sign-up: ${name} (${gradeBand} ${subject})`;
     const internalText = `
 New beta sign-up from curriculate.net/beta
 
@@ -201,10 +220,38 @@ Referer: ${utm.source}
       return NextResponse.json({ error: "Failed to send" }, { status: 500 });
     }
 
-    // Welcome auto-reply.
-    const autoSubject = "Welcome to Curriculate Beta";
+    // Welcome auto-reply — brand-branched.
     const firstName = name.split(/\s+/)[0] || name;
-    const autoText = `Hi ${firstName},
+
+    const autoSubject = isQrewzi
+      ? "You're in the Qrew — welcome to the Qrewzi beta"
+      : "Welcome to Curriculate Beta";
+
+    const autoText = isQrewzi
+      ? `Hi ${firstName},
+
+You're in the Qrewzi beta — welcome to the Qrew. 🦊
+
+Qrewzi turns any lesson into a live team scavenger hunt: 30+ interactive
+task types, GameMaster projector dashboard, hidden team superpowers.
+Beta teachers get everything free through the end of the school year.
+
+Two doors:
+
+1. See how it works — https://qrewzi.com/how-it-works
+   Five-minute teacher walkthrough.
+
+2. Browse features — https://qrewzi.com/features
+   Every task type, device mode, and superpower.
+
+If you'd like a short walkthrough call, reply to this email and I'll
+send a calendar link. Otherwise, dive in.
+
+I read every reply.
+
+— Richard
+Qrewzi`
+      : `Hi ${firstName},
 
 You're in the Curriculate beta — thank you.
 
@@ -224,7 +271,29 @@ I read every reply.
 — Richard
 Curriculate`;
 
-    const autoHtml = `
+    const autoHtml = isQrewzi
+      ? `
+<div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.65; color:#0B1F3A; max-width: 560px;">
+  <p>Hi ${escapeHtml(firstName)},</p>
+  <p><strong>You're in the Qrewzi beta — welcome to the Qrew. 🦊</strong></p>
+  <p>Qrewzi turns any lesson into a live team scavenger hunt: 30+ interactive task types, GameMaster projector dashboard, hidden team superpowers. Beta teachers get everything free through the end of the school year.</p>
+  <p>Two doors:</p>
+  <div style="margin: 16px 0; padding: 14px 18px; border-radius: 12px; background: #FEF9F0; border: 2px solid #FF4D5B;">
+    <div style="font-weight: 800; color:#0B1F3A;">1. See how it works</div>
+    <div style="font-size: 14px; margin: 4px 0 8px; color:#4A5B7A;">Five-minute teacher walkthrough.</div>
+    <a href="https://qrewzi.com/how-it-works" style="color:#FF4D5B; font-weight:700;">Open the walkthrough →</a>
+  </div>
+  <div style="margin: 16px 0; padding: 14px 18px; border-radius: 12px; background: #FEF9F0; border: 2px solid #0B1F3A;">
+    <div style="font-weight: 800; color:#0B1F3A;">2. Browse features</div>
+    <div style="font-size: 14px; margin: 4px 0 8px; color:#4A5B7A;">Every task type, device mode, and superpower.</div>
+    <a href="https://qrewzi.com/features" style="color:#0B1F3A; font-weight:700;">See features →</a>
+  </div>
+  <p>If you'd like a short walkthrough call, reply to this email and I'll send a calendar link. Otherwise, dive in.</p>
+  <p style="color:#4A5B7A;">I read every reply.</p>
+  <p style="margin-top: 18px;">— Richard<br/>Qrewzi</p>
+</div>
+      `.trim()
+      : `
 <div style="font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; line-height: 1.65; color:#111827; max-width: 560px;">
   <p>Hi ${escapeHtml(firstName)},</p>
   <p><strong>You're in the Curriculate beta — thank you.</strong></p>
@@ -243,7 +312,7 @@ Curriculate`;
   <p style="color:#6b7280;">I read every reply.</p>
   <p style="margin-top: 18px;">— Richard<br/>Curriculate</p>
 </div>
-    `.trim();
+      `.trim();
 
     const autoSend = await getResend().emails.send({
       from,

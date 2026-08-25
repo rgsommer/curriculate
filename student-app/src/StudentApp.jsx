@@ -18,6 +18,7 @@ import MysteryBoxGrid from "./components/MysteryBoxGrid.jsx";
 import { API_BASE_URL } from "./config.js";
 import FeedbackButton from "./components/FeedbackButton.jsx";
 import { COLORS } from "@shared/colors.js";
+import { brandName, brandUrl } from "@shared/brandContext.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 import AnimatedScore from "./components/ui/AnimatedScore.jsx";
 import ThemeBackground from "./components/ui/ThemeBackground.jsx";
@@ -6398,7 +6399,7 @@ function StudentApp() {
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
         <button
           type="button"
-          onClick={() => window.open("https://curriculate.net/app", "_blank")}
+          onClick={() => window.open(brandUrl("/app"), "_blank")}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -6424,15 +6425,17 @@ function StudentApp() {
         <button
           type="button"
           onClick={() => {
-            const shareText = "The best teachers make learning feel like this — I just played awesome team games on Curriculate. You should try it with your class: https://curriculate.net?ref=share";
+            const brand = brandName();
+            const shareUrl = brandUrl("/?ref=share");
+            const shareText = `The best teachers make learning feel like this — I just played awesome team games on ${brand}. You should try it with your class: ${shareUrl}`;
             if (navigator.share) {
-              navigator.share({ title: "Curriculate", text: shareText, url: "https://curriculate.net?ref=share" }).catch(() => {});
+              navigator.share({ title: brand, text: shareText, url: shareUrl }).catch(() => {});
             } else {
               navigator.clipboard.writeText(shareText).then(() => {
                 const btn = document.getElementById("share-teacher-btn");
                 if (btn) { btn.textContent = "Copied! 🎉"; setTimeout(() => { btn.textContent = "Tell a Teacher"; }, 2000); }
               }).catch(() => {
-                window.open("https://curriculate.net?ref=share", "_blank");
+                window.open(shareUrl, "_blank");
               });
             }
           }}
@@ -6457,15 +6460,17 @@ function StudentApp() {
         <button
           type="button"
           onClick={() => {
-            const shareText = "Just used Curriculate for an interactive team event — it was a hit. Would be great for your next offsite or conference: https://curriculate.net/events?ref=share";
+            const brand = brandName();
+            const shareUrl = brandUrl("/events?ref=share");
+            const shareText = `Just used ${brand} for an interactive team event — it was a hit. Would be great for your next offsite or conference: ${shareUrl}`;
             if (navigator.share) {
-              navigator.share({ title: "Curriculate Events", text: shareText, url: "https://curriculate.net/events?ref=share" }).catch(() => {});
+              navigator.share({ title: `${brand} Events`, text: shareText, url: shareUrl }).catch(() => {});
             } else {
               navigator.clipboard.writeText(shareText).then(() => {
                 const btn = document.getElementById("share-events-btn");
                 if (btn) { btn.textContent = "Copied! 🎉"; setTimeout(() => { btn.textContent = "Tell Your Team"; }, 2000); }
               }).catch(() => {
-                window.open("https://curriculate.net/events?ref=share", "_blank");
+                window.open(shareUrl, "_blank");
               });
             }
           }}

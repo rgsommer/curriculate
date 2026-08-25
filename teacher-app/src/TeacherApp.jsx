@@ -21,6 +21,7 @@ import { apiFetch, apiFetchJson } from "./api/apiFetch";
 
 import { useAuth } from "./auth/useAuth";
 import { DISALLOWED_ROOM_CODES } from "./disallowedRoomCodes.js";
+import { brandUrl } from "@shared/brandContext.js";
 
 import { socket } from "./socket"; // adjust path if needed
 import SharedLaunch from "./pages/SharedLaunch.jsx";
@@ -2344,7 +2345,7 @@ if (st?.ok && st.exists) {
             </button>
 
             <a
-              href="https://www.curriculate.net/freetrial"
+              href={brandUrl("/freetrial")}
               target="_blank"
               rel="noreferrer"
               style={{

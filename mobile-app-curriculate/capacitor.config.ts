@@ -13,8 +13,8 @@ import type { CapacitorConfig } from "@capacitor/cli";
  * same domain but ship as distinct store listings.
  */
 const config: CapacitorConfig = {
-  appId: "net.curriculate.sessions",
-  appName: "Curriculate",
+  appId: "net.curriculate.sessions", // DO NOT CHANGE — install lineage + signing key pinned to this appId
+  appName: "Qrewzi Teacher",
   webDir: "www",
 
   // ── Live URL mode ──────────────────────────────────────────────
@@ -27,7 +27,7 @@ const config: CapacitorConfig = {
   // For an offline-first variant, drop `server` and run
   // `npm run build:web` to ship the www/ fallback inside the binary.
   server: {
-    url: "https://set.curriculate.net?app=1",
+    url: "https://set.qrewzi.com?app=1",
     cleartext: false,
     androidScheme: "https",
   },

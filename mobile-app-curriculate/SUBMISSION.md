@@ -1,9 +1,9 @@
-# Curriculate — App Store & Play Store Submission Guide
+# Qrewzi Teacher — App Store & Play Store Submission Guide
 
-The native shell wraps the live Game Master console at `set.curriculate.net?app=1`.
+The native shell wraps the live GameMaster console at `set.qrewzi.com?app=1`.
 One codebase, instant content updates, no store resubmission for web changes.
 
-- **App name:** Curriculate
+- **App name:** Qrewzi Teacher
 - **Bundle ID / Package:** `net.curriculate.sessions`
 - **Apple Team:** Applicable Software Inc — `8XSHU49K2X`
 - **Splash / brand base:** `#0b1024`
@@ -75,8 +75,8 @@ npx cap sync
 | Splash | `assets/splash.png` / `splash-dark.png` |
 | Screenshots (5–6) | Capture from a running device — shot list in `store-metadata.md` |
 | Feature graphic (Play, 1024×500) | Create from `Curriculate_logo.png` |
-| Privacy policy | https://curriculate.net/privacy |
-| Support URL | https://curriculate.net/contact |
+| Privacy policy | https://qrewzi.com/privacy |
+| Support URL | https://qrewzi.com/contact |
 
 ## What still needs a human / accounts
 

@@ -56,7 +56,7 @@ classroom,game,student,join,quiz,scavenger,hunt,play,team,learning,session,code
 
 ## Store Listing Identifiers
 - **App ID / Package:** `net.curriculate.student`
-- **Live URL wrapped:** `https://play.curriculate.net`
-- **Support URL:** https://curriculate.net/contact
-- **Privacy Policy URL:** https://curriculate.net/privacy
-- **Marketing URL:** https://curriculate.net
+- **Live URL wrapped:** `https://play.qrewzi.com`
+- **Support URL:** https://qrewzi.com/contact
+- **Privacy Policy URL:** https://qrewzi.com/privacy
+- **Marketing URL:** https://qrewzi.com

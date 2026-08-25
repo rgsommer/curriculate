@@ -1,6 +1,30 @@
 import Link from "next/link";
+import { ArrowRight, Trophy } from "lucide-react";
 
 type Mark = "yes" | "no" | "partial";
+
+// Head-to-head deep-dives. Qrewzi is the featured one (new-ish entrant,
+// playful "they beat us" framing on that page). The rest are direct
+// competitor comparisons that already lived under /compare/*.
+const HEAD_TO_HEADS: Array<{
+  href: string;
+  name: string;
+  emoji: string;
+  pitch: string;
+  featured?: boolean;
+}> = [
+  {
+    href: "/compare/qrewzi",
+    name: "Qrewzi",
+    emoji: "🎯",
+    pitch: "The new live-classroom-games entrant that beat us on GameMaster mode, superpowers, and hidden-QR laptop mode. We admit it.",
+    featured: true,
+  },
+  { href: "/compare/kahoot",     name: "Kahoot",     emoji: "🎉", pitch: "Quiz-first competition. Curriculate wins on task variety, movement, and evidence capture." },
+  { href: "/compare/blooket",    name: "Blooket",    emoji: "🎮", pitch: "Screen-first game modes. Curriculate wins on off-screen learning and collaboration." },
+  { href: "/compare/quizlet",    name: "Quizlet",    emoji: "📚", pitch: "Flashcards + study modes. Curriculate wins on live team activities and structured lessons." },
+  { href: "/compare/worksheets", name: "Worksheets", emoji: "📝", pitch: "The paper baseline. Curriculate wins on engagement, tracking, and instant differentiation." },
+];
 
 function MarkIcon({ value }: { value: Mark }) {
   if (value === "yes") {
@@ -83,7 +107,43 @@ export default function ComparePage() {
         </div>
       </div>
 
-      <div className="mt-10 overflow-x-auto print:overflow-visible">
+      {/* ─── Head-to-head cards (subpages) ─── */}
+      <section className="mt-10 print:hidden">
+        <h2 className="text-2xl font-bold text-gray-900 mb-4">
+          Head-to-head with specific tools
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {HEAD_TO_HEADS.map((h) => (
+            <Link
+              key={h.href}
+              href={h.href}
+              className={
+                "group relative flex flex-col rounded-2xl border p-5 transition hover:-translate-y-0.5 hover:shadow-lg " +
+                (h.featured
+                  ? "border-rose-300 bg-rose-50 shadow-md"
+                  : "border-gray-200 bg-white shadow-sm")
+              }
+            >
+              {h.featured && (
+                <span className="absolute -top-2 right-4 inline-flex items-center gap-1 rounded-full bg-rose-500 px-2.5 py-0.5 text-[10px] font-black tracking-wider text-white uppercase">
+                  <Trophy className="w-3 h-3" /> New rival
+                </span>
+              )}
+              <div className="flex items-baseline gap-3">
+                <span className="text-2xl leading-none" aria-hidden="true">{h.emoji}</span>
+                <div className="text-lg font-black text-gray-900">Curriculate vs {h.name}</div>
+              </div>
+              <p className="mt-3 text-sm text-gray-700 font-medium leading-relaxed">{h.pitch}</p>
+              <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-bold text-blue-700 group-hover:text-blue-900">
+                See comparison <ArrowRight className="w-4 h-4" />
+              </span>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      {/* ─── Full comparison table (Curriculate vs Traditional vs Other EdTech) ─── */}
+      <div className="mt-12 overflow-x-auto print:overflow-visible">
         <table className="w-full border border-gray-200 rounded-xl overflow-hidden print:border-gray-300">
           <thead className="bg-gray-50 print:bg-white">
             <tr>
