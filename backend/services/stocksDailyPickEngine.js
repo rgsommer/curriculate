@@ -402,10 +402,43 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           continue;
         }
       }
-      // Entry = current close. Target = swing high or +2×ATR. Stop = 2.5×ATR below.
-      const target = tech.fib?.swingHigh
-        ? Math.max(tech.last * 1.02, tech.fib.swingHigh)
-        : tech.atr14 != null ? tech.last + 2 * tech.atr14 : tech.last * 1.08;
+      // Target derivation — pick the source that matches the price's
+      // relationship to the prior swing, not "max(last*1.02, swingHigh)"
+      // which anchored to an already-broken resistance and produced
+      // tight +2% targets on breakouts (KXS.TO composite 88, target
+      // +2%, R/R 0.24:1 → SCREENED even though it was a legitimate
+      // strong setup). The correct logic:
+      //   - pullback / consolidation (last < swingHigh): target = swingHigh
+      //     (first meaningful resistance).
+      //   - breakout (last >= swingHigh AND swingLow known): target =
+      //     last + (swingHigh - swingLow) — the measured move projected
+      //     from the current breakout level.
+      //   - no fib data: target = last + 2*ATR (fallback).
+      // The R/R gate downstream still rejects picks whose real target
+      // doesn't clear 1.5:1 — this fix produces the real target, not
+      // a manufactured one.
+      const fib = tech.fib || {};
+      const swingHigh = Number.isFinite(fib.swingHigh) ? fib.swingHigh : null;
+      const swingLow = Number.isFinite(fib.swingLow) ? fib.swingLow : null;
+      let target, targetSource;
+      if (swingHigh && tech.last < swingHigh) {
+        // Pullback / consolidation — first resistance is the swing high.
+        target = swingHigh;
+        targetSource = "swing-high";
+      } else if (swingHigh && swingLow && tech.last >= swingHigh && swingHigh > swingLow) {
+        // Breakout — measured move projected from the current breakout
+        // price. This preserves the technical meaning: a pattern with
+        // range R projects R above the breakout point.
+        const range = swingHigh - swingLow;
+        target = tech.last + range;
+        targetSource = "measured-move";
+      } else if (tech.atr14 != null && tech.atr14 > 0) {
+        target = tech.last + 2 * tech.atr14;
+        targetSource = "atr-2x";
+      } else {
+        target = tech.last * 1.08;
+        targetSource = "pct-floor";
+      }
       const stop = tech.suggested25AtrStop != null && tech.suggested25AtrStop > 0
         ? tech.suggested25AtrStop
         : tech.last * 0.94;
@@ -414,6 +447,7 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         currency: ccy,
         entryPrice: tech.last,
         targetPrice: target,
+        targetSource,
         stopPrice: stop,
         deterministicScore: score,
         scoreContributors: contributors,

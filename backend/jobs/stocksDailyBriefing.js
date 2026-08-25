@@ -1138,7 +1138,14 @@ async function renderDailyPicksDeterministic(dailyPicks) {
                       : "🔍";
       // Identity line: ticker · currency · verified live price · tier.
       lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${p.deterministicScore}${setupTag}${mtfTag} · ${tierColor} **${tier}**`);
-      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%) · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
+      const targetSrcLabel = p.targetSource
+        ? ` [${p.targetSource === "swing-high" ? "prior resistance"
+              : p.targetSource === "measured-move" ? "measured move"
+              : p.targetSource === "atr-2x" ? "2×ATR extension"
+              : p.targetSource === "pct-floor" ? "pct-floor"
+              : p.targetSource}]`
+        : "";
+      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%)${targetSrcLabel} · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
       if (tier === "SCREENED") {
         lines.push(`   ⛔ SCREENED — composite ${p.deterministicScore} is strong but current entry/target/stop only yields R/R ${rrStr} (BUY floor: ${MIN_RR_FOR_BUY}:1). Wait for pullback or improved target structure before treating as actionable.`);
       } else if (isConflict) {
