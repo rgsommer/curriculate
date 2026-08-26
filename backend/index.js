@@ -149,7 +149,7 @@ import questradeRouter from "./routes/questrade.js";
 import { scheduleQuestradePoll } from "./jobs/questradePoll.js";
 import stocksOptionsFlowRouter from "./routes/stocksOptionsFlow.js";
 import travelRouter from "./routes/travel.js";
-import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot } from "./jobs/stocksDailyBriefing.js";
+import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot, scheduleExternalNominationsSync } from "./jobs/stocksDailyBriefing.js";
 import { scheduleIntradayUpdates } from "./jobs/stocksIntradayUpdate.js";
 import { scheduleEodRecap } from "./jobs/stocksEodRecap.js";
 import { scheduleRecOutcomeNightly, runRecOutcomeSweep } from "./jobs/stocksRecOutcomeNightly.js";
@@ -1717,6 +1717,11 @@ const {
 // DEMO_ROOM_CODE only; real classrooms use random codes and never touch
 // this path, so it cannot affect live sessions.
 const DEMO_ROOM_CODE = String(process.env.DEMO_ROOM_CODE || "CRUEDEMO").toUpperCase();
+// Brand-aware demo codes both self-provision the same demo room: CRUEDEMO
+// (legacy / Curriculate) and QREWDEMO (Qrewzi rebrand). The client picks the
+// code by host (brandContext.demoRoomCode); accepting both keeps the old App
+// Review reviewer flow working after the rename.
+const DEMO_ROOM_CODES = new Set([DEMO_ROOM_CODE, "CRUEDEMO", "QREWDEMO"]);
 const DEMO_TASKSET_ID = process.env.DEMO_TASKSET_ID || "6a4c498fda85f44ff4ba4a25";
 // Allow-list of self-contained, solo-completable task types. The reviewer
 // plays alone with no teacher, so the demo must exclude anything that needs
@@ -2862,7 +2867,7 @@ socket.on("task:force-advance", ({ roomCode }) => {
       let room = rooms[code];
       // Reviewer demo: self-provision the reserved room on first join so the
       // reviewer can play without a teacher. No-op for every real room code.
-      if (!room && code === DEMO_ROOM_CODE) {
+      if (!room && DEMO_ROOM_CODES.has(code)) {
         room = await provisionDemoRoom(code);
       }
       if (!room) {
@@ -19914,6 +19919,7 @@ server.listen(PORT, () => {
   scheduleWeeklyDiscovery();
   scheduleDiscoveryOutcomeTracker();
   scheduleDailyPortfolioSnapshot();
+  scheduleExternalNominationsSync();
   scheduleStocksAlerts();
   scheduleEightKPoll();
   scheduleDailyPickCron();

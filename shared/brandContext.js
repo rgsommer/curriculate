@@ -102,3 +102,11 @@ export function isPlaySurfaceUrl(str) {
 export function mascotName() {
   return isQrewziHost() ? "Qrew" : "Crue";
 }
+
+// Public self-running demo room code shown by the "Try a demo" button.
+// Brand-aware so the code matches the mascot name. The backend accepts BOTH
+// codes (see DEMO_ROOM_CODES), so the legacy CRUEDEMO reviewer flow keeps
+// working while Qrewzi uses QREWDEMO.
+export function demoRoomCode() {
+  return isQrewziHost() ? "QREWDEMO" : "CRUEDEMO";
+}

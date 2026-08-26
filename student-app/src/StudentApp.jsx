@@ -18,7 +18,7 @@ import MysteryBoxGrid from "./components/MysteryBoxGrid.jsx";
 import { API_BASE_URL } from "./config.js";
 import FeedbackButton from "./components/FeedbackButton.jsx";
 import { COLORS } from "@shared/colors.js";
-import { brandName, brandUrl, mascotName } from "@shared/brandContext.js";
+import { brandName, brandUrl, mascotName, demoRoomCode } from "@shared/brandContext.js";
 import AnimatedLeaderboard from "./components/Leaderboard.jsx";
 import AnimatedScore from "./components/ui/AnimatedScore.jsx";
 import ThemeBackground from "./components/ui/ThemeBackground.jsx";
@@ -2483,11 +2483,12 @@ function StudentApp() {
     // feedback, analytics, task submission — all carry the demo room code
     // and guest identity instead of showing "unknown".
     setIsDemoSession(true);
-    setRoomCode("CRUEDEMO");
+    const dcode = demoRoomCode();
+    setRoomCode(dcode);
     setTeamName("Demo Team");
     setMembers([{ name: "Guest", email: "" }]);
     handleJoinRoom({
-      roomCode: "CRUEDEMO",
+      roomCode: dcode,
       teamName: "Demo Team",
       members: [{ name: "Guest", email: "" }],
       isDemo: true,
@@ -6097,7 +6098,7 @@ function StudentApp() {
         try {
           socket.emit("feedback:submit", {
             ...payload,
-            roomCode: payload?.roomCode || roomCode || (isDemoSession ? "CRUEDEMO" : ""),
+            roomCode: payload?.roomCode || roomCode || (isDemoSession ? demoRoomCode() : ""),
             ...(isDemoSession && { isDemo: true, source: "demo-button" }),
           });
         } catch {}

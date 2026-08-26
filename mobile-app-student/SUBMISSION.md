@@ -72,7 +72,7 @@ To review WITHOUT needing a teacher or a second device, we've set up a
 self-running demo room:
 
 1. Launch the app.
-2. On the join screen, enter room code: CRUEDEMO
+2. On the join screen, enter room code: QREWDEMO
 3. Enter any team name (e.g. "Reviewers") and one member name.
 4. Tap "Join Room". The demo session auto-starts within a couple of
    seconds — no teacher needed.
@@ -83,7 +83,7 @@ self-running demo room:
 No account, purchase, or teacher device is required to review the app.
 ```
 
-**Verified:** the `CRUEDEMO` room self-provisions and auto-starts on join (backend deployed + tested in production).
+**Verified:** the `QREWDEMO` room self-provisions and auto-starts on join (backend deployed + tested in production).
 
 ## What still needs a human / accounts
 
