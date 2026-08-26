@@ -5819,8 +5819,23 @@ export async function runDiscoveryOutcomeTracker(opts = {}) {
     }
   }
 
-  console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}, conviction ${convictionUpdated}`);
-  return { checked: cands.length, updated, convictionUpdated };
+  // ── Second pass: freeze forward-return horizons on external
+  // nomination docs using the exact same frozen methodology (freeze-
+  // once, benchmark-period-matched to publishedAt). Uses the same
+  // fetchCurrentPrice + fetchYahooDaily helpers already exercised
+  // above so any cache warmed by the discovery pass is reused.
+  let externalPass = { checked: 0, frozen: 0, skipped: 0 };
+  try {
+    const { runExternalNominationOutcomePass } = await import("../services/stocksExternalNominations.js");
+    externalPass = await runExternalNominationOutcomePass({
+      fetchCurrentPriceFn: (t) => fetchCurrentPrice(t),
+      fetchBenchmarkSeriesFn: (sym) => fetchYahooDaily(sym, "1y").catch(() => null),
+    });
+  } catch (e) {
+    console.warn("[external-nomination-outcome-pass] warn:", e?.message);
+  }
+  console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}, conviction ${convictionUpdated}, external{checked=${externalPass.checked}, frozen=${externalPass.frozen}, skipped=${externalPass.skipped}}`);
+  return { checked: cands.length, updated, convictionUpdated, externalPass };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -5892,6 +5907,34 @@ export function scheduleDailyPortfolioSnapshot() {
     console.log(`[stocks-portfolio-snapshot] tick: ${new Date().toISOString()}`);
     try { await runDailyPortfolioSnapshotJob(); } catch (e) { console.error("[stocks-portfolio-snapshot] tick error:", e); }
   }, { timezone: tz });
+}
+
+// ─── External-nomination daily sync (05:00 ET) ────────────────────────
+// Runs once daily to refresh nominations for the eligible Discover
+// universe. Idempotent — the persistNominations upsert on
+// (ticker, sourceKey, publishedAt) means re-runs never dupe.
+export async function runExternalNominationsSync(opts = {}) {
+  try {
+    const { syncExternalNominationsForUniverse } = await import("../services/stocksExternalNominations.js");
+    return await syncExternalNominationsForUniverse(opts);
+  } catch (e) {
+    console.error("[external-nominations sync] fatal:", e);
+    return { error: e?.message || String(e) };
+  }
+}
+
+export function scheduleExternalNominationsSync() {
+  if (process.env.STOCKS_EXTERNAL_NOMINATIONS_SYNC_ENABLED === "0") {
+    console.log("[external-nominations sync] disabled (STOCKS_EXTERNAL_NOMINATIONS_SYNC_ENABLED=0)");
+    return null;
+  }
+  const expr = process.env.STOCKS_EXTERNAL_SYNC_CRON || "0 5 * * *"; // 05:00 America/Toronto
+  console.log(`[external-nominations sync] scheduled: ${expr} America/Toronto`);
+  return cron.schedule(expr, async () => {
+    console.log("[external-nominations sync] tick");
+    try { await runExternalNominationsSync({ verbose: true }); }
+    catch (e) { console.error("[external-nominations sync] tick error:", e); }
+  }, { timezone: "America/Toronto" });
 }
 
 export function scheduleDiscoveryOutcomeTracker() {

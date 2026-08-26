@@ -391,6 +391,276 @@ export async function persistNominations(nominations, opts = {}) {
   return inserted;
 }
 
+// ─── Daily nomination sync (invoked by cron @ 05:00 ET) ──────────────
+// Refreshes nominations for the eligible Discover universe — every
+// ticker in the caller's StocksDiscoveryCandidate pool across all
+// users, plus any tickers surfaced by the daily-pick engine's cached
+// runs. IDEMPOTENT — persistNominations upserts on the composite
+// (ticker, sourceKey, publishedAt) unique index, so re-runs never
+// create duplicates. Also NEVER rewrites publishedAt on existing rows:
+// the upsert uses $setOnInsert, so a stale nomination re-fetched today
+// keeps its original publishedAt (the date the underlying event actually
+// happened) and its original discoveredAt (when we first saw it).
+export async function syncExternalNominationsForUniverse(opts = {}) {
+  const { onlyTickers = null, verbose = false } = opts;
+  const startedAt = Date.now();
+  // Pull the universe: every unique base ticker in the last 60 days
+  // of Discover pool docs (across all users) + optionally a manual
+  // override for tests / manual runs.
+  let tickers;
+  if (Array.isArray(onlyTickers) && onlyTickers.length > 0) {
+    tickers = [...new Set(onlyTickers.map(t => String(t).toUpperCase()))];
+  } else {
+    try {
+      const StocksDiscoveryCandidate = (await import("../models/StocksDiscoveryCandidate.js")).default;
+      const cutoff = new Date(Date.now() - 60 * 86400 * 1000);
+      const docs = await StocksDiscoveryCandidate
+        .find({ scanDate: { $gte: cutoff }, dismissed: { $ne: true } })
+        .select("ticker")
+        .lean();
+      tickers = [...new Set(docs.map(d => String(d.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean))];
+    } catch (e) {
+      console.warn("[external-nominations sync] universe fetch failed:", e?.message);
+      tickers = [];
+    }
+  }
+  if (tickers.length === 0) {
+    return { tickersScanned: 0, nominationsInserted: 0, nominationsSkippedDup: 0, elapsedMs: Date.now() - startedAt };
+  }
+  // Concurrency-cap the adapter fetches so we don't burst FMP / EDGAR.
+  const CONC = 3;
+  let nominationsInserted = 0;
+  let nominationsSkippedDup = 0;
+  for (let i = 0; i < tickers.length; i += CONC) {
+    const slice = tickers.slice(i, i + CONC);
+    await Promise.all(slice.map(async (t) => {
+      try {
+        const conviction = await getExternalConvictionForTicker(t);
+        const noms = conviction?.nominations || [];
+        // Count pre-persist to distinguish inserted from skipped-dup.
+        const before = await countExistingNominations(t, noms);
+        const ins = await persistNominations(noms, { ticker: t });
+        nominationsInserted += ins;
+        nominationsSkippedDup += Math.max(0, noms.length - ins - before);
+      } catch (e) {
+        if (verbose) console.warn(`[external-nominations sync] ${t}:`, e?.message);
+      }
+    }));
+  }
+  const summary = {
+    tickersScanned: tickers.length,
+    nominationsInserted,
+    nominationsSkippedDup,
+    elapsedMs: Date.now() - startedAt,
+  };
+  console.log(`[external-nominations sync] scanned=${summary.tickersScanned} inserted=${summary.nominationsInserted} skipped-dup=${summary.nominationsSkippedDup} elapsed=${summary.elapsedMs}ms`);
+  return summary;
+}
+
+async function countExistingNominations(ticker, noms) {
+  if (!Array.isArray(noms) || noms.length === 0) return 0;
+  try {
+    return await StocksExternalNomination.countDocuments({
+      ticker: String(ticker).toUpperCase(),
+      sourceKey: { $in: [...new Set(noms.map(n => n.sourceKey))] },
+      publishedAt: { $in: noms.map(n => n.publishedAt).filter(Boolean) },
+    });
+  } catch { return 0; }
+}
+
+// ─── Outcome tracker second pass ──────────────────────────────────────
+// Mirrors runDiscoveryOutcomeTracker's horizon-freeze loop but for
+// StocksExternalNomination docs. Same methodology exactly:
+//   • Fetch current price per unique ticker.
+//   • Fetch benchmark bars ONCE per unique benchmark (SPY for USD,
+//     XIC.TO for CAD) and pick the exact bar at publishedAt to freeze
+//     the benchmark price. Horizon-matched benchmark return = same
+//     window as nomination-to-now.
+//   • For each nomination, for each horizon [1,7,30,90,180,365]d:
+//     if age >= horizon AND outcome{h}d.frozenAt is null, freeze the
+//     bucket. NEVER rewrites a frozen bucket — the freezes-once
+//     invariant is enforced by the "!== null" check.
+//   • Missing prices (delisted, feed outage) → skip that nomination
+//     entirely; no partial writes. Delisted tickers don't contaminate
+//     aggregates because unfrozen buckets are excluded from the
+//     cohort report's n.
+export async function runExternalNominationOutcomePass(opts = {}) {
+  const { fetchCurrentPriceFn, fetchBenchmarkSeriesFn } = opts;
+  if (typeof fetchCurrentPriceFn !== "function" || typeof fetchBenchmarkSeriesFn !== "function") {
+    throw new Error("runExternalNominationOutcomePass requires fetchCurrentPriceFn + fetchBenchmarkSeriesFn (injected from stocksDailyBriefing to reuse cache)");
+  }
+  const horizons = [
+    [1, "outcome1d"], [7, "outcome7d"], [30, "outcome30d"],
+    [90, "outcome90d"], [180, "outcome180d"], [365, "outcome365d"],
+  ];
+  // Look back 400 days — 365d horizon plus buffer.
+  const cutoff = new Date(Date.now() - 400 * 86400 * 1000);
+  const nominations = await StocksExternalNomination.find({
+    publishedAt: { $gte: cutoff },
+  }).lean();
+  if (nominations.length === 0) {
+    return { checked: 0, frozen: 0, skipped: 0 };
+  }
+  // One live price per ticker across the whole batch.
+  const tickers = [...new Set(nominations.map(n => n.ticker))];
+  const priceMap = {};
+  await Promise.all(tickers.map(async (t) => {
+    priceMap[t] = await fetchCurrentPriceFn(t).catch(() => null);
+  }));
+  // Benchmark bar series — SPY + XIC.TO once for the batch. Bars
+  // indexed by date so we can pull the exact bar at publishedAt.
+  const [spyBars, xicBars] = await Promise.all([
+    fetchBenchmarkSeriesFn("SPY").catch(() => null),
+    fetchBenchmarkSeriesFn("XIC.TO").catch(() => null),
+  ]);
+  const nowPrice = { SPY: spyBars?.length ? spyBars[spyBars.length - 1].close : null,
+                     "XIC.TO": xicBars?.length ? xicBars[xicBars.length - 1].close : null };
+  const now = new Date();
+  let frozenCount = 0, skipped = 0;
+  for (const n of nominations) {
+    const livePx = priceMap[n.ticker];
+    // Delisted / feed outage guard — skip without any writes so
+    // aggregates aren't contaminated by null prices.
+    if (livePx == null || !Number.isFinite(livePx)) { skipped++; continue; }
+    // priceAtNomination.value is the frozen entry ref. If it's
+    // missing (e.g. an adapter that didn't capture it), skip too —
+    // returns are meaningless without an entry point.
+    const entryPx = n.priceAtNomination?.value;
+    if (entryPx == null || !Number.isFinite(entryPx) || entryPx <= 0) {
+      // For nominations that were persisted without priceAtNomination,
+      // stamp lastPrice + lastPriceCheckAt but skip horizon freeze —
+      // we can't compute returns without a valid entry.
+      try {
+        await StocksExternalNomination.updateOne(
+          { _id: n._id },
+          { $set: { lastPrice: livePx, lastPriceCheckAt: now } }
+        );
+      } catch {}
+      skipped++;
+      continue;
+    }
+    // Benchmark selection — CAD nominations against XIC.TO, else SPY.
+    // Guarantees the benchmark PERIOD exactly matches the nomination
+    // period (both anchored at publishedAt).
+    const benchKey = (n.currency === "CAD" || /\.TO$/i.test(n.ticker)) ? "XIC.TO" : "SPY";
+    const benchBars = benchKey === "XIC.TO" ? xicBars : spyBars;
+    const benchNowPx = nowPrice[benchKey];
+    const benchThenPx = benchBars ? pickBarAtOrAfter(benchBars, n.publishedAt)?.close : null;
+    const set = { lastPrice: livePx, lastPriceCheckAt: now };
+    // Peak / trough tracking (running).
+    const pctSinceEntry = ((livePx - entryPx) / entryPx) * 100;
+    if (n.maxFavourableExcursionPct == null || pctSinceEntry > n.maxFavourableExcursionPct) {
+      set.maxFavourableExcursionPct = pctSinceEntry;
+    }
+    if (n.maxAdverseExcursionPct == null || pctSinceEntry < n.maxAdverseExcursionPct) {
+      set.maxAdverseExcursionPct = pctSinceEntry;
+    }
+    // Horizon freeze — ONCE only. Never overwrites an already-frozen
+    // bucket. This is the "freezes only once and never changes
+    // retrospectively" invariant.
+    const ageDays = (Date.now() - new Date(n.publishedAt || n.discoveredAt).getTime()) / 86400000;
+    for (const [h, field] of horizons) {
+      if (ageDays < h) continue;
+      if (n[field] && n[field].frozenAt) continue; // already frozen — never rewrite
+      const returnPct = ((livePx - entryPx) / entryPx) * 100;
+      const benchmarkReturnPct = (benchThenPx && benchNowPx)
+        ? ((benchNowPx - benchThenPx) / benchThenPx) * 100
+        : null;
+      const excessReturnPct = benchmarkReturnPct != null ? returnPct - benchmarkReturnPct : null;
+      set[field] = {
+        price: livePx,
+        return_pct: returnPct,
+        benchmark_return_pct: benchmarkReturnPct,
+        excess_return_pct: excessReturnPct,
+        frozenAt: now,
+      };
+      frozenCount++;
+    }
+    try { await StocksExternalNomination.updateOne({ _id: n._id }, { $set: set }); } catch { skipped++; }
+  }
+  const summary = { checked: nominations.length, frozen: frozenCount, skipped };
+  console.log(`[external-nomination-outcome-pass] checked=${summary.checked} frozen=${summary.frozen} skipped=${summary.skipped}`);
+  return summary;
+}
+
+function pickBarAtOrAfter(bars, targetDate) {
+  if (!Array.isArray(bars) || bars.length === 0 || !targetDate) return null;
+  const t = new Date(targetDate).getTime();
+  // Bars are ascending by date; pick the first bar with date >= target.
+  for (const b of bars) {
+    const bt = new Date(b.date || b.datetime || b.d || 0).getTime();
+    if (bt >= t) return b;
+  }
+  // If target is after every bar, fall back to the last bar.
+  return bars[bars.length - 1];
+}
+
+// ─── Cohort / source-performance reporting ────────────────────────────
+// Aggregates frozen outcome buckets by (category, action, origin) and
+// emits {n, hitRate, meanReturn, medianReturn, meanExcess, medianExcess,
+// tier}. Tier follows the existing INSUFFICIENT / EARLY / CONCLUSION
+// gate — n<20 INSUFFICIENT, 20-49 EARLY (informational only), ≥50
+// CONCLUSION (strong claim permitted). Callers must respect the tier
+// when rendering — don't LEAN IN on an EARLY tier.
+export async function buildExternalCohortReport({ horizon = 30 } = {}) {
+  const field = `outcome${horizon}d`;
+  const nominations = await StocksExternalNomination.find({
+    [`${field}.frozenAt`]: { $ne: null },
+  }).lean();
+  const cohorts = new Map();
+  const keyFor = (n) => `${n.sourceCategory}|${n.action || "?"}|${originOf(n)}`;
+  for (const n of nominations) {
+    const bucket = n[field];
+    if (!bucket || bucket.return_pct == null) continue;
+    const key = keyFor(n);
+    if (!cohorts.has(key)) {
+      cohorts.set(key, {
+        sourceCategory: n.sourceCategory,
+        action: n.action || "?",
+        origin: originOf(n),
+        returns: [],
+        excesses: [],
+      });
+    }
+    const c = cohorts.get(key);
+    c.returns.push(bucket.return_pct);
+    if (bucket.excess_return_pct != null) c.excesses.push(bucket.excess_return_pct);
+  }
+  return [...cohorts.values()].map(c => {
+    const n = c.returns.length;
+    const tier = n < 20 ? "INSUFFICIENT" : n < 50 ? "EARLY" : "CONCLUSION";
+    return {
+      sourceCategory: c.sourceCategory,
+      action: c.action,
+      origin: c.origin,
+      n,
+      hitRate: n ? (c.returns.filter(r => r > 0).length / n) * 100 : null,
+      meanReturn: n ? c.returns.reduce((s, x) => s + x, 0) / n : null,
+      medianReturn: n ? median(c.returns) : null,
+      meanExcess: c.excesses.length ? c.excesses.reduce((s, x) => s + x, 0) / c.excesses.length : null,
+      medianExcess: c.excesses.length ? median(c.excesses) : null,
+      tier,
+    };
+  }).sort((a, b) => b.n - a.n);
+}
+
+function originOf(n) {
+  // Attribution origin: EXTERNAL_DISCOVERY = layer surfaced it and it
+  // wasn't in the internal universe. INTERNAL_PLUS_EXTERNAL = both
+  // saw it. INTERNAL = flag absent (external didn't discover it,
+  // internal did — recorded elsewhere).
+  if (n.externallyDiscovered && !n.alreadyInInternalUniverse) return "EXTERNAL_DISCOVERY";
+  if (n.externallyDiscovered && n.alreadyInInternalUniverse) return "INTERNAL_PLUS_EXTERNAL";
+  return "INTERNAL_PLUS_EXTERNAL"; // conservative default
+}
+
+function median(arr) {
+  if (!arr.length) return null;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+
 // ─── Renderer for briefing / discovery cards ──────────────────────────
 // Deterministic operator-facing block. No LLM, no fabricated values —
 // every number cited traces back to a stored nomination with a
