@@ -454,7 +454,22 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         setupName: bullSetup?.name || null,
         mtfConfluence: tech.mtf?.confluence || null,
         atr14: tech.atr14,
-        rationale: `Composite ${score}: ${contributors.slice(0, 3).join(" · ")}${bullSetup ? ` · setup: ${bullSetup.name}` : ""}${tech.mtf?.confluence === "aligned" ? " · MTF aligned" : ""}`,
+        rationale: (() => {
+          // Show ALL contributors (positive AND negative) so the displayed
+          // components reconcile to the composite. Prior code sliced to
+          // the first three, which dropped negative adjustments like
+          // "MTF conflicting -5" and produced explanations that couldn't
+          // be summed back to the score. If the sum of visible contributors
+          // doesn't match the clamped score (score was capped at 0 or 100),
+          // append an "[clamped]" marker so the operator sees why math
+          // won't reconcile exactly.
+          const rawSum = contributors.reduce((s, c) => {
+            const m = c.match(/([+\-]\d+(?:\.\d+)?)/);
+            return s + (m ? Number(m[1]) : 0);
+          }, 0);
+          const clampedNote = Math.abs(rawSum - score) > 0.5 ? ` [clamped: raw ${rawSum >= 0 ? "+" : ""}${rawSum}, capped at ${score}]` : "";
+          return `Composite ${score}: ${contributors.join(" · ")}${clampedNote}`;
+        })(),
       });
     } catch { /* skip this ticker this tick */ }
   }

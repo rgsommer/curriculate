@@ -1104,6 +1104,34 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── phantom-liquidation guard: never claim a position is "closed"
+  // or "liquidated" based on price movement alone. The only valid
+  // trigger is an actual SELL execution in the trade ledger (which
+  // reduces canonical.positions[i].qty to 0). If the briefing text
+  // asserts a position was closed for a ticker still held with qty>0,
+  // the source made a market-price → portfolio-state inference and
+  // must be blocked.
+  if (md && typeof md === "string" && canonical) {
+    const stillHeld = new Set(
+      (canonical.positions || [])
+        .filter(p => Number(p.qty) > 0)
+        .map(p => String(p.base || p.ticker || "").toUpperCase().replace(/\..*$/, ""))
+        .filter(Boolean)
+    );
+    const claimRe = /(?:\b|✅\s*)([A-Z]{1,5})(?:\.[A-Z]{1,3})?\s+position\s+(?:closed|has been liquidated|has been sold|liquidated|is closed)/gi;
+    let cm;
+    while ((cm = claimRe.exec(md)) !== null) {
+      const base = String(cm[1]).toUpperCase();
+      if (stillHeld.has(base)) {
+        blockers.push({
+          check: "phantom-position-closed-claim",
+          reason: `Briefing claims ${base} "position closed" / "liquidated" but canonical shows ${base} still held with qty>0`,
+          detail: `Excerpt: "${cm[0]}". Portfolio state (open/closed) is derived from actual SELL executions in the trade ledger, not from market price. A rec-stop being breached is a THESIS event ("rec closed at stop") — it does NOT mean the position was liquidated. Rewrite the alert to say "rec closed at stop; position status unchanged pending SELL execution".`,
+        });
+      }
+    }
+  }
+
   const elapsedMs = Date.now() - t0;
   return {
     ok: blockers.length === 0,

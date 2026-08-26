@@ -2662,10 +2662,19 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // (typically SWING or INCOME) is a display bug that hides real
   // allocation, and the audit gate blocks it. Numbers come straight
   // from canonical sleeveBalance; no AI touch.
-  const corePct = b?.actualPct?.core != null ? `${b.actualPct.core.toFixed(1)}%` : "n/a";
-  const swingPct = b?.actualPct?.swing != null ? `${b.actualPct.swing.toFixed(1)}%` : "n/a";
-  const incomePct = b?.actualPct?.income != null ? `${b.actualPct.income.toFixed(1)}%` : "n/a";
-  const specPct = b?.actualPct?.spec != null ? `${b.actualPct.spec.toFixed(1)}%` : "n/a";
+  // Rescale sleeve %s from book-only to portfolio-total denominator so
+  // they align with cashPct (same fix as the reconciliation check below).
+  // Otherwise sleeve %s + cash % = 100 + cash% instead of 100.
+  const _bookFrac = totalBookCad > 0 ? (b?.book || 0) / totalBookCad : 1;
+  const rescale = (pct) => Number.isFinite(pct) ? pct * _bookFrac : pct;
+  const _coreP = rescale(b?.actualPct?.core);
+  const _swingP = rescale(b?.actualPct?.swing);
+  const _incomeP = rescale(b?.actualPct?.income);
+  const _specP = rescale(b?.actualPct?.spec);
+  const corePct = Number.isFinite(_coreP) ? `${_coreP.toFixed(1)}%` : "n/a";
+  const swingPct = Number.isFinite(_swingP) ? `${_swingP.toFixed(1)}%` : "n/a";
+  const incomePct = Number.isFinite(_incomeP) ? `${_incomeP.toFixed(1)}%` : "n/a";
+  const specPct = Number.isFinite(_specP) ? `${_specP.toFixed(1)}%` : "n/a";
   const coreGapStr = coreGapPp > 0.5 ? ` (gap −${coreGapPp.toFixed(1)}pp)` : "";
   const incomeGapPp = b?.actualPct?.income != null && b?.targetsPct?.income != null
     ? b.targetsPct.income - b.actualPct.income : 0;
@@ -2681,10 +2690,25 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // with wrong numbers. Per user directive: "If canonical itself does
   // not reconcile, suppress the status rather than asking the LLM to
   // repair it."
-  const partsForSum = [b?.actualPct?.core, b?.actualPct?.swing, b?.actualPct?.income, b?.actualPct?.spec, cashPct]
-    .filter(x => Number.isFinite(x));
-  const sleeveSum = partsForSum.reduce((s, x) => s + x, 0);
-  const reconcilesToHundred = partsForSum.length === 5 && Math.abs(sleeveSum - 100) <= 2.5;
+  // ROOT-CAUSE FIX for the "103.6%" false reconciliation failure that
+  // was blocking the operator for days: sleeveBalance.actualPct is
+  // denominated on BOOK ONLY (positions), so those four values sum to
+  // exactly 100. cashPct is denominated on BOOK + CASH. Adding them
+  // together produces 100 + cash% = 103.6% for a portfolio with 3.6%
+  // cash. Not a real reconciliation issue — it's an arithmetic bug
+  // in the check itself.
+  //
+  // Fix: compute portfolio-total-denominated sleeve %s by rescaling
+  // sleeveBalance.actualPct by (book / (book + cash)). Then all five
+  // parts share the same denominator and sum to 100 for a well-formed
+  // portfolio.
+  const bookFraction = totalBookCad > 0 ? (b?.book || 0) / totalBookCad : 1;
+  const partsForSum = [b?.actualPct?.core, b?.actualPct?.swing, b?.actualPct?.income, b?.actualPct?.spec]
+    .map(pct => Number.isFinite(pct) ? pct * bookFraction : pct);
+  partsForSum.push(cashPct);
+  const partsPresent = partsForSum.filter(x => Number.isFinite(x));
+  const sleeveSum = partsPresent.reduce((s, x) => s + x, 0);
+  const reconcilesToHundred = partsPresent.length === 5 && Math.abs(sleeveSum - 100) <= 2.5;
   chunks.push("## 3. 📊 Status");
   if (reconcilesToHundred) {
     chunks.push(`CORE: ${corePct}${coreGapStr} · SWING: ${swingPct} · INCOME: ${incomePct}${incomeGapStr} · SPEC: ${specPct} · Cash: ${cashPctStr} · Hard stops: ${stopsTotal}${suspectStr} · Regime: ${regimeStr} · New ideas: **${newIdeasAllowed}**`);
@@ -3934,8 +3958,16 @@ export async function generateBriefing(profile) {
       );
       const totalBookCadLocal = (b?.book || 0) + totalCashCadLocal;
       const cashPctLocal = totalBookCadLocal > 0 ? (totalCashCadLocal / totalBookCadLocal) * 100 : 0;
-      const parts = [b?.actualPct?.core, b?.actualPct?.swing, b?.actualPct?.income, b?.actualPct?.spec, cashPctLocal]
-        .filter(x => Number.isFinite(x));
+      // Same fix as §3: rescale sleeveBalance.actualPct (book-only
+      // denominator) to portfolio-total denominator so it aligns with
+      // cashPct. Otherwise the sum is always 100 + cash%, producing a
+      // permanent false "reconciliation failed" that suppressed the
+      // sleeve mix line for days.
+      const bookFracLocal = totalBookCadLocal > 0 ? (b?.book || 0) / totalBookCadLocal : 1;
+      const scaledSleeves = ["core", "swing", "income", "spec"]
+        .map(k => b?.actualPct?.[k])
+        .map(pct => Number.isFinite(pct) ? pct * bookFracLocal : pct);
+      const parts = [...scaledSleeves, cashPctLocal].filter(x => Number.isFinite(x));
       if (parts.length === 5) {
         sleeveCashSum = parts.reduce((s, x) => s + x, 0);
         if (Math.abs(sleeveCashSum - 100) > 2.5) reconciliationOk = false;
