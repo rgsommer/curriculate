@@ -1152,6 +1152,34 @@ async function renderDailyPicksDeterministic(dailyPicks) {
         lines.push(`   ⚠ MTF conflicting — treat as watchlist entry, wait for confluence to align before committing size.`);
       }
       if (p.rationale) lines.push(`   ${p.rationale}`);
+      // External Recommendation Discovery Layer — surface confluence
+      // signals per pick. Purely additive presentation; no gate change.
+      // baseComposite = deterministicScore (unchanged). Both the base
+      // and the enhanced values are shown so the operator can see the
+      // external layer's contribution and it can be measured over time.
+      try {
+        const { getExternalConvictionForTicker, formatExternalDiscoveryBlock } = await import("../services/stocksExternalNominations.js");
+        const conviction = await getExternalConvictionForTicker(p.ticker, {
+          currency: p.currency || "USD",
+          baseComposite: p.deterministicScore,
+        });
+        if (conviction && conviction.nominations && conviction.nominations.length > 0) {
+          const enhanced = (p.deterministicScore || 0) + (conviction.externalAdjustment || 0);
+          if (conviction.externalAdjustment > 0) {
+            lines.push(`   base composite ${p.deterministicScore} + external adjustment +${conviction.externalAdjustment} → enhanced composite ${enhanced}`);
+          }
+          const externalBlock = formatExternalDiscoveryBlock(conviction);
+          if (externalBlock) {
+            for (const l of externalBlock.split("\n")) {
+              // Indent under the pick block for visual grouping.
+              lines.push(l.startsWith("   ") || l.trim() === "" ? l : `   ${l}`);
+            }
+          }
+        }
+      } catch (e) {
+        // Never let external-signal fetch break the picks block.
+        console.warn(`[external-discovery-render] ${p.ticker}:`, e?.message);
+      }
       lines.push("");
     }
   } else if (suppressed.length === 0 && blockedRaw.length === 0) {

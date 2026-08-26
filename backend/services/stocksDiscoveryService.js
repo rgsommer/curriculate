@@ -1162,6 +1162,38 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
       subForBlendFinal = { ...subForBlend, mosaic: { score: mosaic.edgeScore } };
     }
     const weightedScore = blendScore(subForBlendFinal, blendWeights);
+    // ─── External Recommendation Discovery Layer wiring ────────────────
+    // baseComposite = weightedScore (FROZEN — base algorithm untouched).
+    // enhancedComposite = baseComposite + externalAdjustment (0..+5).
+    // Persist nominations so source-performance tracker can freeze
+    // forward-return buckets and eventually attribute alpha per source.
+    // Every existing gate downstream (R/R, price-verify, MTF, sleeve,
+    // canonical, funding, kill-switch) runs on values unaffected by
+    // this layer.
+    const baseComposite = weightedScore;
+    let externalConviction = null;
+    let externalConvictionScore = 0;
+    let externalAdjustment = 0;
+    let enhancedComposite = baseComposite;
+    try {
+      const { getExternalConvictionForTicker, persistNominations } = await import("./stocksExternalNominations.js");
+      externalConviction = await getExternalConvictionForTicker(c.ticker, {
+        currency: c.currency || "USD",
+        baseComposite,
+        internalUniverse: new Set((shortlist || []).map(x => String(x.ticker).toUpperCase().replace(/\..*$/, ""))),
+      });
+      externalConvictionScore = externalConviction?.externalConvictionScore || 0;
+      externalAdjustment = externalConviction?.externalAdjustment || 0;
+      enhancedComposite = Math.round((baseComposite || 0) + externalAdjustment);
+      // Fire-and-forget persistence so slow Mongo writes don't block the
+      // scan. Nominations flow into the source-performance tracker.
+      persistNominations(externalConviction?.nominations || [], {
+        ticker: c.ticker,
+        internalUniverse: new Set((shortlist || []).map(x => String(x.ticker).toUpperCase().replace(/\..*$/, ""))),
+      }).catch(e => console.warn("[external-nominations persist] warn:", e?.message));
+    } catch (e) {
+      console.warn(`[external-nominations] compute failed for ${c.ticker}:`, e?.message);
+    }
     const dataFlags = ["fundamentals", "momentum", "technical", "riskControl"]
       .flatMap((k) => (c.sub[k]?.flags || []).map((f) => `${k}: ${f}`));
     const confidence = computeConfidence(subForBlend, dataFlags.length);
@@ -1172,6 +1204,22 @@ export async function runHighConvictionScan({ email, riskMode = "balanced", sect
     const multiFactor = {
       riskMode: mode,
       weightedScore,
+      // External Recommendation Discovery Layer — attribution fields.
+      // baseComposite === weightedScore (unchanged). enhancedComposite
+      // is the value used for tiering/ranking. Both stored so we can
+      // prospectively measure whether the external layer adds alpha.
+      baseComposite,
+      externalConvictionScore,
+      externalAdjustment,
+      enhancedComposite,
+      externalCategories: externalConviction?.categoriesAgreeing || 0,
+      externalCategoryContributions: (externalConviction?.categoryContributions || []).map(cc => ({
+        category: cc.category,
+        strength: cc.decayed,
+        action: cc.winningNomination?.action || null,
+        countInCategory: cc.countInCategory,
+      })),
+      externalAttribution: externalConviction?.attribution || null,
       confidence,
       factors,
       riskRating,
