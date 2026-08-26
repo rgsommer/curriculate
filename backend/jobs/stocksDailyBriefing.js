@@ -5824,15 +5824,37 @@ export async function runDiscoveryOutcomeTracker(opts = {}) {
   // once, benchmark-period-matched to publishedAt). Uses the same
   // fetchCurrentPrice + fetchYahooDaily helpers already exercised
   // above so any cache warmed by the discovery pass is reused.
+  // Health: stamps its own heartbeat so the diagnostics endpoint can
+  // separately observe the two passes even though they share a cron.
   let externalPass = { checked: 0, frozen: 0, skipped: 0 };
+  const externalPassStart = Date.now();
   try {
     const { runExternalNominationOutcomePass } = await import("../services/stocksExternalNominations.js");
     externalPass = await runExternalNominationOutcomePass({
       fetchCurrentPriceFn: (t) => fetchCurrentPrice(t),
       fetchBenchmarkSeriesFn: (sym) => fetchYahooDaily(sym, "1y").catch(() => null),
     });
+    await StocksSystemHeartbeat.findOneAndUpdate(
+      { name: "external-nominations-outcome-pass" },
+      { $set: {
+          lastTickAt: new Date(),
+          lastRunSummary: { ...externalPass, elapsedMs: Date.now() - externalPassStart },
+          lastError: null, lastErrorAt: null,
+        } },
+      { upsert: true, setDefaultsOnInsert: true }
+    ).catch(() => {});
   } catch (e) {
-    console.warn("[external-nomination-outcome-pass] warn:", e?.message);
+    const errMsg = String(e?.message || e).slice(0, 500);
+    console.warn("[external-nomination-outcome-pass] warn:", errMsg);
+    await StocksSystemHeartbeat.findOneAndUpdate(
+      { name: "external-nominations-outcome-pass" },
+      { $set: {
+          lastTickAt: new Date(),
+          lastError: errMsg, lastErrorAt: new Date(),
+          lastRunSummary: { failed: true, elapsedMs: Date.now() - externalPassStart },
+        } },
+      { upsert: true, setDefaultsOnInsert: true }
+    ).catch(() => {});
   }
   console.log(`[stocks-outcome-tracker] checked ${cands.length}, updated ${updated}, conviction ${convictionUpdated}, external{checked=${externalPass.checked}, frozen=${externalPass.frozen}, skipped=${externalPass.skipped}}`);
   return { checked: cands.length, updated, convictionUpdated, externalPass };
@@ -5913,13 +5935,33 @@ export function scheduleDailyPortfolioSnapshot() {
 // Runs once daily to refresh nominations for the eligible Discover
 // universe. Idempotent — the persistNominations upsert on
 // (ticker, sourceKey, publishedAt) means re-runs never dupe.
+//
+// Health: every fire stamps StocksSystemHeartbeat with lastTickAt +
+// lastRunSummary + (on failure) lastError. Diagnostics endpoint can
+// distinguish "cron hasn't fired" from "cron fired but scanned 0
+// tickers" from "cron fired and errored".
 export async function runExternalNominationsSync(opts = {}) {
+  const heartbeatName = "external-nominations-sync";
+  const startedAt = Date.now();
   try {
     const { syncExternalNominationsForUniverse } = await import("../services/stocksExternalNominations.js");
-    return await syncExternalNominationsForUniverse(opts);
+    const summary = await syncExternalNominationsForUniverse(opts);
+    await StocksSystemHeartbeat.findOneAndUpdate(
+      { name: heartbeatName },
+      { $set: { lastTickAt: new Date(), lastRunSummary: summary, lastError: null, lastErrorAt: null } },
+      { upsert: true, setDefaultsOnInsert: true }
+    ).catch(() => {});
+    return summary;
   } catch (e) {
+    const errMsg = String(e?.message || e).slice(0, 500);
     console.error("[external-nominations sync] fatal:", e);
-    return { error: e?.message || String(e) };
+    await StocksSystemHeartbeat.findOneAndUpdate(
+      { name: heartbeatName },
+      { $set: { lastTickAt: new Date(), lastError: errMsg, lastErrorAt: new Date(),
+                lastRunSummary: { failed: true, elapsedMs: Date.now() - startedAt } } },
+      { upsert: true, setDefaultsOnInsert: true }
+    ).catch(() => {});
+    return { error: errMsg };
   }
 }
 
