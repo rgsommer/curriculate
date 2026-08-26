@@ -377,6 +377,15 @@ const allowedOrigins = [
   "https://play.curriculate.net",
   "https://curriculate.net",
   "https://www.curriculate.net",
+  // Qrewzi rebrand — same backend/DB serves the qrewzi.com brand hosts.
+  // Without these, the games play/teacher surfaces on qrewzi.com fail every
+  // HTTP + Socket.IO request (CORS-blocked → "Error connecting. Retrying…").
+  "https://play.qrewzi.com",
+  "https://set.qrewzi.com",
+  "https://qrewzi.com",
+  "https://www.qrewzi.com",
+  "https://qrewzi.ca",
+  "https://www.qrewzi.ca",
   "http://localhost:5173",
   "http://localhost:5174",
   "http://localhost:4173",
