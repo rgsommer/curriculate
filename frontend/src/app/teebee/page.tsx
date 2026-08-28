@@ -201,11 +201,12 @@ function Hero() {
             <Shield size={14} /> CPA Certified · Registered Tax Agents
           </div>
           <h1 style={{ fontSize: 56, fontWeight: 800, letterSpacing: -1.5, lineHeight: 1.08, margin: 0, color: C.ink, fontFamily: "Georgia, serif" }}>
-            Professional <span style={{ color: C.navy }}>accounting</span> &amp; <span style={{ color: C.navy }}>audit</span> services.
+            Less time on <span style={{ color: C.navy }}>compliance</span>. More time on your <span style={{ color: C.navy }}>business</span>.
           </h1>
           <p style={{ fontSize: 19, color: C.inkSoft, lineHeight: 1.55, margin: "22px 0 32px", maxWidth: 560 }}>
-            CPA-certified professionals delivering the highest standards in accounting, audit, and business
-            advisory across Papua New Guinea. Trusted by over 500 clients for more than a decade.
+            TeeBee is a CPA-certified PNG firm that pairs real accountants with modern software — so your
+            books, tax, payroll and audit get handled faster and for less, without the endless paperwork
+            chase. Trusted by over 500 businesses for more than a decade.
           </p>
           <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
             <a href="#contact" style={btnPrimary}>Get consultation <ArrowRight size={17} style={{ marginLeft: 6 }} /></a>
@@ -310,21 +311,21 @@ function Stats() {
 /* ────────── Why choose us ────── */
 function WhyChoose() {
   const items = [
-    { icon: <Award size={22} />,    t: "CPA Certified",         d: "Fully certified CPAs registered with the PNG Accountants Registration Board." },
-    { icon: <Shield size={22} />,   t: "Highest Standards",     d: "International Financial Reporting Standards (IFRS) with rigorous quality control." },
-    { icon: <Users size={22} />,    t: "Client-Focused",        d: "Lasting relationships through understanding each client's unique needs and goals." },
-    { icon: <CheckCircle2 size={22} />, t: "Integrity & Trust", d: "Unwavering ethical standards and complete transparency in every interaction." },
-    { icon: <MapPin size={22} />,   t: "Local Expertise",       d: "Deep understanding of PNG's regulatory environment, tax laws, and business landscape." },
-    { icon: <Phone size={22} />,    t: "Dedicated Support",     d: "Responsive service with direct access to your dedicated team members." },
+    { icon: <Award size={22} />,        t: "Numbers you can trust",        d: "CPA-certified accountants registered with the PNG Accountants Registration Board — signed off, not guessed." },
+    { icon: <CheckCircle2 size={22} />, t: "Less paperwork, faster turnaround", d: "Modern software does the reconciling and chasing, so what took days takes minutes — and we stop chasing you for documents." },
+    { icon: <MapPin size={22} />,       t: "Never miss a PNG deadline",    d: "We know the IRC, IPA and NASFund calendar inside out, so you stay compliant without having to track it yourself." },
+    { icon: <Shield size={22} />,       t: "Audit-ready, always",          d: "Every engagement to IFRS standard with rigorous quality control, so your books stand up to any scrutiny." },
+    { icon: <Users size={22} />,        t: "A team that knows your business", d: "One dedicated team that understands your goals — a lasting relationship, not a call centre." },
+    { icon: <Phone size={22} />,        t: "Answers when you need them",   d: "Responsive, direct support from real people you can actually reach." },
   ];
   return (
     <section id="about" style={{ padding: "80px 24px", background: "#fff" }}>
       <div style={{ maxWidth: 1180, margin: "0 auto" }}>
         <div style={{ textAlign: "center", marginBottom: 50 }}>
-          <Eyebrow>Why choose TBA</Eyebrow>
-          <h2 style={h2}>Delivering excellence in every detail.</h2>
+          <Eyebrow>Why choose TeeBee</Eyebrow>
+          <h2 style={h2}>What you actually get.</h2>
           <p style={{ ...lead, margin: "0 auto", textAlign: "center" }}>
-            We combine expertise with dedication to provide the highest quality accounting services in Papua New Guinea.
+            The proof-points behind the promise — what working with TeeBee means for your business, day to day.
           </p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 22 }}>
