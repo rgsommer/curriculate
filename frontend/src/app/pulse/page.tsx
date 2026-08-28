@@ -815,9 +815,9 @@ export default function PulseLanding() {
               </h1>
 
               <p className="text-lg sm:text-xl text-gray-700 font-medium max-w-xl mb-8 leading-relaxed">
-                Pulse — AI-powered grading for written work, handwriting, video performances,
-                and audio — with batch mode for whole-class sets. Follows your rubric,
-                writes feedback in your voice, and exports grades to your gradebook.
+                Snap a photo, paste text, upload a class-set PDF, or record a
+                performance. Pulse reads your rubric and writes real, personalized
+                feedback for every student — in the voice you choose — in seconds.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-3">
@@ -898,123 +898,123 @@ export default function PulseLanding() {
         </div>
       </section>
 
-      {/* -------- WHO IT'S FOR (WIIFM per visitor) -------- */}
+      {/* -------- WHY YOU NEED THIS (statement, not a question) -------- */}
       <section className="px-6 py-16 bg-gradient-to-b from-white to-blue-50/40">
         <div className="mx-auto max-w-6xl">
           <div className="text-center mb-12">
-            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3">
-              What's in it for you?
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3 tracking-tight">
+              Pulse gives you back your evenings and gives every student real feedback.
             </h2>
             <p className="text-lg text-gray-700 font-medium max-w-2xl mx-auto">
-              Depends who you are. Here's the short version.
+              What that looks like depends on where you sit.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Classroom teacher */}
             <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center">
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center flex-shrink-0">
                   <GraduationCap className="w-6 h-6 text-blue-600" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-blue-600 uppercase tracking-wide">If you're a</div>
-                  <h3 className="text-xl font-black text-gray-900">Classroom teacher</h3>
+                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Get your evenings back.</h3>
+                  <div className="text-xs font-bold text-blue-600 uppercase tracking-wide mt-1">For classroom teachers</div>
                 </div>
               </div>
               <ul className="space-y-3 text-gray-800 font-medium">
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Get your evenings back.</b> A stack of 30 essays goes from 3 hours to 15 minutes. Feedback is longer than what you'd write by hand and matched to your rubric.</span>
+                  <span>A stack of 30 essays goes from 3 hours to 15 minutes. Feedback is longer than what you'd write by hand and matched to your rubric.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Every kid gets real feedback.</b> Not just a grade — actual next-steps in a voice you choose, sized to the student's level.</span>
+                  <span>Every kid gets real feedback — not just a grade — in a voice you choose, sized to their level.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Parents stop chasing you.</b> Every grade lands in the /progress dashboard automatically — parents see it before they ask.</span>
+                  <span>Parents stop chasing you. Every grade lands in the /progress dashboard automatically.</span>
                 </li>
               </ul>
             </div>
 
             {/* Specialist */}
             <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-violet-50 border border-violet-200 flex items-center justify-center">
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-violet-50 border border-violet-200 flex items-center justify-center flex-shrink-0">
                   <Star className="w-6 h-6 text-violet-600" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-violet-600 uppercase tracking-wide">If you're a</div>
-                  <h3 className="text-xl font-black text-gray-900">Music, drama, or performance specialist</h3>
+                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Grade what other AI tools can't.</h3>
+                  <div className="text-xs font-bold text-violet-600 uppercase tracking-wide mt-1">For music, drama & performance teachers</div>
                 </div>
               </div>
               <ul className="space-y-3 text-gray-800 font-medium">
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Grade what other tools can't.</b> Upload a video or audio of a solo, ensemble, or skit — Pulse writes real feedback on tone, timing, delivery, character.</span>
+                  <span>Upload a video or audio of a solo, ensemble, or skit — Pulse writes real feedback on tone, timing, delivery, character.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Ensemble recitals split up.</b> Enter every performer and their instrument (or role, for skits) — Pulse grades each one individually plus the group.</span>
+                  <span>Ensemble recitals split up: enter every performer with their instrument (or role, for skits). Pulse grades each one individually plus the group.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Roster-linked results.</b> Performers can come from different homerooms — the results land on each kid's /progress page automatically.</span>
+                  <span>Performers can come from different homerooms — results roll up on each kid's /progress page automatically.</span>
                 </li>
               </ul>
             </div>
 
             {/* Principal / admin */}
             <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center">
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center flex-shrink-0">
                   <Shield className="w-6 h-6 text-amber-600" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wide">If you're a</div>
-                  <h3 className="text-xl font-black text-gray-900">Principal or department head</h3>
+                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Keep your best teachers longer.</h3>
+                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wide mt-1">For principals & department heads</div>
                 </div>
               </div>
               <ul className="space-y-3 text-gray-800 font-medium">
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Teacher retention.</b> Grading load is the #1 quiet reason strong teachers leave. Pulse cuts it enough to move the needle.</span>
+                  <span>Grading load is the #1 quiet reason strong teachers leave. Pulse cuts it enough to move the needle.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Consistent feedback across sections.</b> Same rubric, same voice — the difference between "Ms. A grades hard, Mr. B grades soft" disappears.</span>
+                  <span>Consistent feedback across sections: same rubric, same voice — "Ms. A grades hard, Mr. B grades soft" disappears.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Real parent communication.</b> Every family gets a live progress dashboard for every kid. Report-card season stops being a fire drill.</span>
+                  <span>Every family gets a live progress dashboard. Report-card season stops being a fire drill.</span>
                 </li>
               </ul>
             </div>
 
             {/* Parent / student */}
             <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+              <div className="flex items-start gap-4 mb-5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center flex-shrink-0">
                   <Users className="w-6 h-6 text-emerald-600" />
                 </div>
                 <div>
-                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-wide">If you're a</div>
-                  <h3 className="text-xl font-black text-gray-900">Parent or student</h3>
+                  <h3 className="text-2xl font-black text-gray-900 leading-tight">See every grade the moment it's marked.</h3>
+                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-wide mt-1">For parents & students</div>
                 </div>
               </div>
               <ul className="space-y-3 text-gray-800 font-medium">
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>See every grade the moment it's marked.</b> Not at report-card season. Not after emailing three times. As soon as the teacher hits submit.</span>
+                  <span>Not at report-card season. Not after emailing three times. As soon as the teacher hits submit.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Actual feedback, not just a score.</b> Strengths, next steps, and the teacher's rubric — same page, in language your kid can act on.</span>
+                  <span>Actual feedback, not just a score — strengths, next steps, and the teacher's rubric in language your kid can act on.</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <span><b>Free. No login for the teacher. No sign-up drama.</b> If the teacher graded it, you can see it — /progress + a student ID is all you need.</span>
+                  <span>Free. No teacher login. No sign-up drama. Just /progress and the student ID.</span>
                 </li>
               </ul>
             </div>

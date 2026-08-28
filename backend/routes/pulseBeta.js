@@ -16,8 +16,84 @@
 import express from "express";
 import crypto from "crypto";
 import PulseBetaTester from "../models/PulseBetaTester.js";
+import { sendSystemEmail } from "../email/shareInviteEmailer.js";
 
 const router = express.Router();
+
+// Format a friendly "Month Day, Year" string that reads well in an email.
+function formatExpiry(d) {
+  try {
+    return new Date(d).toLocaleDateString("en-US", {
+      year: "numeric", month: "long", day: "numeric",
+    });
+  } catch { return String(d); }
+}
+
+// HTML body for the "you're in the Pulse beta" confirmation email. Same tone
+// as the on-page success screen so recipients don't feel like they're getting
+// a machine reply.
+function betaConfirmationHtml({ name, betaCode, expiresAt }) {
+  const salutation = name ? `Hi ${name.split(/\s+/)[0]},` : "Hi there,";
+  const expiryLabel = formatExpiry(expiresAt);
+  return `
+  <div style="font-family: -apple-system, system-ui, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; color: #1e293b; line-height: 1.55; font-size: 15px;">
+    <p style="margin: 0 0 16px;">${salutation}</p>
+
+    <p style="margin: 0 0 16px;">
+      You're in the Pulse Grading beta. You have full access to every feature —
+      photo, paste, batch PDF, video, audio, all 13 feedback voices, roster
+      linking, per-student strictness, the works — with no monthly limit,
+      through <b>${expiryLabel}</b>.
+    </p>
+
+    <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 12px; padding: 18px 20px; margin: 20px 0;">
+      <div style="font-size: 11px; font-weight: 800; color: #166534; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px;">
+        Your beta code
+      </div>
+      <div style="font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 22px; font-weight: 900; color: #0f172a; letter-spacing: 0.5px;">
+        ${betaCode}
+      </div>
+    </div>
+
+    <p style="margin: 0 0 12px;"><b>To start grading right now:</b></p>
+    <ol style="margin: 0 0 20px 22px; padding: 0;">
+      <li style="margin-bottom: 6px;">
+        Head to <a href="https://curriculate.net/grading" style="color: #2563eb;">curriculate.net/grading</a>.
+      </li>
+      <li style="margin-bottom: 6px;">
+        If you signed up in the same browser, you're already unlocked — look for the green "Beta active" pill in the header.
+      </li>
+      <li style="margin-bottom: 6px;">
+        Otherwise, tap "Have a beta code?" and paste the code above. That's it.
+      </li>
+    </ol>
+
+    <p style="margin: 0 0 16px;"><b>What we ask in return</b></p>
+    <p style="margin: 0 0 16px;">
+      Use Pulse at least once a month and reply to the occasional email from
+      us asking what worked, what didn't, and what you'd add. Your feedback
+      literally shapes what ships next — beta testers see fixes and features
+      long before anyone else.
+    </p>
+
+    <p style="margin: 0 0 16px;">
+      Save this email — if your browser wipes or you switch to another device,
+      you can paste this code back in to reactivate. You can also look it up
+      any time at <a href="https://curriculate.net/pulse#beta" style="color: #2563eb;">curriculate.net/pulse#beta</a>
+      using this email address.
+    </p>
+
+    <p style="margin: 0 0 8px;">Thanks for jumping in.</p>
+    <p style="margin: 0 0 24px;">— The Curriculate team</p>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+    <p style="margin: 0; font-size: 12px; color: #64748b;">
+      Questions or need to leave the beta? Just reply to this email.
+      Privacy: your info is used only for the beta program — no marketing lists,
+      no third parties.
+    </p>
+  </div>`;
+}
 
 // Human-friendly code generator — 6 chars, uppercase alphanumerics minus
 // visually-confusing pairs. Prefixed so it's obvious what it is when someone
@@ -56,9 +132,22 @@ router.post("/signup", async (req, res) => {
     }
 
     // If this teacher already has an active beta, return it — no duplicate
-    // records, no confusing "here's another code."
+    // records, no confusing "here's another code." Also re-send the
+    // confirmation email so a "I lost my code" retry surfaces it in their
+    // inbox without support round-trips.
     const existing = await PulseBetaTester.findOne({ email, revokedAt: null }).lean();
     if (existing && existing.expiresAt > new Date()) {
+      sendSystemEmail({
+        to: email,
+        subject: "Your Pulse Grading beta code (resent)",
+        html: betaConfirmationHtml({
+          name: existing.name || "",
+          betaCode: existing.betaCode,
+          expiresAt: existing.expiresAt,
+        }),
+      }).catch((mailErr) => {
+        console.warn(`[pulse-beta] resend to ${email} failed:`, mailErr?.message || mailErr);
+      });
       return res.json({
         ok: true,
         alreadyEnrolled: true,
@@ -100,6 +189,23 @@ router.post("/signup", async (req, res) => {
     });
 
     console.log(`[pulse-beta] new signup ${email} → ${betaCode} (expires ${expiresAt.toISOString()})`);
+
+    // Fire-and-forget confirmation email. Failure to send should NEVER fail
+    // the signup — the teacher already has the code in the response body and
+    // (via the frontend) in localStorage. Log the error so we can spot SMTP
+    // outages, but don't await.
+    sendSystemEmail({
+      to: email,
+      subject: "You're in the Pulse Grading beta — here's your code",
+      html: betaConfirmationHtml({
+        name: doc.name || "",
+        betaCode: doc.betaCode,
+        expiresAt: doc.expiresAt,
+      }),
+    }).catch((mailErr) => {
+      console.warn(`[pulse-beta] confirmation email to ${email} failed:`, mailErr?.message || mailErr);
+    });
+
     return res.json({
       ok: true,
       alreadyEnrolled: false,
