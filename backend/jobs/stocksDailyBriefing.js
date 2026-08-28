@@ -1061,10 +1061,26 @@ function formatRecentTradesBlock(recentTrades) {
 async function renderDailyPicksDeterministic(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   const { verifyRecPrice } = await import("../services/marketDataIntegrity.js");
+  const { auditPickReconciliation } = await import("../services/briefingAudit.js");
   const PICK_PRICE_DRIFT_MAX_PCT = 5.0;
+  // Per-pick reconciliation audit — strip any pick whose displayed
+  // composite doesn't reconcile to the sum of its contributions (hidden
+  // adjustment, duplicate contribution, float artifact, or NaN leak).
+  // Failure is per-pick: a single bad row is dropped from the list, not
+  // the whole briefing. Rejected picks land in `reconciliationFailed`
+  // and are printed at the end so the operator can see WHY.
+  const reconciliationFailed = [];
+  const passesReconciliation = (p) => {
+    const r = auditPickReconciliation(p);
+    if (!r.ok) {
+      reconciliationFailed.push({ ticker: p?.ticker || "?", issues: r.issues });
+      return false;
+    }
+    return true;
+  };
   // Verify every allowed pick concurrently but cap concurrency so
   // we don't burst the market-data provider.
-  const allowedRaw = dailyPicks.filter(p => !p.blockedReason);
+  const allowedRaw = dailyPicks.filter(p => !p.blockedReason && passesReconciliation(p));
   const blockedRaw = dailyPicks.filter(p => p.blockedReason);
   const verified = [];
   const suppressed = [];
@@ -1119,39 +1135,84 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       const MIN_RR_FOR_BUY = 1.5;
       const isConflict = String(p.mtfConfluence || "").toLowerCase() === "conflicting";
       const rrOk = rewardRisk != null && rewardRisk >= MIN_RR_FOR_BUY;
+      // Special-situation preflight — the pick engine already screens
+      // active M&A/tender/take-private tickers, but the renderer must
+      // fail-closed on ANY specialSituation-tagged pick reaching this
+      // block. Priceable deals (independently-verified acquirer price)
+      // route to EVENT-DRIVEN ANALYSIS; anything else is SCREENED —
+      // ACTIVE M&A with a plain-English explanation.
+      const situation = p.specialSituation || null;
+      const situationActive = situation && situation.active;
       let tier;
-      if (p.deterministicScore >= 70 && !isConflict && rrOk) {
+      let priceableDeal = false;
+      if (situationActive) {
+        // Priceability check — the service already computed
+        // impliedDealValue when the store row was read.
+        priceableDeal = !!(situation.impliedDealValue && Number.isFinite(situation.impliedDealValue.impliedValue));
+        tier = priceableDeal ? "EVENT-DRIVEN" : "SCREENED-MA";
+      } else if (p.deterministicScore >= 70 && !isConflict && rrOk) {
         tier = "BUY";
       } else if (p.deterministicScore >= 70 && !isConflict && !rrOk) {
-        // High-quality candidate but the current entry-target-stop
-        // structure doesn't clear the reward/risk gate. Distinct
-        // tier so the operator sees WHY a strong composite isn't a BUY.
+        // High-quality composite but the current entry/target/stop can't
+        // meet the R/R floor. Distinct tier so the operator sees WHY.
         tier = "SCREENED";
-      } else if (p.deterministicScore >= 60) {
+      } else if (p.deterministicScore >= 60 && p.watchTrigger && Number.isFinite(p.watchTrigger.price)) {
+        // WATCH is a real waiting-order tier — reserved for names where
+        // there IS a specific price at which R/R would clear the BUY
+        // floor. Without a valid watchTrigger, WATCH is meaningless
+        // aspirational filler; demote to SCREENED so the operator
+        // doesn't act on a name whose structure can never clear R/R
+        // even on a pullback.
         tier = "WATCH";
+      } else if (p.deterministicScore >= 60) {
+        tier = "SCREENED";
       } else {
         tier = "MONITOR";
       }
       const tierColor = tier === "BUY" ? "✅"
-                      : tier === "SCREENED" ? "⛔"
+                      : tier === "EVENT-DRIVEN" ? "🎯"
+                      : tier === "SCREENED-MA" || tier === "SCREENED" ? "⛔"
                       : tier === "WATCH" ? "⚠️"
                       : "🔍";
       // Identity line: ticker · currency · verified live price · tier.
-      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${p.deterministicScore}${setupTag}${mtfTag} · ${tierColor} **${tier}**`);
-      const targetSrcLabel = p.targetSource
-        ? ` [${p.targetSource === "swing-high" ? "prior resistance"
-              : p.targetSource === "measured-move" ? "measured move"
-              : p.targetSource === "atr-2x" ? "2×ATR extension"
-              : p.targetSource === "pct-floor" ? "pct-floor"
-              : p.targetSource}]`
-        : "";
-      lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%)${targetSrcLabel} · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
-      if (tier === "SCREENED") {
-        lines.push(`   ⛔ SCREENED — composite ${p.deterministicScore} is strong but current entry/target/stop only yields R/R ${rrStr} (BUY floor: ${MIN_RR_FOR_BUY}:1). Wait for pullback or improved target structure before treating as actionable.`);
-      } else if (isConflict) {
-        lines.push(`   ⚠ MTF conflicting — treat as watchlist entry, wait for confluence to align before committing size.`);
+      const compositeLabel = p.deterministicScore == null ? "n/a" : p.deterministicScore;
+      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${compositeLabel}${setupTag}${mtfTag} · ${tierColor} **${tier === "SCREENED-MA" ? "SCREENED — ACTIVE M&A" : tier}**`);
+      if (situationActive) {
+        // Special-situation branch — skip the ordinary entry/target/stop
+        // line entirely; those numbers don't apply once the deal terms
+        // are pricing the security. Print the situation block instead.
+        try {
+          const { formatSpecialSituationBlock } = await import("../services/stocksSpecialSituations.js");
+          const block = formatSpecialSituationBlock(situation, { livePrice: p.verifiedPrice });
+          if (block) for (const l of block.split("\n")) lines.push(`   ${l.replace(/^\s+/, "")}`);
+        } catch (e) {
+          lines.push(`   ⚠ special-situation formatter failed: ${e?.message || "unknown"}`);
+        }
+        if (tier === "SCREENED-MA") {
+          lines.push(`   ⛔ SCREENED — ACTIVE M&A. Ordinary technical setups don't price a name subject to a definitive corporate agreement. Not actionable as a swing/spec BUY. See event-driven analysis if you want to trade the spread.`);
+        } else {
+          lines.push(`   🎯 EVENT-DRIVEN. Ordinary technical rules do not apply — the acquirer's consideration prices this security. Evaluate as an arbitrage / event-driven play only.`);
+        }
+      } else {
+        const targetSrcLabel = p.targetSource
+          ? ` [${p.targetSource === "swing-high" ? "prior resistance"
+                : p.targetSource === "measured-move" ? "measured move"
+                : p.targetSource === "atr-2x" ? "2×ATR extension"
+                : p.targetSource === "pct-floor" ? "pct-floor"
+                : p.targetSource}]`
+          : "";
+        lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%)${targetSrcLabel} · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
+        if (tier === "SCREENED") {
+          lines.push(`   ⛔ SCREENED — composite ${p.deterministicScore} is strong but current entry/target/stop only yields R/R ${rrStr} (BUY floor: ${MIN_RR_FOR_BUY}:1). Wait for pullback or improved target structure before treating as actionable.`);
+        } else if (tier === "WATCH") {
+          const trig = p.watchTrigger;
+          lines.push(`   ⚠ WATCH — requires ${trig.why} to reach ≥${MIN_RR_FOR_BUY}:1. Set alert @ $${trig.price.toFixed(2)}${p.currency ? ` ${p.currency}` : ""}. Not actionable until the trigger fires.`);
+        }
+        if (isConflict) {
+          lines.push(`   ⚠ MTF conflicting — treat as watchlist entry, wait for confluence to align before committing size.`);
+        }
+        if (p.rationale) lines.push(`   ${p.rationale}`);
       }
-      if (p.rationale) lines.push(`   ${p.rationale}`);
       // External Recommendation Discovery Layer — surface confluence
       // signals per pick. Purely additive presentation; no gate change.
       // baseComposite = deterministicScore (unchanged). Both the base
@@ -1197,6 +1258,13 @@ async function renderDailyPicksDeterministic(dailyPicks) {
     lines.push(`_${blockedRaw.length} candidate${blockedRaw.length === 1 ? "" : "s"} blocked by validator — informational only:_`);
     for (const p of blockedRaw) {
       lines.push(`- **${p.ticker}** @ ~$${p.entryPrice.toFixed(2)} — ${p.blockedReason}`);
+    }
+    lines.push("");
+  }
+  if (reconciliationFailed.length > 0) {
+    lines.push(`⚠ **${reconciliationFailed.length} pick${reconciliationFailed.length === 1 ? "" : "s"} STRIPPED — RECONCILIATION AUDIT FAILED** (composite arithmetic did not reconcile to displayed value):`);
+    for (const f of reconciliationFailed) {
+      lines.push(`- **${f.ticker}** — ${f.issues.map(i => `[${i.code}] ${i.detail}`).join(" · ")}`);
     }
     lines.push("");
   }

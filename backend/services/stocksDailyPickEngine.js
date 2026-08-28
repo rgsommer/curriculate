@@ -229,10 +229,24 @@ function pctBetween(a, b) {
 //   +MTF: aligned up (0-15) — requires opts.includeMultiTimeframe upstream
 //   -Kill: RSI > 75 (overbought), price below SMA50 (downtrend) — subtract 30
 function scoreCandidate(tech) {
-  if (!tech?.ok) return { score: 0, contributors: ["tech unavailable"] };
+  if (!tech?.ok) return { score: 0, contributors: ["tech unavailable"], contributions: [] };
   let score = 0;
+  // Two parallel arrays. `contributors` is the human-readable display
+  // string ("trend up (…) +25"). `contributions` is the numeric delta
+  // used by the reconciliation audit — no regex parsing of a string
+  // that contains embedded percentages. Prior code parsed the first
+  // signed number out of the display string ("+5.1" from an inline
+  // priceVsSma50 echo) instead of the trailing score delta ("+25"),
+  // making the reconciliation math bogus. This fixes the input to the
+  // audit — the audit itself lives in briefingAudit.js.
   const contributors = [];
-  const add = (pts, why) => { score += pts; if (pts > 0) contributors.push(`${why} +${pts}`); else if (pts < 0) contributors.push(`${why} ${pts}`); };
+  const contributions = [];
+  const add = (pts, why) => {
+    score += pts;
+    if (pts > 0) contributors.push(`${why} +${pts}`);
+    else if (pts < 0) contributors.push(`${why} ${pts}`);
+    if (pts !== 0) contributions.push({ label: why, delta: pts });
+  };
 
   // Trend
   if (tech.sma50 && tech.sma200 && tech.last) {
@@ -250,11 +264,19 @@ function scoreCandidate(tech) {
 
   // Volume
   if (tech.volume?.rvol >= 1.5) add(8, `RVOL ${tech.volume.rvol.toFixed(2)}x`);
-  if (tech.volume?.pocketPivot) add(10, `pocket pivot`);
+  // Pocket-pivot dedup — the volume flag ("today's up-day volume
+  // exceeds the prior N-day down-day peak") and the multi-day
+  // chart-pattern detector can BOTH label the same event "pocket
+  // pivot", which the operator reads as double-counting. When the
+  // multi-day detector already named itself "Pocket pivot", suppress
+  // the flag's +10 so exactly one contribution is emitted. The
+  // multi-day setup below still adds its score.
+  const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
+  const bullSetupIsPocketPivot = bullSetup && /pocket\s*pivot/i.test(bullSetup.name || "");
+  if (tech.volume?.pocketPivot && !bullSetupIsPocketPivot) add(10, `pocket pivot`);
   if (tech.volume?.obvTrend === "accumulation") add(4, `OBV accumulation`);
 
   // Setup — take the strongest bullish setup's score contribution
-  const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
   if (bullSetup) add(Math.min(25, Math.round(bullSetup.score / 4)), `${bullSetup.name} (${bullSetup.score})`);
 
   // MTF
@@ -265,7 +287,8 @@ function scoreCandidate(tech) {
   // Kill: price below SMA50 = downtrend
   if (tech.priceVsSma50 != null && tech.priceVsSma50 < -3) add(-20, `below SMA50 (${tech.priceVsSma50.toFixed(1)}%)`);
 
-  return { score: Math.max(0, Math.min(100, Math.round(score))), contributors };
+  const clamped = Math.max(0, Math.min(100, Math.round(score)));
+  return { score: clamped, contributors, contributions, rawSum: score };
 }
 
 async function resolveUniverseForUser(email) {
@@ -363,9 +386,10 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   // 300+ per-ticker SKIP log lines every tick. Individual reasons
   // are still reachable via STOCKS_PICK_ENGINE_VERBOSE=1 for debug.
   const verbose = process.env.STOCKS_PICK_ENGINE_VERBOSE === "1";
-  const skipCounts = { techFail: 0, belowMinScore: 0, bannedSetup: 0, themeGate: 0 };
+  const skipCounts = { techFail: 0, belowMinScore: 0, bannedSetup: 0, themeGate: 0, specialSituation: 0 };
   const bannedSetupTickers = [];   // captured for the summary log
   const themeGateTickers = [];
+  const specialSituationTickers = [];
 
   for (const ticker of universe) {
     try {
@@ -375,7 +399,49 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       const ccy = currency || currencyFromTicker(ticker);
       const tech = await getTechnicals(ticker, ccy, { includeMultiTimeframe: true });
       if (!tech?.ok || tech.last == null) { skipCounts.techFail++; continue; }
-      const { score, contributors } = scoreCandidate(tech);
+      // Special-situation preflight gate — fail-closed BEFORE technical
+      // scoring. If this ticker is party to an active M&A / tender /
+      // take-private / delisting, ordinary swing/spec setups no longer
+      // price the security (the deal terms do). Drop from the candidate
+      // set and attach the situation so the briefing can render it as
+      // "SCREENED — ACTIVE M&A" or route to event-driven analysis.
+      // Any error here is silent (skipCounts.specialSituation doesn't
+      // grow) and the candidate proceeds — the preflight is a gate,
+      // not a gatekeeper — the audit blocker downstream catches the
+      // case where a specialSituation-tagged pick still reaches BUY.
+      try {
+        const { getSpecialSituationForTicker } = await import("./stocksSpecialSituations.js");
+        const situation = await getSpecialSituationForTicker(ticker);
+        if (situation && situation.active) {
+          skipCounts.specialSituation = (skipCounts.specialSituation || 0) + 1;
+          if (specialSituationTickers.length < 20) specialSituationTickers.push(`${ticker}(${situation.kind}/${situation.status})`);
+          if (verbose) console.log(`[pick-engine-special-situation] SKIP ${ticker} — ${situation.kind}/${situation.status} (confidence ${(situation.confidence * 100).toFixed(0)}%)`);
+          // Emit a screened stub so renderDailyPicksDeterministic can
+          // render the SCREENED — ACTIVE M&A line. Deterministic score
+          // is null (not scored) — the SCREENED branch doesn't need it.
+          scored.push({
+            ticker,
+            currency: ccy,
+            entryPrice: tech.last,
+            targetPrice: null,
+            targetSource: null,
+            stopPrice: null,
+            deterministicScore: null,
+            scoreContributors: [],
+            scoreContributions: [],
+            scoreRawSum: 0,
+            setupName: null,
+            mtfConfluence: null,
+            atr14: tech.atr14 || null,
+            specialSituation: situation,   // consumed by the renderer
+            rationale: `Special situation: ${situation.kind} status=${situation.status} — ordinary technical scoring skipped.`,
+          });
+          continue;
+        }
+      } catch (e) {
+        console.warn(`[pick-engine-special-situation] lookup failed for ${ticker}:`, e?.message);
+      }
+      const { score, contributors, contributions, rawSum } = scoreCandidate(tech);
       if (score < minScore) { skipCounts.belowMinScore++; continue; }
       const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
       // Per-setup surgical kill — drop candidates whose detected setup
@@ -442,6 +508,26 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       const stop = tech.suggested25AtrStop != null && tech.suggested25AtrStop > 0
         ? tech.suggested25AtrStop
         : tech.last * 0.94;
+      // Compute watchTrigger — the specific PRICE at which a WATCH tier
+      // would flip to a viable BUY. If no such price exists (target and
+      // stop structure can never satisfy R/R ≥ 1.5), we return null and
+      // the tier assignment downstream refuses to say WATCH.
+      // Math: at trigger price T (a pullback below last), assume the same
+      // target and same stop-percent structure applies. R/R at T is
+      //   (target − T) / (T − stop) ≥ 1.5
+      // solving for T: T ≤ (target + 1.5*stop) / 2.5. If that price is
+      // above the current stop (positive downside) and below the current
+      // last (a real pullback), it's a valid WATCH trigger.
+      let watchTrigger = null;
+      if (Number.isFinite(target) && Number.isFinite(stop) && stop > 0 && target > stop) {
+        const T = (target + 1.5 * stop) / 2.5;
+        if (Number.isFinite(T) && T > stop && T < tech.last) {
+          watchTrigger = {
+            price: T,
+            why: `pullback to ≤$${T.toFixed(2)} while target/stop structure holds`,
+          };
+        }
+      }
       scored.push({
         ticker,
         currency: ccy,
@@ -451,23 +537,24 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         stopPrice: stop,
         deterministicScore: score,
         scoreContributors: contributors,
+        // scoreContributions / scoreRawSum: numeric-delta pair the
+        // reconciliation audit consumes. Never parse the string.
+        scoreContributions: contributions,
+        scoreRawSum: rawSum,
         setupName: bullSetup?.name || null,
         mtfConfluence: tech.mtf?.confluence || null,
         atr14: tech.atr14,
+        watchTrigger,
         rationale: (() => {
-          // Show ALL contributors (positive AND negative) so the displayed
-          // components reconcile to the composite. Prior code sliced to
-          // the first three, which dropped negative adjustments like
-          // "MTF conflicting -5" and produced explanations that couldn't
-          // be summed back to the score. If the sum of visible contributors
-          // doesn't match the clamped score (score was capped at 0 or 100),
-          // append an "[clamped]" marker so the operator sees why math
-          // won't reconcile exactly.
-          const rawSum = contributors.reduce((s, c) => {
-            const m = c.match(/([+\-]\d+(?:\.\d+)?)/);
-            return s + (m ? Number(m[1]) : 0);
-          }, 0);
-          const clampedNote = Math.abs(rawSum - score) > 0.5 ? ` [clamped: raw ${rawSum >= 0 ? "+" : ""}${rawSum}, capped at ${score}]` : "";
+          // Show ALL contributors (positive AND negative) so the operator
+          // can trace how we got to the composite. rawSum here comes from
+          // the numeric-delta array — not a regex over the display text —
+          // so the "[clamped: …]" marker only fires when the sum truly
+          // deviates from the reported score (real clamp at 0 or 100),
+          // not when the display string embeds a stray percentage.
+          const clampedNote = Math.abs(rawSum - score) > 0.5
+            ? ` [clamped: raw ${rawSum >= 0 ? "+" : ""}${Math.round(rawSum)}, capped at ${score}]`
+            : "";
           return `Composite ${score}: ${contributors.join(" · ")}${clampedNote}`;
         })(),
       });
@@ -478,12 +565,13 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   // that used to fire hundreds of times per tick once the universe
   // opened up to 500+ names. Set STOCKS_PICK_ENGINE_VERBOSE=1 to see
   // per-ticker reasons back in the log.
-  const skipTotal = skipCounts.techFail + skipCounts.belowMinScore + skipCounts.bannedSetup + skipCounts.themeGate;
+  const skipTotal = skipCounts.techFail + skipCounts.belowMinScore + skipCounts.bannedSetup + skipCounts.themeGate + (skipCounts.specialSituation || 0);
   const skipParts = [
     `tech-fail=${skipCounts.techFail}`,
     `below-minScore(${minScore})=${skipCounts.belowMinScore}`,
     `banned-setup=${skipCounts.bannedSetup}`,
     `SPEC-theme-gate=${skipCounts.themeGate}`,
+    `special-situation=${skipCounts.specialSituation || 0}`,
   ].join(" · ");
   const sampleParts = [];
   if (skipCounts.bannedSetup > 0 && bannedSetupTickers.length) {

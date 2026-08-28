@@ -1132,6 +1132,18 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
     }
   }
 
+  // ─── Special-situation BUY gate (final defense in depth).
+  // The pick engine's preflight already drops M&A targets from
+  // candidacy, but rec producers that bypass the pick engine (AI
+  // narrative, on-demand advice) can still generate a BUY on an
+  // active target. This is the final guard.
+  try {
+    const ssBlockers = await auditNoBuyOnActiveSpecialSituation(acceptedRecs);
+    for (const b of ssBlockers) blockers.push(b);
+  } catch (e) {
+    console.warn("[audit] special-situation guard threw:", e?.message);
+  }
+
   const elapsedMs = Date.now() - t0;
   return {
     ok: blockers.length === 0,
@@ -1146,6 +1158,169 @@ export async function auditBriefingBeforeSend({ email, md, acceptedRecs = [], re
       warningsCount: warnings.length,
     },
   };
+}
+
+// ────────────────────────────────────────────────────────────────
+// Per-pick reconciliation audit (§4 Daily Picks pre-render).
+//
+// This is a per-pick fail — a single bad pick is stripped from the
+// picks block, not the whole briefing. Runs before the pick line is
+// rendered so a mismatched composite never reaches the operator.
+//
+// Checks:
+//   pick-composite-reconciliation-mismatch
+//     Sum of pick.scoreContributions[].delta must equal pick.scoreRawSum
+//     within 0.5 pts, and pick.deterministicScore must equal
+//     clamp(0..100, round(scoreRawSum)) exactly. Any drift means either
+//     a duplicate contribution or a hidden adjustment slipped in.
+//   pick-composite-duplicate-contribution
+//     Two contributions with the same label (e.g. "pocket pivot" from
+//     the volume flag AND "Pocket pivot (75)" from the setup detector
+//     if the dedup fails) fires here.
+//   pick-composite-nan-infinity
+//     Any non-finite numeric leaked into the pick record.
+//   pick-composite-float-artifact
+//     Any string ending up in the pick (rationale, contributor list)
+//     that shows a floating-point garbage tail like ".999999999" —
+//     signals math done in float space that should have been rounded.
+//
+// The renderer calls this and either drops the pick or annotates it
+// with the audit failure — see stocksDailyBriefing.js § renderDailyPicksDeterministic.
+export function auditPickReconciliation(p) {
+  const issues = [];
+  if (!p) return { ok: false, issues: [{ code: "pick-null", detail: "no pick" }] };
+
+  // Special-situation picks are unscored by design (deterministicScore null).
+  // Skip the composite reconciliation for them — the situation block has
+  // its own provenance-based audit.
+  if (p.specialSituation && p.specialSituation.active) {
+    // Situation-side sanity: an active situation must have a kind AND
+    // a status — anything else is a corrupt row.
+    if (!p.specialSituation.kind || !p.specialSituation.status) {
+      issues.push({
+        code: "pick-special-situation-malformed",
+        detail: `active situation on ${p.ticker} missing kind/status — refusing to render`,
+      });
+    }
+    return { ok: issues.length === 0, issues };
+  }
+
+  const score = p.deterministicScore;
+  const contributions = Array.isArray(p.scoreContributions) ? p.scoreContributions : null;
+  const rawSum = p.scoreRawSum;
+
+  if (!Number.isFinite(score)) {
+    issues.push({ code: "pick-composite-nan-infinity", detail: `${p.ticker}: deterministicScore=${score}` });
+  }
+  if (contributions == null) {
+    // Old-shape pick without the numeric-delta array — the reconciliation
+    // audit can't run. Refuse to render so a stale caller path can't
+    // slip a hidden-adjustment pick through under the guise of the
+    // audit being unavailable.
+    issues.push({
+      code: "pick-composite-audit-unavailable",
+      detail: `${p.ticker}: scoreContributions missing — pick engine must emit numeric-delta array`,
+    });
+    return { ok: false, issues };
+  }
+
+  // Sum the contribution deltas; must match the recorded rawSum.
+  let sum = 0;
+  for (const c of contributions) {
+    if (!Number.isFinite(c?.delta)) {
+      issues.push({ code: "pick-composite-nan-infinity", detail: `${p.ticker}: contribution "${c?.label}" has non-finite delta ${c?.delta}` });
+    } else {
+      sum += c.delta;
+    }
+  }
+  if (Number.isFinite(rawSum) && Math.abs(sum - rawSum) > 0.5) {
+    issues.push({
+      code: "pick-composite-reconciliation-mismatch",
+      detail: `${p.ticker}: contributions sum to ${sum} but rawSum recorded ${rawSum}`,
+    });
+  }
+  // Displayed composite must equal clamp(round(rawSum)).
+  const expected = Math.max(0, Math.min(100, Math.round(Number.isFinite(rawSum) ? rawSum : sum)));
+  if (Number.isFinite(score) && score !== expected) {
+    issues.push({
+      code: "pick-composite-reconciliation-mismatch",
+      detail: `${p.ticker}: displayed composite ${score} != clamp(round(rawSum ${rawSum})) = ${expected} — hidden adjustment or arithmetic bug`,
+    });
+  }
+  // Duplicate contribution labels (accidental double-count).
+  const seen = new Set();
+  for (const c of contributions) {
+    const key = String(c?.label || "").toLowerCase().replace(/\s*\(\d+\)\s*$/, "").trim();
+    if (!key) continue;
+    if (seen.has(key)) {
+      issues.push({
+        code: "pick-composite-duplicate-contribution",
+        detail: `${p.ticker}: label "${c.label}" appears more than once — double-count`,
+      });
+    }
+    seen.add(key);
+  }
+  // Float artifact scan — no operator-facing string should show more
+  // than 4 decimals; anything longer is a leak from unrounded
+  // JS float arithmetic ("61.099999999999994").
+  const textFields = [];
+  if (typeof p.rationale === "string") textFields.push(p.rationale);
+  if (Array.isArray(p.scoreContributors)) textFields.push(...p.scoreContributors);
+  const floatRe = /\d+\.\d{5,}/;
+  for (const t of textFields) {
+    if (floatRe.test(t)) {
+      const m = t.match(floatRe);
+      issues.push({
+        code: "pick-composite-float-artifact",
+        detail: `${p.ticker}: unrounded float artifact in operator-facing text: "${m[0]}"`,
+      });
+      break;
+    }
+  }
+  return { ok: issues.length === 0, issues };
+}
+
+// Convenience — runs the pick audit and returns a briefing-blocker
+// shaped record whenever a pick fails. Caller (renderer) can decide
+// to either strip the pick or push the blocker to the top-level audit.
+export function reconciliationBlockerForPick(p) {
+  const r = auditPickReconciliation(p);
+  if (r.ok) return null;
+  return {
+    check: "pick-composite-reconciliation-mismatch",
+    reason: `${p?.ticker || "?"} pick audit failed`,
+    detail: r.issues.map(i => `[${i.code}] ${i.detail}`).join(" · "),
+  };
+}
+
+// Special-situation BUY guard. If any accepted rec is a BUY / ADD on a
+// ticker with an active StocksSpecialSituation, block. Runs from
+// auditBriefingBeforeSend — the pick engine's preflight already stops
+// most of these, but a rec producer that bypasses the pick engine
+// (e.g. AI-generated) can still slip an M&A target through.
+export async function auditNoBuyOnActiveSpecialSituation(acceptedRecs = []) {
+  const blockers = [];
+  const BUY_ACTIONS = new Set(["BUY", "ADD"]);
+  const buyRecs = (acceptedRecs || []).filter(r => BUY_ACTIONS.has(String(r?.action || "").toUpperCase()));
+  if (buyRecs.length === 0) return blockers;
+  try {
+    const { getSpecialSituationForTicker } = await import("./stocksSpecialSituations.js");
+    for (const rec of buyRecs) {
+      try {
+        const sit = await getSpecialSituationForTicker(rec.ticker);
+        if (sit && sit.active) {
+          blockers.push({
+            check: "special-situation-buy",
+            reason: `${rec.action} ${rec.ticker} — ticker is subject to active ${sit.kind}/${sit.status}`,
+            detail: `${sit.acquirer ? `Acquirer: ${sit.acquirer}. ` : ""}Definitive corporate agreements price the security; ordinary technical setups do not apply. Regenerate the rec as event-driven analysis or drop it.`,
+          });
+        }
+      } catch { /* ignore per-rec lookup failure */ }
+    }
+  } catch (e) {
+    console.warn("[audit] special-situation gate failed to load:", e?.message);
+  }
+  return blockers;
 }
 
 // Compact formatter for the failure email + Mongo error field. Keeps
