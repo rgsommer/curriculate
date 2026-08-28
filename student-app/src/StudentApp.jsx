@@ -3807,7 +3807,11 @@ function StudentApp() {
         position: "relative",
         zIndex: 1,
         minHeight: "100vh",
-        padding: 16,
+        // Inset content below the status bar / above the nav bar. On Android
+        // edge-to-edge (targetSdk 35+) the WebView draws under the status bar,
+        // so without this the header ran under the clock. env() is 0 where the
+        // native shell already insets (iOS contentInset), so this is a no-op there.
+        padding: "calc(16px + env(safe-area-inset-top, 0px)) 16px calc(16px + env(safe-area-inset-bottom, 0px)) 16px",
         display: "flex",
         flexDirection: "column",
         alignItems: "stretch",
