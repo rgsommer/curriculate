@@ -558,9 +558,9 @@ function Contact() {
         gridTemplateColumns: "1fr 1.2fr", gap: 48, alignItems: "start" }} className="tba-hero-grid">
         <div>
           <Eyebrow>Get in touch</Eyebrow>
-          <h2 style={{ ...h2, fontSize: 36 }}>Ready to take your business finances to the next level?</h2>
+          <h2 style={{ ...h2, fontSize: 36 }}>Hand us the paperwork. Get your time back.</h2>
           <p style={{ ...lead, marginBottom: 28 }}>
-            Contact us today for a consultation. We'll respond within one business day.
+            Tell us what you need and we'll take it from here — book a consultation and we'll respond within one business day.
           </p>
 
           <div style={{ display: "grid", gap: 20, marginTop: 24 }}>
