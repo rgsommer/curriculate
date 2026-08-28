@@ -25,6 +25,7 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 // Field Day backend module (ESM router)
 import fielddayRouter from "./fieldday/index.js";
 import gradingFeedbackRouter from "./routes/gradingFeedback.js";
+import pulseBetaRouter, { isActiveBetaCode } from "./routes/pulseBeta.js";
 import cardsRouter from "./routes/cards.js";
 import avgsRouter from "./routes/avgs.js";
 
@@ -160,6 +161,7 @@ import { scheduleEightKPoll } from "./jobs/stocksEightKPoll.js";
 import { scheduleDailyPickCron } from "./jobs/stocksDailyPick.js";
 import { scheduleInsiderSync } from "./jobs/stocksInsiderSync.js";
 import { scheduleCron as schedule13FSync } from "./jobs/stocks13FSync.js";
+import { scheduleSpecialSituationsPoll } from "./jobs/stocksSpecialSituationsPoll.js";
 // Substitute-teacher staffing app (/subs)
 import subsAuthRouter from "./routes/subsAuth.js";
 import subsAdminRouter from "./routes/subsAdmin.js";
@@ -678,6 +680,8 @@ app.use("/fieldday/api", fielddayRouter);
 
 // Pulse Grading bug-reports + suggestions (mirrors the Field Day pattern)
 app.use("/api/grading", gradingFeedbackRouter);
+// Free 1-year beta signup + activation + email lookup for Pulse Grading.
+app.use("/pulse/beta", pulseBetaRouter);
 
 // Trading-card evaluator — public /cards page on curriculate.net
 app.use("/cards", cardsRouter);
@@ -15085,9 +15089,20 @@ function buildRubricInstructions({
 
   // Freemium gate check — called at the top of grading endpoints
   async function checkFreemiumGate(req, res) {
+    // A valid Pulse beta code bypasses every gate — that's the entire point of
+    // the beta program. We still check it even before the "freemium active"
+    // short-circuit so we can track beta usage before the paid tier kicks in.
+    const meta = req.body?.meta || {};
+    const betaCode = meta.betaCode || null;
+    if (betaCode) {
+      const beta = await isActiveBetaCode(betaCode).catch(() => ({ ok: false }));
+      if (beta.ok) return true;
+      // A stale/expired code shouldn't block the request when freemium is off,
+      // but we do want to surface it clearly when freemium is on. Fall through.
+    }
+
     if (!isFreemiumActive()) return true; // not active yet, allow everything
 
-    const meta = req.body?.meta || {};
     const sessionId = meta.sessionId || null;
     const ip = clientIpFrom(req);
 
@@ -19929,6 +19944,7 @@ server.listen(PORT, () => {
   scheduleDiscoveryOutcomeTracker();
   scheduleDailyPortfolioSnapshot();
   scheduleExternalNominationsSync();
+  scheduleSpecialSituationsPoll();
   scheduleStocksAlerts();
   scheduleEightKPoll();
   scheduleDailyPickCron();

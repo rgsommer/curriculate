@@ -232,6 +232,271 @@ function VoiceChip({ name, idx }: { name: string; idx: number }) {
   );
 }
 
+/* ------------------------------------------------------------------ */
+/*  BETA SIGNUP                                                        */
+/* ------------------------------------------------------------------ */
+
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || "";
+
+function BetaSignup() {
+  const [email, setEmail] = React.useState("");
+  const [name, setName] = React.useState("");
+  const [school, setSchool] = React.useState("");
+  const [role, setRole] = React.useState("teacher");
+  const [subjectArea, setSubjectArea] = React.useState("");
+  const [gradeBand, setGradeBand] = React.useState("6-8");
+  const [whyInterested, setWhyInterested] = React.useState("");
+  const [commitAck, setCommitAck] = React.useState(false);
+  const [status, setStatus] = React.useState<"idle" | "loading" | "done" | "error">("idle");
+  const [error, setError] = React.useState("");
+  const [result, setResult] = React.useState<
+    null | { betaCode: string; expiresAt: string; alreadyEnrolled?: boolean; name?: string | null }
+  >(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !commitAck) return;
+    setStatus("loading");
+    setError("");
+    try {
+      const res = await fetch(`${BACKEND}/pulse/beta/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email, name, school, role, subjectArea, gradeBand, whyInterested,
+          source: "pulse-landing",
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data?.error || `Signup failed (${res.status}).`);
+        setStatus("error");
+        return;
+      }
+      setResult({
+        betaCode: data.betaCode,
+        expiresAt: data.expiresAt,
+        alreadyEnrolled: data.alreadyEnrolled,
+        name: data.name,
+      });
+      // Cache locally so /grading picks it up immediately without a fresh entry.
+      try {
+        localStorage.setItem("pulse_beta_code", data.betaCode);
+        localStorage.setItem("pulse_beta_expires", data.expiresAt);
+        if (data.name) localStorage.setItem("pulse_beta_name", data.name);
+      } catch {}
+      setStatus("done");
+    } catch (err: any) {
+      setError(err?.message || "Signup failed. Please try again.");
+      setStatus("error");
+    }
+  }
+
+  if (status === "done" && result) {
+    const expDate = new Date(result.expiresAt);
+    return (
+      <div className="rounded-3xl border-2 border-emerald-300 bg-white shadow-2xl p-8">
+        <div className="flex items-center gap-3 mb-4">
+          <CheckCircle className="w-10 h-10 text-emerald-500" />
+          <div>
+            <h3 className="text-2xl font-black text-gray-900">
+              {result.alreadyEnrolled ? "You're already in — here's your code." : "You're in! 🎉"}
+            </h3>
+            <p className="text-sm text-gray-600 font-medium">
+              Free Plus access through {expDate.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}.
+            </p>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-gray-200 bg-gray-50 p-5 mb-4">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-2">
+            Your beta code
+          </div>
+          <div className="font-mono text-2xl font-black text-gray-900 select-all">
+            {result.betaCode}
+          </div>
+        </div>
+
+        <div className="text-sm text-gray-700 font-medium space-y-2 mb-6">
+          <p>
+            <b>What just happened:</b> we saved your code in this browser, so you're
+            already unlocked. Open the grading tool and start using every feature
+            (video, batch, all 13 voices) with no monthly limit.
+          </p>
+          <p>
+            <b>Moving to another device?</b> Head to <a href="/grading" className="text-blue-600 underline">/grading</a>,
+            open the menu, and paste this code into the "Have a beta code?" box.
+            Or use your email to look it up.
+          </p>
+          <p>
+            <b>What we ask in return:</b> use Pulse at least once a month, and
+            reply to the occasional email from us with what worked and what
+            didn't. That's it.
+          </p>
+        </div>
+
+        <Link
+          href="/grading"
+          className="inline-flex items-center justify-center gap-2 rounded-2xl bg-blue-600 hover:bg-blue-700 px-6 py-3 text-white text-base font-black shadow-xl"
+        >
+          Start Grading with Beta Access
+          <ArrowRight className="w-5 h-5" />
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={submit} className="rounded-3xl border-2 border-emerald-300 bg-white shadow-2xl p-8">
+      <div className="mb-6">
+        <div className="inline-flex items-center gap-2 rounded-full bg-emerald-100 px-3 py-1 text-xs font-black text-emerald-800 uppercase tracking-wide mb-3">
+          <Sparkles className="w-3.5 h-3.5" />
+          Free 1-Year Beta
+        </div>
+        <h3 className="text-2xl sm:text-3xl font-black text-gray-900 leading-tight mb-2">
+          Get a free year of everything — before the paid tier launches.
+        </h3>
+        <p className="text-gray-700 font-medium">
+          Teachers who commit to trying Pulse at least once a month and giving
+          honest feedback get full Plus-tier access, on us, for a full year.
+          That's every feature (video, audio, batch, all 13 voices), no limits.
+        </p>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            Email <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@yourschool.org"
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            Your name
+          </label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Alex Chen"
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            School (optional)
+          </label>
+          <input
+            type="text"
+            value={school}
+            onChange={(e) => setSchool(e.target.value)}
+            placeholder="Roosevelt Middle School"
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            Role
+          </label>
+          <select
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none"
+          >
+            <option value="teacher">Classroom teacher</option>
+            <option value="specialist">Specialist (music, drama, art, PE, coding)</option>
+            <option value="admin">Principal / admin</option>
+            <option value="tutor">Tutor / private teacher</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            Grade band
+          </label>
+          <select
+            value={gradeBand}
+            onChange={(e) => setGradeBand(e.target.value)}
+            className="w-full rounded-xl border border-gray-300 bg-white px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none"
+          >
+            <option value="K-2">K–2</option>
+            <option value="3-5">3–5</option>
+            <option value="6-8">6–8</option>
+            <option value="9-10">9–10</option>
+            <option value="11+">11–12</option>
+            <option value="mixed">Mixed</option>
+          </select>
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            Subject(s) you'd grade
+          </label>
+          <input
+            type="text"
+            value={subjectArea}
+            onChange={(e) => setSubjectArea(e.target.value)}
+            placeholder="e.g. English, band, chemistry"
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none"
+          />
+        </div>
+        <div className="sm:col-span-2">
+          <label className="block text-xs font-bold text-gray-700 uppercase tracking-wide mb-1">
+            What made you interested? (a sentence is fine)
+          </label>
+          <textarea
+            value={whyInterested}
+            onChange={(e) => setWhyInterested(e.target.value)}
+            placeholder="Grading Sunday nights, want to try AI grading for performances, curious about the batch mode…"
+            rows={3}
+            className="w-full rounded-xl border border-gray-300 px-4 py-3 text-base font-medium focus:border-blue-500 focus:outline-none resize-y"
+          />
+        </div>
+      </div>
+
+      <label className="flex items-start gap-3 mb-6 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={commitAck}
+          onChange={(e) => setCommitAck(e.target.checked)}
+          className="mt-1 h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+        />
+        <span className="text-sm text-gray-700 font-medium">
+          I'll try Pulse at least <b>once a month</b> during the year and reply
+          to occasional feedback emails. If I stop using it, I'm fine with the
+          beta being revoked.
+        </span>
+      </label>
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+          {error}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={status === "loading" || !email || !commitAck}
+        className="inline-flex items-center justify-center gap-2 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed px-8 py-4 text-white text-lg font-black shadow-xl w-full sm:w-auto"
+      >
+        {status === "loading" ? "Enrolling…" : "Get My Free Year of Plus"}
+        {status !== "loading" && <ArrowRight className="w-5 h-5" />}
+      </button>
+
+      <p className="text-xs text-gray-500 font-medium mt-4">
+        Your info is used only for the beta program — no marketing lists, no
+        third parties. You can leave any time.
+      </p>
+    </form>
+  );
+}
+
 function FAQItem({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = React.useState(false);
 
@@ -564,10 +829,10 @@ export default function PulseLanding() {
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition" />
                 </Link>
                 <a
-                  href="#how-it-works"
-                  className="inline-flex items-center justify-center gap-2 bg-white hover:bg-gray-50 text-gray-900 text-lg font-black py-4 px-8 rounded-2xl shadow-xl border border-gray-200"
+                  href="#beta"
+                  className="inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-lg font-black py-4 px-8 rounded-2xl shadow-xl"
                 >
-                  See How it Works
+                  Join the Free 1-Year Beta
                 </a>
               </div>
 
@@ -633,6 +898,130 @@ export default function PulseLanding() {
         </div>
       </section>
 
+      {/* -------- WHO IT'S FOR (WIIFM per visitor) -------- */}
+      <section className="px-6 py-16 bg-gradient-to-b from-white to-blue-50/40">
+        <div className="mx-auto max-w-6xl">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl sm:text-4xl font-black text-gray-900 mb-3">
+              What's in it for you?
+            </h2>
+            <p className="text-lg text-gray-700 font-medium max-w-2xl mx-auto">
+              Depends who you are. Here's the short version.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Classroom teacher */}
+            <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center">
+                  <GraduationCap className="w-6 h-6 text-blue-600" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-blue-600 uppercase tracking-wide">If you're a</div>
+                  <h3 className="text-xl font-black text-gray-900">Classroom teacher</h3>
+                </div>
+              </div>
+              <ul className="space-y-3 text-gray-800 font-medium">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Get your evenings back.</b> A stack of 30 essays goes from 3 hours to 15 minutes. Feedback is longer than what you'd write by hand and matched to your rubric.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Every kid gets real feedback.</b> Not just a grade — actual next-steps in a voice you choose, sized to the student's level.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Parents stop chasing you.</b> Every grade lands in the /progress dashboard automatically — parents see it before they ask.</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Specialist */}
+            <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-violet-50 border border-violet-200 flex items-center justify-center">
+                  <Star className="w-6 h-6 text-violet-600" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-violet-600 uppercase tracking-wide">If you're a</div>
+                  <h3 className="text-xl font-black text-gray-900">Music, drama, or performance specialist</h3>
+                </div>
+              </div>
+              <ul className="space-y-3 text-gray-800 font-medium">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Grade what other tools can't.</b> Upload a video or audio of a solo, ensemble, or skit — Pulse writes real feedback on tone, timing, delivery, character.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Ensemble recitals split up.</b> Enter every performer and their instrument (or role, for skits) — Pulse grades each one individually plus the group.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Roster-linked results.</b> Performers can come from different homerooms — the results land on each kid's /progress page automatically.</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Principal / admin */}
+            <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center">
+                  <Shield className="w-6 h-6 text-amber-600" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wide">If you're a</div>
+                  <h3 className="text-xl font-black text-gray-900">Principal or department head</h3>
+                </div>
+              </div>
+              <ul className="space-y-3 text-gray-800 font-medium">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Teacher retention.</b> Grading load is the #1 quiet reason strong teachers leave. Pulse cuts it enough to move the needle.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Consistent feedback across sections.</b> Same rubric, same voice — the difference between "Ms. A grades hard, Mr. B grades soft" disappears.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Real parent communication.</b> Every family gets a live progress dashboard for every kid. Report-card season stops being a fire drill.</span>
+                </li>
+              </ul>
+            </div>
+
+            {/* Parent / student */}
+            <div className="rounded-3xl bg-white border border-gray-200 shadow-xl p-8">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-emerald-600" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-wide">If you're a</div>
+                  <h3 className="text-xl font-black text-gray-900">Parent or student</h3>
+                </div>
+              </div>
+              <ul className="space-y-3 text-gray-800 font-medium">
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>See every grade the moment it's marked.</b> Not at report-card season. Not after emailing three times. As soon as the teacher hits submit.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Actual feedback, not just a score.</b> Strengths, next steps, and the teacher's rubric — same page, in language your kid can act on.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <span><b>Free. No login for the teacher. No sign-up drama.</b> If the teacher graded it, you can see it — /progress + a student ID is all you need.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* -------- VIDEO DEMO -------- */}
       <section className="px-6 py-16">
         <div className="mx-auto max-w-4xl text-center">
@@ -665,6 +1054,13 @@ export default function PulseLanding() {
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition" />
             </Link>
           </div>
+        </div>
+      </section>
+
+      {/* -------- FREE 1-YEAR BETA -------- */}
+      <section id="beta" className="px-6 py-16 bg-gradient-to-br from-emerald-50 via-white to-blue-50">
+        <div className="mx-auto max-w-3xl">
+          <BetaSignup />
         </div>
       </section>
 

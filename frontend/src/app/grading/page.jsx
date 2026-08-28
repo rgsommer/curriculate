@@ -1245,6 +1245,51 @@ export default function GradingPage() {
     const [mounted, setMounted] = useState(false);
     useEffect(() => { setMounted(true); }, []);
 
+    // Pulse Beta enrollment status — read from localStorage. When active, we
+    // show a small green pill in the header and the freemium quota is bypassed
+    // (the beta code rides along in every /grading meta payload).
+    const [betaInfo, setBetaInfo] = useState(null); // { code, expiresAt, name } | null
+    useEffect(() => {
+      try {
+        const code = localStorage.getItem("pulse_beta_code");
+        const exp = localStorage.getItem("pulse_beta_expires");
+        if (code && (!exp || new Date(exp) > new Date())) {
+          setBetaInfo({
+            code,
+            expiresAt: exp || null,
+            name: localStorage.getItem("pulse_beta_name") || null,
+          });
+        }
+      } catch {}
+    }, []);
+    const activateBetaCode = async () => {
+      const raw = typeof window !== "undefined"
+        ? window.prompt("Paste your Pulse beta code (format: PULSE-BETA-XXXXXX):")
+        : null;
+      const code = String(raw || "").trim().toUpperCase();
+      if (!code) return;
+      try {
+        const base = (process.env.NEXT_PUBLIC_BACKEND_URL || "").replace(/\/$/, "");
+        const res = await fetch(`${base}/pulse/beta/activate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ betaCode: code }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) {
+          alert(data?.error || "That beta code isn't valid.");
+          return;
+        }
+        localStorage.setItem("pulse_beta_code", data.betaCode);
+        if (data.expiresAt) localStorage.setItem("pulse_beta_expires", data.expiresAt);
+        if (data.name) localStorage.setItem("pulse_beta_name", data.name);
+        setBetaInfo({ code: data.betaCode, expiresAt: data.expiresAt, name: data.name });
+        alert(`Beta activated${data.name ? `, ${data.name}` : ""}! You have ${data.daysRemaining} days of free Plus access.`);
+      } catch {
+        alert("Couldn't reach the activation server. Please try again.");
+      }
+    };
+
     const [sessionItems, setSessionItems] = useState(() => {
       if (typeof window === "undefined") return [];
       return loadSession();
@@ -2667,6 +2712,17 @@ export default function GradingPage() {
             wantsRubricCapture: !manualRubric.length && !stickyRubric.length && inputMode === "photo",
             inputMode,
             subjectArea: subjectArea || undefined,
+            // Beta-code passthrough: if the teacher enrolled in the 1-year
+            // beta, this bypasses the freemium quota on the server.
+            betaCode: (() => {
+              try {
+                const c = localStorage.getItem("pulse_beta_code");
+                const exp = localStorage.getItem("pulse_beta_expires");
+                if (!c) return undefined;
+                if (exp && new Date(exp) <= new Date()) return undefined;
+                return c;
+              } catch { return undefined; }
+            })(),
           },
         };
 
@@ -3539,6 +3595,32 @@ export default function GradingPage() {
               style={{ height: 36, width: 36, borderRadius: "50%", objectFit: "cover" }}
             />
             <h1 style={styles.h1}>Pulse Grading</h1>
+            {betaInfo ? (
+              <span
+                title={`Beta code ${betaInfo.code}`}
+                style={{
+                  fontSize: 11, fontWeight: 800, color: "#065f46",
+                  border: "1px solid #a7f3d0", borderRadius: 999,
+                  padding: "3px 10px", background: "#d1fae5",
+                  whiteSpace: "nowrap", letterSpacing: 0.3, textTransform: "uppercase",
+                }}
+              >
+                ✓ Beta active{betaInfo.expiresAt ? ` · until ${new Date(betaInfo.expiresAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}` : ""}
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={activateBetaCode}
+                style={{
+                  fontSize: 12, fontWeight: 600, color: "#059669",
+                  border: "1px solid #a7f3d0", borderRadius: 12,
+                  padding: "3px 10px", background: "#ecfdf5",
+                  whiteSpace: "nowrap", cursor: "pointer",
+                }}
+              >
+                Have a beta code?
+              </button>
+            )}
             {!tipsHidden && (
               <a
                 href="/pulse"
