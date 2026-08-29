@@ -4,6 +4,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/campfire/AuthProvider";
+import RateNudge from "@/app/campfirelive/RateNudge";
 import {
   useEngagement,
   useRealtimeEngagement,
@@ -5915,6 +5916,9 @@ export default function EngagementDetailPage() {
           <span>{groupInfo?.name ?? "Back to group"}</span>
         </Link>
       )}
+
+      {/* Cold-start ratings help: after a reveal (a genuine high point), gently ask. */}
+      <RateNudge active={engagement?.status === "revealed" && !isGuest} />
 
       {/* ── PAUSED: host froze it to make changes — nothing goes out until resumed ── */}
       {engagement.paused && isCreator && (
