@@ -138,9 +138,13 @@ export default function DashboardPage() {
     config: { occasion?: string } | null;
     deadline: string | null;
     birth_year: number | null;
+    total_expected: number | null;
     revealedAt?: string | null;
   };
   const [todo, setTodo] = useState<TodoEng[]>([]);
+  // True response counts for the home rows ("X of Y"), keyed by engagement id. Fetched
+  // via a SECURITY DEFINER RPC so the sealed-RLS policy doesn't under-report pre-reveal.
+  const [counts, setCounts] = useState<Record<string, number>>({});
 
   // One-time orientation tip for first-timers ("what do I do once I'm in?").
   // Read in an effect (not the initializer) so server and client first-render match.
@@ -174,7 +178,7 @@ export default function DashboardPage() {
       const { data: engs } = await supabase
         .from("engagements")
         .select(
-          "id, group_id, title, type, config, deadline, birth_year, launched_at, scheduled_open_at, paused, excluded_user_ids, created_at"
+          "id, group_id, title, type, config, deadline, birth_year, total_expected, launched_at, scheduled_open_at, paused, excluded_user_ids, created_at"
         )
         .in("group_id", ids)
         .eq("status", "active");
@@ -219,6 +223,7 @@ export default function DashboardPage() {
             config: (e.config as { occasion?: string } | null) ?? null,
             deadline: (e.deadline as string | null) ?? null,
             birth_year: (e.birth_year as number | null) ?? null,
+            total_expected: (e.total_expected as number | null) ?? null,
           }))
       );
     })();
@@ -268,7 +273,7 @@ export default function DashboardPage() {
     let cancelled = false;
     (async () => {
       const cols =
-        "id, group_id, title, type, config, deadline, birth_year, excluded_user_ids, revealed_at";
+        "id, group_id, title, type, config, deadline, birth_year, total_expected, excluded_user_ids, revealed_at";
       const sel = (c: string) =>
         supabase
           .from("engagements")
@@ -296,6 +301,7 @@ export default function DashboardPage() {
           config: (e.config as { occasion?: string } | null) ?? null,
           deadline: (e.deadline as string | null) ?? null,
           birth_year: (e.birth_year as number | null) ?? null,
+          total_expected: (e.total_expected as number | null) ?? null,
           revealedAt:
             (e as { revealed_at?: string | null }).revealed_at ?? null,
         }));
@@ -390,6 +396,32 @@ export default function DashboardPage() {
         );
     }
   };
+
+  // Fetch true response counts for whatever's shown on the home rows. Keyed on a stable
+  // id-string so it only refires when the set of engagements changes, not every render.
+  const countKey = [...todo.map((e) => e.id), ...newReveals.map((e) => e.id)]
+    .sort()
+    .join(",");
+  useEffect(() => {
+    const ids = countKey ? Array.from(new Set(countKey.split(","))) : [];
+    if (ids.length === 0) {
+      setCounts({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.rpc("engagement_response_counts", { _eids: ids });
+      if (cancelled) return;
+      const m: Record<string, number> = {};
+      for (const row of (data as { engagement_id: string; n: number }[]) ?? [])
+        m[row.engagement_id] = row.n;
+      setCounts(m);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [countKey]);
 
   // Host name for groups you JOINED — keyed by GROUP id, preferring the host's
   // per-group display name ("Dad" in Family) over their global profile name.
@@ -598,6 +630,11 @@ export default function DashboardPage() {
                       {meta?.label ?? "Activity"}
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
+                    {typeof e.total_expected === "number" && e.total_expected > 0 && (
+                      <div className="mt-0.5 text-[11px] font-medium text-orange-600">
+                        {counts[e.id] ?? 0} of {e.total_expected} responded
+                      </div>
+                    )}
                   </div>
                   {/* The whole row is the tap target — just a subtle chevron so the
                       title keeps the full width on a phone. */}
@@ -644,6 +681,11 @@ export default function DashboardPage() {
                       {meta?.label ?? "Activity"}
                       {g ? ` · ${g.avatar_emoji} ${g.name}` : ""}
                     </div>
+                    {typeof e.total_expected === "number" && e.total_expected > 0 && (
+                      <div className="mt-0.5 text-[11px] font-medium text-emerald-600">
+                        {counts[e.id] ?? e.total_expected} of {e.total_expected} responded
+                      </div>
+                    )}
                   </div>
                   <span className="flex-shrink-0 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-bold text-emerald-700">
                     See it
