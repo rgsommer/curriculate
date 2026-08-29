@@ -23,6 +23,7 @@ import {
   Mail,
   MessageCircle,
   Bell,
+  GraduationCap,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */

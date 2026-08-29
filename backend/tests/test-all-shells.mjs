@@ -11,6 +11,7 @@ import { TASK_TYPES, TASK_SHELLS } from "../../shared/taskTypes.js";
 import { normalizeTaskByType } from "../validators/taskValidators.js";
 import { sanitizeTaskShapeByType } from "../controllers/sanitizeTaskShape.js";
 import { validateAiTask } from "../controllers/sharedTasksetController.js";
+import { assessTaskPlayability } from "../../shared/taskPlayability.js";
 
 // ── Helper: build, fill, parse, validate ──
 function testShell(taskType, fillValues, shellOpts = {}) {
@@ -59,6 +60,18 @@ function testShell(taskType, fillValues, shellOpts = {}) {
   const result = validateAiTask(taskType, normalized);
   if (!result.ok) {
     throw new Error(`Validation: ${result.errors.join("; ")}`);
+  }
+
+  // ── Serve-time playability gate ──────────────────────────────────
+  // A task can pass generation validation (validateAiTask) yet still fail
+  // the RUNTIME gate that backend/socket/roomEngine.js#sendTaskToTeam runs
+  // on every task before it reaches a student. When that happens the task
+  // is silently SKIPPED mid-session — the exact "missing pieces / glitches"
+  // a paying teacher must never see. Asserting the gate here makes
+  // "generated ⇒ actually served" a hard, CI-enforced guarantee.
+  const play = assessTaskPlayability(normalized);
+  if (!play.playable) {
+    throw new Error(`[Serve-time gate] ${(play.issues || []).join("; ")}`);
   }
 
   return normalized;
@@ -428,6 +441,75 @@ const fillGenerators = {
       BRANCH_1: `${m.topic} Foundations`, BRANCH_2: `${m.topic} Applications`, BRANCH_3: `${m.topic} Connections`,
       ITEM_1: t[0], ITEM_2: t[1], ITEM_3: t[2], ITEM_4: t[3], ITEM_5: t[4], ITEM_6: t[5],
     }, opts: { itemCount: 6, branchCount: 3 } };
+  },
+
+  [TASK_TYPES.WHAT_AM_I]: (si) => {
+    const t = pickTerms(si, 1); const m = meta(si);
+    const ans = String(t[0]);
+    return { fill: {
+      TITLE: `What Am I? — ${m.topic}`, PROMPT: "Read the clues one at a time and guess the hidden term.",
+      ANSWER: ans, ACCEPTABLE_ANSWERS: `${ans}, ${ans}s`, DIFFICULTY: "medium",
+      // Clues must NOT contain the answer verbatim — they require inference.
+      CLUE_1: "I can be identified by my key features once you think it through.",
+      CLUE_2: `You would first meet me in ${m.subject} class.`,
+      CLUE_3: "I play an important role in how this whole topic fits together.",
+      CLUE_4: `My name begins with the letter "${ans.charAt(0).toUpperCase()}".`,
+    }, opts: {} };
+  },
+
+  [TASK_TYPES.UPVOTE]: (si) => {
+    const m = meta(si);
+    return { fill: {
+      TITLE: `Class Vote: ${m.topic}`, PROMPT: "Read the statement, vote, and be ready to defend your side.",
+      PROPOSITION: `Understanding ${m.topic} is the most useful thing we learn in ${m.subject}.`,
+      SUBJECT: m.subject, UNIT_NAME: m.topic, GRADE_LEVEL: String(m.grade), WORLDVIEW: "secular",
+    }, opts: {} };
+  },
+
+  [TASK_TYPES.TEACH_BACK]: (si) => {
+    const t = pickTerms(si, 4); const m = meta(si);
+    return { fill: {
+      TITLE: `Teach It Back: ${m.topic}`, PROMPT: "Explain each idea simply, as if teaching a younger student.",
+      TARGET_AGE: "a 2nd grader", RUBRIC: "Clear, accurate, and uses a simple example.",
+      CONCEPT_1: t[0], CONCEPT_2: t[1], CONCEPT_3: t[2], CONCEPT_4: t[3],
+    }, opts: {} };
+  },
+
+  [TASK_TYPES.STORYTELLING]: (si) => {
+    const t = pickTerms(si, 6); const m = meta(si);
+    return { fill: {
+      TITLE: `Story Build: ${m.topic}`, PROMPT: "Write a short story that correctly uses every vocabulary word.",
+      SETTING: `a ${m.subject} classroom`, TOPIC_CONTEXT: m.topic, GENRE: "adventure",
+      SHOW_NATIONALITY: "false",
+      VOCAB_1: t[0], VOCAB_2: t[1], VOCAB_3: t[2], VOCAB_4: t[3], VOCAB_5: t[4], VOCAB_6: t[5],
+    }, opts: {} };
+  },
+
+  [TASK_TYPES.TRUTH_OR_DARE]: (si) => {
+    const t = pickTerms(si, 4); const m = meta(si);
+    // Tiers must escalate across seeds (≥2 distinct) — sprout → stem → big.
+    const TIERS = ["sprout", "stem", "stem", "big"];
+    const seed = (i, kind) => ({
+      [`SEED_${i}_TYPE`]: kind,
+      [`SEED_${i}_TIER`]: TIERS[i - 1],
+      [`SEED_${i}_CATEGORY`]: m.subject,
+      [`SEED_${i}_PROMPT`]: kind === "truth"
+        ? `Explain what "${t[i - 1]}" means in your own words.`
+        : `Act out or draw the idea of "${t[i - 1]}" for your team.`,
+      [`SEED_${i}_TEACHER_HINT`]: `Looking for a clear grasp of ${t[i - 1]}.`,
+      [`SEED_${i}_TIME_SECONDS`]: "60",
+      [`SEED_${i}_PHYS`]: "low",
+      [`SEED_${i}_SOCIAL`]: "low",
+      [`SEED_${i}_NOISE`]: "low",
+      [`SEED_${i}_ACCEPTABLE`]: t[i - 1],
+      [`SEED_${i}_JUDGE`]: "team",
+      [`SEED_${i}_REWARD`]: "small",
+    });
+    return { fill: {
+      TITLE: `Truth or Dare: ${m.topic}`, PROMPT: "Choose truth or dare, then complete the challenge.",
+      SUBJECT: m.subject, UNIT_NAME: m.topic, GRADE_LEVEL: String(m.grade),
+      ...seed(1, "truth"), ...seed(2, "dare"), ...seed(3, "truth"), ...seed(4, "dare"),
+    }, opts: {} };
   },
 };
 

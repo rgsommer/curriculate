@@ -2782,8 +2782,18 @@ export function normalizeTaskByType(taskType, rawTask) {
       // answer
       cfg.answer = asNonEmptyString(cfg.answer, "");
 
-      // acceptableAnswers — always lowercase array, dedupe
-      let accepted = Array.isArray(cfg.acceptableAnswers) ? cfg.acceptableAnswers : [];
+      // acceptableAnswers — always lowercase array, dedupe.
+      // Accept an array OR a comma/semicolon/pipe-separated string: the
+      // what-am-i shell template fills this field as a STRING, and normalize
+      // runs BEFORE the sanitizer's own split — so without splitting here a
+      // valid "a, b, c" answer list would collapse to just the canonical
+      // answer, fail the "≥2 acceptableAnswers" gate, and needlessly push a
+      // good task into the repair/replace ladder.
+      let accepted = Array.isArray(cfg.acceptableAnswers)
+        ? cfg.acceptableAnswers
+        : (typeof cfg.acceptableAnswers === "string"
+            ? cfg.acceptableAnswers.split(/[,;|]/)
+            : []);
       accepted = accepted
         .map((s) => (typeof s === "string" ? s.trim().toLowerCase() : ""))
         .filter(Boolean);
