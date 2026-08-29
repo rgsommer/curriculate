@@ -1773,8 +1773,8 @@ async function provisionDemoRoom(code) {
     room.startedAt = null;
     room.taskset = {
       _id: String(doc._id),
-      name: doc.tasksetName || "Curriculate Demo",
-      title: doc.tasksetName || "Curriculate Demo",
+      name: doc.tasksetName || "Demo Game",
+      title: doc.tasksetName || "Demo Game",
       subject: doc.subject || "General",
       gradeLevel: doc.gradeLevel || 5,
       source: "demo",

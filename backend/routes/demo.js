@@ -2547,8 +2547,8 @@ async function sendDemoResultsEmail(lead) {
   // Everyone else (practice, unknown source, stale data) sees the
   // neutral practice subject.
   const subject = isConference
-    ? `Your Curriculate Demo Results 🎯 + Free Month Offer`
-    : `Your Curriculate Practice Results — ${lead.totalPoints || 0} points!`;
+    ? `Your Demo Results 🎯 + Free Month Offer`
+    : `Your Practice Results — ${lead.totalPoints || 0} points!`;
 
   await sendSystemEmail({ to: lead.email, subject, html });
 
