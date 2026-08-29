@@ -495,13 +495,53 @@ export default function DashboardPage() {
         <h1 className="text-2xl font-extrabold text-slate-900">
           Hey {profile?.display_name ?? "there"} 👋
         </h1>
-        <p className="text-slate-500 mt-1">
-          {groups.length === 0
-            ? "Create your first group or join one with an invite code."
-            : todo.length > 0
-            ? `You have ${todo.length} thing${todo.length === 1 ? "" : "s"} to respond to 👇`
-            : `You're in ${groups.length} group${groups.length === 1 ? "" : "s"}.`}
-        </p>
+        {groups.length === 0 ? (
+          <p className="text-slate-500 mt-1">
+            Create your first group or join one with an invite code.
+          </p>
+        ) : todo.length === 0 && newReveals.length === 0 ? (
+          <p className="text-slate-500 mt-1">You&apos;re all caught up ✨</p>
+        ) : (
+          // At-a-glance summary — tap a tile to jump to that section below.
+          <div className="mt-3 flex gap-2.5">
+            {todo.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById("your-turn")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+                className="flex-1 rounded-2xl border border-red-100 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-red-300"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" />
+                  <span className="text-xl font-extrabold text-slate-900">{todo.length}</span>
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">to respond</span>
+              </button>
+            )}
+            {newReveals.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  document
+                    .getElementById("just-revealed")
+                    ?.scrollIntoView({ behavior: "smooth", block: "start" })
+                }
+                className="flex-1 rounded-2xl border border-emerald-100 bg-white px-3 py-2.5 text-left shadow-sm transition hover:border-emerald-300"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                  <span className="text-xl font-extrabold text-slate-900">
+                    {newReveals.length}
+                  </span>
+                </span>
+                <span className="mt-0.5 block text-xs text-slate-500">just revealed</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* First-time orientation — dismissible, shown once, only when you're
@@ -528,7 +568,7 @@ export default function DashboardPage() {
       {/* Your turn — the single most important thing on this page. Active
           engagements awaiting THIS user's response, each a one-tap deep link. */}
       {todo.length > 0 && (
-        <div className="mb-8 rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
+        <div id="your-turn" className="mb-8 scroll-mt-4 rounded-2xl border-2 border-orange-300 bg-gradient-to-br from-orange-50 to-rose-50 p-5 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <span className="text-xl">👉</span>
             <h2 className="text-base font-extrabold text-slate-900">
@@ -573,7 +613,7 @@ export default function DashboardPage() {
 
       {/* Revealed! — newly-unlocked results, one per person until they look. */}
       {newReveals.length > 0 && (
-        <div className="mb-8 rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 p-5 shadow-sm">
+        <div id="just-revealed" className="mb-8 scroll-mt-4 rounded-2xl border-2 border-emerald-300 bg-gradient-to-br from-emerald-50 to-teal-50 p-5 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <span className="text-xl">🎉</span>
             <h2 className="text-base font-extrabold text-slate-900">
@@ -879,57 +919,8 @@ export default function DashboardPage() {
                 {g.description && (
                   <p className="text-sm text-slate-500 line-clamp-2">{g.description}</p>
                 )}
-                {/* Host-only digest controls, flipped right from the card. Buttons
-                    (not checkboxes) so preventDefault stops the card navigation
-                    without cancelling a native toggle — the optimistic state then
-                    re-renders instantly. */}
-                {mine && (
-                  <div className="mt-3 space-y-1.5 border-t border-orange-100 pt-2.5">
-                    {(
-                      [
-                        {
-                          field: "notify_on_response" as const,
-                          on: g.notify_on_response !== false,
-                          emoji: "📬",
-                          label: "Member digest",
-                        },
-                        {
-                          field: "notify_host" as const,
-                          on: g.notify_host !== false,
-                          emoji: "🔔",
-                          label: "Notify me (all activity)",
-                        },
-                      ]
-                    ).map((t) => (
-                      <button
-                        key={t.field}
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setGroupNotify(g.id, t.field, !t.on);
-                        }}
-                        className="flex w-full items-center gap-2 text-xs text-slate-600"
-                      >
-                        <span
-                          className={`relative inline-flex h-4 w-7 flex-shrink-0 items-center rounded-full transition ${
-                            t.on ? "bg-orange-500" : "bg-slate-300"
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-3 w-3 transform rounded-full bg-white transition ${
-                              t.on ? "translate-x-3.5" : "translate-x-0.5"
-                            }`}
-                          />
-                        </span>
-                        <span>
-                          {t.emoji} {t.label}{" "}
-                          <span className="text-slate-400">{t.on ? "on" : "off"}</span>
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {/* Notification toggles intentionally live in the group's own settings
+                    (open the group → edit) to keep this overview scannable. */}
               </Link>
             );
           })}

@@ -137,7 +137,7 @@ export default function EngagementDetailPage() {
       // Group name + code for the per-engagement invite link (members can read).
       const { data: g } = await supabase
         .from("groups")
-        .select("name, invite_code")
+        .select("name, invite_code, avatar_emoji")
         .eq("id", groupId)
         .maybeSingle();
       if (!cancelled) {
@@ -162,7 +162,7 @@ export default function EngagementDetailPage() {
           );
         }
         setPendingCount((pc as number) ?? 0);
-        if (g) setGroupInfo(g as { name: string; invite_code: string });
+        if (g) setGroupInfo(g as { name: string; invite_code: string; avatar_emoji?: string | null });
       }
     })();
     return () => {
@@ -594,7 +594,7 @@ export default function EngagementDetailPage() {
   // (RLS lets only the group admin read invitations, so non-admins just get 0.)
   const [inviteStats, setInviteStats] = useState({ joined: 0, pending: 0 });
   const [pendingCount, setPendingCount] = useState(0);
-  const [groupInfo, setGroupInfo] = useState<{ name: string; invite_code: string } | null>(null);
+  const [groupInfo, setGroupInfo] = useState<{ name: string; invite_code: string; avatar_emoji?: string | null } | null>(null);
   const [sharedEng, setSharedEng] = useState(false);
   const [nudgeMsg, setNudgeMsg] = useState<string | null>(null);
   const [nudgeNote, setNudgeNote] = useState(""); // optional one-line personal note
@@ -5908,9 +5908,11 @@ export default function EngagementDetailPage() {
       ) : (
         <Link
           href={`/campfirelive/group/${groupId}`}
-          className="text-sm text-slate-500 hover:text-slate-700 mb-4 inline-block"
+          className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-200"
         >
-          ← Back to group
+          <span aria-hidden>←</span>
+          <span>{groupInfo?.avatar_emoji ?? "🔥"}</span>
+          <span>{groupInfo?.name ?? "Back to group"}</span>
         </Link>
       )}
 
