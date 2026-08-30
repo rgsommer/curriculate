@@ -2668,7 +2668,13 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
   }
 
   const workPromise = (async () => {
-    const genResult = await generateBriefing(profile);
+    // Tag the profile with a fast-preview flag so generateBriefing's
+    // renderDailyPicksDeterministic can skip the expensive AI passes
+    // (adversarial verify + chart vision) that were tripping the
+    // frontend fetch timeout. The nightly cron path (sendBriefingForUser)
+    // never sets this flag → gets the full Tier 3.1/3.2 analysis.
+    const profileForPreview = { ...profile, _fastPreview: true };
+    const genResult = await generateBriefing(profileForPreview);
     let markdown = genResult.md;
     // NOTE: snapshot save moved to AFTER the audit gate below. Prior
     // ordering saved the raw AI markdown here first, which meant the

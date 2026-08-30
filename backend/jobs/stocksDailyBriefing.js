@@ -1062,50 +1062,67 @@ async function renderDailyPicksDeterministic(dailyPicks, ctx = {}) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   const { verifyRecPrice } = await import("../services/marketDataIntegrity.js");
   const { auditPickReconciliation } = await import("../services/briefingAudit.js");
-  // Tier 3.1 (audit Aug-28): run adversarial verify on candidate BUYs.
-  // Bear-case verdict "reject" downgrades tier to SCREENED-BEAR;
-  // "risk_flagged" annotates but doesn't change tier. Fail-open on
-  // Anthropic errors — the pick ships without a bear badge.
+  // Tier 3.1/3.2 (audit Aug-28): adversarial verify + chart vision
+  // add real wall-clock (~15-25s of Anthropic calls) that killed the
+  // preview endpoint's frontend fetch timeout (Aug-29). Two guards:
+  //   1. ctx.fastPreview=true skips both entirely (on-demand path).
+  //   2. Even in cron mode, each call has a hard timeout so a hung
+  //      Anthropic can't stall the briefing indefinitely.
+  const fastPreview = ctx?.fastPreview === true;
+  const withTimeout = (promise, ms, label) => Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+  ]);
   let adversarialByTicker = {};
-  try {
-    // Only pay for verify on BUY-candidate picks (composite ≥ 70).
-    // WATCH / SCREENED / MONITOR are already blocked from actionable
-    // BUY; no LLM call needed on those.
-    const buyCandidates = dailyPicks.filter(p => !p.blockedReason
-      && !p.specialSituation?.active
-      && Number.isFinite(p.deterministicScore) && p.deterministicScore >= 70);
-    if (buyCandidates.length > 0) {
-      const { verifyDailyPicksBatch } = await import("../services/stocksAdversarialVerify.js");
-      adversarialByTicker = await verifyDailyPicksBatch(buyCandidates, { concurrency: 2 });
-    }
-  } catch (e) {
-    console.warn("[daily-picks-adversarial] batch verify failed:", e?.message);
-  }
-  // Tier 3.2 (audit Aug-28): chart-vision veto on the TOP-1 BUY
-  // candidate. One Haiku vision call per briefing bounds the cost.
-  // Reads the chart image, has Haiku describe the trend/pattern,
-  // then applies chartVisionVetoVerdict. veto=true downgrades tier
-  // to SCREENED-CHART; softWarning=true annotates but ships.
-  let chartVisionByTicker = {};
-  try {
-    const topBuy = dailyPicks
-      .filter(p => !p.blockedReason && !p.specialSituation?.active
-        && Number.isFinite(p.deterministicScore) && p.deterministicScore >= 70)
-      .sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore))
-      .slice(0, 1);
-    if (topBuy.length > 0) {
-      const [{ getChartVisionAnalysis, chartVisionVetoVerdict }] = await Promise.all([
-        import("../services/stocksChartVision.js"),
-      ]);
-      const top = topBuy[0];
-      const analysis = await getChartVisionAnalysis(top.ticker, top.currency || "USD").catch(() => null);
-      if (analysis) {
-        const verdict = chartVisionVetoVerdict(analysis);
-        chartVisionByTicker[top.ticker] = { analysis, verdict };
+  if (!fastPreview) {
+    try {
+      // Only pay for verify on BUY-candidate picks (composite ≥ 70).
+      // WATCH / SCREENED / MONITOR are already blocked from actionable
+      // BUY; no LLM call needed on those.
+      const buyCandidates = dailyPicks.filter(p => !p.blockedReason
+        && !p.specialSituation?.active
+        && Number.isFinite(p.deterministicScore) && p.deterministicScore >= 70);
+      if (buyCandidates.length > 0) {
+        const { verifyDailyPicksBatch } = await import("../services/stocksAdversarialVerify.js");
+        adversarialByTicker = await withTimeout(
+          verifyDailyPicksBatch(buyCandidates, { concurrency: 2 }),
+          25_000,
+          "adversarial-verify-batch",
+        ).catch((e) => {
+          console.warn("[daily-picks-adversarial] batch verify failed:", e?.message);
+          return {};
+        });
       }
+    } catch (e) {
+      console.warn("[daily-picks-adversarial] batch verify threw:", e?.message);
     }
-  } catch (e) {
-    console.warn("[daily-picks-chart-vision] failed:", e?.message);
+  }
+  let chartVisionByTicker = {};
+  if (!fastPreview) {
+    try {
+      const topBuy = dailyPicks
+        .filter(p => !p.blockedReason && !p.specialSituation?.active
+          && Number.isFinite(p.deterministicScore) && p.deterministicScore >= 70)
+        .sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore))
+        .slice(0, 1);
+      if (topBuy.length > 0) {
+        const [{ getChartVisionAnalysis, chartVisionVetoVerdict }] = await Promise.all([
+          import("../services/stocksChartVision.js"),
+        ]);
+        const top = topBuy[0];
+        const analysis = await withTimeout(
+          getChartVisionAnalysis(top.ticker, top.currency || "USD"),
+          12_000,
+          "chart-vision",
+        ).catch(() => null);
+        if (analysis) {
+          const verdict = chartVisionVetoVerdict(analysis);
+          chartVisionByTicker[top.ticker] = { analysis, verdict };
+        }
+      }
+    } catch (e) {
+      console.warn("[daily-picks-chart-vision] failed:", e?.message);
+    }
   }
   const PICK_PRICE_DRIFT_MAX_PCT = 5.0;
   // Per-pick reconciliation audit — strip any pick whose displayed
@@ -4247,7 +4264,10 @@ export async function generateBriefing(profile) {
       // If canonical fails, the picks are still computed but not
       // included in the send (they'd risk being interpreted as
       // portfolio-aware sizing).
-      const picksBlock = await renderDailyPicksDeterministic(dailyPicks, { email: p?.email });
+      const picksBlock = await renderDailyPicksDeterministic(dailyPicks, {
+        email: profile?.email,
+        fastPreview: profile?._fastPreview === true,
+      });
       if (picksBlock) parts.push(picksBlock);
     } else {
       parts.push(
