@@ -97,6 +97,46 @@ function buildChartConfig(points, ticker) {
   };
 }
 
+// ─── Chart-vision veto helper (Tier 3.2 audit Aug-28) ────────────
+// Given a chart-vision analysis result, decide whether the chart
+// contradicts a bullish thesis strongly enough to VETO a BUY tier.
+// The veto reads three fields:
+//   • trendStage: "stage-3 top" or "stage-4 decline" → strong bearish
+//   • conviction: "low" → weak — combine with divergences for veto
+//   • patterns: contains bearish shapes ("head-and-shoulders",
+//     "descending triangle", "double top") → bearish
+// Returns { veto: bool, reason: string, softWarning: bool }.
+// veto=true means block BUY. softWarning=true means annotate but ship.
+export function chartVisionVetoVerdict(analysis) {
+  if (!analysis) return { veto: false, reason: null, softWarning: false };
+  const stage = String(analysis.trendStage || "").toLowerCase();
+  const conviction = String(analysis.conviction || "").toLowerCase();
+  const patterns = (analysis.patterns || []).map(p => String(p).toLowerCase());
+  const bearishPatterns = ["head-and-shoulders", "head and shoulders", "descending triangle", "double top", "rising wedge", "stage-4"];
+  const hasBearishPattern = patterns.some(p => bearishPatterns.some(b => p.includes(b)));
+
+  // Hard veto: stage-3/4 OR bearish pattern with low conviction
+  if (stage.includes("stage-3") || stage.includes("stage-4")) {
+    return { veto: true, softWarning: false,
+      reason: `Chart shows ${stage} — trend is topping or declining. BUY inappropriate.` };
+  }
+  if (hasBearishPattern && conviction === "low") {
+    return { veto: true, softWarning: false,
+      reason: `Chart shows ${patterns.filter(p => bearishPatterns.some(b => p.includes(b))).join(", ")} with low conviction.` };
+  }
+  // Soft warning: low conviction alone, or bearish pattern with medium
+  // conviction — annotate but don't block
+  if (conviction === "low") {
+    return { veto: false, softWarning: true,
+      reason: `Chart vision conviction low: ${analysis.convictionReason || "no strong setup visible"}.` };
+  }
+  if (hasBearishPattern) {
+    return { veto: false, softWarning: true,
+      reason: `Chart shows bearish pattern: ${patterns.filter(p => bearishPatterns.some(b => p.includes(b))).join(", ")}.` };
+  }
+  return { veto: false, softWarning: false, reason: null };
+}
+
 export async function getChartVisionAnalysis(ticker, currency = "USD") {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return null;

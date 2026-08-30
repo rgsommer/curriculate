@@ -1058,7 +1058,7 @@ function formatRecentTradesBlock(recentTrades) {
 // Real defect: MU appeared at $967.74 (should be ~$110) — a data-
 // feed adjustment/split artifact that the pick engine let through.
 // Any pick whose price cannot be verified cannot ship.
-async function renderDailyPicksDeterministic(dailyPicks) {
+async function renderDailyPicksDeterministic(dailyPicks, ctx = {}) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   const { verifyRecPrice } = await import("../services/marketDataIntegrity.js");
   const { auditPickReconciliation } = await import("../services/briefingAudit.js");
@@ -1080,6 +1080,32 @@ async function renderDailyPicksDeterministic(dailyPicks) {
     }
   } catch (e) {
     console.warn("[daily-picks-adversarial] batch verify failed:", e?.message);
+  }
+  // Tier 3.2 (audit Aug-28): chart-vision veto on the TOP-1 BUY
+  // candidate. One Haiku vision call per briefing bounds the cost.
+  // Reads the chart image, has Haiku describe the trend/pattern,
+  // then applies chartVisionVetoVerdict. veto=true downgrades tier
+  // to SCREENED-CHART; softWarning=true annotates but ships.
+  let chartVisionByTicker = {};
+  try {
+    const topBuy = dailyPicks
+      .filter(p => !p.blockedReason && !p.specialSituation?.active
+        && Number.isFinite(p.deterministicScore) && p.deterministicScore >= 70)
+      .sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore))
+      .slice(0, 1);
+    if (topBuy.length > 0) {
+      const [{ getChartVisionAnalysis, chartVisionVetoVerdict }] = await Promise.all([
+        import("../services/stocksChartVision.js"),
+      ]);
+      const top = topBuy[0];
+      const analysis = await getChartVisionAnalysis(top.ticker, top.currency || "USD").catch(() => null);
+      if (analysis) {
+        const verdict = chartVisionVetoVerdict(analysis);
+        chartVisionByTicker[top.ticker] = { analysis, verdict };
+      }
+    }
+  } catch (e) {
+    console.warn("[daily-picks-chart-vision] failed:", e?.message);
   }
   const PICK_PRICE_DRIFT_MAX_PCT = 5.0;
   // Per-pick reconciliation audit — strip any pick whose displayed
@@ -1169,6 +1195,10 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       // structural protection; the bear pass is an editorial layer).
       const adversarial = adversarialByTicker[p.ticker] || null;
       const adversarialReject = adversarial && adversarial.verdict === "reject";
+      // Chart-vision veto (Tier 3.2). Only the top-1 gets a vision
+      // pass to bound cost; verdict.veto=true blocks BUY.
+      const chartVisionEntry = chartVisionByTicker[p.ticker] || null;
+      const chartVeto = chartVisionEntry && chartVisionEntry.verdict?.veto;
       let tier;
       let priceableDeal = false;
       if (situationActive) {
@@ -1179,6 +1209,11 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       } else if (adversarialReject) {
         // Bear case wins — do not label as BUY regardless of composite/R/R.
         tier = "SCREENED-BEAR";
+      } else if (chartVeto) {
+        // Chart clearly bearish (stage-3/4 or bearish pattern + low
+        // conviction) — no BUY regardless of composite. New tier so
+        // the operator can trace exactly why.
+        tier = "SCREENED-CHART";
       } else if (p.deterministicScore >= 70 && !isConflict && rrOk) {
         tier = "BUY";
       } else if (p.deterministicScore >= 70 && !isConflict && !rrOk) {
@@ -1200,13 +1235,14 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       }
       const tierColor = tier === "BUY" ? "✅"
                       : tier === "EVENT-DRIVEN" ? "🎯"
-                      : tier === "SCREENED-MA" || tier === "SCREENED" || tier === "SCREENED-BEAR" ? "⛔"
+                      : tier === "SCREENED-MA" || tier === "SCREENED" || tier === "SCREENED-BEAR" || tier === "SCREENED-CHART" ? "⛔"
                       : tier === "WATCH" ? "⚠️"
                       : "🔍";
       // Identity line: ticker · currency · verified live price · tier.
       const compositeLabel = p.deterministicScore == null ? "n/a" : p.deterministicScore;
       const tierDisplayLabel = tier === "SCREENED-MA" ? "SCREENED — ACTIVE M&A"
         : tier === "SCREENED-BEAR" ? "SCREENED — BEAR CASE"
+        : tier === "SCREENED-CHART" ? "SCREENED — CHART BEARISH"
         : tier;
       lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${compositeLabel}${setupTag}${mtfTag} · ${tierColor} **${tierDisplayLabel}**`);
       if (situationActive) {
@@ -1240,6 +1276,10 @@ async function renderDailyPicksDeterministic(dailyPicks) {
           lines.push(`   ⛔ SCREENED — BEAR CASE. Adversarial verify verdict: **reject**. ${adversarial?.bearThesis || ""}`);
           if (adversarial?.weakestPoint) lines.push(`   Weakest point of bull thesis: ${adversarial.weakestPoint}`);
           if (adversarial?.hiddenRisk) lines.push(`   Hidden risk: ${adversarial.hiddenRisk}`);
+        } else if (tier === "SCREENED-CHART") {
+          lines.push(`   ⛔ SCREENED — CHART BEARISH. Chart-vision veto: ${chartVisionEntry?.verdict?.reason || "bearish structure"}.`);
+          if (chartVisionEntry?.analysis?.gestalt) lines.push(`   Chartist gestalt: ${chartVisionEntry.analysis.gestalt}`);
+          if (chartVisionEntry?.analysis?.trendStage) lines.push(`   Trend stage: ${chartVisionEntry.analysis.trendStage} · conviction ${chartVisionEntry.analysis.conviction || "?"}`);
         } else if (tier === "WATCH") {
           const trig = p.watchTrigger;
           lines.push(`   ⚠ WATCH — requires ${trig.why} to reach ≥${MIN_RR_FOR_BUY}:1. Set alert @ $${trig.price.toFixed(2)}${p.currency ? ` ${p.currency}` : ""}. Not actionable until the trigger fires.`);
@@ -1255,6 +1295,14 @@ async function renderDailyPicksDeterministic(dailyPicks) {
           if (adversarial.weakestPoint) lines.push(`   Weakest point: ${adversarial.weakestPoint}`);
         } else if (tier !== "SCREENED-BEAR" && adversarial?.verdict === "confirmed_long") {
           lines.push(`   ✓ Adversarial verify: bear-case attack failed — thesis holds under stress.`);
+        }
+        // Chart-vision soft warning (non-veto)
+        if (tier !== "SCREENED-CHART" && chartVisionEntry?.verdict?.softWarning) {
+          lines.push(`   ⚠ Chart vision: ${chartVisionEntry.verdict.reason}`);
+        } else if (tier === "BUY" && chartVisionEntry?.analysis?.gestalt) {
+          // On confirmed BUY, surface the chartist gestalt as a
+          // positive framing.
+          lines.push(`   ✓ Chart vision: ${chartVisionEntry.analysis.gestalt}`);
         }
         if (p.rationale) lines.push(`   ${p.rationale}`);
       }
@@ -1312,6 +1360,26 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       lines.push(`- **${f.ticker}** — ${f.issues.map(i => `[${i.code}] ${i.detail}`).join(" · ")}`);
     }
     lines.push("");
+  }
+  // Tier 3.2 (audit Aug-28): append labeled moonshot row when a
+  // fresh (≤14d) asymmetric-upside pick exists in the discovery
+  // corpus. Purely additive to the briefing — deterministic picks
+  // above are unaffected. Small-position language + calibrated base
+  // rates enforce lottery-ticket sizing discipline.
+  if (ctx?.email) {
+    try {
+      const { getLatestMoonshotForBriefing, formatMoonshotBriefingBlock } = await import("../services/stocksMoonshot.js");
+      const latest = await getLatestMoonshotForBriefing({ email: ctx.email, maxAgeDays: 14 });
+      if (latest) {
+        const block = formatMoonshotBriefingBlock(latest);
+        if (block) {
+          lines.push(block);
+          lines.push("");
+        }
+      }
+    } catch (e) {
+      console.warn("[daily-picks-moonshot-append] failed:", e?.message);
+    }
   }
   return lines.join("\n");
 }
@@ -4179,7 +4247,7 @@ export async function generateBriefing(profile) {
       // If canonical fails, the picks are still computed but not
       // included in the send (they'd risk being interpreted as
       // portfolio-aware sizing).
-      const picksBlock = await renderDailyPicksDeterministic(dailyPicks);
+      const picksBlock = await renderDailyPicksDeterministic(dailyPicks, { email: p?.email });
       if (picksBlock) parts.push(picksBlock);
     } else {
       parts.push(

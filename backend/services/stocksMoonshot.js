@@ -171,6 +171,62 @@ const str = (v, n = 1200) => (typeof v === "string" ? v.slice(0, n) : "");
 // Assemble one AI pick + the candidate's deterministic/mosaic signals into the
 // persisted/displayable moonshot object, with calibrated probabilities and a
 // transparent composite score.
+// ─── Read latest moonshot for daily briefing (Tier 3.2 audit Aug-28) ────
+// Reads StocksDiscoveryCandidate for the freshest moonshot pick that
+// still passes calibration + freshness gates. Returns { pick, moonshot,
+// ageInDays } or null.
+//
+// Callers: renderDailyPicksDeterministic appends this as a labeled
+// ASYMMETRIC-UPSIDE 3rd pick with the calibrated P(5x) / P(10x) shown
+// honestly (calibrateProbabilities enforces 30% / 15% ceilings).
+//
+// Freshness gate: 14 days. Moonshot theses go stale — a 30-day-old
+// asymmetric setup where the price already ran isn't asymmetric.
+export async function getLatestMoonshotForBriefing({ email, maxAgeDays = 14 } = {}) {
+  if (!email) return null;
+  try {
+    const StocksDiscoveryCandidate = (await import("../models/StocksDiscoveryCandidate.js")).default;
+    const since = new Date(Date.now() - maxAgeDays * 86400 * 1000);
+    const doc = await StocksDiscoveryCandidate.findOne({
+      email: String(email).toLowerCase(),
+      scanDate: { $gte: since },
+      moonshot: { $ne: null },
+      dismissed: { $ne: true },
+    }).sort({ scanDate: -1, score: -1 }).lean();
+    if (!doc || !doc.moonshot) return null;
+    const ageInDays = (Date.now() - new Date(doc.scanDate).getTime()) / 86400000;
+    return { pick: doc, moonshot: doc.moonshot, ageInDays };
+  } catch (e) {
+    console.warn("[moonshot-for-briefing] read failed:", e?.message);
+    return null;
+  }
+}
+
+// Formatter — one operator-facing block for the ASYMMETRIC row.
+export function formatMoonshotBriefingBlock({ moonshot, pick, ageInDays } = {}) {
+  if (!moonshot || !pick) return null;
+  const p5 = Number.isFinite(moonshot.p5xPct) ? Math.round(moonshot.p5xPct) : null;
+  const p10 = Number.isFinite(moonshot.p10xPct) ? Math.round(moonshot.p10xPct) : null;
+  const composite = Number.isFinite(moonshot.compositeScore) ? moonshot.compositeScore : null;
+  const parts = [];
+  parts.push(`🚀 ASYMMETRIC — **${pick.ticker}** [SPEC-MOONSHOT] · ${pick.currencyAtDiscovery || "USD"} · moonshot composite ${composite ?? "n/a"} · ${Math.round(ageInDays)}d old`);
+  if (p5 != null || p10 != null) {
+    const probParts = [];
+    if (p5 != null) probParts.push(`P(5×) ≈ ${p5}%`);
+    if (p10 != null) probParts.push(`P(10×) ≈ ${p10}%`);
+    parts.push(`   Calibrated base rates: ${probParts.join(" · ")} (hard-capped at 30% / 15% respectively)`);
+  }
+  if (moonshot.thesisSummary || moonshot.durableEdge) {
+    parts.push(`   ${moonshot.thesisSummary || moonshot.durableEdge}`);
+  }
+  if (Array.isArray(moonshot.catalysts) && moonshot.catalysts.length > 0) {
+    parts.push(`   Catalysts: ${moonshot.catalysts.slice(0, 3).join(" · ")}`);
+  }
+  if (moonshot.stopStrategy) parts.push(`   Stop: ${moonshot.stopStrategy}`);
+  parts.push(`   ⚠ Small position only. Asymmetric ≠ likely — treat as lottery-ticket sized.`);
+  return parts.join("\n");
+}
+
 export function buildMoonshotResult(aiItem, candidate, horizon = "long") {
   const ms = candidate.moonshot || {};
   const isShort = horizon === "short";
