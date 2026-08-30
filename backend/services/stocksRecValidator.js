@@ -228,10 +228,23 @@ function ruleLiquidityFloor({ rec, ctx }) {
 // current price — the disqualifier is the SESSION MOVE, not
 // entry-vs-live drift.
 // Missing priorClose → rule no-ops (don't block on unavailable data).
-const GAP_EXTENSION_PCT = 8.0; // 8% same-day move disqualifies new BUYs
+// Gap-extension floor (audit Aug-28): was 8% for every BUY, which
+// systematically blocked entry the day after every earnings beat,
+// guidance raise, or short squeeze — exactly when winners announce
+// themselves. Widened to 15% and scoped to SWING sleeve only. CORE
+// remains exempt (rebalance, not R/R). SPEC exempt (asymmetric — a
+// 20% gap on a $500M name is often the actual signal). SWING keeps
+// the "don't chase mid-move" discipline but at a level that no longer
+// filters out post-earnings continuation entries.
+const GAP_EXTENSION_PCT = 15.0;
 function ruleGapExtension({ rec, ctx }) {
   if (rec.action !== "BUY") return { ok: true };
   if (isCoreBuy(rec)) return { ok: true };
+  // Only enforce for SWING sleeve. SPEC's whole thesis is asymmetric
+  // upside — blocking a 12% gap on a small-cap catalyst breakout is
+  // exactly the "miss the next NVDA" pattern the audit flagged.
+  const sleeve = String(rec.sleeve || "").toLowerCase();
+  if (sleeve && sleeve !== "swing") return { ok: true };
   const live = ctx.livePrices?.[String(rec.ticker).toUpperCase()];
   if (!live || !(live.price > 0) || !(live.priorClose > 0)) return { ok: true };
   const movePct = ((live.price - live.priorClose) / live.priorClose) * 100;
@@ -240,7 +253,7 @@ function ruleGapExtension({ rec, ctx }) {
   return {
     ok: false,
     reason: "gap-extension",
-    detail: `BUY ${rec.ticker} rejected — ticker is ${dir} ${movePct.toFixed(1)}% vs prior close $${live.priorClose.toFixed(2)} (now $${live.price.toFixed(2)}). Same-day move ≥ ${GAP_EXTENSION_PCT}% means the setup is either consumed (up-gap chase) or invalidated (down-gap thesis break). No new BUYs on extension days — wait for digestion, then reset entry / stop / target on fresh structure, or drop the idea.`,
+    detail: `BUY ${rec.ticker} (SWING) rejected — ticker is ${dir} ${movePct.toFixed(1)}% vs prior close $${live.priorClose.toFixed(2)} (now $${live.price.toFixed(2)}). Same-day move ≥ ${GAP_EXTENSION_PCT}% on a SWING setup means chase-territory — the R/R is compressed and the setup is either consumed (up-gap chase) or invalidated (down-gap thesis break). Wait for digestion, then reset entry / stop / target on fresh structure. (SPEC + CORE sleeves are exempt from this floor.)`,
   };
 }
 
@@ -485,9 +498,16 @@ function ruleHorizonStopMatch({ rec, ctx }) {
 //   product cycle). "Pocket pivot scored 84" is NOT a structural
 //   driver — it's a chart pattern.
 // Chart-pattern / short-term language that CANNOT stand alone as a
-// structural driver. If the driver text is dominated by these terms,
-// the "thesis" is really a technical trigger dressed up — reject.
-const DRIVER_TECHNICAL_PATTERNS = /\b(pocket\s*pivot|bull\s*flag|bear\s*flag|coiled\s*spring|coil|vcp|cup\s*and\s*handle|inside\s*day|breakout\s*above|breakdown\s*below|rvol\s*spike|rvol\s*>?\s*\d|rsi\s*(over|under|<|>)|chart\s*pattern|moving\s*average\s*cross|golden\s*cross|death\s*cross|macd\s*cross|fibonacci\s*retrace|fib\s*level|sma\s*\d+|ema\s*\d+|rsi\s*\d+|technical\s*setup|setup\s*(scored|scoring)|momentum\s*(strong|is\s*strong)|hot\s*sector|sector\s*is\s*hot|earnings\s*tomorrow|earnings\s*next\s*week|analyst\s*upgrade\s*today|price\s*action\s*(strong|good)|volume\s*spike\s*today)\b/gi;
+// structural driver. Note (audit Aug-28): we narrowed this to genuine
+// pure-technical vocabulary. "momentum", "breakout", "hot sector",
+// "leadership acceleration", "post-earnings continuation" were REMOVED
+// — those describe legitimate durable investment drivers (a company
+// with accelerating relative strength IS a momentum-leader thesis; a
+// stock breaking out to new all-time highs on volume after an earnings
+// beat has real information content). Prior list blocked every
+// momentum-driven SPEC thesis by regex — banning the vocabulary of
+// exactly the archetype we want to discover.
+const DRIVER_TECHNICAL_PATTERNS = /\b(pocket\s*pivot|bull\s*flag|bear\s*flag|coiled\s*spring|vcp|cup\s*and\s*handle|inside\s*day|rvol\s*spike|rvol\s*>?\s*\d|rsi\s*(over|under|<|>)|chart\s*pattern|moving\s*average\s*cross|golden\s*cross|death\s*cross|macd\s*cross|fibonacci\s*retrace|fib\s*level|sma\s*\d+|ema\s*\d+|rsi\s*\d+|technical\s*setup|setup\s*(scored|scoring))\b/gi;
 // Durable-driver vocabulary — at least one hit REQUIRED. Signals the
 // thesis references business fundamentals, industry structure, supply/
 // demand, competitive position, regulatory/policy change, or a
@@ -983,8 +1003,65 @@ export function validateRecs(recs, ctx) {
       const slugs = r.rejections.map(x => x.reason).join(", ");
       console.warn(`  ${r.rec.action} ${r.rec.ticker}: ${slugs}`);
     }
+    // Tier 2.3 (audit Aug-28): persist rejections to StocksRejectionLog
+    // so the redesign has a queryable "candidates we rejected and why"
+    // corpus. Fire-and-forget — persistence failure never blocks the
+    // briefing. Requires ctx.email + ctx.generatedAt (both optional;
+    // when missing the persistence is skipped silently).
+    if (ctx?.email && ctx?.generatedAt) {
+      persistRejectionsAsync(rejected, {
+        email: ctx.email,
+        generatedAt: ctx.generatedAt,
+        sessionKey: ctx.sessionKey || null,
+        origin: "validator",
+      });
+    }
   }
   return { accepted, rejected };
+}
+
+// Async, non-blocking persistence for rejected recs. Kept out of the
+// validateRecs synchronous return path so a Mongo hiccup can't stall
+// a briefing send.
+async function persistRejectionsAsync(rejected, { email, generatedAt, sessionKey, origin }) {
+  try {
+    const { default: StocksRejectionLog } = await import("../models/StocksRejectionLog.js");
+    const docs = [];
+    for (const r of rejected) {
+      const rec = r.rec || {};
+      // A single rec can have multiple rejection reasons — one doc per
+      // (rec, reason) so per-reason aggregations are trivial.
+      for (const rej of r.rejections || []) {
+        docs.push({
+          email,
+          generatedAt,
+          ticker: String(rec.ticker || "").toUpperCase(),
+          action: String(rec.action || "?").toUpperCase(),
+          origin,
+          reason: rej.reason || "unknown",
+          detail: rej.detail || null,
+          snapshot: {
+            entryPrice: rec.entryPrice ?? null,
+            targetPrice: rec.targetPrice ?? null,
+            stopPrice: rec.stopPrice ?? null,
+            horizonDays: rec.horizonDays ?? null,
+            sleeve: rec.sleeve ?? null,
+            sourceLabel: rec.sourceLabel ?? null,
+            structuralDriver: rec.structuralDriver ?? null,
+            thesisHorizonMonths: rec.thesisHorizonMonths ?? null,
+          },
+          sessionKey,
+        });
+      }
+    }
+    if (docs.length > 0) {
+      await StocksRejectionLog.insertMany(docs, { ordered: false }).catch((e) => {
+        console.warn("[rec-validator] rejection log insertMany failed:", e?.message);
+      });
+    }
+  } catch (e) {
+    console.warn("[rec-validator] rejection persistence threw:", e?.message);
+  }
 }
 
 /**

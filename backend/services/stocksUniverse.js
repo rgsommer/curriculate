@@ -29,7 +29,11 @@
 import mongoose from "mongoose";
 import { isFmpEnabled } from "./fmpEnabled.js";
 
-const LIQUIDITY_MIN_MCAP_USD = 500_000_000;      // $500M market cap
+// $200M market cap floor (audit Aug-28: was $500M, which structurally
+// excluded the $200-500M emerging-growth cohort — historically the
+// multi-bagger pool). Volume floor unchanged; a name that's too illiquid
+// at $200M still gets dropped by the dollar-volume gate.
+const LIQUIDITY_MIN_MCAP_USD = 200_000_000;      // $200M market cap
 const LIQUIDITY_MIN_AVG_VOL_USD = 5_000_000;     // $5M / day dollar volume
 const MAX_UNIVERSE_SIZE = 5000;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;        // refresh daily

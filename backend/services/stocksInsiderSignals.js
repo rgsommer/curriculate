@@ -337,6 +337,84 @@ export async function detectClusters(ticker, { windowDays = 30 } = {}) {
   return detected;
 }
 
+// ─── Insider cluster VELOCITY (Tier 2.2 audit Aug-28) ────────────
+// Compare weighted-cluster-score in the recent window vs the prior
+// window of the same length. Positive velocity = clusters are
+// accelerating (recent 30d has more insider conviction than the
+// previous 30d) — leading indicator of a management-driven inflection.
+//
+// Returns Map<base_ticker, { recentScore, priorScore, velocityScore,
+// velocityDeltaPct }>. `velocityDeltaPct` is the % change; a delta
+// of +100 means the recent window's weighted score is double the
+// prior window.
+//
+// Batched — one Mongo read per ticker (matches the existing
+// getRecentInsiderSignals pattern in cost). Called by the pick engine
+// stage-2 in parallel with `getRecentInsiderSignals`.
+export async function getInsiderClusterVelocity(tickers, { windowDays = 30 } = {}) {
+  const uniq = [...new Set((tickers || []).map(normalizeTickerForEdgar).filter(Boolean))];
+  if (uniq.length === 0) return new Map();
+  const now = Date.now();
+  const recentSince = new Date(now - windowDays * 86400 * 1000);
+  const priorSince = new Date(now - 2 * windowDays * 86400 * 1000);
+  const out = new Map();
+  // One aggregation per ticker (parallel with concurrency guard).
+  const CONC = 6;
+  for (let i = 0; i < uniq.length; i += CONC) {
+    const slice = uniq.slice(i, i + CONC);
+    await Promise.all(slice.map(async (tk) => {
+      try {
+        // Pull raw transactions from both windows.
+        const rows = await StocksInsiderTransaction.find({
+          ticker: tk,
+          transactionDate: { $gte: priorSince },
+          isDerivative: false,
+        }).lean();
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        // Compute weighted score for each window: sum of role weights
+        // over unique buy-side insiders in that window.
+        const weightedFor = (from, to) => {
+          const relevant = rows.filter(r => {
+            const d = new Date(r.transactionDate);
+            if (!(d >= from && d < to)) return false;
+            if (!isDiscretionaryCode(r.transactionCode, "cluster_buy")) return false;
+            if (r.acquiredDisposed === "D") return false;
+            return true;
+          });
+          const byInsider = new Map();
+          for (const r of relevant) {
+            const key = (r.insiderName || "unknown").toUpperCase();
+            const prev = byInsider.get(key) || { role: r.insiderRole };
+            byInsider.set(key, prev);
+          }
+          let score = 0;
+          for (const v of byInsider.values()) score += (ROLE_WEIGHT[v.role] || 0.5);
+          return { score, count: byInsider.size };
+        };
+        const recent = weightedFor(recentSince, new Date(now));
+        const prior = weightedFor(priorSince, recentSince);
+        // Delta as % change. Special cases:
+        //   • prior=0 recent>0 → +999 (uncapped-new-signal marker)
+        //   • both 0 → skip (no data to report)
+        //   • recent<prior → negative velocity (clusters cooling)
+        if (recent.score === 0 && prior.score === 0) return;
+        const velocityDeltaPct = prior.score > 0
+          ? ((recent.score - prior.score) / prior.score) * 100
+          : (recent.score > 0 ? 999 : 0);
+        const base = String(tk).toUpperCase().replace(/\..*$/, "");
+        out.set(base, {
+          recentScore: recent.score,
+          priorScore: prior.score,
+          recentCount: recent.count,
+          priorCount: prior.count,
+          velocityDeltaPct,
+        });
+      } catch { /* soft-fail per ticker */ }
+    }));
+  }
+  return out;
+}
+
 // Load recent signals for a set of tickers (held + starred), for prompt injection.
 export async function getRecentInsiderSignals(tickers, { days = 30, limit = 30 } = {}) {
   const uniq = [...new Set((tickers || []).map(normalizeTickerForEdgar).filter(Boolean))];

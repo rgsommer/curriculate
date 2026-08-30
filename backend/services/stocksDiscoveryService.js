@@ -136,8 +136,14 @@ async function fmpGet(path) {
 // those after fetching per-ticker financial-growth data downstream.
 export async function runUniverseScreen(opts = {}) {
   const {
+    // Discovery upper bound removed — was $5B, which made the
+    // "multi-bagger hunter" structurally blind to every $5-50B name
+    // (all of NVDA-post-2023, PLTR-post-2024, AMD-in-uptrend, etc.).
+    // Raised to $500B (audit Aug-28) so effectively no ceiling; the
+    // downstream composite handles ranking. Lower floor $200M preserved
+    // — micro-caps below that are ineligible.
     marketCapMin = 200_000_000,   // $200M
-    marketCapMax = 5_000_000_000, // $5B
+    marketCapMax = 500_000_000_000, // $500B — effectively no ceiling
     priceMin = 2,
     volumeMin = 100_000,
     sectors = null,                // null = all; or array of strings

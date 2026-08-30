@@ -59,16 +59,29 @@ async function fmpFetch(path) {
 }
 
 // ─── Growth ──────────────────────────────────────────────────────────
-// Returns { ok, revenueYoYPct, revenueAccelPp, epsYoYPct } or {ok:false, reason}.
+// Returns comprehensive change-detection payload (audit Aug-28 Tier 2.2):
+//   { ok,
+//     revenueYoYPct, revenueAccelPp,           // (existing)
+//     epsYoYPct, epsAccelPp,                    // NEW: 2nd derivative of EPS growth
+//     grossMarginQ0Pct, grossMarginExpansionPp, // NEW: margin expansion vs same Q year-ago
+//     opMarginQ0Pct,    opMarginExpansionPp,    // NEW: op margin expansion
+//     fcfMarginQ0Pct,   fcfConversionTrendPp,   // NEW: FCF/revenue trend (Q0 vs Q4)
+//     latestQuarterEnd }
+// Every field is null if not computable — consumers gate on Number.isFinite.
 export async function getGrowth(ticker) {
   if (!isFmpEnabled()) return { ok: false, reason: "fmp disabled" };
   const now = Date.now();
   const cached = GROWTH_CACHE.get(ticker);
   if (cached && now - cached.at < CACHE_TTL_MS) return cached.data;
 
-  // Need 8 quarters to compute Q0 YoY, Q1 YoY, and the accel delta.
-  const rows = await fmpFetch(`/api/v3/income-statement/${encodeURIComponent(ticker)}?period=quarter&limit=8`);
-  const arr = Array.isArray(rows) ? rows : [];
+  // Need 8 quarters of income to compute Q0/Q1 YoY + acceleration, plus
+  // Q4 for margin expansion (this Q vs same Q year-ago). We fetch cash-
+  // flow in parallel for FCF conversion trend.
+  const [incomeRows, cashFlowRows] = await Promise.all([
+    fmpFetch(`/api/v3/income-statement/${encodeURIComponent(ticker)}?period=quarter&limit=8`),
+    fmpFetch(`/api/v3/cash-flow-statement/${encodeURIComponent(ticker)}?period=quarter&limit=8`).catch(() => null),
+  ]);
+  const arr = Array.isArray(incomeRows) ? incomeRows : [];
   if (arr.length < 5) {
     const data = { ok: false, reason: `insufficient quarters (${arr.length})` };
     GROWTH_CACHE.set(ticker, { at: now, data });
@@ -77,14 +90,16 @@ export async function getGrowth(ticker) {
   const [q0, q1, q2, q3, q4] = arr;
   const rev = (q) => Number(q?.revenue) || null;
   const eps = (q) => Number(q?.eps) || null;
+  const gp = (q) => Number(q?.grossProfit) || null;
+  const opInc = (q) => Number(q?.operatingIncome) || null;
 
-  const yoy = (curr, prior) => {
+  const yoyRev = (curr, prior) => {
     const c = rev(curr), p = rev(prior);
     if (!Number.isFinite(c) || !Number.isFinite(p) || p <= 0) return null;
     return ((c - p) / p) * 100;
   };
-  const revYoYQ0 = yoy(q0, q4);
-  const revYoYQ1 = q1 && arr.length >= 6 ? yoy(q1, arr[5]) : null;
+  const revYoYQ0 = yoyRev(q0, q4);
+  const revYoYQ1 = q1 && arr.length >= 6 ? yoyRev(q1, arr[5]) : null;
   const revenueAccelPp = (Number.isFinite(revYoYQ0) && Number.isFinite(revYoYQ1)) ? (revYoYQ0 - revYoYQ1) : null;
 
   const eps0 = eps(q0), eps4 = eps(q4);
@@ -92,11 +107,68 @@ export async function getGrowth(ticker) {
     ? ((eps0 - eps4) / Math.abs(eps4)) * 100
     : null;
 
+  // EPS acceleration (2nd derivative): this quarter's YoY growth rate
+  // minus the prior quarter's YoY growth rate. Positive = growth is
+  // accelerating (leading indicator of an earnings inflection).
+  const eps1 = q1 ? eps(q1) : null;
+  const eps5 = arr[5] ? eps(arr[5]) : null;
+  const epsYoYQ1 = (Number.isFinite(eps1) && Number.isFinite(eps5) && Math.abs(eps5) > 0.01)
+    ? ((eps1 - eps5) / Math.abs(eps5)) * 100
+    : null;
+  const epsAccelPp = (Number.isFinite(epsYoYPct) && Number.isFinite(epsYoYQ1))
+    ? (epsYoYPct - epsYoYQ1) : null;
+
+  // Margin expansion (Q0 vs Q4, same-quarter year-ago). Uses percentage
+  // points, not percent-change, so an expansion from 30% → 35% reads
+  // as +5pp (not "+16.67%"). Signed: negative = compression.
+  const grossMarginPct = (q) => {
+    const g = gp(q), r = rev(q);
+    return (Number.isFinite(g) && Number.isFinite(r) && r > 0) ? (g / r) * 100 : null;
+  };
+  const opMarginPct = (q) => {
+    const o = opInc(q), r = rev(q);
+    return (Number.isFinite(o) && Number.isFinite(r) && r > 0) ? (o / r) * 100 : null;
+  };
+  const grossMarginQ0Pct = grossMarginPct(q0);
+  const grossMarginQ4Pct = grossMarginPct(q4);
+  const grossMarginExpansionPp = (Number.isFinite(grossMarginQ0Pct) && Number.isFinite(grossMarginQ4Pct))
+    ? (grossMarginQ0Pct - grossMarginQ4Pct) : null;
+  const opMarginQ0Pct = opMarginPct(q0);
+  const opMarginQ4Pct = opMarginPct(q4);
+  const opMarginExpansionPp = (Number.isFinite(opMarginQ0Pct) && Number.isFinite(opMarginQ4Pct))
+    ? (opMarginQ0Pct - opMarginQ4Pct) : null;
+
+  // FCF conversion trend — FCF/revenue this Q vs same Q year-ago.
+  // FMP cash-flow statement's `freeCashFlow` is the direct FCF figure.
+  // Positive trend = a business converting more of its revenue to
+  // cash — often the earliest signal of operating leverage.
+  const cfArr = Array.isArray(cashFlowRows) ? cashFlowRows : [];
+  const cfByDate = new Map();
+  for (const c of cfArr) if (c?.date) cfByDate.set(c.date, c);
+  const fcfMarginFor = (incomeQ) => {
+    if (!incomeQ?.date) return null;
+    const cf = cfByDate.get(incomeQ.date);
+    const fcf = Number(cf?.freeCashFlow);
+    const r = rev(incomeQ);
+    return (Number.isFinite(fcf) && Number.isFinite(r) && r > 0) ? (fcf / r) * 100 : null;
+  };
+  const fcfMarginQ0Pct = fcfMarginFor(q0);
+  const fcfMarginQ4Pct = fcfMarginFor(q4);
+  const fcfConversionTrendPp = (Number.isFinite(fcfMarginQ0Pct) && Number.isFinite(fcfMarginQ4Pct))
+    ? (fcfMarginQ0Pct - fcfMarginQ4Pct) : null;
+
   const data = {
     ok: true,
     revenueYoYPct: revYoYQ0,
     revenueAccelPp,
     epsYoYPct,
+    epsAccelPp,
+    grossMarginQ0Pct,
+    grossMarginExpansionPp,
+    opMarginQ0Pct,
+    opMarginExpansionPp,
+    fcfMarginQ0Pct,
+    fcfConversionTrendPp,
     latestQuarterEnd: q0?.date || null,
   };
   GROWTH_CACHE.set(ticker, { at: now, data });

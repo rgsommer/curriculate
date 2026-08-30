@@ -162,6 +162,7 @@ import { scheduleDailyPickCron } from "./jobs/stocksDailyPick.js";
 import { scheduleInsiderSync } from "./jobs/stocksInsiderSync.js";
 import { scheduleCron as schedule13FSync } from "./jobs/stocks13FSync.js";
 import { scheduleSpecialSituationsPoll } from "./jobs/stocksSpecialSituationsPoll.js";
+import { scheduleCoverageKpiCron } from "./jobs/stocksCoverageKpiCron.js";
 // Substitute-teacher staffing app (/subs)
 import subsAuthRouter from "./routes/subsAuth.js";
 import subsAdminRouter from "./routes/subsAdmin.js";
@@ -19945,6 +19946,7 @@ server.listen(PORT, () => {
   scheduleDailyPortfolioSnapshot();
   scheduleExternalNominationsSync();
   scheduleSpecialSituationsPoll();
+  scheduleCoverageKpiCron();
   scheduleStocksAlerts();
   scheduleEightKPoll();
   scheduleDailyPickCron();

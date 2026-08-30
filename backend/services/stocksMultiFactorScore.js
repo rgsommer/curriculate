@@ -96,10 +96,19 @@ export function scoreGrowth(growth) {
   let sub = 0;
   let denom = 0;
 
-  // Revenue YoY growth
+  // Revenue YoY growth — log-scaled continuous curve (audit Aug-28).
+  // Prior version saturated at ≥25% → 1.0, making a 100%-YoY grower
+  // indistinguishable from a 25%-YoY grower in the composite. The new
+  // curve rewards hypergrowth explicitly: a 100%-grower now scores 1.2
+  // and a 200%-grower 1.4, uncapped. Negative growth still 0.
+  // Uses log-normalization so returns don't blow up on extreme inputs
+  // and 25% = 1.0 remains a reference "healthy" threshold.
   if (Number.isFinite(growth.revenueYoYPct)) {
     const g = growth.revenueYoYPct;
-    const pt = g >= 25 ? 1 : g >= 15 ? 0.75 : g >= 8 ? 0.5 : g >= 3 ? 0.3 : g >= 0 ? 0.15 : 0;
+    let pt;
+    if (g <= 0) pt = 0;
+    else if (g <= 25) pt = 0.15 + (g / 25) * 0.85; // linear 0→1 across 0-25%
+    else pt = 1.0 + Math.log10(g / 25) * 0.4;       // log-scaled >25%: 50%=1.12, 100%=1.24, 200%=1.36
     sub += pt; denom += 1;
     c.push(`revenue YoY ${g >= 0 ? "+" : ""}${g.toFixed(1)}% → ${pt.toFixed(2)}`);
   }
@@ -112,12 +121,78 @@ export function scoreGrowth(growth) {
     c.push(`revenue accel ${a >= 0 ? "+" : ""}${a.toFixed(1)}pp → ${pt.toFixed(2)}`);
   }
 
-  // EPS YoY growth
+  // EPS YoY growth — log-scaled continuous (audit Aug-28). Same problem
+  // as revenue: prior saturation at 30% hid the difference between a
+  // 30% grower and a 200% earnings-inflection name. Reference threshold
+  // 30% = 1.0.
   if (Number.isFinite(growth.epsYoYPct)) {
     const g = growth.epsYoYPct;
-    const pt = g >= 30 ? 1 : g >= 15 ? 0.75 : g >= 8 ? 0.5 : g >= 0 ? 0.3 : 0;
+    let pt;
+    if (g <= 0) pt = 0;
+    else if (g <= 30) pt = 0.3 + (g / 30) * 0.7;
+    else pt = 1.0 + Math.log10(g / 30) * 0.4;
     sub += pt; denom += 1;
     c.push(`EPS YoY ${g >= 0 ? "+" : ""}${g.toFixed(1)}% → ${pt.toFixed(2)}`);
+  }
+
+  // ── Tier 2.2 change-detection signals (audit Aug-28) ─────────────
+  // These are 2nd-derivatives that identify inflection points BEFORE
+  // they show up in absolute-level factor scores. Each contributes as
+  // an independent factor when the underlying data exists.
+
+  // EPS acceleration — Q0 YoY minus Q1 YoY. Positive = growth rate is
+  // improving quarter-over-quarter (earnings-inflection signal).
+  // Reference: +5pp = strong (1.0), 0 = neutral (0.5), −5pp = 0.
+  if (Number.isFinite(growth.epsAccelPp)) {
+    const a = growth.epsAccelPp;
+    let pt;
+    if (a >= 5) pt = 1;
+    else if (a >= 0) pt = 0.5 + (a / 5) * 0.5;
+    else if (a >= -5) pt = 0.5 + (a / 5) * 0.5;   // symmetric slope
+    else pt = 0;
+    sub += pt; denom += 1;
+    c.push(`EPS accel ${a >= 0 ? "+" : ""}${a.toFixed(1)}pp → ${pt.toFixed(2)}`);
+  }
+
+  // Gross margin expansion (pp) — same-quarter year-ago. Positive =
+  // pricing power / operating leverage improving. +2pp = 1.0 threshold.
+  if (Number.isFinite(growth.grossMarginExpansionPp)) {
+    const m = growth.grossMarginExpansionPp;
+    let pt;
+    if (m >= 2) pt = 1;
+    else if (m >= 0) pt = 0.5 + (m / 2) * 0.5;
+    else if (m >= -2) pt = 0.5 + (m / 2) * 0.5;
+    else pt = 0;
+    sub += pt; denom += 1;
+    c.push(`gross margin ${m >= 0 ? "+" : ""}${m.toFixed(1)}pp → ${pt.toFixed(2)}`);
+  }
+
+  // Operating margin expansion (pp) — sharper signal than gross since
+  // it captures cost discipline + scale benefits. +1.5pp = 1.0.
+  if (Number.isFinite(growth.opMarginExpansionPp)) {
+    const m = growth.opMarginExpansionPp;
+    let pt;
+    if (m >= 1.5) pt = 1;
+    else if (m >= 0) pt = 0.5 + (m / 1.5) * 0.5;
+    else if (m >= -1.5) pt = 0.5 + (m / 1.5) * 0.5;
+    else pt = 0;
+    sub += pt; denom += 1;
+    c.push(`op margin ${m >= 0 ? "+" : ""}${m.toFixed(1)}pp → ${pt.toFixed(2)}`);
+  }
+
+  // FCF conversion trend (pp) — same-quarter year-ago FCF/revenue
+  // ratio delta. Rising FCF conversion is often the earliest sign of
+  // an inflecting business — cash arrives before it shows up in
+  // GAAP earnings. +2pp = 1.0.
+  if (Number.isFinite(growth.fcfConversionTrendPp)) {
+    const f = growth.fcfConversionTrendPp;
+    let pt;
+    if (f >= 2) pt = 1;
+    else if (f >= 0) pt = 0.5 + (f / 2) * 0.5;
+    else if (f >= -2) pt = 0.5 + (f / 2) * 0.5;
+    else pt = 0;
+    sub += pt; denom += 1;
+    c.push(`FCF conversion ${f >= 0 ? "+" : ""}${f.toFixed(1)}pp → ${pt.toFixed(2)}`);
   }
 
   return denom > 0
@@ -153,18 +228,68 @@ export function scoreRelativeStrength(rsInput) {
       c.push(`RS ${name} ${val >= 0 ? "+" : ""}${val.toFixed(1)}pp vs bench → ${pt.toFixed(2)}`);
     }
   }
+
+  // ── Tier 2.2: RS acceleration / new-leadership detector ─────────
+  // Audit Aug-28: scoring each window in isolation misses the
+  // "emerging leadership" pattern — a stock quiet over 12M (or even
+  // a laggard) whose 3M RS is suddenly leading is exactly the kind of
+  // pattern that identifies rotation-driven winners. Bonus applied
+  // when short-window RS materially exceeds long-window RS, gated by
+  // both windows existing.
+  //   3M − 12M-proxy(6M): +5pp = emerging, +10pp = strong emergence.
+  // We only have 1M/3M/6M so use 6M as the "long" reference. Fires
+  // as an additive bonus (up to +0.15 on the normalized RS score) to
+  // preserve the existing window-level contributions.
+  if (Number.isFinite(rs3mPp) && Number.isFinite(rs6mPp) && denom > 0) {
+    const emergencePp = rs3mPp - rs6mPp;
+    let bonus = 0;
+    if (emergencePp >= 10) bonus = 0.15;
+    else if (emergencePp >= 5) bonus = 0.10;
+    else if (emergencePp >= 2) bonus = 0.05;
+    if (bonus > 0) {
+      // Divide by denom so total score stays in [0, 1] with headroom.
+      // Effectively: emerging leadership adds up to ~15% to the RS score.
+      sub += bonus * denom;
+      c.push(`RS emergence (3M − 6M = ${emergencePp >= 0 ? "+" : ""}${emergencePp.toFixed(1)}pp) → bonus +${bonus.toFixed(2)}`);
+    }
+  }
+
   return denom > 0
-    ? { score: sub / denom, contributors: c }
+    ? { score: Math.min(1, sub / denom), contributors: c }
     : { score: 0.5, contributors: ["no RS windows — neutral"] };
 }
 
-// Insider — recent cluster buy signal. Boolean input from insider-
-// signals service; if signal exists this factor gets a bump.
+// Insider — recent cluster buy signal + velocity (Tier 2.2 audit
+// Aug-28). Baseline signal (clusterBuy/clusterSell) unchanged. Velocity
+// adds a bonus/penalty when cluster activity is materially accelerating
+// or cooling window-over-window:
+//   velocityDeltaPct ≥ +50%   → +0.10 (accelerating conviction)
+//   velocityDeltaPct ≤ −50%   → −0.10 (conviction cooling)
+//   otherwise no adjustment
+// Score is clamped to [0, 1] so bonus can't overflow.
 export function scoreInsider(insider) {
   if (!insider) return { score: 0.5, contributors: ["no insider signal — neutral"] };
-  if (insider.clusterBuy) return { score: 1, contributors: ["insider cluster BUY detected"] };
-  if (insider.clusterSell) return { score: 0, contributors: ["insider cluster SELL detected"] };
-  return { score: 0.5, contributors: ["insider activity mixed — neutral"] };
+  let base;
+  const contributors = [];
+  if (insider.clusterBuy) { base = 1; contributors.push("insider cluster BUY detected"); }
+  else if (insider.clusterSell) { base = 0; contributors.push("insider cluster SELL detected"); }
+  else { base = 0.5; contributors.push("insider activity mixed — neutral"); }
+  // Velocity delta (optional field).
+  if (Number.isFinite(insider.velocityDeltaPct)) {
+    const v = insider.velocityDeltaPct;
+    let bonus = 0;
+    if (v >= 100) bonus = 0.15;
+    else if (v >= 50) bonus = 0.10;
+    else if (v >= 25) bonus = 0.05;
+    else if (v <= -100) bonus = -0.15;
+    else if (v <= -50) bonus = -0.10;
+    else if (v <= -25) bonus = -0.05;
+    if (bonus !== 0) {
+      base = Math.max(0, Math.min(1, base + bonus));
+      contributors.push(`cluster velocity ${v >= 0 ? "+" : ""}${Math.round(v)}% → ${bonus >= 0 ? "+" : ""}${bonus.toFixed(2)}`);
+    }
+  }
+  return { score: base, contributors };
 }
 
 // Technical — thin wrapper that normalizes scoreCandidate's 0-100

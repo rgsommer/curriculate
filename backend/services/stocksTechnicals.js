@@ -311,6 +311,56 @@ function detectSetups(points, tech, vol) {
     }
   }
 
+  // ─── New-52-Week-High on RVOL breakout (audit Aug-28) ───────────
+  // Rationale: the existing detectors (VCP, bull flag, coiled spring,
+  // pocket pivot) all look for COMPRESSION patterns — stocks setting
+  // up quietly for a move. None recognize the move itself. When a name
+  // closes at a fresh 52-week high on materially elevated volume, that
+  // IS the setup — it's the market announcing new leadership. Ignoring
+  // this pattern is the direct cause of missing every 2024-2026
+  // breakout leader.
+  //
+  // Conditions:
+  //   • Today's close ≥ prior 250-day high (fresh 52-wk high)
+  //   • Today's volume ≥ 1.5× 50-day avg volume (RVOL confirmation)
+  //   • Score 82 (between bull flag 78 and VCP 85)
+  //
+  // Uses `points` (daily OHLC) which already reaches this function.
+  // Silently no-ops when we have <250 points (young ticker) so
+  // recently-IPO'd names get scored on the other setups; a real
+  // "all-time high on RVOL" for a 6-month-old IPO is caught by
+  // pocket-pivot + volume flag already.
+  if (Array.isArray(points) && points.length >= 250) {
+    const N = 250;
+    const lastPt = points[points.length - 1];
+    const prior = points.slice(-N - 1, -1); // last 250 bars EXCLUDING today
+    let prior52wHigh = -Infinity;
+    for (const p of prior) { if (p.high > prior52wHigh) prior52wHigh = p.high; }
+    // Volume confirmation: today's volume relative to prior 50-day avg
+    const prior50 = points.slice(-51, -1);
+    let vol50sum = 0, vol50n = 0;
+    for (const p of prior50) { if (Number.isFinite(p.volume) && p.volume > 0) { vol50sum += p.volume; vol50n++; } }
+    const avgVol50 = vol50n > 0 ? vol50sum / vol50n : 0;
+    const rvolToday = avgVol50 > 0 && Number.isFinite(lastPt.volume) ? lastPt.volume / avgVol50 : 0;
+    // Fresh close: today's close > prior 52w high (not just intraday
+    // high). Intraday spikes into new-high territory that FAIL to close
+    // there are not breakouts — they're rejections.
+    const closeAtNewHigh = Number.isFinite(lastPt.close) && Number.isFinite(prior52wHigh)
+      && lastPt.close > prior52wHigh;
+    if (closeAtNewHigh && rvolToday >= 1.5) {
+      setups.push({
+        name: "52-week high breakout on RVOL",
+        type: "bullish",
+        score: 82,
+        evidence: [
+          `Today's close $${lastPt.close.toFixed(2)} > prior 250-day high $${prior52wHigh.toFixed(2)}`,
+          `Volume ${(lastPt.volume / 1e6).toFixed(1)}M is ${rvolToday.toFixed(2)}× 50d avg (${(avgVol50 / 1e6).toFixed(1)}M)`,
+          `Fresh leadership signal — market is repricing this name higher on real participation`,
+        ],
+      });
+    }
+  }
+
   return setups.sort((a, b) => b.score - a.score);
 }
 

@@ -254,12 +254,28 @@ function scoreCandidate(tech) {
     else if (tech.priceVsSma50 >= 0) add(10, `above SMA50 but SMA50<SMA200`);
   }
 
-  // Momentum
+  // Momentum — soft slope. RSI is a trend measure, not a top-picker
+  // (Wilder's original guidance). Prior version hard-killed RSI>75 at
+  // −30, which systematically excluded every trend leader (NVDA/PLTR-in-
+  // uptrend types typically sit at 75-90 for weeks). Vet audit Aug-28
+  // identified this as the single largest anti-winner tax in the code.
+  // New curve rewards trend across the full healthy range, tapers only
+  // at true blow-off (>92), never punishes trend continuation with a
+  // negative delta:
+  //   RSI 40-50: +8  (recovering)
+  //   RSI 50-65: +15 (sweet spot)
+  //   RSI 65-75: +15 (trend continuation)
+  //   RSI 75-85: +10 (strong uptrend — the "leader" zone)
+  //   RSI 85-92: +5  (extended but still legitimate)
+  //   RSI >92:   0   (blow-off risk — neutral, not negative)
   if (tech.rsi14 != null) {
-    if (tech.rsi14 >= 50 && tech.rsi14 <= 65) add(15, `RSI ${tech.rsi14.toFixed(0)} sweet spot`);
-    else if (tech.rsi14 >= 40 && tech.rsi14 < 50) add(7, `RSI ${tech.rsi14.toFixed(0)} recovering`);
-    else if (tech.rsi14 > 65 && tech.rsi14 <= 75) add(3, `RSI ${tech.rsi14.toFixed(0)} elevated`);
-    else if (tech.rsi14 > 75) add(-30, `RSI ${tech.rsi14.toFixed(0)} OVERBOUGHT — killed`);
+    if (tech.rsi14 >= 40 && tech.rsi14 < 50) add(8, `RSI ${tech.rsi14.toFixed(0)} recovering`);
+    else if (tech.rsi14 >= 50 && tech.rsi14 <= 65) add(15, `RSI ${tech.rsi14.toFixed(0)} sweet spot`);
+    else if (tech.rsi14 > 65 && tech.rsi14 <= 75) add(15, `RSI ${tech.rsi14.toFixed(0)} trend continuation`);
+    else if (tech.rsi14 > 75 && tech.rsi14 <= 85) add(10, `RSI ${tech.rsi14.toFixed(0)} strong uptrend`);
+    else if (tech.rsi14 > 85 && tech.rsi14 <= 92) add(5, `RSI ${tech.rsi14.toFixed(0)} extended`);
+    // RSI > 92: neutral (no add). Blow-off risk, but no punitive kill —
+    // the actual thesis, R/R, and MTF gates below handle timing.
   }
 
   // Volume
@@ -284,8 +300,12 @@ function scoreCandidate(tech) {
   else if (tech.mtf?.confluence === "aligned" && tech.mtf.direction === "down") add(-15, `MTF aligned DOWN — killed`);
   else if (tech.mtf?.confluence === "conflicting") add(-5, `MTF conflicting`);
 
-  // Kill: price below SMA50 = downtrend
-  if (tech.priceVsSma50 != null && tech.priceVsSma50 < -3) add(-20, `below SMA50 (${tech.priceVsSma50.toFixed(1)}%)`);
+  // Kill: price below SMA50 = downtrend. Halved from -20 to -10 (audit
+  // Aug-28): the prior -20 punished the "handle" of every cup-and-handle
+  // by 20 pts, often dropping legitimate pullback-to-support entries
+  // below minScore. -10 still expresses "below trend is a headwind" but
+  // no longer dominates a pick's composite when everything else is right.
+  if (tech.priceVsSma50 != null && tech.priceVsSma50 < -3) add(-10, `below SMA50 (${tech.priceVsSma50.toFixed(1)}%)`);
 
   const clamped = Math.max(0, Math.min(100, Math.round(score)));
   return { score: clamped, contributors, contributions, rawSum: score };
@@ -320,7 +340,13 @@ async function resolveUniverseForUser(email) {
   // in the mix so a broad-load failure never leaves the pick engine
   // with an empty universe. STOCKS_BROAD_UNIVERSE_CAP is a tuning
   // knob (500 default) not an on/off switch.
-  const cap = Math.max(100, Math.min(2000, Number(process.env.STOCKS_BROAD_UNIVERSE_CAP) || 500));
+  // Raised default 500 → 1500 (audit Aug-28). At 500 tickers the algorithm
+  // was structurally blind to ~2000 of the ~3000 investable US+CA names —
+  // it "cannot discover opportunities it never examines." Stage-2 top-K
+  // (30) is unchanged, so per-tick expensive FMP calls stay bounded; only
+  // the cheap Stage-1 technical pre-screen widens. Max lifted 2000 → 3000
+  // so a power-user override can go broader when investigating.
+  const cap = Math.max(100, Math.min(3000, Number(process.env.STOCKS_BROAD_UNIVERSE_CAP) || 1500));
   try {
     const { getBroadUniverse } = await import("./stocksUniverse.js");
     const broad = await getBroadUniverse();
@@ -382,6 +408,11 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   );
   const universe = rawUniverse.filter((t) => !excludeSet.has(normalizeTicker(t)));
   const scored = [];
+  // Tier 2.1 fundamentals-rescue pool — candidates with technical
+  // scores in [25, 40) that would otherwise be dropped. Stage 2 runs
+  // the multi-factor composite over the top N of these; any that clear
+  // FUNDAMENTALS_RESCUE_PROMOTION join the final ranking union.
+  const rescueScored = [];
   // Aggregate skip counters so a 500-ticker universe doesn't dump
   // 300+ per-ticker SKIP log lines every tick. Individual reasons
   // are still reachable via STOCKS_PICK_ENGINE_VERBOSE=1 for debug.
@@ -442,7 +473,38 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         console.warn(`[pick-engine-special-situation] lookup failed for ${ticker}:`, e?.message);
       }
       const { score, contributors, contributions, rawSum } = scoreCandidate(tech);
-      if (score < minScore) { skipCounts.belowMinScore++; continue; }
+      // Fundamentals-rescue pool (Tier 2.1, audit Aug-28). Candidates
+      // scoring 25-40 on pure technicals used to be dropped as
+      // belowMinScore — meaning a pullback name with weak-chart-but-
+      // strong-fundamentals never saw the multi-factor composite. Now
+      // we PRESERVE them into a rescueScored[] pool; Stage 2 pulls the
+      // top-N from there, fetches fundamentals, and any name whose
+      // compositeRank clears the promotion threshold gets unioned into
+      // the final top-N candidate set. Below 25 is still dropped —
+      // 25-40 is the "weak but not broken" band where fundamentals
+      // can plausibly rescue a candidate.
+      const FUNDAMENTALS_RESCUE_FLOOR = 25;
+      if (score < minScore) {
+        if (score >= FUNDAMENTALS_RESCUE_FLOOR) {
+          // Persist minimally-shaped stub to rescuePool; Stage 2 fills
+          // in the fundamentals pass.
+          rescueScored.push({
+            ticker,
+            currency: ccy,
+            deterministicScore: score,
+            scoreContributors: contributors,
+            scoreContributions: contributions,
+            scoreRawSum: rawSum,
+            entryPrice: tech.last,
+            atr14: tech.atr14 || null,
+            setupName: (tech.setups || []).find(s => s.type === "bullish")?.name || null,
+            mtfConfluence: tech.mtf?.confluence || null,
+            _rescueOrigin: true, // marker so the union step knows to guard the promotion threshold
+          });
+        }
+        skipCounts.belowMinScore++;
+        continue;
+      }
       const bullSetup = (tech.setups || []).find((s) => s.type === "bullish");
       // Per-setup surgical kill — drop candidates whose detected setup
       // is in the user's banned set (proven losing history over ≥10
@@ -608,7 +670,7 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     ]);
     const { computeMultiFactorScore, computeRelativeStrengthFromBars } = mfMod;
     const { getGrowth, getEstimateRevisions } = growthMod;
-    const { getRecentInsiderSignals } = insiderMod;
+    const { getRecentInsiderSignals, getInsiderClusterVelocity } = insiderMod;
 
     // Load benchmark bars once, reused across the top-K.
     let spyBars = null, xicBars = null;
@@ -620,16 +682,32 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // Insider signals: one batch query for the whole top-K rather than
     // per-ticker Mongo hits inside the loop. Bucket by ticker so per-
     // candidate lookup is O(1) below.
+    // Tier 2.2 (audit Aug-28): also fetch cluster velocity in parallel
+    // (window-over-window comparison) so scoreInsider can reward
+    // accelerating conviction and penalize cooling clusters.
     const stage2Bases = stage2Input.map(c => String(c.ticker).replace(/\..*$/, ""));
     let insiderByBase = new Map();
     try {
-      const signals = await getRecentInsiderSignals(stage2Bases, { days: 30, limit: 60 });
+      const [signals, velocityMap] = await Promise.all([
+        getRecentInsiderSignals(stage2Bases, { days: 30, limit: 60 }),
+        getInsiderClusterVelocity(stage2Bases, { windowDays: 30 }).catch(() => new Map()),
+      ]);
       for (const s of signals || []) {
         const b = String(s.ticker || "").toUpperCase().replace(/\..*$/, "");
         const prev = insiderByBase.get(b) || { clusterBuy: false, clusterSell: false };
         if (s.kind === "cluster_buy") prev.clusterBuy = true;
         if (s.kind === "cluster_sell") prev.clusterSell = true;
         insiderByBase.set(b, prev);
+      }
+      // Fold velocity into the same bucket. Tickers with no clusters
+      // but positive velocity still get a scoreable object so
+      // scoreInsider can express the trend.
+      for (const [base, vel] of velocityMap) {
+        const prev = insiderByBase.get(base) || { clusterBuy: false, clusterSell: false };
+        prev.velocityDeltaPct = vel.velocityDeltaPct;
+        prev.velocityRecentScore = vel.recentScore;
+        prev.velocityPriorScore = vel.priorScore;
+        insiderByBase.set(base, prev);
       }
     } catch (e) { console.warn("[pick-engine-multi-factor] insider batch failed:", e?.message); }
 
@@ -675,10 +753,118 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         }
       }));
     }
-    // Re-rank on multi-factor composite. Fallback (rare) is technical.
-    stage2Input.sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore));
-    top = stage2Input.slice(0, n);
-    console.log(`[pick-engine-multi-factor] scored ${stage2Input.length} candidates w/ growth+revisions+insider, final top ${top.length}`);
+    // ── Tier 2.1: Fundamentals-rescue pass ──────────────────────
+    // Take the top-K by technical from rescueScored[] (the 25-40 band),
+    // fetch fundamentals with the same composite, and any candidate
+    // whose compositeRank clears the promotion threshold gets unioned
+    // into stage2Input for the final rerank. This is the audit's fix
+    // for "a pullback name with weak technicals but 80% revenue growth
+    // never gets fundamentals scored." Bounded at RESCUE_TOP_K so FMP
+    // calls stay capped (main K + rescue K = ~45 per tick worst case).
+    const RESCUE_TOP_K = Math.max(5, Math.min(30, Number(process.env.STOCKS_RESCUE_TOP_K) || 15));
+    const FUNDAMENTALS_RESCUE_PROMOTION = 60; // multi-factor composite ≥ 60 to promote
+    rescueScored.sort((a, b) => b.deterministicScore - a.deterministicScore);
+    const rescueInput = rescueScored.slice(0, RESCUE_TOP_K);
+    const rescueBases = rescueInput.map(c => String(c.ticker).replace(/\..*$/, ""));
+    let rescueInsiderByBase = new Map();
+    try {
+      const rSignals = await getRecentInsiderSignals(rescueBases, { days: 30, limit: 40 });
+      for (const s of rSignals || []) {
+        const b = String(s.ticker || "").toUpperCase().replace(/\..*$/, "");
+        const prev = rescueInsiderByBase.get(b) || { clusterBuy: false, clusterSell: false };
+        if (s.kind === "cluster_buy") prev.clusterBuy = true;
+        if (s.kind === "cluster_sell") prev.clusterSell = true;
+        rescueInsiderByBase.set(b, prev);
+      }
+    } catch { /* soft-fail */ }
+    for (let i = 0; i < rescueInput.length; i += CONC) {
+      const slice = rescueInput.slice(i, i + CONC);
+      await Promise.all(slice.map(async (cand) => {
+        try {
+          const ccy = cand.currency || "USD";
+          const bench = ccy === "CAD" ? xicBars : spyBars;
+          const base = String(cand.ticker).replace(/\..*$/, "");
+          const [tickerBars, fundamentals, growth, revisions] = await Promise.all([
+            fetchYahooDaily(cand.ticker, "1y").catch(() => null),
+            getFundamentals(cand.ticker, ccy).catch(() => null),
+            getGrowth(cand.ticker).catch(() => null),
+            getEstimateRevisions(cand.ticker).catch(() => null),
+          ]);
+          const rs = (tickerBars && bench)
+            ? computeRelativeStrengthFromBars(tickerBars, bench) : { ok: false };
+          const insider = rescueInsiderByBase.get(base) || null;
+          const composite = computeMultiFactorScore({
+            technicalScore: cand.deterministicScore,
+            fundamentals, growth, revisions, rs, insider,
+          });
+          cand.multiFactorScore = composite.score;
+          cand.multiFactorContributors = composite.contributors;
+          cand.factorBreakdown = Object.fromEntries(
+            Object.entries(composite.factors).map(([k, v]) => [k, v.score])
+          );
+          cand.compositeRank = composite.score;
+        } catch (e) {
+          console.warn(`[pick-engine-rescue] ${cand.ticker} skipped:`, e?.message);
+        }
+      }));
+    }
+    // Promote rescue candidates that cleared the fundamentals bar.
+    // These lack the full pick shape (targetPrice/stopPrice/watchTrigger
+    // — Stage 1 skipped them) so give them a minimal target/stop from
+    // ATR fallback so downstream code doesn't crash on null.
+    const promoted = rescueInput.filter(c => (c.compositeRank ?? 0) >= FUNDAMENTALS_RESCUE_PROMOTION);
+    for (const p of promoted) {
+      if (!p.targetPrice) p.targetPrice = p.entryPrice + (p.atr14 || p.entryPrice * 0.04) * 2;
+      if (!p.stopPrice) p.stopPrice = p.entryPrice - (p.atr14 || p.entryPrice * 0.03) * 1.5;
+      if (!p.targetSource) p.targetSource = "atr-2x";
+      if (!p.rationale) {
+        p.rationale = `Fundamentals-rescue: technical composite ${p.deterministicScore} but multi-factor composite ${p.compositeRank}. ${p.multiFactorContributors?.slice(0, 3).join(" · ") || ""}`;
+      }
+    }
+    if (promoted.length > 0) {
+      console.log(`[pick-engine-rescue] promoted ${promoted.length}/${rescueInput.length} fundamentals-rescue candidates: ${promoted.map(p => `${p.ticker}(tech ${p.deterministicScore}→comp ${p.compositeRank})`).join(", ")}`);
+    }
+
+    // ── Tier 2.1: External adjustment applied to compositeRank ──
+    // Previously the external nomination adjustment was rendered as
+    // display text only ("base 76 + external +5 = enhanced 81") but did
+    // not shift `top` selection. Now it modifies compositeRank so a
+    // ticker with insider cluster + institutional new-position + sell-
+    // side upgrade can actually pass another ticker in the final rank.
+    // Cap: +5 max (already enforced by getExternalConvictionForTicker's
+    // EXTERNAL_ADJUSTMENT_CAP). We add it to compositeRank with a hard
+    // ceiling of 100 so external can't inflate a mediocre base past a
+    // strong genuine composite.
+    const combined = [...stage2Input, ...promoted];
+    try {
+      const { getExternalConvictionForTicker } = await import("./stocksExternalNominations.js");
+      // Parallelize the lookups — each is a small Mongo read.
+      const EXT_CONC = 6;
+      for (let i = 0; i < combined.length; i += EXT_CONC) {
+        const slice = combined.slice(i, i + EXT_CONC);
+        await Promise.all(slice.map(async (cand) => {
+          try {
+            if (cand.compositeRank == null) return;
+            const conviction = await getExternalConvictionForTicker(cand.ticker, {
+              currency: cand.currency || "USD",
+              baseComposite: cand.compositeRank,
+            });
+            cand.baseCompositeRank = cand.compositeRank;
+            cand.externalAdjustment = conviction?.externalAdjustment || 0;
+            cand.externalConvictionScore = conviction?.externalConvictionScore || 0;
+            cand.compositeRank = Math.min(100, cand.baseCompositeRank + cand.externalAdjustment);
+          } catch { /* soft-fail — leave compositeRank unchanged */ }
+        }));
+      }
+    } catch (e) {
+      console.warn("[pick-engine-external] adjustment pass failed:", e?.message);
+    }
+
+    // Re-rank on multi-factor composite (now includes external
+    // adjustment). Fallback (rare) is technical.
+    combined.sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore));
+    top = combined.slice(0, n);
+    console.log(`[pick-engine-multi-factor] scored ${stage2Input.length} technical + ${rescueInput.length} rescue (${promoted.length} promoted), external adjustment applied, final top ${top.length}`);
   } else {
     top = [];
   }
