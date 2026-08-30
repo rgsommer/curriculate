@@ -113,6 +113,69 @@ VERDICT RULES:
   }
 }
 
+// ─── Daily-pick adapter (Tier 3.1 audit Aug-28) ──────────────────
+// Adapts a daily-pick shape (deterministicScore, targetPrice,
+// stopPrice, setupName, rationale) into the discovery-pick shape
+// verifyPick expects (bullCase, watchZone, projection, keyCatalysts).
+// Then routes through the same Haiku bear-case attack.
+//
+// Called from renderDailyPicksDeterministic on picks with tier=BUY
+// BEFORE the tier is finalized. Verdict "reject" downgrades tier to
+// SCREENED-BEAR; "risk_flagged" is annotated but doesn't change tier
+// (deterministic gates already have R/R + MTF + regime protection).
+//
+// Fail-open: if the Anthropic call fails or returns malformed JSON,
+// this returns null and the pick ships as-is with no bear badge.
+export async function verifyDailyPickAdversarial(dailyPick) {
+  if (!dailyPick || !dailyPick.ticker) return null;
+  // Build the discovery-pick shape verifyPick expects. Rationale
+  // becomes the bull case; setupName + score becomes the "why". If
+  // the daily pick has scoreContributors, they become the catalysts
+  // list — makes the bear case attack the actual signals we scored on.
+  const projection = {
+    target: dailyPick.targetPrice ?? null,
+    stop: dailyPick.stopPrice ?? null,
+    projectedRoiPct: (dailyPick.targetPrice && dailyPick.entryPrice)
+      ? Math.round(((dailyPick.targetPrice - dailyPick.entryPrice) / dailyPick.entryPrice) * 1000) / 10
+      : null,
+    downsidePct: (dailyPick.stopPrice && dailyPick.entryPrice)
+      ? Math.round(((dailyPick.entryPrice - dailyPick.stopPrice) / dailyPick.entryPrice) * 1000) / 10
+      : null,
+  };
+  const adapted = {
+    ticker: dailyPick.ticker,
+    weightedScore: dailyPick.compositeRank ?? dailyPick.deterministicScore,
+    riskRating: dailyPick.deterministicScore >= 80 ? "medium" : dailyPick.deterministicScore >= 60 ? "elevated" : "high",
+    bullCase: dailyPick.rationale || `Composite ${dailyPick.deterministicScore} · setup ${dailyPick.setupName || "n/a"}`,
+    watchZone: dailyPick.entryPrice ? `$${dailyPick.entryPrice.toFixed(2)}` : null,
+    projection,
+    whyBeatOthers: dailyPick.multiFactorContributors?.slice(0, 5).join(" · ") || null,
+    keyCatalysts: dailyPick.scoreContributors?.slice(0, 5) || null,
+    whatProvesWrong: dailyPick.stopPrice ? `Break of stop $${dailyPick.stopPrice.toFixed(2)}` : null,
+  };
+  // Route through the same verifyPick — no tech/fund objects, so the
+  // bear-case operates on the bull thesis alone (still surfaces real
+  // teeth on macro / competitor / valuation risk).
+  return verifyPick(adapted, null, null);
+}
+
+// Attack N daily picks in parallel with a concurrency cap. Similar
+// shape to verifyPicksBatch but uses the daily-pick adapter.
+export async function verifyDailyPicksBatch(dailyPicks, { concurrency = 3 } = {}) {
+  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return {};
+  const out = {};
+  for (let i = 0; i < dailyPicks.length; i += concurrency) {
+    const slice = dailyPicks.slice(i, i + concurrency);
+    await Promise.all(slice.map(async (pick) => {
+      try {
+        const v = await verifyDailyPickAdversarial(pick);
+        if (v) out[pick.ticker] = v;
+      } catch { /* fail-open */ }
+    }));
+  }
+  return out;
+}
+
 // Attack N picks in parallel. Returns the same shape as verifyPick, indexed
 // by ticker so the caller can attach to each pick without positional coupling.
 export async function verifyPicksBatch(picks, quantByTicker) {

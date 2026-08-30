@@ -1062,6 +1062,25 @@ async function renderDailyPicksDeterministic(dailyPicks) {
   if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
   const { verifyRecPrice } = await import("../services/marketDataIntegrity.js");
   const { auditPickReconciliation } = await import("../services/briefingAudit.js");
+  // Tier 3.1 (audit Aug-28): run adversarial verify on candidate BUYs.
+  // Bear-case verdict "reject" downgrades tier to SCREENED-BEAR;
+  // "risk_flagged" annotates but doesn't change tier. Fail-open on
+  // Anthropic errors — the pick ships without a bear badge.
+  let adversarialByTicker = {};
+  try {
+    // Only pay for verify on BUY-candidate picks (composite ≥ 70).
+    // WATCH / SCREENED / MONITOR are already blocked from actionable
+    // BUY; no LLM call needed on those.
+    const buyCandidates = dailyPicks.filter(p => !p.blockedReason
+      && !p.specialSituation?.active
+      && Number.isFinite(p.deterministicScore) && p.deterministicScore >= 70);
+    if (buyCandidates.length > 0) {
+      const { verifyDailyPicksBatch } = await import("../services/stocksAdversarialVerify.js");
+      adversarialByTicker = await verifyDailyPicksBatch(buyCandidates, { concurrency: 2 });
+    }
+  } catch (e) {
+    console.warn("[daily-picks-adversarial] batch verify failed:", e?.message);
+  }
   const PICK_PRICE_DRIFT_MAX_PCT = 5.0;
   // Per-pick reconciliation audit — strip any pick whose displayed
   // composite doesn't reconcile to the sum of its contributions (hidden
@@ -1143,6 +1162,13 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       // ACTIVE M&A with a plain-English explanation.
       const situation = p.specialSituation || null;
       const situationActive = situation && situation.active;
+      // Tier 3.1 (audit Aug-28): adversarial verify verdict lookup. A
+      // "reject" verdict downgrades an otherwise-BUY tier to SCREENED-
+      // BEAR; "risk_flagged" annotates but doesn't change tier (the
+      // deterministic R/R + MTF + regime gates already provide the
+      // structural protection; the bear pass is an editorial layer).
+      const adversarial = adversarialByTicker[p.ticker] || null;
+      const adversarialReject = adversarial && adversarial.verdict === "reject";
       let tier;
       let priceableDeal = false;
       if (situationActive) {
@@ -1150,6 +1176,9 @@ async function renderDailyPicksDeterministic(dailyPicks) {
         // impliedDealValue when the store row was read.
         priceableDeal = !!(situation.impliedDealValue && Number.isFinite(situation.impliedDealValue.impliedValue));
         tier = priceableDeal ? "EVENT-DRIVEN" : "SCREENED-MA";
+      } else if (adversarialReject) {
+        // Bear case wins — do not label as BUY regardless of composite/R/R.
+        tier = "SCREENED-BEAR";
       } else if (p.deterministicScore >= 70 && !isConflict && rrOk) {
         tier = "BUY";
       } else if (p.deterministicScore >= 70 && !isConflict && !rrOk) {
@@ -1171,12 +1200,15 @@ async function renderDailyPicksDeterministic(dailyPicks) {
       }
       const tierColor = tier === "BUY" ? "✅"
                       : tier === "EVENT-DRIVEN" ? "🎯"
-                      : tier === "SCREENED-MA" || tier === "SCREENED" ? "⛔"
+                      : tier === "SCREENED-MA" || tier === "SCREENED" || tier === "SCREENED-BEAR" ? "⛔"
                       : tier === "WATCH" ? "⚠️"
                       : "🔍";
       // Identity line: ticker · currency · verified live price · tier.
       const compositeLabel = p.deterministicScore == null ? "n/a" : p.deterministicScore;
-      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${compositeLabel}${setupTag}${mtfTag} · ${tierColor} **${tier === "SCREENED-MA" ? "SCREENED — ACTIVE M&A" : tier}**`);
+      const tierDisplayLabel = tier === "SCREENED-MA" ? "SCREENED — ACTIVE M&A"
+        : tier === "SCREENED-BEAR" ? "SCREENED — BEAR CASE"
+        : tier;
+      lines.push(`**${i + 1}. ${p.ticker}** [${sleeveTag.toUpperCase()}] · ${p.currency || "USD"} · composite ${compositeLabel}${setupTag}${mtfTag} · ${tierColor} **${tierDisplayLabel}**`);
       if (situationActive) {
         // Special-situation branch — skip the ordinary entry/target/stop
         // line entirely; those numbers don't apply once the deal terms
@@ -1204,12 +1236,25 @@ async function renderDailyPicksDeterministic(dailyPicks) {
         lines.push(`   Entry ~$${p.entryPrice.toFixed(2)} · target $${p.targetPrice.toFixed(2)} (+${upsidePct.toFixed(1)}%)${targetSrcLabel} · stop $${p.stopPrice.toFixed(2)} (−${downsidePct.toFixed(1)}%) · R/R ${rrStr} · verified live $${p.verifiedPrice.toFixed(2)}`);
         if (tier === "SCREENED") {
           lines.push(`   ⛔ SCREENED — composite ${p.deterministicScore} is strong but current entry/target/stop only yields R/R ${rrStr} (BUY floor: ${MIN_RR_FOR_BUY}:1). Wait for pullback or improved target structure before treating as actionable.`);
+        } else if (tier === "SCREENED-BEAR") {
+          lines.push(`   ⛔ SCREENED — BEAR CASE. Adversarial verify verdict: **reject**. ${adversarial?.bearThesis || ""}`);
+          if (adversarial?.weakestPoint) lines.push(`   Weakest point of bull thesis: ${adversarial.weakestPoint}`);
+          if (adversarial?.hiddenRisk) lines.push(`   Hidden risk: ${adversarial.hiddenRisk}`);
         } else if (tier === "WATCH") {
           const trig = p.watchTrigger;
           lines.push(`   ⚠ WATCH — requires ${trig.why} to reach ≥${MIN_RR_FOR_BUY}:1. Set alert @ $${trig.price.toFixed(2)}${p.currency ? ` ${p.currency}` : ""}. Not actionable until the trigger fires.`);
         }
         if (isConflict) {
           lines.push(`   ⚠ MTF conflicting — treat as watchlist entry, wait for confluence to align before committing size.`);
+        }
+        // Adversarial "risk_flagged" verdict — pick stays actionable
+        // but the bear case gets surfaced so the operator can size
+        // accordingly.
+        if (tier !== "SCREENED-BEAR" && adversarial?.verdict === "risk_flagged") {
+          lines.push(`   ⚠ Adversarial verify: risk flagged — ${adversarial.bearThesis}`);
+          if (adversarial.weakestPoint) lines.push(`   Weakest point: ${adversarial.weakestPoint}`);
+        } else if (tier !== "SCREENED-BEAR" && adversarial?.verdict === "confirmed_long") {
+          lines.push(`   ✓ Adversarial verify: bear-case attack failed — thesis holds under stress.`);
         }
         if (p.rationale) lines.push(`   ${p.rationale}`);
       }

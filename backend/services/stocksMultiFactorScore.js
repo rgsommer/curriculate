@@ -195,6 +195,36 @@ export function scoreGrowth(growth) {
     c.push(`FCF conversion ${f >= 0 ? "+" : ""}${f.toFixed(1)}pp → ${pt.toFixed(2)}`);
   }
 
+  // ── Turnaround archetype detector (Tier 3.1 audit Aug-28) ────────
+  // Prior scoreGrowth heavily penalized negative revenue growth (0
+  // score), which hid every legitimate turnaround setup — a company
+  // with declining revenue AND improving 2nd derivative AND margin
+  // recovery is exactly the pattern that produces multi-bagger
+  // asymmetric bets. This detector adds a bonus WHEN all three
+  // conditions align, so a turnaround candidate can score at or
+  // above a mediocre grower:
+  //   • revenueYoYPct < 0 (still declining)
+  //   • revenueAccelPp > 3 (materially improving — 2nd deriv positive)
+  //   • grossMarginExpansionPp > 0 OR opMarginExpansionPp > 0
+  // Bonus = +0.3 to the raw sub-score. Combined with the base neutral
+  // signals a turnaround typically registers 0.55-0.70, which is
+  // enough to lift a candidate above minScore in the parallel rescue
+  // pool without gaming the strong-fundamentals composite.
+  const isTurnaround =
+    Number.isFinite(growth.revenueYoYPct) && growth.revenueYoYPct < 0
+    && Number.isFinite(growth.revenueAccelPp) && growth.revenueAccelPp > 3
+    && ((Number.isFinite(growth.grossMarginExpansionPp) && growth.grossMarginExpansionPp > 0)
+      || (Number.isFinite(growth.opMarginExpansionPp) && growth.opMarginExpansionPp > 0));
+  if (isTurnaround) {
+    sub += 0.3 * (denom || 1);
+    c.push(`TURNAROUND detected — declining revenue (${growth.revenueYoYPct.toFixed(1)}%) BUT accelerating (${growth.revenueAccelPp.toFixed(1)}pp) with margin expansion → +0.30`);
+  }
+
+  // Note: no min(1) clamp — the log-scaled Tier-1 un-saturation is
+  // designed to let hypergrowth names score >1.0 on this factor so
+  // they can outrank moderate growers. The composite path weights this
+  // at 0.15, so a 1.3 growth factor contributes 0.195 — still bounded
+  // by the composite normalization downstream.
   return denom > 0
     ? { score: sub / denom, contributors: c }
     : { score: 0.5, contributors: [...c, "no growth fields — neutral"] };

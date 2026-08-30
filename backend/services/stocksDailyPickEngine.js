@@ -748,6 +748,21 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           // technical score in a side field for auditability + backtest
           // comparisons, but let compositeRank drive selection.
           cand.compositeRank = composite.score;
+          // ── Tier 3.1: Quality-Compounder archetype bump ────────
+          // A candidate that meets 4-of-5 durability tests (high ROE,
+          // FCF conversion, low leverage, margin durability, positive
+          // revenue) gets a +5 composite bump so genuine compounders
+          // outrank momentum-only picks with weaker fundamentals.
+          try {
+            const { evaluateCompounderForPick } = await import("./stocksQualityCompounder.js");
+            const evalResult = evaluateCompounderForPick({ fundamentals, growth });
+            if (evalResult.bumped) {
+              cand.qualityCompounderBadge = evalResult.badge;
+              cand.qualityCompounderReasons = evalResult.reasons;
+              cand.compositeRankPreCompounder = cand.compositeRank;
+              cand.compositeRank = Math.min(100, cand.compositeRank + evalResult.bumpAmount);
+            }
+          } catch { /* soft-fail — don't break stage 2 on compounder issue */ }
         } catch (e) {
           console.warn(`[pick-engine-multi-factor] ${cand.ticker} skipped:`, e?.message);
         }
@@ -823,6 +838,43 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     }
     if (promoted.length > 0) {
       console.log(`[pick-engine-rescue] promoted ${promoted.length}/${rescueInput.length} fundamentals-rescue candidates: ${promoted.map(p => `${p.ticker}(tech ${p.deterministicScore}→comp ${p.compositeRank})`).join(", ")}`);
+    }
+
+    // ── Tier 3.1: Fresh-news catalyst bump ─────────────────────
+    // Audit Aug-28: FMP news is a paid feed that was never wired to
+    // the daily pick engine (only surfaced on the News tab). A ticker
+    // with material news in the last 3 days is a legitimate short-term
+    // catalyst signal. We apply a small +5 bonus that stacks with the
+    // external adjustment but stays below the "genuine composite
+    // strength" tier.
+    try {
+      const { getTickerNews } = await import("./stocksNews.js");
+      const NEWS_CONC = 4;
+      const NEWS_LOOKBACK_DAYS = 3;
+      const NEWS_BUMP = 5;
+      const compForNews = [...stage2Input, ...promoted];
+      const cutoff = Date.now() - NEWS_LOOKBACK_DAYS * 86400 * 1000;
+      for (let i = 0; i < compForNews.length; i += NEWS_CONC) {
+        const slice = compForNews.slice(i, i + NEWS_CONC);
+        await Promise.all(slice.map(async (cand) => {
+          try {
+            const news = await getTickerNews(cand.ticker, cand.currency || "USD", { limit: 5 });
+            const fresh = (news || []).filter(n => {
+              const t = n.publishedAt ? new Date(n.publishedAt).getTime() : 0;
+              return t >= cutoff;
+            });
+            cand.freshNewsCount = fresh.length;
+            cand.freshNewsHeadlines = fresh.slice(0, 3).map(n => n.title).filter(Boolean);
+            if (fresh.length > 0 && Number.isFinite(cand.compositeRank)) {
+              cand.newsCatalystBump = NEWS_BUMP;
+              cand.compositeRankPreNews = cand.compositeRank;
+              cand.compositeRank = Math.min(100, cand.compositeRank + NEWS_BUMP);
+            }
+          } catch { /* soft-fail per ticker */ }
+        }));
+      }
+    } catch (e) {
+      console.warn("[pick-engine-news] catalyst bump failed:", e?.message);
     }
 
     // ── Tier 2.1: External adjustment applied to compositeRank ──
