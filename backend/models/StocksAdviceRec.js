@@ -73,6 +73,42 @@ const StocksAdviceRecSchema = new mongoose.Schema(
     hitPrice: { type: Number, default: null },
     lastCheckedAt: { type: Date, default: null },
     lastCheckedPrice: { type: Number, default: null },
+
+    // Tier 4 (audit Aug-28): per-rec MFE / MAE tracking.
+    // Prior state: the nightly sweep only recorded lastCheckedPrice —
+    // if price whipsawed to +20% then back to −5% between two sweeps,
+    // the −5% got stored and the +20% peak was lost. That erased the
+    // counterfactual signal the audit called out ("did we exit at
+    // stop before recovery?").
+    //
+    // These fields are UPDATED IN PLACE on every nightly-sweep tick
+    // while status === "open". After status flips (target-hit / stop-
+    // hit / expired), they're frozen — the operator can still see the
+    // best/worst intraday trajectory the pick achieved before exit.
+    //   peakPrice        — best mark-to-market price reached (highest for
+    //                      BUY-direction, lowest for SELL-direction).
+    //   peakPct          — MFE (max favourable excursion), signed by
+    //                      action direction so BUY +25% and SELL +25%
+    //                      both express "25% in your favour."
+    //   peakAt           — timestamp of the peak observation.
+    //   troughPrice      — worst mark-to-market price reached.
+    //   troughPct        — MAE (max adverse excursion), signed. BUY at
+    //                      −8% and SELL at −8% both express "8%
+    //                      against you."
+    //   troughAt         — timestamp of the trough observation.
+    //   postExitPeakPct  — after status != open, we keep tracking for
+    //                      another 90d so "sold winner too early"
+    //                      analysis can compare exit price vs subsequent
+    //                      peak. Reset from 0; frozen at 90d.
+    peakPrice: { type: Number, default: null },
+    peakPct: { type: Number, default: null },
+    peakAt: { type: Date, default: null },
+    troughPrice: { type: Number, default: null },
+    troughPct: { type: Number, default: null },
+    troughAt: { type: Date, default: null },
+    postExitPeakPct: { type: Number, default: null },
+    postExitPeakAt: { type: Date, default: null },
+    postExitTrackingUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );

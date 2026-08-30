@@ -3766,4 +3766,101 @@ router.post("/alerts/tick-now", requireStocksAuth, async (req, res) => {
   }
 });
 
+// ─── Tier 4: Coverage KPI + MFE/MAE diagnostic endpoints ───────
+//
+// GET /api/stocks-advice/coverage-kpi
+//   Returns recent daily coverage KPI snapshots (top-decile weekly
+//   winner discovery rate). The measurement that answers "is my
+//   discovery engine actually finding the right names?"
+router.get("/coverage-kpi", requireStocksAuth, async (req, res) => {
+  try {
+    const limit = Math.min(90, Math.max(1, parseInt(req.query.limit) || 30));
+    const { getRecentCoverageKPIs } = await import("../services/stocksMissedWinnerCoverage.js");
+    const snapshots = await getRecentCoverageKPIs({ limit });
+    // Also compute a rolling-average summary for the dashboard chip.
+    let avgCoverage = null, avgCaughtEarly = null, latest = null;
+    if (snapshots.length > 0) {
+      const withCoverage = snapshots.filter(s => Number.isFinite(s.coveragePct) && !s.error);
+      if (withCoverage.length > 0) {
+        avgCoverage = Math.round(
+          withCoverage.reduce((s, x) => s + x.coveragePct, 0) / withCoverage.length * 10
+        ) / 10;
+        avgCaughtEarly = Math.round(
+          withCoverage.reduce((s, x) => s + (x.caughtEarlyPct || 0), 0) / withCoverage.length * 10
+        ) / 10;
+      }
+      latest = snapshots[0];
+    }
+    res.json({
+      ok: true,
+      snapshots,
+      summary: {
+        count: snapshots.length,
+        avgCoveragePct: avgCoverage,
+        avgCaughtEarlyPct: avgCaughtEarly,
+        latest,
+      },
+    });
+  } catch (err) {
+    console.error("coverage-kpi error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
+// GET /api/stocks-advice/rec-mfe-mae
+//   Returns per-rec MFE/MAE stats for the user's recent recs. Answers
+//   "did I exit a winner too early?" and "what was the peak trajectory
+//   of my losers?" Reads the Tier 4 tracking fields written by the
+//   nightly outcome sweep.
+router.get("/rec-mfe-mae", requireStocksAuth, async (req, res) => {
+  try {
+    const days = Math.min(180, Math.max(7, parseInt(req.query.days) || 60));
+    const since = new Date(Date.now() - days * 86400000);
+    const recs = await StocksAdviceRec.find({
+      email: req.stocksUser.email,
+      generatedAt: { $gte: since },
+    })
+      .select({
+        ticker: 1, action: 1, generatedAt: 1, entryPrice: 1, hitPrice: 1,
+        hitAt: 1, status: 1, lastPnlPct: 1,
+        peakPct: 1, peakAt: 1, troughPct: 1, troughAt: 1,
+        postExitPeakPct: 1, postExitPeakAt: 1, sourceLabel: 1,
+      })
+      .sort({ generatedAt: -1 })
+      .limit(200)
+      .lean();
+
+    // Rolling stats — average MFE, average MAE, "sold too early"
+    // percentage (postExitPeakPct materially exceeds exit-pnl by >10%).
+    const closed = recs.filter(r => r.status !== "open" && Number.isFinite(r.postExitPeakPct));
+    const soldTooEarly = closed.filter(r =>
+      Number.isFinite(r.postExitPeakPct)
+      && Number.isFinite(r.lastPnlPct)
+      && (r.postExitPeakPct - r.lastPnlPct) > 10
+    );
+    const withMfe = recs.filter(r => Number.isFinite(r.peakPct));
+    const withMae = recs.filter(r => Number.isFinite(r.troughPct));
+    const avg = (xs, k) => xs.length > 0 ? Math.round(xs.reduce((s, x) => s + x[k], 0) / xs.length * 10) / 10 : null;
+
+    res.json({
+      ok: true,
+      recs,
+      summary: {
+        totalRecs: recs.length,
+        withMfe: withMfe.length,
+        withMae: withMae.length,
+        avgMfePct: avg(withMfe, "peakPct"),
+        avgMaePct: avg(withMae, "troughPct"),
+        closedTracked: closed.length,
+        soldTooEarlyCount: soldTooEarly.length,
+        soldTooEarlyPct: closed.length > 0 ? Math.round((soldTooEarly.length / closed.length) * 1000) / 10 : null,
+        avgPostExitPeakPct: avg(closed, "postExitPeakPct"),
+      },
+    });
+  } catch (err) {
+    console.error("rec-mfe-mae error:", err);
+    res.status(500).json({ error: err?.message || "Internal error" });
+  }
+});
+
 export default router;

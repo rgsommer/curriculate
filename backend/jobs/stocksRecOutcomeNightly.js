@@ -59,12 +59,33 @@ function pastHorizon(rec, now) {
 // Sweep one user's open recs. Batches price fetches per unique
 // exchange symbol (dedup) so a user with 20 open recs on 8 distinct
 // tickers makes 8 network calls, not 20.
+//
+// Tier 4 (audit Aug-28): also pulls in CLOSED recs that are still
+// within their 90-day post-exit tracking window. Purpose: measure
+// "did we sell a winner too early?" by keeping the peak-after-exit
+// updated for 90 days after status flipped. Adds no user-facing
+// cost; the price fetch is deduped against the open-rec set.
 async function sweepUser(email) {
   const openRecs = await StocksAdviceRec.find({ email, status: "open" }).lean();
-  if (openRecs.length === 0) return { checked: 0, targetHit: 0, stopHit: 0, expired: 0 };
+  const postExitRecs = await StocksAdviceRec.find({
+    email,
+    status: { $in: ["target-hit", "stop-hit", "expired"] },
+    // Track for 90 days after status flip. postExitTrackingUntil is
+    // set when status first transitions; if it's not set yet on a
+    // legacy rec, fall back to hitAt + 90d in the filter path.
+    $or: [
+      { postExitTrackingUntil: { $gte: new Date() } },
+      {
+        postExitTrackingUntil: null,
+        hitAt: { $gte: new Date(Date.now() - 90 * 86400000) },
+      },
+    ],
+  }).lean();
+  const allRecs = [...openRecs, ...postExitRecs];
+  if (allRecs.length === 0) return { checked: 0, targetHit: 0, stopHit: 0, expired: 0, mfeMaeUpdated: 0, postExitTracked: 0 };
 
   const symBy = new Map(); // resolvedSymbol → { ccy, recs[] }
-  for (const rec of openRecs) {
+  for (const rec of allRecs) {
     const sym = recExchangeSym(rec);
     if (!sym) continue;
     if (!symBy.has(sym)) symBy.set(sym, { ccy: rec.entryCurrency || "USD", recs: [] });
@@ -87,8 +108,10 @@ async function sweepUser(email) {
   const now = Date.now();
   const nowDate = new Date(now);
   let checked = 0, tHit = 0, sHit = 0, expired = 0;
+  let mfeMaeUpdated = 0, postExitTracked = 0;
 
   const bulkOps = [];
+  // ── OPEN recs — status transition, MFE/MAE, lastPnl ─────────
   for (const rec of openRecs) {
     const sym = recExchangeSym(rec);
     const px = priceBy.get(sym);
@@ -117,20 +140,85 @@ async function sweepUser(email) {
       lastScoredPrice: px,
     };
     if (pnlPct != null) setFields.lastPnlPct = pnlPct;
-    if (newStatus !== "open") { setFields.status = newStatus; setFields.hitPrice = hitPrice; setFields.hitAt = hitAt; }
+
+    // Tier 4 MFE/MAE tracking (audit Aug-28). Compare today's px to
+    // rec.peakPrice / rec.troughPrice (which may be null on first
+    // touch). "Best" = highest for BUY, lowest for SELL.
+    if (Number.isFinite(rec.entryPrice) && rec.entryPrice > 0 && pnlPct != null) {
+      const isLong = rec.action === "BUY" || rec.action === "HOLD";
+      const currentBest = rec.peakPrice;
+      const currentWorst = rec.troughPrice;
+      // Determine "best" and "worst" from the direction. For BUY, best=max, worst=min.
+      const isNewBest = currentBest == null
+        || (isLong ? px > currentBest : px < currentBest);
+      const isNewWorst = currentWorst == null
+        || (isLong ? px < currentWorst : px > currentWorst);
+      if (isNewBest) {
+        setFields.peakPrice = px;
+        setFields.peakPct = pnlPct;
+        setFields.peakAt = nowDate;
+        mfeMaeUpdated++;
+      }
+      if (isNewWorst) {
+        setFields.troughPrice = px;
+        setFields.troughPct = pnlPct;
+        setFields.troughAt = nowDate;
+        mfeMaeUpdated++;
+      }
+    }
+
+    if (newStatus !== "open") {
+      setFields.status = newStatus;
+      setFields.hitPrice = hitPrice;
+      setFields.hitAt = hitAt;
+      // Start post-exit tracking window — 90 days after status flip.
+      setFields.postExitTrackingUntil = new Date(now + 90 * 86400000);
+      setFields.postExitPeakPct = 0; // reset from exit price
+      setFields.postExitPeakAt = nowDate;
+    }
     bulkOps.push({ updateOne: { filter: { _id: rec._id }, update: { $set: setFields } } });
+  }
+
+  // ── CLOSED recs (within 90d window) — post-exit peak tracking ──
+  // Measures "did we sell a winner too early?" Compares current px vs
+  // exit price; positive delta means the rec kept working after we
+  // called it done.
+  for (const rec of postExitRecs) {
+    const sym = recExchangeSym(rec);
+    const px = priceBy.get(sym);
+    if (px == null || !Number.isFinite(rec.hitPrice) || rec.hitPrice <= 0) continue;
+    postExitTracked++;
+    const isLong = rec.action === "BUY" || rec.action === "HOLD";
+    // Post-exit delta signed by direction. For a BUY closed at $50 with
+    // px now $60, postExitDelta = +20%. For a SELL closed at $50 with
+    // px now $40, postExitDelta = +20% (the SELL was correct).
+    const raw = ((px - rec.hitPrice) / rec.hitPrice) * 100;
+    const postExitDelta = isLong ? raw : -raw;
+    const setFields = {};
+    const currentPeak = rec.postExitPeakPct;
+    if (currentPeak == null || postExitDelta > currentPeak) {
+      setFields.postExitPeakPct = postExitDelta;
+      setFields.postExitPeakAt = nowDate;
+    }
+    // Backfill postExitTrackingUntil for legacy recs.
+    if (!rec.postExitTrackingUntil && rec.hitAt) {
+      setFields.postExitTrackingUntil = new Date(new Date(rec.hitAt).getTime() + 90 * 86400000);
+    }
+    if (Object.keys(setFields).length > 0) {
+      bulkOps.push({ updateOne: { filter: { _id: rec._id }, update: { $set: setFields } } });
+    }
   }
 
   if (bulkOps.length > 0) {
     await StocksAdviceRec.bulkWrite(bulkOps, { ordered: false });
   }
-  return { checked, targetHit: tHit, stopHit: sHit, expired };
+  return { checked, targetHit: tHit, stopHit: sHit, expired, mfeMaeUpdated, postExitTracked };
 }
 
 // Public: mark-to-market every open rec for every user.
 export async function runRecOutcomeSweep() {
   const users = await StocksPortfolio.find({}).select({ email: 1 }).lean();
-  let total = { users: 0, checked: 0, targetHit: 0, stopHit: 0, expired: 0 };
+  let total = { users: 0, checked: 0, targetHit: 0, stopHit: 0, expired: 0, mfeMaeUpdated: 0, postExitTracked: 0 };
   for (const u of users) {
     if (!u?.email) continue;
     try {
@@ -140,11 +228,13 @@ export async function runRecOutcomeSweep() {
       total.targetHit += r.targetHit;
       total.stopHit += r.stopHit;
       total.expired += r.expired;
+      total.mfeMaeUpdated += r.mfeMaeUpdated || 0;
+      total.postExitTracked += r.postExitTracked || 0;
     } catch (e) {
       console.warn(`[rec-outcome] sweep failed for ${u.email}:`, e?.message);
     }
   }
-  console.log(`[rec-outcome] nightly sweep — users=${total.users} checked=${total.checked} target-hit=${total.targetHit} stop-hit=${total.stopHit} expired=${total.expired}`);
+  console.log(`[rec-outcome] nightly sweep — users=${total.users} checked=${total.checked} target-hit=${total.targetHit} stop-hit=${total.stopHit} expired=${total.expired} mfe-mae-updated=${total.mfeMaeUpdated} post-exit-tracked=${total.postExitTracked}`);
   return total;
 }
 
