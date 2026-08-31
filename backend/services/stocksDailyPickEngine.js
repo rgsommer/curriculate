@@ -370,7 +370,21 @@ async function resolveUniverseForUser(email) {
 // already holds or just executed via a linked rec. Silent filter (no
 // warning) — the pick is simply not a candidate for a NEW entry, though
 // the AI's "Signals per holding" section still manages the position.
-export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = null, excludeTickers = [] } = {}) {
+// Per-block timeout helper — protects the pick engine from a single
+// slow network call (FMP news, external nomination Mongo lookup, etc.)
+// hanging the whole briefing. Wraps `promise` so it resolves to
+// `fallback` if it doesn't complete within `ms`.
+function pickEngineWithTimeout(promise, ms, label, fallback) {
+  return Promise.race([
+    promise,
+    new Promise((resolve) => setTimeout(() => {
+      console.warn(`[pick-engine] ${label} timed out after ${ms}ms — using fallback`);
+      resolve(fallback);
+    }, ms)),
+  ]);
+}
+
+export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, currency = null, excludeTickers = [], fastPreview = false } = {}) {
   // Kill-switch gate. If the discretionary engine has been losing money
   // over the last 30 days, stop feeding new picks — waiting for the
   // user's actual performance to recover before emitting more. Silent
@@ -685,13 +699,15 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // Tier 2.2 (audit Aug-28): also fetch cluster velocity in parallel
     // (window-over-window comparison) so scoreInsider can reward
     // accelerating conviction and penalize cooling clusters.
+    // 8s timeout (added Aug-30) — a hung Mongo aggregation shouldn't
+    // stall the whole briefing; scoreInsider handles null insider fine.
     const stage2Bases = stage2Input.map(c => String(c.ticker).replace(/\..*$/, ""));
     let insiderByBase = new Map();
     try {
-      const [signals, velocityMap] = await Promise.all([
+      const [signals, velocityMap] = await pickEngineWithTimeout(Promise.all([
         getRecentInsiderSignals(stage2Bases, { days: 30, limit: 60 }),
         getInsiderClusterVelocity(stage2Bases, { windowDays: 30 }).catch(() => new Map()),
-      ]);
+      ]), 8_000, "insider-batch", [[], new Map()]);
       for (const s of signals || []) {
         const b = String(s.ticker || "").toUpperCase().replace(/\..*$/, "");
         const prev = insiderByBase.get(b) || { clusterBuy: false, clusterSell: false };
@@ -847,34 +863,42 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // catalyst signal. We apply a small +5 bonus that stacks with the
     // external adjustment but stays below the "genuine composite
     // strength" tier.
-    try {
-      const { getTickerNews } = await import("./stocksNews.js");
-      const NEWS_CONC = 4;
-      const NEWS_LOOKBACK_DAYS = 3;
-      const NEWS_BUMP = 5;
-      const compForNews = [...stage2Input, ...promoted];
-      const cutoff = Date.now() - NEWS_LOOKBACK_DAYS * 86400 * 1000;
-      for (let i = 0; i < compForNews.length; i += NEWS_CONC) {
-        const slice = compForNews.slice(i, i + NEWS_CONC);
-        await Promise.all(slice.map(async (cand) => {
-          try {
-            const news = await getTickerNews(cand.ticker, cand.currency || "USD", { limit: 5 });
-            const fresh = (news || []).filter(n => {
-              const t = n.publishedAt ? new Date(n.publishedAt).getTime() : 0;
-              return t >= cutoff;
-            });
-            cand.freshNewsCount = fresh.length;
-            cand.freshNewsHeadlines = fresh.slice(0, 3).map(n => n.title).filter(Boolean);
-            if (fresh.length > 0 && Number.isFinite(cand.compositeRank)) {
-              cand.newsCatalystBump = NEWS_BUMP;
-              cand.compositeRankPreNews = cand.compositeRank;
-              cand.compositeRank = Math.min(100, cand.compositeRank + NEWS_BUMP);
-            }
-          } catch { /* soft-fail per ticker */ }
-        }));
-      }
-    } catch (e) {
-      console.warn("[pick-engine-news] catalyst bump failed:", e?.message);
+    // Fast-preview + hard timeout guards (added Aug-30 after briefings
+    // were failing): (1) skip entirely in fastPreview mode — bump is a
+    // nice-to-have, not core to the pick; (2) even in cron mode wrap
+    // the whole batch in a 12s ceiling so a slow FMP can't stall the
+    // briefing indefinitely.
+    if (!fastPreview) {
+      const NEWS_BATCH_TIMEOUT_MS = 12_000;
+      const newsBatchTask = (async () => {
+        const { getTickerNews } = await import("./stocksNews.js");
+        const NEWS_CONC = 4;
+        const NEWS_LOOKBACK_DAYS = 3;
+        const NEWS_BUMP = 5;
+        const compForNews = [...stage2Input, ...promoted];
+        const cutoff = Date.now() - NEWS_LOOKBACK_DAYS * 86400 * 1000;
+        for (let i = 0; i < compForNews.length; i += NEWS_CONC) {
+          const slice = compForNews.slice(i, i + NEWS_CONC);
+          await Promise.all(slice.map(async (cand) => {
+            try {
+              const news = await getTickerNews(cand.ticker, cand.currency || "USD", { limit: 5 });
+              const fresh = (news || []).filter(n => {
+                const t = n.publishedAt ? new Date(n.publishedAt).getTime() : 0;
+                return t >= cutoff;
+              });
+              cand.freshNewsCount = fresh.length;
+              cand.freshNewsHeadlines = fresh.slice(0, 3).map(n => n.title).filter(Boolean);
+              if (fresh.length > 0 && Number.isFinite(cand.compositeRank)) {
+                cand.newsCatalystBump = NEWS_BUMP;
+                cand.compositeRankPreNews = cand.compositeRank;
+                cand.compositeRank = Math.min(100, cand.compositeRank + NEWS_BUMP);
+              }
+            } catch { /* soft-fail per ticker */ }
+          }));
+        }
+      })();
+      await pickEngineWithTimeout(newsBatchTask, NEWS_BATCH_TIMEOUT_MS, "news-catalyst-batch", null)
+        .catch((e) => console.warn("[pick-engine-news] catalyst bump failed:", e?.message));
     }
 
     // ── Tier 2.1: External adjustment applied to compositeRank ──
@@ -888,7 +912,12 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // ceiling of 100 so external can't inflate a mediocre base past a
     // strong genuine composite.
     const combined = [...stage2Input, ...promoted];
-    try {
+    // 10s ceiling on the entire external-adjustment pass (added Aug-30
+    // after briefings hung). Mongo reads should be fast but a stuck
+    // connection would loop 6 slices × several seconds each. If it
+    // times out, compositeRank stays at baseCompositeRank — same as
+    // if no external nominations existed.
+    const externalTask = (async () => {
       const { getExternalConvictionForTicker } = await import("./stocksExternalNominations.js");
       // Parallelize the lookups — each is a small Mongo read.
       const EXT_CONC = 6;
@@ -908,9 +937,9 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           } catch { /* soft-fail — leave compositeRank unchanged */ }
         }));
       }
-    } catch (e) {
-      console.warn("[pick-engine-external] adjustment pass failed:", e?.message);
-    }
+    })();
+    await pickEngineWithTimeout(externalTask, 10_000, "external-adjustment-batch", null)
+      .catch((e) => console.warn("[pick-engine-external] adjustment pass failed:", e?.message));
 
     // Re-rank on multi-factor composite (now includes external
     // adjustment). Fallback (rare) is technical.

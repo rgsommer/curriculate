@@ -3707,6 +3707,10 @@ export async function generateBriefing(profile) {
       email: profile.email,
       n: 2,
       excludeTickers: (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")),
+      // Fast-preview mode (set by produceBriefingMarkdown on the on-demand
+      // route) skips the news-catalyst-bump too. Cron always gets the
+      // full pass.
+      fastPreview: profile?._fastPreview === true,
     }).catch((e) => { console.warn("[generateDailyPicksForUser] warn:", e?.message); return []; }),
     // Trades the user actually executed since the last successful briefing.
     // Populated with each trade's linked rec (if any) so the AI can quote
