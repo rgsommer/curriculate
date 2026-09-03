@@ -109,6 +109,43 @@ assigned to it still works.
 Menu items mirror their log into a dialog, because `Logger` output is invisible
 when a function runs from a menu rather than the editor.
 
+## How the Group (section) is worked out
+
+The Group column wants `8A`, not `8`. Three sources are tried in order of
+trust, and only then does it fall back to the bare grade:
+
+1. **The student's own classes in the zoom row.** Works when a `PrefName`
+   carries the section (`HR8A`, `GEO8B`, `MATH7B`) *and* its grade digits match
+   the student's `Grade`.
+2. **The student's Panorama.** The zoom lists only classes shared with the
+   signed-in teacher, so a student whose one shared class is section-less —
+   `Learning Skills` / `MLS68Sommer`, id `34944663`, last year's — resolves
+   nothing at step 1. Panorama is their own page and carries their real
+   homeroom. It is already fetched for DOB and parents, so this costs no extra
+   requests.
+3. **Their homeroom teacher.** Every zoom row has `hrTeacher`, and a homeroom
+   teacher maps to one section, so the mapping is *learned* from the students
+   who did resolve and applied to those who did not — the automatic version of
+   `CONFIG.TEACHER_TO_CLASS`, which remains as a manual override and still
+   wins. A teacher running homerooms in two grades cannot mislabel across them:
+   an inferred section is only accepted when its grade matches the student's.
+
+**Stale enrolments are discarded, not used.** `Classes` carries history, so a
+grade-8 student can still list last year's `HR7B` (note the id ranges: `34944xxx`
+is last year, `38275xxx` current). A token whose grade disagrees with the
+student's now yields nothing, letting steps 2 and 3 answer instead — returning
+`""` is better than returning last year's section.
+
+The run log reports where each section came from, the teacher→section map it
+learned, and names anyone still unresolved:
+
+```
+Sections resolved from: {"own classes":41,"panorama":12,"homeroom teacher":9}
+Homeroom teacher → section (learned): {"Mr. Richard Sommer":"8A","Ms. Nakesha McKenzie":"8B"}
+No section for 2 student(s) — Group falls back to their grade. …
+  Asante, Davine (Mrs. Jil Ng)
+```
+
 ## Roster CSV export
 
 **Edsby → Export roster CSV** writes a file to Drive and shows a link. The

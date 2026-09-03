@@ -26,6 +26,7 @@ module.exports = {
   groupTokenOf_, isHomeroomClass_, ownedColumns_, clearImportedColumns_,
   planSync_, nameKey_, rowValuesFor_, writeRowValues_,
   buildRosterCsv_, rowFieldsFor_, csvCell_, csvDate_, stripTags_, gradeFromGroup_,
+  sectionTokensFromText_, pickSection_, extractGroupFromPanorama_, inferSectionsByTeacher_,
   CSV_COLUMNS,
 };
 `);
@@ -106,8 +107,11 @@ eq("only an untokenised class -> empty (caller falls back to grade)",
    M.extractGroupFromClasses_([MLS], "8"), "");
 eq("no grade given still prefers the homeroom",
    M.extractGroupFromClasses_([GEO8B, HR7B], ""), "7B");
-eq("grade with no matching class falls back to the homeroom",
-   M.extractGroupFromClasses_([HR7B, MATH7B], "9"), "7B");
+// Changed deliberately: a grade-9 student listing only grade-7 classes now
+// resolves to "" so Panorama or the homeroom teacher can answer, instead of
+// being labelled with last year's section.
+eq("grade with no matching class yields nothing, not last year's section",
+   M.extractGroupFromClasses_([HR7B, MATH7B], "9"), "");
 eq("numeric grade works like a string",
    M.extractGroupFromClasses_([GEO8B, HR7B], 8), "8B");
 eq("'Grade 8' style value works",
@@ -323,6 +327,91 @@ for (const col of [3, 4, 9, 10, 11, 12, 13, 15, 18, 20]) {
 const noRows = [];
 M.clearImportedColumns_({ getLastRow: () => 2, getRange: () => ({ clearContent: () => noRows.push(1) }) });
 eq("empty sheet clears nothing", noRows.length, 0);
+
+// ── Section resolution ──────────────────────────────────────────────────────
+// Students whose only shared class is section-less ("Learning Skills" /
+// MLS68Sommer) used to fall back to a bare grade. The section exists in Edsby,
+// just not in the zoom row: the zoom lists only classes shared with the
+// signed-in teacher.
+group("Section tokens from text");
+const tok = (s) => M.sectionTokensFromText_(s).map((t) => t.token + (t.homeroom ? "*" : ""));
+eq("HR code is a homeroom", tok("HR8A"), ["8A*"]);
+eq("homeroom label", tok("Homeroom - 8A"), ["8A*"]);
+eq("homeroom label, en dash", tok("Homeroom – 7C"), ["7C*"]);
+eq("course code is not a homeroom", tok("GEO8B"), ["8B"]);
+eq("several codes", tok("GEO8A CED8A MATH7B").sort(), ["7B", "8A"]);
+eq("two-digit grade", tok("HR10B"), ["10B*"]);
+eq("no section in a grade-only label", tok("Homeroom - 08"), []);
+eq("no section in a plain subject", tok("Learning Skills"), []);
+eq("MLS68Sommer yields nothing", tok("MLS68Sommer"), []);
+eq("empty", tok(""), []);
+eq("null safe", M.sectionTokensFromText_(null), []);
+
+group("Picking a section for a grade");
+const T = (s) => M.sectionTokensFromText_(s);
+eq("homeroom preferred over course", M.pickSection_(T("GEO8B HR8A"), "8"), "8A");
+eq("course used when no homeroom", M.pickSection_(T("GEO8B"), "8"), "8B");
+// The stale-enrolment rule: a grade-8 student still listing last year's HR7B
+// must not be labelled 7B.
+eq("grade mismatch is rejected, not used", M.pickSection_(T("HR7B MATH7B"), "8"), "");
+eq("matching grade wins over a homeroom from another grade",
+   M.pickSection_(T("HR7B GEO8B"), "8"), "8B");
+eq("no grade given falls back to the homeroom", M.pickSection_(T("GEO8B HR7B"), ""), "7B*".slice(0, 2));
+eq("'Grade 8' style value", M.pickSection_(T("HR8A"), "Grade 8"), "8A");
+eq("nothing to pick", M.pickSection_([], "8"), "");
+
+group("Section from Panorama");
+// The zoom gave nothing for this student; their own page carries the homeroom.
+const pano8C = { col3: { info: { grade: "8", homeroom: { data: {
+  name: "Homeroom - 8C", teacher: [{ name: "Mrs. Jil Ng" }] } } } } };
+eq("reads the homeroom sub-object", M.extractGroupFromPanorama_(pano8C, "8"), "8C");
+const panoElsewhere = { col1: { classes: [{ name: "Geography - 08", code: "GEO8B" }] } };
+eq("falls back to scanning the page", M.extractGroupFromPanorama_(panoElsewhere, "8"), "8B");
+eq("respects the grade when scanning",
+   M.extractGroupFromPanorama_({ a: { code: "MATH7B" } }, "8"), "");
+eq("empty payload", M.extractGroupFromPanorama_(null, "8"), "");
+eq("nothing section-shaped", M.extractGroupFromPanorama_({ a: "Learning Skills" }, "8"), "");
+
+group("Learning section from the homeroom teacher");
+// Shapes from the live response: Sommer's students carry HR8A, McKenzie's
+// GEO8B, and Ng's carry only last year's classes.
+const roster = [
+  { lastName: "Bassoo", grade: "8", firstHomeroomTeacher: "Mr. Richard Sommer", group: "8A" },
+  { lastName: "Grabham", grade: "8", firstHomeroomTeacher: "Mr. Richard Sommer", group: "8A" },
+  { lastName: "Foster", grade: "8", firstHomeroomTeacher: "Ms. Nakesha McKenzie", group: "8B" },
+  { lastName: "Asante", grade: "8", firstHomeroomTeacher: "Mrs. Jil Ng", group: "" },
+  { lastName: "Toor", grade: "8", firstHomeroomTeacher: "Mrs. Jil Ng", group: "" },
+  { lastName: "Premkumar", grade: "8", firstHomeroomTeacher: "Mr. Richard Sommer", group: "" },
+];
+const inf = M.inferSectionsByTeacher_(roster);
+eq("learns the mapping", inf.map,
+   { "Mr. Richard Sommer": "8A", "Ms. Nakesha McKenzie": "8B" });
+eq("fills the student it can", roster.find((s) => s.lastName === "Premkumar").group, "8A");
+eq("marks how it was filled", roster.find((s) => s.lastName === "Premkumar").groupSource, "homeroom teacher");
+eq("counts fills", inf.filled, 1);
+eq("reports whoever is still unresolved", inf.unresolved.length, 2);
+ok("the report names the teacher", /Jil Ng/.test(inf.unresolved.join(" ")));
+
+// A teacher with homerooms in two grades must not mislabel across them.
+const twoGrades = [
+  { lastName: "A", grade: "7", firstHomeroomTeacher: "Mx. Both", group: "7A" },
+  { lastName: "B", grade: "7", firstHomeroomTeacher: "Mx. Both", group: "7A" },
+  { lastName: "C", grade: "8", firstHomeroomTeacher: "Mx. Both", group: "" },
+];
+M.inferSectionsByTeacher_(twoGrades);
+eq("a grade-8 student is not given the 7A homeroom",
+   twoGrades.find((s) => s.lastName === "C").group, "");
+
+// Majority wins when a teacher's students disagree.
+const noisy = [
+  { grade: "8", firstHomeroomTeacher: "T", group: "8A" },
+  { grade: "8", firstHomeroomTeacher: "T", group: "8A" },
+  { grade: "8", firstHomeroomTeacher: "T", group: "8B" },
+  { grade: "8", firstHomeroomTeacher: "T", group: "" },
+];
+eq("majority section", M.inferSectionsByTeacher_(noisy).map.T, "8A");
+eq("empty roster", M.inferSectionsByTeacher_([]).map, {});
+eq("null safe", M.inferSectionsByTeacher_(null).filled, 0);
 
 // ── Roster CSV export ───────────────────────────────────────────────────────
 // Headers must be the canonical ones from backend/behavior/lib/rosterImport.js

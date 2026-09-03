@@ -1187,14 +1187,47 @@ function populateBdays() {
     const s = extractStudent_(data);
     if (!s) continue;
     if (grades.length > 0 && grades.indexOf(String(s.grade)) < 0) continue;
-    // Carry the Classes array from the listing through so we can derive Group.
+    // Group (section) resolution, in order of trust. Steps 1 and 2 are per
+    // student; the homeroom-teacher pass runs after the loop, once there are
+    // resolved students to learn from.
     s.zoomClasses = studentRecords[i] && studentRecords[i].classes || [];
     s.group = extractGroupFromClasses_(s.zoomClasses, s.grade);
+    s.groupSource = s.group ? "own classes" : "";
+    if (!s.group) {
+      // The zoom lists only classes shared with the signed-in teacher, so a
+      // student whose one shared class carries no section resolves nothing
+      // above. Their Panorama — already fetched for DOB and parents — is their
+      // own page and carries their real homeroom.
+      s.group = extractGroupFromPanorama_(data, s.grade);
+      if (s.group) s.groupSource = "panorama";
+    }
     students.push(s);
     if (s.dadNid) parentNidsToFetch[s.dadNid] = true;
     if (s.momNid) parentNidsToFetch[s.momNid] = true;
   }
   Logger.log("After grade filter: " + students.length + " students kept.");
+
+  // 2b. Fill any remaining sections from the homeroom teacher, learned from the
+  //     students who did resolve. TEACHER_TO_CLASS still wins if it names them.
+  for (let i = 0; i < students.length; i++) {
+    const manual = CONFIG.TEACHER_TO_CLASS[students[i].firstHomeroomTeacher];
+    if (manual) { students[i].group = manual; students[i].groupSource = "TEACHER_TO_CLASS"; }
+  }
+  const inferred = inferSectionsByTeacher_(students);
+  const bySource = {};
+  for (let i = 0; i < students.length; i++) {
+    const k = students[i].groupSource || "grade only";
+    bySource[k] = (bySource[k] || 0) + 1;
+  }
+  Logger.log("Sections resolved from: " + JSON.stringify(bySource));
+  if (Object.keys(inferred.map).length) {
+    Logger.log("Homeroom teacher → section (learned): " + JSON.stringify(inferred.map));
+  }
+  if (inferred.unresolved.length) {
+    Logger.log("No section for " + inferred.unresolved.length + " student(s) — Group " +
+      "falls back to their grade. Add their homeroom teacher to " +
+      "CONFIG.TEACHER_TO_CLASS to fix:\n  " + inferred.unresolved.join("\n  "));
+  }
 
   // 3. Fetch parent ParentDetails (chunked).
   const parentNids = Object.keys(parentNidsToFetch);
@@ -1716,11 +1749,13 @@ function extractGroupFromClasses_(classes, grade) {
   };
 
   if (gradeDigits) {
+    // A token from another grade is a historical enrolment (a grade-8 student
+    // still listing last year's HR7B). Returning "" lets Panorama or the
+    // homeroom-teacher pass answer instead, which beats last year's section.
     const matchesGrade = function (t) { return t.token.indexOf(gradeDigits) === 0; };
     return pick(function (t) { return t.homeroom && matchesGrade(t); }) ||
            pick(matchesGrade) ||
-           pick(function (t) { return t.homeroom; }) ||
-           pick(function () { return true; });
+           "";
   }
   return pick(function (t) { return t.homeroom; }) || pick(function () { return true; });
 }
@@ -1827,6 +1862,151 @@ function escapeRegex_(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+
+/* ============================================================
+ * SECTION (HOMEROOM) RESOLUTION
+ *
+ * The Group column wants "8A", not "8". Three sources, in order of trust:
+ *
+ *  1. The student's own classes in the ZoomMyStudents row. Reliable when the
+ *     section is in a PrefName (HR8A, GEO8B, MATH7B) AND its grade digits
+ *     match the student's Grade. Classes carries HISTORICAL enrolments — a
+ *     grade-8 student can still list last year's HR7B — so a token whose grade
+ *     disagrees is discarded rather than used, which is why this alone leaves
+ *     some students unresolved.
+ *
+ *  2. The student's Panorama. The zoom lists only classes shared with the
+ *     signed-in teacher, so a student whose one shared class is section-less
+ *     ("Learning Skills" / MLS68Sommer, id 34944663 — last year's) yields
+ *     nothing at step 1. Panorama is the student's OWN page and carries their
+ *     real homeroom.
+ *
+ *  3. Their homeroom teacher. Every zoom row has hrTeacher, and a homeroom
+ *     teacher maps to one section, so the mapping is learned from the students
+ *     who DID resolve and applied to those who did not. This is the automatic
+ *     version of CONFIG.TEACHER_TO_CLASS, which stays as a manual override.
+ *
+ * Only then does it fall back to the bare grade.
+ * ============================================================ */
+
+// "Homeroom - 8A" / "Homeroom 8A"
+const RE_HOMEROOM_LABEL = /homeroom\s*[-–—:]?\s*(\d{1,2})\s*([A-Za-z])\b/gi;
+// "HR8A"
+const RE_HR_CODE = /\bHR\s*(\d{1,2})\s*([A-Za-z])\b/gi;
+// "GEO8A", "MATH7B", "HIST7C" — a subject prefix, then grade+section.
+const RE_COURSE_CODE = /\b[A-Z]{2,6}(\d{1,2})([A-Z])\b/g;
+
+/**
+ * Pure: every section token in a blob of text, each flagged for whether it came
+ * from a homeroom-shaped string. Returns [{ token, homeroom }].
+ */
+function sectionTokensFromText_(text) {
+  const out = [];
+  const index = {};
+  const str = String(text == null ? "" : text);
+  // One entry per token. The course-code pattern also matches "HR8A" (HR is
+  // two uppercase letters), so a token can be seen twice; if either sighting
+  // was homeroom-shaped, the token is a homeroom.
+  const add = function (grade, letter, homeroom) {
+    const token = String(parseInt(grade, 10)) + String(letter).toUpperCase();
+    if (index[token]) {
+      if (homeroom) index[token].homeroom = true;
+      return;
+    }
+    index[token] = { token: token, homeroom: !!homeroom };
+    out.push(index[token]);
+  };
+
+  let m;
+  const hrLabel = new RegExp(RE_HOMEROOM_LABEL.source, "gi");
+  while ((m = hrLabel.exec(str)) !== null) add(m[1], m[2], true);
+  const hrCode = new RegExp(RE_HR_CODE.source, "gi");
+  while ((m = hrCode.exec(str)) !== null) add(m[1], m[2], true);
+  const course = new RegExp(RE_COURSE_CODE.source, "g");
+  while ((m = course.exec(str)) !== null) add(m[1], m[2], false);
+
+  return out;
+}
+
+/**
+ * Pure: choose a section from candidate tokens for a student in `grade`.
+ * A token whose grade digits disagree with the student's grade is a stale
+ * enrolment and is never used — returning "" is better than returning last
+ * year's section.
+ */
+function pickSection_(tokens, grade) {
+  const list = tokens || [];
+  const g = String(grade == null ? "" : grade).replace(/\D+/g, "");
+  if (!g) {
+    const hr = list.filter(function (t) { return t.homeroom; })[0];
+    return (hr || list[0] || {}).token || "";
+  }
+  const matching = list.filter(function (t) { return t.token.indexOf(g) === 0; });
+  const hr = matching.filter(function (t) { return t.homeroom; })[0];
+  return (hr || matching[0] || {}).token || "";
+}
+
+/** Pure: section from the Panorama payload, honouring the student's grade. */
+function extractGroupFromPanorama_(data, grade) {
+  if (!data) return "";
+  // The homeroom sub-object is the most trustworthy part of the page, so try it
+  // alone before falling back to scanning everything.
+  const info = (data.col3 && data.col3.info) || {};
+  if (info.homeroom) {
+    const picked = pickSection_(sectionTokensFromText_(JSON.stringify(info.homeroom)), grade);
+    if (picked) return picked;
+  }
+  let whole = "";
+  try { whole = JSON.stringify(data); } catch (err) { return ""; }
+  return pickSection_(sectionTokensFromText_(whole), grade);
+}
+
+/**
+ * Pure: learn homeroom-teacher → section from the students who resolved, then
+ * fill in the ones who did not. Mutates each student's `group`, and returns
+ * { map, filled, unresolved } for the log.
+ */
+function inferSectionsByTeacher_(students) {
+  const list = students || [];
+  const votes = {};
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    const teacher = String(s.firstHomeroomTeacher || "").trim();
+    if (!teacher || !s.group) continue;
+    if (!votes[teacher]) votes[teacher] = {};
+    votes[teacher][s.group] = (votes[teacher][s.group] || 0) + 1;
+  }
+
+  const map = {};
+  Object.keys(votes).forEach(function (teacher) {
+    const tally = votes[teacher];
+    const best = Object.keys(tally).sort(function (a, b) {
+      return tally[b] - tally[a] || (a < b ? -1 : 1);
+    })[0];
+    if (best) map[teacher] = best;
+  });
+
+  let filled = 0;
+  const unresolved = [];
+  for (let i = 0; i < list.length; i++) {
+    const s = list[i];
+    if (s.group) continue;
+    const teacher = String(s.firstHomeroomTeacher || "").trim();
+    const guess = map[teacher];
+    // Only accept a teacher's section if its grade matches this student's, so a
+    // teacher who runs homerooms in two grades cannot mislabel anyone.
+    const g = String(s.grade == null ? "" : s.grade).replace(/\D+/g, "");
+    if (guess && (!g || guess.indexOf(g) === 0)) {
+      s.group = guess;
+      s.groupSource = "homeroom teacher";
+      filled++;
+    } else {
+      unresolved.push((s.lastName || "?") + ", " + (s.prefFirst || s.firstName || "?") +
+        (teacher ? " (" + teacher + ")" : " (no homeroom teacher)"));
+    }
+  }
+  return { map: map, filled: filled, unresolved: unresolved };
+}
 
 /* ============================================================
  * ROSTER CSV EXPORT
