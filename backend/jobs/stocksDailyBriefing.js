@@ -4255,6 +4255,20 @@ export async function generateBriefing(profile) {
     const modeLine = isWeekend
       ? `_Weekend planning mode — regular market is closed today. All §1 mandates are planning for the next trading session, not "do today" orders. Every number below comes from canonical portfolio data or the pick engine._`
       : `_Deterministic mode — every number below comes from canonical portfolio data or the pick engine. To enable AI narrative sections, flip **AI narrative** on in Settings._`;
+    // Previous-day recap (2026-09-02): deterministic "yesterday's tape"
+    // block — portfolio move, top gainers/losers with reasons, benchmark
+    // context, rec transitions, 8-K events on held names. Bounded 8s
+    // budget so a slow Yahoo can't stall the briefing.
+    let recapBlock = "";
+    try {
+      const { buildPreviousDayRecap, formatPreviousDayRecap } = await import("../services/stocksPreviousDayRecap.js");
+      const recap = await Promise.race([
+        buildPreviousDayRecap({ email: profile.email, positions: profile.positions || [] }),
+        new Promise((resolve) => setTimeout(() => resolve(null), 8_000)),
+      ]);
+      if (recap) recapBlock = formatPreviousDayRecap(recap);
+    } catch (e) { console.warn("[stocks-briefing] previous-day recap warn:", e?.message); }
+
     const parts = [
       headerTitle,
       "",
@@ -4262,6 +4276,7 @@ export async function generateBriefing(profile) {
       "",
       mdPrefixForShip,
     ];
+    if (recapBlock) parts.push(recapBlock);
 
     if (reconciliationOk) {
       // Daily picks only ship when the portfolio itself is trustworthy.
@@ -4303,27 +4318,46 @@ export async function generateBriefing(profile) {
   // rules block (~10K tokens) is sent as a cached system prompt so repeat
   // briefings hit the cache and save ~90% of input tokens on the static
   // portion. Cache TTL is Anthropic-managed (~5 min for ephemeral).
+  //
+  // Hardening (added 2026-09-02 after briefings stopped arriving for
+  // several days): (a) per-call AbortController timeout — was unbounded,
+  // could hang indefinitely on a slow/stuck Anthropic response; (b) web
+  // search reduced 8→3 uses — each search costs 15-30s wall clock, 8
+  // could push a single call past 4 minutes. Env overrides preserved.
+  const CALL_TIMEOUT_MS = Number(process.env.STOCKS_ADVICE_CALL_TIMEOUT_MS) || 60_000;
   const callClaude = async (messages, tokens) => {
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": process.env.ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
-        max_tokens: tokens,
-        tools: [{ type: "web_search_20250305", name: "web_search", max_uses: Math.max(1, parseInt(process.env.STOCKS_ADVICE_MAX_SEARCHES, 10) || 8) }],
-        system: [{ type: "text", text: staticSystem, cache_control: { type: "ephemeral" } }],
-        messages,
-      }),
-    });
-    if (!resp.ok) {
-      const e = await resp.text().catch(() => "");
-      throw new Error(`Anthropic ${resp.status}: ${e.slice(0, 200)}`);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), CALL_TIMEOUT_MS);
+    try {
+      const resp = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "x-api-key": process.env.ANTHROPIC_API_KEY,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model: process.env.STOCKS_ADVICE_MODEL || "claude-sonnet-4-6",
+          max_tokens: tokens,
+          tools: [{ type: "web_search_20250305", name: "web_search", max_uses: Math.max(1, parseInt(process.env.STOCKS_ADVICE_MAX_SEARCHES, 10) || 3) }],
+          system: [{ type: "text", text: staticSystem, cache_control: { type: "ephemeral" } }],
+          messages,
+        }),
+      });
+      if (!resp.ok) {
+        const e = await resp.text().catch(() => "");
+        throw new Error(`Anthropic ${resp.status}: ${e.slice(0, 200)}`);
+      }
+      return resp.json();
+    } catch (e) {
+      if (e?.name === "AbortError") {
+        throw new Error(`Anthropic call timed out after ${CALL_TIMEOUT_MS}ms`);
+      }
+      throw e;
+    } finally {
+      clearTimeout(timeoutId);
     }
-    return resp.json();
   };
 
   // First call — generous max_tokens so the per-account cash deployment
