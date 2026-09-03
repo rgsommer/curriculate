@@ -89,9 +89,10 @@ function diagnoseEdsby() {
     ? sess.cookie.length + " chars, " + countCookies_(sess.cookie) + " cookie(s)" +
       (/session_id_edsby=/.test(sess.cookie) ? ", session_id_edsby present" : ", ⚠ NO session_id_edsby")
     : "⚠ MISSING — set EDSBY_SESSION_COOKIE"));
-  lines.push("jver:     " + (sess.jver || "⚠ MISSING — set EDSBY_JVER (403s without it)"));
-  lines.push("cver:     " + (sess.cver || "⚠ MISSING — set EDSBY_CVER (403s without it)"));
+  lines.push("jver:     " + (sess.jver || "(not set — optional; only some calls need it)"));
+  lines.push("cver:     " + (sess.cver || "(not set — optional; only some calls need it)"));
   lines.push("User nid: " + (sess.userNid || "(not set — formkey POST retry disabled)"));
+  lines.push("Zoom node: " + (sess.zoomNodeId || "⚠ MISSING"));
 
   if (sess.cookie && countCookies_(sess.cookie) === 1) {
     lines.push("Note: only one cookie is stored. Edsby usually needs the whole " +
@@ -110,9 +111,9 @@ function diagnoseEdsby() {
   lines.push("  " + explainStatus_(boot));
 
   // Live probe: the actual students call.
-  const zoom = edsbyGetJson_(sess, CONFIG.ZOOM_NODE_ID, "ZoomMyStudents", "&stage=1");
+  const zoom = edsbyGetJson_(sess, sess.zoomNodeId, "ZoomMyStudents", "&stage=1");
   lines.push("");
-  lines.push("Probe GET ZoomMyStudents/" + CONFIG.ZOOM_NODE_ID + " -> HTTP " + zoom.status);
+  lines.push("Probe GET ZoomMyStudents/" + sess.zoomNodeId + " -> HTTP " + zoom.status);
   lines.push("  " + explainStatus_(zoom));
   if (zoom.json) {
     const recs = collectStudentRecords_(unwrapSlice_(zoom.json));
@@ -123,6 +124,14 @@ function diagnoseEdsby() {
     }
   }
 
+  // bootstrap OK + node refused = the session is fine and the id is the problem.
+  if (boot.ok && !zoom.ok) {
+    lines.push("");
+    lines.push("Verdict: your session cookie is VALID (bootstrap returned 200), so this");
+    lines.push("is not a credential problem. The node id is the suspect — run");
+    lines.push("discoverZoomNodes() to list the ids this account can actually reach.");
+  }
+
   Logger.log(lines.join("\n"));
 }
 
@@ -130,22 +139,34 @@ function explainStatus_(r) {
   if (r.sessionExpired) {
     return "Session expired — Edsby returned its login page. Refresh EDSBY_SESSION_COOKIE.";
   }
-  if (r.status === 403) {
-    return "Forbidden. Almost always stale/missing x-xds-jver or x-xds-cver " +
-           "(they change with every Edsby release), or a cookie missing values " +
-           "beyond session_id_edsby. Re-copy all three from a live request.";
+  if (r.status === 0) return "Network error: " + r.text;
+
+  // Edsby's own application error is far more specific than the HTTP status it
+  // rides on (1030 arrives as a 403), so report it first.
+  const code = edsbyErrorCode_(r.json);
+  if (code) {
+    const str = edsbyErrorStr_(r.json);
+    let msg = "Edsby error " + code + (str ? ' "' + str + '"' : "") + ".";
+    if (code === 1030) {
+      msg += " This is NOT a credential problem — your session is valid (bootstrap " +
+             "returns 200). It means this account has no link to that node id: the " +
+             "ZoomMyStudents id is stale or belongs to another account/school year. " +
+             "Run discoverZoomNodes() to find the current one.";
+    } else {
+      msg += " Edsby refused the node or view for this account.";
+    }
+    return msg;
   }
+
   if (r.status === 401) return "Unauthorized — the session cookie is expired or wrong.";
-  if (r.status === 0)   return "Network error: " + r.text;
-  if (r.status >= 500)  return "Edsby server error. Retry later.";
-  if (r.status >= 400)  return "Error body: " + String(r.text || "").slice(0, 300);
-  if (!r.json)          return "HTTP OK but the body was not JSON: " + String(r.text || "").slice(0, 300);
-  if (edsbyErrorCode_(r.json)) {
-    return "Edsby application error " + edsbyErrorCode_(r.json) +
-           (edsbyErrorCode_(r.json) === 1030
-             ? " (denied nodetype — this account may not have a \"My Students\" view)."
-             : ".");
+  if (r.status === 403) {
+    return "Forbidden with no Edsby error code. Check the node id first " +
+           "(discoverZoomNodes()); if that is right, try setting EDSBY_JVER / " +
+           "EDSBY_CVER from a live request's x-xds-jver / x-xds-cver headers.";
   }
+  if (r.status >= 500) return "Edsby server error. Retry later.";
+  if (r.status >= 400) return "Error body: " + String(r.text || "").slice(0, 300);
+  if (!r.json)         return "HTTP OK but the body was not JSON: " + String(r.text || "").slice(0, 300);
   return "OK.";
 }
 
@@ -160,11 +181,206 @@ function describeShape_(v) {
   return "{" + Object.keys(v).slice(0, 12).join(",") + "}";
 }
 
+function edsbyErrorStr_(json) {
+  if (!json || typeof json !== "object") return "";
+  const slice = json.slices && json.slices[0];
+  return String(json.errorstr || (slice && slice.errorstr) || "").trim();
+}
+
 function edsbyErrorCode_(json) {
   if (!json || typeof json !== "object") return null;
   const e = json.error || json.errno || (json.slices && json.slices[0] && json.slices[0].error);
   const n = parseInt(e, 10);
   return isNaN(n) ? null : n;
+}
+
+
+/* ============================================================
+ * NODE-ID DISCOVERY
+ *
+ * Edsby error 1030 "no links to node" means the account has no relationship to
+ * the requested node — the /p/ZoomMyStudents/<id> in CONFIG is stale (ids are
+ * per-account and change across school years). Rather than hand-copying a new
+ * one out of the URL bar each September, these helpers harvest the candidates
+ * from the live session and verify each by actually asking it for students.
+ * ============================================================ */
+
+/**
+ * Prints every ZoomMyStudents node id this session can see, marks the ones that
+ * actually return students, and tells you which to store. Run from the editor.
+ */
+function discoverZoomNodes() {
+  const sess = getEdsbySession_();
+  if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
+
+  const found = harvestZoomNodeIds_(sess);
+  if (found.candidates.length === 0) {
+    Logger.log([
+      "No ZoomMyStudents node ids found in this session.",
+      found.userNid ? "User nid: " + found.userNid : "Could not determine your user nid — set EDSBY_USER_NID.",
+      "",
+      "Fall back to reading it by hand: open Edsby → My Students, and copy the",
+      "number from the page URL /p/ZoomMyStudents/NUMBER into the",
+      "EDSBY_ZOOM_NODE_ID script property.",
+      "Sources checked: " + found.sourcesTried.join(", "),
+    ].join("\n"));
+    return;
+  }
+
+  const lines = ["Candidate ZoomMyStudents node ids:"];
+  const working = [];
+  for (let i = 0; i < found.candidates.length; i++) {
+    const c = found.candidates[i];
+    const n = verifyZoomNode_(sess, c.nid);
+    const mark = n.count > 0 ? "✓" : "✗";
+    lines.push("  " + mark + " " + c.nid + "  (seen in " + c.source + ") — " +
+      (n.count > 0 ? n.count + " students" : n.note));
+    if (n.count > 0) working.push({ nid: c.nid, count: n.count });
+  }
+
+  lines.push("");
+  if (working.length > 0) {
+    working.sort(function (a, b) { return b.count - a.count; });
+    lines.push("Set script property EDSBY_ZOOM_NODE_ID = " + working[0].nid +
+      " (" + working[0].count + " students), then run populateBdays().");
+    lines.push("Currently configured: " + sess.zoomNodeId +
+      (String(sess.zoomNodeId) === String(working[0].nid) ? " (already correct)" : " ← stale"));
+  } else {
+    lines.push("None of the candidates returned students. If you are an admin rather");
+    lines.push("than a homeroom teacher, your account may have no \"My Students\" view");
+    lines.push("at all — populateBdays() also tries SchoolStudents / Students /");
+    lines.push("ClassStudents, whose ids you can store in EDSBY_ZOOM_NODE_ID too.");
+  }
+  Logger.log(lines.join("\n"));
+}
+
+/**
+ * Scrape candidate zoom node ids out of whatever this session will show us:
+ * the authenticated landing page HTML, the bootstrap JSON, and the user's Home
+ * view. All three embed nav links of the form /p/ZoomMyStudents/<id>.
+ */
+function harvestZoomNodeIds_(sess) {
+  const seen = {};
+  const candidates = [];
+  const sourcesTried = [];
+
+  // A zoom link shows up in three shapes across HTML and JSON:
+  //   /p/ZoomMyStudents/21471167   (and the \/-escaped JSON variant)
+  //   {"xds":"ZoomMyStudents", ... "nid":21471167}
+  //   {"nid":21471167, ... "xds":"ZoomMyStudents"}
+  const PATTERNS = [
+    /ZoomMyStudents[\\/"'\s:,]{0,8}(\d{4,})/g,
+    /ZoomMyStudents(?:[^{}]{0,60}?)["']?nid["']?\s*[:=]\s*["']?(\d{4,})/g,
+    /["']?nid["']?\s*[:=]\s*["']?(\d{4,})["']?(?:[^{}]{0,60}?)ZoomMyStudents/g,
+  ];
+
+  const scan = function (text, source) {
+    if (!text) return;
+    for (let p = 0; p < PATTERNS.length; p++) {
+      const re = new RegExp(PATTERNS[p].source, "g");
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const nid = m[1];
+        if (seen[nid]) continue;
+        seen[nid] = true;
+        candidates.push({ nid: nid, source: source });
+      }
+    }
+  };
+
+  // 1. The authenticated HTML landing page — nav links live here verbatim.
+  sourcesTried.push("landing page HTML");
+  try {
+    const resp = UrlFetchApp.fetchAll([req_(sess, sess.baseUrl + "/", {
+      extraHeaders: { "Accept": "text/html,application/xhtml+xml", "User-Agent": "Mozilla/5.0" },
+    })])[0];
+    scan(resp.getContentText(), "landing page HTML");
+  } catch (err) { /* keep going */ }
+
+  // 2. bootstrap — also the place to learn our own user nid.
+  sourcesTried.push("bootstrap");
+  const boot = edsbyGetJson_(sess, "", "bootstrap");
+  scan(boot.text, "bootstrap");
+  const userNid = sess.userNid || findUserNid_(boot.json);
+
+  // 3. The user's Home view, which carries their personal nav.
+  if (userNid) {
+    sourcesTried.push("Home/" + userNid);
+    const home = edsbyGetJson_(sess, userNid, "Home");
+    scan(home.text, "Home");
+  }
+
+  // Always probe the configured id too, so its verdict is reported explicitly.
+  if (sess.zoomNodeId && !seen[String(sess.zoomNodeId)]) {
+    candidates.push({ nid: String(sess.zoomNodeId), source: "CONFIG/script property" });
+  }
+
+  return { candidates: candidates, userNid: userNid, sourcesTried: sourcesTried };
+}
+
+/** Ask a node for students. Returns { count, note }. */
+function verifyZoomNode_(sess, nid) {
+  const r = edsbyGetJson_(sess, nid, "ZoomMyStudents", "&stage=1");
+  if (r.ok) {
+    const recs = collectStudentRecords_(unwrapSlice_(r.json));
+    if (recs.length) return { count: recs.length, note: "" };
+    return { count: 0, note: "HTTP 200 but no student rows (" + describeShape_(r.json) + ")" };
+  }
+  return { count: 0, note: "HTTP " + r.status + ": " + explainStatus_(r) };
+}
+
+/** Deep-walk a bootstrap payload for the signed-in user's nid. */
+function findUserNid_(json) {
+  if (!json) return "";
+  const stack = [{ node: json, depth: 0 }];
+  while (stack.length > 0) {
+    const cur = stack.pop();
+    const node = cur.node;
+    if (!node || typeof node !== "object" || cur.depth > 12) continue;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) stack.push({ node: node[i], depth: cur.depth + 1 });
+      continue;
+    }
+    const keys = Object.keys(node);
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i], v = node[k];
+      if (/^(usernid|userid|user_id|myid|meid|uid)$/i.test(k) && /^\d{3,}$/.test(String(v))) {
+        return String(v);
+      }
+      if (v && typeof v === "object") stack.push({ node: v, depth: cur.depth + 1 });
+    }
+  }
+  return "";
+}
+
+/**
+ * The node id to use: the configured one if it works, otherwise the best
+ * discovered one. Keeps populateBdays() working across a school-year rollover
+ * without an edit.
+ */
+function resolveZoomNodeId_(sess) {
+  const configured = String(sess.zoomNodeId || "");
+  if (configured) {
+    const v = verifyZoomNode_(sess, configured);
+    if (v.count > 0) return { nid: configured, count: v.count };
+    Logger.log("Configured node " + configured + " returned no students — " + v.note);
+    Logger.log("Searching for the current ZoomMyStudents node id…");
+  }
+
+  const found = harvestZoomNodeIds_(sess);
+  let best = null;
+  for (let i = 0; i < found.candidates.length; i++) {
+    const nid = found.candidates[i].nid;
+    if (nid === configured) continue;
+    const v = verifyZoomNode_(sess, nid);
+    if (v.count > 0 && (!best || v.count > best.count)) best = { nid: nid, count: v.count };
+  }
+  if (best) {
+    Logger.log("Found node " + best.nid + " with " + best.count + " students. " +
+      "Store it as EDSBY_ZOOM_NODE_ID to skip this search next run.");
+    return best;
+  }
+  return { nid: configured, count: 0 };
 }
 
 
@@ -178,20 +394,19 @@ function populateBdays() {
     Logger.log("Skipped: no EDSBY_SESSION_COOKIE in Script Properties. Run diagnoseEdsby().");
     return;
   }
-  if (!sess.jver || !sess.cver) {
-    Logger.log("Warning: EDSBY_JVER / EDSBY_CVER are not set. Edsby returns HTTP 403 " +
-      "without the x-xds-jver and x-xds-cver headers. Run diagnoseEdsby() for details.");
-  }
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Sheet "' + CONFIG.SHEET + '" not found.');
 
   // 1. Get all student records (nid + Classes) from the students listing.
-  const studentRecords = fetchZoomMyStudents_(sess);
+  //    Node ids are per-account and change across school years, so a stale id
+  //    is resolved rather than fatal (Edsby error 1030 "no links to node").
+  const resolved = resolveZoomNodeId_(sess);
+  const studentRecords = fetchZoomMyStudents_(sess, resolved.nid);
   if (studentRecords.length === 0) {
-    Logger.log("No students returned. Run diagnoseEdsby() — it reports which of " +
-      "cookie / jver / cver is stale.");
+    Logger.log("No students returned. Run discoverZoomNodes() to check the node id, " +
+      "then diagnoseEdsby() for the credentials.");
     return;
   }
   Logger.log("Students listing: " + studentRecords.length + " students.");
@@ -327,6 +542,7 @@ function getEdsbySession_() {
     jver:    get("EDSBY_JVER"),
     cver:    get("EDSBY_CVER"),
     userNid: get("EDSBY_USER_NID"),
+    zoomNodeId: get("EDSBY_ZOOM_NODE_ID") || CONFIG.ZOOM_NODE_ID,
   };
 }
 
@@ -414,7 +630,8 @@ function refreshFormkey_(sess) {
  * only loads with stage=1), then a formkey POST with _method=GET as the CSRF
  * fallback. Logs a per-view diagnostic so a failure says which step failed.
  */
-function fetchZoomMyStudents_(sess) {
+function fetchZoomMyStudents_(sess, zoomId) {
+  const nodeId = zoomId || sess.zoomNodeId;
   let formkey = "";
   const fresh = refreshFormkey_(sess);
   if (fresh.sessionExpired) {
@@ -428,7 +645,7 @@ function fetchZoomMyStudents_(sess) {
     const view = STUDENT_LIST_VIEWS[v];
 
     // --- Attempt 1: plain GET with stage=1 ---
-    const g = edsbyGetJson_(sess, CONFIG.ZOOM_NODE_ID, view, "&stage=1");
+    const g = edsbyGetJson_(sess, nodeId, view, "&stage=1");
     if (g.sessionExpired) {
       Logger.log("Session expired during GET " + view + ". Refresh EDSBY_SESSION_COOKIE.");
       return [];
@@ -447,7 +664,7 @@ function fetchZoomMyStudents_(sess) {
 
     // --- Attempt 2: formkey POST with _method=GET (Edsby's CSRF path) ---
     if (!formkey) continue;
-    const url = sess.baseUrl + "/core/node.json/" + CONFIG.ZOOM_NODE_ID +
+    const url = sess.baseUrl + "/core/node.json/" + nodeId +
       "?xds=" + encodeURIComponent(view) + "&stage=1&_method=GET";
     const boundary = "----CurriculateBdays";
     const payload = "--" + boundary + "\r\n" +
@@ -459,7 +676,7 @@ function fetchZoomMyStudents_(sess) {
         method: "post",
         contentType: "multipart/form-data; boundary=" + boundary,
         payload: payload,
-        referer: sess.baseUrl + "/p/" + view + "/" + CONFIG.ZOOM_NODE_ID,
+        referer: sess.baseUrl + "/p/" + view + "/" + nodeId,
         extraHeaders: {
           "Origin": sess.baseUrl,
           "x-edsby-client-request-queue": "net::post",

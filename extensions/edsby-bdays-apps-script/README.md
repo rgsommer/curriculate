@@ -8,9 +8,54 @@ browser request. The request shape is ported from
 `backend/behavior/lib/edsbyRead.js`, the only DevTools-verified shape in this
 repo.
 
-## Why the old script returned HTTP 403
+## Why the import returned HTTP 403
 
-The previous version sent only a session cookie:
+Confirmed against a live session. `diagnoseEdsby()` reported:
+
+```
+Probe GET /core/node.json/?xds=bootstrap  -> HTTP 200  OK.
+Probe GET ZoomMyStudents/21471167         -> HTTP 403
+  {"error":1030,"when":"2026-09-03 13:57:39","errorstr":"no links to node","ticket":""}
+```
+
+`bootstrap` succeeding with **only** `session_id_edsby` and no `x-xds-jver` /
+`x-xds-cver` proves the session is valid and those headers are not required for
+these reads. The 403 is Edsby application error **1030, "no links to node"**:
+the account has no relationship to node `21471167`.
+
+In other words the hardcoded `ZOOM_NODE_ID` is stale. Zoom node ids are
+per-account and change across school years, so last year's "My Students" id
+stops resolving — which is exactly when you go looking for a *new* students
+list.
+
+Note for anyone reading `backend/behavior/lib/edsbyRead.js`: its comment glosses
+1030 as "denied nodetype". Edsby's own `errorstr` here is "no links to node",
+which is about the *node*, not the view — a wrong id, not a permissions
+problem.
+
+### Fixing it
+
+Run `discoverZoomNodes()`. It harvests every `ZoomMyStudents` id the live
+session exposes (authenticated landing-page HTML, `bootstrap`, and your `Home`
+view), probes each one, and reports which return students:
+
+```
+Candidate ZoomMyStudents node ids:
+  ✗ 21471167  (seen in CONFIG/script property) — HTTP 403: Edsby error 1030 "no links to node". …
+  ✓ 24880031  (seen in landing page HTML) — 31 students
+
+Set script property EDSBY_ZOOM_NODE_ID = 24880031 (31 students), then run populateBdays().
+Currently configured: 21471167 ← stale
+```
+
+Store that id in `EDSBY_ZOOM_NODE_ID` and the import runs. `populateBdays()`
+also self-heals: if the configured id returns nothing it runs the same search
+automatically and uses the best candidate, so next September it keeps working
+without an edit.
+
+### The header change, kept anyway
+
+The original headers were:
 
 ```js
 headers: {
@@ -20,20 +65,12 @@ headers: {
 }
 ```
 
-Two problems, either of which produces a 403:
-
-1. **Missing `x-xds-jver` / `x-xds-cver`.** Edsby requires these client-version
-   headers on `/core/node.json/` calls. Every working request in this repo sends
-   them (`backend/behavior/lib/edsbyRead.js:44-45`,
-   `backend/behavior/lib/providers/EdsbyProvider.js:61`). They change with each
-   Edsby release, so a script that never sent them breaks permanently, and one
-   that hardcodes them breaks at the next release.
-2. **`Origin` + `X-Requested-With` on a plain GET.** The verified GET path sends
-   neither; adding `Origin` makes the request look cross-origin and trips
-   Edsby's CSRF rejection. They belong only on the formkey `POST` fallback.
-
-A third, likelier-than-it-looks cause: the old setup notes said to store just
-`session_id_edsby=<value>`. Edsby generally needs the **whole** `Cookie:` header.
+`Origin` and `X-Requested-With` on a plain GET are not what the verified path
+sends (`backend/behavior/lib/edsbyRead.js:41-49`), so they were dropped from
+GETs and kept on the formkey POST only, and `x-xds-jver` / `x-xds-cver` are now
+sent when set. Neither turned out to be the cause of *this* 403 — the node id
+was — but both align the script with the one request shape known to work.
+`EDSBY_JVER` / `EDSBY_CVER` are therefore **optional**.
 
 ## Setup
 
@@ -42,8 +79,9 @@ Project Settings → Script Properties:
 | Property | Required | What |
 |---|---|---|
 | `EDSBY_SESSION_COOKIE` | yes | the **entire** `Cookie:` header line from a logged-in Edsby request |
-| `EDSBY_JVER` | yes | value of the `x-xds-jver` request header |
-| `EDSBY_CVER` | yes | value of the `x-xds-cver` request header |
+| `EDSBY_ZOOM_NODE_ID` | recommended | the `/p/ZoomMyStudents/NUMBER` id — overrides `CONFIG.ZOOM_NODE_ID` with no code edit. Get it from `discoverZoomNodes()` |
+| `EDSBY_JVER` | no | `x-xds-jver` request header. Not needed for these reads; set it if a call ever 403s with no Edsby error code |
+| `EDSBY_CVER` | no | `x-xds-cver` request header. Same |
 | `EDSBY_USER_NID` | no | your Edsby user/teacher nid — enables the formkey POST retry |
 | `EDSBY_BASE_URL` | no | defaults to `https://bcs.edsby.com` |
 
@@ -54,26 +92,33 @@ Request Headers**. Copy everything after `Cookie:`, plus `x-xds-jver` and
 
 Then add a button on the Bdays sheet → Assign script → `populateBdays`.
 
-## Run `diagnoseEdsby()` first
+## Troubleshooting
 
-When something fails, run `diagnoseEdsby()` from the Apps Script editor and read
-the Execution log. It reports which credential is missing or stale, probes both
-`bootstrap` and `ZoomMyStudents`, and explains the status instead of logging a
-bare `HTTP 403`. Sample output:
+Two functions to run from the Apps Script editor, then read the Execution log:
 
-```
-Cookie:   612 chars, 7 cookie(s), session_id_edsby present
-jver:     ⚠ MISSING — set EDSBY_JVER (403s without it)
-Probe GET ZoomMyStudents/21471167 -> HTTP 403
-  Forbidden. Almost always stale/missing x-xds-jver or x-xds-cver …
-```
+- **`diagnoseEdsby()`** — reports each credential, probes `bootstrap` and
+  `ZoomMyStudents`, and reports **Edsby's own error code and string** rather
+  than the HTTP status it rides on. When `bootstrap` succeeds but the node call
+  fails it says so explicitly, so a valid session is never misread as an expired
+  one.
+- **`discoverZoomNodes()`** — lists and verifies the node ids this account can
+  reach. Run it whenever you see error 1030.
+
+Error codes worth knowing:
+
+| Code | Means | Do |
+|---|---|---|
+| `1030` `no links to node` | this account has no link to that node id | `discoverZoomNodes()` — the id is stale |
+| HTTP 401, or a login page at HTTP 200 | session expired | re-copy `EDSBY_SESSION_COOKIE` |
+| HTTP 403, no Edsby code | CSRF or version headers | check the node id, then try `EDSBY_JVER` / `EDSBY_CVER` |
 
 ## What else changed
 
+- **Resolves the node id.** `discoverZoomNodes()` finds it; `populateBdays()`
+  falls back to that search when the configured id returns nothing.
 - **Retries the listing.** Tries `ZoomMyStudents`, then `SchoolStudents`,
-  `Students`, `ClassStudents` — an admin account is often denied
-  `ZoomMyStudents` (Edsby error `1030`), which the old script reported as
-  "returned no students".
+  `Students`, `ClassStudents` — an admin account may have no "My Students" view
+  at all, which the old script reported as "returned no students".
 - **Formkey POST fallback.** If the plain GET yields nothing, retries as a
   multipart POST with a freshly fetched `_formkey` and `_method=GET`, matching
   `fetchZoomStudents()` in the backend. Formkeys expire fast, so one is fetched
@@ -89,9 +134,27 @@ Probe GET ZoomMyStudents/21471167 -> HTTP 403
   through `activate()` calls and sorted whatever range the cursor happened to
   land on. It now sorts the `Bdays` data range directly.
 
+## Tests
+
+```
+node extensions/edsby-bdays-apps-script/test-parsing.mjs
+```
+
+55 assertions over the pure functions — response parsing against the recorded
+`ZoomMyStudents` shape, group derivation, error-message construction (including
+the real 1030 payload above), node-id harvesting, and column mapping. Apps
+Script has no test runner, so `Code.gs` is loaded as text with an export footer
+appended; `UrlFetchApp` and `SpreadsheetApp` are never touched.
+
 ## Maintenance
 
-`jver`/`cver` change with every Edsby release and the cookie expires
-periodically. When the import starts failing, re-copy all three from a live
-request. The `../behaviours-edsby-cookie-sync/` extension automates the cookie
-half of this for the web app; this script still needs it pasted by hand.
+Two things drift:
+
+- **The zoom node id**, across school years — `discoverZoomNodes()`, or just let
+  `populateBdays()` re-find it.
+- **The session cookie**, every so often — re-copy it. The
+  `../behaviours-edsby-cookie-sync/` extension automates this for the web app;
+  this script still needs a manual paste.
+
+`jver`/`cver` also change with each Edsby release, but these reads do not need
+them.
