@@ -99,8 +99,8 @@ function diagnoseEdsby() {
     : "unknown — pasted by hand, or the extension has never pushed here"));
 
   if (sess.cookie && countCookies_(sess.cookie) === 1) {
-    lines.push("Note: only one cookie is stored. Edsby usually needs the whole " +
-      "Cookie: header line, not just session_id_edsby.");
+    lines.push("Note: one cookie stored. That is normal for bcs.edsby.com — it sets");
+    lines.push("only session_id_edsby — so this is not a problem in itself.");
   }
 
   if (!sess.cookie) {
@@ -344,6 +344,12 @@ function doGet() {
     tokenConfigured: !!String(props.getProperty("EDSBY_INGEST_TOKEN") || "").trim(),
     haveCookie: !!cookie,
     cookieChars: cookie.length,
+    cookieCount: cookie ? countCookies_(cookie) : 0,
+    // bcs.edsby.com sets a single cookie, so a refreshed session has the SAME
+    // length as the stale one it replaced and cookieChars cannot show a change.
+    // This fingerprint can: it moves whenever the session id does, and reveals
+    // nothing about the id itself (this endpoint is reachable by anyone).
+    cookieFingerprint: sidFingerprint_(sidOf_(cookie)),
     lastUpdated: props.getProperty("EDSBY_COOKIE_UPDATED_AT") || null,
   })).setMimeType(ContentService.MimeType.JSON);
 }
@@ -514,6 +520,21 @@ function reportSetCookie_(lines, r, ourSid) {
   lines.push("  " + c.note);
 }
 
+/**
+ * Short, non-reversible fingerprint of a session id: 8 hex chars of SHA-256.
+ * Enough to see that a value changed, useless for reconstructing it.
+ */
+function sidFingerprint_(sid) {
+  const s = String(sid || "");
+  if (!s) return null;
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, s);
+  let hex = "";
+  for (let i = 0; i < 4; i++) {
+    hex += ("0" + (bytes[i] & 0xff).toString(16)).slice(-2);
+  }
+  return hex;
+}
+
 function maskSid_(sid) {
   const s = String(sid || "");
   if (s.length <= 8) return s || "(none)";
@@ -557,12 +578,11 @@ function checkAuth() {
 /** Returns { authenticated, verdict, detail[] }. */
 function checkAuthStatus_(sess) {
   const detail = [];
+  // A single session_id_edsby is normal: bcs.edsby.com sets only that one, and
+  // the Cookie Sync extension pushes the whole Cookie header, which is just it.
+  // Cookie COUNT says nothing about validity — only a live request does.
   detail.push("Cookie: " + sess.cookie.length + " chars, " +
-    countCookies_(sess.cookie) + " cookie(s)" +
-    (countCookies_(sess.cookie) === 1
-      ? " — only one. Edsby normally sets several; a lone session_id_edsby is " +
-        "often not enough to authenticate."
-      : ""));
+    countCookies_(sess.cookie) + " cookie(s).");
 
   let resp;
   try {
