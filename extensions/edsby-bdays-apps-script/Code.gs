@@ -1133,13 +1133,7 @@ function populateBdays() {
   });
 
   // 5. Optionally clear old rows before writing.
-  if (CONFIG.CLEAR_OLD_ROWS) {
-    const lastRow = sheet.getLastRow();
-    const lastCol = sheet.getLastColumn();
-    if (lastRow >= CONFIG.DATA_START_ROW && lastCol > 0) {
-      sheet.getRange(CONFIG.DATA_START_ROW, 1, lastRow - CONFIG.DATA_START_ROW + 1, lastCol).clearContent();
-    }
-  }
+  if (CONFIG.CLEAR_OLD_ROWS) clearImportedColumns_(sheet);
 
   // 6. Write rows. Build one 2-D block per column run and write it in a single
   //    setValues() call — the old per-cell setValue() loop made ~10 spreadsheet
@@ -1148,6 +1142,38 @@ function populateBdays() {
 
   Logger.log("Bdays populated: " + students.length + " students, " +
     Object.keys(parentEmails).length + " parent emails.");
+}
+
+/**
+ * Clear ONLY the columns this import owns.
+ *
+ * The original version cleared row 4 → lastRow across 1 → getLastColumn(),
+ * which wipes every column the import never rewrites — on the current mapping
+ * that is C, D, I, J, K, L, M, O, R and T. Column T is the "Greeting & Email"
+ * formula the config comment promises is left untouched, so each run silently
+ * destroyed it along with any hand-kept notes in the other nine.
+ */
+function clearImportedColumns_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CONFIG.DATA_START_ROW) return;
+  const rows = lastRow - CONFIG.DATA_START_ROW + 1;
+
+  const owned = ownedColumns_();
+  for (let i = 0; i < owned.length; i++) {
+    sheet.getRange(CONFIG.DATA_START_ROW, owned[i], rows, 1).clearContent();
+  }
+}
+
+/** Pure: the sheet columns this import writes, ascending and de-duplicated. */
+function ownedColumns_() {
+  const seen = {};
+  const out = [];
+  Object.keys(CONFIG.COLS).forEach(function (k) {
+    const c = CONFIG.COLS[k];
+    if (typeof c === "number" && c > 0 && !seen[c]) { seen[c] = true; out.push(c); }
+  });
+  out.sort(function (a, b) { return a - b; });
+  return out;
 }
 
 function writeStudents_(sheet, students, parentEmails) {

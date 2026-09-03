@@ -23,7 +23,7 @@ module.exports = {
   extractParentEmail_, harvestNavLinksFromText_, findUserNidInText_,
   STUDENT_VIEW_RE, STUDENT_LIST_VIEWS, isPlausibleNid_, identityCandidates_,
   sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
-  groupTokenOf_, isHomeroomClass_,
+  groupTokenOf_, isHomeroomClass_, ownedColumns_, clearImportedColumns_,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -297,6 +297,29 @@ eq("parent email, account path",
 eq("parent email, info fallback",
    M.extractParentEmail_({ col2: { info: { email: "c@d.com" } } }), "c@d.com");
 eq("parent email, absent", M.extractParentEmail_({}), "");
+
+// ── Clearing only what we own ───────────────────────────────────────────────
+// The original clear spanned 1..getLastColumn(), wiping ten columns the import
+// never rewrites — including column T, the formula the config promises to
+// leave alone.
+group("Clear only imported columns");
+eq("owned columns, sorted and de-duplicated", M.ownedColumns_(), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19]);
+const cleared = [];
+const clearSheet = {
+  getLastRow: () => 40,
+  getRange: (r, c, nr, nc) => ({ clearContent: () => cleared.push({ col: c, row: r, rows: nr, cols: nc }) }),
+};
+M.clearImportedColumns_(clearSheet);
+eq("clears each owned column", cleared.map((c) => c.col), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19]);
+eq("one column wide each", [...new Set(cleared.map((c) => c.cols))], [1]);
+eq("starts at the first data row", [...new Set(cleared.map((c) => c.row))], [M.CONFIG.DATA_START_ROW]);
+eq("spans to the last row", [...new Set(cleared.map((c) => c.rows))], [40 - M.CONFIG.DATA_START_ROW + 1]);
+for (const col of [3, 4, 9, 10, 11, 12, 13, 15, 18, 20]) {
+  ok(`column ${col} is never cleared`, !cleared.some((c) => c.col === col));
+}
+const noRows = [];
+M.clearImportedColumns_({ getLastRow: () => 2, getRange: () => ({ clearContent: () => noRows.push(1) }) });
+eq("empty sheet clears nothing", noRows.length, 0);
 
 // ── Sheet writes ────────────────────────────────────────────────────────────
 group("Sheet writes (batched)");
