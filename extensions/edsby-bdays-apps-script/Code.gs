@@ -200,133 +200,262 @@ function edsbyErrorCode_(json) {
  *
  * Edsby error 1030 "no links to node" means the account has no relationship to
  * the requested node — the /p/ZoomMyStudents/<id> in CONFIG is stale (ids are
- * per-account and change across school years). Rather than hand-copying a new
- * one out of the URL bar each September, these helpers harvest the candidates
- * from the live session and verify each by actually asking it for students.
+ * per-account and change across school years). These helpers harvest the nav
+ * links the live session exposes and verify each by asking it for students.
  * ============================================================ */
 
+// Views that can list students, best first. An admin account often has no
+// ZoomMyStudents at all and reaches students through one of the others.
+const STUDENT_VIEW_RE = /^(Zoom)?(My)?Students$|^(School|Class|Course|Section)Students$/i;
+
 /**
- * Prints every ZoomMyStudents node id this session can see, marks the ones that
- * actually return students, and tells you which to store. Run from the editor.
+ * Pure: pull every nav link of the form /p/<View>/<nid> out of a blob of HTML
+ * or JSON, in the shapes Edsby actually emits. Returns [{ view, nid }].
+ * Exported for tests — no network, no spreadsheet.
+ */
+function harvestNavLinksFromText_(text) {
+  const out = [];
+  const seen = {};
+  const add = function (view, nid) {
+    const key = view + "/" + nid;
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push({ view: view, nid: nid });
+  };
+  if (!text) return out;
+
+  const V = "([A-Za-z][A-Za-z0-9_]{2,40})";
+  const N = "(\\d{4,})";
+  const PATTERNS = [
+    // /p/ZoomMyStudents/21471167, and the \/-escaped JSON variant, where each
+    // slash is preceded by a literal backslash.
+    new RegExp("\\\\?/p\\\\?/" + V + "\\\\?/" + N, "g"),
+    // {"xds":"ZoomMyStudents", … "nid":21471167}
+    new RegExp("[\"']xds[\"']\\s*:\\s*[\"']" + V + "[\"'][^{}]{0,80}?[\"']?nid[\"']?\\s*[:=]\\s*[\"']?" + N, "g"),
+    // {"nid":21471167, … "xds":"ZoomMyStudents"}   (view/nid captured reversed)
+    new RegExp("[\"']?nid[\"']?\\s*[:=]\\s*[\"']?" + N + "[\"']?[^{}]{0,80}?[\"']xds[\"']\\s*:\\s*[\"']" + V + "[\"']", "g"),
+  ];
+
+  for (let i = 0; i < PATTERNS.length; i++) {
+    const re = PATTERNS[i];
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      // The third pattern captures (nid, view); the others (view, nid).
+      if (i === 2) add(m[2], m[1]);
+      else add(m[1], m[2]);
+    }
+  }
+  return out;
+}
+
+/** Pure: find a plausible signed-in user nid in raw text. */
+function findUserNidInText_(text) {
+  if (!text) return "";
+  const m = String(text).match(/["']?(?:userid|usernid|user_id|myid|uid)["']?\s*[:=]\s*["']?(\d{4,})/i);
+  return m ? m[1] : "";
+}
+
+/**
+ * Prints every nav link this session exposes, marks the ones that actually
+ * return students, and tells you which id to store. Run from the editor.
  */
 function discoverZoomNodes() {
   const sess = getEdsbySession_();
   if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
 
-  const found = harvestZoomNodeIds_(sess);
-  if (found.candidates.length === 0) {
-    Logger.log([
-      "No ZoomMyStudents node ids found in this session.",
-      found.userNid ? "User nid: " + found.userNid : "Could not determine your user nid — set EDSBY_USER_NID.",
-      "",
-      "Fall back to reading it by hand: open Edsby → My Students, and copy the",
-      "number from the page URL /p/ZoomMyStudents/NUMBER into the",
-      "EDSBY_ZOOM_NODE_ID script property.",
-      "Sources checked: " + found.sourcesTried.join(", "),
-    ].join("\n"));
+  const found = harvestNavLinks_(sess);
+  const lines = [];
+
+  lines.push("Sources read:");
+  for (let i = 0; i < found.sources.length; i++) {
+    const src = found.sources[i];
+    lines.push("  " + src.name + " — " + (src.bytes > 0 ? src.bytes + " bytes" : "EMPTY") +
+      (src.note ? " (" + src.note + ")" : ""));
+  }
+  lines.push("User nid: " + (found.userNid || "not found"));
+  lines.push("");
+
+  if (found.links.length === 0) {
+    lines.push("No /p/<View>/<nid> nav links found anywhere in this session.");
+    lines.push("");
+    lines.push("Read the id by hand instead — it takes 20 seconds:");
+    lines.push("  1. Open Edsby in a browser and sign in.");
+    lines.push("  2. Click the page that lists your students (\"My Students\").");
+    lines.push("  3. The URL looks like  .../p/ZoomMyStudents/12345678");
+    lines.push("  4. Put that number in the EDSBY_ZOOM_NODE_ID script property.");
+    lines.push("  5. Run probeNode() to confirm it works, then populateBdays().");
+    lines.push("");
+    lines.push("If the URL shows a different view name, that is fine — probeNode()");
+    lines.push("tries every student-listing view against the id.");
+    Logger.log(lines.join("\n"));
     return;
   }
 
-  const lines = ["Candidate ZoomMyStudents node ids:"];
+  // Report everything found, so a differently-named view is visible even when
+  // no ZoomMyStudents link exists.
+  lines.push("All nav links found (" + found.links.length + "):");
+  const studentish = [];
+  for (let i = 0; i < found.links.length; i++) {
+    const L = found.links[i];
+    const isStudent = STUDENT_VIEW_RE.test(L.view);
+    lines.push("  " + (isStudent ? "*" : " ") + " /p/" + L.view + "/" + L.nid + "   [" + L.source + "]");
+    if (isStudent) studentish.push(L);
+  }
+  lines.push("");
+
+  // Probe the student-ish ones, plus the configured id, plus any bare nid we
+  // can reach — a nid seen under ANY view may still answer a students view.
+  const toProbe = studentish.slice();
+  const already = {};
+  for (let i = 0; i < toProbe.length; i++) already[toProbe[i].nid] = true;
+  if (sess.zoomNodeId && !already[String(sess.zoomNodeId)]) {
+    toProbe.push({ view: "ZoomMyStudents", nid: String(sess.zoomNodeId), source: "script property" });
+    already[String(sess.zoomNodeId)] = true;
+  }
+  for (let i = 0; i < found.links.length && toProbe.length < 25; i++) {
+    const L = found.links[i];
+    if (already[L.nid]) continue;
+    already[L.nid] = true;
+    toProbe.push({ view: "ZoomMyStudents", nid: L.nid, source: "seen under /p/" + L.view });
+  }
+
+  lines.push("Probing " + toProbe.length + " node id(s) for students:");
   const working = [];
-  for (let i = 0; i < found.candidates.length; i++) {
-    const c = found.candidates[i];
-    const n = verifyZoomNode_(sess, c.nid);
-    const mark = n.count > 0 ? "✓" : "✗";
-    lines.push("  " + mark + " " + c.nid + "  (seen in " + c.source + ") — " +
-      (n.count > 0 ? n.count + " students" : n.note));
-    if (n.count > 0) working.push({ nid: c.nid, count: n.count });
+  for (let i = 0; i < toProbe.length; i++) {
+    const nid = toProbe[i].nid;
+    const r = probeNodeAllViews_(sess, nid);
+    if (r.best) {
+      lines.push("  ✓ " + nid + " via " + r.best.view + " — " + r.best.count + " students   [" + toProbe[i].source + "]");
+      working.push({ nid: nid, view: r.best.view, count: r.best.count });
+    } else {
+      lines.push("  ✗ " + nid + " — " + r.note + "   [" + toProbe[i].source + "]");
+    }
   }
 
   lines.push("");
   if (working.length > 0) {
     working.sort(function (a, b) { return b.count - a.count; });
-    lines.push("Set script property EDSBY_ZOOM_NODE_ID = " + working[0].nid +
-      " (" + working[0].count + " students), then run populateBdays().");
-    lines.push("Currently configured: " + sess.zoomNodeId +
-      (String(sess.zoomNodeId) === String(working[0].nid) ? " (already correct)" : " ← stale"));
+    const w = working[0];
+    lines.push("Set script property EDSBY_ZOOM_NODE_ID = " + w.nid +
+      "  (" + w.count + " students via " + w.view + "), then run populateBdays().");
+    if (String(sess.zoomNodeId) !== String(w.nid)) {
+      lines.push("Currently configured " + sess.zoomNodeId + " is stale.");
+    }
   } else {
-    lines.push("None of the candidates returned students. If you are an admin rather");
-    lines.push("than a homeroom teacher, your account may have no \"My Students\" view");
-    lines.push("at all — populateBdays() also tries SchoolStudents / Students /");
-    lines.push("ClassStudents, whose ids you can store in EDSBY_ZOOM_NODE_ID too.");
+    lines.push("Nothing returned students. Read the id from the browser URL bar:");
+    lines.push("  Edsby → the page listing your students → URL is .../p/<View>/<NUMBER>");
+    lines.push("Put NUMBER in EDSBY_ZOOM_NODE_ID, then run probeNode() to confirm.");
   }
   Logger.log(lines.join("\n"));
 }
 
 /**
- * Scrape candidate zoom node ids out of whatever this session will show us:
- * the authenticated landing page HTML, the bootstrap JSON, and the user's Home
- * view. All three embed nav links of the form /p/ZoomMyStudents/<id>.
+ * Test one node id against every student-listing view. Reads
+ * EDSBY_ZOOM_NODE_ID unless you pass an id. Use this to confirm an id you
+ * copied out of the browser URL bar.
  */
-function harvestZoomNodeIds_(sess) {
-  const seen = {};
-  const candidates = [];
-  const sourcesTried = [];
+function probeNode(nid) {
+  const sess = getEdsbySession_();
+  const target = String(nid || sess.zoomNodeId || "").trim();
+  if (!target) { Logger.log("No node id. Set EDSBY_ZOOM_NODE_ID or call probeNode(12345678)."); return; }
 
-  // A zoom link shows up in three shapes across HTML and JSON:
-  //   /p/ZoomMyStudents/21471167   (and the \/-escaped JSON variant)
-  //   {"xds":"ZoomMyStudents", ... "nid":21471167}
-  //   {"nid":21471167, ... "xds":"ZoomMyStudents"}
-  const PATTERNS = [
-    /ZoomMyStudents[\\/"'\s:,]{0,8}(\d{4,})/g,
-    /ZoomMyStudents(?:[^{}]{0,60}?)["']?nid["']?\s*[:=]\s*["']?(\d{4,})/g,
-    /["']?nid["']?\s*[:=]\s*["']?(\d{4,})["']?(?:[^{}]{0,60}?)ZoomMyStudents/g,
-  ];
-
-  const scan = function (text, source) {
-    if (!text) return;
-    for (let p = 0; p < PATTERNS.length; p++) {
-      const re = new RegExp(PATTERNS[p].source, "g");
-      let m;
-      while ((m = re.exec(text)) !== null) {
-        const nid = m[1];
-        if (seen[nid]) continue;
-        seen[nid] = true;
-        candidates.push({ nid: nid, source: source });
-      }
-    }
-  };
-
-  // 1. The authenticated HTML landing page — nav links live here verbatim.
-  sourcesTried.push("landing page HTML");
-  try {
-    const resp = UrlFetchApp.fetchAll([req_(sess, sess.baseUrl + "/", {
-      extraHeaders: { "Accept": "text/html,application/xhtml+xml", "User-Agent": "Mozilla/5.0" },
-    })])[0];
-    scan(resp.getContentText(), "landing page HTML");
-  } catch (err) { /* keep going */ }
-
-  // 2. bootstrap — also the place to learn our own user nid.
-  sourcesTried.push("bootstrap");
-  const boot = edsbyGetJson_(sess, "", "bootstrap");
-  scan(boot.text, "bootstrap");
-  const userNid = sess.userNid || findUserNid_(boot.json);
-
-  // 3. The user's Home view, which carries their personal nav.
-  if (userNid) {
-    sourcesTried.push("Home/" + userNid);
-    const home = edsbyGetJson_(sess, userNid, "Home");
-    scan(home.text, "Home");
+  const lines = ["Probing node " + target + " against every student-listing view:"];
+  const r = probeNodeAllViews_(sess, target);
+  for (let i = 0; i < r.tried.length; i++) {
+    const t = r.tried[i];
+    lines.push("  " + (t.count > 0 ? "✓" : "✗") + " " + t.view + " — " +
+      (t.count > 0 ? t.count + " students" : t.note));
   }
-
-  // Always probe the configured id too, so its verdict is reported explicitly.
-  if (sess.zoomNodeId && !seen[String(sess.zoomNodeId)]) {
-    candidates.push({ nid: String(sess.zoomNodeId), source: "CONFIG/script property" });
-  }
-
-  return { candidates: candidates, userNid: userNid, sourcesTried: sourcesTried };
+  lines.push("");
+  lines.push(r.best
+    ? "Works. Set EDSBY_ZOOM_NODE_ID = " + target + " and run populateBdays()."
+    : "This id returns no students for this account. Double-check the number in the URL.");
+  Logger.log(lines.join("\n"));
 }
 
-/** Ask a node for students. Returns { count, note }. */
-function verifyZoomNode_(sess, nid) {
-  const r = edsbyGetJson_(sess, nid, "ZoomMyStudents", "&stage=1");
-  if (r.ok) {
-    const recs = collectStudentRecords_(unwrapSlice_(r.json));
-    if (recs.length) return { count: recs.length, note: "" };
-    return { count: 0, note: "HTTP 200 but no student rows (" + describeShape_(r.json) + ")" };
+/** Try every student-listing view against one nid. */
+function probeNodeAllViews_(sess, nid) {
+  const tried = [];
+  let best = null;
+  for (let i = 0; i < STUDENT_LIST_VIEWS.length; i++) {
+    const view = STUDENT_LIST_VIEWS[i];
+    const r = edsbyGetJson_(sess, nid, view, "&stage=1");
+    let count = 0, note = "";
+    if (r.ok) {
+      count = collectStudentRecords_(unwrapSlice_(r.json)).length;
+      if (count === 0) note = "HTTP 200, no student rows (" + describeShape_(r.json) + ")";
+    } else {
+      note = "HTTP " + r.status + ": " + explainStatus_(r);
+    }
+    tried.push({ view: view, count: count, note: note });
+    if (count > 0 && (!best || count > best.count)) best = { view: view, count: count };
   }
-  return { count: 0, note: "HTTP " + r.status + ": " + explainStatus_(r) };
+  return { tried: tried, best: best, note: (tried[0] && tried[0].note) || "no students" };
+}
+
+/** Back-compat single-view check used by resolveZoomNodeId_. */
+function verifyZoomNode_(sess, nid) {
+  const r = probeNodeAllViews_(sess, nid);
+  return r.best ? { count: r.best.count, note: "" } : { count: 0, note: r.note };
+}
+
+/**
+ * Read every source this session will give us and harvest nav links from each.
+ * Reports per-source byte counts so an empty source is visible instead of
+ * silently contributing nothing.
+ */
+function harvestNavLinks_(sess) {
+  const links = [];
+  const seen = {};
+  const sources = [];
+
+  const scan = function (text, name, note) {
+    sources.push({ name: name, bytes: text ? String(text).length : 0, note: note || "" });
+    const got = harvestNavLinksFromText_(text);
+    for (let i = 0; i < got.length; i++) {
+      const key = got[i].view + "/" + got[i].nid;
+      if (seen[key]) continue;
+      seen[key] = true;
+      links.push({ view: got[i].view, nid: got[i].nid, source: name });
+    }
+    return text || "";
+  };
+
+  // 1. The authenticated HTML app shell — nav links live here verbatim.
+  //    MUST follow redirects: "/" 302s to the app and a non-followed redirect
+  //    has an empty body.
+  let html = "";
+  try {
+    const resp = UrlFetchApp.fetchAll([req_(sess, sess.baseUrl + "/", {
+      followRedirects: true,
+      extraHeaders: { "Accept": "text/html,application/xhtml+xml", "User-Agent": "Mozilla/5.0" },
+    })])[0];
+    html = resp.getContentText();
+    scan(html, "landing page HTML", "HTTP " + resp.getResponseCode());
+  } catch (err) {
+    sources.push({ name: "landing page HTML", bytes: 0, note: String(err && err.message || err) });
+  }
+
+  // 2. bootstrap.
+  const boot = edsbyGetJson_(sess, "", "bootstrap");
+  scan(boot.text, "bootstrap", "HTTP " + boot.status);
+
+  // 3. The user's Home view — their personal nav. Needs a user nid, so find one
+  //    if it was never configured (this is why Home used to be skipped).
+  const userNid = sess.userNid ||
+                  findUserNid_(boot.json) ||
+                  findUserNidInText_(boot.text) ||
+                  findUserNidInText_(html);
+  if (userNid) {
+    const home = edsbyGetJson_(sess, userNid, "Home");
+    scan(home.text, "Home/" + userNid, "HTTP " + home.status);
+    const bare = edsbyGetJson_(sess, userNid, "Panorama");
+    scan(bare.text, "Panorama/" + userNid, "HTTP " + bare.status);
+  } else {
+    sources.push({ name: "Home", bytes: 0, note: "skipped — no user nid; set EDSBY_USER_NID" });
+  }
+
+  return { links: links, userNid: userNid, sources: sources };
 }
 
 /** Deep-walk a bootstrap payload for the signed-in user's nid. */
@@ -364,14 +493,17 @@ function resolveZoomNodeId_(sess) {
     const v = verifyZoomNode_(sess, configured);
     if (v.count > 0) return { nid: configured, count: v.count };
     Logger.log("Configured node " + configured + " returned no students — " + v.note);
-    Logger.log("Searching for the current ZoomMyStudents node id…");
+    Logger.log("Searching for the current node id…");
   }
 
-  const found = harvestZoomNodeIds_(sess);
+  const found = harvestNavLinks_(sess);
   let best = null;
-  for (let i = 0; i < found.candidates.length; i++) {
-    const nid = found.candidates[i].nid;
-    if (nid === configured) continue;
+  const tried = {};
+  tried[configured] = true;
+  for (let i = 0; i < found.links.length; i++) {
+    const nid = found.links[i].nid;
+    if (tried[nid]) continue;
+    tried[nid] = true;
     const v = verifyZoomNode_(sess, nid);
     if (v.count > 0 && (!best || v.count > best.count)) best = { nid: nid, count: v.count };
   }
@@ -380,9 +512,9 @@ function resolveZoomNodeId_(sess) {
       "Store it as EDSBY_ZOOM_NODE_ID to skip this search next run.");
     return best;
   }
+  Logger.log("Could not find a working node id. Run discoverZoomNodes() for the full report.");
   return { nid: configured, count: 0 };
 }
-
 
 /* ============================================================
  * MAIN ENTRY POINT (assign this to your button)
@@ -564,7 +696,10 @@ function req_(sess, url, opts) {
     method: o.method || "get",
     headers: headers,
     muteHttpExceptions: true,
-    followRedirects: false,
+    // Default off so an expired session's 302-to-login is visible rather than
+    // silently followed. The HTML page fetch overrides it — that one redirects
+    // to the app shell, and not following it yields an empty body.
+    followRedirects: o.followRedirects === true,
   };
   if (o.payload) r.payload = o.payload;
   if (o.contentType) r.contentType = o.contentType;

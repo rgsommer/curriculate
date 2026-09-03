@@ -101,8 +101,27 @@ Two functions to run from the Apps Script editor, then read the Execution log:
   than the HTTP status it rides on. When `bootstrap` succeeds but the node call
   fails it says so explicitly, so a valid session is never misread as an expired
   one.
-- **`discoverZoomNodes()`** — lists and verifies the node ids this account can
-  reach. Run it whenever you see error 1030.
+- **`discoverZoomNodes()`** — lists every `/p/<View>/<nid>` nav link the session
+  exposes (with per-source byte counts, so an empty source is visible), then
+  probes each candidate against all four student-listing views. Run it whenever
+  you see error 1030.
+- **`probeNode(12345678)`** — tests one id you read out of the browser URL bar
+  against every student view. The quickest way to confirm an id before storing
+  it. With no argument it probes `EDSBY_ZOOM_NODE_ID`.
+
+### When discovery finds nothing
+
+Nav links are not always present in the app shell — Edsby may build them client
+side. Read the id by hand; it takes 20 seconds:
+
+1. Open Edsby in a browser and sign in.
+2. Click the page that lists your students ("My Students").
+3. The URL is `.../p/ZoomMyStudents/12345678` — take the number.
+4. Put it in `EDSBY_ZOOM_NODE_ID`.
+5. Run `probeNode()` to confirm, then `populateBdays()`.
+
+If the URL shows a different view name, that is fine — `probeNode()` tries every
+student-listing view against the id.
 
 Error codes worth knowing:
 
@@ -136,15 +155,23 @@ Error codes worth knowing:
 
 ## Tests
 
+Developer-only — this has nothing to do with running the import, which happens
+entirely inside the Apps Script editor.
+
 ```
 node extensions/edsby-bdays-apps-script/test-parsing.mjs
 ```
 
-55 assertions over the pure functions — response parsing against the recorded
+76 assertions over the pure functions — response parsing against the recorded
 `ZoomMyStudents` shape, group derivation, error-message construction (including
-the real 1030 payload above), node-id harvesting, and column mapping. Apps
-Script has no test runner, so `Code.gs` is loaded as text with an export footer
-appended; `UrlFetchApp` and `SpreadsheetApp` are never touched.
+the real 1030 payload above), nav-link harvesting in every shape Edsby emits,
+user-nid detection, redirect handling, and column mapping. Apps Script has no
+test runner, so `Code.gs` is loaded as text with an export footer appended;
+`UrlFetchApp` and `SpreadsheetApp` are never touched.
+
+Two of these tests caught real bugs during development: the harvest regex
+missed the `\/`-escaped JSON link form, and the diagnostic reported the HTTP
+status ahead of Edsby's own error code.
 
 ## Maintenance
 

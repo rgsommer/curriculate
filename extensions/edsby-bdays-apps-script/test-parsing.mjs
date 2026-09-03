@@ -20,7 +20,8 @@ module.exports = {
   CONFIG, collectStudentRecords_, extractGroupFromClasses_, unwrapSlice_,
   describeShape_, countCookies_, edsbyErrorCode_, edsbyErrorStr_,
   explainStatus_, findUserNid_, writeStudents_, extractStudent_,
-  extractParentEmail_,
+  extractParentEmail_, harvestNavLinksFromText_, findUserNidInText_,
+  STUDENT_VIEW_RE, STUDENT_LIST_VIEWS,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -93,35 +94,60 @@ eq("finds nested userNid", M.findUserNid_({ a: { b: { userNid: "445566" } } }), 
 eq("ignores implausibly short ids", M.findUserNid_({ uid: "7" }), "");
 eq("userNid null safe", M.findUserNid_(null), "");
 
-// ── Zoom node-id harvesting ─────────────────────────────────────────────────
-// The regexes are read straight out of Code.gs so the test can't drift from it.
-group("Zoom node-id harvesting");
-const PATTERNS = eval("[" + src.match(/const PATTERNS = \[([\s\S]*?)\n  \];/)[1] + "]");
-const grab = (text) => {
-  const seen = new Set(), out = [];
-  for (const p of PATTERNS) {
-    const re = new RegExp(p.source, "g");
-    let m;
-    while ((m = re.exec(text)) !== null) if (!seen.has(m[1])) { seen.add(m[1]); out.push(m[1]); }
-  }
-  return out;
-};
-eq("HTML href", grab('<a href="/p/ZoomMyStudents/21471167">x</a>'), ["21471167"]);
-eq("escaped-slash JSON url", grab('"url":"\\/p\\/ZoomMyStudents\\/9988776"'), ["9988776"]);
-eq("xds then nid", grab('{"xds":"ZoomMyStudents","nid":33445566}'), ["33445566"]);
-eq("xds then nid, keys apart", grab('{"xds":"ZoomMyStudents","label":"My Students","nid":"7778889"}'), ["7778889"]);
-eq("nid then xds", grab('{"nid":44556677,"xds":"ZoomMyStudents"}'), ["44556677"]);
-eq("bare colon form", grab("ZoomMyStudents: 12345678"), ["12345678"]);
-eq("two ids", grab("ZoomMyStudents/111222 ZoomMyStudents/333444").sort(), ["111222", "333444"]);
-eq("dedupes", grab("ZoomMyStudents/555666 ZoomMyStudents/555666").length, 1);
-eq("rejects short ids", grab("ZoomMyStudents/12"), []);
-eq("ignores other views", grab("ZoomOtherThing/21471167"), []);
+// ── Nav-link harvesting ─────────────────────────────────────────────────────
+group("Nav-link harvesting");
+const H = (t) => M.harvestNavLinksFromText_(t).map((l) => l.view + "/" + l.nid);
+eq("HTML href", H('<a href="/p/ZoomMyStudents/21471167">x</a>'), ["ZoomMyStudents/21471167"]);
+eq("escaped-slash JSON url", H('"url":"\\/p\\/ZoomMyStudents\\/9988776"'), ["ZoomMyStudents/9988776"]);
+eq("plain and escaped forms agree", H('/p/ZoomMyStudents/1111222'), H('\\/p\\/ZoomMyStudents\\/1111222'));
+eq("xds then nid", H('{"xds":"ZoomMyStudents","nid":33445566}'), ["ZoomMyStudents/33445566"]);
+eq("xds then nid, keys apart",
+   H('{"xds":"ZoomMyStudents","label":"My Students","nid":"7778889"}'), ["ZoomMyStudents/7778889"]);
+eq("nid then xds", H('{"nid":44556677,"xds":"ZoomMyStudents"}'), ["ZoomMyStudents/44556677"]);
+eq("dedupes", H("/p/ZoomMyStudents/555666 /p/ZoomMyStudents/555666").length, 1);
+eq("rejects short ids", H("/p/ZoomMyStudents/12"), []);
+eq("null safe", H(null), []);
 ok("does not leak an nid across objects",
-   !grab('{"xds":"ZoomMyStudents"},{"o":1},{"nid":999888}').includes("999888"));
+   !H('{"xds":"ZoomMyStudents"},{"o":1},{"nid":999888}').includes("ZoomMyStudents/999888"));
+
+// The point of harvesting ANY view, not just ZoomMyStudents: an account whose
+// students live under a differently-named view must still be discoverable.
+eq("captures other views too",
+   H('<a href="/p/SchoolStudents/24880031">All</a><a href="/p/ZoomTeacherClasses/555111">Classes</a>').sort(),
+   ["SchoolStudents/24880031", "ZoomTeacherClasses/555111"]);
 eq("HTML nav + JSON nav in one blob",
-   grab('<a href="/p/ZoomMyStudents/21471167">Old</a>' +
-        '{"nav":[{"xds":"ZoomMyStudents","name":"My Students","nid":24880031}]}').sort(),
-   ["21471167", "24880031"]);
+   H('<a href="/p/ZoomMyStudents/21471167">Old</a>' +
+     '{"nav":[{"xds":"SchoolStudents","name":"Students","nid":24880031}]}').sort(),
+   ["SchoolStudents/24880031", "ZoomMyStudents/21471167"]);
+
+group("Student-view classification");
+for (const v of ["ZoomMyStudents", "SchoolStudents", "Students", "ClassStudents", "MyStudents"]) {
+  ok(v + " counts as a student view", M.STUDENT_VIEW_RE.test(v));
+}
+for (const v of ["Home", "Panorama", "ZoomTeacherClasses", "Calendar"]) {
+  ok(v + " does not", !M.STUDENT_VIEW_RE.test(v));
+}
+ok("every configured list view classifies as one",
+   M.STUDENT_LIST_VIEWS.every((v) => M.STUDENT_VIEW_RE.test(v)));
+
+group("User-nid detection");
+eq("from JSON", M.findUserNid_({ env: { userid: "9912345" } }), "9912345");
+eq("from nested JSON", M.findUserNid_({ a: { b: { userNid: "445566" } } }), "445566");
+eq("ignores implausibly short ids", M.findUserNid_({ uid: "7" }), "");
+eq("JSON null safe", M.findUserNid_(null), "");
+eq("from raw text", M.findUserNidInText_('window._cf={"userid":21470001};'), "21470001");
+eq("from quoted text", M.findUserNidInText_("usernid = '9988776'"), "9988776");
+eq("text null safe", M.findUserNidInText_(null), "");
+eq("text ignores short ids", M.findUserNidInText_('"uid":42'), "");
+
+// ── Redirect handling ───────────────────────────────────────────────────────
+// The HTML app shell 302s; not following it returns an empty body, which is
+// why discovery originally found nothing. req_ must expose the override.
+group("Redirect handling");
+const reqSrc = src.slice(src.indexOf("function req_("), src.indexOf("function edsbyGetJson_("));
+ok("req_ defaults to not following redirects", /followRedirects: o\.followRedirects === true/.test(reqSrc));
+ok("the HTML shell fetch opts in", /followRedirects: true,/.test(src));
+eq("exactly one caller opts in", (src.match(/followRedirects: true,/g) || []).length, 1);
 
 // ── Panorama extraction ─────────────────────────────────────────────────────
 group("Panorama extraction");
