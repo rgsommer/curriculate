@@ -40,6 +40,20 @@ const CONFIG = {
   // step and clears every imported column first.
   CLEAR_OLD_ROWS: false,
   ARCHIVE_SHEET: "Bdays Archive",
+
+  // Roster CSV export (Edsby menu → Export roster CSV). Column headers are the
+  // canonical ones from backend/behavior/lib/rosterImport.js, so the file
+  // imports into Behaviours without editing.
+  CSV: {
+    FILENAME_PREFIX: "behaviours-roster",
+    // The Bdays sheet has no House column and Edsby does not supply one. If you
+    // keep houses in a column, put its number here and the export reads it;
+    // left at 0 the House field is exported blank, and Behaviours simply leaves
+    // each student's house unset. The import NEVER writes this column.
+    HOUSE_COL: 0,
+    // Optional Drive folder name for the generated file; blank = My Drive root.
+    FOLDER: "",
+  },
   FETCH_CHUNK_SIZE: 20,          // calls per fetchAll batch
   FETCH_SLEEP_MS: 1500,          // sleep between batches
   GRADE_FILTER: [],              // [] = all grades; or e.g. ["6","7","8"]
@@ -58,6 +72,10 @@ const CONFIG = {
     dadEmail:   19,   // S
     // T is "Greeting & Email" -- left untouched (it's your formula), and the
     // clear step no longer touches it.
+    momEdsbyId: 22,   // V -- mother's Edsby nid, for the Behaviours roster CSV
+                      //      ("Parent N Edsby ID" feeds EdsbyProvider so notices
+                      //      post via Edsby rather than falling back to email).
+    dadEdsbyId: 23,   // W -- father's Edsby nid, same purpose.
     edsbyNid:   21,   // U -- the student's Edsby nid. This is the key that lets
                       // a run recognise a row it wrote before, so manual notes
                       // survive and departed students can be told apart from
@@ -93,6 +111,7 @@ function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu("Edsby")
     .addItem("Update Roster", "populateBdays")
+    .addItem("Export roster CSV", "exportRosterCsv")
     .addSeparator()
     .addItem("Check connection", "menuCheckConnection")
     .addItem("Find my students list", "menuFindStudentsList")
@@ -1272,6 +1291,8 @@ function rowValuesFor_(s, parentEmails) {
   put(cols.momEmail, s.momNid ? (emails[s.momNid] || "") : "");
   put(cols.dadName, s.dadName || "");
   put(cols.dadEmail, s.dadNid ? (emails[s.dadNid] || "") : "");
+  put(cols.momEdsbyId, s.momNid || "");
+  put(cols.dadEdsbyId, s.dadNid || "");
   put(cols.edsbyNid, s.nid || "");
   return out;
 }
@@ -1806,6 +1827,203 @@ function escapeRegex_(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+
+/* ============================================================
+ * ROSTER CSV EXPORT
+ *
+ * Produces the CSV that backend/behavior/lib/rosterImport.js expects, using
+ * that file's canonical header names so the upload needs no editing:
+ *
+ *   Student ID, Last Name, First Name, Common/Preferred Name, Gender,
+ *   Class/Group, Grade, House, DOB,
+ *   Parent 1 Name, Parent 1 Email, Parent 1 Edsby ID,
+ *   Parent 2 Name, Parent 2 Email, Parent 2 Edsby ID
+ *
+ * Only Last Name and First Name are required; a row with neither is skipped.
+ * House matches an existing house by name or creates one on import. Ethnicity
+ * is never exported — there is no such column, and bracketed tags such as
+ * "Smith [White]" are stripped from names here as well as on import, so a tag
+ * pasted into this sheet cannot travel.
+ *
+ * Exports what is IN THE SHEET, not a fresh Edsby pull, so manual corrections
+ * and the House column are included. Run "Update Roster" first for fresh data.
+ * ============================================================ */
+
+// Canonical headers, in order. Field names match rowFieldsFor_ below.
+const CSV_COLUMNS = [
+  { header: "Student ID",             field: "externalId" },
+  { header: "Last Name",              field: "lastName" },
+  { header: "First Name",             field: "firstName" },
+  { header: "Common/Preferred Name",  field: "preferredName" },
+  { header: "Gender",                 field: "gender" },
+  { header: "Class/Group",            field: "classGroup" },
+  { header: "Grade",                  field: "grade" },
+  { header: "House",                  field: "house" },
+  { header: "DOB",                    field: "dob" },
+  { header: "Parent 1 Name",          field: "parent1Name" },
+  { header: "Parent 1 Email",         field: "parent1Email" },
+  { header: "Parent 1 Edsby ID",      field: "parent1EdsbyId" },
+  { header: "Parent 2 Name",          field: "parent2Name" },
+  { header: "Parent 2 Email",         field: "parent2Email" },
+  { header: "Parent 2 Edsby ID",      field: "parent2EdsbyId" },
+];
+
+/** Menu action: build the CSV, save it to Drive, show a link. */
+function exportRosterCsv() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEET);
+  if (!sheet) throw new Error('Sheet "' + CONFIG.SHEET + '" not found.');
+
+  const built = buildRosterCsv_(readSheetRows_(sheet));
+  if (built.rows === 0) {
+    SpreadsheetApp.getUi().alert(
+      "Nothing to export — no rows with a name were found on \"" + CONFIG.SHEET + "\".");
+    return;
+  }
+
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const name = CONFIG.CSV.FILENAME_PREFIX + "-" + stamp + ".csv";
+  const blob = Utilities.newBlob(built.csv, "text/csv", name);
+  const folder = CONFIG.CSV.FOLDER ? getFolderByName_(CONFIG.CSV.FOLDER) : DriveApp.getRootFolder();
+  const file = folder.createFile(blob);
+
+  const skipped = built.skipped.length
+    ? "<p>Skipped " + built.skipped.length + " row(s) with no name: " +
+      built.skipped.slice(0, 20).join(", ") + (built.skipped.length > 20 ? "…" : "") + "</p>"
+    : "";
+  const houseNote = CONFIG.CSV.HOUSE_COL
+    ? ""
+    : "<p><b>House is blank.</b> This sheet has no House column, so Behaviours will " +
+      "leave houses unset. To include them, put the column number in " +
+      "<code>CONFIG.CSV.HOUSE_COL</code>.</p>";
+
+  SpreadsheetApp.getUi().showModalDialog(
+    HtmlService.createHtmlOutput(
+      "<div style=\"font:13px/1.5 system-ui,sans-serif\">" +
+      "<p><b>" + built.rows + " students</b> exported.</p>" + skipped + houseNote +
+      '<p><a href="' + file.getUrl() + '" target="_blank">Open ' + escapeHtml_(name) + "</a></p>" +
+      "<p style=\"color:#666\">Upload it in Behaviours → Students → Import roster.</p></div>"
+    ).setWidth(520).setHeight(300),
+    "Roster CSV"
+  );
+}
+
+/** Read every data row as a full value array, plus its row number. */
+function readSheetRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CONFIG.DATA_START_ROW) return [];
+  const width = Math.max(sheet.getLastColumn(), CONFIG.COLS.dadEdsbyId || 1, CONFIG.CSV.HOUSE_COL || 1);
+  const values = sheet.getRange(CONFIG.DATA_START_ROW, 1, lastRow - CONFIG.DATA_START_ROW + 1, width).getValues();
+  return values.map(function (v, i) { return { row: CONFIG.DATA_START_ROW + i, values: v }; });
+}
+
+/**
+ * Pure: sheet rows → { csv, rows, skipped }.
+ * `skipped` lists the row numbers dropped for having neither name.
+ */
+function buildRosterCsv_(sheetRows) {
+  const out = [CSV_COLUMNS.map(function (c) { return c.header; })];
+  const skipped = [];
+
+  for (let i = 0; i < (sheetRows || []).length; i++) {
+    const r = sheetRows[i];
+    const f = rowFieldsFor_(r.values);
+    // Last Name and First Name are the only required fields.
+    if (!f.lastName && !f.firstName) {
+      // A blank row is padding, not a dropped student — don't report it.
+      if (CSV_COLUMNS.some(function (c) { return String(f[c.field] || "").trim(); })) skipped.push(r.row);
+      continue;
+    }
+    out.push(CSV_COLUMNS.map(function (c) { return f[c.field]; }));
+  }
+
+  return {
+    csv: out.map(function (row) { return row.map(csvCell_).join(","); }).join("\r\n") + "\r\n",
+    rows: out.length - 1,
+    skipped: skipped,
+  };
+}
+
+/** Pure: one sheet row's values → the canonical CSV fields. */
+function rowFieldsFor_(values) {
+  const cols = CONFIG.COLS;
+  const at = function (c) {
+    if (!c || c < 1) return "";
+    const v = values[c - 1];
+    return v == null ? "" : v;
+  };
+  // stripTags_ mirrors rosterImport.js: bracketed tags like "[White]" are
+  // ethnicity markers in the source data and must never leave the sheet.
+  return {
+    externalId: String(at(cols.edsbyNid) || "").trim(),
+    lastName: stripTags_(at(cols.lastName)),
+    firstName: stripTags_(at(cols.formalFirst)),
+    preferredName: stripTags_(at(cols.commonName)),
+    gender: String(at(cols.gender) || "").trim(),
+    classGroup: String(at(cols.group) || "").trim(),
+    grade: String(at(cols.grade || 0) || "").trim() || gradeFromGroup_(String(at(cols.group) || "")),
+    house: String(at(CONFIG.CSV.HOUSE_COL) || "").trim(),
+    dob: csvDate_(at(cols.dob)),
+    parent1Name: stripTags_(at(cols.momName)),
+    parent1Email: String(at(cols.momEmail) || "").trim(),
+    parent1EdsbyId: String(at(cols.momEdsbyId) || "").trim(),
+    parent2Name: stripTags_(at(cols.dadName)),
+    parent2Email: String(at(cols.dadEmail) || "").trim(),
+    parent2EdsbyId: String(at(cols.dadEdsbyId) || "").trim(),
+  };
+}
+
+/**
+ * Pure: the sheet has no Grade column of its own — the Group cell holds "8A" —
+ * so derive the grade from it rather than exporting it blank.
+ */
+function gradeFromGroup_(group) {
+  const m = String(group || "").trim().match(/^(\d{1,2})/);
+  return m ? m[1] : "";
+}
+
+/** Pure: strip bracketed tags, matching rosterImport.js stripTags(). */
+function stripTags_(v) {
+  return String(v == null ? "" : v).replace(/\[[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
+}
+
+/** Pure: a Date or a string → yyyy-MM-dd, or "" when unparseable. */
+function csvDate_(v) {
+  if (v instanceof Date) {
+    // An unparseable Date stringifies to "Invalid Date", which would otherwise
+    // be exported verbatim as a birthday.
+    if (isNaN(v.getTime())) return "";
+    const p = function (n) { return (n < 10 ? "0" : "") + n; };
+    return v.getFullYear() + "-" + p(v.getMonth() + 1) + "-" + p(v.getDate());
+  }
+  const s = String(v == null ? "" : v).trim();
+  if (!s) return "";
+  let m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if (m) {
+    const p = function (n) { return (n.length < 2 ? "0" : "") + n; };
+    return m[1] + "-" + p(m[2]) + "-" + p(m[3]);
+  }
+  // Leave anything else as typed: rosterImport.js parses dates tolerantly, and
+  // guessing between d/m/y and m/d/y here would silently corrupt birthdays.
+  return s;
+}
+
+/** Pure: RFC 4180 cell — quote when needed, double any inner quotes. */
+function csvCell_(v) {
+  const s = v == null ? "" : String(v);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function escapeHtml_(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+/** Find or create a Drive folder by name. */
+function getFolderByName_(name) {
+  const it = DriveApp.getFoldersByName(name);
+  return it.hasNext() ? it.next() : DriveApp.createFolder(name);
+}
 
 /* ============================================================
  * SYNC PLANNING

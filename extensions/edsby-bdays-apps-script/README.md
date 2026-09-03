@@ -95,6 +95,7 @@ interface — there is nothing to pick out of a function list:
 | Menu item | When |
 |---|---|
 | **Update Roster** | the one you want, every time |
+| Export roster CSV | to feed the roster into Behaviours |
 | Check connection | it failed, and you want to know why |
 | Find my students list | the connection is fine but no students come back |
 | Full diagnostics (when stuck) | nothing else explained it |
@@ -107,6 +108,40 @@ assigned to it still works.
 
 Menu items mirror their log into a dialog, because `Logger` output is invisible
 when a function runs from a menu rather than the editor.
+
+## Roster CSV export
+
+**Edsby → Export roster CSV** writes a file to Drive and shows a link. The
+headers are the canonical ones from `backend/behavior/lib/rosterImport.js`, so
+it uploads into Behaviours → Students → Import roster with no editing:
+
+```
+Student ID, Last Name, First Name, Common/Preferred Name, Gender,
+Class/Group, Grade, House, DOB,
+Parent 1 Name, Parent 1 Email, Parent 1 Edsby ID,
+Parent 2 Name, Parent 2 Email, Parent 2 Edsby ID
+```
+
+- Only **Last Name** and **First Name** matter; a row with either is exported,
+  a row with neither is skipped and reported (blank padding rows are not).
+- **House** matches an existing house by name or creates one on import. The
+  Bdays sheet has no House column and Edsby supplies none, so it exports blank
+  unless you set `CONFIG.CSV.HOUSE_COL` to the column you keep houses in. The
+  import never writes that column.
+- **Grade** is derived from the Group cell (`8A` → `8`), since the sheet has no
+  separate grade column.
+- **Parent Edsby IDs** come from columns V and W, which `Update Roster` now
+  fills from each student's Edsby parent nids. They feed `EdsbyProvider`, so
+  notices post through Edsby instead of falling back to email.
+- **Ethnicity is never exported.** There is no such column, and bracketed tags
+  like `Smith [White]` are stripped from names on the way out — mirroring
+  `stripTags()` in the importer — so a tag pasted into this sheet cannot
+  travel.
+- Dates become `yyyy-MM-dd`. An ambiguous `01/04/2011` is passed through as
+  typed rather than guessed at, because picking d/m/y over m/d/y here would
+  silently corrupt birthdays; the importer parses tolerantly.
+- The export reads **the sheet**, not a fresh Edsby pull, so manual corrections
+  are included. Run **Update Roster** first if you want current data.
 
 ## What happens to students who leave
 

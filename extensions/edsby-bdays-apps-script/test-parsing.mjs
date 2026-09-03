@@ -25,6 +25,8 @@ module.exports = {
   sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
   groupTokenOf_, isHomeroomClass_, ownedColumns_, clearImportedColumns_,
   planSync_, nameKey_, rowValuesFor_, writeRowValues_,
+  buildRosterCsv_, rowFieldsFor_, csvCell_, csvDate_, stripTags_, gradeFromGroup_,
+  CSV_COLUMNS,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -304,14 +306,14 @@ eq("parent email, absent", M.extractParentEmail_({}), "");
 // never rewrites — including column T, the formula the config promises to
 // leave alone.
 group("Clear only imported columns");
-eq("owned columns, sorted and de-duplicated", M.ownedColumns_(), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19, 21]);
+eq("owned columns, sorted and de-duplicated", M.ownedColumns_(), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19, 21, 22, 23]);
 const cleared = [];
 const clearSheet = {
   getLastRow: () => 40,
   getRange: (r, c, nr, nc) => ({ clearContent: () => cleared.push({ col: c, row: r, rows: nr, cols: nc }) }),
 };
 M.clearImportedColumns_(clearSheet);
-eq("clears each owned column", cleared.map((c) => c.col), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19, 21]);
+eq("clears each owned column", cleared.map((c) => c.col), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19, 21, 22, 23]);
 eq("one column wide each", [...new Set(cleared.map((c) => c.cols))], [1]);
 eq("starts at the first data row", [...new Set(cleared.map((c) => c.row))], [M.CONFIG.DATA_START_ROW]);
 eq("spans to the last row", [...new Set(cleared.map((c) => c.rows))], [40 - M.CONFIG.DATA_START_ROW + 1]);
@@ -321,6 +323,98 @@ for (const col of [3, 4, 9, 10, 11, 12, 13, 15, 18, 20]) {
 const noRows = [];
 M.clearImportedColumns_({ getLastRow: () => 2, getRange: () => ({ clearContent: () => noRows.push(1) }) });
 eq("empty sheet clears nothing", noRows.length, 0);
+
+// ── Roster CSV export ───────────────────────────────────────────────────────
+// Headers must be the canonical ones from backend/behavior/lib/rosterImport.js
+// so the file uploads without editing.
+group("Roster CSV headers");
+eq("header order matches the importer's canonical names",
+   M.CSV_COLUMNS.map((c) => c.header),
+   ["Student ID", "Last Name", "First Name", "Common/Preferred Name", "Gender",
+    "Class/Group", "Grade", "House", "DOB",
+    "Parent 1 Name", "Parent 1 Email", "Parent 1 Edsby ID",
+    "Parent 2 Name", "Parent 2 Email", "Parent 2 Edsby ID"]);
+ok("no ethnicity column exists",
+   !M.CSV_COLUMNS.some((c) => /ethnic|race/i.test(c.header + c.field)));
+
+group("CSV cell quoting (RFC 4180)");
+eq("plain", M.csvCell_("Byron"), "Byron");
+eq("comma is quoted", M.csvCell_("Byron, Ada"), '"Byron, Ada"');
+eq("inner quotes doubled", M.csvCell_('Atinuke "Tinu"'), '"Atinuke ""Tinu"""');
+eq("newline is quoted", M.csvCell_("a\nb"), '"a\nb"');
+eq("null becomes empty", M.csvCell_(null), "");
+eq("number becomes text", M.csvCell_(7640360), "7640360");
+
+group("Ethnicity tags cannot travel");
+eq("tag stripped from a surname", M.stripTags_("Smith [White]"), "Smith");
+eq("tag stripped mid-string", M.stripTags_("Ada [Black] Byron"), "Ada Byron");
+eq("whitespace collapsed", M.stripTags_("  Van   Dyke  "), "Van Dyke");
+eq("nothing to strip", M.stripTags_("Byron"), "Byron");
+eq("null safe", M.stripTags_(null), "");
+
+group("DOB formatting");
+eq("Date object", M.csvDate_(new Date(2011, 3, 1)), "2011-04-01");
+eq("pads month and day", M.csvDate_(new Date(2011, 0, 5)), "2011-01-05");
+eq("iso string", M.csvDate_("2011-04-01"), "2011-04-01");
+eq("slashed iso pads", M.csvDate_("2011/4/1"), "2011-04-01");
+eq("empty", M.csvDate_(""), "");
+eq("null", M.csvDate_(null), "");
+eq("ambiguous is left as typed, not guessed", M.csvDate_("01/04/2011"), "01/04/2011");
+eq("invalid Date", M.csvDate_(new Date("nope")), "");
+
+group("Grade derived from the Group cell");
+eq("8A -> 8", M.gradeFromGroup_("8A"), "8");
+eq("7C -> 7", M.gradeFromGroup_("7C"), "7");
+eq("two digits", M.gradeFromGroup_("10B"), "10");
+eq("no digits", M.gradeFromGroup_(""), "");
+eq("non-numeric", M.gradeFromGroup_("Homeroom"), "");
+
+group("Row → CSV fields");
+const C = M.CONFIG.COLS;
+const mkRow = (o) => { const v = new Array(24).fill(""); Object.keys(o).forEach((c) => { v[c - 1] = o[c]; }); return v; };
+const f = M.rowFieldsFor_(mkRow({
+  [C.lastName]: "Bassoo", [C.formalFirst]: "Mya", [C.commonName]: "Mya Bassoo",
+  [C.gender]: "F", [C.group]: "8A", [C.dob]: new Date(2011, 3, 1),
+  [C.momName]: "A Bassoo", [C.momEmail]: "mum@example.test", [C.momEdsbyId]: "5001",
+  [C.dadName]: "B Bassoo", [C.dadEmail]: "dad@example.test", [C.dadEdsbyId]: "5002",
+  [C.edsbyNid]: "7640360",
+}));
+eq("student id", f.externalId, "7640360");
+eq("names", [f.lastName, f.firstName, f.preferredName], ["Bassoo", "Mya", "Mya Bassoo"]);
+eq("class group", f.classGroup, "8A");
+eq("grade derived from group", f.grade, "8");
+eq("dob formatted", f.dob, "2011-04-01");
+eq("parent 1 trio", [f.parent1Name, f.parent1Email, f.parent1EdsbyId], ["A Bassoo", "mum@example.test", "5001"]);
+eq("parent 2 trio", [f.parent2Name, f.parent2Email, f.parent2EdsbyId], ["B Bassoo", "dad@example.test", "5002"]);
+eq("house blank when unconfigured", f.house, "");
+
+group("Building the file");
+const built = M.buildRosterCsv_([
+  { row: 4, values: mkRow({ [C.lastName]: "Byron", [C.formalFirst]: "Ada", [C.group]: "8A" }) },
+  { row: 5, values: mkRow({ [C.lastName]: "Turing, Jr", [C.formalFirst]: "Alan" }) },
+  { row: 6, values: mkRow({}) },                                        // padding
+  { row: 7, values: mkRow({ [C.gender]: "F", [C.momEmail]: "x@y.test" }) }, // data, no name
+  { row: 8, values: mkRow({ [C.formalFirst]: "Grace" }) },              // first only is enough
+]);
+const lines = built.csv.trim().split("\r\n");
+eq("one header plus three students", lines.length, 4);
+eq("counts only exported students", built.rows, 3);
+eq("header line", lines[0].split(",")[1], "Last Name");
+ok("comma in a name is quoted", lines[2].includes('"Turing, Jr"'));
+ok("first-name-only row is kept", lines[3].includes("Grace"));
+eq("blank padding is not reported as skipped", built.skipped, [7]);
+eq("CRLF line endings", built.csv.indexOf("\r\n") > 0, true);
+eq("trailing newline", built.csv.slice(-2), "\r\n");
+eq("empty input still emits the header", M.buildRosterCsv_([]).rows, 0);
+eq("empty input header count", M.buildRosterCsv_([]).csv.trim().split("\r\n").length, 1);
+eq("null safe", M.buildRosterCsv_(null).rows, 0);
+
+// A tag pasted into the sheet must not reach the file.
+const tagged = M.buildRosterCsv_([
+  { row: 4, values: mkRow({ [C.lastName]: "Smith [White]", [C.formalFirst]: "Sam" }) },
+]);
+ok("no bracketed tag in the output", !/\[/.test(tagged.csv));
+ok("the name survives", tagged.csv.includes("Smith"));
 
 // ── Sync planning ───────────────────────────────────────────────────────────
 // Former grade 8s and departed students used to vanish silently, because a
