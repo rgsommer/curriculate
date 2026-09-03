@@ -21,7 +21,8 @@ module.exports = {
   describeShape_, countCookies_, edsbyErrorCode_, edsbyErrorStr_,
   explainStatus_, findUserNid_, writeStudents_, extractStudent_,
   extractParentEmail_, harvestNavLinksFromText_, findUserNidInText_,
-  STUDENT_VIEW_RE, STUDENT_LIST_VIEWS,
+  STUDENT_VIEW_RE, STUDENT_LIST_VIEWS, isPlausibleNid_, identityCandidates_,
+  sidOf_, sidsInSetCookie_, classifySetCookie_,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -160,6 +161,53 @@ ok("says a browser-reachable URL rules the id out", /browser/i.test(m1030));
 ok("drops the 'session is valid' claim", !/session is valid/i.test(m1030));
 ok("drops 'NOT a credential problem'", !/NOT a credential problem/i.test(m1030));
 ok("that verdict is gone from Code.gs entirely", !/session cookie is VALID/i.test(src));
+
+// ── Node-id plausibility ────────────────────────────────────────────────────
+// A bare /\d{4,}/ matched the timestamp "054748" out of a 200 KB bootstrap and
+// was then used as a user nid, making every Home request fail with error 1030.
+group("Node-id plausibility");
+ok("accepts a real nid", M.isPlausibleNid_("21471167"));
+ok("accepts a 6-digit nid", M.isPlausibleNid_("214711"));
+ok("rejects a leading zero (the 054748 bug)", !M.isPlausibleNid_("054748"));
+ok("rejects too short", !M.isPlausibleNid_("4748"));
+ok("rejects too long", !M.isPlausibleNid_("12345678901"));
+ok("rejects non-numeric", !M.isPlausibleNid_("21a71167"));
+ok("rejects empty", !M.isPlausibleNid_(""));
+ok("rejects null", !M.isPlausibleNid_(null));
+eq("text scan skips the timestamp and keeps a real nid",
+   M.findUserNidInText_('{"t":"05:47:48","uid":054748,"userid":21470001}'), "21470001");
+eq("text scan returns nothing when only implausible ids exist",
+   M.findUserNidInText_('{"uid":054748}'), "");
+
+group("Identity candidates");
+const bootLike = { config: { version: 9 }, me: { nid: 21470001, name: "Richard Sommer", role: "Teacher" },
+                   junk: { nid: "000123", name: "bad" }, list: [{ nid: 21470002, name: "Someone Else" }] };
+const cands = M.identityCandidates_(bootLike, 10);
+ok("finds the signed-in person", cands.some((c) => c.nid === "21470001" && /Sommer/.test(c.name)));
+ok("finds others too", cands.some((c) => c.nid === "21470002"));
+ok("excludes the leading-zero nid", !cands.some((c) => c.nid === "000123"));
+eq("anonymous bootstrap yields nothing", M.identityCandidates_({ config: { a: 1 } }, 10), []);
+eq("respects the limit", M.identityCandidates_(bootLike, 1).length, 1);
+eq("null safe", M.identityCandidates_(null, 5), []);
+
+// ── Set-Cookie classification ───────────────────────────────────────────────
+// The decisive test for a dead cookie: Edsby handing back a different session.
+group("Set-Cookie classification");
+eq("reads our sid", M.sidOf_("session_id_edsby=abc123; other=1"), "abc123");
+eq("no sid", M.sidOf_("other=1"), "");
+eq("sid from a string header", M.sidsInSetCookie_({ "Set-Cookie": "session_id_edsby=xyz; Path=/" }), ["xyz"]);
+eq("sid from an array header",
+   M.sidsInSetCookie_({ "Set-Cookie": ["a=1", "session_id_edsby=xyz; HttpOnly"] }), ["xyz"]);
+eq("lowercase header name", M.sidsInSetCookie_({ "set-cookie": "session_id_edsby=q" }), ["q"]);
+eq("none", M.sidsInSetCookie_({ "Set-Cookie": "a=1" }), []);
+eq("absent header", M.sidsInSetCookie_({}), []);
+eq("same sid means accepted",
+   M.classifySetCookie_({ "Set-Cookie": "session_id_edsby=abc" }, "abc").kind, "same");
+eq("different sid means rejected",
+   M.classifySetCookie_({ "Set-Cookie": "session_id_edsby=zzz" }, "abc").kind, "replaced");
+ok("the rejected verdict says the cookie is dead",
+   /cookie is dead/i.test(M.classifySetCookie_({ "Set-Cookie": "session_id_edsby=zzz" }, "abc").note));
+eq("no header is not a rejection", M.classifySetCookie_({}, "abc").kind, "none");
 
 // ── Panorama extraction ─────────────────────────────────────────────────────
 group("Panorama extraction");

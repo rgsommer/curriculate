@@ -202,6 +202,178 @@ function edsbyErrorCode_(json) {
 
 
 /* ============================================================
+ * RAW SESSION DUMP
+ *
+ * When a 403 survives the other checks, stop inferring and collect evidence.
+ * This prints the things that actually distinguish the possibilities:
+ *
+ *   - Set-Cookie on our responses. If Edsby hands back a session_id_edsby
+ *     DIFFERENT from the one we sent, it rejected ours and started a fresh
+ *     anonymous session — decisive proof the cookie is dead.
+ *   - The full bootstrap body. Small, and if it names a user then the session
+ *     is authenticated regardless of what the HTML shell looks like.
+ *   - The same node read under several parameter sets, including the original
+ *     script's noForm/facetSave combination, since which params Edsby requires
+ *     is not documented anywhere.
+ * ============================================================ */
+
+function dumpSession() {
+  const sess = getEdsbySession_();
+  if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
+  const lines = [];
+  const ourSid = sidOf_(sess.cookie);
+  lines.push("Our session_id_edsby: " + maskSid_(ourSid) + " (" + ourSid.length + " chars)");
+  lines.push("");
+
+  // 1. Did Edsby accept our cookie, or issue a replacement?
+  lines.push("── Set-Cookie check ──");
+  const shell = fetchRaw_(sess, sess.baseUrl + "/", true);
+  lines.push("app shell: HTTP " + shell.status + ", " + shell.bytes + " bytes");
+  reportSetCookie_(lines, shell, ourSid);
+  const bootRaw = fetchRaw_(sess, sess.baseUrl + "/core/node.json/?xds=bootstrap", false);
+  lines.push("bootstrap: HTTP " + bootRaw.status + ", " + bootRaw.bytes + " bytes");
+  reportSetCookie_(lines, bootRaw, ourSid);
+  lines.push("");
+
+  // 2. Who does the bootstrap think we are? It is ~200 KB, so dumping it is
+  //    useless — scan it for person-shaped objects instead.
+  lines.push("── identity in the bootstrap ──");
+  let bootJson = null;
+  try { bootJson = JSON.parse(bootRaw.text); } catch (err) { bootJson = null; }
+  const nidInText = findUserNidInText_(bootRaw.text);
+  lines.push("nid-like key in raw text: " + (nidInText || "none that passes a plausibility check"));
+  if (bootJson) {
+    const cands = identityCandidates_(bootJson, 10);
+    if (cands.length === 0) {
+      lines.push("No person-shaped objects (nid + name) in the bootstrap →");
+      lines.push("this looks like an ANONYMOUS bootstrap: app config only, no identity.");
+    } else {
+      lines.push("Person-shaped objects found (nid — name — role — under key):");
+      for (let i = 0; i < cands.length; i++) {
+        const c = cands[i];
+        lines.push("  " + c.nid + " — " + c.name + " — " + c.role + " — ." + c.at);
+      }
+      lines.push("If one of these is YOU, the session is authenticated and that nid");
+      lines.push("belongs in EDSBY_USER_NID.");
+    }
+  } else {
+    lines.push("bootstrap body was not JSON (" + bootRaw.bytes + " bytes).");
+  }
+  lines.push("");
+
+  // 3. The node read, under every parameter set worth trying.
+  lines.push("── ZoomMyStudents/" + sess.zoomNodeId + " parameter variants ──");
+  const variants = [
+    { label: "stage=1 (current)",                  q: "&stage=1" },
+    { label: "stage=1&noForm&facetSave (original)", q: "&stage=1&noForm=true&facetSave=true" },
+    { label: "bare (no params)",                   q: "" },
+    { label: "stage=2",                            q: "&stage=2" },
+    { label: "_method=GET",                        q: "&stage=1&_method=GET" },
+  ];
+  for (let i = 0; i < variants.length; i++) {
+    const v = variants[i];
+    const url = sess.baseUrl + "/core/node.json/" + sess.zoomNodeId +
+      "?xds=ZoomMyStudents" + v.q;
+    const r = fetchRaw_(sess, url, false);
+    lines.push("  " + v.label + " → HTTP " + r.status + ": " +
+      String(r.text || "").slice(0, 160).replace(/\s+/g, " "));
+  }
+  lines.push("");
+
+  // 4. Views that should work for ANY authenticated account.
+  lines.push("── identity / generic views ──");
+  const probes = [
+    "/core/node.json/?xds=Home",
+    "/core/node.json/",
+    "/core/node.json/?xds=Me",
+    "/core/node.json/?xds=Profile",
+  ];
+  for (let i = 0; i < probes.length; i++) {
+    const r = fetchRaw_(sess, sess.baseUrl + probes[i], false);
+    lines.push("  " + probes[i] + " → HTTP " + r.status + ": " +
+      String(r.text || "").slice(0, 160).replace(/\s+/g, " "));
+  }
+
+  lines.push("");
+  lines.push("── what to do with this ──");
+  lines.push("If Set-Cookie handed back a DIFFERENT session_id_edsby, the cookie is");
+  lines.push("dead: re-copy it and re-run. If a parameter variant returned students,");
+  lines.push("tell me which one. If everything 403s with 1030 while the browser can");
+  lines.push("open the page, copy the browser's own request:");
+  lines.push("  DevTools → Network → filter 'xds' → open /p/ZoomMyStudents/" + sess.zoomNodeId);
+  lines.push("  → right-click the ZoomMyStudents request → Copy → Copy as cURL");
+  lines.push("That shows exactly which headers/params Edsby is requiring.");
+
+  Logger.log(lines.join("\n"));
+}
+
+/** A fetch that keeps the response object, so headers stay readable. */
+function fetchRaw_(sess, url, followRedirects) {
+  try {
+    const resp = UrlFetchApp.fetchAll([req_(sess, url, {
+      followRedirects: followRedirects === true,
+      extraHeaders: followRedirects
+        ? { "Accept": "text/html,application/xhtml+xml", "User-Agent": "Mozilla/5.0" }
+        : null,
+    })])[0];
+    let text = "";
+    try { text = resp.getContentText(); } catch (err) { text = ""; }
+    let headers = {};
+    try { headers = resp.getAllHeaders() || {}; } catch (err) { headers = {}; }
+    return { status: resp.getResponseCode(), text: text, bytes: text.length, headers: headers };
+  } catch (err) {
+    return { status: 0, text: String(err && err.message || err), bytes: 0, headers: {} };
+  }
+}
+
+/** Pure: the session_id_edsby value out of a Cookie header. */
+function sidOf_(cookie) {
+  const m = String(cookie || "").match(/session_id_edsby=([^;\s]+)/);
+  return m ? m[1] : "";
+}
+
+/** Pure: every session_id_edsby value in a Set-Cookie header (string or array). */
+function sidsInSetCookie_(headers) {
+  const raw = headers && (headers["Set-Cookie"] || headers["set-cookie"]);
+  if (!raw) return [];
+  const list = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  for (let i = 0; i < list.length; i++) {
+    const m = String(list[i]).match(/session_id_edsby=([^;\s]+)/);
+    if (m) out.push(m[1]);
+  }
+  return out;
+}
+
+/** Pure: decide what a Set-Cookie means for our session. */
+function classifySetCookie_(headers, ourSid) {
+  const sids = sidsInSetCookie_(headers);
+  if (sids.length === 0) return { kind: "none", note: "no session_id_edsby in Set-Cookie (normal)." };
+  for (let i = 0; i < sids.length; i++) {
+    if (ourSid && sids[i] === ourSid) {
+      return { kind: "same", note: "Edsby re-sent the SAME session id — our cookie was accepted." };
+    }
+  }
+  return {
+    kind: "replaced",
+    note: "Edsby returned a DIFFERENT session_id_edsby (" + maskSid_(sids[0]) +
+          ") — it rejected ours and started a new session. The cookie is dead; re-copy it.",
+  };
+}
+
+function reportSetCookie_(lines, r, ourSid) {
+  const c = classifySetCookie_(r.headers, ourSid);
+  lines.push("  " + c.note);
+}
+
+function maskSid_(sid) {
+  const s = String(sid || "");
+  if (s.length <= 8) return s || "(none)";
+  return s.slice(0, 4) + "…" + s.slice(-4);
+}
+
+
+/* ============================================================
  * AUTHENTICATION CHECK
  *
  * The /core/node.json/?xds=bootstrap endpoint answers WITHOUT a valid session
@@ -281,8 +453,9 @@ function checkAuthStatus_(sess) {
     return { authenticated: true, verdict: "AUTHENTICATED as user nid " + userNid + ".", detail: detail };
   }
 
-  detail.push("No login form, but no user nid found either — inconclusive.");
-  detail.push("First 300 bytes: " + html.slice(0, 300).replace(/\s+/g, " "));
+  detail.push("No login form, but no user nid either. Edsby's shell is a thin JS");
+  detail.push("bootstrap that looks the same signed in or out, so this test cannot");
+  detail.push("decide it. Run dumpSession() — it checks Set-Cookie, which can.");
   return {
     authenticated: false,
     verdict: "INCONCLUSIVE — could not confirm the session is signed in.",
@@ -344,11 +517,63 @@ function harvestNavLinksFromText_(text) {
   return out;
 }
 
+/**
+ * Pure: is this a plausible Edsby node id? Real ones are 6-10 digits with no
+ * leading zero (e.g. 21471167). Rejecting leading zeros matters: a bare
+ * /\d{4,}/ happily matches a timestamp like 054748 out of a 200 KB bundle,
+ * which then makes every request for that "nid" fail with error 1030.
+ */
+function isPlausibleNid_(v) {
+  return /^[1-9]\d{5,9}$/.test(String(v == null ? "" : v).trim());
+}
+
 /** Pure: find a plausible signed-in user nid in raw text. */
 function findUserNidInText_(text) {
   if (!text) return "";
-  const m = String(text).match(/["']?(?:userid|usernid|user_id|myid|uid)["']?\s*[:=]\s*["']?(\d{4,})/i);
-  return m ? m[1] : "";
+  const re = /["']?(?:userid|usernid|user_id|mynid|myid|uid)["']?\s*[:=]\s*["']?(\d{4,10})/gi;
+  let m;
+  while ((m = re.exec(String(text))) !== null) {
+    if (isPlausibleNid_(m[1])) return m[1];
+  }
+  return "";
+}
+
+/**
+ * Pure: walk a parsed bootstrap payload for objects that look like a person —
+ * a plausible nid paired with a name. Returns up to `limit` candidates so the
+ * signed-in identity can be read off the log instead of guessed at.
+ */
+function identityCandidates_(json, limit) {
+  const max = limit || 10;
+  const out = [];
+  const seen = {};
+  const stack = [{ node: json, depth: 0, key: "$" }];
+  while (stack.length > 0 && out.length < max) {
+    const cur = stack.pop();
+    const node = cur.node;
+    if (!node || typeof node !== "object" || cur.depth > 10) continue;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) stack.push({ node: node[i], depth: cur.depth + 1, key: cur.key });
+      continue;
+    }
+    const nid = node.nid != null ? String(node.nid) : "";
+    const name = node.name || node.fullname || node.displayname || "";
+    if (isPlausibleNid_(nid) && typeof name === "string" && name.length > 1 && !seen[nid]) {
+      seen[nid] = true;
+      out.push({
+        nid: nid,
+        name: String(name).slice(0, 60),
+        role: String(node.role || node.nodetype || "").slice(0, 30),
+        at: cur.key,
+      });
+    }
+    const keys = Object.keys(node);
+    for (let i = 0; i < keys.length; i++) {
+      const v = node[keys[i]];
+      if (v && typeof v === "object") stack.push({ node: v, depth: cur.depth + 1, key: keys[i] });
+    }
+  }
+  return out;
 }
 
 /**
@@ -538,10 +763,18 @@ function harvestNavLinks_(sess) {
 
   // 3. The user's Home view — their personal nav. Needs a user nid, so find one
   //    if it was never configured (this is why Home used to be skipped).
-  const userNid = sess.userNid ||
-                  findUserNid_(boot.json) ||
-                  findUserNidInText_(boot.text) ||
-                  findUserNidInText_(html);
+  let userNid = sess.userNid ||
+                findUserNid_(boot.json) ||
+                findUserNidInText_(boot.text) ||
+                findUserNidInText_(html);
+  if (userNid && !isPlausibleNid_(userNid)) {
+    sources.push({ name: "user nid", bytes: 0, note: "rejected implausible nid " + userNid });
+    userNid = "";
+  }
+  if (!userNid && boot.json) {
+    const cands = identityCandidates_(boot.json, 1);
+    if (cands.length) userNid = cands[0].nid;
+  }
   if (userNid) {
     const home = edsbyGetJson_(sess, userNid, "Home");
     scan(home.text, "Home/" + userNid, "HTTP " + home.status);
@@ -569,7 +802,7 @@ function findUserNid_(json) {
     const keys = Object.keys(node);
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i], v = node[k];
-      if (/^(usernid|userid|user_id|myid|meid|uid)$/i.test(k) && /^\d{3,}$/.test(String(v))) {
+      if (/^(usernid|userid|user_id|mynid|myid|meid|uid)$/i.test(k) && isPlausibleNid_(v)) {
         return String(v);
       }
       if (v && typeof v === "object") stack.push({ node: v, depth: cur.depth + 1 });

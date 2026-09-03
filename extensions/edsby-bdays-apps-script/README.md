@@ -42,12 +42,34 @@ expired session by the login-form HTML.
 So bootstrap succeeding while node reads 403 with 1030 is exactly the signature
 of an unauthenticated session, not a healthy one.
 
-### The likely fix: paste the whole Cookie header
+### Ruled out so far
 
-A 53-character cookie value is a lone `session_id_edsby=…`. Edsby normally sets
-several cookies, and this project's own setup page
-(`frontend/src/app/behavior/setup/page.tsx:980`) tells users to copy
-**everything after `Cookie:`** for that reason.
+- **The node id.** `/p/ZoomMyStudents/21471167` opens in the browser.
+- **jver/cver.** Not required; unset and other calls still succeed.
+- **"Paste the whole Cookie header."** Plausible from the setup page, but the
+  cookie-sync extension pushes only `session_id_edsby`
+  (`extensions/behaviours-edsby-cookie-sync/background.js:14`) and the
+  honour-roll feature works on it — so one cookie *can* authenticate.
+- **HTML-shell auth detection.** Edsby's shell is a 4.5 KB JS bootstrap that
+  looks identical signed in or out. `checkAuth()` cannot decide from it.
+- **Nav-link scraping.** Neither the shell nor the 200 KB bootstrap contains any
+  `/p/<View>/<nid>` link; the nav is built client-side. `discoverZoomNodes()`
+  is a dead end on this deployment.
+
+### Still open
+
+Whether the session authenticates at all. Two tests can settle it:
+
+- **`dumpSession()`** — checks `Set-Cookie` (if Edsby hands back a *different*
+  `session_id_edsby`, it rejected ours and the cookie is dead), scans the
+  bootstrap for person-shaped objects, and retries the node under five
+  parameter sets including the original `noForm`/`facetSave` combination.
+- **The browser's own request.** DevTools → Network → filter `xds` → open
+  `/p/ZoomMyStudents/21471167` → right-click the `ZoomMyStudents` request →
+  **Copy as cURL**. Diffing that against what the script sends is the one
+  guaranteed answer.
+
+### If the cookie does turn out to be the problem
 
 1. Sign in to Edsby, open DevTools (F12) → **Network**.
 2. Filter on `xds` and reload the page.
@@ -171,7 +193,7 @@ entirely inside the Apps Script editor.
 node extensions/edsby-bdays-apps-script/test-parsing.mjs
 ```
 
-82 assertions over the pure functions — response parsing against the recorded
+109 assertions over the pure functions — response parsing against the recorded
 `ZoomMyStudents` shape, group derivation, error-message construction (including
 the real 1030 payload above), nav-link harvesting in every shape Edsby emits,
 user-nid detection, redirect handling, and column mapping. Apps Script has no
@@ -180,8 +202,10 @@ test runner, so `Code.gs` is loaded as text with an export footer appended;
 
 Several of these tests caught real bugs during development: the harvest regex
 missed the `\/`-escaped JSON link form, the diagnostic reported the HTTP status
-ahead of Edsby's own error code, and one now guards against the retracted
-"bootstrap returned 200 so your session is valid" verdict reappearing.
+ahead of Edsby's own error code, one guards against the retracted
+"bootstrap returned 200 so your session is valid" verdict reappearing, and the
+nid plausibility tests pin a bug where a bare `\d{4,}` match pulled the
+timestamp `054748` out of the bootstrap and used it as a user nid.
 
 ## Maintenance
 
