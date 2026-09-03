@@ -61,6 +61,32 @@ That last one also proves `SchoolStudents`, `Students` and `ClassStudents` do
    (the `unid` from the response above).
 4. Run `populateBdays()`.
 
+### Then stop doing it by hand
+
+The Cookie Sync extension pushes only to the Behaviours backend
+(`api.curriculate.net/api/behavior/edsby/ingest`), which is why this
+spreadsheet's cookie went stale while the web app's stayed fresh — they are
+different stores and nothing linked them.
+
+Extension v1.3.0 accepts **several ingest URLs, one per line**, so it can feed
+this script too. Set it up once and the cookie never has to be pasted again:
+
+1. Script Properties → add `EDSBY_INGEST_TOKEN` with a long random value.
+2. **Deploy → New deployment → Web app**, Execute as **Me**, Access **Anyone**.
+3. In the extension's options, add a second Ingest URL line:
+   `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?token=<TOKEN>`
+4. Reload the unpacked extension (its host permissions changed), then click its
+   toolbar button.
+
+`doPost` accepts the extension's payload and writes `EDSBY_SESSION_COOKIE`,
+`EDSBY_BASE_URL`, `EDSBY_JVER`, `EDSBY_CVER` and `EDSBY_USER_NID`, plus
+`EDSBY_COOKIE_UPDATED_AT` — which `diagnoseEdsby()` prints, so a stale sync is
+visible at a glance. The token is in the query string because Apps Script cannot
+read custom request headers; treat that URL as a password.
+
+A `GET` on the same URL returns a liveness check (token configured? cookie
+present? last updated when?) and never returns the cookie itself.
+
 ## Setup
 
 Project Settings → Script Properties:

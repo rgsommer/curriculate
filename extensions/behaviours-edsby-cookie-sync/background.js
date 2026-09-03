@@ -26,8 +26,20 @@ async function getConfig() {
   return {
     edsbyHost: (edsbyHost || "").trim().replace(/^https?:\/\//, "").replace(/\/.*$/, ""),
     ingestToken: (ingestToken || "").trim(),
-    ingestUrl: (ingestUrl || "").trim() || DEFAULT_INGEST_URL,
+    ingestUrls: parseIngestUrls(ingestUrl),
   };
+}
+
+// The field accepts several targets, one per line (or comma-separated), so the
+// cookie can reach more than one consumer — e.g. the Behaviours backend AND an
+// Apps Script Web App that keeps a spreadsheet's Script Properties fresh.
+// Blank falls back to the hosted endpoint.
+function parseIngestUrls(raw) {
+  const list = String(raw || "")
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter((s) => /^https:\/\/\S+$/.test(s));
+  return list.length ? list : [DEFAULT_INGEST_URL];
 }
 
 // ---- cookie reading --------------------------------------------------------
@@ -65,17 +77,41 @@ async function pushNow(oneShot = false) {
     if (pageCreds && pageCreds[k]) payload[k] = pageCreds[k];
   }
   if (oneShot) { payload.oneShot = true; payload.ttlMinutes = 10; }
+  const body = JSON.stringify(payload);
 
+  // Every target gets the same payload. The token also rides in the query
+  // string because Apps Script Web Apps cannot read custom request headers;
+  // backends keep using the header.
+  const results = await Promise.all(cfg.ingestUrls.map(async (url) => {
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
+        body,
+      });
+      const text = await resp.text();
+      return { url: shortenUrl(url), ok: resp.ok, status: resp.status, body: text.slice(0, 200) };
+    } catch (e) {
+      return { url: shortenUrl(url), ok: false, error: String(e) };
+    }
+  }));
+
+  const failed = results.filter((r) => !r.ok);
+  return setLast({
+    ok: failed.length === 0,
+    targets: results.length,
+    failedTargets: failed.length,
+    results,
+  });
+}
+
+// Keep the log readable, and keep a token in a query string out of it.
+function shortenUrl(url) {
   try {
-    const resp = await fetch(cfg.ingestUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-ingest-token": cfg.ingestToken },
-      body: JSON.stringify(payload),
-    });
-    const text = await resp.text();
-    return setLast({ ok: resp.ok, status: resp.status, body: text.slice(0, 200) });
-  } catch (e) {
-    return setLast({ ok: false, error: String(e) });
+    const u = new URL(url);
+    return u.host + u.pathname + (u.searchParams.get("token") ? "?token=***" : "");
+  } catch {
+    return "(unparseable URL)";
   }
 }
 

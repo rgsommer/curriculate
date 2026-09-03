@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Behaviours — Edsby Cookie Sync",
-  "description": "Keeps your Edsby session cookie synced to the Behaviours app so parent notices can post via Edsby without re-pasting it.",
-  "version": "1.2.0",
+  "description": "Keeps your Edsby session cookie synced to the Behaviours app (and any other ingest target you add) so parent notices and roster imports keep working without re-pasting it.",
+  "version": "1.3.0",
   "permissions": [
     "cookies",
     "storage",
@@ -11,7 +11,9 @@
   ],
   "host_permissions": [
     "https://*.edsby.com/*",
-    "https://api.curriculate.net/*"
+    "https://api.curriculate.net/*",
+    "https://script.google.com/*",
+    "https://script.googleusercontent.com/*"
   ],
   "background": {
     "service_worker": "background.js"

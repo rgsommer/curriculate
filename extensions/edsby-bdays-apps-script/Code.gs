@@ -93,6 +93,10 @@ function diagnoseEdsby() {
   lines.push("cver:     " + (sess.cver || "(not set — optional; only some calls need it)"));
   lines.push("User nid: " + (sess.userNid || "(not set — formkey POST retry disabled)"));
   lines.push("Zoom node: " + (sess.zoomNodeId || "⚠ MISSING"));
+  const synced = PropertiesService.getScriptProperties().getProperty("EDSBY_COOKIE_UPDATED_AT");
+  lines.push("Cookie set: " + (synced
+    ? synced + " (pushed by the Cookie Sync extension)"
+    : "unknown — pasted by hand, or the extension has never pushed here"));
 
   if (sess.cookie && countCookies_(sess.cookie) === 1) {
     lines.push("Note: only one cookie is stored. Edsby usually needs the whole " +
@@ -220,6 +224,128 @@ function edsbyErrorCode_(json) {
   const e = json.error || json.errno || (json.slices && json.slices[0] && json.slices[0].error);
   const n = parseInt(e, 10);
   return isNaN(n) ? null : n;
+}
+
+
+/* ============================================================
+ * COOKIE INGEST (Web App endpoint)
+ *
+ * Receives a fresh cookie from the Edsby Cookie Sync extension so the session
+ * never has to be pasted by hand. The extension already pushes to the
+ * Curriculate backend; pointing it at this endpoint as an ADDITIONAL target
+ * keeps this spreadsheet current too.
+ *
+ * ── SETUP ───────────────────────────────────────────────────────────────
+ *  1. Script Properties → add EDSBY_INGEST_TOKEN with a long random value
+ *     (Apps Script cannot read custom request headers, so the extension's
+ *     x-ingest-token cannot reach us — the token travels in the query string
+ *     instead, which is why it must be a value you generate, not reuse).
+ *  2. Deploy → New deployment → type "Web app",
+ *       Execute as: Me,  Who has access: Anyone.
+ *     Copy the /exec URL.
+ *  3. In the extension's options page, add to the Ingest URL field (one per
+ *     line, keeping the existing backend URL):
+ *       https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?token=<TOKEN>
+ *  4. Click the extension's toolbar button to push now, then run checkAuth().
+ *
+ * Anyone holding that URL can write these Script Properties, so treat it like
+ * a password: keep the token long, and redeploy with a new token to revoke.
+ * ============================================================ */
+
+function doPost(e) {
+  const reply = function (code, obj) {
+    return ContentService
+      .createTextOutput(JSON.stringify(Object.assign({ ok: code === 200 }, obj)))
+      .setMimeType(ContentService.MimeType.JSON);
+  };
+
+  const props = PropertiesService.getScriptProperties();
+  const expected = String(props.getProperty("EDSBY_INGEST_TOKEN") || "").trim();
+  if (!expected) return reply(403, { error: "EDSBY_INGEST_TOKEN is not set on this script." });
+
+  const supplied = String((e && e.parameter && e.parameter.token) || "").trim();
+  if (!constantTimeEquals_(supplied, expected)) return reply(403, { error: "bad token" });
+
+  let body = null;
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || "{}");
+  } catch (err) {
+    return reply(400, { error: "body is not JSON" });
+  }
+
+  const applied = applyIngest_(body, props);
+  if (applied.error) return reply(400, { error: applied.error });
+  return reply(200, applied);
+}
+
+/**
+ * Pure-ish: validate an ingest payload and write the properties it carries.
+ * Pass a plain object as `store` to test without PropertiesService.
+ * Payload shape comes from the extension:
+ *   { cookie, baseUrl, jver?, cver?, userNid?, formkey?, oneShot?, ttlMinutes? }
+ */
+function applyIngest_(body, store) {
+  if (!body || typeof body !== "object") return { error: "empty payload" };
+
+  const cookie = String(body.cookie || "").trim();
+  if (!cookie) return { error: "no cookie in payload" };
+  if (!/session_id_edsby=/.test(cookie)) return { error: "cookie has no session_id_edsby" };
+
+  const updated = [];
+  const set = function (key, value) {
+    store.setProperty(key, value);
+    updated.push(key);
+  };
+
+  set("EDSBY_SESSION_COOKIE", cookie);
+
+  const base = String(body.baseUrl || "").trim().replace(/\/+$/, "");
+  if (/^https:\/\/[^\s\/]+$/.test(base)) set("EDSBY_BASE_URL", base);
+
+  // jver/cver are optional for these reads but harmless to keep current.
+  for (const key of ["jver", "cver"]) {
+    const v = String(body[key] || "").trim();
+    if (v) set("EDSBY_" + key.toUpperCase(), v);
+  }
+
+  // A user nid is only useful if it is plausible — the bootstrap bundle is full
+  // of numbers that are not node ids.
+  const userNid = String(body.userNid || "").trim();
+  if (userNid && isPlausibleNid_(userNid)) set("EDSBY_USER_NID", userNid);
+
+  store.setProperty("EDSBY_COOKIE_UPDATED_AT", new Date().toISOString());
+
+  return {
+    updated: updated,
+    cookieChars: cookie.length,
+    cookieCount: countCookies_(cookie),
+  };
+}
+
+/** Length-independent compare, so a wrong token leaks nothing by timing. */
+function constantTimeEquals_(a, b) {
+  const x = String(a), y = String(b);
+  if (x.length === 0 || y.length === 0) return false;
+  let diff = x.length ^ y.length;
+  const n = Math.max(x.length, y.length);
+  for (let i = 0; i < n; i++) {
+    diff |= (x.charCodeAt(i) || 0) ^ (y.charCodeAt(i) || 0);
+  }
+  return diff === 0;
+}
+
+/** GET on the web-app URL: a liveness check that never reveals the cookie. */
+function doGet() {
+  const props = PropertiesService.getScriptProperties();
+  const cookie = String(props.getProperty("EDSBY_SESSION_COOKIE") || "");
+  return ContentService.createTextOutput(JSON.stringify({
+    ok: true,
+    service: "edsby-bdays cookie ingest",
+    tokenConfigured: !!String(props.getProperty("EDSBY_INGEST_TOKEN") || "").trim(),
+    haveCookie: !!cookie,
+    cookieChars: cookie.length,
+    lastUpdated: props.getProperty("EDSBY_COOKIE_UPDATED_AT") || null,
+  })).setMimeType(ContentService.MimeType.JSON);
 }
 
 

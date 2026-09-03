@@ -28,18 +28,28 @@ $("save").addEventListener("click", async () => {
   await chrome.storage.local.set({
     edsbyHost: $("edsbyHost").value.trim(),
     ingestToken: $("token").value.trim(),
-    ingestUrl: $("ingestUrl").value.trim(),
+    ingestUrl: normalizeIngestUrls($("ingestUrl").value),
   });
   $("save").textContent = "Saved";
   setTimeout(() => ($("save").textContent = "Save"), 1500);
   load();
 });
 
+// Keep one URL per line, dropping blanks — the service worker splits on
+// newlines and commas, so a stray trailing newline is harmless either way.
+function normalizeIngestUrls(raw) {
+  return String(raw || "")
+    .split(/[\n,]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 async function saveFields() {
   await chrome.storage.local.set({
     edsbyHost: $("edsbyHost").value.trim(),
     ingestToken: $("token").value.trim(),
-    ingestUrl: $("ingestUrl").value.trim(),
+    ingestUrl: normalizeIngestUrls($("ingestUrl").value),
   });
 }
 

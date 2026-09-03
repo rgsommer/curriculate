@@ -52,3 +52,54 @@ tell it. The cookie is sent **only** to the ingest URL you configure.
 - The ingest token is the credential — keep it private. Regenerating it in
   Behaviours immediately revokes the old one; update the extension's options
   with the new token.
+
+## Multiple ingest targets (v1.3.0)
+
+The **Ingest URL** field on the options page now takes **one URL per line**, and
+every line receives the same push. Blank still means the hosted endpoint.
+
+This exists because the cookie has more than one consumer. The extension used to
+feed only the Behaviours backend, so anything else reading Edsby with a stored
+cookie — e.g. the Bdays spreadsheet in
+`../edsby-bdays-apps-script/` — drifted out of date silently and failed with
+Edsby error 1030 `no links to node`, which looks nothing like an expired
+session.
+
+### Adding a Google Sheet as a target
+
+1. In the sheet's Apps Script project, add a Script Property
+   `EDSBY_INGEST_TOKEN` with a long random value.
+2. **Deploy → New deployment → Web app**, Execute as **Me**, Access
+   **Anyone**. Copy the `/exec` URL.
+3. Add this as a second line in the Ingest URL field:
+   `https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?token=<TOKEN>`
+4. Save, then click the toolbar button to push immediately.
+
+The token rides in the **query string** because Apps Script web apps cannot read
+custom request headers — `x-ingest-token` never reaches `doPost`. Anyone holding
+that URL can write those script properties, so treat it like a password; to
+revoke, change the property and redeploy. The URL is masked in the extension's
+"Last push" log (`?token=***`).
+
+`host_permissions` now includes `script.google.com` and
+`script.googleusercontent.com`; an MV3 service worker cannot POST to a host it
+lacks permission for, so **reload the unpacked extension** after updating.
+
+### Notes
+
+- `readCookieHeader()` sends the **whole** Cookie header for the Edsby host, not
+  just `session_id_edsby` — matching a manual DevTools copy.
+- A push reports per-target results; `failedTargets` is non-zero if any line
+  failed, so one broken target does not hide the others.
+- Only `https://` lines are accepted. Anything else is ignored, and if no line
+  survives, the default endpoint is used.
+
+## Tests
+
+```
+node extensions/behaviours-edsby-cookie-sync/test-ingest.cjs
+```
+
+32 assertions over the fan-out parsing, token masking, and the Apps Script
+receiver (`applyIngest_`, `constantTimeEquals_`). No Chrome or Apps Script
+runtime needed.

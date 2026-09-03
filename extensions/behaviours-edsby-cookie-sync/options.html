@@ -32,10 +32,18 @@
   <p class="note">Setup → Edsby → “Auto-push from your own browser script” → Generate token.</p>
 
   <details>
-    <summary>Advanced: ingest URL</summary>
-    <label for="ingestUrl">Ingest URL</label>
-    <input id="ingestUrl" type="text" placeholder="https://api.curriculate.net/api/behavior/edsby/ingest">
-    <p class="note">Leave blank to use the default hosted endpoint. Only change this if your school self-hosts the Behaviours backend.</p>
+    <summary>Advanced: ingest targets</summary>
+    <label for="ingestUrl">Ingest URLs — one per line</label>
+    <textarea id="ingestUrl" rows="4" style="width:100%;font-family:monospace"
+      placeholder="https://api.curriculate.net/api/behavior/edsby/ingest"></textarea>
+    <p class="note">Leave blank to use the default hosted endpoint. Every line gets the same push, so
+    the cookie can reach more than one place. Add a line only if your school self-hosts the Behaviours
+    backend, or to keep a Google Sheet's Edsby import working.</p>
+    <p class="note"><b>Google Sheet target:</b> deploy the sheet's Apps Script as a Web app
+    (Execute&nbsp;as: Me, Access: Anyone), then add its <code>/exec</code> URL with
+    <code>?token=YOUR_TOKEN</code> appended, matching the <code>EDSBY_INGEST_TOKEN</code> script
+    property. The token goes in the URL because Apps Script cannot read custom request headers.
+    Treat that URL as a password.</p>
   </details>
 
   <div>
