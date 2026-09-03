@@ -24,6 +24,7 @@ module.exports = {
   STUDENT_VIEW_RE, STUDENT_LIST_VIEWS, isPlausibleNid_, identityCandidates_,
   sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
   groupTokenOf_, isHomeroomClass_, ownedColumns_, clearImportedColumns_,
+  planSync_, nameKey_, rowValuesFor_, writeRowValues_,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -303,14 +304,14 @@ eq("parent email, absent", M.extractParentEmail_({}), "");
 // never rewrites — including column T, the formula the config promises to
 // leave alone.
 group("Clear only imported columns");
-eq("owned columns, sorted and de-duplicated", M.ownedColumns_(), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19]);
+eq("owned columns, sorted and de-duplicated", M.ownedColumns_(), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19, 21]);
 const cleared = [];
 const clearSheet = {
   getLastRow: () => 40,
   getRange: (r, c, nr, nc) => ({ clearContent: () => cleared.push({ col: c, row: r, rows: nr, cols: nc }) }),
 };
 M.clearImportedColumns_(clearSheet);
-eq("clears each owned column", cleared.map((c) => c.col), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19]);
+eq("clears each owned column", cleared.map((c) => c.col), [1, 2, 5, 6, 7, 8, 14, 16, 17, 19, 21]);
 eq("one column wide each", [...new Set(cleared.map((c) => c.cols))], [1]);
 eq("starts at the first data row", [...new Set(cleared.map((c) => c.row))], [M.CONFIG.DATA_START_ROW]);
 eq("spans to the last row", [...new Set(cleared.map((c) => c.rows))], [40 - M.CONFIG.DATA_START_ROW + 1]);
@@ -320,6 +321,101 @@ for (const col of [3, 4, 9, 10, 11, 12, 13, 15, 18, 20]) {
 const noRows = [];
 M.clearImportedColumns_({ getLastRow: () => 2, getRange: () => ({ clearContent: () => noRows.push(1) }) });
 eq("empty sheet clears nothing", noRows.length, 0);
+
+// ── Sync planning ───────────────────────────────────────────────────────────
+// Former grade 8s and departed students used to vanish silently, because a
+// wipe-and-rewrite cannot tell "left" from "never here". The Edsby nid in
+// column U makes the three cases separable.
+group("Sync planning");
+const row = (r, nid, last, first) => ({ row: r, nid, lastName: last, firstName: first });
+const stu = (nid, last, first) => ({ nid, lastName: last, prefFirst: first });
+
+// Steady state: everyone matches by nid.
+let plan = M.planSync_(
+  [row(4, "1001", "Byron", "Ada"), row(5, "1002", "Turing", "Alan")],
+  [stu("1001", "Byron", "Ada"), stu("1002", "Turing", "Alan")]);
+eq("all matched, none added or archived",
+   [plan.updates.length, plan.appends.length, plan.archives.length], [2, 0, 0]);
+eq("updates carry the sheet row", plan.updates.map((u) => u.row), [4, 5]);
+
+// A departed student and a new arrival in the same run.
+plan = M.planSync_(
+  [row(4, "1001", "Byron", "Ada"), row(5, "1002", "Turing", "Alan")],
+  [stu("1001", "Byron", "Ada"), stu("1003", "Hopper", "Grace")]);
+eq("the leaver is archived, not deleted", plan.archives.map((a) => a.row), [5]);
+eq("the arrival is appended", plan.appends.map((s) => s.nid), ["1003"]);
+eq("the stayer is updated", plan.updates.map((u) => u.row), [4]);
+
+// First merge run: the sheet has no nids yet, so it must adopt them by name
+// rather than archiving every existing row.
+plan = M.planSync_(
+  [row(4, "", "Byron", "Ada"), row(5, "", "Turing", "Alan")],
+  [stu("1001", "Byron", "Ada"), stu("1002", "Turing", "Alan")]);
+eq("adopts existing rows by name", plan.updates.map((u) => u.row), [4, 5]);
+eq("nothing archived on adoption", plan.archives.length, 0);
+eq("nothing appended on adoption", plan.appends.length, 0);
+
+// Name matching should be forgiving about case and spacing, since the sheet is
+// hand-edited.
+plan = M.planSync_([row(4, "", "  byron ", "ADA")], [stu("1001", "Byron", "Ada")]);
+eq("name match ignores case and padding", plan.updates.length, 1);
+eq("normalised key", M.nameKey_("  Byron ", "ADA"), "byron|ada");
+eq("collapses inner whitespace", M.nameKey_("Van  Dyke", "Ann"), "van dyke|ann");
+eq("empty name has no key", M.nameKey_("", ""), "");
+
+// A renamed student keeps her row via the nid, and is not duplicated.
+plan = M.planSync_([row(4, "1001", "Byron", "Ada")], [stu("1001", "Lovelace", "Ada")]);
+eq("nid wins over a changed surname", plan.updates.map((u) => u.row), [4]);
+eq("no duplicate row for a rename", plan.appends.length, 0);
+eq("the old row is not archived", plan.archives.length, 0);
+
+// Blank padding rows are not people.
+plan = M.planSync_([row(4, "1001", "Byron", "Ada"), row(5, "", "", ""), row(6, "", "", "")],
+                   [stu("1001", "Byron", "Ada")]);
+eq("blank rows are not archived", plan.archives.length, 0);
+
+// Two sheet rows for one student: only one can claim it, the other archives.
+plan = M.planSync_([row(4, "1001", "Byron", "Ada"), row(5, "1001", "Byron", "Ada")],
+                   [stu("1001", "Byron", "Ada")]);
+eq("duplicate row claims once", plan.updates.length, 1);
+eq("the duplicate is archived", plan.archives.map((a) => a.row), [5]);
+
+// Degenerate inputs.
+eq("empty sheet, empty Edsby", M.planSync_([], []), { updates: [], appends: [], archives: [] });
+eq("empty sheet appends everyone", M.planSync_([], [stu("1", "A", "B")]).appends.length, 1);
+eq("empty Edsby archives everyone", M.planSync_([row(4, "1", "A", "B")], []).archives.length, 1);
+eq("null safe", M.planSync_(null, null), { updates: [], appends: [], archives: [] });
+
+group("Row values");
+const rv = M.rowValuesFor_(
+  { nid: 7640360, lastName: "Bassoo", prefFirst: "Mya", fullName: "Mya Bassoo", gender: "F",
+    group: "8A", grade: "8", dob: "2011-04-01", momNid: "5001", momName: "A Bassoo" },
+  { 5001: "mum@example.test" });
+eq("writes the nid to column U", rv[M.CONFIG.COLS.edsbyNid], 7640360);
+eq("group", rv[M.CONFIG.COLS.group], "8A");
+eq("mom email resolved", rv[M.CONFIG.COLS.momEmail], "mum@example.test");
+eq("dad email blank without a nid", rv[M.CONFIG.COLS.dadEmail], "");
+eq("falls back to grade when no group",
+   M.rowValuesFor_({ grade: "7" }, {})[M.CONFIG.COLS.group], "7");
+eq("only owned columns are produced",
+   Object.keys(rv).map(Number).sort((a, b) => a - b),
+   M.ownedColumns_());
+
+group("Batched writes over scattered rows");
+const written = [];
+const wSheet = { getRange: (r, c, nr) => ({ setValues: (v) => written.push({ row: r, col: c, n: nr, vals: v.map((x) => x[0]) }) }) };
+M.writeRowValues_(wSheet, [
+  { row: 4, values: { 1: "Byron" } },
+  { row: 5, values: { 1: "Turing" } },
+  { row: 9, values: { 1: "Hopper" } },
+]);
+eq("contiguous rows coalesce into one call", written.filter((w) => w.n === 2).length, 1);
+eq("the gap starts a new call", written.length, 2);
+eq("first run values", written.find((w) => w.row === 4).vals, ["Byron", "Turing"]);
+eq("second run values", written.find((w) => w.row === 9).vals, ["Hopper"]);
+const none = [];
+M.writeRowValues_({ getRange: () => ({ setValues: () => none.push(1) }) }, []);
+eq("no entries, no calls", none.length, 0);
 
 // ── Sheet writes ────────────────────────────────────────────────────────────
 group("Sheet writes (batched)");
@@ -335,7 +431,7 @@ eq("starts at DATA_START_ROW", col(1).row, M.CONFIG.DATA_START_ROW);
 eq("column G group", col(7).vals, ["8B", "7A"]);
 eq("column P mom email, blank without a nid", col(16).vals, ["mom@x.com", ""]);
 eq("column S dad email", col(19).vals, ["", "dad@x.com"]);
-eq("one setValues per mapped column", writes.length, Object.keys(M.CONFIG.COLS).length);
+eq("one setValues per mapped column", writes.length, M.ownedColumns_().length);
 eq("no writes for an empty roster", (() => { const w = []; M.writeStudents_({ getRange: () => ({ setValues: (v) => w.push(v) }) }, [], {}); return w.length; })(), 0);
 
 console.log(`\n${pass} passed, ${fail} failed`);

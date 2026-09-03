@@ -87,6 +87,52 @@ read custom request headers; treat that URL as a password.
 A `GET` on the same URL returns a liveness check (token configured? cookie
 present? last updated when?) and never returns the cookie itself.
 
+## Using it
+
+An **Edsby** menu appears in the spreadsheet toolbar. That is the whole
+interface — there is nothing to pick out of a function list:
+
+| Menu item | When |
+|---|---|
+| **Update Roster** | the one you want, every time |
+| Check connection | it failed, and you want to know why |
+| Find my students list | the connection is fine but no students come back |
+| Full diagnostics (when stuck) | nothing else explained it |
+| Sort by grade | as before |
+
+Everything else in `Code.gs` is a private helper (trailing `_`), so only these
+and the two web-app entry points appear in the editor's Run list — 8 public
+functions out of 67. `populateBdays` keeps its name so any button already
+assigned to it still works.
+
+Menu items mirror their log into a dialog, because `Logger` output is invisible
+when a function runs from a menu rather than the editor.
+
+## What happens to students who leave
+
+`Update Roster` **merges** rather than wiping:
+
+- Rows are matched on the student's Edsby nid, kept in **column U**.
+- Matched rows are updated in place, so notes you keep in C, D, I–M, O or R
+  survive, and the column-T formula is never touched.
+- New students are appended.
+- Students no longer in Edsby move to a **`Bdays Archive`** sheet with the date
+  they were first missing, then their row is removed from `Bdays`. Nothing is
+  deleted.
+- The data rows are then sorted by last name, first name.
+
+On the first merge run the sheet has no nids yet, so rows are adopted by
+last+first name (case- and spacing-insensitive) instead of being archived
+wholesale. After that the nid is authoritative, so a student who changes
+surname keeps her row rather than appearing twice.
+
+Edsby's zoom already excludes dropped students — "Show Dropped" defaults off
+and the request does not pass `showdropped=1` — so anyone absent from the
+response has genuinely left or moved on.
+
+Set `CLEAR_OLD_ROWS: true` only to force a full rebuild; that path clears the
+imported columns and writes every student, with no archive step.
+
 ## Setup
 
 Project Settings → Script Properties:

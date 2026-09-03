@@ -34,7 +34,12 @@ const CONFIG = {
   SHEET: "Bdays",
   ZOOM_NODE_ID: "21471167",      // /p/ZoomMyStudents/<this id>
   DATA_START_ROW: 4,             // first student row (rows 1-3 are headers/labels)
-  CLEAR_OLD_ROWS: true,
+  // Merge mode (the default) matches existing rows by Edsby nid, updates them
+  // in place, appends new students, and moves departed students to the archive
+  // sheet. Set true only to force a full rebuild, which discards the archive
+  // step and clears every imported column first.
+  CLEAR_OLD_ROWS: false,
+  ARCHIVE_SHEET: "Bdays Archive",
   FETCH_CHUNK_SIZE: 20,          // calls per fetchAll batch
   FETCH_SLEEP_MS: 1500,          // sleep between batches
   GRADE_FILTER: [],              // [] = all grades; or e.g. ["6","7","8"]
@@ -51,7 +56,12 @@ const CONFIG = {
     momEmail:   16,   // P
     dadName:    17,   // Q
     dadEmail:   19,   // S
-    // T is "Greeting & Email" -- left untouched (it's your formula).
+    // T is "Greeting & Email" -- left untouched (it's your formula), and the
+    // clear step no longer touches it.
+    edsbyNid:   21,   // U -- the student's Edsby nid. This is the key that lets
+                      // a run recognise a row it wrote before, so manual notes
+                      // survive and departed students can be told apart from
+                      // new ones. Move it if U ever holds something.
   },
 
   // Optional: legacy fallback. The Group column is now auto-derived from each
@@ -72,6 +82,67 @@ const STUDENT_LIST_VIEWS = ["ZoomMyStudents", "SchoolStudents", "Students", "Cla
 
 
 /* ============================================================
+ * MENU — the only thing you need to remember
+ *
+ * A "Edsby" menu appears in the spreadsheet's toolbar on open, so next year
+ * there is nothing to pick out of a function list. "Update Roster" is the one
+ * you want; the rest are only for when it stops working, in the order to try them.
+ * ============================================================ */
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("Edsby")
+    .addItem("Update Roster", "populateBdays")
+    .addSeparator()
+    .addItem("Check connection", "menuCheckConnection")
+    .addItem("Find my students list", "menuFindStudentsList")
+    .addItem("Full diagnostics (when stuck)", "menuFullDiagnostics")
+    .addSeparator()
+    .addItem("Sort by grade", "SortByGrade")
+    .addToUi();
+}
+
+/**
+ * One answer to "is this going to work?". Reports the stored settings, tries
+ * the real students call, and if it fails says which of the three causes it is
+ * and what to do. This replaces having to choose between several checks.
+ */
+function menuCheckConnection() {
+  diagnoseEdsby_();
+  showLog_("Check connection");
+}
+
+function menuFindStudentsList() {
+  discoverZoomNodes_();
+  showLog_("Find my students list");
+}
+
+function menuFullDiagnostics() {
+  dumpSession_();
+  showLog_("Full diagnostics");
+}
+
+/**
+ * Apps Script's Logger output is invisible when a function is run from a menu
+ * rather than the editor, so mirror it into a dialog. Falls back silently when
+ * there is no UI (a trigger, or the web app).
+ */
+function showLog_(title) {
+  const text = Logger.getLog() || "(no output)";
+  try {
+    SpreadsheetApp.getUi().showModalDialog(
+      HtmlService.createHtmlOutput(
+        '<pre style="white-space:pre-wrap;font:12px/1.45 monospace;margin:0">' +
+        text.replace(/&/g, "&amp;").replace(/</g, "&lt;") + "</pre>"
+      ).setWidth(760).setHeight(560),
+      title
+    );
+  } catch (err) {
+    /* no UI available — the log is still in the execution transcript */
+  }
+}
+
+/* ============================================================
  * DIAGNOSTICS — run this first when something 403s
  * ============================================================ */
 
@@ -80,7 +151,7 @@ const STUDENT_LIST_VIEWS = ["ZoomMyStudents", "SchoolStudents", "Students", "Cla
  * leaving you with a bare "HTTP 403". Run from the Apps Script editor and read
  * the Execution log.
  */
-function diagnoseEdsby() {
+function diagnoseEdsby_() {
   const sess = getEdsbySession_();
   const lines = [];
 
@@ -246,7 +317,7 @@ function edsbyErrorCode_(json) {
  *  3. In the extension's options page, add to the Ingest URL field (one per
  *     line, keeping the existing backend URL):
  *       https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec?token=<TOKEN>
- *  4. Click the extension's toolbar button to push now, then run checkAuth().
+ *  4. Click the extension's toolbar button to push now, then use the Edsby menu → Check connection.
  *
  * Anyone holding that URL can write these Script Properties, so treat it like
  * a password: keep the token long, and redeploy with a new token to revoke.
@@ -371,7 +442,7 @@ function doGet() {
  *     is not documented anywhere.
  * ============================================================ */
 
-function dumpSession() {
+function dumpSession_() {
   const sess = getEdsbySession_();
   if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
   const lines = [];
@@ -556,7 +627,7 @@ function maskSid_(sid) {
  * ============================================================ */
 
 /** Reports whether this cookie is actually signed in. Run from the editor. */
-function checkAuth() {
+function checkAuth_() {
   const sess = getEdsbySession_();
   if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
   const a = checkAuthStatus_(sess);
@@ -570,7 +641,7 @@ function checkAuth() {
     lines.push("  3. Click any ?xds= request -> Headers -> Request Headers.");
     lines.push("  4. Copy EVERYTHING after 'Cookie:' — usually several hundred");
     lines.push("     characters across several cookies — into EDSBY_SESSION_COOKIE.");
-    lines.push("  5. Re-run checkAuth(). Once it says signed in, run populateBdays().");
+    lines.push("  5. Re-use the Edsby menu → Check connection. Once it says signed in, run populateBdays().");
   }
   Logger.log(lines.join("\n"));
 }
@@ -623,7 +694,7 @@ function checkAuthStatus_(sess) {
 
   detail.push("No login form, but no user nid either. Edsby's shell is a thin JS");
   detail.push("bootstrap that looks the same signed in or out, so this test cannot");
-  detail.push("decide it. Run dumpSession() — it checks Set-Cookie, which can.");
+  detail.push("decide it. Full diagnostics checks Set-Cookie, which can.");
   return {
     authenticated: false,
     verdict: "INCONCLUSIVE — could not confirm the session is signed in.",
@@ -748,7 +819,7 @@ function identityCandidates_(json, limit) {
  * Prints every nav link this session exposes, marks the ones that actually
  * return students, and tells you which id to store. Run from the editor.
  */
-function discoverZoomNodes() {
+function discoverZoomNodes_() {
   const sess = getEdsbySession_();
   if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
 
@@ -772,7 +843,7 @@ function discoverZoomNodes() {
     lines.push("  2. Click the page that lists your students (\"My Students\").");
     lines.push("  3. The URL looks like  .../p/ZoomMyStudents/12345678");
     lines.push("  4. Put that number in the EDSBY_ZOOM_NODE_ID script property.");
-    lines.push("  5. Run probeNode() to confirm it works, then populateBdays().");
+    lines.push("  5. Then use the Edsby menu → Import students.");
     lines.push("");
     lines.push("If the URL shows a different view name, that is fine — probeNode()");
     lines.push("tries every student-listing view against the id.");
@@ -833,7 +904,7 @@ function discoverZoomNodes() {
   } else {
     lines.push("Nothing returned students. Read the id from the browser URL bar:");
     lines.push("  Edsby → the page listing your students → URL is .../p/<View>/<NUMBER>");
-    lines.push("Put NUMBER in EDSBY_ZOOM_NODE_ID, then run probeNode() to confirm.");
+    lines.push("Put NUMBER in EDSBY_ZOOM_NODE_ID, then re-run Check connection.");
   }
   Logger.log(lines.join("\n"));
 }
@@ -843,7 +914,7 @@ function discoverZoomNodes() {
  * EDSBY_ZOOM_NODE_ID unless you pass an id. Use this to confirm an id you
  * copied out of the browser URL bar.
  */
-function probeNode(nid) {
+function probeNode_(nid) {
   const sess = getEdsbySession_();
   const target = String(nid || sess.zoomNodeId || "").trim();
   if (!target) { Logger.log("No node id. Set EDSBY_ZOOM_NODE_ID or call probeNode(12345678)."); return; }
@@ -1042,7 +1113,8 @@ function resolveZoomNodeId_(sess) {
       "Store it as EDSBY_ZOOM_NODE_ID to skip this search next run.");
     return best;
   }
-  Logger.log("Could not find a working node id. Run discoverZoomNodes() for the full report.");
+  Logger.log("Could not find a working node id. Use the Edsby menu → " +
+    "Find my students list for the full report.");
   return { nid: configured, count: 0 };
 }
 
@@ -1070,10 +1142,10 @@ function populateBdays() {
     const auth = checkAuthStatus_(sess);
     if (!auth.authenticated) {
       Logger.log("No students returned, and the session is not signed in: " + auth.verdict);
-      Logger.log("Run checkAuth() for the fix (usually: paste the whole Cookie header).");
+      Logger.log("Use the Edsby menu → Check connection for the fix.");
     } else {
       Logger.log("No students returned even though the session is signed in. " +
-        "Run discoverZoomNodes() to check the node id.");
+        "the Edsby menu → Find my students list to check the node id.");
     }
     return;
   }
@@ -1132,15 +1204,21 @@ function populateBdays() {
     return af < bf ? -1 : (af > bf ? 1 : 0);
   });
 
-  // 5. Optionally clear old rows before writing.
-  if (CONFIG.CLEAR_OLD_ROWS) clearImportedColumns_(sheet);
+  // 5. Write. Merge is the default: rows are matched on the Edsby nid in
+  //    column U, so students who left are archived rather than silently
+  //    dropped, and manual columns survive.
+  let summary;
+  if (CONFIG.CLEAR_OLD_ROWS) {
+    clearImportedColumns_(sheet);
+    writeStudents_(sheet, students, parentEmails);
+    summary = { updated: 0, added: students.length, archived: 0 };
+  } else {
+    summary = syncStudents_(sheet, students, parentEmails);
+  }
 
-  // 6. Write rows. Build one 2-D block per column run and write it in a single
-  //    setValues() call — the old per-cell setValue() loop made ~10 spreadsheet
-  //    round-trips per student and was the slowest part of the run.
-  writeStudents_(sheet, students, parentEmails);
-
-  Logger.log("Bdays populated: " + students.length + " students, " +
+  Logger.log("Bdays synced: " + summary.updated + " updated, " + summary.added +
+    " added, " + summary.archived + " archived to \"" + CONFIG.ARCHIVE_SHEET + "\" — " +
+    students.length + " students in Edsby, " +
     Object.keys(parentEmails).length + " parent emails.");
 }
 
@@ -1176,43 +1254,106 @@ function ownedColumns_() {
   return out;
 }
 
-function writeStudents_(sheet, students, parentEmails) {
+/** Pure: the values this import owns for one student, as {column: value}. */
+function rowValuesFor_(s, parentEmails) {
   const cols = CONFIG.COLS;
-  if (students.length === 0) return;
+  const emails = parentEmails || {};
+  // Group: auto-derived from Classes -> teacher-map fallback -> grade.
+  const cls = s.group || CONFIG.TEACHER_TO_CLASS[s.firstHomeroomTeacher] || s.grade || "";
+  const out = {};
+  const put = function (col, v) { if (col) out[col] = v; };
+  put(cols.lastName, s.lastName || "");
+  put(cols.formalFirst, s.prefFirst || s.firstName || "");
+  put(cols.commonName, s.fullName || "");
+  put(cols.gender, s.gender || "");
+  put(cols.group, cls);
+  put(cols.dob, s.dob || "");
+  put(cols.momName, s.momName || "");
+  put(cols.momEmail, s.momNid ? (emails[s.momNid] || "") : "");
+  put(cols.dadName, s.dadName || "");
+  put(cols.dadEmail, s.dadNid ? (emails[s.dadNid] || "") : "");
+  put(cols.edsbyNid, s.nid || "");
+  return out;
+}
 
-  const values = {};
-  const put = function (col, i, v) {
-    if (!col) return;
-    if (!values[col]) values[col] = [];
-    values[col][i] = [v];
-  };
+/**
+ * Merge Edsby's roster into the sheet: update rows we already have, append new
+ * students, archive the rest. Only the columns in CONFIG.COLS are written, so
+ * hand-kept notes and the column-T formula are left alone.
+ */
+function syncStudents_(sheet, students, parentEmails) {
+  const existing = readExistingRows_(sheet);
+  const plan = planSync_(existing, students);
 
-  for (let i = 0; i < students.length; i++) {
-    const s = students[i];
+  // 1. Departed students leave first, so the appends below land on a compact
+  //    block and row numbers stop moving afterwards.
+  const archived = archiveRows_(sheet, plan.archives);
 
-    // Determine "Group" (class designator).
-    // Priority: auto-derived from Classes -> teacher map fallback -> grade.
-    const cls = s.group ||
-                CONFIG.TEACHER_TO_CLASS[s.firstHomeroomTeacher] ||
-                s.grade || "";
+  // Deleting rows shifts everything below, so the update targets are stale.
+  // Re-read and re-plan against the compacted sheet rather than trying to
+  // arithmetic our way to the new row numbers.
+  const plan2 = archived > 0 ? planSync_(readExistingRows_(sheet), students) : plan;
 
-    put(cols.lastName,    i, s.lastName || "");
-    put(cols.formalFirst, i, s.prefFirst || s.firstName || "");
-    put(cols.commonName,  i, s.fullName || "");
-    put(cols.gender,      i, s.gender || "");
-    put(cols.group,       i, cls);
-    put(cols.dob,         i, s.dob || "");
-    put(cols.momName,     i, s.momName || "");
-    put(cols.momEmail,    i, s.momNid ? (parentEmails[s.momNid] || "") : "");
-    put(cols.dadName,     i, s.dadName || "");
-    put(cols.dadEmail,    i, s.dadNid ? (parentEmails[s.dadNid] || "") : "");
+  // 2. Update matched rows, batched per column over the contiguous block.
+  writeRowValues_(sheet, plan2.updates.map(function (u) {
+    return { row: u.row, values: rowValuesFor_(u.student, parentEmails) };
+  }));
+
+  // 3. Append new students below the last row.
+  const startRow = Math.max(sheet.getLastRow() + 1, CONFIG.DATA_START_ROW);
+  writeRowValues_(sheet, plan2.appends.map(function (st, i) {
+    return { row: startRow + i, values: rowValuesFor_(st, parentEmails) };
+  }));
+
+  // 4. Sort by last name then first. Range.sort moves whole cells, so formulas
+  //    in unowned columns travel with their row.
+  sortDataRows_(sheet);
+
+  return { updated: plan2.updates.length, added: plan2.appends.length, archived: archived };
+}
+
+/**
+ * Write {row, values:{column: value}} entries with one setValues call per
+ * column per contiguous run, instead of one call per cell.
+ */
+function writeRowValues_(sheet, entries) {
+  if (!entries || !entries.length) return;
+  const byCol = {};
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    Object.keys(e.values).forEach(function (col) {
+      if (!byCol[col]) byCol[col] = [];
+      byCol[col].push({ row: e.row, value: e.values[col] });
+    });
   }
-
-  Object.keys(values).forEach(function (col) {
-    const block = values[col];
-    for (let i = 0; i < students.length; i++) if (!block[i]) block[i] = [""];
-    sheet.getRange(CONFIG.DATA_START_ROW, parseInt(col, 10), students.length, 1).setValues(block);
+  Object.keys(byCol).forEach(function (col) {
+    const cells = byCol[col].sort(function (a, b) { return a.row - b.row; });
+    let i = 0;
+    while (i < cells.length) {
+      let j = i;
+      while (j + 1 < cells.length && cells[j + 1].row === cells[j].row + 1) j++;
+      const block = cells.slice(i, j + 1).map(function (c) { return [c.value]; });
+      sheet.getRange(cells[i].row, parseInt(col, 10), block.length, 1).setValues(block);
+      i = j + 1;
+    }
   });
+}
+
+function sortDataRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= CONFIG.DATA_START_ROW) return;
+  const width = Math.max(sheet.getLastColumn(), CONFIG.COLS.edsbyNid || 1);
+  sheet.getRange(CONFIG.DATA_START_ROW, 1, lastRow - CONFIG.DATA_START_ROW + 1, width)
+       .sort([{ column: CONFIG.COLS.lastName, ascending: true },
+              { column: CONFIG.COLS.formalFirst, ascending: true }]);
+}
+
+/** Full-rebuild path: clear the imported columns and write every student. */
+function writeStudents_(sheet, students, parentEmails) {
+  if (students.length === 0) return;
+  writeRowValues_(sheet, students.map(function (st, i) {
+    return { row: CONFIG.DATA_START_ROW + i, values: rowValuesFor_(st, parentEmails) };
+  }));
 }
 
 
@@ -1665,6 +1806,135 @@ function escapeRegex_(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+
+/* ============================================================
+ * SYNC PLANNING
+ *
+ * Without a stable key the import could only wipe and rewrite, so a student
+ * who left simply vanished — indistinguishable from one who was never there,
+ * and taking any hand-kept notes with them. Rows now carry the Edsby nid
+ * (column U), which makes three cases separable: still enrolled, newly
+ * arrived, and gone.
+ * ============================================================ */
+
+/** Pure: normalise a name for fallback matching. */
+function nameKey_(last, first) {
+  const n = function (v) { return String(v == null ? "" : v).trim().toLowerCase().replace(/\s+/g, " "); };
+  const l = n(last), f = n(first);
+  return l || f ? l + "|" + f : "";
+}
+
+/**
+ * Pure: decide what to do with each row and each Edsby student.
+ *
+ * existing: [{ row, nid, lastName, firstName }]  — one per sheet data row
+ * students: [{ nid, lastName, prefFirst, firstName, ... }] — from Edsby
+ *
+ * Returns { updates: [{row, student}], appends: [student], archives: [{row, reason}] }.
+ * Matching is by nid first; a row with no nid yet (every row, before the first
+ * merge run) falls back to last+first name so an existing sheet adopts its
+ * nids instead of being archived wholesale.
+ */
+function planSync_(existing, students) {
+  const rows = existing || [];
+  const list = students || [];
+
+  const byNid = {};
+  const byName = {};
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const nid = String(r.nid == null ? "" : r.nid).trim();
+    if (nid) {
+      if (!byNid[nid]) byNid[nid] = r;
+    } else {
+      const key = nameKey_(r.lastName, r.firstName);
+      if (key && !byName[key]) byName[key] = r;
+    }
+  }
+
+  const updates = [];
+  const appends = [];
+  const claimed = {};
+
+  for (let i = 0; i < list.length; i++) {
+    const st = list[i];
+    const nid = String(st.nid == null ? "" : st.nid).trim();
+    let hit = nid && byNid[nid] ? byNid[nid] : null;
+    if (!hit) {
+      const key = nameKey_(st.lastName, st.prefFirst || st.firstName);
+      if (key && byName[key]) hit = byName[key];
+    }
+    if (hit && !claimed[hit.row]) {
+      claimed[hit.row] = true;
+      updates.push({ row: hit.row, student: st });
+    } else {
+      appends.push(st);
+    }
+  }
+
+  const archives = [];
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (claimed[r.row]) continue;
+    // An entirely blank row is padding, not a departed student.
+    if (!String(r.nid || "").trim() && !nameKey_(r.lastName, r.firstName)) continue;
+    archives.push({ row: r.row, reason: "not in Edsby" });
+  }
+
+  return { updates: updates, appends: appends, archives: archives };
+}
+
+/** Read the sheet's data rows down to the key/name columns planSync_ needs. */
+function readExistingRows_(sheet) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < CONFIG.DATA_START_ROW) return [];
+  const rows = lastRow - CONFIG.DATA_START_ROW + 1;
+  const width = Math.max(sheet.getLastColumn(), CONFIG.COLS.edsbyNid || 1);
+  const values = sheet.getRange(CONFIG.DATA_START_ROW, 1, rows, width).getValues();
+  const cols = CONFIG.COLS;
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    const at = function (c) { return c && v[c - 1] != null ? v[c - 1] : ""; };
+    out.push({
+      row: CONFIG.DATA_START_ROW + i,
+      nid: String(at(cols.edsbyNid) || "").trim(),
+      lastName: at(cols.lastName),
+      firstName: at(cols.formalFirst),
+    });
+  }
+  return out;
+}
+
+/** Move departed rows to the archive sheet, then delete them bottom-up. */
+function archiveRows_(sheet, archives) {
+  if (!archives.length) return 0;
+  const ss = sheet.getParent();
+  let archive = ss.getSheetByName(CONFIG.ARCHIVE_SHEET);
+  const width = Math.max(sheet.getLastColumn(), CONFIG.COLS.edsbyNid || 1);
+  if (!archive) {
+    archive = ss.insertSheet(CONFIG.ARCHIVE_SHEET);
+    const header = new Array(width + 1).fill("");
+    header[0] = "Archived from " + CONFIG.SHEET;
+    header[width] = "Left (detected)";
+    archive.getRange(1, 1, 1, width + 1).setValues([header]);
+    archive.setFrozenRows(1);
+  }
+
+  // Descending, so deleting a row never shifts one still to be read.
+  const rowsDesc = archives.map(function (a) { return a.row; }).sort(function (a, b) { return b - a; });
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const batch = [];
+  for (let i = 0; i < rowsDesc.length; i++) {
+    const vals = sheet.getRange(rowsDesc[i], 1, 1, width).getValues()[0];
+    batch.push(vals.concat([stamp]));
+  }
+  if (batch.length) {
+    archive.getRange(archive.getLastRow() + 1, 1, batch.length, width + 1).setValues(batch);
+  }
+  for (let i = 0; i < rowsDesc.length; i++) sheet.deleteRow(rowsDesc[i]);
+  return rowsDesc.length;
+}
 
 /* ============================================================
  * SHEET HELPERS
