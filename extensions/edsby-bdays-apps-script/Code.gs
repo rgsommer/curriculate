@@ -680,7 +680,7 @@ function probeNode(nid) {
   const target = String(nid || sess.zoomNodeId || "").trim();
   if (!target) { Logger.log("No node id. Set EDSBY_ZOOM_NODE_ID or call probeNode(12345678)."); return; }
 
-  const lines = ["Probing node " + target + " against every student-listing view:"];
+  const lines = ["Probing node " + target + " — every student-listing view, by GET and by formkey POST:"];
   const r = probeNodeAllViews_(sess, target);
   for (let i = 0; i < r.tried.length; i++) {
     const t = r.tried[i];
@@ -689,18 +689,30 @@ function probeNode(nid) {
   }
   lines.push("");
   lines.push(r.best
-    ? "Works. Set EDSBY_ZOOM_NODE_ID = " + target + " and run populateBdays()."
-    : "This id returns no students for this account. Double-check the number in the URL.");
+    ? "Works via " + r.best.view + " [" + r.best.method + "]. Set EDSBY_ZOOM_NODE_ID = " +
+      target + " and run populateBdays()."
+    : "This id returns no students for this account, by GET or by formkey POST.");
   Logger.log(lines.join("\n"));
 }
 
-/** Try every student-listing view against one nid. */
+/**
+ * Try every student-listing view against one nid, by BOTH methods: the plain
+ * GET and the formkey POST. Edsby's CSRF path means a view can 403 on GET and
+ * still answer the POST, so a GET-only probe proves nothing.
+ */
 function probeNodeAllViews_(sess, nid) {
   const tried = [];
   let best = null;
-  for (let i = 0; i < STUDENT_LIST_VIEWS.length; i++) {
-    const view = STUDENT_LIST_VIEWS[i];
-    const r = edsbyGetJson_(sess, nid, view, "&stage=1");
+
+  const fresh = refreshFormkey_(sess);
+  const formkey = fresh.formkey || "";
+  tried.push({
+    view: "(formkey)",
+    count: 0,
+    note: formkey ? "refreshed — POST attempts enabled" : "could not obtain one — POST attempts SKIPPED",
+  });
+
+  const consider = function (view, method, r) {
     let count = 0, note = "";
     if (r.ok) {
       count = collectStudentRecords_(unwrapSlice_(r.json)).length;
@@ -708,10 +720,19 @@ function probeNodeAllViews_(sess, nid) {
     } else {
       note = "HTTP " + r.status + ": " + explainStatus_(r);
     }
-    tried.push({ view: view, count: count, note: note });
-    if (count > 0 && (!best || count > best.count)) best = { view: view, count: count };
+    tried.push({ view: view + " [" + method + "]", count: count, note: note });
+    if (count > 0 && (!best || count > best.count)) best = { view: view, method: method, count: count };
+    return count;
+  };
+
+  for (let i = 0; i < STUDENT_LIST_VIEWS.length; i++) {
+    const view = STUDENT_LIST_VIEWS[i];
+    if (consider(view, "GET", edsbyGetJson_(sess, nid, view, "&stage=1")) > 0) continue;
+    if (formkey) consider(view, "POST", zoomPost_(sess, nid, view, formkey));
   }
-  return { tried: tried, best: best, note: (tried[0] && tried[0].note) || "no students" };
+
+  const firstFail = tried.filter(function (t) { return t.count === 0 && t.view !== "(formkey)"; })[0];
+  return { tried: tried, best: best, note: (firstFail && firstFail.note) || "no students" };
 }
 
 /** Back-compat single-view check used by resolveZoomNodeId_. */
@@ -1069,6 +1090,38 @@ function readResponse_(resp) {
 }
 
 /**
+ * The formkey POST that Edsby's CSRF path wants: POST with _method=GET and the
+ * formkey in a multipart body, plus Origin and the client-request-queue header.
+ * Mirrors fetchZoomStudents() in backend/behavior/lib/edsbyRead.js. Kept
+ * separate so the diagnostics exercise the same path populateBdays() does —
+ * probing with GET alone tests only half the code.
+ */
+function zoomPost_(sess, nodeId, view, formkey) {
+  const url = sess.baseUrl + "/core/node.json/" + nodeId +
+    "?xds=" + encodeURIComponent(view) + "&stage=1&_method=GET";
+  const boundary = "----CurriculateBdays";
+  const payload = "--" + boundary + "\r\n" +
+    'Content-Disposition: form-data; name="_formkey"\r\n\r\n' +
+    formkey + "\r\n--" + boundary + "--\r\n";
+  let resp;
+  try {
+    resp = UrlFetchApp.fetchAll([req_(sess, url, {
+      method: "post",
+      contentType: "multipart/form-data; boundary=" + boundary,
+      payload: payload,
+      referer: sess.baseUrl + "/p/" + view + "/" + nodeId,
+      extraHeaders: {
+        "Origin": sess.baseUrl,
+        "x-edsby-client-request-queue": "net::post",
+      },
+    })])[0];
+  } catch (err) {
+    return { ok: false, threw: true, status: 0, json: null, text: String(err && err.message || err) };
+  }
+  return readResponse_(resp);
+}
+
+/**
  * Fetch a fresh CSRF _formkey from a bootstrap GET. Edsby formkeys expire
  * quickly, so one is fetched right before the POST retry that needs it.
  */
@@ -1134,29 +1187,11 @@ function fetchZoomMyStudents_(sess, zoomId) {
 
     // --- Attempt 2: formkey POST with _method=GET (Edsby's CSRF path) ---
     if (!formkey) continue;
-    const url = sess.baseUrl + "/core/node.json/" + nodeId +
-      "?xds=" + encodeURIComponent(view) + "&stage=1&_method=GET";
-    const boundary = "----CurriculateBdays";
-    const payload = "--" + boundary + "\r\n" +
-      'Content-Disposition: form-data; name="_formkey"\r\n\r\n' +
-      formkey + "\r\n--" + boundary + "--\r\n";
-    let resp;
-    try {
-      resp = UrlFetchApp.fetchAll([req_(sess, url, {
-        method: "post",
-        contentType: "multipart/form-data; boundary=" + boundary,
-        payload: payload,
-        referer: sess.baseUrl + "/p/" + view + "/" + nodeId,
-        extraHeaders: {
-          "Origin": sess.baseUrl,
-          "x-edsby-client-request-queue": "net::post",
-        },
-      })])[0];
-    } catch (err) {
-      Logger.log("POST " + view + " threw: " + (err && err.message || err));
+    const r = zoomPost_(sess, nodeId, view, formkey);
+    if (r.threw) {
+      Logger.log("POST " + view + " threw: " + r.text);
       continue;
     }
-    const r = readResponse_(resp);
     if (r.sessionExpired) {
       Logger.log("Session expired during POST " + view + ". Refresh EDSBY_SESSION_COOKIE.");
       return [];

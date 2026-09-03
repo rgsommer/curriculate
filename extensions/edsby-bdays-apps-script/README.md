@@ -56,6 +56,35 @@ of an unauthenticated session, not a healthy one.
   `/p/<View>/<nid>` link; the nav is built client-side. `discoverZoomNodes()`
   is a dead end on this deployment.
 
+### The pairing rule (from this repo)
+
+`/avgs` — the working Edsby path here — deliberately pairs **cookie ↔ userNid ↔
+zoomNid per teacher**:
+
+- `BehaviorTeacher.js:44` — "Edsby's broadcast create is `/core/create/<userNid>`
+  and **must match the session**".
+- `avgsRoutes.js:111` — node priority is "the signed-in user's own My-Students
+  node (**matches whose session is being used**)", from
+  `membership.edsbyZoomNid`.
+
+Node `21471167` is linked to one specific Edsby user. Error 1030 "no links to
+node" is what you get when the session's user is not that user — a cookie for a
+different account, or a stale session that no longer maps to one.
+
+### Compare against /avgs directly
+
+`/avgs` runs the verified backend code against the same node with a cookie you
+paste for one run, and dumps raw diagnostics. It is the cleanest A/B test:
+
+1. Open `/avgs` in the app.
+2. Put `21471167` in **My Students node** (its placeholder is already that id).
+3. Paste a **fresh** cookie into "used for this run only, never saved".
+4. Run, and read the diagnostics panel.
+
+If `/avgs` returns students, the cookie and node are fine and the difference is
+in this script's request. If it also fails with 1030, the cookie is not the
+session that owns that node.
+
 ### Still open
 
 Whether the session authenticates at all. Two tests can settle it:
