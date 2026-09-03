@@ -138,6 +138,19 @@ function diagnoseEdsby() {
   Logger.log(lines.join("\n"));
 }
 
+/** One-line status for list rows — the long explanation prints once, not per row. */
+function explainStatusShort_(r) {
+  if (r.sessionExpired) return "session expired (login page returned)";
+  if (r.status === 0) return "network error: " + String(r.text || "").slice(0, 60);
+  const code = edsbyErrorCode_(r.json);
+  if (code) {
+    const str = edsbyErrorStr_(r.json);
+    return "HTTP " + r.status + " · Edsby " + code + (str ? ' "' + str + '"' : "");
+  }
+  if (!r.json && r.status >= 200 && r.status < 300) return "HTTP " + r.status + ", non-JSON body";
+  return "HTTP " + r.status;
+}
+
 function explainStatus_(r) {
   if (r.sessionExpired) {
     return "Session expired — Edsby returned its login page. Refresh EDSBY_SESSION_COOKIE.";
@@ -151,13 +164,15 @@ function explainStatus_(r) {
     const str = edsbyErrorStr_(r.json);
     let msg = "Edsby error " + code + (str ? ' "' + str + '"' : "") + ".";
     if (code === 1030) {
-      msg += " The *caller* has no link to that node. Two causes, in order of " +
-             "likelihood: (1) this request is not authenticated as you — an " +
-             "incomplete or expired cookie leaves Edsby treating you as a " +
-             "stranger to the node, and a bootstrap HTTP 200 does NOT rule this " +
-             "out because bootstrap answers unauthenticated; run checkAuth(). " +
-             "(2) the node id really is stale — but if you can open " +
-             "/p/ZoomMyStudents/<id> in your browser, it is not.";
+      msg += " The caller has no link to that node. If EVERY student view fails " +
+             "identically, the node relationship is the problem, not view " +
+             "permission — so either the session is not authenticated as the user " +
+             "who owns the node, or it is not authenticated at all (a bootstrap " +
+             "200 does not rule that out: bootstrap answers unauthenticated). " +
+             "Settle it in the browser — while signed in, open " +
+             "/core/node.json/<id>?xds=ZoomMyStudents&stage=1 directly. Students " +
+             "back means the node is fine and only this script's session differs; " +
+             "1030 there too means the page does not use this endpoint.";
     } else {
       msg += " Edsby refused the node or view for this account.";
     }
@@ -684,10 +699,16 @@ function probeNode(nid) {
   const r = probeNodeAllViews_(sess, target);
   for (let i = 0; i < r.tried.length; i++) {
     const t = r.tried[i];
-    lines.push("  " + (t.count > 0 ? "✓" : "✗") + " " + t.view + " — " +
+    const mark = t.view === "(formkey)" ? " " : (t.count > 0 ? "✓" : "✗");
+    lines.push("  " + mark + " " + t.view + " — " +
       (t.count > 0 ? t.count + " students" : t.note));
   }
   lines.push("");
+  if (!r.best && r.full) {
+    lines.push("What that error means:");
+    lines.push("  " + r.full);
+    lines.push("");
+  }
   lines.push(r.best
     ? "Works via " + r.best.view + " [" + r.best.method + "]. Set EDSBY_ZOOM_NODE_ID = " +
       target + " and run populateBdays()."
@@ -712,13 +733,15 @@ function probeNodeAllViews_(sess, nid) {
     note: formkey ? "refreshed — POST attempts enabled" : "could not obtain one — POST attempts SKIPPED",
   });
 
+  let lastFull = "";
   const consider = function (view, method, r) {
     let count = 0, note = "";
     if (r.ok) {
       count = collectStudentRecords_(unwrapSlice_(r.json)).length;
       if (count === 0) note = "HTTP 200, no student rows (" + describeShape_(r.json) + ")";
     } else {
-      note = "HTTP " + r.status + ": " + explainStatus_(r);
+      note = explainStatusShort_(r);
+      lastFull = explainStatus_(r);
     }
     tried.push({ view: view + " [" + method + "]", count: count, note: note });
     if (count > 0 && (!best || count > best.count)) best = { view: view, method: method, count: count };
@@ -732,7 +755,11 @@ function probeNodeAllViews_(sess, nid) {
   }
 
   const firstFail = tried.filter(function (t) { return t.count === 0 && t.view !== "(formkey)"; })[0];
-  return { tried: tried, best: best, note: (firstFail && firstFail.note) || "no students" };
+  return {
+    tried: tried, best: best,
+    note: (firstFail && firstFail.note) || "no students",
+    full: lastFull,
+  };
 }
 
 /** Back-compat single-view check used by resolveZoomNodeId_. */

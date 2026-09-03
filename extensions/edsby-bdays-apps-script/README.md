@@ -85,6 +85,45 @@ If `/avgs` returns students, the cookie and node are fine and the difference is
 in this script's request. If it also fails with 1030, the cookie is not the
 session that owns that node.
 
+### Ruled out by probing (all 8 combinations)
+
+`probeNode()` against `21471167`, every student-listing view, both methods:
+
+```
+  (formkey) — refreshed, POST attempts enabled
+✗ ZoomMyStudents [GET]  · Edsby 1030 "no links to node"
+✗ ZoomMyStudents [POST] · Edsby 1030
+✗ SchoolStudents [GET/POST] · Edsby 1030
+✗ Students       [GET/POST] · Edsby 1030
+✗ ClassStudents  [GET/POST] · Edsby 1030
+```
+
+A formkey **was** obtained, so the CSRF path is available and the POST is not
+being rejected for lack of one. And every view fails *identically* — if the
+session were authenticated but simply lacked permission for a view, at least
+one would fail differently. Identical "no links to node" across all views means
+the failure is the node relationship, not view permission.
+
+That leaves only: the session is not authenticated as the user who owns the
+node, or it is not authenticated at all.
+
+### The one test that settles it
+
+While signed in to Edsby in a browser, open the API URL directly:
+
+```
+https://bcs.edsby.com/core/node.json/21471167?xds=ZoomMyStudents&stage=1
+```
+
+- **JSON with students** → node and account are fine; only this script's
+  session differs, and the cookie is the thing to replace.
+- **1030 again** → even a live browser session cannot use this endpoint, so the
+  `/p/ZoomMyStudents/` page reaches its data some other way and the endpoint
+  itself is wrong. DevTools → Network on that page shows what it really calls.
+
+This removes Apps Script from the question entirely, which is why it beats
+every indirect check attempted so far.
+
 ### Still open
 
 Whether the session authenticates at all. Two tests can settle it:

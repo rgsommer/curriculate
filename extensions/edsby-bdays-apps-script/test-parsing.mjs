@@ -22,7 +22,7 @@ module.exports = {
   explainStatus_, findUserNid_, writeStudents_, extractStudent_,
   extractParentEmail_, harvestNavLinksFromText_, findUserNidInText_,
   STUDENT_VIEW_RE, STUDENT_LIST_VIEWS, isPlausibleNid_, identityCandidates_,
-  sidOf_, sidsInSetCookie_, classifySetCookie_,
+  sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -153,14 +153,31 @@ ok("only the HTML shell fetches opt in", (src.match(/followRedirects: true,/g) |
 // as proof the cookie works — that false premise produced a wrong diagnosis.
 group("1030 messaging");
 const m1030 = M.explainStatus_({ ok: false, status: 403, json: e1030, text: "" });
-ok("names authentication as the leading cause", /not authenticated as you/i.test(m1030));
-ok("points at checkAuth", m1030.includes("checkAuth"));
+ok("blames the node relationship, not view permission",
+   /node relationship/i.test(m1030) && /not view/i.test(m1030));
+ok("names both authentication possibilities",
+   /not authenticated as the user/i.test(m1030) && /not authenticated at all/i.test(m1030));
 ok("warns a bootstrap 200 proves nothing", /bootstrap answers unauthenticated/i.test(m1030));
-ok("keeps a stale id as the alternative", /stale/i.test(m1030));
-ok("says a browser-reachable URL rules the id out", /browser/i.test(m1030));
+ok("points at the decisive browser test", /browser/i.test(m1030) && m1030.includes("xds=ZoomMyStudents"));
+ok("says what each browser outcome means", /1030 there too/i.test(m1030));
 ok("drops the 'session is valid' claim", !/session is valid/i.test(m1030));
 ok("drops 'NOT a credential problem'", !/NOT a credential problem/i.test(m1030));
 ok("that verdict is gone from Code.gs entirely", !/session cookie is VALID/i.test(src));
+
+// ── Short status lines ──────────────────────────────────────────────────────
+// The long explanation repeated once per probe row buried the signal under
+// ~3 KB of duplicate text; rows now get one line and the detail prints once.
+group("Short status lines");
+eq("1030 in one line", M.explainStatusShort_({ status: 403, json: e1030 }),
+   'HTTP 403 · Edsby 1030 "no links to node"');
+ok("short form is short", M.explainStatusShort_({ status: 403, json: e1030 }).length < 60);
+ok("full form stays detailed", M.explainStatus_({ status: 403, json: e1030 }).length > 200);
+eq("expired", M.explainStatusShort_({ sessionExpired: true, status: 401 }),
+   "session expired (login page returned)");
+eq("plain status", M.explainStatusShort_({ status: 500, json: null }), "HTTP 500");
+eq("non-JSON 200", M.explainStatusShort_({ status: 200, json: null }), "HTTP 200, non-JSON body");
+ok("network error names the cause",
+   /network error/.test(M.explainStatusShort_({ status: 0, text: "timeout" })));
 
 // ── Node-id plausibility ────────────────────────────────────────────────────
 // A bare /\d{4,}/ matched the timestamp "054748" out of a 200 KB bootstrap and
