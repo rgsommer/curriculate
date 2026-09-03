@@ -23,6 +23,7 @@ module.exports = {
   extractParentEmail_, harvestNavLinksFromText_, findUserNidInText_,
   STUDENT_VIEW_RE, STUDENT_LIST_VIEWS, isPlausibleNid_, identityCandidates_,
   sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
+  groupTokenOf_, isHomeroomClass_,
 };
 `);
 const M = createRequire(import.meta.url)(shim);
@@ -65,6 +66,49 @@ eq("homeroom HR8B -> 8B", M.extractGroupFromClasses_(recs.find((r) => r.nid === 
 eq("no homeroom, MATH7A -> 7A", M.extractGroupFromClasses_(recs.find((r) => r.nid === 1002).classes), "7A");
 eq("no classes -> empty", M.extractGroupFromClasses_([]), "");
 eq("falls back to the label", M.extractGroupFromClasses_([{ LastName: "Homeroom - 6C", PrefName: "HR6" }]), "6C");
+
+// Class-code shapes taken from the live bcs.edsby.com response (names invented —
+// real student data does not belong in the repo).
+group("Group tokens (real code shapes)");
+eq("HR8A", M.groupTokenOf_({ PrefName: "HR8A", LastName: "Homeroom - 08" }), "8A");
+eq("GEO8B", M.groupTokenOf_({ PrefName: "GEO8B", LastName: "Geography - 08" }), "8B");
+eq("MATH7B", M.groupTokenOf_({ PrefName: "MATH7B", LastName: "Mathematics - 07" }), "7B");
+eq("HIST7C", M.groupTokenOf_({ PrefName: "HIST7C", LastName: "History - 07" }), "7C");
+eq("CED8A", M.groupTokenOf_({ PrefName: "CED8A", LastName: "Christian Education - 08" }), "8A");
+eq("MLS68Sommer yields nothing (no trailing boundary)",
+   M.groupTokenOf_({ PrefName: "MLS68Sommer", LastName: "Learning Skills" }), "");
+eq("'Homeroom - 08' alone has no letter", M.groupTokenOf_({ PrefName: "", LastName: "Homeroom - 08" }), "");
+ok("HR8A is a homeroom", M.isHomeroomClass_({ PrefName: "HR8A", LastName: "Homeroom - 08" }));
+ok("GEO8B is not", !M.isHomeroomClass_({ PrefName: "GEO8B", LastName: "Geography - 08" }));
+
+group("Group derivation uses the student's grade");
+const HR8A = { PrefName: "HR8A", LastName: "Homeroom - 08" };
+const HR7B = { PrefName: "HR7B", LastName: "Homeroom - 7B" };
+const GEO8B = { PrefName: "GEO8B", LastName: "Geography - 08" };
+const MATH7B = { PrefName: "MATH7B", LastName: "Mathematics - 07" };
+const MLS = { PrefName: "MLS68Sommer", LastName: "Learning Skills" };
+const HIST7C = { PrefName: "HIST7C", LastName: "History - 07" };
+
+// The bug this fixes: a real grade-8 student carries a stale 7B homeroom.
+// Homeroom-first labelled her "7B"; grade-matching gives "8B".
+eq("grade 8 with a stale 7B homeroom -> 8B",
+   M.extractGroupFromClasses_([GEO8B, HR7B, MATH7B, MLS], "8"), "8B");
+eq("grade 8 with a matching homeroom -> 8A",
+   M.extractGroupFromClasses_([HR8A, GEO8B, MLS], "8"), "8A");
+eq("grade 8, both homerooms, matching one wins",
+   M.extractGroupFromClasses_([HR8A, HR7B, MATH7B], "8"), "8A");
+eq("grade 7, single subject class -> 7C",
+   M.extractGroupFromClasses_([HIST7C], "7"), "7C");
+eq("only an untokenised class -> empty (caller falls back to grade)",
+   M.extractGroupFromClasses_([MLS], "8"), "");
+eq("no grade given still prefers the homeroom",
+   M.extractGroupFromClasses_([GEO8B, HR7B], ""), "7B");
+eq("grade with no matching class falls back to the homeroom",
+   M.extractGroupFromClasses_([HR7B, MATH7B], "9"), "7B");
+eq("numeric grade works like a string",
+   M.extractGroupFromClasses_([GEO8B, HR7B], 8), "8B");
+eq("'Grade 8' style value works",
+   M.extractGroupFromClasses_([GEO8B, HR7B], "Grade 8"), "8B");
 
 // ── Error reporting ─────────────────────────────────────────────────────────
 // The payload that prompted this rewrite: HTTP 403 carrying Edsby error 1030.
@@ -153,13 +197,18 @@ ok("only the HTML shell fetches opt in", (src.match(/followRedirects: true,/g) |
 // as proof the cookie works — that false premise produced a wrong diagnosis.
 group("1030 messaging");
 const m1030 = M.explainStatus_({ ok: false, status: 403, json: e1030, text: "" });
-ok("blames the node relationship, not view permission",
-   /node relationship/i.test(m1030) && /not view/i.test(m1030));
-ok("names both authentication possibilities",
-   /not authenticated as the user/i.test(m1030) && /not authenticated at all/i.test(m1030));
-ok("warns a bootstrap 200 proves nothing", /bootstrap answers unauthenticated/i.test(m1030));
-ok("points at the decisive browser test", /browser/i.test(m1030) && m1030.includes("xds=ZoomMyStudents"));
-ok("says what each browser outcome means", /1030 there too/i.test(m1030));
+// The three 1030 variants seen live mean three different things.
+ok("'no links to node' = stale cookie", /session cookie is stale/i.test(m1030));
+ok("  ...and explains why nothing else catches it",
+   /rather than a 401/i.test(m1030) && /bootstrap keeps/i.test(m1030));
+ok("  ...and gives the fix", /copy a CURRENT/i.test(m1030));
+const mDenied = M.explainStatus_({ status: 403, json: { error: 1030, errorstr: "denied nodetype(xds=ZoomMyStudents)" } });
+ok("'denied nodetype' = authenticated, wrong role",
+   /ARE authenticated/i.test(mDenied) && /School Teacher/i.test(mDenied));
+ok("  ...and is not called a stale cookie", !/cookie is stale/i.test(mDenied));
+const mNoXds = M.explainStatus_({ status: 403, json: { error: 1030, errorstr: "denied(xds not found)" } });
+ok("'xds not found' = the view does not exist", /does not exist/i.test(mNoXds));
+ok("  ...and is not called a stale cookie", !/cookie is stale/i.test(mNoXds));
 ok("drops the 'session is valid' claim", !/session is valid/i.test(m1030));
 ok("drops 'NOT a credential problem'", !/NOT a credential problem/i.test(m1030));
 ok("that verdict is gone from Code.gs entirely", !/session cookie is VALID/i.test(src));

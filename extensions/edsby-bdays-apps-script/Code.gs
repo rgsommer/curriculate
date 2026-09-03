@@ -164,15 +164,22 @@ function explainStatus_(r) {
     const str = edsbyErrorStr_(r.json);
     let msg = "Edsby error " + code + (str ? ' "' + str + '"' : "") + ".";
     if (code === 1030) {
-      msg += " The caller has no link to that node. If EVERY student view fails " +
-             "identically, the node relationship is the problem, not view " +
-             "permission — so either the session is not authenticated as the user " +
-             "who owns the node, or it is not authenticated at all (a bootstrap " +
-             "200 does not rule that out: bootstrap answers unauthenticated). " +
-             "Settle it in the browser — while signed in, open " +
-             "/core/node.json/<id>?xds=ZoomMyStudents&stage=1 directly. Students " +
-             "back means the node is fine and only this script's session differs; " +
-             "1030 there too means the page does not use this endpoint.";
+      const str2 = String(str || "");
+      if (/xds not found/i.test(str2)) {
+        msg += " That view does not exist on this Edsby deployment — wrong view name.";
+      } else if (/denied nodetype/i.test(str2)) {
+        msg += " The view exists and you ARE authenticated, but this account " +
+               "lacks the role for it (ZoomMyStudents requires \"School Teacher\"). " +
+               "You are signed in as the wrong account — an admin login cannot read " +
+               "a teacher's My Students.";
+      } else {
+        msg += " CONFIRMED MEANING: your session cookie is stale. Edsby answers node " +
+               "reads from an unauthenticated caller with this error rather than a 401 " +
+               "or a login page, so nothing else detects it — and bootstrap keeps " +
+               "returning 200 because it answers unauthenticated. Fix: copy a CURRENT " +
+               "session_id_edsby from a browser where Edsby is open, into " +
+               "EDSBY_SESSION_COOKIE.";
+      }
     } else {
       msg += " Edsby refused the node or view for this account.";
     }
@@ -945,7 +952,7 @@ function populateBdays() {
     if (grades.length > 0 && grades.indexOf(String(s.grade)) < 0) continue;
     // Carry the Classes array from the listing through so we can derive Group.
     s.zoomClasses = studentRecords[i] && studentRecords[i].classes || [];
-    s.group = extractGroupFromClasses_(s.zoomClasses);
+    s.group = extractGroupFromClasses_(s.zoomClasses, s.grade);
     students.push(s);
     if (s.dadNid) parentNidsToFetch[s.dadNid] = true;
     if (s.momNid) parentNidsToFetch[s.momNid] = true;
@@ -1322,44 +1329,66 @@ function collectStudentRecords_(data) {
  *   2. Otherwise scan every class's PrefName for a digit+letter token
  *      (MATH7A -> 7A, HIST7C -> 7C, GEO8A -> 8A).
  */
-function extractGroupFromClasses_(classes) {
+function isHomeroomClass_(c) {
+  const pref = String(c.PrefName || c.prefname || c.shortname || c.ShortName || "");
+  const label = String(c.LastName || c.lastname || c.name || c.Name || c.label || "");
+  return /^HR\s*\d/i.test(pref) || /^homeroom\b/i.test(label);
+}
+
+/**
+ * Pure: the "8A"-style token in one class entry, or "".
+ * Real PrefName values from bcs.edsby.com: HR8A, GEO8B, MATH7B, HIST7C, CED8A,
+ * MLS68Sommer. The trailing \b matters — it stops "MLS68Sommer" yielding "68S".
+ */
+function groupTokenOf_(c) {
+  if (!c) return "";
+  const pref = String(c.PrefName || c.prefname || c.shortname || c.ShortName || "");
+  const label = String(c.LastName || c.lastname || c.name || c.Name || c.label || "");
+  let m = pref.match(/^HR\s*(\d+)\s*([A-Z])/i);
+  if (m) return m[1] + m[2].toUpperCase();
+  m = pref.match(/(\d+)\s*([A-Z])\b/);
+  if (m) return m[1] + m[2].toUpperCase();
+  m = label.match(/(\d+)\s*([A-Z])\b/);
+  if (m) return m[1] + m[2].toUpperCase();
+  return "";
+}
+
+/**
+ * Given a student's Classes array (and their Grade), return a "Group" like "8B".
+ *
+ * The student's grade breaks ties, because Classes carries historical
+ * enrolments. A real grade-8 student in the live data has classes
+ * [GEO8B, HR7B, MATH7B]: taking the homeroom first would label her "7B". The
+ * grade-matching pass gives "8B", which is right.
+ *
+ * Order: homeroom matching the grade → any class matching the grade →
+ * any homeroom → any class.
+ */
+function extractGroupFromClasses_(classes, grade) {
   if (!classes) return "";
   const list = Array.isArray(classes)
     ? classes
     : (typeof classes === "object" ? Object.keys(classes).map(function (k) { return classes[k]; }) : []);
   if (list.length === 0) return "";
 
-  const labelOf = function (c) {
-    return String(c.LastName || c.lastname || c.name || c.Name || c.label || "");
+  const gradeDigits = String(grade == null ? "" : grade).replace(/\D+/g, "");
+  const tokens = list.map(function (c) {
+    return { token: groupTokenOf_(c), homeroom: c ? isHomeroomClass_(c) : false };
+  });
+
+  const pick = function (test) {
+    for (let i = 0; i < tokens.length; i++) if (tokens[i].token && test(tokens[i])) return tokens[i].token;
+    return "";
   };
-  const prefOf = function (c) {
-    return String(c.PrefName || c.prefname || c.shortname || c.ShortName || "");
-  };
 
-  // 1. Homeroom-first pass.
-  for (let i = 0; i < list.length; i++) {
-    const c = list[i];
-    if (!c) continue;
-    const label = labelOf(c);
-    const pref = prefOf(c);
-    if (/^homeroom\b/i.test(label) || /^HR\d/i.test(pref)) {
-      let m = pref.match(/(\d+)\s*([A-Z])/i);
-      if (m) return m[1] + m[2].toUpperCase();
-      m = label.match(/(\d+)\s*([A-Z])/);
-      if (m) return m[1] + m[2].toUpperCase();
-    }
+  if (gradeDigits) {
+    const matchesGrade = function (t) { return t.token.indexOf(gradeDigits) === 0; };
+    return pick(function (t) { return t.homeroom && matchesGrade(t); }) ||
+           pick(matchesGrade) ||
+           pick(function (t) { return t.homeroom; }) ||
+           pick(function () { return true; });
   }
-
-  // 2. Any-class-PrefName fallback (MATH7A, HIST7C, GEO8A, ...).
-  for (let i = 0; i < list.length; i++) {
-    const c = list[i];
-    if (!c) continue;
-    const pref = prefOf(c);
-    const m = pref.match(/(\d+)([A-Z])\b/);
-    if (m) return m[1] + m[2].toUpperCase();
-  }
-
-  return "";
+  return pick(function (t) { return t.homeroom; }) || pick(function () { return true; });
 }
 
 function extractStudent_(data) {
