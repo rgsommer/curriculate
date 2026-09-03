@@ -124,12 +124,15 @@ function diagnoseEdsby() {
     }
   }
 
-  // bootstrap OK + node refused = the session is fine and the id is the problem.
-  if (boot.ok && !zoom.ok) {
+  // bootstrap answers WITHOUT a valid session (see edsbyRead.js: "unauthenticated
+  // -CSRF bootstrap GET"), so its 200 says nothing about the cookie. The only
+  // honest check is whether the app shell renders as you or as a login page.
+  if (!zoom.ok) {
     lines.push("");
-    lines.push("Verdict: your session cookie is VALID (bootstrap returned 200), so this");
-    lines.push("is not a credential problem. The node id is the suspect — run");
-    lines.push("discoverZoomNodes() to list the ids this account can actually reach.");
+    const auth = checkAuthStatus_(sess);
+    lines.push("Authentication check (bootstrap's 200 proves nothing — it answers");
+    lines.push("unauthenticated): " + auth.verdict);
+    for (let i = 0; i < auth.detail.length; i++) lines.push("  " + auth.detail[i]);
   }
 
   Logger.log(lines.join("\n"));
@@ -148,10 +151,13 @@ function explainStatus_(r) {
     const str = edsbyErrorStr_(r.json);
     let msg = "Edsby error " + code + (str ? ' "' + str + '"' : "") + ".";
     if (code === 1030) {
-      msg += " This is NOT a credential problem — your session is valid (bootstrap " +
-             "returns 200). It means this account has no link to that node id: the " +
-             "ZoomMyStudents id is stale or belongs to another account/school year. " +
-             "Run discoverZoomNodes() to find the current one.";
+      msg += " The *caller* has no link to that node. Two causes, in order of " +
+             "likelihood: (1) this request is not authenticated as you — an " +
+             "incomplete or expired cookie leaves Edsby treating you as a " +
+             "stranger to the node, and a bootstrap HTTP 200 does NOT rule this " +
+             "out because bootstrap answers unauthenticated; run checkAuth(). " +
+             "(2) the node id really is stale — but if you can open " +
+             "/p/ZoomMyStudents/<id> in your browser, it is not.";
     } else {
       msg += " Edsby refused the node or view for this account.";
     }
@@ -192,6 +198,96 @@ function edsbyErrorCode_(json) {
   const e = json.error || json.errno || (json.slices && json.slices[0] && json.slices[0].error);
   const n = parseInt(e, 10);
   return isNaN(n) ? null : n;
+}
+
+
+/* ============================================================
+ * AUTHENTICATION CHECK
+ *
+ * The /core/node.json/?xds=bootstrap endpoint answers WITHOUT a valid session
+ * (edsbyRead.js calls it an "unauthenticated-CSRF bootstrap GET"), so a 200
+ * from it is not evidence the cookie works. An unauthenticated caller has no
+ * relationship to any node, so Edsby answers node reads with 403 error 1030
+ * "no links to node" — the same error a genuinely stale node id produces.
+ *
+ * The one reliable signal is whether the app shell renders as the signed-in
+ * user or as a login page.
+ * ============================================================ */
+
+/** Reports whether this cookie is actually signed in. Run from the editor. */
+function checkAuth() {
+  const sess = getEdsbySession_();
+  if (!sess.cookie) { Logger.log("Set EDSBY_SESSION_COOKIE first."); return; }
+  const a = checkAuthStatus_(sess);
+  const lines = ["Verdict: " + a.verdict];
+  for (let i = 0; i < a.detail.length; i++) lines.push("  " + a.detail[i]);
+  if (!a.authenticated) {
+    lines.push("");
+    lines.push("Fix: re-copy the WHOLE Cookie header, not just session_id_edsby.");
+    lines.push("  1. Sign in to Edsby, open DevTools (F12) -> Network.");
+    lines.push("  2. Filter on 'xds' and reload the page.");
+    lines.push("  3. Click any ?xds= request -> Headers -> Request Headers.");
+    lines.push("  4. Copy EVERYTHING after 'Cookie:' — usually several hundred");
+    lines.push("     characters across several cookies — into EDSBY_SESSION_COOKIE.");
+    lines.push("  5. Re-run checkAuth(). Once it says signed in, run populateBdays().");
+  }
+  Logger.log(lines.join("\n"));
+}
+
+/** Returns { authenticated, verdict, detail[] }. */
+function checkAuthStatus_(sess) {
+  const detail = [];
+  detail.push("Cookie: " + sess.cookie.length + " chars, " +
+    countCookies_(sess.cookie) + " cookie(s)" +
+    (countCookies_(sess.cookie) === 1
+      ? " — only one. Edsby normally sets several; a lone session_id_edsby is " +
+        "often not enough to authenticate."
+      : ""));
+
+  let resp;
+  try {
+    resp = UrlFetchApp.fetchAll([req_(sess, sess.baseUrl + "/", {
+      followRedirects: true,
+      extraHeaders: { "Accept": "text/html,application/xhtml+xml", "User-Agent": "Mozilla/5.0" },
+    })])[0];
+  } catch (err) {
+    detail.push("Could not fetch the app shell: " + (err && err.message || err));
+    return { authenticated: false, verdict: "UNKNOWN — the app shell fetch failed.", detail: detail };
+  }
+
+  const status = resp.getResponseCode();
+  const html = resp.getContentText() || "";
+  detail.push("App shell: HTTP " + status + ", " + html.length + " bytes.");
+
+  const looksLikeLogin = /<form/i.test(html) &&
+    (/password/i.test(html) || /sign\s*in/i.test(html) || /login/i.test(html));
+  const userNid = findUserNidInText_(html);
+
+  if (looksLikeLogin && !userNid) {
+    detail.push("The shell rendered a LOGIN FORM — this cookie is not signed in.");
+    return {
+      authenticated: false,
+      verdict: "NOT AUTHENTICATED. The cookie is expired or incomplete.",
+      detail: detail,
+    };
+  }
+
+  if (userNid) {
+    detail.push("Signed in — found user nid " + userNid + " in the shell.");
+    if (!sess.userNid) {
+      detail.push("Tip: store " + userNid + " as EDSBY_USER_NID to enable the " +
+        "formkey POST retry and the Home-view search.");
+    }
+    return { authenticated: true, verdict: "AUTHENTICATED as user nid " + userNid + ".", detail: detail };
+  }
+
+  detail.push("No login form, but no user nid found either — inconclusive.");
+  detail.push("First 300 bytes: " + html.slice(0, 300).replace(/\s+/g, " "));
+  return {
+    authenticated: false,
+    verdict: "INCONCLUSIVE — could not confirm the session is signed in.",
+    detail: detail,
+  };
 }
 
 
@@ -537,8 +633,14 @@ function populateBdays() {
   const resolved = resolveZoomNodeId_(sess);
   const studentRecords = fetchZoomMyStudents_(sess, resolved.nid);
   if (studentRecords.length === 0) {
-    Logger.log("No students returned. Run discoverZoomNodes() to check the node id, " +
-      "then diagnoseEdsby() for the credentials.");
+    const auth = checkAuthStatus_(sess);
+    if (!auth.authenticated) {
+      Logger.log("No students returned, and the session is not signed in: " + auth.verdict);
+      Logger.log("Run checkAuth() for the fix (usually: paste the whole Cookie header).");
+    } else {
+      Logger.log("No students returned even though the session is signed in. " +
+        "Run discoverZoomNodes() to check the node id.");
+    }
     return;
   }
   Logger.log("Students listing: " + studentRecords.length + " students.");

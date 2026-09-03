@@ -8,50 +8,57 @@ browser request. The request shape is ported from
 `backend/behavior/lib/edsbyRead.js`, the only DevTools-verified shape in this
 repo.
 
-## Why the import returned HTTP 403
+## Why the import returns HTTP 403
 
-Confirmed against a live session. `diagnoseEdsby()` reported:
+The failing call answers with Edsby application error **1030, "no links to
+node"**:
 
 ```
-Probe GET /core/node.json/?xds=bootstrap  -> HTTP 200  OK.
-Probe GET ZoomMyStudents/21471167         -> HTTP 403
+GET ZoomMyStudents/21471167 -> HTTP 403
   {"error":1030,"when":"2026-09-03 13:57:39","errorstr":"no links to node","ticket":""}
 ```
 
-`bootstrap` succeeding with **only** `session_id_edsby` and no `x-xds-jver` /
-`x-xds-cver` proves the session is valid and those headers are not required for
-these reads. The 403 is Edsby application error **1030, "no links to node"**:
-the account has no relationship to node `21471167`.
+1030 means **the caller** has no relationship to that node. Two very different
+causes produce it:
 
-In other words the hardcoded `ZOOM_NODE_ID` is stale. Zoom node ids are
-per-account and change across school years, so last year's "My Students" id
-stops resolving — which is exactly when you go looking for a *new* students
-list.
+1. **The request is not authenticated as you.** An unauthenticated caller has no
+   link to any node, so Edsby answers node reads with 1030 rather than 401.
+2. **The node id is genuinely stale.** Zoom node ids are per-account and change
+   across school years.
 
-Note for anyone reading `backend/behavior/lib/edsbyRead.js`: its comment glosses
-1030 as "denied nodetype". Edsby's own `errorstr` here is "no links to node",
-which is about the *node*, not the view — a wrong id, not a permissions
-problem.
+`/p/ZoomMyStudents/21471167` loads fine in the browser, which rules out (2) —
+the id is correct. So this is (1): the session cookie is not authenticating.
 
-### Fixing it
+### The trap: a bootstrap 200 proves nothing
 
-Run `discoverZoomNodes()`. It harvests every `ZoomMyStudents` id the live
-session exposes (authenticated landing-page HTML, `bootstrap`, and your `Home`
-view), probes each one, and reports which return students:
+`GET /core/node.json/?xds=bootstrap` returns HTTP 200 with only a
+`session_id_edsby` cookie and no version headers. That is **not** evidence the
+session works — `backend/behavior/lib/edsbyRead.js:352` calls it an
+"unauthenticated-CSRF bootstrap GET", i.e. it answers without a valid session.
+`EdsbyProvider.testConnection` accordingly never treats a bootstrap 200 as a
+passing session check; it requires a `_formkey` in the body, and detects an
+expired session by the login-form HTML.
 
-```
-Candidate ZoomMyStudents node ids:
-  ✗ 21471167  (seen in CONFIG/script property) — HTTP 403: Edsby error 1030 "no links to node". …
-  ✓ 24880031  (seen in landing page HTML) — 31 students
+So bootstrap succeeding while node reads 403 with 1030 is exactly the signature
+of an unauthenticated session, not a healthy one.
 
-Set script property EDSBY_ZOOM_NODE_ID = 24880031 (31 students), then run populateBdays().
-Currently configured: 21471167 ← stale
-```
+### The likely fix: paste the whole Cookie header
 
-Store that id in `EDSBY_ZOOM_NODE_ID` and the import runs. `populateBdays()`
-also self-heals: if the configured id returns nothing it runs the same search
-automatically and uses the best candidate, so next September it keeps working
-without an edit.
+A 53-character cookie value is a lone `session_id_edsby=…`. Edsby normally sets
+several cookies, and this project's own setup page
+(`frontend/src/app/behavior/setup/page.tsx:980`) tells users to copy
+**everything after `Cookie:`** for that reason.
+
+1. Sign in to Edsby, open DevTools (F12) → **Network**.
+2. Filter on `xds` and reload the page.
+3. Click any `?xds=` request → **Headers → Request Headers**.
+4. Copy **everything after `Cookie:`** — usually several hundred characters
+   across several cookies — into `EDSBY_SESSION_COOKIE`.
+5. Run **`checkAuth()`**. Once it reports signed in, run `populateBdays()`.
+
+`checkAuth()` tests the one reliable signal: whether the app shell renders as the
+signed-in user or as a login page. It also recovers your user nid, worth storing
+as `EDSBY_USER_NID`.
 
 ### The header change, kept anyway
 
@@ -68,9 +75,9 @@ headers: {
 `Origin` and `X-Requested-With` on a plain GET are not what the verified path
 sends (`backend/behavior/lib/edsbyRead.js:41-49`), so they were dropped from
 GETs and kept on the formkey POST only, and `x-xds-jver` / `x-xds-cver` are now
-sent when set. Neither turned out to be the cause of *this* 403 — the node id
-was — but both align the script with the one request shape known to work.
-`EDSBY_JVER` / `EDSBY_CVER` are therefore **optional**.
+sent when set. Neither is the cause of this 403, but both align the script with
+the one request shape known to work. `EDSBY_JVER` / `EDSBY_CVER` stay
+**optional**.
 
 ## Setup
 
@@ -94,8 +101,10 @@ Then add a button on the Bdays sheet → Assign script → `populateBdays`.
 
 ## Troubleshooting
 
-Two functions to run from the Apps Script editor, then read the Execution log:
+Run these from the Apps Script editor, then read the Execution log:
 
+- **`checkAuth()`** — the first thing to run on any 403. Reports whether the
+  cookie is actually signed in, and spells out the fix when it is not.
 - **`diagnoseEdsby()`** — reports each credential, probes `bootstrap` and
   `ZoomMyStudents`, and reports **Edsby's own error code and string** rather
   than the HTTP status it rides on. When `bootstrap` succeeds but the node call
@@ -127,7 +136,7 @@ Error codes worth knowing:
 
 | Code | Means | Do |
 |---|---|---|
-| `1030` `no links to node` | this account has no link to that node id | `discoverZoomNodes()` — the id is stale |
+| `1030` `no links to node` | the **caller** has no link to that node: usually not authenticated, sometimes a stale id | `checkAuth()` first. If it says signed in, `discoverZoomNodes()` |
 | HTTP 401, or a login page at HTTP 200 | session expired | re-copy `EDSBY_SESSION_COOKIE` |
 | HTTP 403, no Edsby code | CSRF or version headers | check the node id, then try `EDSBY_JVER` / `EDSBY_CVER` |
 
@@ -162,16 +171,17 @@ entirely inside the Apps Script editor.
 node extensions/edsby-bdays-apps-script/test-parsing.mjs
 ```
 
-76 assertions over the pure functions — response parsing against the recorded
+82 assertions over the pure functions — response parsing against the recorded
 `ZoomMyStudents` shape, group derivation, error-message construction (including
 the real 1030 payload above), nav-link harvesting in every shape Edsby emits,
 user-nid detection, redirect handling, and column mapping. Apps Script has no
 test runner, so `Code.gs` is loaded as text with an export footer appended;
 `UrlFetchApp` and `SpreadsheetApp` are never touched.
 
-Two of these tests caught real bugs during development: the harvest regex
-missed the `\/`-escaped JSON link form, and the diagnostic reported the HTTP
-status ahead of Edsby's own error code.
+Several of these tests caught real bugs during development: the harvest regex
+missed the `\/`-escaped JSON link form, the diagnostic reported the HTTP status
+ahead of Edsby's own error code, and one now guards against the retracted
+"bootstrap returned 200 so your session is valid" verdict reappearing.
 
 ## Maintenance
 

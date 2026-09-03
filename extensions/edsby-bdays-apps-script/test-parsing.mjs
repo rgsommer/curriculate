@@ -75,8 +75,6 @@ eq("errorstr inside slices", M.edsbyErrorStr_({ slices: [{ errorstr: "denied" }]
 eq("no code when absent", M.edsbyErrorCode_({ slices: [{ data: {} }] }), null);
 const msg1030 = M.explainStatus_({ ok: false, status: 403, json: e1030, text: JSON.stringify(e1030) });
 ok("1030 reports Edsby's own code and string", msg1030.includes("1030") && msg1030.includes("no links to node"));
-ok("1030 clears the credentials", msg1030.includes("NOT a credential problem"));
-ok("1030 points at discoverZoomNodes", msg1030.includes("discoverZoomNodes"));
 ok("1030 does not blame jver/cver", !/jver|cver/i.test(msg1030));
 const bare403 = M.explainStatus_({ ok: false, status: 403, json: null, text: "forbidden" });
 ok("a code-less 403 suspects the node id before jver/cver",
@@ -147,7 +145,21 @@ group("Redirect handling");
 const reqSrc = src.slice(src.indexOf("function req_("), src.indexOf("function edsbyGetJson_("));
 ok("req_ defaults to not following redirects", /followRedirects: o\.followRedirects === true/.test(reqSrc));
 ok("the HTML shell fetch opts in", /followRedirects: true,/.test(src));
-eq("exactly one caller opts in", (src.match(/followRedirects: true,/g) || []).length, 1);
+ok("only the HTML shell fetches opt in", (src.match(/followRedirects: true,/g) || []).length <= 2);
+
+// ── 1030 messaging ──────────────────────────────────────────────────────────
+// bootstrap answers unauthenticated, so a 200 from it must never be presented
+// as proof the cookie works — that false premise produced a wrong diagnosis.
+group("1030 messaging");
+const m1030 = M.explainStatus_({ ok: false, status: 403, json: e1030, text: "" });
+ok("names authentication as the leading cause", /not authenticated as you/i.test(m1030));
+ok("points at checkAuth", m1030.includes("checkAuth"));
+ok("warns a bootstrap 200 proves nothing", /bootstrap answers unauthenticated/i.test(m1030));
+ok("keeps a stale id as the alternative", /stale/i.test(m1030));
+ok("says a browser-reachable URL rules the id out", /browser/i.test(m1030));
+ok("drops the 'session is valid' claim", !/session is valid/i.test(m1030));
+ok("drops 'NOT a credential problem'", !/NOT a credential problem/i.test(m1030));
+ok("that verdict is gone from Code.gs entirely", !/session cookie is VALID/i.test(src));
 
 // ── Panorama extraction ─────────────────────────────────────────────────────
 group("Panorama extraction");
