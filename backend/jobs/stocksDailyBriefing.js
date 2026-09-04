@@ -4367,9 +4367,45 @@ export async function generateBriefing(profile) {
   // prose (~500 tokens per holding × 5 holdings), which ate into the
   // budget for downstream sections. 12288 gives ~4k headroom over the
   // normal ~8k briefing without needing a continuation call.
-  let j = await callClaude([{ role: "user", content: userPrompt }], 12288);
-  let raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-  if (!raw) throw new Error("Empty briefing");
+  // Fail-open on AI failure (added 2026-09-03 after briefings stopped
+  // arriving despite the timeout fix — throwing from callClaude bubbled
+  // through sendBriefingForUser's outer catch and dropped the email
+  // entirely). Instead, catch here and synthesize a degraded briefing
+  // from the deterministic prefix that's already computed. The
+  // operator gets a real email (§1 mandates, §3 sleeve status, §4
+  // picks, previous-day recap) with a banner naming the AI failure.
+  let j;
+  let raw;
+  try {
+    j = await callClaude([{ role: "user", content: userPrompt }], 12288);
+    raw = (j?.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+    if (!raw) throw new Error("Anthropic returned empty response");
+  } catch (aiErr) {
+    console.warn(`[stocks-briefing] AI initial call FAILED for ${profile.email}: ${aiErr?.message} — falling back to degraded deterministic briefing`);
+    const dateStrFallback = new Date().toLocaleDateString("en-US", {
+      month: "long", day: "numeric", year: "numeric",
+      timeZone: profile?.briefingTz || "America/Toronto",
+    });
+    const degradedMd = buildDegradedBriefing({
+      deterministicPrefix,
+      blockers: [{
+        check: "ai-generation-failed",
+        reason: `Anthropic call failed: ${String(aiErr?.message || aiErr).slice(0, 200)}`,
+        detail: "The AI narrative section (§5-§8, thesis prose, watchlist) was suppressed. Everything above from the deterministic prefix — §1 mandates, §3 sleeve status, §4 daily picks, positions, trail reviews — is fully canonical and safe to act on.",
+      }],
+      summary: "AI narrative unavailable — deterministic briefing shipped.",
+      dateStr: dateStrFallback,
+    });
+    return {
+      md: degradedMd,
+      sectorRotation,
+      tradingRegime,
+      acceptedRecs: [],
+      rejectedRecs: [],
+      mandateRecs: prefixMandateRecs,
+      deterministicPrefix,
+    };
+  }
   // Log cache stats so we can confirm the cache is warming.
   const u = j?.usage || {};
   if (u.cache_creation_input_tokens || u.cache_read_input_tokens) {
@@ -5639,10 +5675,62 @@ export async function sendBriefingForUser(p, sendKey) {
     const includeMonthly = isLastTradingDayOfMonth(new Date());
     let genResult = { acceptedRecs: [], rejectedRecs: [] };
     try {
-      genResult = await generateBriefing(p);
+      // Hard wall-clock ceiling on generateBriefing (added 2026-09-03
+      // after the user reported "no briefing for several days" — earlier
+      // fixes added per-block timeouts inside the pipeline, but if ANY
+      // unwrapped step hangs the whole cron send never returns and the
+      // operator gets silent nothing). 3-minute ceiling is generous:
+      // typical cron send completes in 30-60s.
+      const BRIEFING_HARD_TIMEOUT_MS = Number(process.env.STOCKS_BRIEFING_HARD_TIMEOUT_MS) || 180_000;
+      genResult = await Promise.race([
+        generateBriefing(p),
+        new Promise((_, reject) => setTimeout(
+          () => reject(new Error(`generateBriefing hard-timeout after ${BRIEFING_HARD_TIMEOUT_MS}ms`)),
+          BRIEFING_HARD_TIMEOUT_MS
+        )),
+      ]);
       md = genResult.md;
     }
-    catch (e) { await recordFail("generateBriefing", e); throw e; }
+    catch (e) {
+      await recordFail("generateBriefing", e);
+      // NEVER leave the operator in silence — even on catastrophic
+      // failure, send a minimal alert email so they know the pipeline
+      // failed AND what stage failed. Previously we silently threw
+      // here and no email was sent, so days of missed briefings looked
+      // identical to a healthy quiet market. The alert emails the
+      // portfolio owner + names the failing stage; then throws so
+      // upstream diagnostics still record the failure.
+      const alertDateStr = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+      const alertMd = [
+        `# ⚠ Daily briefing — ${alertDateStr} — PIPELINE FAILURE`,
+        "",
+        "The briefing generation pipeline failed and could not produce a normal or degraded briefing.",
+        "",
+        `**Failing stage:** \`generateBriefing\``,
+        `**Error:** ${String(e?.message || e).slice(0, 400)}`,
+        "",
+        "**What to check:**",
+        "- `/api/stocks-advice/briefing-diagnostics` shows the persisted `lastBriefingErrorStage` + `lastBriefingErrorMessage` for this account.",
+        "- The next scheduled cron slot will retry automatically. If failures persist, check Render logs for a stack trace.",
+        "",
+        "_This is a pipeline-failure alert email. Your portfolio state is unchanged. §1 mandates, positions, stops, and picks were NOT computed for this slot — do not act on absence of a mandate as an all-clear._",
+      ].join("\n");
+      try {
+        await emailBriefing({
+          to: p.email,
+          subject: `⚠ Daily briefing — ${alertDateStr} — PIPELINE FAILURE (${e?.message || "unknown"})`.slice(0, 150),
+          md: alertMd,
+        });
+        // Stamp sendKey so we don't loop-retry every minute.
+        await StocksPortfolio.updateOne(
+          { email: p.email },
+          { $set: { lastBriefingSentKey: sendKey } }
+        ).catch(() => {});
+      } catch (mailErr) {
+        console.warn(`[stocks-briefing] pipeline-failure alert email failed for ${p.email}:`, mailErr?.message);
+      }
+      throw e;
+    }
     if (includeMonthly) {
       const reports = await buildAllAccountReports(p).catch((e) => { console.warn("[monthly-report] warn:", e?.message); return []; });
       const block = formatAllReportsMarkdown(reports);
