@@ -2668,13 +2668,28 @@ async function produceBriefingMarkdown(profile, { forceFresh = false } = {}) {
   }
 
   const workPromise = (async () => {
-    // Tag the profile with a fast-preview flag so generateBriefing's
-    // renderDailyPicksDeterministic can skip the expensive AI passes
-    // (adversarial verify + chart vision) that were tripping the
-    // frontend fetch timeout. The nightly cron path (sendBriefingForUser)
-    // never sets this flag → gets the full Tier 3.1/3.2 analysis.
+    // Tag the profile with a fast-preview flag so generateBriefing:
+    //   (a) forces the deterministic branch (no LLM call) — added
+    //       2026-09-04 after the AI narrative call itself was pushing
+    //       preview past the frontend fetch timeout
+    //   (b) skips the expensive Tier 3.1/3.2 AI passes (adversarial
+    //       verify + chart vision + news catalyst) inside the pick
+    //       engine and render
+    // The nightly cron path (sendBriefingForUser) never sets this flag
+    // → gets the full AI-enhanced briefing.
     const profileForPreview = { ...profile, _fastPreview: true };
-    const genResult = await generateBriefing(profileForPreview);
+    // Hard 90s ceiling — the deterministic preview typically completes
+    // in 5-15s. If anything hangs beyond that, fail fast with a clear
+    // error the frontend can surface instead of showing "Failed to
+    // fetch" from an aborted request.
+    const PREVIEW_HARD_TIMEOUT_MS = Number(process.env.STOCKS_ADVICE_PREVIEW_TIMEOUT_MS) || 90_000;
+    const genResult = await Promise.race([
+      generateBriefing(profileForPreview),
+      new Promise((_, reject) => setTimeout(
+        () => reject(new Error(`Preview briefing exceeded ${PREVIEW_HARD_TIMEOUT_MS}ms — pipeline hung on an upstream step. Check /briefing-diagnostics for the last error stage.`)),
+        PREVIEW_HARD_TIMEOUT_MS
+      )),
+    ]);
     let markdown = genResult.md;
     // NOTE: snapshot save moved to AFTER the audit gate below. Prior
     // ordering saved the raw AI markdown here first, which meant the

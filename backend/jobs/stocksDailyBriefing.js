@@ -4144,8 +4144,18 @@ export async function generateBriefing(profile) {
   // daily picks). The pre-send audit still runs — if canonical
   // itself is inconsistent, the audit blocks and the degraded-
   // fallback (already wired) ships the safest slice.
-  if (profile?.aiNarrativeEnabled !== true) {
-    console.log(`[stocks-briefing] ${profile.email}: aiNarrativeEnabled=false → deterministic-only mode (no LLM call)`);
+  // Fast-preview short-circuit (added 2026-09-04): on-demand preview
+  // requests (produceBriefingMarkdown sets profile._fastPreview=true)
+  // ALWAYS take the deterministic branch — the on-screen preview needs
+  // to render in ~5-15s to stay under the frontend fetch timeout.
+  // The full AI-enhanced briefing still ships via the morning cron
+  // (which doesn't set _fastPreview). Aug-30/Sep-2 the preview
+  // repeatedly failed with "Failed to fetch" because the AI narrative
+  // call ran unconditionally and the resulting 30-90s wall clock
+  // exceeded the frontend fetch budget.
+  const forceDeterministic = profile?._fastPreview === true;
+  if (profile?.aiNarrativeEnabled !== true || forceDeterministic) {
+    console.log(`[stocks-briefing] ${profile.email}: ${forceDeterministic ? "_fastPreview flag → force deterministic (no LLM call)" : "aiNarrativeEnabled=false → deterministic-only mode (no LLM call)"}`);
     // Weekend/holiday awareness. Use the user's briefingTz to compute
     // "today" in their timezone; if the resulting day is Saturday or
     // Sunday, the header + §1 language switches from "do these today"
