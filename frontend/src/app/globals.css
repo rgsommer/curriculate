@@ -61,6 +61,18 @@ body.teebopay-host .min-h-\[70vh\] {
   min-height: 100vh;
 }
 
+/* ── /daily classroom board ──
+   A projected kiosk page driven by the teacher's planning sheet. No site
+   header, footer or Curriculate branding may show on it. The /daily layout
+   tags <body> before first paint; daily.css also hides the chrome via :has(). */
+body.daily-kiosk .site-header,
+body.daily-kiosk .site-footer {
+  display: none !important;
+}
+body.daily-kiosk .min-h-\[70vh\] {
+  min-height: 100vh;
+}
+
 /* Hide the horizontal scrollbar on the input-mode tabs row — touch swipe still
    works on mobile, and on desktop the row usually fits so the scrollbar would
    appear only as a flickering 1px artifact. */
