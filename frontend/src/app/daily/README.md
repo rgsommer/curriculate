@@ -27,6 +27,7 @@ projector PC's startup) — that is the whole deployment on the classroom side.
 | `DAILY_SHEETS_API_KEY` | one of the two | Google API key with the Sheets API enabled. Only works if the spreadsheet is shared "Anyone with the link can view". |
 | `DAILY_SHEET_ID` | no | Spreadsheet id. Defaults to the Weekly Schedule sheet this was built for. |
 | `DAILY_ACCESS_KEY` | no | If set, the board must be opened as `/daily?k=<key>`. |
+| `DAILY_PING_KEY` | no | Enables `/api/daily/ping?key=…`, which the sheet's Apps Script trigger calls after an edit so the board refreshes within seconds. |
 
 To create the service account: Google Cloud Console → IAM & Admin → Service Accounts →
 Create → Keys → Add key (JSON). Enable the **Google Sheets API** on that project.
@@ -62,6 +63,42 @@ Cells that do not match (Lunch, Recess Duty, Dismissal) become "change of class"
 
 The opening window (question and warm-up instead of the bullet list) is fixed at
 5 minutes in `parse.ts` (`DEFAULT_SETUP.openMin`); there is no Setup row for it yet.
+
+## How quickly do sheet edits show?
+
+The board polls `/api/daily` every 10 s. The server keeps an in-memory copy and re-reads
+the sheet when that copy is older than 2 minutes, **or** when the sheet has pinged it.
+With the ping wired up, an edit reaches the projector within about 10 to 20 seconds;
+without it, within about 2 minutes.
+
+To wire the ping:
+
+1. In Vercel add `DAILY_PING_KEY` (any long random string) and redeploy.
+2. In the spreadsheet: Extensions → Apps Script, paste this, replacing the key:
+
+   ```js
+   function dailyPing() {
+     UrlFetchApp.fetch("https://www.curriculate.net/api/daily/ping?key=YOUR_KEY", {
+       method: "post", muteHttpExceptions: true,
+     });
+   }
+   ```
+
+3. Save, then Triggers (clock icon) → Add Trigger: function `dailyPing`, event source
+   *From spreadsheet*, event type *On edit*. Approve the permissions once. Add a second
+   trigger for *On change* if you want structural edits (rows added, sheets renamed) to
+   count too.
+
+Caveat: the copy is per server instance. With one classroom screen polling, the same
+warm instance answers every poll, so a ping is seen immediately; if two instances were
+ever in play the 2-minute fallback still bounds the lag.
+
+## Time scrubber
+
+The slim strip along the bottom edge is a slider. Drag it to preview any time of the
+day; the board outlines itself in yellow while previewing and shows "Previewing 11:47".
+It snaps back to the live clock 45 s after the last touch, or on "Back to now", so the
+projector cannot be left on a preview.
 
 ## Testing
 

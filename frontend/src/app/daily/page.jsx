@@ -2,27 +2,31 @@
 
 // /daily — the classroom day board.
 //
-// Reads /api/daily (the DisplayAI tab, parsed) once a minute and renders one
+// Reads /api/daily (the DisplayAI tab, parsed) every 10 s and renders one
 // class per screen. Every part of the screen is gated by the clock and by the
 // timing rules in the Setup tab (next class shown N minutes before the end,
 // red at N minutes, washroom cut-off, and so on). Nothing here is typed twice:
 // the lesson text, status chips, points and feature cell all come from the sheet.
 //
-// Testing: /daily?t=11:05 freezes the clock at that time. /daily?k=... passes
-// the access key when DAILY_ACCESS_KEY is set. /daily?pic=left moves the lesson
-// picture to the left side.
+// The slim bar along the bottom lets the teacher scrub the day's time forward
+// or back to preview a period; it snaps back to the live clock after 45 s.
+//
+// URL options: ?t=11:05 freezes the clock; ?k=... passes the access key when
+// DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides the lesson picture.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
+const POLL_MS = 10_000;
+const FETCH_TIMEOUT_MS = 25_000;
+const SCRUB_RESET_MS = 45_000;
 
 function fmt(m) {
-  const h = Math.floor(m / 60), mm = m % 60, ap = h >= 12 ? "PM" : "AM";
+  const h = Math.floor(m / 60), mm = Math.floor(m % 60), ap = h >= 12 ? "PM" : "AM";
   return `${h % 12 || 12}:${mm < 10 ? "0" : ""}${mm} ${ap}`;
 }
-function minutesNow(override) {
-  if (override != null) return override;
+function liveMinutes() {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
 }
@@ -163,15 +167,38 @@ function PointsStrip({ points, currentSec }) {
   );
 }
 
+/* The slim time scrubber along the bottom. */
+function Scrub({ min, max, value, live, onChange, onLive }) {
+  const active = value != null;
+  return (
+    <div className={`scrub${active ? " active" : ""}`}>
+      <span className="scrub-label">{active ? `Previewing ${fmt(value)}` : "Look ahead or back"}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={active ? value : Math.round(live)}
+        aria-label="Preview another time of day"
+        onChange={(e) => onChange(parseInt(e.target.value, 10))}
+      />
+      <button type="button" className="scrub-live" onClick={onLive} disabled={!active}>{active ? "Back to now" : "Live"}</button>
+    </div>
+  );
+}
+
 /* ---------- the page ---------- */
 
 export default function DailyPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [loadNote, setLoadNote] = useState("Contacting the sheet…");
   const [points, setPoints] = useState({ numbers: null, percents: null, entered: null });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right" });
+  const [scrub, setScrub] = useState(null);
+  const scrubTouched = useRef(0);
 
   // URL options (client only)
   useEffect(() => {
@@ -180,29 +207,36 @@ export default function DailyPage() {
     document.title = "Daily Board";
   }, []);
 
-  // Poll the sheet once a minute; keep both numbers and percents as they alternate on the date line.
+  // Poll the sheet. Keep both numbers and percents as they alternate on the date line.
   useEffect(() => {
     let alive = true;
     const load = async () => {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
       try {
-        const res = await fetch(`/api/daily${opts.k ? `?k=${encodeURIComponent(opts.k)}` : ""}`, { cache: "no-store" });
-        const j = await res.json();
+        const res = await fetch(`/api/daily${opts.k ? `?k=${encodeURIComponent(opts.k)}` : ""}`, { cache: "no-store", signal: ctrl.signal });
+        const text = await res.text();
+        let j;
+        try { j = JSON.parse(text); } catch { j = { error: `Unexpected reply (${res.status}): ${text.slice(0, 120)}` }; }
         if (!alive) return;
-        if (!res.ok) { setError(j.error || `HTTP ${res.status}`); return; }
+        if (!res.ok || !j.periods) { setError(j.error || `HTTP ${res.status}`); return; }
         setData(j);
         setError(j.stale ? `Showing the last good copy. ${j.error || ""}` : "");
         setPoints((p) => ({
-          numbers: j.points.numbers || p.numbers,
-          percents: j.points.percents || p.percents,
-          entered: j.points.entered != null ? j.points.entered : p.entered,
+          numbers: (j.points && j.points.numbers) || p.numbers,
+          percents: (j.points && j.points.percents) || p.percents,
+          entered: j.points && j.points.entered != null ? j.points.entered : p.entered,
         }));
       } catch (e) {
-        if (alive) setError(e.message || "Could not reach the sheet");
+        if (alive) setError(e.name === "AbortError" ? "The sheet took too long to answer; retrying." : e.message || "Could not reach the sheet");
+      } finally {
+        clearTimeout(timer);
       }
     };
     load();
-    const id = setInterval(load, 60_000);
-    return () => { alive = false; clearInterval(id); };
+    const id = setInterval(load, POLL_MS);
+    const note = setTimeout(() => setLoadNote("Still waiting… the first load after a quiet spell can take a few seconds."), 8000);
+    return () => { alive = false; clearInterval(id); clearTimeout(note); };
   }, [opts.k]);
 
   // Clock tick every 5 s (the display only needs minute resolution, but the red phase should not lag)
@@ -211,7 +245,17 @@ export default function DailyPage() {
     return () => clearInterval(id);
   }, []);
 
-  const now = minutesNow(opts.t);
+  // Scrubbed previews snap back to the live clock after a while.
+  useEffect(() => {
+    if (scrub == null) return undefined;
+    const id = setInterval(() => {
+      if (Date.now() - scrubTouched.current > SCRUB_RESET_MS) setScrub(null);
+    }, 1000);
+    return () => clearInterval(id);
+  }, [scrub]);
+
+  const live = liveMinutes();
+  const now = scrub != null ? scrub : opts.t != null ? opts.t : live;
   const t = Math.floor(now);
   const setup = data ? data.setup : null;
 
@@ -230,21 +274,24 @@ export default function DailyPage() {
   const curKey = view && view.cur ? view.cur.start : -1;
   useEffect(() => { setVidBig(false); }, [curKey]);
 
-  if (error && !data) {
+  if (!data) {
     return (
       <div className="board">
         <div className="notice">
           <div>
             <h1>Daily board</h1>
-            <p>The sheet could not be read. {error}</p>
-            <p style={{ marginTop: "1vh" }}>Set <code>DAILY_SHEETS_SERVICE_ACCOUNT</code> (and share the sheet with it) or <code>DAILY_SHEETS_API_KEY</code>.</p>
+            {error ? (
+              <>
+                <p>The sheet could not be read. {error}</p>
+                <p style={{ marginTop: "1vh" }}>Retrying every {POLL_MS / 1000} seconds. If this persists, check <code>DAILY_SHEETS_SERVICE_ACCOUNT</code> in Vercel and that the sheet is shared with that account.</p>
+              </>
+            ) : (
+              <p>{loadNote}</p>
+            )}
           </div>
         </div>
       </div>
     );
-  }
-  if (!data || !view) {
-    return <div className="board"><div className="notice"><p>Loading the day…</p></div></div>;
   }
 
   const { meta } = data;
@@ -253,6 +300,8 @@ export default function DailyPage() {
   const verse = meta.verse.replace(/^.*?~/, "").trim() || meta.verse;
   const challenge = (meta.other.match(/Math Challenge Question[^:]*:\s*(.*)$/) || [, ""])[1];
   const lastClass = classes[classes.length - 1];
+  const dayMin = P.length ? Math.max(0, P[0].start - 60) : 8 * 60;
+  const dayMax = P.length ? Math.min(24 * 60 - 1, P[P.length - 1].end + 30) : 16 * 60;
 
   const header = ({ title, chips, when, leftHtml, pct, red, period }) => (
     <>
@@ -280,6 +329,14 @@ export default function DailyPage() {
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
           : <span className="verse">{verse}</span>}
       </div>
+      <Scrub
+        min={dayMin}
+        max={dayMax}
+        value={scrub}
+        live={opts.t != null ? opts.t : live}
+        onChange={(v) => { scrubTouched.current = Date.now(); setScrub(v); }}
+        onLive={() => setScrub(null)}
+      />
     </>
   );
   const list = (items, cls) => <ul className={cls || ""}>{items.map((x, i) => <li key={i}>{x}</li>)}</ul>;
@@ -336,7 +393,7 @@ export default function DailyPage() {
       </>
     );
   } else if (!cur || cur.duty || cur.empty) {
-    const nx = nextClass(cur ? cur.s || cur.start : t);
+    const nx = nextClass(cur ? cur.start : t);
     const mins = nx ? nx.start - t : 0;
     const title = cur && !cur.empty ? cur.subj : "Change of class";
     body = (
@@ -425,5 +482,5 @@ export default function DailyPage() {
     );
   }
 
-  return <div className={`board${redState ? " red" : ""}`} data-tick={tick}>{body}</div>;
+  return <div className={`board${redState ? " red" : ""}${scrub != null ? " previewing" : ""}`} data-tick={tick}>{body}</div>;
 }
