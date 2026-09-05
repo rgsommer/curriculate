@@ -137,6 +137,19 @@
 
 **Branding:** Grading tool is branded "Pulse Grading" (formerly "Prism", formerly "AI Grading"). Scavenger hunts are branded "Curriculate".
 
+## M. Daily Board (classroom projector)
+
+**What:** `www.curriculate.net/daily` — a full-screen, one-class-per-screen board driven by the DisplayAI tab of the teacher's Google Sheet planner. Polls the sheet once a minute; every element (lesson text, status chips, class points, video tile, lesson picture, poem/riddle cell) comes from the sheet, and the timing rules come from its Setup tab. No site header/footer on this page.
+
+**Key files:**
+- `frontend/src/app/daily/page.jsx` — the board (clock phases, video tile, picture window, points strip)
+- `frontend/src/app/daily/layout.tsx` — kiosk layout (fonts, noindex, hides chrome via `body.daily-kiosk`)
+- `frontend/src/app/daily/daily.css` — projector-sized styles
+- `frontend/src/app/api/daily/route.ts` — reads + parses the sheet, 30 s cache, optional `DAILY_ACCESS_KEY`
+- `frontend/src/lib/daily/sheets.ts` — Sheets API via service account JSON (`DAILY_SHEETS_SERVICE_ACCOUNT`) or `DAILY_SHEETS_API_KEY`
+- `frontend/src/lib/daily/parse.ts` — pure parser (DisplayAI rows, status text, points line, Setup labels)
+- `frontend/src/app/daily/README.md` — env vars, ranges read, timing rules, test URLs
+
 ## L. Pending / Future Work
 
 - **Bulk generation via templates:** Wire template path into `buildTasksetPrompt` so initial generation also uses shells (currently only retries do)

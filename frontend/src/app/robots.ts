@@ -27,6 +27,8 @@ export default function robots(): MetadataRoute.Robots {
           "/campfirelive/auth/",
           "/campfirelive/join/",
           "/campfirelive/settings/",
+          "/daily",             // classroom day board — private kiosk page
+          "/daily/",
           "/termsofservice",    // legacy alias canonicalized to /terms
         ],
       },
