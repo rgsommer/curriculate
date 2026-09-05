@@ -145,7 +145,9 @@
 - `frontend/src/app/daily/page.jsx` — the board (clock phases, video tile, picture window, points strip)
 - `frontend/src/app/daily/layout.tsx` — kiosk layout (fonts, noindex, hides chrome via `body.daily-kiosk`)
 - `frontend/src/app/daily/daily.css` — projector-sized styles
-- `frontend/src/app/api/daily/route.ts` — reads + parses the sheet, 30 s cache, optional `DAILY_ACCESS_KEY`
+- `frontend/src/app/api/daily/route.ts` — reads + parses the sheet; in-memory copy (`lib/daily/cache.ts`) re-read after 2 min or after a ping; optional `DAILY_ACCESS_KEY`
+- `frontend/src/app/api/daily/ping/route.ts` — `?key=DAILY_PING_KEY`; the sheet's Apps Script on-edit trigger calls it so edits show within ~10 s
+- Page polls every 10 s; bottom-edge time scrubber previews any time of day and snaps back to live after 45 s
 - `frontend/src/lib/daily/sheets.ts` — Sheets API via service account JSON (`DAILY_SHEETS_SERVICE_ACCOUNT`) or `DAILY_SHEETS_API_KEY`
 - `frontend/src/lib/daily/parse.ts` — pure parser (DisplayAI rows, status text, points line, Setup labels)
 - `frontend/src/app/daily/README.md` — env vars, ranges read, timing rules, test URLs

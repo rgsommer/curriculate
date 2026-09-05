@@ -30,7 +30,19 @@
 body:has(.daily-root) .site-header,
 body:has(.daily-root) .site-footer { display: none !important; }
 
-.board { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr auto auto; background: var(--surface); overflow: hidden; position: relative; }
+.board { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr auto auto auto; background: var(--surface); overflow: hidden; position: relative; }
+.board.previewing { outline: .6vh solid var(--sun); outline-offset: -.6vh; }
+
+/* time scrubber: a slim strip along the bottom edge; quiet until used */
+.scrub { display: flex; align-items: center; gap: 1.2vw; padding: .4vh 3vw .8vh; border-top: 1px solid var(--line); font-size: clamp(11px, 1.6vh, 14px); color: var(--muted); }
+.scrub input[type="range"] { flex: 1; height: 1.2vh; accent-color: var(--muted); cursor: pointer; margin: 0; }
+.scrub.active { color: var(--sun-ink); background: var(--sun-fill); }
+.scrub.active input[type="range"] { accent-color: var(--sun-ink); }
+.scrub-label { white-space: nowrap; min-width: 14ch; font-variant-numeric: tabular-nums; }
+.scrub-live { font: inherit; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: 999px; padding: .2vh 1vw; cursor: pointer; opacity: .55; }
+.scrub-live:not(:disabled) { opacity: 1; font-weight: 600; }
+.scrub-live:disabled { cursor: default; }
+.scrub-live:focus-visible, .scrub input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .top { display: grid; grid-template-columns: 1fr auto auto; align-items: end; gap: 2vw; padding: 2vh 3vw 1.2vh; }
 .top .title { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; }
 .top .subj { font-size: clamp(28px, 6.5vh, 80px); font-weight: 500; line-height: 1; }
