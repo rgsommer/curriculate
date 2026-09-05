@@ -3687,51 +3687,56 @@ export async function generateBriefing(profile) {
     } catch { return null; }
   })();
 
-  // Run all upstream signals in parallel
+  // Per-stage timeout wrapper (added 2026-09-04 after a briefing hit
+  // the 180s hard ceiling from an unbounded upstream signal fetch).
+  // Wraps a promise with a per-signal ceiling + fallback + timing log.
+  // If a signal times out, the briefing still ships with the fallback
+  // value and the log line names the offender so we can fix it
+  // directly next iteration.
+  const STAGE_TIMEOUT_MS = Number(process.env.STOCKS_BRIEFING_STAGE_TIMEOUT_MS) || 30_000;
+  const stageTimings = {};
+  const stage = (name, promise, fallback = null, ms = STAGE_TIMEOUT_MS) => {
+    const t0 = Date.now();
+    return Promise.race([
+      promise.then((v) => { stageTimings[name] = Date.now() - t0; return v; })
+             .catch((e) => { stageTimings[name] = Date.now() - t0; console.warn(`[stocks-briefing/${name}] warn:`, e?.message); return fallback; }),
+      new Promise((resolve) => setTimeout(() => {
+        stageTimings[name] = STAGE_TIMEOUT_MS;
+        console.warn(`[stocks-briefing/${name}] TIMED OUT after ${ms}ms — using fallback`);
+        resolve(fallback);
+      }, ms)),
+    ]);
+  };
+  // Run all upstream signals in parallel — each individually bounded
+  // so one hang can't stall the whole briefing.
   const [monitorRes, quantSignals, macro, lifecycle, factors, lessons, transcripts, watchListBlock, dailyPicks, recentTrades, sectorRotation, correlations, fedLiquidity, congressional, discoveryPool, calibration, macroFred, insiderSignals, optionsFlow, marketPulse, whale13F] = await Promise.all([
-    monitorOpenRecs(profile.email).catch((e) => { console.warn("[monitorOpenRecs] warn:", e?.message); return { alerts: [] }; }),
-    computeQuantSignals(profile).catch((e) => { console.warn("[computeQuantSignals] warn:", e?.message); return {}; }),
-    getMacroContext().catch((e) => { console.warn("[getMacroContext] warn:", e?.message); return null; }),
-    computeLifecycle(profile).catch((e) => { console.warn("[computeLifecycle] warn:", e?.message); return null; }),
-    computeFactorTilts(profile).catch((e) => { console.warn("[computeFactorTilts] warn:", e?.message); return null; }),
-    computeLessons(profile.email).catch((e) => { console.warn("[computeLessons] warn:", e?.message); return null; }),
-    getTranscriptsForTopHoldings(profile).catch((e) => { console.warn("[getTranscriptsForTopHoldings] warn:", e?.message); return null; }),
-    buildStarredWatchListBlock(profile.email).catch(() => ""),
+    stage("monitorOpenRecs", monitorOpenRecs(profile.email), { alerts: [] }),
+    stage("computeQuantSignals", computeQuantSignals(profile), {}),
+    stage("getMacroContext", getMacroContext(), null),
+    stage("computeLifecycle", computeLifecycle(profile), null),
+    stage("computeFactorTilts", computeFactorTilts(profile), null),
+    stage("computeLessons", computeLessons(profile.email), null),
+    stage("getTranscriptsForTopHoldings", getTranscriptsForTopHoldings(profile), null),
+    stage("buildStarredWatchListBlock", buildStarredWatchListBlock(profile.email), ""),
     // Deterministic swing-trade picks — feed the AI so it can narrate them
     // in a dedicated section, AND persist them to StocksDailyPick so Test A
     // tracking works whether or not the daily-pick cron ran independently.
     // Exclude tickers the user already holds so we don't propose a fresh
     // entry on a position they just took (or took a while ago) — the
     // "Signals per holding" section manages those instead.
-    generateDailyPicksForUser({
+    stage("generateDailyPicksForUser", generateDailyPicksForUser({
       email: profile.email,
       n: 2,
       excludeTickers: (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")),
-      // Fast-preview mode (set by produceBriefingMarkdown on the on-demand
-      // route) skips the news-catalyst-bump too. Cron always gets the
-      // full pass.
       fastPreview: profile?._fastPreview === true,
-    }).catch((e) => { console.warn("[generateDailyPicksForUser] warn:", e?.message); return []; }),
-    // Trades the user actually executed since the last successful briefing.
-    // Populated with each trade's linked rec (if any) so the AI can quote
-    // the target/stop of the rec that was taken.
-    StocksTradeJournal.find({ email: profile.email, executedAt: { $gte: lastBriefingAt } })
+    }), [], 45_000),
+    stage("recentTrades", StocksTradeJournal.find({ email: profile.email, executedAt: { $gte: lastBriefingAt } })
       .populate("linkedAdviceRecId", "ticker action entryPrice targetPrice stopPrice horizonDays")
       .populate("linkedDailyPickId", "ticker entryPrice targetPrice stopPrice horizonDays setupName deterministicScore")
       .sort({ executedAt: -1 })
-      .lean()
-      .catch((e) => { console.warn("[recentTrades] warn:", e?.message); return []; }),
-    // 11-sector rotation ranking — cached 4h across all users.
-    getSectorRotation().catch((e) => { console.warn("[sectorRotation] warn:", e?.message); return null; }),
-    // Pairwise correlation across the user's holdings — flags hidden
-    // concentration ("three names but one bet") that raw diversification-
-    // count metrics miss. Compact: computed off held tickers only.
-    (async () => {
-      // Retrofit: pull tickers / currencies / weights from the canonical
-      // portfolio so correlations use exactly the CAD-value weights the
-      // briefing (and every other section) is going to report. Previously
-      // this recomputed weights inline — a duplicate-calc site that could
-      // drift from portfolioSummary.
+      .lean(), []),
+    stage("sectorRotation", getSectorRotation(), null),
+    stage("correlations", (async () => {
       if (!canonical) return null;
       const tickers = [];
       const currencies = {};
@@ -3744,20 +3749,13 @@ export async function generateBriefing(profile) {
         weights[t] = (weights[t] || 0) + (pos.cad_value || 0);
       }
       return await computeCorrelations({ tickers, currencies, weights });
-    })().catch((e) => { console.warn("[correlations] warn:", e?.message); return null; }),
-    // Fed liquidity regime — cached 12h, free from FRED
-    getFedLiquidity().catch((e) => { console.warn("[fedLiquidity] warn:", e?.message); return null; }),
-    // Congressional trades matching user's holdings (last 45d)
-    (async () => {
+    })(), null),
+    stage("fedLiquidity", getFedLiquidity(), null),
+    stage("congressional", (async () => {
       const tickers = (profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")).filter(Boolean);
       return await getCongressionalTradesForTickers(tickers, { maxAgeDays: 45 });
-    })().catch((e) => { console.warn("[congressional] warn:", e?.message); return null; }),
-    // Top Discovery candidates from the last 45 days (score ≥ 60,
-    // excluding already-held tickers). Feeds the SPEC-sleeve source
-    // pool in section 7 — "aggressive new ideas" now pulls from
-    // adversarially-verified Discovery picks instead of the AI
-    // inventing them cold.
-    (async () => {
+    })(), null),
+    stage("discoveryPool", (async () => {
       const heldSet = new Set((profile.positions || []).map((p) => String(p.ticker || "").toUpperCase().replace(/\..*$/, "")));
       const since = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000);
       const cands = await StocksDiscoveryCandidate.find({
@@ -3766,31 +3764,22 @@ export async function generateBriefing(profile) {
         score: { $gte: 60 },
       }).sort({ score: -1, scanDate: -1 }).limit(20).lean();
       return (cands || []).filter((c) => !heldSet.has(String(c.ticker || "").toUpperCase().replace(/\..*$/, "")));
-    })().catch((e) => { console.warn("[discoveryPool] warn:", e?.message); return []; }),
-    // Score → outcome calibration — buckets THIS user's closed picks by
-    // score band + setup + MTF confluence so the AI can tilt toward
-    // combinations that have historically paid off for them.
-    computeCalibration(profile.email).catch((e) => { console.warn("[computeCalibration] warn:", e?.message); return null; }),
-    // Phase 2: FRED macro regime — deterministic yield-curve / credit /
-    // vol / FX numbers. Gated by FRED_API_KEY + FRED_DISABLED kill-switch;
-    // returns ok:false when off and formatter silent-omits.
-    getMacroFred().catch((e) => { console.warn("[macroFred] warn:", e?.message); return null; }),
-    // Phase 1: SEC Form 4 cluster-buy / cluster-sell signals for held +
-    // starred tickers. Signals are pre-computed by the nightly
-    // insider-sync cron; this just reads recent rows.
-    getInsiderSignalsForUser(profile).catch((e) => { console.warn("[insiderSignals] warn:", e?.message); return null; }),
-    // Phase 4: options-flow signals (UW-primary + Yahoo-fallback). Scans
-    // held + starred universe and persists results. Formatter silent-omits
-    // when no signals returned.
-    getOptionsFlowForUser(profile).catch((e) => { console.warn("[optionsFlow] warn:", e?.message); return null; }),
-    // Time-of-day-aware price pulse — pre-market gap / intraday last-few-hours /
-    // last-session-into-close, per holding, with %chg + momentum + rel-volume.
-    computeMarketPulse(profile).catch((e) => { console.warn("[computeMarketPulse] warn:", e?.message); return null; }),
-    // 13F institutional whale filings (curated list, weekly-sync'd from SEC EDGAR,
-    // 45-day filing lag). Read-only here; the stocks13FSync cron populates the
-    // collection. Formatter silent-omits when no whales persisted yet.
-    getLatestWhaleFilings().catch((e) => { console.warn("[whale13F] warn:", e?.message); return []; }),
+    })(), []),
+    stage("computeCalibration", computeCalibration(profile.email), null),
+    stage("getMacroFred", getMacroFred(), null),
+    stage("getInsiderSignalsForUser", getInsiderSignalsForUser(profile), null),
+    stage("getOptionsFlowForUser", getOptionsFlowForUser(profile), null),
+    stage("computeMarketPulse", computeMarketPulse(profile), null),
+    stage("getLatestWhaleFilings", getLatestWhaleFilings(), []),
   ]);
+  // Emit a compact stage-timing summary — the next time a briefing
+  // pushes near the ceiling, this log line tells us the exact culprit.
+  const slowStages = Object.entries(stageTimings)
+    .filter(([, ms]) => ms >= 5_000)
+    .sort((a, b) => b[1] - a[1]);
+  if (slowStages.length > 0) {
+    console.log(`[stocks-briefing/timings] ${profile.email} slow stages: ${slowStages.map(([n, ms]) => `${n}=${ms}ms`).join(" · ")}`);
+  }
   const monitorAlerts = monitorRes?.alerts || [];
   const monitorStopHitRecs = monitorRes?.stopHitRecs || [];
 
