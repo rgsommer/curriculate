@@ -158,6 +158,8 @@
 - `frontend/src/lib/daily/parse.ts` — pure parser (DisplayAI rows, status text, points line, Setup labels)
 - `frontend/src/app/daily/README.md` — env vars, ranges read, timing rules, test URLs
 
+**Workflow for this feature:** changes to the daily board go all the way through without asking — commit, push, open the PR and merge it — so the board deploys. Stop and check first only for work outside `frontend/src/app/daily`, `frontend/src/app/api/daily` and `frontend/src/lib/daily`, or anything that could affect the grading pages.
+
 ## L. Pending / Future Work
 
 - **Bulk generation via templates:** Wire template path into `buildTasksetPrompt` so initial generation also uses shells (currently only retries do)
