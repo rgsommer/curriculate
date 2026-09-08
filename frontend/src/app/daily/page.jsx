@@ -576,6 +576,7 @@ export default function DailyPage() {
               {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
               {row("verse (as read)", meta.verse)}
               {row("verse (evaluated)", verseSrc.text ? `${verseSrc.open ? "full" : "short"} \u2014 ${verse}` : "Verses tab not read; using A5")}
+              {row("handouts (current class)", cur && (cur.links || []).length ? cur.links.map((l) => `${l.label} \u2192 ${l.url}`).join("  |  ") : "")}
               {row("puzzle", meta.puzzle)}
               {row("riddle", meta.riddle)}
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
@@ -730,12 +731,23 @@ export default function DailyPage() {
     const lessonPicOn = opts.pic !== "off" && data.picture && usable(data.picture.url) && elapsed * 60 < setup.picSeconds;
     const picOn = !!featureImage || lessonPicOn;
 
+    // Handouts named in the lesson cell, so they can be opened and printed from
+    // the board if they were not run off beforehand.
+    const handouts = (cur.links || []).length > 0 ? (
+      <div className="handouts">
+        <span className="hlabel">Handouts</span>
+        {cur.links.map((l) => (
+          <a key={l.url} className="hlink" href={l.url} target="_blank" rel="noreferrer">{l.label} ↗</a>
+        ))}
+      </div>
+    ) : null;
     const leftCol = (
       <div>
         <p className="eyebrow">Today</p>
         <p className="question">{cur.q || cur.subj}</p>
         <p className="summary">{cur.today}</p>
         {phase === "open" ? null : list(cur.plan, "plan")}
+        {handouts}
       </div>
     );
 

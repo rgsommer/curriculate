@@ -15,7 +15,7 @@ export const FIXTURE: RawInputs = {
     ["", "", "Pray for Albania"],
     ["", "FALSE", "UNSCRAMBLE for a treat: TNOMISNEPEO ___ ___ ___ ___ ___ ___ ___ ___ ___ ___ ___", "FALSE"],
     ["", "", "Plans for Thursday, Sep 10, 2026...    -660--871--220--820--290-", "1"],
-    ["10:00 AM", "FALSE", "Math 7A (22) 202 (J003) Today we practice solving equations and using properties of operations. How do properties help solve equations faster? - Complete NS7-3: p. 7 problems. - Complete NS7-4: p. 8 problems. Reminders: Test on Unit 1 (Number Sense) on Thu Sep 17; finish last day's work.", "AB1 & B2", "", "1"],
+    ["10:00 AM", "FALSE", "Math 7A (22) 202 (J003) Today we practice solving equations and using properties of operations. How do properties help solve equations faster? - Complete NS7-3: p. 7 problems. - Complete NS7-4: p. 8 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Test on Unit 1 (Number Sense) on Thu Sep 17; finish last day's work. Getting to Know You form http://tinyurl.com/BCSQuickCheckin", "AB1 & B2", "", "1"],
     ["59 minutes"],
     ["11:00 AM", "FALSE", "History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts - Complete written task \"Historical Perspective\" p.2 - Find five challenging quotes about history (online or ChatGPT) Reminders: Written task Due Thu Sep 17. Textbook access link posted.", "A-FD & B1", "", "0"],
     ["12:00 PM", "FALSE", "Lunch", "REC"],
@@ -29,6 +29,11 @@ export const FIXTURE: RawInputs = {
   ],
   displayD: [[], [], [], [], [], [], [], [], ['=HYPERLINK("https://www.youtube.com/watch?v=dQw4w9WgXcQ","▶")'], [], ['=HYPERLINK("https://www.youtube.com/watch?v=dQw4w9WgXcQ","▶")']],
   displayC: [[], [], [], [], [], ['=HYPERLINK("https://prayercast.com/albania.html","Pray for Albania")']],
+  // A handout attached to a phrase with Insert > Link, invisible to both the
+  // value and the formula.
+  displayCRuns: [[], [], [], [], [], [], [], [], [], [],
+    [{ text: "Due Dates handout", url: "https://example.org/due-dates.pdf" }],
+  ],
   setup: [
     [],
     ["", "School", "Brampton Christian School"],

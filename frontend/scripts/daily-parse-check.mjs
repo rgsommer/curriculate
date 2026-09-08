@@ -311,5 +311,29 @@ check("verse: full again for 20 min from A11", P.evaluateVerse(vs({}), 670, 3).o
 check("verse: short before A9", P.evaluateVerse(vs({}), 500, 3).open === false);
 check("verse: empty when the Verses tab is missing", P.evaluateVerse(S({}), 610, 3).text === "");
 
+
+// ---- handouts named in the lesson cell ----
+const withLink = P.extractLinks("Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1Yz/edit?tab=t.0) and hand it in.");
+check("links: one handout found", withLink.links.length === 1 && withLink.links[0].url === "https://docs.google.com/document/d/1Yz/edit?tab=t.0", withLink.links);
+check("links: named from the words before it", withLink.links[0].label === "Complete the Introduction Fill-In-the-Blanks worksheet", withLink.links[0].label);
+check("links: the address leaves the text", !/https?:/.test(withLink.clean) && withLink.clean.startsWith("Complete the Introduction"), withLink.clean);
+const kindOnly = P.extractLinks("See https://docs.google.com/presentation/d/1a/edit");
+check("links: falls back to the kind of thing it is", kindOnly.links[0].label === "Slides", kindOnly.links[0]);
+check("links: a dangling preposition is dropped", P.extractLinks("Handout at https://example.org/x.pdf").links[0].label === "Handout", P.extractLinks("Handout at https://example.org/x.pdf").links[0]);
+check("links: pdf recognised", P.extractLinks("https://example.org/x.pdf").links[0].label === "PDF", P.extractLinks("https://example.org/x.pdf").links[0]);
+const twice = P.extractLinks("A https://example.org/a.pdf then again https://example.org/a.pdf");
+check("links: the same handout twice is one", twice.links.length === 1, twice.links);
+check("links: none when there are none", P.extractLinks("Read p18-23 to prepare.").links.length === 0);
+
+const lesson = P.parseClassText("Math 7A (22) 202 (J003) Today we practice. What is next? - Do NS7-3. - Print the Unit 1 review (or from this link: https://docs.google.com/document/d/1Q/edit?usp=sharing) Reminders: none.");
+check("class links carried on the period", lesson.links.length === 1 && lesson.links[0].label === "Print the Unit 1 review", lesson.links);
+check("class bullets no longer carry the address", lesson.plan.every((b) => !/https?:/.test(b)), lesson.plan);
+check("a URL's own ? is not read as the lesson question", lesson.q === "What is next?", lesson.q);
+
+const runGrid = display.map(() => []);
+runGrid[8] = [{ text: "Due Dates handout", url: "https://example.org/due.pdf" }];
+const withRuns = P.buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature: "", displayCRuns: runGrid });
+check("rich-text handout merged in", (withRuns.periods[0].links || []).some((l) => l.label === "Due Dates handout"), withRuns.periods[0].links);
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

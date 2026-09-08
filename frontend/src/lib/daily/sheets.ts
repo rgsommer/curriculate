@@ -100,6 +100,73 @@ export async function readRanges(ranges: string[], render: RenderOption = "FORMA
 }
 
 /**
+ * Every link inside each cell of a range, with the words it is attached to.
+ *
+ * `readCellLinks` answers "is there a link on this cell", which is all the
+ * "Pray for …" line needs. A lesson cell can carry several — one per handout —
+ * so this walks the rich-text runs and pairs each link with its own text.
+ *
+ * Returns one array of links per row of the range.
+ */
+export async function readCellLinkRuns(range: string): Promise<{ text: string; url: string }[][]> {
+  const sheetId = process.env.DAILY_SHEET_ID || DEFAULT_SHEET_ID;
+  const params = new URLSearchParams();
+  params.set("ranges", range);
+  params.set("includeGridData", "true");
+  params.set(
+    "fields",
+    "sheets.data.rowData.values(formattedValue,hyperlink,textFormatRuns(startIndex,format.link.uri))"
+  );
+
+  const headers: Record<string, string> = { accept: "application/json" };
+  const sa = readServiceAccount();
+  if (sa) {
+    headers.Authorization = `Bearer ${await mintAccessToken(sa)}`;
+  } else if (process.env.DAILY_SHEETS_API_KEY) {
+    params.set("key", process.env.DAILY_SHEETS_API_KEY);
+  } else {
+    throw new Error("Set DAILY_SHEETS_SERVICE_ACCOUNT or DAILY_SHEETS_API_KEY");
+  }
+
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?${params}`;
+  const res = await fetch(url, { headers, cache: "no-store" });
+  const data = (await res.json().catch(() => ({}))) as {
+    sheets?: {
+      data?: {
+        rowData?: {
+          values?: {
+            formattedValue?: string;
+            hyperlink?: string;
+            textFormatRuns?: { startIndex?: number; format?: { link?: { uri?: string } } }[];
+          }[];
+        }[];
+      }[];
+    }[];
+    error?: { message?: string };
+  };
+  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${data.error?.message || "request failed"}`);
+
+  return (data.sheets?.[0]?.data?.[0]?.rowData || []).map((row) => {
+    const out: { text: string; url: string }[] = [];
+    for (const cell of row.values || []) {
+      const value = cell.formattedValue || "";
+      const runs = cell.textFormatRuns || [];
+      if (runs.length) {
+        runs.forEach((run, i) => {
+          const uri = run.format?.link?.uri;
+          if (!uri) return;
+          const from = run.startIndex || 0;
+          const to = runs[i + 1]?.startIndex ?? value.length;
+          out.push({ text: value.slice(from, to).trim(), url: uri });
+        });
+      }
+      if (!out.length && cell.hyperlink) out.push({ text: value.trim(), url: cell.hyperlink });
+    }
+    return out;
+  });
+}
+
+/**
  * The spreadsheet's tab names.
  *
  * The Kiss & Ride list lives on its own tab, and the board should keep working
