@@ -74,7 +74,7 @@ export type Payload = {
 export const DEFAULT_SETUP: Setup = {
   nextAdvance: 15,
   remindersAdvance: 2,
-  redAt: 3,
+  redAt: 5,
   homeworkAt: 1,
   blankFrom: null,
   blankTo: null,

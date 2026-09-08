@@ -74,6 +74,10 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .top .when { font-size: clamp(13px, 2vh, 20px); color: var(--muted); margin-top: .6vh; }
 .top .peek { font-size: clamp(12px, 1.9vh, 19px); color: var(--muted); margin-top: .3vh; }
 .top .peek b { color: var(--ink); font-weight: 500; }
+/* The last few minutes: what is coming, in red, large enough to read from the
+   back of the room. */
+.top .peek.soon { color: var(--alert); font-weight: 500; font-size: clamp(14px, 2.4vh, 24px); }
+.top .peek.soon b { color: var(--alert); font-weight: 700; }
 .block .daily { white-space: pre-line; font-size: clamp(14px, 2.4vh, 26px); }
 /* The clock is highlighted once the class change is close (Setup: "change time
    to red", minutes before the bell) — the signal the teacher used to get from
