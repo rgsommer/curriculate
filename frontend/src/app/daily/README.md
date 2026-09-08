@@ -43,6 +43,12 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Setup!T1:AA8` (values and formulas) | The feature-slot table. Column T labels the rows; the E1 formula's `HLOOKUP` runs on U to AA, so the slots proper start one column in: row 1 priority, row 2 name, row 4 value, row 7 seconds on screen. `?debug=1` prints the whole block with its formulas, which is how to see what actually decides E1. |
 | `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
+The non-teaching rows get a friendlier heading than the sheet's own label, because
+the room is reading them rather than the teacher: Lunch becomes "Enjoy your lunch",
+Recess Duty becomes "Out for recess", and Playground, Dismissal, Assembly, Chapel and
+No School are similarly reworded (`friendlyDutyTitle` in `parse.ts`). A row with no
+better wording keeps its own text.
+
 Lesson cells are split using the shape the AI text already has:
 `Subject Sec (n) Room (Code) Today we … Question? - bullet - bullet Reminders: …`
 Cells that do not match (Lunch, Recess Duty, Dismissal) become "change of class" screens.

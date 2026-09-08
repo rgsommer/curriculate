@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, statusStyle } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, friendlyDutyTitle, statusStyle } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
@@ -573,7 +573,9 @@ export default function DailyPage() {
   } else if (!cur || cur.duty || cur.empty) {
     const nx = nextClass(cur ? cur.start : t);
     const mins = nx ? nx.start - t : 0;
-    const title = cur && !cur.empty ? cur.subj : "Change of class";
+    const title = cur && !cur.empty
+      ? friendlyDutyTitle(cur.text || cur.subj) || cur.subj
+      : "Change of class";
     body = (
       <>
         {header({

@@ -685,3 +685,21 @@ export function statusStyle(status: string): StatusStyle | null {
   const hit = STATUS_RULES.find((r) => r.test(s));
   return hit ? hit.style : null;
 }
+
+/**
+ * A friendlier heading for the non-teaching rows. The sheet labels these for
+ * the teacher ("Recess Duty"), but the room is reading them, so the board says
+ * what the students are doing. Returns "" when the row has no better wording,
+ * in which case the cell's own text is used.
+ */
+export function friendlyDutyTitle(text: string): string {
+  const t = String(text || "").toLowerCase();
+  if (/lunch/.test(t)) return "Enjoy your lunch";
+  if (/recess/.test(t)) return "Out for recess";
+  if (/playground/.test(t)) return "Out on the playground";
+  if (/dismiss/.test(t)) return "Dismissal";
+  if (/assembl/.test(t)) return "Assembly";
+  if (/chapel/.test(t)) return "Chapel";
+  if (/no school/.test(t)) return "No school today";
+  return "";
+}
