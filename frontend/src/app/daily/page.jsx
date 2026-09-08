@@ -317,13 +317,15 @@ export default function DailyPage() {
   // The sheet computes its display cells from NOW(); the board recomputes the
   // same rules from its own clock, so the scrubber moves them too.
   const weekday = new Date().getDay() + 1; // Sheets counts Sunday as 1
-  const sources = data.sources || EMPTY_SOURCES;
+  // A payload from an older build (or one a warm server is still caching) can be
+  // missing these, and an exception here would freeze the whole board.
+  const sources = { ...EMPTY_SOURCES, ...(data.sources || {}) };
   const evaluated = evaluateFeature(sources, t);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
   // The D-column rule, recomputed from the board's clock so the grace window
   // and the chips move with the scrubber too.
-  const statusOf = (p) => (sources.pointsClasses.length
+  const statusOf = (p) => ((sources.pointsClasses || []).length
     ? evaluateStatus(sources.pointsClasses, p, t, setup.graceMin) || p.status
     : p.status);
   // The scrubber has to reach the whole school day, not just the teaching periods:
@@ -453,8 +455,8 @@ export default function DailyPage() {
               {row("B7 / D7", `${sources.b7} / ${sources.d7}`)}
               {row("status (evaluated)", cur ? statusOf(cur) : "")}
               {row("status (as read)", cur ? cur.status : "")}
-              {row("points classes", sources.pointsClasses.map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
-              {row("slots", sources.slots.filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}
+              {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
+              {row("slots", (sources.slots || []).filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}
               {row("E1 picture (as read)", meta.featureImage)}
               {row("E1 text (as read)", meta.feature)}
               {row("pray text", meta.pray && meta.pray.text)}
@@ -516,6 +518,22 @@ export default function DailyPage() {
       <>
         {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: "", pct: 0 })}
         <div className="main blank"><p>Please listen</p></div>
+        {footer(false)}
+      </>
+    );
+  } else if (!classes.length) {
+    // No class rows for today: every scrub position lands here, which can look
+    // like the scrubber is dead. Say so instead.
+    body = (
+      <>
+        {header({ title: meta.greeting || "No classes today", chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
+        <div className="main center">
+          <div>
+            <p className="script">{meta.greeting || "No classes today"}</p>
+            <p className="question">{verse}</p>
+            <p className="summary">The sheet has no class rows for today, so every time of day shows this screen.</p>
+          </div>
+        </div>
         {footer(false)}
       </>
     );
