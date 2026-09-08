@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readRanges } from "@/lib/daily/sheets";
+import { readCellLinks, readRanges } from "@/lib/daily/sheets";
 import { buildPayload, refFromFormula, urlFromFormula, type Payload } from "@/lib/daily/parse";
 import { FIXTURE } from "@/lib/daily/fixture";
 import { dailyCache } from "@/lib/daily/cache";
@@ -43,11 +43,11 @@ export async function GET(req: Request) {
   try {
     // Core content plus the optional extras, in parallel. A renamed tab in the
     // optional ranges must not take the whole board down, so those degrade to empty.
-    const [core, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes] = await Promise.all([
-      readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!U1:AA8"]),
+    const [core, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes, displayLinks] = await Promise.all([
+      readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!T1:AA8"]),
       readRanges(["Display!E1", "DisplayAI!E1"]).catch(() => [] as string[][][]),
       readRanges(
-        ["DisplayAI!D1:D40", "DisplayAI!C1:C40", "Setup!U4:AA4", "Display!E1", "DisplayAI!E1"],
+        ["DisplayAI!D1:D40", "DisplayAI!C1:C40", "Setup!T1:AA8", "Display!E1", "DisplayAI!E1"],
         "FORMULA"
       ).catch(() => [] as string[][][]),
       // Ingredients for the sheet's own display rules. Each tab is read on its
@@ -58,11 +58,20 @@ export async function GET(req: Request) {
       readRanges(["Riddles!D1:D400"]).catch(() => [] as string[][][]),
       readRanges(["Master!B1:B2"]).catch(() => [] as string[][][]),
       readRanges(["Points!A3:BZ3", "Points!A46:BZ46"]).catch(() => [] as string[][][]),
+      // Links on the header cells. A rich-text link is invisible to the values
+      // API, so the grid itself has to be read for the "Pray for …" line.
+      readCellLinks("DisplayAI!A1:F40").catch(() => [] as string[][]),
     ]);
-    const [display, setup, slots] = core;
+    const [display, setup, slotBlock] = core;
+    // The slot table spans T to AA; the E1 formula's HLOOKUP works on U to AA,
+    // so the slots themselves drop the leading T column. The whole block is
+    // carried through for ?debug=1, where its formulas can be inspected.
+    const slots = (slotBlock || []).map((r) => (r || []).slice(1));
     const [featA, featB] = featureRes;
     const feature = (featA && featA[0] && featA[0][0]) || (featB && featB[0] && featB[0][0]) || "";
-    const [displayD = [], displayC = [], slotFormulas = [], featFa = [], featFb = []] = formulaRes;
+    const [displayD = [], displayC = [], slotBlockFormulas = [], featFa = [], featFb = []] = formulaRes;
+    // buildSources wants row 4 of the U..AA slots as its formula row.
+    const slotFormulas = [((slotBlockFormulas[3] || []).slice(1))];
     // An =IMAGE() cell has no text value, so the picture's URL only shows up here.
     let featureFormula = (featFa[0] && featFa[0][0]) || (featFb[0] && featFb[0][0]) || "";
 
@@ -91,6 +100,9 @@ export async function GET(req: Request) {
       master: masterRes[0] || [],
       pointsRow3: ((pointsRes[0] || [])[0]) || [],
       pointsRow46: ((pointsRes[1] || [])[0]) || [],
+      displayLinks: displayLinks || [],
+      slotBlock: slotBlock || [],
+      slotBlockFormulas: slotBlockFormulas || [],
     });
     c.body = body;
     c.at = Date.now();

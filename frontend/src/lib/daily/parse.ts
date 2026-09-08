@@ -65,6 +65,10 @@ export type Payload = {
   setup: Setup;
   picture: { url: string; seconds: number } | null;
   sources: Sources;
+  // Setup!T1:AA8 as values and formulas, shown by ?debug=1 so the cells that
+  // decide what E1 displays can be read without opening the sheet.
+  slotBlock: string[][];
+  slotBlockFormulas: string[][];
 };
 
 export const DEFAULT_SETUP: Setup = {
@@ -286,6 +290,9 @@ export type RawInputs = {
   master?: string[][]; // Master!B1:B2 values
   pointsRow3?: string[]; // Points!A3:BZ3 — class names
   pointsRow46?: string[]; // Points!A46:BZ46 — four flags per class
+  slotBlock?: string[][]; // Setup!T1:AA8 values, for the debug view
+  slotBlockFormulas?: string[][]; // Setup!T1:AA8 formulas, for the debug view
+  displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -327,12 +334,21 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   headerRows.forEach((r, i) => {
     const a = (r[0] || "").trim();
     const c = (r[2] || "").trim();
-    // "Pray for Albania" — the nation of the day, usually a hyperlink to its page.
-    for (const [text, col] of [[a, 0], [c, 2]] as [string, number][]) {
-      if (!meta.pray && /^pray\b/i.test(text)) {
+    // "Pray for Albania" — the nation of the day. The link may be a HYPERLINK()
+    // formula, a rich-text link on the cell (which lives in neither the value
+    // nor the formula), or a bare URL in the text, so all three are tried.
+    if (!meta.pray) {
+      for (let col = 0; col < 6; col += 1) {
+        const text = (r[col] || "").trim();
+        if (!/^pray\b/i.test(text)) continue;
         const formula = col === 2 ? cell(inp.displayC, i, 0) : "";
-        const url = urlFromFormula(formula) || (text.match(URL_RE) || [])[0] || "";
+        const url =
+          cell(inp.displayLinks || [], i, col) ||
+          urlFromFormula(formula) ||
+          (text.match(URL_RE) || [])[0] ||
+          "";
         meta.pray = { text: text.replace(URL_RE, "").trim(), url };
+        break;
       }
     }
     if (!meta.greeting && /^Good (morning|afternoon|evening)/i.test(a)) meta.greeting = a;
@@ -425,7 +441,12 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   const setup = parseSetup(inp.setup);
   if (picture) setup.picSeconds = picture.seconds;
 
-  return { fetchedAt: now.toISOString(), meta, periods, points, setup, picture, sources: buildSources(inp) };
+  return {
+    fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
+    sources: buildSources(inp),
+    slotBlock: inp.slotBlock || [],
+    slotBlockFormulas: inp.slotBlockFormulas || [],
+  };
 }
 
 /* ------------------------------------------------------------------ *

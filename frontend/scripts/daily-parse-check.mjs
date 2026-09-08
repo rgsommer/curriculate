@@ -196,6 +196,16 @@ const prayC = []; prayC[6] = ['=HYPERLINK("https://prayercast.com/albania.html",
 const prayOut = P.buildPayload({ display: prayGrid, displayD, displayC: prayC, setup, slots, slotFormulas, feature: "" });
 check("pray text", prayOut.meta.pray && prayOut.meta.pray.text === "Pray for Albania", prayOut.meta.pray);
 check("pray link from hyperlink formula", prayOut.meta.pray && prayOut.meta.pray.url === "https://prayercast.com/albania.html", prayOut.meta.pray);
+// a rich-text link lives in neither the value nor the formula
+const linkGrid = []; linkGrid[6] = ["", "", "https://prayercast.com/peru.html"];
+const richOut = P.buildPayload({ display: prayGrid, displayD, displayC: [], setup, slots, slotFormulas, feature: "", displayLinks: linkGrid });
+check("pray link from a rich-text link", richOut.meta.pray && richOut.meta.pray.url === "https://prayercast.com/peru.html", richOut.meta.pray);
+// and the cell may sit in any header column, not just A or C
+const colEGrid = display.map((r) => r.slice());
+colEGrid.splice(6, 0, ["", "", "", "", "Pray for Chad"]);
+const colELinks = []; colELinks[6] = ["", "", "", "", "https://prayercast.com/chad.html"];
+const colEOut = P.buildPayload({ display: colEGrid, displayD, displayC: [], setup, slots, slotFormulas, feature: "", displayLinks: colELinks });
+check("pray found in column E", colEOut.meta.pray && colEOut.meta.pray.url === "https://prayercast.com/chad.html", colEOut.meta.pray);
 check("no pray when absent", out.meta.pray === null, out.meta.pray);
 check("feature error blanked", out.meta.feature === "");
 check("no feature image when none", out.meta.featureImage === "", out.meta.featureImage);
