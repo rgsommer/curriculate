@@ -12,7 +12,8 @@
 // or back to preview a period; it snaps back to the live clock after 45 s.
 //
 // URL options: ?t=11:05 freezes the clock; ?k=... passes the access key when
-// DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides the lesson picture.
+// DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides pictures (the lesson
+// picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -37,6 +38,9 @@ function parseHHMM(s) {
 function youtubeId(url) {
   const m = /(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{6,})/.exec(url || "");
   return m ? m[1] : null;
+}
+function isVideoUrl(url) {
+  return /youtu\.be\/|youtube\.com\/|youtube-nocookie\.com\/|drive\.google\.com\/file\/|\.(mp4|webm|m4v)(\?|$)/i.test(url || "");
 }
 function driveId(url) {
   const m = /drive\.google\.com\/file\/d\/([^/]+)/.exec(url || "");
@@ -196,14 +200,16 @@ export default function DailyPage() {
   const [points, setPoints] = useState({ numbers: null, percents: null, entered: null });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
-  const [opts, setOpts] = useState({ t: null, k: "", pic: "right" });
+  const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
   const [scrub, setScrub] = useState(null);
+  const [badImages, setBadImages] = useState({});
+  const [prayBig, setPrayBig] = useState(false);
   const scrubTouched = useRef(0);
 
   // URL options (client only)
   useEffect(() => {
     const u = new URLSearchParams(window.location.search);
-    setOpts({ t: parseHHMM(u.get("t")), k: u.get("k") || "", pic: u.get("pic") === "left" ? "left" : u.get("pic") === "off" ? "off" : "right" });
+    setOpts({ t: parseHHMM(u.get("t")), k: u.get("k") || "", pic: u.get("pic") === "left" ? "left" : u.get("pic") === "off" ? "off" : "right", debug: u.get("debug") === "1" });
     document.title = "Daily Board";
   }, []);
 
@@ -300,8 +306,17 @@ export default function DailyPage() {
   const verse = meta.verse.replace(/^.*?~/, "").trim() || meta.verse;
   const challenge = (meta.other.match(/Math Challenge Question[^:]*:\s*(.*)$/) || [, ""])[1];
   const lastClass = classes[classes.length - 1];
-  const dayMin = P.length ? Math.max(0, P[0].start - 60) : 8 * 60;
-  const dayMax = P.length ? Math.min(24 * 60 - 1, P[P.length - 1].end + 30) : 16 * 60;
+  // The scrubber has to reach the whole school day, not just the teaching periods:
+  // arrival and the announcements window come before the first class, and the
+  // dismissal screen can run past the last one.
+  const dayMin = Math.max(0, Math.min(...[
+    P.length ? P[0].start - 90 : 8 * 60,
+    setup.blankFrom != null ? setup.blankFrom - 10 : Infinity,
+  ]));
+  const dayMax = Math.min(24 * 60 - 1, Math.max(...[
+    P.length ? P[P.length - 1].end + 30 : 16 * 60,
+    setup.dismissalAt != null ? setup.dismissalAt + 45 : -Infinity,
+  ]));
 
   const header = ({ title, chips, when, leftHtml, pct, red, period }) => (
     <>
@@ -320,11 +335,29 @@ export default function DailyPage() {
       <div className="pbar"><i style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></div>
     </>
   );
+  // "Pray for Albania" from the header rows: a small player when it links to a
+  // video, otherwise a link the teacher can open.
+  const pray = meta.pray && meta.pray.text ? meta.pray : null;
+  const prayEl = () => {
+    if (!pray) return null;
+    if (pray.url && isVideoUrl(pray.url)) {
+      return (
+        <span className="prayrow">
+          <VideoTile url={pray.url} big={prayBig} setBig={setPrayBig} />
+          <span className="pray">{pray.text}</span>
+        </span>
+      );
+    }
+    return pray.url
+      ? <a className="pray" href={pray.url} target="_blank" rel="noreferrer">{pray.text}</a>
+      : <span className="pray">{pray.text}</span>;
+  };
   const footer = (showPuzzle) => (
     <>
       <PointsStrip points={points} currentSec={cur && !cur.duty ? cur.sec : ""} />
       <div className="bottom">
         <span>{meta.line}{error ? <span className="stale"> · {error}</span> : null}</span>
+        {prayEl()}
         {showPuzzle && puzzleWord
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
           : <span className="verse">{verse}</span>}
@@ -349,6 +382,75 @@ export default function DailyPage() {
     ? <div className="block feature quiet"><p>{meta.feature}</p></div>
     : meta.riddle ? <div className="block quiet"><h3>Riddle</h3><p>{meta.riddle.replace(/^Q:\s*/, "")}</p></div> : null);
 
+  // A picture in E1 outranks everything else on the right of the screen: while the
+  // sheet is showing one, the board gives it the large slot.
+  // A picture that will not load (a Drive link that is not shared, say) must not
+  // leave a broken frame on the projector: the board drops it and shows the panel.
+  const markBad = (url) => setBadImages((b) => (b[url] ? b : { ...b, [url]: true }));
+  const usable = (url) => !!url && !badImages[url];
+  const featureImage = opts.pic === "off" || !usable(meta.featureImage) ? "" : meta.featureImage;
+  const bigPicture = (url, caption, note) => (
+    <div className="picture">
+      <div className="frame">
+        <img src={url} alt={caption || "Picture on the board"} onError={() => markBad(url)} />
+      </div>
+      <div className="capline"><span>{caption}</span><span>{note}</span></div>
+    </div>
+  );
+  // Between classes and before school there is no lesson column, so the picture
+  // shares the screen with whatever text that screen carries.
+  const withPicture = (content) => (featureImage
+    ? <div className="main pic-right pic-feature">{content}{bigPicture(featureImage, "On screen now", "")}</div>
+    : <div className="main center">{content}</div>);
+
+  // /daily?debug=1 — what the board actually received from the sheet. Use it to
+  // tell whether a picture or link is reaching the page at all.
+  if (opts.debug) {
+    const row = (k, v) => (
+      <tr key={k}><th>{k}</th><td>{v === "" || v == null ? <em>empty</em> : String(v)}</td></tr>
+    );
+    return (
+      <div className="board">
+        <div className="debug">
+          <h1>What the board sees</h1>
+          <table>
+            <tbody>
+              {row("fetched", data.fetchedAt)}
+              {row("version", data.version)}
+              {row("stale", data.stale ? `yes — ${data.error || ""}` : "no")}
+              {row("E1 picture", meta.featureImage)}
+              {row("E1 text", meta.feature)}
+              {row("pray text", meta.pray && meta.pray.text)}
+              {row("pray link", meta.pray && meta.pray.url)}
+              {row("lesson picture", data.picture && data.picture.url)}
+              {row("picture seconds", setup.picSeconds)}
+              {row("periods", `${P.length} rows, ${classes.length} classes`)}
+              {row("now", `${fmt(t)} — ${cur ? cur.subj || "duty" : "no period"}`)}
+              {row("puzzle", meta.puzzle)}
+              {row("riddle", meta.riddle)}
+              {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
+            </tbody>
+          </table>
+          <div className="shots">
+            {[["E1 picture", meta.featureImage], ["Lesson picture", data.picture && data.picture.url]]
+              .filter(([, url]) => url)
+              .map(([label, url]) => (
+                <figure key={label}>
+                  <img src={url} alt={label} onError={() => markBad(url)} />
+                  <figcaption>{label} — {badImages[url] ? "did NOT load" : "loaded"}</figcaption>
+                </figure>
+              ))}
+            {!meta.featureImage && !(data.picture && data.picture.url) && <p>No picture URL came back from the sheet.</p>}
+          </div>
+          <p>A picture only reaches this page if the cell itself holds it, for example
+            <code>=IMAGE(&quot;https://…&quot;)</code>. An image inserted over the grid
+            (Insert &rsaquo; Image &rsaquo; Image in cell is fine; floating images are not)
+            cannot be read by the sheet API and will always show as empty here.</p>
+        </div>
+      </div>
+    );
+  }
+
   let body;
   let redState = false;
 
@@ -364,14 +466,14 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Good morning", chips: null, when: meta.plans, leftHtml: <>First class at <b>{fmt(classes[0].start)}</b></>, pct: 0 })}
-        <div className="main center">
+        {withPicture(
           <div>
             <p className="script">{meta.greeting || "Good morning"}</p>
             <p className="question">{verse}</p>
             {agenda()}
-            {featureBlock()}
+            {featureImage ? null : featureBlock()}
           </div>
-        </div>
+        )}
         {footer(false)}
       </>
     );
@@ -379,7 +481,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Dismissal", chips: null, when: `From ${fmt(setup.dismissalAt)}`, leftHtml: <b>{cur && !cur.duty ? `${cur.left} min left` : "Day complete"}</b>, pct: 100 })}
-        <div className="main center">
+        {withPicture(
           <div>
             <p className="script">Well done, {(meta.greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
             {meta.headout.length > 0 && (
@@ -388,7 +490,7 @@ export default function DailyPage() {
               </div>
             )}
           </div>
-        </div>
+        )}
         {footer(true)}
       </>
     );
@@ -403,18 +505,16 @@ export default function DailyPage() {
           leftHtml: nx ? <><b>{nx.subj}</b> in {mins} min</> : <b>Day complete</b>,
           pct: cur ? ((t - cur.start) / (cur.end - cur.start)) * 100 : 0, period: cur,
         })}
-        <div className="main center">
-          {nx ? (
-            <div>
-              <p className="eyebrow">Up next</p>
-              <p className="big">{nx.subj}</p>
-              <p className="question">{nx.room} · starts at {fmt(nx.start)}</p>
-              <p className="summary">{nx.today}</p>
-            </div>
-          ) : (
-            <div><p className="script">{title}</p></div>
-          )}
-        </div>
+        {withPicture(nx ? (
+          <div>
+            <p className="eyebrow">Up next</p>
+            <p className="big">{nx.subj}</p>
+            <p className="question">{nx.room} · starts at {fmt(nx.start)}</p>
+            <p className="summary">{nx.today}</p>
+          </div>
+        ) : (
+          <div><p className="script">{title}</p></div>
+        ))}
         {footer(true)}
       </>
     );
@@ -425,7 +525,8 @@ export default function DailyPage() {
     const phase = elapsed < setup.openMin ? "open" : "work";
     const nx = nextClass(cur.end);
     const isLast = lastClass && lastClass.start === cur.start;
-    const picOn = opts.pic !== "off" && data.picture && elapsed * 60 < setup.picSeconds;
+    const lessonPicOn = opts.pic !== "off" && data.picture && usable(data.picture.url) && elapsed * 60 < setup.picSeconds;
+    const picOn = !!featureImage || lessonPicOn;
 
     const leftCol = (
       <div>
@@ -437,14 +538,11 @@ export default function DailyPage() {
     );
 
     let side;
-    if (picOn) {
+    if (featureImage) {
+      side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
+    } else if (lessonPicOn) {
       const picLeft = Math.ceil((setup.picSeconds - elapsed * 60) / 60);
-      side = (
-        <div className="picture">
-          <div className="frame"><img src={data.picture.url} alt="Lesson picture" /></div>
-          <div className="capline"><span>Lesson picture · {cur.code}</span><span>{picLeft} min left on screen</span></div>
-        </div>
-      );
+      side = bigPicture(data.picture.url, `Lesson picture · ${cur.code}`, `${picLeft} min left on screen`);
     } else {
       const blocks = [];
       if (phase === "open") {
@@ -474,7 +572,7 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
-        <div className={`main${picOn ? ` pic-${opts.pic}` : ""}`}>
+        <div className={`main${picOn ? ` pic-${opts.pic}` : ""}${featureImage ? " pic-feature" : ""}`}>
           {picOn && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
         </div>
         {footer(left <= setup.nextAdvance)}

@@ -12,7 +12,7 @@ export const FIXTURE: RawInputs = {
     ["Week 1                       Brampton Christian School                      38 weeks left!"],
     [],
     ['Two short verses to remember for life. This is what He promises His followers: ~"God is our refuge and strength, a very present help in trouble." Psalm 46:1'],
-    [],
+    ["", "", "Pray for Albania"],
     ["", "FALSE", "UNSCRAMBLE for a treat: TNOMISNEPEO ___ ___ ___ ___ ___ ___ ___ ___ ___ ___ ___", "FALSE"],
     ["", "", "Plans for Thursday, Sep 10, 2026...    -660--871--220--820--290-", "1"],
     ["10:00 AM", "FALSE", "Math 7A (22) 202 (J003) Today we practice solving equations and using properties of operations. How do properties help solve equations faster? - Complete NS7-3: p. 7 problems. - Complete NS7-4: p. 8 problems. Reminders: Test on Unit 1 (Number Sense) on Thu Sep 17; finish last day's work.", "AB1 & B2", "", "1"],
@@ -28,7 +28,7 @@ export const FIXTURE: RawInputs = {
     ["", "", "Other Subjects/Reminders: Math Challenge Question (treat for FIRST correct answer in; max 1 win/week): Simplify: (5p + 6)(5p - 6)"],
   ],
   displayD: [[], [], [], [], [], [], [], [], ['=HYPERLINK("https://www.youtube.com/watch?v=dQw4w9WgXcQ","▶")'], [], ['=HYPERLINK("https://www.youtube.com/watch?v=dQw4w9WgXcQ","▶")']],
-  displayC: [],
+  displayC: [[], [], [], [], [], ['=HYPERLINK("https://prayercast.com/albania.html","Pray for Albania")']],
   setup: [
     [],
     ["", "School", "Brampton Christian School"],

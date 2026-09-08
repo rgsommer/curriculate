@@ -148,6 +148,9 @@
 - `frontend/src/app/api/daily/route.ts` — reads + parses the sheet; in-memory copy (`lib/daily/cache.ts`) re-read after 2 min or after a ping; optional `DAILY_ACCESS_KEY`
 - `frontend/src/app/api/daily/ping/route.ts` — `?key=DAILY_PING_KEY`; the sheet's Apps Script on-edit trigger calls it so edits show within ~10 s
 - Page polls every 10 s; bottom-edge time scrubber previews any time of day and snaps back to live after 45 s
+- A header cell starting with "Pray" (with its hyperlink) shows in the bottom bar as a link, or as a small enlarging player when it points at a video
+- `/daily?debug=1` shows exactly what the board received from the sheet — first stop when something in the sheet is not appearing
+- A picture in the feature cell E1 (`=IMAGE()`, hyperlink, or image URL — E1 is read as both value and formula) takes the large side of the screen while the sheet shows it; Drive links are rewritten for `<img>`, and an image that fails to load falls back to the normal panel
 - `frontend/src/lib/daily/sheets.ts` — Sheets API via service account JSON (`DAILY_SHEETS_SERVICE_ACCOUNT`) or `DAILY_SHEETS_API_KEY`
 - `frontend/src/lib/daily/parse.ts` — pure parser (DisplayAI rows, status text, points line, Setup labels)
 - `frontend/src/app/daily/README.md` — env vars, ranges read, timing rules, test URLs

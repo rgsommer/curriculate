@@ -41,7 +41,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `DisplayAI!C1:D40` as formulas | `HYPERLINK()` targets in the lesson or status cells → the video tile. |
 | `Setup!A1:D20` | Timing rules, matched by the label text in column B (see below). |
 | `Setup!U1:AA8` | The feature-slot table; the **Lesson Pic** column gives the picture URL (row 4, `=IMAGE()` or a URL) and its on-screen window in seconds (row 7). |
-| `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message) — the sheet's own priority logic is reused as-is. |
+| `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
 Lesson cells are split using the shape the AI text already has:
 `Subject Sec (n) Room (Code) Today we … Question? - bullet - bullet Reminders: …`
@@ -93,12 +93,65 @@ Caveat: the copy is per server instance. With one classroom screen polling, the 
 warm instance answers every poll, so a ping is seen immediately; if two instances were
 ever in play the 2-minute fallback still bounds the lag.
 
+## Pictures
+
+Two things can put a picture on the board, and both take a large share of the screen
+rather than sitting in the side panel:
+
+1. **The feature cell E1.** Whenever the sheet's own logic puts a picture there — an
+   `=IMAGE("…")`, a `=HYPERLINK()` to one, or a bare image URL — the board gives it the
+   right-hand side at nearly two thirds of the width, shrinks the lesson text to suit,
+   and captions it "On screen now". It stays up as long as E1 holds it, so the sheet
+   decides the timing. On the greeting, between-class and dismissal screens the picture
+   shares the screen with that screen's text.
+2. **The Lesson Pic slot** in Setup, which shows for the seconds set in row 7 of that
+   column (600 by default) from the start of the period. E1 wins when both are present.
+
+Google Drive share links are rewritten to a form an `<img>` can load
+(`lh3.googleusercontent.com/d/<id>`); the file still has to be shared so that anyone
+with the link can view it. A picture that fails to load is dropped and the normal
+side panel comes back, so a bad link never leaves a broken frame on the projector.
+`?pic=off` hides pictures entirely; `?pic=left` puts them on the left.
+
+## The "Pray for …" line
+
+A header cell (column A or C, above the first time row) that starts with **Pray** is
+picked up with its hyperlink. It shows in the bottom bar: as a link the teacher can
+click when it points at a page such as Prayercast, or as a small player that enlarges
+when it points at a video (YouTube or Drive), the same behaviour as the lesson video.
+
+## Checking what the board sees
+
+`/daily?debug=1` lists exactly what came back from the sheet: the E1 picture and text,
+the Pray line and its link, the lesson picture, period counts, points, and whether the
+copy is stale. It also renders each picture it found and says whether it **loaded** or
+**did NOT load**, which separates "the sheet never sent a URL" from "the URL is there but
+the file is not shared". Use it first whenever something in the sheet is not showing.
+
+A picture reaches the board only if the **cell itself** holds it — `=IMAGE("…")`, a
+`=HYPERLINK()` to an image, an image URL as text, or Insert › Image › **Image in cell**.
+A floating image placed *over* the grid is invisible to the sheet API and can never be
+read. If E1's formula is `=IMAGE(SomeCell)` or plain `=SomeCell`, the board follows that
+one reference; a longer chain (an `IF` that returns a cell holding an image) does not
+work, and in Sheets it does not render an image in E1 either.
+
 ## Time scrubber
 
 The slim strip along the bottom edge is a slider. Drag it to preview any time of the
 day; the board outlines itself in yellow while previewing and shows "Previewing 11:47".
 It snaps back to the live clock 45 s after the last touch, or on "Back to now", so the
 projector cannot be left on a preview.
+
+Its range runs from 90 minutes before the first class (or 10 minutes before the
+announcements window in Setup, whichever is earlier) to 30 minutes after the last
+period, or 45 minutes past the dismissal time — so arrival, announcements and
+dismissal can all be previewed, not just the teaching periods.
+
+One limit worth knowing: scrubbing moves **the board's** clock, not the sheet's. Cells
+whose own formulas depend on `NOW()` — E1 above all — still hold whatever they hold at
+this moment, so scrubbing back to 8:55 shows the board's 8:55 layout with E1's *current*
+content. What the board gates itself (which period, the phase blocks, the lesson-picture
+window, the dismissal screen) does follow the scrubber.
 
 ## Testing
 
