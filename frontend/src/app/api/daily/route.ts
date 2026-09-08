@@ -43,13 +43,21 @@ export async function GET(req: Request) {
   try {
     // Core content plus the optional extras, in parallel. A renamed tab in the
     // optional ranges must not take the whole board down, so those degrade to empty.
-    const [core, featureRes, formulaRes] = await Promise.all([
+    const [core, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes] = await Promise.all([
       readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!U1:AA8"]),
       readRanges(["Display!E1", "DisplayAI!E1"]).catch(() => [] as string[][][]),
       readRanges(
         ["DisplayAI!D1:D40", "DisplayAI!C1:C40", "Setup!U4:AA4", "Display!E1", "DisplayAI!E1"],
         "FORMULA"
       ).catch(() => [] as string[][][]),
+      // Ingredients for the sheet's own display rules. Each tab is read on its
+      // own: one missing tab must not take the rest of the board down.
+      readRanges(["Poems!F1:J3"]).catch(() => [] as string[][][]),
+      readRanges(["Poems!F1:J3"], "FORMULA").catch(() => [] as string[][][]),
+      readRanges(["VerticalAi!D1:J200"]).catch(() => [] as string[][][]),
+      readRanges(["Riddles!D1:D400"]).catch(() => [] as string[][][]),
+      readRanges(["Master!B1:B2"]).catch(() => [] as string[][][]),
+      readRanges(["Points!A3:BZ3", "Points!A46:BZ46"]).catch(() => [] as string[][][]),
     ]);
     const [display, setup, slots] = core;
     const [featA, featB] = featureRes;
@@ -74,7 +82,16 @@ export async function GET(req: Request) {
       }
     }
 
-    const body = buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature, featureFormula });
+    const body = buildPayload({
+      display, displayD, displayC, setup, slots, slotFormulas, feature, featureFormula,
+      poems: poemsRes[0] || [],
+      poemFormulas: poemFormulaRes[0] || [],
+      vertical: verticalRes[0] || [],
+      riddles: riddlesRes[0] || [],
+      master: masterRes[0] || [],
+      pointsRow3: ((pointsRes[0] || [])[0]) || [],
+      pointsRow46: ((pointsRes[1] || [])[0]) || [],
+    });
     c.body = body;
     c.at = Date.now();
     c.dirty = false;

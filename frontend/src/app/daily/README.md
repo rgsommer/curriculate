@@ -93,6 +93,31 @@ Caveat: the copy is per server instance. With one classroom screen polling, the 
 warm instance answers every poll, so a ping is seen immediately; if two instances were
 ever in play the 2-minute fallback still bounds the lag.
 
+## The board evaluates the sheet's display rules itself
+
+Three cells on the Display tab are computed from `NOW()`: the daily-update text,
+the feature cell **E1**, and the **D-column status**. Reading their results would
+pin the board to the sheet's clock — the scrubber could not move them, and a
+picture in E1 would never arrive. So the board reads the *ingredients* and applies
+the same rules against its own clock (`evaluateFeature`, `evaluateDailyText`,
+`evaluateStatus` in `lib/daily/parse.ts`).
+
+| Rule | Order it follows |
+| --- | --- |
+| **E1 feature** | poem window (Setup C12–D12) → manual message when B7 is ticked → lesson picture when D7 is ticked → the Setup slot table by priority 1 to 6 → the riddle before the window → nothing |
+| **Daily text** | the weekday's poem inside the window, else the VerticalAi row keyed 1 for that weekday — first two lines once past A11, in full before that; "Skip 7A " and friends stripped |
+| **D-column status** | blank outside the period, `REC` for Lunch and Recess, blank for rows starting `*`, else the class letter plus four flags from Points row 46, dashed (B2 off) inside the Setup D16 grace window at each end |
+
+Extra ranges read for this: `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D400`,
+`Master!B1:B2`, `Points!A3:BZ3`, `Points!A46:BZ46`. Each is read separately, so a
+renamed or missing tab degrades that one rule instead of blanking the board.
+
+**One deliberate difference from the sheet.** The slot test in E1 is `<>""`, and an
+`=IMAGE()` cell has no text value at all — so the sheet skips its own picture slots
+and E1 renders nothing. Here a cell holding a picture counts as filled. That is why
+a flag placed in the Lesson Pic slot shows on the board even though it never showed
+in E1. `?debug=1` names the rule that fired ("E1 rule used").
+
 ## Pictures
 
 Two things can put a picture on the board, and both take a large share of the screen
@@ -112,6 +137,9 @@ Google Drive share links are rewritten to a form an `<img>` can load
 with the link can view it. A picture that fails to load is dropped and the normal
 side panel comes back, so a bad link never leaves a broken frame on the projector.
 `?pic=off` hides pictures entirely; `?pic=left` puts them on the left.
+
+The heading of the next class — subject, room and start time — sits under the period
+line on every screen, so the room always knows what is coming.
 
 ## The "Pray for …" line
 
@@ -147,11 +175,10 @@ announcements window in Setup, whichever is earlier) to 30 minutes after the las
 period, or 45 minutes past the dismissal time — so arrival, announcements and
 dismissal can all be previewed, not just the teaching periods.
 
-One limit worth knowing: scrubbing moves **the board's** clock, not the sheet's. Cells
-whose own formulas depend on `NOW()` — E1 above all — still hold whatever they hold at
-this moment, so scrubbing back to 8:55 shows the board's 8:55 layout with E1's *current*
-content. What the board gates itself (which period, the phase blocks, the lesson-picture
-window, the dismissal screen) does follow the scrubber.
+Because the board evaluates the three `NOW()` rules itself (see above), the scrubber
+moves those too: at any previewed time the feature cell, the daily text and the status
+chips show what they *would* show then. Cells the board does not evaluate — anything
+else in the sheet computed from `NOW()` — still hold their current values.
 
 ## Testing
 

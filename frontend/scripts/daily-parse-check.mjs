@@ -66,6 +66,61 @@ check("refFromFormula plain ref", P.refFromFormula("=Setup!$Z$4") === "Setup!$Z$
 check("refFromFormula ignores literal", P.refFromFormula('=IMAGE("https://x/y.png")') === "");
 check("refFromFormula ignores IF chain", P.refFromFormula("=if(B7,Setup!V4,Setup!Z4)") === "", P.refFromFormula("=if(B7,Setup!V4,Setup!Z4)"));
 
+// ---- the sheet's own display rules, evaluated against the board's clock ----
+const S = (over) => ({ ...P.EMPTY_SOURCES, ...over });
+const slot = (priority, name, value, formula) => ({ priority, name, value: value || "", formula: formula || "" });
+
+const poemWin = S({ windowStart: 750, windowEnd: 800, poemF3: "Poem of the week" });
+check("feature: poem inside the window", P.evaluateFeature(poemWin, 760).text === "Poem of the week", P.evaluateFeature(poemWin, 760));
+check("feature: nothing outside the window", P.evaluateFeature(poemWin, 700).text === "", P.evaluateFeature(poemWin, 700));
+
+const b7 = S({ b7: true, slots: [slot(6, "Vocab"), slot(1, "Verse", "Dress-down Friday")] });
+check("feature: B7 takes Setup!V4", P.evaluateFeature(b7, 600).text === "Dress-down Friday", P.evaluateFeature(b7, 600));
+
+const d7 = S({ d7: true, slots: [0, 1, 2, 3, 4].map(() => slot(null, "")).concat([slot(2, "Lesson Pic", "", '=IMAGE("https://x/flag.png")')]) });
+const d7r = P.evaluateFeature(d7, 600);
+check("feature: D7 takes the lesson picture", d7r.image === "https://x/flag.png" && d7r.text === "", d7r);
+check("feature: D7 with an empty Z4 says No class", P.evaluateFeature(S({ d7: true }), 600).text === "No class");
+
+const byPriority = S({ slots: [slot(6, "Vocab", "vocab word"), slot(1, "Verse", "verse text"), slot(3, "Homework", "hw")] });
+check("feature: priority 1 wins", P.evaluateFeature(byPriority, 600).text === "verse text", P.evaluateFeature(byPriority, 600));
+const dashSkipped = S({ slots: [slot(1, "Verse", ""), slot(2, "Lesson Pic", "-"), slot(3, "Gestation", "Week 15")] });
+check("feature: empty and \"-\" slots are skipped", P.evaluateFeature(dashSkipped, 600).text === "Week 15", P.evaluateFeature(dashSkipped, 600));
+
+// the difference from the sheet: an =IMAGE() cell has no text value, so the
+// sheet's own <>"" test skips it. Here it counts as filled.
+const pictureSlot = S({ slots: [slot(1, "Verse", "", '=IMAGE("https://x/canada.png")'), slot(2, "Other", "later text")] });
+const ps = P.evaluateFeature(pictureSlot, 600);
+check("feature: a picture slot counts as filled", ps.image === "https://x/canada.png" && ps.source.startsWith("Verse"), ps);
+
+const riddle = S({ windowStart: 750, riddle: "Why did the horse...?" });
+check("feature: riddle before the window", P.evaluateFeature(riddle, 600).text === "Why did the horse...?", P.evaluateFeature(riddle, 600));
+check("feature: offset hours shift the window", P.evaluateFeature(S({ windowStart: 750, windowEnd: 800, offsetHours: 1, poemF3: "P" }), 810).text === "P");
+
+const daily = S({ a11: 600, verticalRow: ["1", "", "mon", "tue", "wed", "line one\nline two\nline three", "fri"] });
+check("daily: full text before the first period", P.evaluateDailyText(daily, 500, 5) === "line one\nline two\nline three", P.evaluateDailyText(daily, 500, 5));
+check("daily: first two lines once started", P.evaluateDailyText(daily, 700, 5) === "line one\nline two", P.evaluateDailyText(daily, 700, 5));
+check("daily: Skip 7A is stripped", P.evaluateDailyText(S({ verticalRow: ["1", "", "", "", "", "Skip 7A Bring your book", ""] }), 500, 5) === "Bring your book");
+check("daily: weekday picks the column", P.evaluateDailyText(S({ verticalRow: ["1", "", "monday", "tuesday", "", "", ""] }), 500, 2) === "monday", P.evaluateDailyText(S({ verticalRow: ["1", "", "monday", "tuesday", "", "", ""] }), 500, 2));
+const row3 = []; const row46 = [];
+const put = (arr, col1, v) => { arr[col1 - 1] = v; };
+put(row3, 4, "7A"); put(row3, 17, "7B"); put(row3, 30, "7C"); put(row3, 43, "8A"); put(row3, 56, "8B");
+[13, 26, 39, 52, 65].forEach((base, i) => ["1", "1", "1", "0"].forEach((d, k) => put(row46, base + k, i === 0 ? ["1", "1", "0", "0"][k] : d)));
+const pc = P.buildPointsClasses(row3, row46);
+check("points classes built in formula order", pc.map((c) => c.name).join() === "7B,7C,7A,8A,8B", pc.map((c) => c.name));
+check("points class letters", pc.map((c) => c.letter).join() === "B,C,A,A,B", pc.map((c) => c.letter));
+const statusPeriod = { start: 600, end: 660, text: "Math 7A (22) 202 (J003) Today we..." };
+check("status: empty outside the period", P.evaluateStatus(pc, statusPeriod, 700, 15) === "");
+check("status: REC for lunch", P.evaluateStatus(pc, { start: 600, end: 660, text: "Lunch" }, 610, 15) === "REC");
+check("status: * rows print nothing", P.evaluateStatus(pc, { start: 600, end: 660, text: "*hidden" }, 610, 15) === "");
+// 7A digits are 1,1,0,0 -> mid window prints d1 d2 d4 d3 = 1 1 0 0 -> "B1 & B2"
+check("status: mid window uses all four flags", P.evaluateStatus(pc, statusPeriod, 630, 15) === "AB1 & B2", P.evaluateStatus(pc, statusPeriod, 630, 15));
+// inside the grace window B2 is forced off: d1 0 d4 d3 = 1 0 0 0
+check("status: grace window forces B2 off", P.evaluateStatus(pc, statusPeriod, 605, 15) === "A-1000", P.evaluateStatus(pc, statusPeriod, 605, 15));
+check("status: unknown class prints nothing", P.evaluateStatus(pc, { start: 600, end: 660, text: "Assembly" }, 630, 15) === "");
+
+check("daily: poem inside the window", P.evaluateDailyText(S({ windowStart: 750, windowEnd: 800, poemRow: ["mon", "tue", "wed", "thu", "fri"] }), 760, 5) === "thu");
+
 // ---- whole payload from a Thursday-shaped grid ----
 const display = [
   ["Good morning, Thursday workers!", "", "", "0"],

@@ -16,6 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
@@ -62,9 +63,9 @@ function parseStatus(raw) {
 
 /* ---------- small pieces ---------- */
 
-function Chips({ period, left, setup }) {
+function Chips({ period, left, setup, status }) {
   if (!period) return null;
-  const st = parseStatus(period.status);
+  const st = parseStatus(status || period.status);
   if (period.duty) return st && st.rec ? <div className="points"><span className="chip rec">REC</span></div> : null;
   const items = [];
   if (st) {
@@ -306,6 +307,19 @@ export default function DailyPage() {
   const verse = meta.verse.replace(/^.*?~/, "").trim() || meta.verse;
   const challenge = (meta.other.match(/Math Challenge Question[^:]*:\s*(.*)$/) || [, ""])[1];
   const lastClass = classes[classes.length - 1];
+
+  // The sheet computes its display cells from NOW(); the board recomputes the
+  // same rules from its own clock, so the scrubber moves them too.
+  const weekday = new Date().getDay() + 1; // Sheets counts Sunday as 1
+  const sources = data.sources || EMPTY_SOURCES;
+  const evaluated = evaluateFeature(sources, t);
+  const dailyText = evaluateDailyText(sources, t, weekday);
+  const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
+  // The D-column rule, recomputed from the board's clock so the grace window
+  // and the chips move with the scrubber too.
+  const statusOf = (p) => (sources.pointsClasses.length
+    ? evaluateStatus(sources.pointsClasses, p, t, setup.graceMin) || p.status
+    : p.status);
   // The scrubber has to reach the whole school day, not just the teaching periods:
   // arrival and the announcements window come before the first class, and the
   // dismissal screen can run past the last one.
@@ -323,8 +337,11 @@ export default function DailyPage() {
       <div className="top">
         <div>
           <div className="title"><span className="subj">{title}</span>{chips}</div>
-          {period && <Chips period={period} left={period.left} setup={setup} />}
+          {period && <Chips period={period} left={period.left} setup={setup} status={statusOf(period)} />}
           <div className="when">{when}</div>
+          {peekNext && (
+            <div className="peek">Next: <b>{peekNext.subj}</b> · {peekNext.room} · {fmt(peekNext.start)}</div>
+          )}
         </div>
         {period && !period.duty ? <VideoTile url={period.video} big={vidBig} setBig={setVidBig} /> : <span />}
         <div className={`clockbox${red ? " red" : ""}`}>
@@ -378,9 +395,12 @@ export default function DailyPage() {
       {classes.map((p) => [<span key={`t${p.start}`} className="t">{fmt(p.start)}</span>, <span key={`s${p.start}`}>{p.subj} · {p.room}</span>])}
     </div>
   );
-  const featureBlock = () => (meta.feature
-    ? <div className="block feature quiet"><p>{meta.feature}</p></div>
+  const featureText = evaluated.text || meta.feature;
+  const featureBlock = () => (featureText
+    ? <div className="block feature quiet"><p>{featureText.replace(/^Q:\s*/, "")}</p></div>
     : meta.riddle ? <div className="block quiet"><h3>Riddle</h3><p>{meta.riddle.replace(/^Q:\s*/, "")}</p></div> : null);
+  const dailyBlock = () => (dailyText
+    ? <div className="block navy"><h3>Today</h3><p className="daily">{dailyText}</p></div> : null);
 
   // A picture in E1 outranks everything else on the right of the screen: while the
   // sheet is showing one, the board gives it the large slot.
@@ -388,7 +408,8 @@ export default function DailyPage() {
   // leave a broken frame on the projector: the board drops it and shows the panel.
   const markBad = (url) => setBadImages((b) => (b[url] ? b : { ...b, [url]: true }));
   const usable = (url) => !!url && !badImages[url];
-  const featureImage = opts.pic === "off" || !usable(meta.featureImage) ? "" : meta.featureImage;
+  const evaluatedImage = evaluated.image || meta.featureImage;
+  const featureImage = opts.pic === "off" || !usable(evaluatedImage) ? "" : evaluatedImage;
   const bigPicture = (url, caption, note) => (
     <div className="picture">
       <div className="frame">
@@ -418,8 +439,18 @@ export default function DailyPage() {
               {row("fetched", data.fetchedAt)}
               {row("version", data.version)}
               {row("stale", data.stale ? `yes — ${data.error || ""}` : "no")}
-              {row("E1 picture", meta.featureImage)}
-              {row("E1 text", meta.feature)}
+              {row("E1 picture (evaluated)", evaluated.image)}
+              {row("E1 text (evaluated)", evaluated.text)}
+              {row("E1 rule used", evaluated.source)}
+              {row("daily text", dailyText)}
+              {row("poem window", `${sources.windowStart == null ? "—" : fmt(sources.windowStart)} to ${sources.windowEnd == null ? "—" : fmt(sources.windowEnd)}`)}
+              {row("B7 / D7", `${sources.b7} / ${sources.d7}`)}
+              {row("status (evaluated)", cur ? statusOf(cur) : "")}
+              {row("status (as read)", cur ? cur.status : "")}
+              {row("points classes", sources.pointsClasses.map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
+              {row("slots", sources.slots.filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}
+              {row("E1 picture (as read)", meta.featureImage)}
+              {row("E1 text (as read)", meta.feature)}
               {row("pray text", meta.pray && meta.pray.text)}
               {row("pray link", meta.pray && meta.pray.url)}
               {row("lesson picture", data.picture && data.picture.url)}
@@ -432,7 +463,7 @@ export default function DailyPage() {
             </tbody>
           </table>
           <div className="shots">
-            {[["E1 picture", meta.featureImage], ["Lesson picture", data.picture && data.picture.url]]
+            {[["E1 picture", evaluated.image || meta.featureImage], ["Lesson picture", data.picture && data.picture.url]]
               .filter(([, url]) => url)
               .map(([label, url]) => (
                 <figure key={label}>
@@ -440,7 +471,7 @@ export default function DailyPage() {
                   <figcaption>{label} — {badImages[url] ? "did NOT load" : "loaded"}</figcaption>
                 </figure>
               ))}
-            {!meta.featureImage && !(data.picture && data.picture.url) && <p>No picture URL came back from the sheet.</p>}
+            {!evaluated.image && !meta.featureImage && !(data.picture && data.picture.url) && <p>No picture URL came back from the sheet.</p>}
           </div>
           <p>A picture only reaches this page if the cell itself holds it, for example
             <code>=IMAGE(&quot;https://…&quot;)</code>. An image inserted over the grid
@@ -472,6 +503,7 @@ export default function DailyPage() {
             <p className="question">{verse}</p>
             {agenda()}
             {featureImage ? null : featureBlock()}
+            {dailyBlock()}
           </div>
         )}
         {footer(false)}
@@ -556,10 +588,11 @@ export default function DailyPage() {
       }
       const f = featureBlock();
       if (f) blocks.push(<div key="f">{f}</div>);
+      const d = dailyBlock();
+      if (d) blocks.push(<div key="d">{d}</div>);
       if (left <= setup.remindersAdvance && cur.remind) blocks.push(<div key="r" className="block navy"><h3>Reminders</h3><p>{cur.remind}</p></div>);
       if (left <= setup.homeworkAt) blocks.push(<div key="h" className="block alert"><h3>Write in your agenda</h3><p>{cur.assign.length ? cur.assign.join("; ") : cur.remind}</p></div>);
       else if (phase !== "open" && cur.assign.length) blocks.push(<div key="a" className="block sun"><h3>Assign</h3>{list(cur.assign)}</div>);
-      if (left <= setup.nextAdvance && nx) blocks.push(<div key="n" className="block quiet"><h3>After this</h3><p>{nx.subj} · {nx.room} · {fmt(nx.start)}</p></div>);
       if (isLast && left <= setup.nextAdvance && meta.headout.length) blocks.push(<div key="x" className="block alert"><h3>Before you head out</h3>{list(meta.headout)}</div>);
       side = <div className="panel">{blocks}</div>;
     }
