@@ -326,6 +326,27 @@ export default function DailyPage() {
   // What actually happens at the bell, which is not always the next class: the
   // next row of the timetable, lunch and recess included. Used for the red
   // "what's next" line in the last few minutes of a period.
+  // Setup's "For Dismissal Messages" block: the times the end-of-day material
+  // comes forward (lunch, lunch recess, dismissal) and how far ahead of each.
+  const dismissal = data.dismissal || { advanceMin: 5, times: [] };
+  const waiting = data.waiting || [];
+  // When the teaching day ends. The sheet says so in three places and any one of
+  // them may be blank, so the first that is set wins: the DisplayAI dismissal
+  // row, Setup's "Show Dismissal List" time, or the Dismissal entry in the
+  // message block. Without this the board fell through to "No classes today"
+  // once the last row had passed.
+  const dismissalRow = P.find((p) => /dismiss/i.test(`${p.subj || ""} ${p.text || ""}`));
+  const endOfDayAt = [
+    dismissalRow ? dismissalRow.start : null,
+    setup.dismissalAt,
+    (dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at,
+  ].find((x) => x != null) ?? null;
+  // The last few minutes of the day: E1 gives its side of the screen over to the
+  // dismissal package. The nation of the day comes forward then and before each
+  // of the sheet's other message times as well.
+  const endOfDaySoon = endOfDayAt != null && t >= endOfDayAt - dismissal.advanceMin && t < endOfDayAt;
+  const msgSoon = endOfDaySoon
+    || !!dismissal.times.find((m) => t >= m.at - dismissal.advanceMin && t < m.at);
   const nextRow = P.find((p) => !p.empty && p.start >= (cur ? cur.end : t)) || null;
   const nextUp = nextRow
     ? {
@@ -398,9 +419,10 @@ export default function DailyPage() {
         </span>
       );
     }
+    const cls = `pray${msgSoon ? " pop" : ""}`;
     return pray.url
-      ? <a className="pray" href={pray.url} target="_blank" rel="noreferrer">{pray.text} ↗</a>
-      : <span className="pray nolink" title="No link found on this cell">{pray.text}</span>;
+      ? <a className={cls} href={pray.url} target="_blank" rel="noreferrer">{pray.text} ↗</a>
+      : <span className={`${cls} nolink`} title="No link found on this cell">{pray.text}</span>;
   };
   const footer = (showPuzzle) => (
     <>
@@ -439,6 +461,23 @@ export default function DailyPage() {
     : meta.riddle ? <div className="block quiet"><h3>Riddle</h3><p>{meta.riddle.replace(/^Q:\s*/, "")}</p></div> : null);
   const dailyBlock = () => (dailyText
     ? <div className="block navy"><h3>Today</h3><p className="daily">{dailyText}</p></div> : null);
+  // The end-of-day package that takes over the feature side: what is on
+  // tomorrow, the head-out list, and the Kiss & Ride names waiting outside.
+  const dismissalPanel = (withHeadout) => (
+    <div className="panel dismissalpanel">
+      {meta.tomorrow ? <div className="block sun"><h3>Tomorrow</h3><p>{meta.tomorrow}</p></div> : null}
+      {withHeadout && meta.headout.length > 0
+        ? <div className="block alert"><h3>Before you head out</h3>{list(meta.headout)}</div> : null}
+      {waiting.length > 0
+        ? (
+          <div className="block navy">
+            <h3>Kiss &amp; Ride · waiting</h3>
+            <ol className="waiting">{waiting.slice(0, 6).map((w, i) => <li key={i}>{w}</li>)}</ol>
+          </div>
+        ) : null}
+      {withHeadout ? null : featureBlock()}
+    </div>
+  );
 
   // A picture in E1 outranks everything else on the right of the screen: while the
   // sheet is showing one, the board gives it the large slot.
@@ -495,6 +534,12 @@ export default function DailyPage() {
               {row("picture seconds", setup.picSeconds)}
               {row("periods", `${P.length} rows, ${classes.length} classes`)}
               {row("now", `${fmt(t)} — ${cur ? cur.subj || "duty" : "no period"}`)}
+              {row("tomorrow", meta.tomorrow)}
+              {row("head out items", meta.headout.join(" | "))}
+              {row("blessing", meta.blessing)}
+              {row("end of day at", endOfDayAt == null ? "" : `${fmt(endOfDayAt)} (package from ${fmt(endOfDayAt - dismissal.advanceMin)})`)}
+              {row("dismissal messages", dismissal.times.map((m) => `${m.label} ${fmt(m.at)}`).join("  ") + `  · ${dismissal.advanceMin} min before`)}
+              {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
               {row("puzzle", meta.puzzle)}
               {row("riddle", meta.riddle)}
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
@@ -551,6 +596,29 @@ export default function DailyPage() {
         {footer(false)}
       </>
     );
+  } else if (endOfDayAt != null && t >= endOfDayAt && (!cur || cur.duty || cur.empty)) {
+    // Dismissal waits for the last class to finish. The dismissal time can fall
+    // inside the final period, and the class has to hold the screen to its very
+    // last minute rather than being pushed off early.
+    body = (
+      <>
+        {header({ title: "Dismissal", chips: null, when: `From ${fmt(endOfDayAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
+        <div className={`main pic-right endofday${featureImage ? " pic-feature" : ""}`}>
+          <div>
+            <p className="script">Well done, {(meta.greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
+            {verse ? <p className="question">{verse}</p> : null}
+            {meta.headout.length > 0 && (
+              <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
+                <h3>Before you head out</h3>{list(meta.headout)}
+              </div>
+            )}
+            {meta.blessing ? <p className="summary blessing">{meta.blessing}</p> : null}
+          </div>
+          {featureImage ? bigPicture(featureImage, "On screen now", "") : dismissalPanel(false)}
+        </div>
+        {footer(true)}
+      </>
+    );
   } else if (!classes.length) {
     // No class rows for today: every scrub position lands here, which can look
     // like the scrubber is dead. Say so instead.
@@ -581,26 +649,6 @@ export default function DailyPage() {
           </div>
         )}
         {footer(false)}
-      </>
-    );
-  } else if (setup.dismissalAt != null && t >= setup.dismissalAt && (!cur || cur.duty || cur.empty)) {
-    // Dismissal waits for the last class to finish. The dismissal time can fall
-    // inside the final period, and the class has to hold the screen to its very
-    // last minute rather than being pushed off early.
-    body = (
-      <>
-        {header({ title: "Dismissal", chips: null, when: `From ${fmt(setup.dismissalAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
-        {withPicture(
-          <div>
-            <p className="script">Well done, {(meta.greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
-            {meta.headout.length > 0 && (
-              <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
-                <h3>Before you head out</h3>{list(meta.headout)}
-              </div>
-            )}
-          </div>
-        )}
-        {footer(true)}
       </>
     );
   } else if (!cur || cur.duty || cur.empty) {
@@ -656,7 +704,11 @@ export default function DailyPage() {
     );
 
     let side;
-    if (featureImage) {
+    if (endOfDaySoon) {
+      // The last few minutes of the day: E1 gives its side of the screen over to
+      // the dismissal package.
+      side = dismissalPanel(true);
+    } else if (featureImage) {
       side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
     } else if (lessonPicOn) {
       const picLeft = Math.ceil((setup.picSeconds - elapsed * 60) / 60);
@@ -691,8 +743,8 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
-        <div className={`main${picOn ? ` pic-${opts.pic}` : ""}${featureImage ? " pic-feature" : ""}`}>
-          {picOn && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
+        <div className={`main${picOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !endOfDaySoon ? " pic-feature" : ""}`}>
+          {picOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
         </div>
         {footer(left <= setup.nextAdvance)}
       </>

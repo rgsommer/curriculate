@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readCellLinks, readRanges } from "@/lib/daily/sheets";
+import { listSheetTitles, readCellLinks, readRanges } from "@/lib/daily/sheets";
 import { buildPayload, refFromFormula, urlFromFormula, type Payload } from "@/lib/daily/parse";
 import { FIXTURE } from "@/lib/daily/fixture";
 import { dailyCache } from "@/lib/daily/cache";
@@ -43,8 +43,12 @@ export async function GET(req: Request) {
   try {
     // Core content plus the optional extras, in parallel. A renamed tab in the
     // optional ranges must not take the whole board down, so those degrade to empty.
-    const [core, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes, displayLinks] = await Promise.all([
-      readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!T1:AA8"]),
+    const [core, sheetTitles, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes, displayLinks] = await Promise.all([
+      readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!T1:AA8", "Setup!N1:Q8"]),
+      // The Kiss & Ride waiting list is on its own tab. Its name is looked up
+      // rather than hard-coded, so renaming the tab does not silently empty the
+      // dismissal panel.
+      listSheetTitles().catch(() => [] as string[]),
       readRanges(["Display!E1", "DisplayAI!E1"]).catch(() => [] as string[][][]),
       readRanges(
         ["DisplayAI!D1:D40", "DisplayAI!C1:C40", "Setup!T1:AA8", "Display!E1", "DisplayAI!E1"],
@@ -62,7 +66,12 @@ export async function GET(req: Request) {
       // API, so the grid itself has to be read for the "Pray for …" line.
       readCellLinks("DisplayAI!A1:F40").catch(() => [] as string[][]),
     ]);
-    const [display, setup, slotBlock] = core;
+    const [display, setup, slotBlock, setupMessages] = core;
+    // Kiss & Ride, KissRide, "Kiss & Ride 2026" — anything with both words.
+    const waitingTab = (sheetTitles || []).find((t) => /kiss\s*&?\s*ride/i.test(t)) || "";
+    const waiting = waitingTab
+      ? await readRanges([`'${waitingTab.replace(/'/g, "''")}'!A1:H60`]).then((r) => r[0] || []).catch(() => [] as string[][])
+      : ([] as string[][]);
     // The slot table spans T to AA; the E1 formula's HLOOKUP works on U to AA,
     // so the slots themselves drop the leading T column. The whole block is
     // carried through for ?debug=1, where its formulas can be inspected.
@@ -101,6 +110,8 @@ export async function GET(req: Request) {
       pointsRow3: ((pointsRes[0] || [])[0]) || [],
       pointsRow46: ((pointsRes[1] || [])[0]) || [],
       displayLinks: displayLinks || [],
+      setupMessages: setupMessages || [],
+      waiting,
       slotBlock: slotBlock || [],
       slotBlockFormulas: slotBlockFormulas || [],
     });

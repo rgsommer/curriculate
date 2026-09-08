@@ -45,6 +45,13 @@ export type Setup = {
   picSeconds: number;
 };
 
+/**
+ * Setup's "For Dismissal Messages" block: the times at which the end-of-day
+ * package comes up (lunch, lunch recess, dismissal) and how many minutes
+ * before each of them it starts showing.
+ */
+export type Dismissal = { advanceMin: number; times: { label: string; at: number }[] };
+
 export type Payload = {
   fetchedAt: string;
   meta: {
@@ -54,6 +61,8 @@ export type Payload = {
     puzzle: string;
     plans: string;
     headout: string[];
+    blessing: string;
+    tomorrow: string;
     riddle: string;
     feature: string;
     featureImage: string;
@@ -63,6 +72,10 @@ export type Payload = {
   periods: Period[];
   points: Points;
   setup: Setup;
+  // The end-of-day package: when the dismissal messages come up (Setup N/O/Q)
+  // and the Kiss & Ride waiting list they show alongside.
+  dismissal: Dismissal;
+  waiting: string[];
   picture: { url: string; seconds: number } | null;
   sources: Sources;
   // Setup!T1:AA8 as values and formulas, shown by ?debug=1 so the cells that
@@ -249,6 +262,70 @@ function num(s: string, d: number): number {
   return Number.isFinite(n) ? n : d;
 }
 
+/**
+ * The "Before you head out today…" cell (DisplayAI C15). Its shape varies —
+ * "1) … 2) …", "① … ② …", or " - " separated — and it ends with a blessing
+ * introduced by "receive this blessing:" or "before you go today…". The list
+ * and the blessing are wanted in different places on the board, so they are
+ * split apart here.
+ */
+export function splitHeadout(text: string): { items: string[]; blessing: string } {
+  const body = String(text || "").replace(/^[^:]{0,80}?:\s*/, "").trim();
+  const marker = body.match(/(?:and as you go,?\s*)?(?:receive this blessing:|before you go today[.\s]*)/i);
+  const listPart = marker ? body.slice(0, marker.index) : body;
+  const blessing = marker ? body.slice((marker.index || 0) + marker[0].length).trim() : "";
+  // Items are separated by "1)", "\u2460", or " - ". Whatever sits before the first
+  // of those is a lead-in ("Make sure \u2026"), not an item, so it is dropped.
+  const chunks = listPart.split(/(?:^|\s)(?:\d[).]|[\u2460-\u2473]|-)\s+/);
+  const items = (chunks.length > 1 ? chunks.slice(1) : chunks)
+    .map((x) => x.replace(/\s*(?:\.{2,}|\u2026)\s*$/, "").trim())
+    .filter((x) => x.length > 2);
+  return { items, blessing };
+}
+
+/**
+ * Setup's "For Dismissal Messages" block (columns N to Q): a label and a time
+ * per row — Lunch, Lunch Recess, Dismissal — and, in column Q, how many
+ * minutes before each of them the end-of-day package starts showing.
+ */
+export function parseDismissal(rows: string[][]): Dismissal {
+  const out: Dismissal = { advanceMin: 5, times: [] };
+  for (const r of rows || []) {
+    const label = (r[0] || "").trim();
+    const at = parseTime(r[1] || "");
+    if (label && at !== null && !/^for /i.test(label)) out.times.push({ label, at });
+    const q = (r[3] || "").trim();
+    if (/^\d+$/.test(q)) out.advanceMin = parseInt(q, 10);
+  }
+  out.times.sort((a, b) => a.at - b.at);
+  return out;
+}
+
+/**
+ * The Kiss & Ride tab's "Waiting (Recent First)…" column: the header cell is
+ * found by its text rather than a fixed address, then the names below it are
+ * taken until the column runs out.
+ */
+export function parseWaiting(rows: string[][]): string[] {
+  let hr = -1;
+  let hc = -1;
+  for (let r = 0; r < (rows || []).length && hr < 0; r += 1) {
+    for (let c = 0; c < (rows[r] || []).length; c += 1) {
+      if (/waiting/i.test((rows[r][c] || "").trim())) { hr = r; hc = c; break; }
+    }
+  }
+  if (hr < 0) return [];
+  const out: string[] = [];
+  let blanks = 0;
+  for (let r = hr + 1; r < rows.length && out.length < 12 && blanks < 3; r += 1) {
+    const v = ((rows[r] || [])[hc] || "").trim();
+    if (!v) { blanks += 1; continue; }
+    blanks = 0;
+    out.push(v);
+  }
+  return out;
+}
+
 /** Setup!A1:D20 — matched by the label in column B so row shuffles do not break it. */
 export function parseSetup(rows: string[][]): Setup {
   const out: Setup = { ...DEFAULT_SETUP };
@@ -293,6 +370,8 @@ export type RawInputs = {
   slotBlock?: string[][]; // Setup!T1:AA8 values, for the debug view
   slotBlockFormulas?: string[][]; // Setup!T1:AA8 formulas, for the debug view
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
+  setupMessages?: string[][]; // Setup!N1:Q8 — the "For Dismissal Messages" block
+  waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -306,6 +385,8 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     puzzle: "",
     plans: "",
     headout: [] as string[],
+    blessing: "",
+    tomorrow: "",
     riddle: "",
     feature: isErr(inp.feature || "") ? "" : (inp.feature || "").trim(),
     featureImage: "",
@@ -351,6 +432,13 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
         break;
       }
     }
+    // "Tomorrow: MAPS Roster Due" — merged across A:C, so any column may carry it.
+    if (!meta.tomorrow) {
+      for (let col = 0; col < 6; col += 1) {
+        const text = (r[col] || "").trim();
+        if (/^Tomorrow\s*:/i.test(text)) { meta.tomorrow = text.replace(/^Tomorrow\s*:\s*/i, "").trim(); break; }
+      }
+    }
     if (!meta.greeting && /^Good (morning|afternoon|evening)/i.test(a)) meta.greeting = a;
     else if (!meta.line && /^Week\s*\d+/i.test(a)) meta.line = a.split(/\s{2,}/).join(" · ");
     else if (!meta.verse && a.length > 40 && !/^Q:/.test(a)) meta.verse = a;
@@ -374,12 +462,10 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     const start = parseTime(r[0] || "");
     if (start === null) continue;
     const text = (r[2] || "").trim();
-    if (/^Before you head out/i.test(text)) {
-      meta.headout = text
-        .split(/\s-\s/)
-        .slice(1)
-        .map((s) => s.trim())
-        .filter(Boolean);
+    if (/^Before you head out/i.test(text) || /^Make sure\s*\.\.\./i.test(text)) {
+      const parsed = splitHeadout(text);
+      meta.headout = parsed.items;
+      meta.blessing = parsed.blessing;
       continue;
     }
     if (/^Other Subjects\/Reminders/i.test(text)) {
@@ -443,6 +529,8 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
 
   return {
     fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
+    dismissal: parseDismissal(inp.setupMessages || []),
+    waiting: parseWaiting(inp.waiting || []),
     sources: buildSources(inp),
     slotBlock: inp.slotBlock || [],
     slotBlockFormulas: inp.slotBlockFormulas || [],
