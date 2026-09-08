@@ -216,6 +216,21 @@ Parent 2 Name, Parent 2 Email, Parent 2 Edsby ID
   silently corrupt birthdays; the importer parses tolerantly.
 - The export reads **the sheet**, not a fresh Edsby pull, so manual corrections
   are included. Run **Update Roster** first if you want current data.
+- Re-running on the same day **replaces** that day's file rather than leaving a
+  second copy: Drive permits duplicate names in a folder, so otherwise every run
+  would add another.
+
+### Generating it automatically
+
+`Update Roster` does **not** write the CSV by default — every run would drop a
+file in Drive whether or not you wanted one. To make one click do both:
+
+```js
+CSV: { …, AUTO_EXPORT: true },
+```
+
+The run log then ends with the file's URL. The menu item still works either
+way, and both paths write the same file.
 
 ## What happens to students who leave
 

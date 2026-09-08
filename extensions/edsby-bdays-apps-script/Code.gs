@@ -57,6 +57,10 @@ const CONFIG = {
     HOUSE_COL: 0,
     // Optional Drive folder name for the generated file; blank = My Drive root.
     FOLDER: "",
+    // Set true to have "Update Roster" also write the CSV, so one click does
+    // both. Left false by default: every run would otherwise drop a file in
+    // Drive whether or not you needed one.
+    AUTO_EXPORT: false,
   },
   FETCH_CHUNK_SIZE: 20,          // calls per fetchAll batch
   FETCH_SLEEP_MS: 1500,          // sleep between batches
@@ -1295,6 +1299,13 @@ function populateBdays() {
     summary = syncStudents_(sheet, students, parentEmails);
   }
 
+  if (CONFIG.CSV.AUTO_EXPORT) {
+    const csv = createRosterCsvFile_(sheet);
+    Logger.log(csv.file
+      ? "Roster CSV " + (csv.replaced ? "updated" : "written") + ": " + csv.file.getUrl()
+      : "Roster CSV skipped — no rows with a name.");
+  }
+
   Logger.log("Bdays synced: " + summary.updated + " updated, " + summary.added +
     " added, " + summary.archived + " archived to \"" + CONFIG.ARCHIVE_SHEET + "\" — " +
     students.length + " students in Edsby, " +
@@ -2140,24 +2151,44 @@ const CSV_COLUMNS = [
   { header: "Parent 2 Edsby ID",      field: "parent2EdsbyId" },
 ];
 
+/**
+ * Build the CSV and put it in Drive. Returns { built, file } or { built } when
+ * there was nothing to export.
+ *
+ * Re-running on the same day reuses the file rather than creating "roster.csv",
+ * "roster.csv (1)", … — Drive allows duplicate names in a folder, so without
+ * this every run would leave another copy behind.
+ */
+function createRosterCsvFile_(sheet) {
+  const built = buildRosterCsv_(readSheetRows_(sheet));
+  if (built.rows === 0) return { built: built };
+
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
+  const name = CONFIG.CSV.FILENAME_PREFIX + "-" + stamp + ".csv";
+  const folder = CONFIG.CSV.FOLDER ? getFolderByName_(CONFIG.CSV.FOLDER) : DriveApp.getRootFolder();
+
+  const existing = folder.getFilesByName(name);
+  if (existing.hasNext()) {
+    const file = existing.next();
+    file.setContent(built.csv);
+    return { built: built, file: file, replaced: true };
+  }
+  return { built: built, file: folder.createFile(Utilities.newBlob(built.csv, "text/csv", name)) };
+}
+
 /** Menu action: build the CSV, save it to Drive, show a link. */
 function exportRosterCsv() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET);
   if (!sheet) throw new Error('Sheet "' + CONFIG.SHEET + '" not found.');
 
-  const built = buildRosterCsv_(readSheetRows_(sheet));
-  if (built.rows === 0) {
+  const result = createRosterCsvFile_(sheet);
+  if (!result.file) {
     SpreadsheetApp.getUi().alert(
       "Nothing to export — no rows with a name were found on \"" + CONFIG.SHEET + "\".");
     return;
   }
-
-  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd");
-  const name = CONFIG.CSV.FILENAME_PREFIX + "-" + stamp + ".csv";
-  const blob = Utilities.newBlob(built.csv, "text/csv", name);
-  const folder = CONFIG.CSV.FOLDER ? getFolderByName_(CONFIG.CSV.FOLDER) : DriveApp.getRootFolder();
-  const file = folder.createFile(blob);
+  const built = result.built;
 
   const skipped = built.skipped.length
     ? "<p>Skipped " + built.skipped.length + " row(s) with no name: " +
@@ -2172,8 +2203,10 @@ function exportRosterCsv() {
   SpreadsheetApp.getUi().showModalDialog(
     HtmlService.createHtmlOutput(
       "<div style=\"font:13px/1.5 system-ui,sans-serif\">" +
-      "<p><b>" + built.rows + " students</b> exported.</p>" + skipped + houseNote +
-      '<p><a href="' + file.getUrl() + '" target="_blank">Open ' + escapeHtml_(name) + "</a></p>" +
+      "<p><b>" + built.rows + " students</b> exported" +
+      (result.replaced ? " (replaced today's earlier file)" : "") + ".</p>" + skipped + houseNote +
+      '<p><a href="' + result.file.getUrl() + '" target="_blank">Open ' +
+      escapeHtml_(result.file.getName()) + "</a></p>" +
       "<p style=\"color:#666\">Upload it in Behaviours → Students → Import roster.</p></div>"
     ).setWidth(520).setHeight(300),
     "Roster CSV"
