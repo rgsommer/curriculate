@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, statusStyle } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
@@ -65,17 +65,23 @@ function parseStatus(raw) {
 
 function Chips({ period, left, setup, status }) {
   if (!period) return null;
-  const st = parseStatus(status || period.status);
-  if (period.duty) return st && st.rec ? <div className="points"><span className="chip rec">REC</span></div> : null;
-  const items = [];
-  if (st) {
-    items.push(<span key="l" className="lbl">Class {st.letter}{st.grace ? " –" : ""}</span>);
-    FLAGS.forEach((name, i) => {
-      const on = !!st.on[i];
-      const cls = on ? "on" : st.grace && i === 2 ? "grace" : "off";
-      items.push(<span key={name} className={`chip ${cls}`}>{name}</span>);
-    });
-  }
+  const raw = (status || period.status || "").trim();
+  const st = parseStatus(raw);
+  const style = statusStyle(raw);
+  // The code is a privilege signal the room reads by colour, so the badge
+  // carries the sheet's own conditional formatting rather than a plain label.
+  const badge = raw ? (
+    <span
+      key="badge"
+      className="statusbadge"
+      style={{ background: style ? style.bg : "var(--chip)", color: style ? style.fg : "var(--muted)", borderColor: style && style.border ? style.border : "transparent" }}
+      title={`Privilege code ${raw}`}
+    >
+      {raw}
+    </span>
+  ) : null;
+  if (period.duty) return badge ? <div className="points">{badge}</div> : null;
+  const items = [badge];
   items.push(<span key="w" className={`chip ${left > setup.washroomBefore ? "on" : "off"}`}>Washroom</span>);
   if (st && st.on && st.on[2] && !st.grace && period.elapsed <= setup.graceMin + setup.snacksB2Min) {
     items.push(<span key="s" className="chip on">Snacks</span>);

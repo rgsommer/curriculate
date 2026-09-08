@@ -112,6 +112,34 @@ Extra ranges read for this: `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D40
 `Master!B1:B2`, `Points!A3:BZ3`, `Points!A46:BZ46`. Each is read separately, so a
 renamed or missing tab degrades that one rule instead of blanking the board.
 
+### The status colours
+
+The status is a **privilege code**, and the sheet's conditional formatting on
+D9/D11/D13 is what makes it readable across the room. The board mirrors those
+rules (`statusStyle` in `parse.ts`) and shows the code as a coloured badge rather
+than a plain label — so `A-1000`, which has no text substitution and exists only to
+be coloured, still reads correctly as grey on green.
+
+First match wins, as in Sheets, so the specific rules come first:
+
+| Match | Colour |
+| --- | --- |
+| ends with `1` | magenta on black text |
+| ends with `4` (the morning marker) | brown, white text |
+| `REC` | green |
+| `All 3` | orange, red text |
+| `B1 & B2` | orange, white text |
+| `FD & B1` | dark green, red text |
+| `FD & B2` | cyan, red text |
+| `-FD Only` | no fill, red text |
+| `FD Only` | bright green, red text |
+| `B1` | dark green, white text |
+| `B2` | cyan |
+| `-000` | no fill, grey text |
+| `000` | bright green, grey text |
+
+If the sheet's rule order changes, reorder `STATUS_RULES` to match.
+
 **One deliberate difference from the sheet.** The slot test in E1 is `<>""`, and an
 `=IMAGE()` cell has no text value at all — so the sheet skips its own picture slots
 and E1 renders nothing. Here a cell holding a picture counts as filled. That is why

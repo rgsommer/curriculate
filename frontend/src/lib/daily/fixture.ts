@@ -62,11 +62,12 @@ export const FIXTURE: RawInputs = {
   slotFormulas: [["", "", "", "", "", '=IMAGE("https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Quebec_1759.jpg/960px-Quebec_1759.jpg")', ""]],
   // Points row 3 names the classes; row 46 holds four flags each (7A at M, 7B at
   // Z, 7C at AM, 8A at AZ, 8B at BM), which the D-column status rule reads.
-  pointsRow3: (() => { const r = []; r[3] = "7A"; r[16] = "7B"; r[29] = "7C"; r[42] = "8A"; r[55] = "8B"; return r; })(),
+  pointsRow3: (() => { const r: string[] = []; r[3] = "7A"; r[16] = "7B"; r[29] = "7C"; r[42] = "8A"; r[55] = "8B"; return r; })(),
   pointsRow46: (() => {
-    const r = [];
-    [[12, "1100"], [25, "0110"], [38, "1010"], [51, "1110"], [64, "0100"]].forEach(([base, digits]) => {
-      String(digits).split("").forEach((d, k) => { r[base + k] = d; });
+    const r: string[] = [];
+    const blocks: [number, string][] = [[12, "1100"], [25, "0110"], [38, "1010"], [51, "1110"], [64, "0100"]];
+    blocks.forEach(([base, digits]) => {
+      digits.split("").forEach((d, k) => { r[base + k] = d; });
     });
     return r;
   })(),

@@ -623,3 +623,41 @@ export function evaluateStatus(
   const label = (STATUS_LABELS.find(([digits]) => digits === code) || [, code])[1];
   return `${hit.letter}${mid ? "" : "-"}${label}`;
 }
+
+/* ------------------------------------------------------------------ *
+ * Status colours
+ *
+ * The D-column status is a privilege code, and the sheet's conditional
+ * formatting on D9/D11/D13 is what makes it readable across the room. The
+ * same rules are mirrored here so the board carries the colour rather than
+ * a plain label — including codes like "A-1000" that have no text label and
+ * exist only to be coloured.
+ *
+ * First match wins, exactly as Sheets applies them. Specific rules (a "-"
+ * prefix, a pair such as "B1 & B2") therefore come before the general ones.
+ * ------------------------------------------------------------------ */
+
+export type StatusStyle = { bg: string; fg: string; border?: string };
+
+const STATUS_RULES: { test: (s: string) => boolean; style: StatusStyle }[] = [
+  { test: (s) => /1$/.test(s), style: { bg: "#EE22EE", fg: "#111111" } },
+  { test: (s) => /4$/.test(s), style: { bg: "#A0522D", fg: "#FFFFFF" } },
+  { test: (s) => s.includes("REC"), style: { bg: "#5BE55B", fg: "#14532D" } },
+  { test: (s) => s.includes("All 3"), style: { bg: "#F0993E", fg: "#C4231A" } },
+  { test: (s) => s.includes("B1 & B2"), style: { bg: "#E8912D", fg: "#FFFFFF" } },
+  { test: (s) => s.includes("FD & B1"), style: { bg: "#3D6B2E", fg: "#FF6B5E" } },
+  { test: (s) => s.includes("FD & B2"), style: { bg: "#6FF0F0", fg: "#C4231A" } },
+  { test: (s) => s.includes("-FD Only"), style: { bg: "transparent", fg: "#C4231A", border: "#C4231A" } },
+  { test: (s) => s.includes("FD Only"), style: { bg: "#66EE55", fg: "#C4231A" } },
+  { test: (s) => s.includes("B1"), style: { bg: "#3D6B2E", fg: "#FFFFFF" } },
+  { test: (s) => s.includes("B2"), style: { bg: "#6FF0F0", fg: "#0B4A4A" } },
+  { test: (s) => s.includes("-000"), style: { bg: "transparent", fg: "#AFAFAF", border: "#CFCFCF" } },
+  { test: (s) => s.includes("000"), style: { bg: "#66EE55", fg: "#DCDCDC" } },
+];
+
+export function statusStyle(status: string): StatusStyle | null {
+  const s = String(status || "").trim();
+  if (!s) return null;
+  const hit = STATUS_RULES.find((r) => r.test(s));
+  return hit ? hit.style : null;
+}

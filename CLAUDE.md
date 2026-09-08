@@ -149,6 +149,7 @@
 - `frontend/src/app/api/daily/ping/route.ts` — `?key=DAILY_PING_KEY`; the sheet's Apps Script on-edit trigger calls it so edits show within ~10 s
 - Page polls every 10 s; bottom-edge time scrubber previews any time of day and snaps back to live after 45 s
 - The board evaluates the sheet's three NOW()-driven display rules itself (`evaluateFeature`, `evaluateDailyText`, `evaluateStatus` in `lib/daily/parse.ts`) instead of reading their results, so the scrubber moves them and an `=IMAGE()` slot is seen — the sheet's own `<>""` test skips picture slots, which is why E1 showed nothing
+- The status is a privilege code shown as a coloured badge mirroring the sheet's conditional formatting on D9/D11/D13 (`statusStyle`), so codes with no text label (e.g. `A-1000`) still read correctly
 - Persistent next-class peek line (subject, room, time) under the period line
 - A header cell starting with "Pray" (with its hyperlink) shows in the bottom bar as a link, or as a small enlarging player when it points at a video
 - `/daily?debug=1` shows exactly what the board received from the sheet — first stop when something in the sheet is not appearing

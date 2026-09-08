@@ -119,6 +119,17 @@ check("status: mid window uses all four flags", P.evaluateStatus(pc, statusPerio
 check("status: grace window forces B2 off", P.evaluateStatus(pc, statusPeriod, 605, 15) === "A-1000", P.evaluateStatus(pc, statusPeriod, 605, 15));
 check("status: unknown class prints nothing", P.evaluateStatus(pc, { start: 600, end: 660, text: "Assembly" }, 630, 15) === "");
 
+const style = (s) => { const st = P.statusStyle(s); return st ? st.bg : null; };
+check("colour: A-1000 is the grey-on-green no-privilege code", style("A-1000") === "#66EE55", P.statusStyle("A-1000"));
+check("colour: REC is green", style("REC") === "#5BE55B");
+check("colour: All 3 is orange", style("AAll 3") === "#F0993E");
+check("colour: B1 & B2 beats the bare B1 rule", style("AB1 & B2") === "#E8912D", P.statusStyle("AB1 & B2"));
+check("colour: -FD Only has no fill", style("A-FD Only") === "transparent", P.statusStyle("A-FD Only"));
+check("colour: FD Only is bright green", style("AFD Only") === "#66EE55");
+check("colour: a trailing 4 is the morning marker", style("AAll 3 4") === "#A0522D", P.statusStyle("AAll 3 4"));
+check("colour: a trailing 1 is magenta", style("AB1") === "#EE22EE", P.statusStyle("AB1"));
+check("colour: nothing for an empty status", P.statusStyle("") === null);
+
 check("daily: poem inside the window", P.evaluateDailyText(S({ windowStart: 750, windowEnd: 800, poemRow: ["mon", "tue", "wed", "thu", "fri"] }), 760, 5) === "thu");
 
 // ---- whole payload from a Thursday-shaped grid ----
