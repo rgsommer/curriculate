@@ -8,7 +8,7 @@ import type { RawInputs } from "./parse";
 export const FIXTURE: RawInputs = {
   display: [
     ["Good morning, Thursday workers!", "", "", "0"],
-    [],
+    [" Tomorrow: MAPS Roster Due"],
     ["Week 1                       Brampton Christian School                      38 weeks left!"],
     [],
     ['Two short verses to remember for life. This is what He promises His followers: ~"God is our refuge and strength, a very present help in trouble." Psalm 46:1'],
@@ -24,7 +24,7 @@ export const FIXTURE: RawInputs = {
     ["1:30 PM", "FALSE", "Math 7B (23) 207 (J002) Today we work on place value and order of operations. Why does the order you do things in change the answer? - Complete NS7-1: p. 2 problems. - Complete NS7-2: p. 5 problems. Reminders: Bring your textbook every class.", "B-B2"],
     ["2:30 PM", "FALSE", "Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2: What is geography? Why study geography? - Build Chapter 1 term list in notebook (16 terms) - Read p18-23 to prepare for textbook work Reminders: Finish Chapter 1 term list due NEXT class; TERMS QUIZ (matching) next class; link posted", "AAll 3"],
     ["3:25 PM", "FALSE", "Dismissal Rm212"],
-    ["4:00 PM", "", "Before you head out today, please: - Tidy your floor area and make sure your desk is neat. - If you've wronged someone, take a moment to say sorry and make it right."],
+    ["4:00 PM", "", "Before you head out today, please remember: 1) Tidy your floor area and make sure your desk is neat. 2) If you've wronged someone today, take a moment to say sorry and make it right.  And as you go, receive this blessing: \u201cNow may the God of peace equip you with everything good so that you may do His will.\u201d"],
     ["", "", "Other Subjects/Reminders: Math Challenge Question (treat for FIRST correct answer in; max 1 win/week): Simplify: (5p + 6)(5p - 6)"],
   ],
   displayD: [[], [], [], [], [], [], [], [], ['=HYPERLINK("https://www.youtube.com/watch?v=dQw4w9WgXcQ","▶")'], [], ['=HYPERLINK("https://www.youtube.com/watch?v=dQw4w9WgXcQ","▶")']],
@@ -101,4 +101,19 @@ export const FIXTURE: RawInputs = {
   riddles: [["Riddle for week 1"], ["Riddle for week 2"]],
   master: [["Week"], ["1"]],
   feature: "Q: A horse is on a 24 foot chain and wants an apple that is 26 feet away. How can the horse get to the apple?",
+  // Setup!N1:Q8 — when the end-of-day package comes up, and how far ahead.
+  setupMessages: [
+    ["For Dismissal Messages", "", "", ""],
+    ["Lunch", "12:00", "", "5"],
+    ["Lunch Recess", "12:20", "", "minutes before Dismissal list"],
+    ["Dismissal", "15:30", "", ""],
+  ],
+  // The Kiss & Ride tab, as its "Waiting (Recent First)" column is returned.
+  waiting: [
+    ["Kiss & Ride", "", ""],
+    ["Waiting (Recent First)", "", "Called"],
+    ["Nguyen, Mia (8A)", "", "3:26 PM"],
+    ["Okafor, Daniel (7B)", "", "3:27 PM"],
+    ["Silva, Ana (7A)", "", "3:28 PM"],
+  ],
 };

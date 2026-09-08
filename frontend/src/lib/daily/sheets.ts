@@ -100,6 +100,38 @@ export async function readRanges(ranges: string[], render: RenderOption = "FORMA
 }
 
 /**
+ * The spreadsheet's tab names.
+ *
+ * The Kiss & Ride list lives on its own tab, and the board should keep working
+ * if that tab is renamed, so it is found by name at read time rather than
+ * hard-coded into a range.
+ */
+export async function listSheetTitles(): Promise<string[]> {
+  const sheetId = process.env.DAILY_SHEET_ID || DEFAULT_SHEET_ID;
+  const params = new URLSearchParams();
+  params.set("fields", "sheets.properties.title");
+
+  const headers: Record<string, string> = { accept: "application/json" };
+  const sa = readServiceAccount();
+  if (sa) {
+    headers.Authorization = `Bearer ${await mintAccessToken(sa)}`;
+  } else if (process.env.DAILY_SHEETS_API_KEY) {
+    params.set("key", process.env.DAILY_SHEETS_API_KEY);
+  } else {
+    throw new Error("Set DAILY_SHEETS_SERVICE_ACCOUNT or DAILY_SHEETS_API_KEY");
+  }
+
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?${params}`;
+  const res = await fetch(url, { headers, cache: "no-store" });
+  const data = (await res.json().catch(() => ({}))) as {
+    sheets?: { properties?: { title?: string } }[];
+    error?: { message?: string };
+  };
+  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${data.error?.message || "request failed"}`);
+  return (data.sheets || []).map((sh) => sh.properties?.title || "").filter(Boolean);
+}
+
+/**
  * Links attached to cells, which the values API cannot see.
  *
  * A link in Sheets comes in two forms: a `=HYPERLINK()` formula, which shows up

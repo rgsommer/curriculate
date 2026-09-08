@@ -251,5 +251,44 @@ check("status carried", per[1].status === "A-FD & B1");
 check("setup values", out.setup.nextAdvance === 15 && out.setup.redAt === 3 && out.setup.homeworkAt === 1 && out.setup.blankFrom === 535 && out.setup.blankTo === 540 && out.setup.dismissalAt === 915 && out.setup.riddleUntil === 750 && out.setup.graceMin === 15 && out.setup.washroomBefore === 10 && out.setup.snacksB2Min === 5, out.setup);
 check("picture from slot", out.picture && out.picture.url === "https://example.com/lesson.png" && out.picture.seconds === 600, out.picture);
 
+
+// ---- the end-of-day package ----
+const c15 = "Before you head out today, please remember: 1) Tidy your floor area and make sure your desk is neat. 2) If you\u2019ve wronged someone today, take a moment to say sorry and make it right.  And as you go, receive this blessing: \u201cNow may the God of peace equip you with everything good.\u201d";
+const head = P.splitHeadout(c15);
+check("headout: numbered items", head.items.length === 2 && head.items[0].startsWith("Tidy your floor area"), head.items);
+check("headout: blessing split off", head.blessing.startsWith("\u201cNow may the God of peace"), head.blessing);
+const circled = P.splitHeadout("Make sure ... \u2460 your floor area and desk are tidy  \u2461 you hug a friend ... before you go today...  The grace of the Lord Jesus Christ be with you all.");
+check("headout: circled items", circled.items.length === 2 && circled.items[1] === "you hug a friend", circled.items);
+check("headout: blessing after 'before you go today'", circled.blessing.startsWith("The grace of the Lord"), circled.blessing);
+
+const dis = P.parseDismissal([
+  ["For Dismissal Messages", "", "", ""],
+  ["Lunch", "12:00", "", "5"],
+  ["Lunch Recess", "12:20", "", "minutes before Dismissal list"],
+  ["Dismissal", "15:30", "", ""],
+]);
+check("dismissal times", dis.times.length === 3 && dis.times[0].at === 720 && dis.times[2].at === 930, dis.times);
+check("dismissal advance minutes", dis.advanceMin === 5, dis.advanceMin);
+check("dismissal header row skipped", !dis.times.some((x) => /^for /i.test(x.label)), dis.times);
+check("dismissal defaults when the block is missing", P.parseDismissal([]).advanceMin === 5 && P.parseDismissal([]).times.length === 0);
+
+const wait = P.parseWaiting([
+  ["Kiss & Ride", "", ""],
+  ["Waiting (Recent First)", "", "Called"],
+  ["Nguyen, Mia (8A)", "", "3:26 PM"],
+  ["Okafor, Daniel (7B)", "", "3:27 PM"],
+  ["", "", ""],
+  ["", "", ""],
+  ["", "", ""],
+  ["Should not be read", "", ""],
+]);
+check("waiting list from the header cell", wait.length === 2 && wait[0] === "Nguyen, Mia (8A)", wait);
+check("waiting list empty without a header", P.parseWaiting([["Name", "Time"], ["A", "B"]]).length === 0);
+
+const tomorrowGrid = display.map((r) => r.slice());
+tomorrowGrid.splice(1, 0, [" Tomorrow: MAPS Roster Due"]);
+const withTomorrow = P.buildPayload({ display: tomorrowGrid, displayD: [], displayC: [], setup, slots, slotFormulas, feature: "" });
+check("meta tomorrow", withTomorrow.meta.tomorrow === "MAPS Roster Due", withTomorrow.meta.tomorrow);
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
