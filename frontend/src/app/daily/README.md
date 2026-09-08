@@ -179,10 +179,16 @@ line on every screen, so the room always knows what is coming.
 
 ## The "Pray for …" line
 
-A header cell (column A or C, above the first time row) that starts with **Pray** is
-picked up with its hyperlink. It shows in the bottom bar: as a link the teacher can
-click when it points at a page such as Prayercast, or as a small player that enlarges
-when it points at a video (YouTube or Drive), the same behaviour as the lesson video.
+A header cell in any column A to F, above the first time row, that starts with **Pray**
+is picked up along with its link. It shows in the bottom bar: as a link (with a ↗) the
+teacher can click when it points at a page such as Prayercast, or as a small player that
+enlarges when it points at a video (YouTube or Drive), the same behaviour as the lesson
+video. If no link is found the text shows in grey instead, so the difference is visible.
+
+The link is looked for in three places, because Sheets stores them three ways: a
+`=HYPERLINK()` formula, a **rich-text link** applied to the cell text with Insert › Link
+(which appears in neither the cell's value nor its formula, so the grid itself has to be
+read — `readCellLinks` in `lib/daily/sheets.ts`), and a bare URL inside the text.
 
 ## Checking what the board sees
 

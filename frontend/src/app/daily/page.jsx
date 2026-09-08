@@ -372,8 +372,8 @@ export default function DailyPage() {
       );
     }
     return pray.url
-      ? <a className="pray" href={pray.url} target="_blank" rel="noreferrer">{pray.text}</a>
-      : <span className="pray">{pray.text}</span>;
+      ? <a className="pray" href={pray.url} target="_blank" rel="noreferrer">{pray.text} ↗</a>
+      : <span className="pray nolink" title="No link found on this cell">{pray.text}</span>;
   };
   const footer = (showPuzzle) => (
     <>

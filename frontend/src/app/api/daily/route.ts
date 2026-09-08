@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { readRanges } from "@/lib/daily/sheets";
+import { readCellLinks, readRanges } from "@/lib/daily/sheets";
 import { buildPayload, refFromFormula, urlFromFormula, type Payload } from "@/lib/daily/parse";
 import { FIXTURE } from "@/lib/daily/fixture";
 import { dailyCache } from "@/lib/daily/cache";
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
   try {
     // Core content plus the optional extras, in parallel. A renamed tab in the
     // optional ranges must not take the whole board down, so those degrade to empty.
-    const [core, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes] = await Promise.all([
+    const [core, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes, displayLinks] = await Promise.all([
       readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!T1:AA8"]),
       readRanges(["Display!E1", "DisplayAI!E1"]).catch(() => [] as string[][][]),
       readRanges(
@@ -58,6 +58,9 @@ export async function GET(req: Request) {
       readRanges(["Riddles!D1:D400"]).catch(() => [] as string[][][]),
       readRanges(["Master!B1:B2"]).catch(() => [] as string[][][]),
       readRanges(["Points!A3:BZ3", "Points!A46:BZ46"]).catch(() => [] as string[][][]),
+      // Links on the header cells. A rich-text link is invisible to the values
+      // API, so the grid itself has to be read for the "Pray for …" line.
+      readCellLinks("DisplayAI!A1:F40").catch(() => [] as string[][]),
     ]);
     const [display, setup, slotBlock] = core;
     // The slot table spans T to AA; the E1 formula's HLOOKUP works on U to AA,
@@ -97,6 +100,7 @@ export async function GET(req: Request) {
       master: masterRes[0] || [],
       pointsRow3: ((pointsRes[0] || [])[0]) || [],
       pointsRow46: ((pointsRes[1] || [])[0]) || [],
+      displayLinks: displayLinks || [],
       slotBlock: slotBlock || [],
       slotBlockFormulas: slotBlockFormulas || [],
     });

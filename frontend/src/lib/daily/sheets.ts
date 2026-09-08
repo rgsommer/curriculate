@@ -98,3 +98,61 @@ export async function readRanges(ranges: string[], render: RenderOption = "FORMA
     (vr.values || []).map((row) => row.map((cell) => (cell == null ? "" : String(cell))))
   );
 }
+
+/**
+ * Links attached to cells, which the values API cannot see.
+ *
+ * A link in Sheets comes in two forms: a `=HYPERLINK()` formula, which shows up
+ * in a FORMULA read, and a rich-text link applied to the cell's text with
+ * Insert › Link, which appears in neither the value nor the formula. This reads
+ * the grid itself so both are found.
+ *
+ * Returns a grid of URLs shaped like the range, "" where a cell has no link.
+ */
+export async function readCellLinks(range: string): Promise<string[][]> {
+  const sheetId = process.env.DAILY_SHEET_ID || DEFAULT_SHEET_ID;
+  const params = new URLSearchParams();
+  params.set("ranges", range);
+  params.set("includeGridData", "true");
+  params.set(
+    "fields",
+    "sheets.data.rowData.values(hyperlink,textFormatRuns.format.link.uri,userEnteredFormat.textFormat.link.uri)"
+  );
+
+  const headers: Record<string, string> = { accept: "application/json" };
+  const sa = readServiceAccount();
+  if (sa) {
+    headers.Authorization = `Bearer ${await mintAccessToken(sa)}`;
+  } else if (process.env.DAILY_SHEETS_API_KEY) {
+    params.set("key", process.env.DAILY_SHEETS_API_KEY);
+  } else {
+    throw new Error("Set DAILY_SHEETS_SERVICE_ACCOUNT or DAILY_SHEETS_API_KEY");
+  }
+
+  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?${params}`;
+  const res = await fetch(url, { headers, cache: "no-store" });
+  const data = (await res.json().catch(() => ({}))) as {
+    sheets?: {
+      data?: {
+        rowData?: {
+          values?: {
+            hyperlink?: string;
+            textFormatRuns?: { format?: { link?: { uri?: string } } }[];
+            userEnteredFormat?: { textFormat?: { link?: { uri?: string } } };
+          }[];
+        }[];
+      }[];
+    }[];
+    error?: { message?: string };
+  };
+  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${data.error?.message || "request failed"}`);
+
+  const rows = data.sheets?.[0]?.data?.[0]?.rowData || [];
+  return rows.map((row) =>
+    (row.values || []).map((c) => {
+      if (!c) return "";
+      const run = (c.textFormatRuns || []).map((r) => r?.format?.link?.uri).find(Boolean);
+      return c.hyperlink || run || c.userEnteredFormat?.textFormat?.link?.uri || "";
+    })
+  );
+}
