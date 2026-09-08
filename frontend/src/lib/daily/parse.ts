@@ -57,6 +57,7 @@ export type Payload = {
     riddle: string;
     feature: string;
     featureImage: string;
+    pray: { text: string; url: string } | null;
     other: string;
   };
   periods: Period[];
@@ -120,6 +121,19 @@ export function isImageUrl(u: string): boolean {
     /photos\.(google|app\.goo)\./i.test(s) ||
     /\/image|image\//i.test(s)
   );
+}
+
+/**
+ * When a cell holds `=IMAGE(Setup!Z4)` or simply `=Setup!Z4`, the picture's URL is in
+ * that other cell, not in this formula. Returns the A1 reference to follow, or "".
+ * Only a plain single-cell reference qualifies; anything else is left alone.
+ */
+export function refFromFormula(formula: string): string {
+  const f = String(formula || "").trim();
+  if (!f.startsWith("=")) return "";
+  const inner = (f.match(/^=\s*(?:IMAGE|HYPERLINK)\s*\(\s*([^,)]+?)\s*[,)]/i) || f.match(/^=\s*([^,()]+?)\s*$/) || [, ""])[1] || "";
+  const ref = inner.trim();
+  return /^'?[A-Za-z0-9_ .\-]*'?!?\$?[A-Z]{1,3}\$?\d{1,5}$/.test(ref) ? ref : "";
 }
 
 /** Rewrite Drive share links into a form an <img> tag can actually load. */
@@ -278,6 +292,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     riddle: "",
     feature: isErr(inp.feature || "") ? "" : (inp.feature || "").trim(),
     featureImage: "",
+    pray: null as null | { text: string; url: string },
     other: "",
   };
 
@@ -299,9 +314,17 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   // ---- header cells (rows above the first time row) ----
   const firstTimeRow = rows.findIndex((r) => parseTime(r[0] || "") !== null);
   const headerRows = firstTimeRow < 0 ? rows : rows.slice(0, firstTimeRow);
-  for (const r of headerRows) {
+  headerRows.forEach((r, i) => {
     const a = (r[0] || "").trim();
     const c = (r[2] || "").trim();
+    // "Pray for Albania" — the nation of the day, usually a hyperlink to its page.
+    for (const [text, col] of [[a, 0], [c, 2]] as [string, number][]) {
+      if (!meta.pray && /^pray\b/i.test(text)) {
+        const formula = col === 2 ? cell(inp.displayC, i, 0) : "";
+        const url = urlFromFormula(formula) || (text.match(URL_RE) || [])[0] || "";
+        meta.pray = { text: text.replace(URL_RE, "").trim(), url };
+      }
+    }
     if (!meta.greeting && /^Good (morning|afternoon|evening)/i.test(a)) meta.greeting = a;
     else if (!meta.line && /^Week\s*\d+/i.test(a)) meta.line = a.split(/\s{2,}/).join(" · ");
     else if (!meta.verse && a.length > 40 && !/^Q:/.test(a)) meta.verse = a;
@@ -316,7 +339,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       if (d !== "") points.entered = d === "1" || /^true$/i.test(d);
     }
     if (/^Q:/.test(c) && !meta.riddle) meta.riddle = c;
-  }
+  });
 
   // ---- period rows ----
   const periods: Period[] = [];

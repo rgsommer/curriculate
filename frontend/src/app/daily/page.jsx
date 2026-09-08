@@ -39,6 +39,9 @@ function youtubeId(url) {
   const m = /(?:youtu\.be\/|v=|\/embed\/|\/shorts\/)([A-Za-z0-9_-]{6,})/.exec(url || "");
   return m ? m[1] : null;
 }
+function isVideoUrl(url) {
+  return /youtu\.be\/|youtube\.com\/|youtube-nocookie\.com\/|drive\.google\.com\/file\/|\.(mp4|webm|m4v)(\?|$)/i.test(url || "");
+}
 function driveId(url) {
   const m = /drive\.google\.com\/file\/d\/([^/]+)/.exec(url || "");
   return m ? m[1] : null;
@@ -197,15 +200,16 @@ export default function DailyPage() {
   const [points, setPoints] = useState({ numbers: null, percents: null, entered: null });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
-  const [opts, setOpts] = useState({ t: null, k: "", pic: "right" });
+  const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
   const [scrub, setScrub] = useState(null);
   const [badImages, setBadImages] = useState({});
+  const [prayBig, setPrayBig] = useState(false);
   const scrubTouched = useRef(0);
 
   // URL options (client only)
   useEffect(() => {
     const u = new URLSearchParams(window.location.search);
-    setOpts({ t: parseHHMM(u.get("t")), k: u.get("k") || "", pic: u.get("pic") === "left" ? "left" : u.get("pic") === "off" ? "off" : "right" });
+    setOpts({ t: parseHHMM(u.get("t")), k: u.get("k") || "", pic: u.get("pic") === "left" ? "left" : u.get("pic") === "off" ? "off" : "right", debug: u.get("debug") === "1" });
     document.title = "Daily Board";
   }, []);
 
@@ -305,6 +309,43 @@ export default function DailyPage() {
   const dayMin = P.length ? Math.max(0, P[0].start - 60) : 8 * 60;
   const dayMax = P.length ? Math.min(24 * 60 - 1, P[P.length - 1].end + 30) : 16 * 60;
 
+  // /daily?debug=1 — what the board actually received from the sheet. Use it to
+  // tell whether a picture or link is reaching the page at all.
+  if (opts.debug) {
+    const row = (k, v) => (
+      <tr key={k}><th>{k}</th><td>{v === "" || v == null ? <em>empty</em> : String(v)}</td></tr>
+    );
+    return (
+      <div className="board">
+        <div className="debug">
+          <h1>What the board sees</h1>
+          <table>
+            <tbody>
+              {row("fetched", data.fetchedAt)}
+              {row("version", data.version)}
+              {row("stale", data.stale ? `yes — ${data.error || ""}` : "no")}
+              {row("E1 picture", meta.featureImage)}
+              {row("E1 text", meta.feature)}
+              {row("pray text", meta.pray && meta.pray.text)}
+              {row("pray link", meta.pray && meta.pray.url)}
+              {row("lesson picture", data.picture && data.picture.url)}
+              {row("picture seconds", setup.picSeconds)}
+              {row("periods", `${P.length} rows, ${classes.length} classes`)}
+              {row("now", `${fmt(t)} — ${cur ? cur.subj || "duty" : "no period"}`)}
+              {row("puzzle", meta.puzzle)}
+              {row("riddle", meta.riddle)}
+              {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
+            </tbody>
+          </table>
+          <p>A picture only reaches this page if the cell itself holds it, for example
+            <code>=IMAGE(&quot;https://…&quot;)</code>. An image inserted over the grid
+            (Insert &rsaquo; Image &rsaquo; Image in cell is fine; floating images are not)
+            cannot be read by the sheet API and will always show as empty here.</p>
+        </div>
+      </div>
+    );
+  }
+
   const header = ({ title, chips, when, leftHtml, pct, red, period }) => (
     <>
       <div className="top">
@@ -322,11 +363,29 @@ export default function DailyPage() {
       <div className="pbar"><i style={{ width: `${Math.max(0, Math.min(100, pct))}%` }} /></div>
     </>
   );
+  // "Pray for Albania" from the header rows: a small player when it links to a
+  // video, otherwise a link the teacher can open.
+  const pray = meta.pray && meta.pray.text ? meta.pray : null;
+  const prayEl = () => {
+    if (!pray) return null;
+    if (pray.url && isVideoUrl(pray.url)) {
+      return (
+        <span className="prayrow">
+          <VideoTile url={pray.url} big={prayBig} setBig={setPrayBig} />
+          <span className="pray">{pray.text}</span>
+        </span>
+      );
+    }
+    return pray.url
+      ? <a className="pray" href={pray.url} target="_blank" rel="noreferrer">{pray.text}</a>
+      : <span className="pray">{pray.text}</span>;
+  };
   const footer = (showPuzzle) => (
     <>
       <PointsStrip points={points} currentSec={cur && !cur.duty ? cur.sec : ""} />
       <div className="bottom">
         <span>{meta.line}{error ? <span className="stale"> · {error}</span> : null}</span>
+        {prayEl()}
         {showPuzzle && puzzleWord
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
           : <span className="verse">{verse}</span>}

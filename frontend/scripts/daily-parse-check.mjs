@@ -61,6 +61,10 @@ check("isImageUrl rejects youtube", !P.isImageUrl("https://youtu.be/abc123def"))
 check("normalizeImageUrl drive path", P.normalizeImageUrl("https://drive.google.com/file/d/ABC123/view?usp=sharing") === "https://lh3.googleusercontent.com/d/ABC123", P.normalizeImageUrl("https://drive.google.com/file/d/ABC123/view?usp=sharing"));
 check("normalizeImageUrl drive uc", P.normalizeImageUrl("https://drive.google.com/uc?export=view&id=XYZ789") === "https://lh3.googleusercontent.com/d/XYZ789", P.normalizeImageUrl("https://drive.google.com/uc?export=view&id=XYZ789"));
 check("normalizeImageUrl leaves plain", P.normalizeImageUrl("https://example.com/p.png") === "https://example.com/p.png");
+check("refFromFormula IMAGE(ref)", P.refFromFormula("=IMAGE(Setup!Z4)") === "Setup!Z4", P.refFromFormula("=IMAGE(Setup!Z4)"));
+check("refFromFormula plain ref", P.refFromFormula("=Setup!$Z$4") === "Setup!$Z$4", P.refFromFormula("=Setup!$Z$4"));
+check("refFromFormula ignores literal", P.refFromFormula('=IMAGE("https://x/y.png")') === "");
+check("refFromFormula ignores IF chain", P.refFromFormula("=if(B7,Setup!V4,Setup!Z4)") === "", P.refFromFormula("=if(B7,Setup!V4,Setup!Z4)"));
 
 // ---- whole payload from a Thursday-shaped grid ----
 const display = [
@@ -115,6 +119,13 @@ check("meta greeting/line", out.meta.greeting.startsWith("Good morning") && out.
 check("meta verse/puzzle", out.meta.verse.startsWith("Two short") && out.meta.puzzle === "UNSCRAMBLE for a treat: TNOMISNEPEO", out.meta);
 check("meta plans + points", out.meta.plans === "Plans for Thursday, Sep 10, 2026..." && out.points.numbers.length === 5 && out.points.entered === true, out.points);
 check("meta headout", out.meta.headout.length === 2 && out.meta.headout[0] === "Tidy your floor area.", out.meta.headout);
+const prayGrid = display.map((r) => r.slice());
+prayGrid.splice(6, 0, ["", "", "Pray for Albania"]);
+const prayC = []; prayC[6] = ['=HYPERLINK("https://prayercast.com/albania.html","Pray for Albania")'];
+const prayOut = P.buildPayload({ display: prayGrid, displayD, displayC: prayC, setup, slots, slotFormulas, feature: "" });
+check("pray text", prayOut.meta.pray && prayOut.meta.pray.text === "Pray for Albania", prayOut.meta.pray);
+check("pray link from hyperlink formula", prayOut.meta.pray && prayOut.meta.pray.url === "https://prayercast.com/albania.html", prayOut.meta.pray);
+check("no pray when absent", out.meta.pray === null, out.meta.pray);
 check("feature error blanked", out.meta.feature === "");
 check("no feature image when none", out.meta.featureImage === "", out.meta.featureImage);
 

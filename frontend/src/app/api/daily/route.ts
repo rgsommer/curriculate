@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { readRanges } from "@/lib/daily/sheets";
-import { buildPayload, type Payload } from "@/lib/daily/parse";
+import { buildPayload, refFromFormula, urlFromFormula, type Payload } from "@/lib/daily/parse";
 import { FIXTURE } from "@/lib/daily/fixture";
 import { dailyCache } from "@/lib/daily/cache";
 
@@ -56,7 +56,23 @@ export async function GET(req: Request) {
     const feature = (featA && featA[0] && featA[0][0]) || (featB && featB[0] && featB[0][0]) || "";
     const [displayD = [], displayC = [], slotFormulas = [], featFa = [], featFb = []] = formulaRes;
     // An =IMAGE() cell has no text value, so the picture's URL only shows up here.
-    const featureFormula = (featFa[0] && featFa[0][0]) || (featFb[0] && featFb[0][0]) || "";
+    let featureFormula = (featFa[0] && featFa[0][0]) || (featFb[0] && featFb[0][0]) || "";
+
+    // `=IMAGE(Setup!Z4)` or `=Setup!Z4` keeps the URL one cell away: follow it once.
+    const ref = refFromFormula(featureFormula);
+    if (ref && !urlFromFormula(featureFormula)) {
+      try {
+        const [refValue, refFormula] = await Promise.all([
+          readRanges([ref]),
+          readRanges([ref], "FORMULA"),
+        ]);
+        const v = (refValue[0] && refValue[0][0] && refValue[0][0][0]) || "";
+        const f = (refFormula[0] && refFormula[0][0] && refFormula[0][0][0]) || "";
+        featureFormula = urlFromFormula(f) ? f : v || featureFormula;
+      } catch {
+        /* the reference did not resolve; carry on with what we have */
+      }
+    }
 
     const body = buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature, featureFormula });
     c.body = body;

@@ -134,6 +134,22 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .bottom .puzzle { background: var(--sun-fill); color: var(--sun-ink); padding: .6vh 1vw; border-radius: 4px; white-space: nowrap; }
 .bottom .puzzle b { letter-spacing: .14em; font-weight: 600; }
 .bottom .stale { color: var(--alert); }
+.bottom .pray { color: var(--accent); font-weight: 500; white-space: nowrap; }
+.bottom a.pray { text-decoration: underline; text-underline-offset: .3vh; }
+.bottom a.pray:hover, .bottom a.pray:focus-visible { color: var(--ink); }
+.prayrow { display: inline-flex; align-items: center; gap: .8vw; }
+.prayrow .vid { width: clamp(56px, 7vw, 96px); border-width: 1px; }
+.prayrow .vid .cap { display: none; }
+.prayrow .vid.big { width: auto; }
+
+.debug { padding: 4vh 5vw; overflow: auto; font-size: 15px; }
+.debug h1 { font-size: 24px; font-weight: 500; margin: 0 0 2vh; }
+.debug table { border-collapse: collapse; width: 100%; max-width: 100ch; }
+.debug th, .debug td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-word; }
+.debug th { width: 22ch; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.debug em { color: var(--muted); }
+.debug p { margin-top: 3vh; max-width: 80ch; color: var(--muted); line-height: 1.5; }
+.debug code { font-family: ui-monospace, Menlo, monospace; background: var(--chip); padding: 1px 5px; border-radius: 3px; }
 
 .main.center { grid-template-columns: 1fr; place-items: center; text-align: center; }
 .agenda { display: grid; grid-template-columns: auto 1fr; gap: .6vh 2vw; font-size: clamp(15px, 2.6vh, 28px); text-align: left; margin-top: 2vh; font-variant-numeric: tabular-nums; }

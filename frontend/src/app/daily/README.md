@@ -113,6 +113,26 @@ with the link can view it. A picture that fails to load is dropped and the norma
 side panel comes back, so a bad link never leaves a broken frame on the projector.
 `?pic=off` hides pictures entirely; `?pic=left` puts them on the left.
 
+## The "Pray for …" line
+
+A header cell (column A or C, above the first time row) that starts with **Pray** is
+picked up with its hyperlink. It shows in the bottom bar: as a link the teacher can
+click when it points at a page such as Prayercast, or as a small player that enlarges
+when it points at a video (YouTube or Drive), the same behaviour as the lesson video.
+
+## Checking what the board sees
+
+`/daily?debug=1` lists exactly what came back from the sheet: the E1 picture and text,
+the Pray line and its link, the lesson picture, period counts, points, and whether the
+copy is stale. Use it first whenever something in the sheet is not showing.
+
+A picture reaches the board only if the **cell itself** holds it — `=IMAGE("…")`, a
+`=HYPERLINK()` to an image, an image URL as text, or Insert › Image › **Image in cell**.
+A floating image placed *over* the grid is invisible to the sheet API and can never be
+read. If E1's formula is `=IMAGE(SomeCell)` or plain `=SomeCell`, the board follows that
+one reference; a longer chain (an `IF` that returns a cell holding an image) does not
+work, and in Sheets it does not render an image in E1 either.
+
 ## Time scrubber
 
 The slim strip along the bottom edge is a slider. Drag it to preview any time of the
