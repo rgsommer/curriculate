@@ -2,6 +2,9 @@
 // with plain node. Input is the raw cell grid of the DisplayAI tab (plus a few
 // Setup cells); output is the JSON the page renders from.
 
+/** A handout, form or reference linked from a lesson cell. */
+export type LessonLink = { label: string; url: string };
+
 export type Period = {
   start: number; // minutes after midnight
   end: number;
@@ -21,6 +24,7 @@ export type Period = {
   plan: string[];
   assign: string[];
   remind: string;
+  links: LessonLink[]; // handouts and forms named in the lesson text
 };
 
 export type Points = {
@@ -176,8 +180,67 @@ export function urlFromFormula(f: string): string {
  * Split one DisplayAI class cell. Shape produced by the AI update text:
  *   "Subject Sec (n) Room (Code) Today we ... Question? - bullet - bullet Reminders: ..."
  */
+// Long enough for a real handout name, short enough to sit on one chip.
+const LABEL_MAX = 56;
+
+/** A readable name for a link when the words around it give nothing away. */
+function linkKind(url: string): string {
+  const u = String(url || "");
+  if (/docs\.google\.com\/document/i.test(u)) return "Google Doc";
+  if (/docs\.google\.com\/presentation/i.test(u)) return "Slides";
+  if (/docs\.google\.com\/spreadsheets/i.test(u)) return "Sheet";
+  if (/docs\.google\.com\/forms|forms\.gle/i.test(u)) return "Form";
+  if (/\.pdf(\?|$)/i.test(u)) return "PDF";
+  if (/drive\.google\.com/i.test(u)) return "Drive file";
+  const host = (u.match(/^https?:\/\/([^/]+)/i) || [, ""])[1] || "";
+  return host.replace(/^www\./i, "") || "Link";
+}
+
+/**
+ * The handouts named in a lesson cell.
+ *
+ * The teacher writes them inline — "Complete the Introduction worksheet (or from
+ * this link: https://…)" — so the URL is pulled out into something clickable and
+ * the words that introduced it become its name. The text is handed back without
+ * the URLs, which is also how the lesson bullets stop being half address bar.
+ */
+export function extractLinks(text: string): { links: LessonLink[]; clean: string } {
+  const t = String(text || "");
+  const links: LessonLink[] = [];
+  const re = new RegExp(URL_RE.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) {
+    const url = m[0].replace(/[.,;:)\]]+$/, "");
+    // The words just before the link, back to the last sentence break.
+    const before = t.slice(0, m.index);
+    let label = (before.split(/(?:[.!?•]|\s-\s|\[|\]|;)\s*/).pop() || "")
+      .replace(/\(?\s*(?:or\s+)?(?:you\s+can\s+)?(?:get\s+it\s+|print\s+it\s+|available\s+)?(?:from\s+|use\s+|at\s+|via\s+)?(?:this\s+|the\s+)?link[s]?\s*:?\s*$/i, "")
+      .replace(/\b(?:here|below|online|posted)\s*:?\s*$/i, "")
+      .replace(/[\s(:,–—-]+$/, "")
+      .replace(/\s+(?:at|from|via|on|in|to|of|for)\s*:?\s*$/i, "")
+      .replace(/^[\s\-–—•)]+/, "")
+      .replace(/^\s*(?:Assign|Reminders)\s*:\s*/i, "")
+      .trim();
+    if (label.length < 4) label = linkKind(url);
+    links.push({ label: truncateWords(label, LABEL_MAX), url });
+  }
+  const clean = t
+    .replace(new RegExp(URL_RE.source, "g"), "")
+    .replace(/\(\s*(?:or\s+)?(?:from\s+)?(?:this\s+)?link[s]?\s*:?\s*\)/gi, "")
+    .replace(/\s*\(\s*\)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([.,;:])/g, "$1")
+    .trim();
+  // Same handout named twice in one cell is one handout.
+  const seen = new Set<string>();
+  return { links: links.filter((l) => (seen.has(l.url) ? false : seen.add(l.url))), clean };
+}
+
 export function parseClassText(text: string) {
-  const t = String(text || "").replace(/\s+/g, " ").trim();
+  // Handouts come out first: the lesson text reads better without the addresses,
+  // and a URL's own "?" no longer gets mistaken for the lesson's question.
+  const { links, clean } = extractLinks(String(text || ""));
+  const t = clean.replace(/\s+/g, " ").trim();
   const m = t.match(/^(.+?) \((\d+)\) -? ?(\d{3}) \(([A-Z]\d{3})/);
   if (!m) {
     return {
@@ -192,6 +255,7 @@ export function parseClassText(text: string) {
       plan: [] as string[],
       assign: [] as string[],
       remind: "",
+      links,
     };
   }
   const rest = t.slice(m[0].length).replace(/^[^)]*\)\s*/, "");
@@ -216,6 +280,7 @@ export function parseClassText(text: string) {
     plan: bullets.filter((b) => !/^Assign:/i.test(b)),
     assign: bullets.filter((b) => /^Assign:/i.test(b)).map((b) => b.replace(/^Assign:\s*/i, "")),
     remind,
+    links,
   };
 }
 
@@ -370,6 +435,7 @@ export type RawInputs = {
   slotBlock?: string[][]; // Setup!T1:AA8 values, for the debug view
   slotBlockFormulas?: string[][]; // Setup!T1:AA8 formulas, for the debug view
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
+  displayCRuns?: { text: string; url: string }[][]; // every link inside each DisplayAI!C cell
   setupMessages?: string[][]; // Setup!N1:Q8 — the "For Dismissal Messages" block
   waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
   verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
@@ -493,6 +559,14 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     const video = candidates.find(isVideoUrl) || "";
 
     const parsed = parseClassText(text);
+    // A handout can be a rich-text link on the lesson cell rather than a URL in
+    // its words; those live in neither the value nor the formula, so they come
+    // from the grid and are merged in here.
+    const runLinks = ((inp.displayCRuns || [])[i] || [])
+      .filter((l) => l.url && !isVideoUrl(l.url))
+      .map((l) => ({ label: truncateWords(l.text || linkKind(l.url), 44), url: l.url }));
+    const seenLink = new Set(parsed.links.map((l) => l.url));
+    const links = parsed.links.concat(runLinks.filter((l) => (seenLink.has(l.url) ? false : seenLink.add(l.url))));
     periods.push({
       start,
       end,
@@ -502,6 +576,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       video,
       empty: text === "",
       ...parsed,
+      links,
     });
   }
 
@@ -639,8 +714,9 @@ export function truncateWords(text: string, max: number): string {
   const t = String(text || "").trim();
   if (t.length <= max) return t;
   const cut = t.slice(0, max);
+  const onBoundary = /\s/.test(t[max] || "");
   const sp = cut.lastIndexOf(" ");
-  const kept = (sp > max * 0.5 ? cut.slice(0, sp) : cut).replace(/[\s,;:.\u2014-]+$/, "");
+  const kept = (onBoundary || sp <= max * 0.5 ? cut : cut.slice(0, sp)).replace(/[\s,;:.\u2014-]+$/, "");
   return `${kept}\u2026`;
 }
 

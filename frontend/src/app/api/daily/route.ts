@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listSheetTitles, readCellLinks, readRanges } from "@/lib/daily/sheets";
+import { listSheetTitles, readCellLinkRuns, readCellLinks, readRanges } from "@/lib/daily/sheets";
 import { buildPayload, refFromFormula, urlFromFormula, type Payload } from "@/lib/daily/parse";
 import { FIXTURE } from "@/lib/daily/fixture";
 import { dailyCache } from "@/lib/daily/cache";
@@ -43,7 +43,7 @@ export async function GET(req: Request) {
   try {
     // Core content plus the optional extras, in parallel. A renamed tab in the
     // optional ranges must not take the whole board down, so those degrade to empty.
-    const [core, sheetTitles, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, versesRes, pointsRes, displayLinks] = await Promise.all([
+    const [core, sheetTitles, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, versesRes, pointsRes, displayLinks, displayCRuns] = await Promise.all([
       readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!T1:AA8", "Setup!N1:Q8"]),
       // The Kiss & Ride waiting list is on its own tab. Its name is looked up
       // rather than hard-coded, so renaming the tab does not silently empty the
@@ -69,6 +69,9 @@ export async function GET(req: Request) {
       // Links on the header cells. A rich-text link is invisible to the values
       // API, so the grid itself has to be read for the "Pray for …" line.
       readCellLinks("DisplayAI!A1:F40").catch(() => [] as string[][]),
+      // Every link inside each lesson cell, so a handout attached to a phrase
+      // (rather than written out as a URL) still reaches the board.
+      readCellLinkRuns("DisplayAI!C1:C40").catch(() => [] as { text: string; url: string }[][]),
     ]);
     const [display, setup, slotBlock, setupMessages] = core;
     // Kiss & Ride, KissRide, "Kiss & Ride 2026" — anything with both words.
@@ -116,6 +119,7 @@ export async function GET(req: Request) {
       pointsRow3: ((pointsRes[0] || [])[0]) || [],
       pointsRow46: ((pointsRes[1] || [])[0]) || [],
       displayLinks: displayLinks || [],
+      displayCRuns: displayCRuns || [],
       setupMessages: setupMessages || [],
       waiting,
       slotBlock: slotBlock || [],
