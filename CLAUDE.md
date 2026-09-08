@@ -152,7 +152,8 @@
 - The status is a privilege code shown as a coloured badge mirroring the sheet's conditional formatting on D9/D11/D13 (`statusStyle`), so codes with no text label (e.g. `A-1000`) still read correctly
 - Persistent next-class peek line (subject, room, time) under the period line
 - Each subject carries its own colour (`subjectTheme` in `lib/daily/parse.ts`, keyed off the lesson code letter) — heading wash, chips, progress bar and panel edge follow it, so a class change is visible from the back of the room; the footer day chip uses the sheet's own weekday colours (`weekdayColour`)
-- The clock is highlighted (red pill, slow pulse) for the last few minutes of a period — the window is Setup's "change time to red"; it applies to lunch and recess too, so an imminent class change is always signalled
+- The clock is highlighted (red pill, slow pulse) for the last few minutes of a period — the window is Setup's "change time to red" (5 min if that row is missing) — and the peek line turns red and reads "Next in N min: …", naming the next row of the timetable (lunch and recess included), or Dismissal after the last class; it applies to breaks too, measured to the end of the break
+- A class holds the screen to its very last minute: the dismissal screen waits for the current period to finish rather than taking over at the dismissal time, which can fall inside the final period
 - A header cell starting with "Pray" (with its hyperlink) shows in the bottom bar as a link, or as a small enlarging player when it points at a video
 - `/daily?debug=1` shows exactly what the board received from the sheet — first stop when something in the sheet is not appearing
 - A picture in the feature cell E1 (`=IMAGE()`, hyperlink, or image URL — E1 is read as both value and formula) takes the large side of the screen while the sheet shows it; Drive links are rewritten for `<img>`, and an image that fails to load falls back to the normal panel

@@ -323,6 +323,19 @@ export default function DailyPage() {
   const evaluated = evaluateFeature(sources, t);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
+  // What actually happens at the bell, which is not always the next class: the
+  // next row of the timetable, lunch and recess included. Used for the red
+  // "what's next" line in the last few minutes of a period.
+  const nextRow = P.find((p) => !p.empty && p.start >= (cur ? cur.end : t)) || null;
+  const nextUp = nextRow
+    ? {
+        label: nextRow.duty ? friendlyDutyTitle(nextRow.text || nextRow.subj) || nextRow.subj : nextRow.subj,
+        room: nextRow.duty ? "" : nextRow.room,
+        start: nextRow.start,
+      }
+    : peekNext
+      ? { label: peekNext.subj, room: peekNext.room, start: peekNext.start }
+      : null;
   // Each subject carries its own accent, so the room sees the class change
   // before it reads the heading. Between classes the next one's colour is used.
   const themeOf = (p) => (p && p.code ? subjectTheme(p.code, p.subj) : null);
@@ -352,9 +365,16 @@ export default function DailyPage() {
           <div className="title"><span className="subj">{title}</span>{chips}</div>
           {period && <Chips period={period} left={period.left} setup={setup} status={statusOf(period)} />}
           <div className="when">{when}</div>
-          {peekNext && (
+          {red && nextUp ? (
+            <div className="peek soon">
+              {`Next in ${Math.max(0, nextUp.start - t)} min: `}
+              <b>{nextUp.label}</b>{nextUp.room ? ` · ${nextUp.room}` : ""} · {fmt(nextUp.start)}
+            </div>
+          ) : red ? (
+            <div className="peek soon">Next: <b>{setup.dismissalAt != null ? "Dismissal" : "End of the day"}</b></div>
+          ) : peekNext ? (
             <div className="peek">Next: <b>{peekNext.subj}</b> · {peekNext.room} · {fmt(peekNext.start)}</div>
-          )}
+          ) : null}
         </div>
         {period && !period.duty ? <VideoTile url={period.video} big={vidBig} setBig={setVidBig} /> : <span />}
         <div className={`clockbox${red ? " red" : ""}`}>
@@ -563,10 +583,13 @@ export default function DailyPage() {
         {footer(false)}
       </>
     );
-  } else if (setup.dismissalAt != null && t >= setup.dismissalAt) {
+  } else if (setup.dismissalAt != null && t >= setup.dismissalAt && (!cur || cur.duty || cur.empty)) {
+    // Dismissal waits for the last class to finish. The dismissal time can fall
+    // inside the final period, and the class has to hold the screen to its very
+    // last minute rather than being pushed off early.
     body = (
       <>
-        {header({ title: "Dismissal", chips: null, when: `From ${fmt(setup.dismissalAt)}`, leftHtml: <b>{cur && !cur.duty ? `${cur.left} min left` : "Day complete"}</b>, pct: 100 })}
+        {header({ title: "Dismissal", chips: null, when: `From ${fmt(setup.dismissalAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
         {withPicture(
           <div>
             <p className="script">Well done, {(meta.greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
@@ -586,9 +609,12 @@ export default function DailyPage() {
     const title = cur && !cur.empty
       ? friendlyDutyTitle(cur.text || cur.subj) || cur.subj
       : "Change of class";
-    // Lunch and recess end in a class change too, so the clock is highlighted
-    // for the same last few minutes.
-    redState = !!nx && mins > 0 && mins <= setup.redAt;
+    // Lunch and recess end in a change too, so the clock is highlighted for the
+    // same last few minutes — measured to the end of this break, not to the next
+    // class, which can be a whole recess away.
+    redState = cur
+      ? cur.end - t > 0 && cur.end - t <= setup.redAt
+      : !!nx && mins > 0 && mins <= setup.redAt;
     body = (
       <>
         {header({
