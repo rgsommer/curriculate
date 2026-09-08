@@ -41,7 +41,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `DisplayAI!C1:D40` as formulas | `HYPERLINK()` targets in the lesson or status cells → the video tile. |
 | `Setup!A1:D20` | Timing rules, matched by the label text in column B (see below). |
 | `Setup!U1:AA8` | The feature-slot table; the **Lesson Pic** column gives the picture URL (row 4, `=IMAGE()` or a URL) and its on-screen window in seconds (row 7). |
-| `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message) — the sheet's own priority logic is reused as-is. |
+| `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
 Lesson cells are split using the shape the AI text already has:
 `Subject Sec (n) Room (Code) Today we … Question? - bullet - bullet Reminders: …`
@@ -92,6 +92,26 @@ To wire the ping:
 Caveat: the copy is per server instance. With one classroom screen polling, the same
 warm instance answers every poll, so a ping is seen immediately; if two instances were
 ever in play the 2-minute fallback still bounds the lag.
+
+## Pictures
+
+Two things can put a picture on the board, and both take a large share of the screen
+rather than sitting in the side panel:
+
+1. **The feature cell E1.** Whenever the sheet's own logic puts a picture there — an
+   `=IMAGE("…")`, a `=HYPERLINK()` to one, or a bare image URL — the board gives it the
+   right-hand side at nearly two thirds of the width, shrinks the lesson text to suit,
+   and captions it "On screen now". It stays up as long as E1 holds it, so the sheet
+   decides the timing. On the greeting, between-class and dismissal screens the picture
+   shares the screen with that screen's text.
+2. **The Lesson Pic slot** in Setup, which shows for the seconds set in row 7 of that
+   column (600 by default) from the start of the period. E1 wins when both are present.
+
+Google Drive share links are rewritten to a form an `<img>` can load
+(`lh3.googleusercontent.com/d/<id>`); the file still has to be shared so that anyone
+with the link can view it. A picture that fails to load is dropped and the normal
+side panel comes back, so a bad link never leaves a broken frame on the projector.
+`?pic=off` hides pictures entirely; `?pic=left` puts them on the left.
 
 ## Time scrubber
 

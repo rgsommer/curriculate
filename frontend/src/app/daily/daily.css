@@ -100,6 +100,16 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .big { font-size: clamp(34px, 9vh, 110px); font-weight: 600; line-height: 1; margin: 0 0 .6vh; font-variant-numeric: tabular-nums; }
 .script { font-family: var(--font-caveat), "Brush Script MT", cursive; font-weight: 600; font-size: clamp(40px, 9vh, 110px); line-height: 1; margin: 0; }
 
+/* A picture in E1 is the point of the screen while it is up, so it takes the
+   larger share and the lesson text gives way. */
+.main.pic-feature { grid-template-columns: 1fr 1.9fr; align-items: stretch; }
+.main.pic-left.pic-feature { grid-template-columns: 1.9fr 1fr; }
+.main.pic-feature .question { font-size: clamp(20px, 3.4vh, 38px); }
+.main.pic-feature .plan { font-size: clamp(16px, 2.6vh, 30px); }
+.main.pic-feature .summary { font-size: clamp(15px, 2.4vh, 26px); }
+.main.pic-feature .script { font-size: clamp(28px, 6vh, 72px); }
+.main.pic-feature .big { font-size: clamp(28px, 7vh, 84px); }
+
 .picture { display: flex; flex-direction: column; min-height: 0; gap: 1vh; }
 .picture .frame { flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--pic1); display: grid; place-items: center; }
 .picture .frame img { max-width: 100%; max-height: 100%; object-fit: contain; }

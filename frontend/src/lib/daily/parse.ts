@@ -56,6 +56,7 @@ export type Payload = {
     headout: string[];
     riddle: string;
     feature: string;
+    featureImage: string;
     other: string;
   };
   periods: Period[];
@@ -105,6 +106,30 @@ const URL_RE = /https?:\/\/[^\s"'<>)\]]+/g;
 
 export function isVideoUrl(u: string): boolean {
   return /youtu\.be\/|youtube\.com\/|youtube-nocookie\.com\/|drive\.google\.com\/file\/|\.(mp4|webm|m4v)(\?|$)/i.test(u);
+}
+
+/** A URL an <img> can show: a picture file, a Google-hosted image, or a Drive/Photos link. */
+export function isImageUrl(u: string): boolean {
+  const s = String(u || "");
+  if (!/^https?:\/\//i.test(s)) return false;
+  if (isVideoUrl(s) && !/drive\.google\.com\/file\//i.test(s)) return false;
+  return (
+    /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic)(\?|#|$)/i.test(s) ||
+    /googleusercontent\.com\//i.test(s) ||
+    /drive\.google\.com\/(file\/d\/|uc\?|thumbnail\?)/i.test(s) ||
+    /photos\.(google|app\.goo)\./i.test(s) ||
+    /\/image|image\//i.test(s)
+  );
+}
+
+/** Rewrite Drive share links into a form an <img> tag can actually load. */
+export function normalizeImageUrl(u: string): string {
+  const s = String(u || "");
+  const byPath = s.match(/drive\.google\.com\/file\/d\/([^/?#]+)/i);
+  if (byPath) return `https://lh3.googleusercontent.com/d/${byPath[1]}`;
+  const byQuery = s.match(/drive\.google\.com\/(?:uc|open|thumbnail)\?[^"']*[?&]?id=([^&"'#]+)/i);
+  if (byQuery) return `https://lh3.googleusercontent.com/d/${byQuery[1]}`;
+  return s;
 }
 
 /** URL out of a =HYPERLINK("...") / =IMAGE("...") formula or a bare URL. */
@@ -236,6 +261,7 @@ export type RawInputs = {
   slots: string[][]; // Setup!U1:AA8 values
   slotFormulas: string[][]; // Setup!U4:AA4 formulas
   feature: string; // Display!E1 (or DisplayAI!E1) formatted value
+  featureFormula?: string; // the same cell as a formula — an =IMAGE() has no text value
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -251,8 +277,23 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     headout: [] as string[],
     riddle: "",
     feature: isErr(inp.feature || "") ? "" : (inp.feature || "").trim(),
+    featureImage: "",
     other: "",
   };
+
+  // E1 may hold a picture rather than words: =IMAGE("…"), a hyperlink to one, or a
+  // bare image URL. An =IMAGE() cell has no text value at all, so the formula is
+  // the only place the URL shows up. When there is a picture, the board gives it
+  // the big slot and does not also print the URL as text.
+  {
+    const fromFormula = urlFromFormula(inp.featureFormula || "");
+    const fromValue = (meta.feature.match(URL_RE) || [])[0] || "";
+    const url = [fromFormula, fromValue].find((u) => u && isImageUrl(u)) || "";
+    if (url) {
+      meta.featureImage = normalizeImageUrl(url);
+      if (!meta.feature || meta.feature === url) meta.feature = "";
+    }
+  }
   const points: Points = { numbers: null, percents: null, entered: null };
 
   // ---- header cells (rows above the first time row) ----

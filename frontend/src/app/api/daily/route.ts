@@ -46,14 +46,19 @@ export async function GET(req: Request) {
     const [core, featureRes, formulaRes] = await Promise.all([
       readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!U1:AA8"]),
       readRanges(["Display!E1", "DisplayAI!E1"]).catch(() => [] as string[][][]),
-      readRanges(["DisplayAI!D1:D40", "DisplayAI!C1:C40", "Setup!U4:AA4"], "FORMULA").catch(() => [] as string[][][]),
+      readRanges(
+        ["DisplayAI!D1:D40", "DisplayAI!C1:C40", "Setup!U4:AA4", "Display!E1", "DisplayAI!E1"],
+        "FORMULA"
+      ).catch(() => [] as string[][][]),
     ]);
     const [display, setup, slots] = core;
     const [featA, featB] = featureRes;
     const feature = (featA && featA[0] && featA[0][0]) || (featB && featB[0] && featB[0][0]) || "";
-    const [displayD = [], displayC = [], slotFormulas = []] = formulaRes;
+    const [displayD = [], displayC = [], slotFormulas = [], featFa = [], featFb = []] = formulaRes;
+    // An =IMAGE() cell has no text value, so the picture's URL only shows up here.
+    const featureFormula = (featFa[0] && featFa[0][0]) || (featFb[0] && featFb[0][0]) || "";
 
-    const body = buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature });
+    const body = buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature, featureFormula });
     c.body = body;
     c.at = Date.now();
     c.dirty = false;

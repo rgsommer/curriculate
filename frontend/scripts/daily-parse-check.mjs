@@ -54,6 +54,13 @@ check("duty row", P.parseClassText("Recess Duty").duty && P.parseClassText("Rece
 check("url from HYPERLINK", P.urlFromFormula('=HYPERLINK("https://youtu.be/abc123def","▶")') === "https://youtu.be/abc123def");
 check("url from IMAGE", P.urlFromFormula('=IMAGE("https://example.com/p.png")') === "https://example.com/p.png");
 check("isVideoUrl", P.isVideoUrl("https://www.youtube.com/watch?v=x") && !P.isVideoUrl("https://docs.google.com/document/d/1"));
+check("isImageUrl png", P.isImageUrl("https://example.com/a/b.PNG?x=1"));
+check("isImageUrl drive", P.isImageUrl("https://drive.google.com/file/d/ABC123/view?usp=sharing"));
+check("isImageUrl rejects doc", !P.isImageUrl("https://docs.google.com/document/d/1/edit"));
+check("isImageUrl rejects youtube", !P.isImageUrl("https://youtu.be/abc123def"));
+check("normalizeImageUrl drive path", P.normalizeImageUrl("https://drive.google.com/file/d/ABC123/view?usp=sharing") === "https://lh3.googleusercontent.com/d/ABC123", P.normalizeImageUrl("https://drive.google.com/file/d/ABC123/view?usp=sharing"));
+check("normalizeImageUrl drive uc", P.normalizeImageUrl("https://drive.google.com/uc?export=view&id=XYZ789") === "https://lh3.googleusercontent.com/d/XYZ789", P.normalizeImageUrl("https://drive.google.com/uc?export=view&id=XYZ789"));
+check("normalizeImageUrl leaves plain", P.normalizeImageUrl("https://example.com/p.png") === "https://example.com/p.png");
 
 // ---- whole payload from a Thursday-shaped grid ----
 const display = [
@@ -109,6 +116,20 @@ check("meta verse/puzzle", out.meta.verse.startsWith("Two short") && out.meta.pu
 check("meta plans + points", out.meta.plans === "Plans for Thursday, Sep 10, 2026..." && out.points.numbers.length === 5 && out.points.entered === true, out.points);
 check("meta headout", out.meta.headout.length === 2 && out.meta.headout[0] === "Tidy your floor area.", out.meta.headout);
 check("feature error blanked", out.meta.feature === "");
+check("no feature image when none", out.meta.featureImage === "", out.meta.featureImage);
+
+const withImg = P.buildPayload({ display, displayD, displayC, setup, slots, slotFormulas,
+  feature: "", featureFormula: '=IMAGE("https://drive.google.com/file/d/PIC42/view")' });
+check("feature image from =IMAGE formula", withImg.meta.featureImage === "https://lh3.googleusercontent.com/d/PIC42", withImg.meta.featureImage);
+check("feature text cleared when image", withImg.meta.feature === "", withImg.meta.feature);
+
+const withUrlText = P.buildPayload({ display, displayD, displayC, setup, slots, slotFormulas,
+  feature: "https://example.com/map.jpg", featureFormula: "" });
+check("feature image from bare URL value", withUrlText.meta.featureImage === "https://example.com/map.jpg", withUrlText.meta.featureImage);
+
+const withPoem = P.buildPayload({ display, displayD, displayC, setup, slots, slotFormulas,
+  feature: "The fisherman goes out at dawn", featureFormula: "=Poems!F3" });
+check("poem text is not an image", withPoem.meta.featureImage === "" && withPoem.meta.feature.startsWith("The fisherman"), withPoem.meta);
 const per = out.periods;
 check("period count (headout row excluded)", per.length === 7, per.map((p) => p.start));
 check("period ends: duration row shortens", per[0].start === 600 && per[0].end === 659, per[0]);

@@ -12,7 +12,8 @@
 // or back to preview a period; it snaps back to the live clock after 45 s.
 //
 // URL options: ?t=11:05 freezes the clock; ?k=... passes the access key when
-// DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides the lesson picture.
+// DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides pictures (the lesson
+// picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -198,6 +199,7 @@ export default function DailyPage() {
   const [vidBig, setVidBig] = useState(false);
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right" });
   const [scrub, setScrub] = useState(null);
+  const [badImages, setBadImages] = useState({});
   const scrubTouched = useRef(0);
 
   // URL options (client only)
@@ -349,6 +351,27 @@ export default function DailyPage() {
     ? <div className="block feature quiet"><p>{meta.feature}</p></div>
     : meta.riddle ? <div className="block quiet"><h3>Riddle</h3><p>{meta.riddle.replace(/^Q:\s*/, "")}</p></div> : null);
 
+  // A picture in E1 outranks everything else on the right of the screen: while the
+  // sheet is showing one, the board gives it the large slot.
+  // A picture that will not load (a Drive link that is not shared, say) must not
+  // leave a broken frame on the projector: the board drops it and shows the panel.
+  const markBad = (url) => setBadImages((b) => (b[url] ? b : { ...b, [url]: true }));
+  const usable = (url) => !!url && !badImages[url];
+  const featureImage = opts.pic === "off" || !usable(meta.featureImage) ? "" : meta.featureImage;
+  const bigPicture = (url, caption, note) => (
+    <div className="picture">
+      <div className="frame">
+        <img src={url} alt={caption || "Picture on the board"} onError={() => markBad(url)} />
+      </div>
+      <div className="capline"><span>{caption}</span><span>{note}</span></div>
+    </div>
+  );
+  // Between classes and before school there is no lesson column, so the picture
+  // shares the screen with whatever text that screen carries.
+  const withPicture = (content) => (featureImage
+    ? <div className="main pic-right pic-feature">{content}{bigPicture(featureImage, "On screen now", "")}</div>
+    : <div className="main center">{content}</div>);
+
   let body;
   let redState = false;
 
@@ -364,14 +387,14 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Good morning", chips: null, when: meta.plans, leftHtml: <>First class at <b>{fmt(classes[0].start)}</b></>, pct: 0 })}
-        <div className="main center">
+        {withPicture(
           <div>
             <p className="script">{meta.greeting || "Good morning"}</p>
             <p className="question">{verse}</p>
             {agenda()}
-            {featureBlock()}
+            {featureImage ? null : featureBlock()}
           </div>
-        </div>
+        )}
         {footer(false)}
       </>
     );
@@ -379,7 +402,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Dismissal", chips: null, when: `From ${fmt(setup.dismissalAt)}`, leftHtml: <b>{cur && !cur.duty ? `${cur.left} min left` : "Day complete"}</b>, pct: 100 })}
-        <div className="main center">
+        {withPicture(
           <div>
             <p className="script">Well done, {(meta.greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
             {meta.headout.length > 0 && (
@@ -388,7 +411,7 @@ export default function DailyPage() {
               </div>
             )}
           </div>
-        </div>
+        )}
         {footer(true)}
       </>
     );
@@ -403,18 +426,16 @@ export default function DailyPage() {
           leftHtml: nx ? <><b>{nx.subj}</b> in {mins} min</> : <b>Day complete</b>,
           pct: cur ? ((t - cur.start) / (cur.end - cur.start)) * 100 : 0, period: cur,
         })}
-        <div className="main center">
-          {nx ? (
-            <div>
-              <p className="eyebrow">Up next</p>
-              <p className="big">{nx.subj}</p>
-              <p className="question">{nx.room} · starts at {fmt(nx.start)}</p>
-              <p className="summary">{nx.today}</p>
-            </div>
-          ) : (
-            <div><p className="script">{title}</p></div>
-          )}
-        </div>
+        {withPicture(nx ? (
+          <div>
+            <p className="eyebrow">Up next</p>
+            <p className="big">{nx.subj}</p>
+            <p className="question">{nx.room} · starts at {fmt(nx.start)}</p>
+            <p className="summary">{nx.today}</p>
+          </div>
+        ) : (
+          <div><p className="script">{title}</p></div>
+        ))}
         {footer(true)}
       </>
     );
@@ -425,7 +446,8 @@ export default function DailyPage() {
     const phase = elapsed < setup.openMin ? "open" : "work";
     const nx = nextClass(cur.end);
     const isLast = lastClass && lastClass.start === cur.start;
-    const picOn = opts.pic !== "off" && data.picture && elapsed * 60 < setup.picSeconds;
+    const lessonPicOn = opts.pic !== "off" && data.picture && usable(data.picture.url) && elapsed * 60 < setup.picSeconds;
+    const picOn = !!featureImage || lessonPicOn;
 
     const leftCol = (
       <div>
@@ -437,14 +459,11 @@ export default function DailyPage() {
     );
 
     let side;
-    if (picOn) {
+    if (featureImage) {
+      side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
+    } else if (lessonPicOn) {
       const picLeft = Math.ceil((setup.picSeconds - elapsed * 60) / 60);
-      side = (
-        <div className="picture">
-          <div className="frame"><img src={data.picture.url} alt="Lesson picture" /></div>
-          <div className="capline"><span>Lesson picture · {cur.code}</span><span>{picLeft} min left on screen</span></div>
-        </div>
-      );
+      side = bigPicture(data.picture.url, `Lesson picture · ${cur.code}`, `${picLeft} min left on screen`);
     } else {
       const blocks = [];
       if (phase === "open") {
@@ -474,7 +493,7 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
-        <div className={`main${picOn ? ` pic-${opts.pic}` : ""}`}>
+        <div className={`main${picOn ? ` pic-${opts.pic}` : ""}${featureImage ? " pic-feature" : ""}`}>
           {picOn && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
         </div>
         {footer(left <= setup.nextAdvance)}
