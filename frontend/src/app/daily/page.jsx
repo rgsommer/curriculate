@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, friendlyDutyTitle, statusStyle } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, friendlyDutyTitle, statusStyle, subjectTheme, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
@@ -164,7 +164,7 @@ function PointsStrip({ points, currentSec }) {
               <span className="c">{label}</span>
               <span className="n">{nums[i] != null ? nums[i] : "—"}</span>
               <span className="pc">{pct != null ? `${pct}%` : ""}</span>
-              <div className="bar"><i style={{ width: `${Math.min(100, (pct || 0) / 3)}%` }} /></div>
+              <div className="bar"><i className={pct >= 100 ? "met" : ""} style={{ width: `${Math.min(100, (pct || 0) / 3)}%` }} /></div>
             </div>
           );
         })}
@@ -323,6 +323,11 @@ export default function DailyPage() {
   const evaluated = evaluateFeature(sources, t);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
+  // Each subject carries its own accent, so the room sees the class change
+  // before it reads the heading. Between classes the next one's colour is used.
+  const themeOf = (p) => (p && p.code ? subjectTheme(p.code, p.subj) : null);
+  const theme = themeOf(cur && !cur.duty ? cur : peekNext) || { key: "?", accent: "#1F3A5F", deep: "#122845" };
+  const today = weekdayColour(weekday);
   // The D-column rule, recomputed from the board's clock so the grace window
   // and the chips move with the scrubber too.
   const statusOf = (p) => ((sources.pointsClasses || []).length
@@ -381,7 +386,12 @@ export default function DailyPage() {
     <>
       <PointsStrip points={points} currentSec={cur && !cur.duty ? cur.sec : ""} />
       <div className="bottom">
-        <span>{meta.line}{error ? <span className="stale"> · {error}</span> : null}</span>
+        <span>
+          {today && (
+            <span className="daychip" style={{ background: today.colour }}>{today.name}</span>
+          )}
+          {meta.line}{error ? <span className="stale"> · {error}</span> : null}
+        </span>
         {prayEl()}
         {showPuzzle && puzzleWord
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
@@ -576,12 +586,16 @@ export default function DailyPage() {
     const title = cur && !cur.empty
       ? friendlyDutyTitle(cur.text || cur.subj) || cur.subj
       : "Change of class";
+    // Lunch and recess end in a class change too, so the clock is highlighted
+    // for the same last few minutes.
+    redState = !!nx && mins > 0 && mins <= setup.redAt;
     body = (
       <>
         {header({
           title, chips: null, when: cur ? `${fmt(cur.start)} to ${fmt(cur.end)}` : "",
           leftHtml: nx ? <><b>{nx.subj}</b> in {mins} min</> : <b>Day complete</b>,
           pct: cur ? ((t - cur.start) / (cur.end - cur.start)) * 100 : 0, period: cur,
+          red: redState,
         })}
         {withPicture(nx ? (
           <div>
@@ -659,5 +673,15 @@ export default function DailyPage() {
     );
   }
 
-  return <div className={`board${redState ? " red" : ""}${scrub != null ? " previewing" : ""}`} data-tick={tick}>{body}</div>;
+  return (
+    <div
+      className={`board${redState ? " red" : ""}${scrub != null ? " previewing" : ""}`}
+      style={{ "--subj": theme.accent, "--subj-deep": theme.deep }}
+      data-subject={theme.key}
+      data-period={cur ? cur.start : "none"}
+      data-tick={tick}
+    >
+      {body}
+    </div>
+  );
 }

@@ -142,6 +142,16 @@ check("duty title: dismissal", P.friendlyDutyTitle("Dismissal Rm212") === "Dismi
 check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") === "No school today");
 check("duty title: nothing better to say", P.friendlyDutyTitle("MAPS Testing") === "");
 
+check("theme: Math is blue", P.subjectTheme("J003", "Math 7A").accent === "#2F6BD8");
+check("theme: History is rust", P.subjectTheme("H001", "History 7A").accent === "#C2571A");
+check("theme: CE is violet", P.subjectTheme("B003", "CE 8A").accent === "#7C5CD6");
+check("theme: Geography is green", P.subjectTheme("G002", "Geography 8A").accent === "#2E8B4A");
+check("theme: an unknown code still gets a colour", /^hsl\(/.test(P.subjectTheme("Z009", "Drama 8B").accent), P.subjectTheme("Z009", "Drama 8B"));
+check("theme: the same subject always gets the same colour",
+  P.subjectTheme("Z009", "Drama 8B").accent === P.subjectTheme("Z009", "Drama 8B").accent);
+check("weekday colour: Thursday", (P.weekdayColour(5) || {}).name === "Thursday" && P.weekdayColour(5).colour === "#B4A7D6");
+check("weekday colour: none at the weekend", P.weekdayColour(1) === null && P.weekdayColour(7) === null);
+
 check("daily: poem inside the window", P.evaluateDailyText(S({ windowStart: 750, windowEnd: 800, poemRow: ["mon", "tue", "wed", "thu", "fri"] }), 760, 5) === "thu");
 
 // ---- whole payload from a Thursday-shaped grid ----
