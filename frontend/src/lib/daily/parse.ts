@@ -65,6 +65,10 @@ export type Payload = {
   setup: Setup;
   picture: { url: string; seconds: number } | null;
   sources: Sources;
+  // Setup!T1:AA8 as values and formulas, shown by ?debug=1 so the cells that
+  // decide what E1 displays can be read without opening the sheet.
+  slotBlock: string[][];
+  slotBlockFormulas: string[][];
 };
 
 export const DEFAULT_SETUP: Setup = {
@@ -286,6 +290,8 @@ export type RawInputs = {
   master?: string[][]; // Master!B1:B2 values
   pointsRow3?: string[]; // Points!A3:BZ3 — class names
   pointsRow46?: string[]; // Points!A46:BZ46 — four flags per class
+  slotBlock?: string[][]; // Setup!T1:AA8 values, for the debug view
+  slotBlockFormulas?: string[][]; // Setup!T1:AA8 formulas, for the debug view
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -425,7 +431,12 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   const setup = parseSetup(inp.setup);
   if (picture) setup.picSeconds = picture.seconds;
 
-  return { fetchedAt: now.toISOString(), meta, periods, points, setup, picture, sources: buildSources(inp) };
+  return {
+    fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
+    sources: buildSources(inp),
+    slotBlock: inp.slotBlock || [],
+    slotBlockFormulas: inp.slotBlockFormulas || [],
+  };
 }
 
 /* ------------------------------------------------------------------ *

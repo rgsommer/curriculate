@@ -154,6 +154,11 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .debug th { width: 22ch; color: var(--muted); font-weight: 500; white-space: nowrap; }
 .debug em { color: var(--muted); }
 .debug p { margin-top: 3vh; max-width: 80ch; color: var(--muted); line-height: 1.5; }
+.debug h2 { font-size: 17px; font-weight: 500; margin: 4vh 0 1vh; }
+.debug table.grid { font-size: 12px; table-layout: fixed; }
+.debug table.grid th { width: 4ch; color: var(--muted); }
+.debug table.grid td { max-width: 22ch; overflow-wrap: anywhere; vertical-align: top; }
+.debug table.grid code { font-size: 11px; line-height: 1.35; }
 .debug .shots { display: flex; gap: 2vw; flex-wrap: wrap; margin-top: 3vh; }
 .debug figure { margin: 0; max-width: 40ch; }
 .debug figure img { max-width: 100%; max-height: 28vh; border: 1px solid var(--line); border-radius: 6px; display: block; background: var(--chip); }

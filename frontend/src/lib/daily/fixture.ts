@@ -50,6 +50,21 @@ export const FIXTURE: RawInputs = {
     ["", "Display riddle answer every", "3", "Lesson pic"],
     ["", "Snacks are allowed with B2 for", "5", "minutes"],
   ],
+  // Setup!T1:AA8. Column T is a row label; the E1 formula's HLOOKUP runs on
+  // U to AA, so the slots proper start one column in.
+  slotBlock: [
+    ["Priority", "6", "1", "", "5", "3", "2", ""],
+    ["Name", "Vocab", "Verse & Poem", "Homework", "Kiss&Ride", "Gestation", "Lesson Pic", ""],
+    ["On?", "FALSE", "FALSE", "TRUE", "FALSE", "FALSE", "C11", ""],
+    ["Value", "", "", "Daily Update", "", "", "", ""],
+    [],
+    [],
+    ["Seconds", "500", "800", "500", "200", "200", "600", "1300"],
+  ],
+  slotBlockFormulas: [
+    [], [], [],
+    ["", "", "", "=Setup!C6", "", "", '=IMAGE("https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Quebec_1759.jpg/960px-Quebec_1759.jpg")', ""],
+  ],
   slots: [
     ["6", "1", "", "5", "3", "2", ""],
     ["Vocab", "Verse & Poem", "Homework", "Kiss&Ride", "Gestation", "Lesson Pic", ""],

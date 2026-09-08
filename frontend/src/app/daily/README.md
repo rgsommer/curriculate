@@ -40,7 +40,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `DisplayAI!A1:F40` | Greeting (A1), week line (A3), verse (A5), unscramble (C7), "Plans for…" line with class points and the entered flag (C8/D8), then the time rows: A time, C lesson text, D status, F flag. |
 | `DisplayAI!C1:D40` as formulas | `HYPERLINK()` targets in the lesson or status cells → the video tile. |
 | `Setup!A1:D20` | Timing rules, matched by the label text in column B (see below). |
-| `Setup!U1:AA8` | The feature-slot table; the **Lesson Pic** column gives the picture URL (row 4, `=IMAGE()` or a URL) and its on-screen window in seconds (row 7). |
+| `Setup!T1:AA8` (values and formulas) | The feature-slot table. Column T labels the rows; the E1 formula's `HLOOKUP` runs on U to AA, so the slots proper start one column in: row 1 priority, row 2 name, row 4 value, row 7 seconds on screen. `?debug=1` prints the whole block with its formulas, which is how to see what actually decides E1. |
 | `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
 Lesson cells are split using the shape the AI text already has:

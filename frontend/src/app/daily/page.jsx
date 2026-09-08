@@ -468,6 +468,26 @@ export default function DailyPage() {
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
             </tbody>
           </table>
+          <h2>Setup!T1:AA8 — the cells that decide E1</h2>
+          <table className="grid">
+            <tbody>
+              {(data.slotBlock || []).map((rowVals, r) => (
+                <tr key={r}>
+                  <th>{r + 1}</th>
+                  {["T", "U", "V", "W", "X", "Y", "Z", "AA"].map((col, c) => {
+                    const formula = ((data.slotBlockFormulas || [])[r] || [])[c] || "";
+                    const value = (rowVals || [])[c] || "";
+                    return (
+                      <td key={col} title={`${col}${r + 1}`}>
+                        {formula && formula !== value ? <code>{formula}</code> : value || <em>—</em>}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
           <div className="shots">
             {[["E1 picture", evaluated.image || meta.featureImage], ["Lesson picture", data.picture && data.picture.url]]
               .filter(([, url]) => url)
