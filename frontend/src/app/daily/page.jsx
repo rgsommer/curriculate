@@ -306,45 +306,17 @@ export default function DailyPage() {
   const verse = meta.verse.replace(/^.*?~/, "").trim() || meta.verse;
   const challenge = (meta.other.match(/Math Challenge Question[^:]*:\s*(.*)$/) || [, ""])[1];
   const lastClass = classes[classes.length - 1];
-  const dayMin = P.length ? Math.max(0, P[0].start - 60) : 8 * 60;
-  const dayMax = P.length ? Math.min(24 * 60 - 1, P[P.length - 1].end + 30) : 16 * 60;
-
-  // /daily?debug=1 — what the board actually received from the sheet. Use it to
-  // tell whether a picture or link is reaching the page at all.
-  if (opts.debug) {
-    const row = (k, v) => (
-      <tr key={k}><th>{k}</th><td>{v === "" || v == null ? <em>empty</em> : String(v)}</td></tr>
-    );
-    return (
-      <div className="board">
-        <div className="debug">
-          <h1>What the board sees</h1>
-          <table>
-            <tbody>
-              {row("fetched", data.fetchedAt)}
-              {row("version", data.version)}
-              {row("stale", data.stale ? `yes — ${data.error || ""}` : "no")}
-              {row("E1 picture", meta.featureImage)}
-              {row("E1 text", meta.feature)}
-              {row("pray text", meta.pray && meta.pray.text)}
-              {row("pray link", meta.pray && meta.pray.url)}
-              {row("lesson picture", data.picture && data.picture.url)}
-              {row("picture seconds", setup.picSeconds)}
-              {row("periods", `${P.length} rows, ${classes.length} classes`)}
-              {row("now", `${fmt(t)} — ${cur ? cur.subj || "duty" : "no period"}`)}
-              {row("puzzle", meta.puzzle)}
-              {row("riddle", meta.riddle)}
-              {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
-            </tbody>
-          </table>
-          <p>A picture only reaches this page if the cell itself holds it, for example
-            <code>=IMAGE(&quot;https://…&quot;)</code>. An image inserted over the grid
-            (Insert &rsaquo; Image &rsaquo; Image in cell is fine; floating images are not)
-            cannot be read by the sheet API and will always show as empty here.</p>
-        </div>
-      </div>
-    );
-  }
+  // The scrubber has to reach the whole school day, not just the teaching periods:
+  // arrival and the announcements window come before the first class, and the
+  // dismissal screen can run past the last one.
+  const dayMin = Math.max(0, Math.min(...[
+    P.length ? P[0].start - 90 : 8 * 60,
+    setup.blankFrom != null ? setup.blankFrom - 10 : Infinity,
+  ]));
+  const dayMax = Math.min(24 * 60 - 1, Math.max(...[
+    P.length ? P[P.length - 1].end + 30 : 16 * 60,
+    setup.dismissalAt != null ? setup.dismissalAt + 45 : -Infinity,
+  ]));
 
   const header = ({ title, chips, when, leftHtml, pct, red, period }) => (
     <>
@@ -430,6 +402,54 @@ export default function DailyPage() {
   const withPicture = (content) => (featureImage
     ? <div className="main pic-right pic-feature">{content}{bigPicture(featureImage, "On screen now", "")}</div>
     : <div className="main center">{content}</div>);
+
+  // /daily?debug=1 — what the board actually received from the sheet. Use it to
+  // tell whether a picture or link is reaching the page at all.
+  if (opts.debug) {
+    const row = (k, v) => (
+      <tr key={k}><th>{k}</th><td>{v === "" || v == null ? <em>empty</em> : String(v)}</td></tr>
+    );
+    return (
+      <div className="board">
+        <div className="debug">
+          <h1>What the board sees</h1>
+          <table>
+            <tbody>
+              {row("fetched", data.fetchedAt)}
+              {row("version", data.version)}
+              {row("stale", data.stale ? `yes — ${data.error || ""}` : "no")}
+              {row("E1 picture", meta.featureImage)}
+              {row("E1 text", meta.feature)}
+              {row("pray text", meta.pray && meta.pray.text)}
+              {row("pray link", meta.pray && meta.pray.url)}
+              {row("lesson picture", data.picture && data.picture.url)}
+              {row("picture seconds", setup.picSeconds)}
+              {row("periods", `${P.length} rows, ${classes.length} classes`)}
+              {row("now", `${fmt(t)} — ${cur ? cur.subj || "duty" : "no period"}`)}
+              {row("puzzle", meta.puzzle)}
+              {row("riddle", meta.riddle)}
+              {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
+            </tbody>
+          </table>
+          <div className="shots">
+            {[["E1 picture", meta.featureImage], ["Lesson picture", data.picture && data.picture.url]]
+              .filter(([, url]) => url)
+              .map(([label, url]) => (
+                <figure key={label}>
+                  <img src={url} alt={label} onError={() => markBad(url)} />
+                  <figcaption>{label} — {badImages[url] ? "did NOT load" : "loaded"}</figcaption>
+                </figure>
+              ))}
+            {!meta.featureImage && !(data.picture && data.picture.url) && <p>No picture URL came back from the sheet.</p>}
+          </div>
+          <p>A picture only reaches this page if the cell itself holds it, for example
+            <code>=IMAGE(&quot;https://…&quot;)</code>. An image inserted over the grid
+            (Insert &rsaquo; Image &rsaquo; Image in cell is fine; floating images are not)
+            cannot be read by the sheet API and will always show as empty here.</p>
+        </div>
+      </div>
+    );
+  }
 
   let body;
   let redState = false;

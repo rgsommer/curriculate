@@ -124,7 +124,9 @@ when it points at a video (YouTube or Drive), the same behaviour as the lesson v
 
 `/daily?debug=1` lists exactly what came back from the sheet: the E1 picture and text,
 the Pray line and its link, the lesson picture, period counts, points, and whether the
-copy is stale. Use it first whenever something in the sheet is not showing.
+copy is stale. It also renders each picture it found and says whether it **loaded** or
+**did NOT load**, which separates "the sheet never sent a URL" from "the URL is there but
+the file is not shared". Use it first whenever something in the sheet is not showing.
 
 A picture reaches the board only if the **cell itself** holds it — `=IMAGE("…")`, a
 `=HYPERLINK()` to an image, an image URL as text, or Insert › Image › **Image in cell**.
@@ -139,6 +141,17 @@ The slim strip along the bottom edge is a slider. Drag it to preview any time of
 day; the board outlines itself in yellow while previewing and shows "Previewing 11:47".
 It snaps back to the live clock 45 s after the last touch, or on "Back to now", so the
 projector cannot be left on a preview.
+
+Its range runs from 90 minutes before the first class (or 10 minutes before the
+announcements window in Setup, whichever is earlier) to 30 minutes after the last
+period, or 45 minutes past the dismissal time — so arrival, announcements and
+dismissal can all be previewed, not just the teaching periods.
+
+One limit worth knowing: scrubbing moves **the board's** clock, not the sheet's. Cells
+whose own formulas depend on `NOW()` — E1 above all — still hold whatever they hold at
+this moment, so scrubbing back to 8:55 shows the board's 8:55 layout with E1's *current*
+content. What the board gates itself (which period, the phase blocks, the lesson-picture
+window, the dismissal screen) does follow the scrubber.
 
 ## Testing
 
