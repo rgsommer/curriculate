@@ -22,12 +22,31 @@ function test1_headerRendered() {
     benchmarks: { SPY: 0.4, "XIC.TO": 0.2 },
     gainers: [], losers: [], recTransitions: [], eightKs: [], moves: [],
   });
-  assert(md.includes("## 📊 Yesterday's tape"),
-    "1. Recap block starts with §📊 Yesterday's tape header", "");
+  // Header now shows the actual snapshot date (P0A staleness gate fix
+  // 2026-09-08). Old hardcoded "Yesterday's tape" was the bug — an
+  // Aug-31 snapshot rendered as "yesterday" on Sept 8.
+  assert(md.includes("## 📊 Portfolio recap — 2026-09-01"),
+    "1. Recap block header names the actual snapshot date", md.slice(0, 200));
   assert(md.includes("Portfolio 2026-09-01"),
-    "1b. Includes yesterday's date + portfolio headline", "");
+    "1b. Includes snapshot date + portfolio headline", "");
   assert(md.includes("SPY +0.4%"),
     "1c. Includes SPY benchmark context", "");
+}
+
+function test1c_stalenessBanner() {
+  const md = formatPreviousDayRecap({
+    portfolio: { stale: true, latestDate: "2026-08-31", ageDays: 5 },
+    benchmarks: {}, gainers: [], losers: [], recTransitions: [], eightKs: [], moves: [],
+  });
+  assert(md.includes("DATA STALE"),
+    "1c-stale. Stale snapshot renders explicit DATA STALE banner", md.slice(0, 300));
+  assert(md.includes("2026-08-31"),
+    "1c-stale-date. Includes actual last-valid-snapshot date", "");
+  assert(md.includes("5 business days"),
+    "1c-stale-age. Includes age in business days", "");
+  // Never labels a stale row as "yesterday"
+  assert(!md.includes("Yesterday's tape"),
+    "1c-stale-no-yesterday. Stale banner does NOT use the misleading 'Yesterday's tape' header", "");
 }
 
 function test2_signedPctFormatted() {
@@ -106,8 +125,8 @@ function test7_emptyRecapDoesntBlow() {
     portfolio: null, benchmarks: {},
     gainers: [], losers: [], recTransitions: [], eightKs: [], moves: [],
   });
-  assert(typeof md === "string" && md.includes("Yesterday's tape"),
-    "7. Empty recap still renders the header (no crash)", "");
+  assert(typeof md === "string" && md.includes("## 📊 Portfolio recap"),
+    "7. Empty recap still renders the header (no crash)", md.slice(0, 200));
   assert(md.includes("Insufficient snapshot history"),
     "7b. Missing portfolio surfaces friendly message", "");
 }
@@ -159,6 +178,7 @@ function test11_briefingWiresRecap() {
 async function run() {
   console.log("\n═══ Previous-Day Recap + AI Hardening Regression Tests ═══\n");
   test1_headerRendered();
+  test1c_stalenessBanner();
   test2_signedPctFormatted();
   test3_gainersLosersRendered();
   test4_reasonPrefers8k();

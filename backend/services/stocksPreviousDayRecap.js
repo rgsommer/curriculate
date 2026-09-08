@@ -48,25 +48,64 @@ function lastBarReturnPct(bars) {
 }
 
 // Yesterday's portfolio total vs the day before, from the persisted
-// snapshot series. Returns {yesterdayCad, dayBeforeCad, deltaCad,
-// deltaPct, yesterdayDate} or null when snapshots insufficient.
+// snapshot series. Returns:
+//   { stale: true, latestDate, ageDays }                 — snapshot >3 business days old
+//   { yesterdayCad, dayBeforeCad, deltaCad, deltaPct,
+//     yesterdayDate, ageDays }                            — fresh
+//   null                                                  — insufficient rows
+//
+// P0A staleness gate (2026-09-08): prior version returned the latest
+// snapshot no matter how old and the renderer unconditionally labeled
+// it "Yesterday's tape" — an Aug 31 row displayed as yesterday on
+// Sep 8. Now the delta object carries `stale` + `ageDays` and the
+// renderer branches on it.
+function businessDaysBetween(fromYmd, toDate) {
+  // Simple business-day gap: count weekdays between the two dates.
+  // Doesn't handle holidays — over-counts by ~1 in a normal year.
+  // Good enough for a "is this snapshot recent?" signal.
+  if (!fromYmd || typeof fromYmd !== "string") return null;
+  const from = new Date(`${fromYmd}T00:00:00Z`);
+  if (isNaN(from.getTime())) return null;
+  let days = 0;
+  const oneDay = 86400_000;
+  const toMs = toDate.getTime();
+  for (let t = from.getTime() + oneDay; t <= toMs; t += oneDay) {
+    const d = new Date(t);
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) days++;
+  }
+  return days;
+}
+
 async function portfolioDelta(email) {
   try {
     const rows = await StocksPortfolioSnapshot.find({
       email: String(email).toLowerCase(),
       accountId: "__total__",
     }).sort({ date: -1 }).limit(2).lean();
-    if (!Array.isArray(rows) || rows.length < 2) return null;
+    if (!Array.isArray(rows) || rows.length === 0) return null;
     const [latest, prior] = rows;
-    if (!Number.isFinite(latest?.totalCad) || !Number.isFinite(prior?.totalCad) || prior.totalCad <= 0) return null;
+    const ageBd = businessDaysBetween(latest.date, new Date());
+    // >3 business days old — treat as stale. Normal Monday briefing
+    // sees Fri snapshot (~1bd age) → fresh. Snapshot skipped for a
+    // whole week → age >5bd → stale.
+    if (Number.isFinite(ageBd) && ageBd > 3) {
+      return { stale: true, latestDate: latest.date, ageDays: ageBd };
+    }
+    if (!prior || !Number.isFinite(latest?.totalCad) || !Number.isFinite(prior?.totalCad) || prior.totalCad <= 0) {
+      // Fresh but only one snapshot — can't compute delta yet.
+      return { stale: false, yesterdayDate: latest.date, yesterdayCad: latest.totalCad, ageDays: ageBd, insufficientHistory: true };
+    }
     const deltaCad = latest.totalCad - prior.totalCad;
     const deltaPct = (deltaCad / prior.totalCad) * 100;
     return {
+      stale: false,
       yesterdayDate: latest.date,
       yesterdayCad: latest.totalCad,
       dayBeforeCad: prior.totalCad,
       deltaCad,
       deltaPct,
+      ageDays: ageBd,
     };
   } catch { return null; }
 }
@@ -222,13 +261,31 @@ export async function buildPreviousDayRecap({ email, positions = [] } = {}) {
 // yesterday" before the "what to do today" mandates.
 export function formatPreviousDayRecap(recap) {
   if (!recap) return "";
+  const dp = recap.portfolio;
+  // P0A staleness gate: if snapshot is >3 business days old, refuse to
+  // label the row "Yesterday's tape". Explicit stale banner instead.
+  if (dp?.stale) {
+    return [
+      "",
+      "## 📊 Portfolio recap — DATA STALE",
+      "",
+      `> ⚠ **DATA STALE — LAST VALID SNAPSHOT ${dp.latestDate} (${dp.ageDays} business days ago).**`,
+      ">",
+      `> The portfolio-snapshot cron has not written a fresh row in ${dp.ageDays} business days. A prior-day recap would be misleading; the section is intentionally suppressed. Check the diagnostic endpoint for the snapshot heartbeat and fix the underlying cron/data issue before treating any portfolio move number as current.`,
+      "",
+    ].join("\n");
+  }
   const lines = [];
   lines.push("");
-  lines.push("## 📊 Yesterday's tape");
+  // Use the actual snapshot date in the header so a Monday briefing
+  // reading a Friday snapshot says "Fri Sept 5 tape" rather than the
+  // implicit "yesterday" (which would be a lie on any Mon/Tue-after-
+  // holiday).
+  const dateLabel = dp?.yesterdayDate || "";
+  lines.push(`## 📊 Portfolio recap — ${dateLabel}`);
   lines.push("");
   // Portfolio-level headline
-  if (recap.portfolio) {
-    const dp = recap.portfolio;
+  if (dp && !dp.insufficientHistory && Number.isFinite(dp.deltaCad)) {
     const marketContext = recap.benchmarks.SPY != null
       ? ` · SPY ${fmtPct(recap.benchmarks.SPY)}${recap.benchmarks["XIC.TO"] != null ? ` · XIC ${fmtPct(recap.benchmarks["XIC.TO"])}` : ""}`
       : "";

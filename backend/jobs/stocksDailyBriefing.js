@@ -1723,8 +1723,20 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     const floor = PICK_SANITY_FLOORS[String(ticker || "").toUpperCase()];
     return !Number.isFinite(floor) || price >= floor;
   };
-  const pickDefaultTicket = (list, targetCad, deployCurrency) => {
-    if (!(targetCad > 0)) return null;
+  // Pick a default ticket for a paired trade.
+  // `targetNative` is the budget in the SAME currency as `deployCurrency`
+  // (i.e. USD proceeds ⇒ targetNative in USD; CAD proceeds ⇒ targetNative
+  // in CAD). Historically this parameter was misnamed `targetCad` and
+  // several callers passed a CAD-converted amount alongside deployCurrency
+  // = "USD"; because the same-currency filter below guarantees
+  // liveCcy === deployCurrency, the function then treated the CAD number
+  // as if it were USD and sized the BUY at ~1.37× the funds actually
+  // available. That produced the 2026-08 DJT paired-trade $167 USD
+  // deficit. Fixed 2026-09-08 (P0A.2): parameter renamed, cross-currency
+  // conversion branches removed (they were unreachable AND wrong), and
+  // callers updated to pass the native-currency amount.
+  const pickDefaultTicket = (list, targetNative, deployCurrency) => {
+    if (!(targetNative > 0)) return null;
     const wantCcy = String(deployCurrency || "").toUpperCase();
     const rawFiltered = (list || [])
       .filter(t => !ctxRecentExits.includes(t))
@@ -1769,18 +1781,13 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       return null;
     }
     const fx = fxUsdCad || 1.37;
-    // Convert budget from the caller's supplied unit to the live
-    // price's currency so share count is correct. Historical callers
-    // pass a CAD-equivalent budget even when deploying into USD (or
-    // vice versa); the strict same-currency gate above ensures the
-    // picked ticker matches wantCcy, so this conversion is purely
-    // caller-convenience — the trade itself never crosses currency.
-    let budgetInNative;
-    if (liveCcy === deployCurrency) budgetInNative = targetCad;
-    else if (liveCcy === "USD" && deployCurrency === "CAD") budgetInNative = targetCad / fx;
-    else if (liveCcy === "CAD" && deployCurrency === "USD") budgetInNative = targetCad * fx;
-    else budgetInNative = targetCad;
-    const shares = Math.floor(budgetInNative / live.price);
+    // Budget is supplied in the deploy currency's native units. The
+    // strict same-currency filter above guarantees liveCcy === wantCcy
+    // (== deployCurrency), so the price and the budget are in the same
+    // unit — divide directly. NO conversion here: any conversion would
+    // re-introduce the "CAD number ÷ USD price" 1.37× oversizing bug
+    // (see P0A.2 header comment above).
+    const shares = Math.floor(targetNative / live.price);
     if (!(shares > 0)) return null;
     const usedNative = shares * live.price;
     const usedCad = liveCcy === "CAD" ? usedNative
@@ -2023,7 +2030,11 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
           list = underweight.sleeve === "income" ? incomeUsdList : coreUsdList;
           effectiveSleeve = underweight.sleeve === "income" ? "INCOME" : "CORE";
         }
-        const ticket = pickDefaultTicket(list, deployCadThisPool, pool.ccy);
+        // P0A.2: pass the NATIVE-currency amount, not the CAD-converted one.
+        // pickDefaultTicket wants the budget in deploy-currency units;
+        // passing deployCadThisPool with pool.ccy="USD" was oversizing
+        // USD BUYs by ~1.37×.
+        const ticket = pickDefaultTicket(list, deployNative, pool.ccy);
         if (!ticket) continue;
         tickets.push({ pool, ticket, deployNative, effectiveSleeve, reserveInCcy });
       }
@@ -2418,7 +2429,6 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
     // not deferred until tomorrow's DEPLOY CASH mandate.
     if (r.qty > 0 && r.last > 0) {
       const proceedsNative = r.qty * r.last;
-      const proceedsCad = r.currency === "CAD" ? proceedsNative : proceedsNative * (fxUsdCad || 1.37);
       // Route to the most-underweight sleeve, currency-matched. Same
       // logic as TRIM CONCENTRATION paired REDEPLOY.
       const routableGaps = sleeveBalance?.deviations ? [
@@ -2466,7 +2476,11 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
         const pct = (cadInBase / bookForConc) * 100;
         return pct < CONC_CAP_PCT;
       });
-      const redeployTicket = pickDefaultTicket(destList, proceedsCad, r.currency);
+      // P0A.2: pass NATIVE proceeds. Passing proceedsCad with r.currency="USD"
+      // was oversizing paired REDEPLOY BUYs by ~1.37× (see DJT $167 deficit
+      // 2026-08). r.currency is the SELL's native currency, which matches the
+      // deploy-currency requirement here (paired trade = same account/currency).
+      const redeployTicket = pickDefaultTicket(destList, proceedsNative, r.currency);
       if (redeployTicket) {
         const acctLabel = (cashAccounts || []).find(a => String(a.id) === String(r.account))?.name || String(r.account || "account");
         const usedNative = redeployTicket.shares * redeployTicket.livePrice;
@@ -2641,12 +2655,12 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
       `**SELL AT MARKET** — ${r.ticker} in ${r.account}: ${r.qty} sh · basis $${r.costBasis?.toFixed(2)} ${r.currency}, now $${r.currentPrice?.toFixed(2)} ${r.currency} (${r.pnlPct.toFixed(1)}%)${sleeveStop}. Hard-stop rule triggered. Sell at market or LIMIT at ~1% below current.`
     );
     if (coreLockActive && proceeds > 0) {
-      const proceedsCad = r.currency === "CAD" ? proceeds : proceeds * (fxUsdCad || 1.37);
       // .TO suffix on CAD tickers so price lookup matches how
       // MANDATE_DEFAULT_TICKERS pre-fetches them; bare "XEQT" would
       // miss and fall through to the "pick manually" degrade path.
       const coreList = r.currency === "CAD" ? ["XEQT.TO", "VUN.TO", "XIU.TO"] : ["VOO", "VTI", "QQQ"];
-      const pairTicket = pickDefaultTicket(coreList, proceedsCad, r.currency);
+      // P0A.2: pass NATIVE proceeds; same fix as trail-stop-if-exit-redeploy above.
+      const pairTicket = pickDefaultTicket(coreList, proceeds, r.currency);
       if (pairTicket) {
         const altStr = pairTicket.alternatives ? ` · Alternatives: ${pairTicket.alternatives}` : "";
         mandatory.push(
@@ -5502,6 +5516,13 @@ export async function runDailyBriefing(opts = {}) {
               targetPrice: r.targetPrice ?? undefined,
               horizonDays: r.horizonDays ?? 30,
               account: r.account || undefined,
+              // P0A.2: map sizeShares → shares. Mandate factory writes
+              // sizeShares (addMandateRec) but the persisted schema
+              // uses shares. Prior to this fix every persisted mandate
+              // rec had shares:null, so downstream scorecard/linker
+              // views showed no size and paired-trade audits missed the
+              // rec entirely.
+              shares: r.sizeShares ?? null,
               rationale: `Deterministic ${r.sourceLabel || "mandate"} — briefing cron`,
             })),
             { ordered: false } // one insert failure shouldn't block the rest
@@ -6241,8 +6262,19 @@ export async function runDailyPortfolioSnapshotJob(opts = {}) {
       console.warn("[stocks-portfolio-snapshot] fail:", doc.email, e?.message);
     }
   }
+  const summary = { ok, fail, priceRefreshes };
   console.log(`[stocks-portfolio-snapshot] wrote ${ok}, failed ${fail}, refreshed ${priceRefreshes} prices`);
-  return { ok, fail, priceRefreshes };
+  // Tier-2026-09 P0A: heartbeat so the diagnostics endpoint (and the
+  // buildPreviousDayRecap staleness gate) can tell "cron hasn't fired"
+  // apart from "cron fired but wrote 0". Prior state — this job had NO
+  // heartbeat, so an 8-day stale snapshot from Sep 8 back to Aug 31
+  // went undetected. Pattern mirrors runExternalNominationsSync.
+  await StocksSystemHeartbeat.findOneAndUpdate(
+    { name: "stocks-portfolio-snapshot" },
+    { $set: { lastTickAt: new Date(), lastRunSummary: summary, lastError: null, lastErrorAt: null } },
+    { upsert: true, setDefaultsOnInsert: true }
+  ).catch(() => {});
+  return summary;
 }
 
 export function scheduleDailyPortfolioSnapshot() {
@@ -6253,7 +6285,17 @@ export function scheduleDailyPortfolioSnapshot() {
   console.log(`[stocks-portfolio-snapshot] scheduled: "${expr}" ${tz}`);
   return cron.schedule(expr, async () => {
     console.log(`[stocks-portfolio-snapshot] tick: ${new Date().toISOString()}`);
-    try { await runDailyPortfolioSnapshotJob(); } catch (e) { console.error("[stocks-portfolio-snapshot] tick error:", e); }
+    try { await runDailyPortfolioSnapshotJob(); }
+    catch (e) {
+      console.error("[stocks-portfolio-snapshot] tick error:", e);
+      // Also stamp heartbeat on catastrophic failure so the diagnostic
+      // shows an error state, not "cron hasn't fired".
+      await StocksSystemHeartbeat.findOneAndUpdate(
+        { name: "stocks-portfolio-snapshot" },
+        { $set: { lastTickAt: new Date(), lastError: String(e?.message || e).slice(0, 500), lastErrorAt: new Date() } },
+        { upsert: true, setDefaultsOnInsert: true }
+      ).catch(() => {});
+    }
   }, { timezone: tz });
 }
 

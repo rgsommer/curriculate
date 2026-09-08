@@ -918,8 +918,103 @@ function ruleBatchSmartMoneyAggregateCap(recs, ctx) {
   return rejections;
 }
 
+// Per-pair math validator for paired SELL/BUY orders (REDEPLOY /
+// CORE DEPLOY / SWAP mandates). A paired REDEPLOY means "use the SELL
+// proceeds to fund the BUY, in the same account, in the same currency,
+// no FX and no cash draw". So the BUY cost MUST be ≤ the paired SELL
+// proceeds minus a small commission buffer. If it isn't, the AI (or a
+// buggy default-ticket picker upstream) has sized the BUY beyond what
+// the SELL raises — and the trader will hit an "insufficient funds"
+// error at the broker.
+//
+// The 2026-08 DJT case: paired SELL raised $2,111 USD, paired BUY was
+// sized at $2,278 USD (a ~1.37× oversizing caused by the pickDefaultTicket
+// currency-unit bug fixed in stocksDailyBriefing.js:1726 P0A.2). The
+// old checks passed because startingCash + proceeds = $2,611 ≥ $2,278.
+// But the paired trade semantics were violated: BUY exceeded proceeds
+// by $167, silently pulling from reserve cash the trader intended to
+// keep. A paired trade that needs top-up cash is NOT a redeploy — it's
+// a separate discretionary decision that the user has not authorized.
+//
+// Rule: per (account, currency) bucket in the batch, if there is at
+// least one SELL/TRIM AND at least one BUY, ΣBUY_cost ≤ ΣSELL_proceeds
+// − fee estimate. Excess BUY(s) rejected largest-first (worst offender)
+// until the bucket balances.
+function ruleBatchPairedTradeMath(recs, ctx) {
+  const list = recs || [];
+  if (list.length === 0) return [];
+  const FEE_PER_LEG = 10; // native currency; conservative — CIBC IE ~$6.95, Questrade ~$4.95, but ETFs and thin books can slip
+  const TOLERANCE_PCT = 0.5; // allow 0.5% rounding on top of fee, catches float-arithmetic drift
+
+  const ccyOf = (r) => String(r?.entryCurrency || r?.currency || "").toUpperCase();
+  const acctOf = (r) => String(r?.account || "").trim();
+  const notional = (r) => {
+    const shares = Number(r?.shares) || 0;
+    const price = Number(r?.entryPrice) || Number(r?.hitPrice) || Number(r?.lastPrice) || 0;
+    return shares > 0 && price > 0 ? shares * price : 0;
+  };
+
+  // Bucket recs by (account, currency). Only bucket keys with a real
+  // account AND currency are candidates — a missing key means we can't
+  // prove the pair is same-account/currency, so we don't second-guess
+  // (ruleBatchPairedRedeploy already handles the missing-currency case).
+  const buckets = new Map();
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (!r || !r.action) continue;
+    if (!["BUY", "SELL", "TRIM"].includes(r.action)) continue;
+    const acct = acctOf(r);
+    const ccy = ccyOf(r);
+    if (!acct || !ccy) continue;
+    const n = notional(r);
+    if (!(n > 0)) continue;
+    const key = `${acct}::${ccy}`;
+    if (!buckets.has(key)) buckets.set(key, { sells: [], buys: [] });
+    if (r.action === "BUY") buckets.get(key).buys.push({ i, r, n });
+    else buckets.get(key).sells.push({ i, r, n });
+  }
+
+  const rejections = [];
+  for (const [key, b] of buckets) {
+    if (b.sells.length === 0 || b.buys.length === 0) continue; // not paired — nothing to check
+    const grossSell = b.sells.reduce((s, x) => s + x.n, 0);
+    const grossBuy = b.buys.reduce((s, x) => s + x.n, 0);
+    // Available for redeploy: SELL proceeds minus one commission per
+    // SELL leg minus one per BUY leg, and a small tolerance for rounding.
+    const feeBuffer = FEE_PER_LEG * (b.sells.length + b.buys.length);
+    const tolerance = grossSell * (TOLERANCE_PCT / 100);
+    const available = Math.max(0, grossSell - feeBuffer - tolerance);
+    if (grossBuy <= available) continue;
+    // Overshoot — reject BUYs largest-first until the bucket balances.
+    // Largest-first is the right heuristic here: the "one oversized BUY"
+    // failure mode (the DJT bug) is exactly the case this needs to catch,
+    // and a small, correctly-sized BUY that got dragged over the line by
+    // a giant sibling should keep its shot.
+    const buysDesc = [...b.buys].sort((a, b) => b.n - a.n);
+    let over = grossBuy - available;
+    const [acct, ccy] = key.split("::");
+    for (const bx of buysDesc) {
+      if (over <= 0) break;
+      rejections.push({
+        recIndex: bx.i,
+        reason: "paired-trade-math",
+        detail:
+          `BUY ${bx.r.ticker} ($${Math.round(bx.n).toLocaleString()} ${ccy}) rejected — ` +
+          `paired-trade math fails in ${acct} / ${ccy}: ` +
+          `SELL/TRIM proceeds $${Math.round(grossSell).toLocaleString()} − fees $${Math.round(feeBuffer).toLocaleString()} = ` +
+          `$${Math.round(available).toLocaleString()} available, but batch BUY total is $${Math.round(grossBuy).toLocaleString()} ` +
+          `(overshoot $${Math.round(grossBuy - available).toLocaleString()}). A paired REDEPLOY must be funded by the SELL, ` +
+          `not by drawing on reserve cash. Reduce share count or drop the BUY.`,
+      });
+      over -= bx.n;
+    }
+  }
+  return rejections;
+}
+
 const BATCH_RULES = [
   ruleBatchPairedRedeploy,
+  ruleBatchPairedTradeMath,
   ruleAccountFragmentation,
   ruleBatchSmartMoneyAggregateCap,
 ];
