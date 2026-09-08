@@ -64,6 +64,7 @@ export type Payload = {
   points: Points;
   setup: Setup;
   picture: { url: string; seconds: number } | null;
+  sources: Sources;
 };
 
 export const DEFAULT_SETUP: Setup = {
@@ -276,6 +277,15 @@ export type RawInputs = {
   slotFormulas: string[][]; // Setup!U4:AA4 formulas
   feature: string; // Display!E1 (or DisplayAI!E1) formatted value
   featureFormula?: string; // the same cell as a formula — an =IMAGE() has no text value
+  // Ingredients for the sheet's own display rules, so the board can evaluate
+  // them against its own clock (see evaluateFeature / evaluateDailyText).
+  poems?: string[][]; // Poems!F1:J3 values
+  poemFormulas?: string[][]; // Poems!F1:J3 formulas
+  vertical?: string[][]; // VerticalAi!D1:J200 values
+  riddles?: string[][]; // Riddles!D1:D400 values
+  master?: string[][]; // Master!B1:B2 values
+  pointsRow3?: string[]; // Points!A3:BZ3 — class names
+  pointsRow46?: string[]; // Points!A46:BZ46 — four flags per class
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -415,5 +425,242 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   const setup = parseSetup(inp.setup);
   if (picture) setup.picSeconds = picture.seconds;
 
-  return { fetchedAt: now.toISOString(), meta, periods, points, setup, picture };
+  return { fetchedAt: now.toISOString(), meta, periods, points, setup, picture, sources: buildSources(inp) };
+}
+
+/* ------------------------------------------------------------------ *
+ * Live evaluation of the sheet's own display formulas
+ *
+ * The Display tab computes two cells from NOW(): the daily-update text and
+ * the feature cell E1. Reading their results would freeze the board to the
+ * sheet's clock, so the board reads the *ingredients* instead and evaluates
+ * the same rules against its own clock — which is what makes the scrubber
+ * move them, and what lets an =IMAGE() slot be seen at all.
+ * ------------------------------------------------------------------ */
+
+export type Slot = { priority: number | null; name: string; value: string; formula: string };
+
+export type Sources = {
+  windowStart: number | null; // Setup!C12
+  windowEnd: number | null; // Setup!D12
+  offsetHours: number; // A7 — the hours the feature cell subtracts from NOW()
+  b7: boolean; // manual-message checkbox
+  d7: boolean; // lesson-picture checkbox
+  a11: number | null; // first time row; the daily text shortens past it
+  poemRow: string[]; // Poems!F2:J2, Monday to Friday
+  poemF3: string; // Poems!F3
+  poemF3Formula: string;
+  verticalRow: string[]; // VerticalAi row keyed 1, columns D to J
+  slots: Slot[]; // Setup!U1:AA4
+  riddle: string; // Riddles!D at the week in Master!B2
+  pointsClasses: PointsClass[]; // for the D-column status rule
+};
+
+export const EMPTY_SOURCES: Sources = {
+  windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a11: null,
+  poemRow: [], poemF3: "", poemF3Formula: "", verticalRow: [], slots: [], riddle: "", pointsClasses: [],
+};
+
+const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
+
+/** The picture inside a cell, if it holds one. */
+function imageOf(value: string, formula: string): string {
+  const url = [urlFromFormula(formula), (String(value || "").match(URL_RE) || [])[0]].find((u) => u && isImageUrl(u));
+  return url ? normalizeImageUrl(url) : "";
+}
+
+export type FeatureResult = { text: string; image: string; source: string };
+
+/**
+ * The E1 rule, in the sheet's own order:
+ *   poem window → manual message (B7) → lesson picture (D7) → the Setup slot
+ *   table by priority 1..6 → the riddle before the window → nothing.
+ *
+ * One deliberate difference: the sheet tests each slot with `<>""`, and an
+ * =IMAGE() cell has no text value, so the sheet skips its own picture slots.
+ * Here a cell holding a picture counts as filled, which is why a flag put in
+ * a slot reaches the board.
+ */
+export function evaluateFeature(src: Sources, minutes: number): FeatureResult {
+  const out = (value: string, formula: string, source: string): FeatureResult => ({
+    text: imageOf(value, formula) ? "" : String(value || "").trim(),
+    image: imageOf(value, formula),
+    source,
+  });
+  const t = minutes - (src.offsetHours || 0) * 60;
+
+  if (src.windowStart != null && src.windowEnd != null && t >= src.windowStart && t <= src.windowEnd) {
+    return out(src.poemF3, src.poemF3Formula, "Poems!F3 (poem window)");
+  }
+  const slotAt = (i: number) => src.slots[i] || { priority: null, name: "", value: "", formula: "" };
+  if (src.b7) return out(slotAt(1).value, slotAt(1).formula, "Setup!V4 (B7 ticked)");
+  if (src.d7) {
+    const z = slotAt(5);
+    return z.value || imageOf(z.value, z.formula)
+      ? out(z.value, z.formula, "Setup!Z4 (D7 ticked)")
+      : { text: "No class", image: "", source: "D7 ticked, Z4 empty" };
+  }
+  for (let p = 1; p <= 6; p += 1) {
+    const s = src.slots.find((c) => c.priority === p);
+    if (!s) continue;
+    const picture = imageOf(s.value, s.formula);
+    const filled = picture ? true : s.value !== "" && !(p === 2 && s.value === "-");
+    if (filled) return out(s.value, s.formula, `${s.name || "slot"} (priority ${p})`);
+  }
+  if (src.windowStart != null && minutes < src.windowStart && src.riddle) {
+    return { text: src.riddle, image: "", source: "Riddles (before the window)" };
+  }
+  return { text: "", image: "", source: "nothing selected" };
+}
+
+/**
+ * The daily-update rule: the weekday's poem inside the poem window, otherwise
+ * the VerticalAi text for the weekday — its first two lines once the day has
+ * started (past A11), in full before that. "Skip 7A " and friends come out.
+ */
+export function evaluateDailyText(src: Sources, minutes: number, weekday: number): string {
+  const strip = (s: string) => String(s || "").replace(/Skip \d[A-C]\s*/g, "").trim();
+  const t = minutes - (src.offsetHours || 0) * 60;
+
+  if (src.windowStart != null && src.windowEnd != null && t >= src.windowStart && t < src.windowEnd) {
+    return strip(src.poemRow[weekday - 2] || "");
+  }
+  const full = src.verticalRow[weekday] || "";
+  if (src.a11 != null && minutes > src.a11) {
+    const lines = String(full).split("\n");
+    return strip(lines.slice(0, 2).join("\n"));
+  }
+  return strip(full);
+}
+
+/** Gather everything the two rules need out of the raw grids. */
+export function buildSources(inp: RawInputs): Sources {
+  const setupRow12 = inp.setup[11] || [];
+  const row7 = inp.display[6] || [];
+  const priorities = inp.slots[0] || [];
+  const names = inp.slots[1] || [];
+  const values = inp.slots[3] || [];
+  const formulas = (inp.slotFormulas || [])[0] || [];
+  const slots: Slot[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const p = parseInt(String(priorities[i] || "").trim(), 10);
+    slots.push({
+      priority: Number.isFinite(p) ? p : null,
+      name: (names[i] || "").trim(),
+      value: (values[i] || "").trim(),
+      formula: (formulas[i] || "").trim(),
+    });
+  }
+  const poems = inp.poems || [];
+  const week = parseInt(String(((inp.master || [])[1] || [])[0] || "").trim(), 10);
+  const riddleRows = inp.riddles || [];
+
+  return {
+    windowStart: parseTime(setupRow12[2] || ""),
+    windowEnd: parseTime(setupRow12[3] || ""),
+    offsetHours: parseFloat(String(row7[0] || "").replace(/[^\d.-]/g, "")) || 0,
+    b7: truthy(row7[1] || ""),
+    d7: truthy(row7[3] || ""),
+    a11: parseTime((inp.display[10] || [])[0] || ""),
+    poemRow: (poems[1] || []).map((s) => String(s || "")),
+    poemF3: String((poems[2] || [])[0] || ""),
+    poemF3Formula: String(((inp.poemFormulas || [])[2] || [])[0] || ""),
+    verticalRow: (inp.vertical || []).find((r) => String((r || [])[0] || "").trim() === "1") || [],
+    slots,
+    riddle: Number.isFinite(week) ? String((riddleRows[week - 1] || [])[0] || "") : "",
+    pointsClasses: buildPointsClasses(inp.pointsRow3 || [], inp.pointsRow46 || []),
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * The D-column status rule (the one in D9, copied down the period rows)
+ *
+ * Inside the period it prints a class letter and four flags taken from
+ * Points row 46, then substitutes the four digits for a label. Outside the
+ * grace window at each end of the period (Setup!D16 minutes) it prints the
+ * dashed form, which forces B2 off. Evaluating it here rather than reading
+ * the cell is what makes the chips follow the scrubber.
+ * ------------------------------------------------------------------ */
+
+export type PointsClass = { name: string; letter: string; digits: string[] };
+
+/** Points row 3 holds the class names; row 46 holds four flags per class. */
+export function buildPointsClasses(row3: string[], row46: string[]): PointsClass[] {
+  // Column bases, in the order the formula tests them. The name sits nine
+  // columns to the left of each block of four flags.
+  const blocks: [number, string][] = [[26, "B"], [39, "C"], [13, "A"], [52, "A"], [65, "B"]];
+  const at = (row: string[], col1: number) => String((row || [])[col1 - 1] || "").trim();
+  return blocks
+    .map(([base, letter]) => ({
+      name: at(row3, base - 9),
+      letter,
+      digits: [0, 1, 2, 3].map((k) => at(row46, base + k)),
+    }))
+    .filter((c) => c.name);
+}
+
+const STATUS_LABELS: [string, string][] = [
+  ["1110", "All 3"], ["1100", "B1 & B2"], ["0100", "B2"], ["1001", "B1"],
+  ["1010", "FD & B1"], ["0010", "FD Only"], ["0110", "FD & B2"],
+];
+
+export function evaluateStatus(
+  classes: PointsClass[],
+  period: { start: number; end: number; text: string },
+  minutes: number,
+  graceMin: number
+): string {
+  if (!period || minutes < period.start || minutes > period.end) return "";
+  const text = String(period.text || "");
+  if (/Recess|Lunch/i.test(text)) return "REC";
+  if (text.trim().startsWith("*")) return "";
+
+  const hit = classes.find((c) => c.name && text.includes(c.name));
+  if (!hit) return "";
+  const [d1, d2, d3, d4] = hit.digits;
+  const mid = minutes > period.start + graceMin && minutes <= period.end - graceMin;
+  const code = mid ? `${d1}${d2}${d4}${d3}` : `${d1}0${d4}${d3}`;
+  const label = (STATUS_LABELS.find(([digits]) => digits === code) || [, code])[1];
+  return `${hit.letter}${mid ? "" : "-"}${label}`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Status colours
+ *
+ * The D-column status is a privilege code, and the sheet's conditional
+ * formatting on D9/D11/D13 is what makes it readable across the room. The
+ * same rules are mirrored here so the board carries the colour rather than
+ * a plain label — including codes like "A-1000" that have no text label and
+ * exist only to be coloured.
+ *
+ * First match wins, exactly as Sheets applies them. Specific rules (a "-"
+ * prefix, a pair such as "B1 & B2") therefore come before the general ones.
+ * ------------------------------------------------------------------ */
+
+export type StatusStyle = { bg: string; fg: string; border?: string };
+
+const STATUS_RULES: { test: (s: string) => boolean; style: StatusStyle }[] = [
+  // The order is the sheet's own (D8:D9, D11:D13), first match winning. Note
+  // that "ends with 1" sits at the very top, so a code ending in 1 — "AB1",
+  // "AFD & B1" — is magenta and never reaches the dark-green rules below.
+  { test: (s) => /1$/.test(s), style: { bg: "#EE22EE", fg: "#111111" } },
+  { test: (s) => s.includes("REC"), style: { bg: "#5BE55B", fg: "#14532D" } },
+  { test: (s) => s.includes("B1 & B2"), style: { bg: "#E8912D", fg: "#FFFFFF" } },
+  { test: (s) => /4$/.test(s), style: { bg: "#A0522D", fg: "#FFFFFF" } },
+  { test: (s) => s.includes("FD & B1"), style: { bg: "#3D6B2E", fg: "#FF6B5E" } },
+  { test: (s) => s.includes("B1"), style: { bg: "#3D6B2E", fg: "#FFFFFF" } },
+  { test: (s) => s.includes("FD & B2"), style: { bg: "#6FF0F0", fg: "#C4231A" } },
+  { test: (s) => s.includes("B2"), style: { bg: "#6FF0F0", fg: "#0B4A4A" } },
+  { test: (s) => s.includes("All 3"), style: { bg: "#F0993E", fg: "#C4231A" } },
+  { test: (s) => s.includes("-FD Only"), style: { bg: "transparent", fg: "#C4231A", border: "#C4231A" } },
+  { test: (s) => s.includes("FD Only"), style: { bg: "#66EE55", fg: "#C4231A" } },
+  { test: (s) => s.includes("-000"), style: { bg: "transparent", fg: "#AFAFAF", border: "#CFCFCF" } },
+  { test: (s) => s.includes("000"), style: { bg: "#66EE55", fg: "#DCDCDC" } },
+];
+
+export function statusStyle(status: string): StatusStyle | null {
+  const s = String(status || "").trim();
+  if (!s) return null;
+  const hit = STATUS_RULES.find((r) => r.test(s));
+  return hit ? hit.style : null;
 }

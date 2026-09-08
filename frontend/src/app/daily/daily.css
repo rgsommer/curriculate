@@ -51,9 +51,14 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .chip.off { opacity: .45; text-decoration: line-through; }
 .chip.grace { border: 1px dashed var(--muted); background: transparent; }
 .chip.rec { background: var(--sun-fill); color: var(--sun-ink); font-weight: 600; }
+/* The privilege code, in the sheet's conditional-format colours. */
+.statusbadge { font-size: clamp(13px, 2.2vh, 22px); font-weight: 600; letter-spacing: .04em; padding: .5vh 1.1vw; border-radius: 5px; border: 2px solid transparent; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .points { display: flex; gap: .5vw; align-items: center; margin-top: .9vh; flex-wrap: wrap; }
 .points .lbl { font-size: clamp(11px, 1.6vh, 15px); color: var(--muted); letter-spacing: .1em; text-transform: uppercase; margin-right: .4vw; }
 .top .when { font-size: clamp(13px, 2vh, 20px); color: var(--muted); margin-top: .6vh; }
+.top .peek { font-size: clamp(12px, 1.9vh, 19px); color: var(--muted); margin-top: .3vh; }
+.top .peek b { color: var(--ink); font-weight: 500; }
+.block .daily { white-space: pre-line; font-size: clamp(14px, 2.4vh, 26px); }
 .clockbox { text-align: right; }
 .clockbox .clock { font-size: clamp(28px, 6.5vh, 80px); font-weight: 400; font-variant-numeric: tabular-nums; line-height: 1; }
 .clockbox .left { font-size: clamp(13px, 2.1vh, 20px); color: var(--muted); margin-top: .6vh; font-variant-numeric: tabular-nums; }

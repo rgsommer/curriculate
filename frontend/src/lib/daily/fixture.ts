@@ -60,5 +60,30 @@ export const FIXTURE: RawInputs = {
     ["500", "800", "500", "200", "200", "600", "1300"],
   ],
   slotFormulas: [["", "", "", "", "", '=IMAGE("https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Quebec_1759.jpg/960px-Quebec_1759.jpg")', ""]],
+  // Points row 3 names the classes; row 46 holds four flags each (7A at M, 7B at
+  // Z, 7C at AM, 8A at AZ, 8B at BM), which the D-column status rule reads.
+  pointsRow3: (() => { const r: string[] = []; r[3] = "7A"; r[16] = "7B"; r[29] = "7C"; r[42] = "8A"; r[55] = "8B"; return r; })(),
+  pointsRow46: (() => {
+    const r: string[] = [];
+    const blocks: [number, string][] = [[12, "1100"], [25, "0110"], [38, "1010"], [51, "1110"], [64, "0100"]];
+    blocks.forEach(([base, digits]) => {
+      digits.split("").forEach((d, k) => { r[base + k] = d; });
+    });
+    return r;
+  })(),
+  poems: [
+    ["Mon", "Tue", "Wed", "Thu", "Fri"],
+    ["Monday poem", "Tuesday poem", "Wednesday poem", "The fisherman goes out at dawn", "Friday poem"],
+    ["Poem of the week: The Fisherman, by Abbie Farwell Brown"],
+  ],
+  poemFormulas: [[], [], []],
+  vertical: [
+    ["", "", "", "", "", "", ""],
+    ["1", "", "Mon update", "Tue update", "Wed update",
+      "Things you need to know for today...\nGeography 8A term list is due next class.\nSkip 7A Bring your textbook to every class.\nDress-down payments due Fri Sep 25.",
+      "Fri update"],
+  ],
+  riddles: [["Riddle for week 1"], ["Riddle for week 2"]],
+  master: [["Week"], ["1"]],
   feature: "Q: A horse is on a 24 foot chain and wants an apple that is 26 feet away. How can the horse get to the apple?",
 };
