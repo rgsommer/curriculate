@@ -135,6 +135,13 @@ check("colour: B1 & B2 beats the trailing 4", style("AB1 & B2 4") === "#E8912D",
 check("colour: FD & B1 with the marker is brown", style("AFD & B1 4") === "#A0522D", P.statusStyle("AFD & B1 4"));
 check("colour: nothing for an empty status", P.statusStyle("") === null);
 
+check("duty title: lunch", P.friendlyDutyTitle("Lunch") === "Enjoy your lunch");
+check("duty title: recess duty is what students are doing", P.friendlyDutyTitle("Recess Duty") === "Out for recess");
+check("duty title: playground", P.friendlyDutyTitle("Playground") === "Out on the playground");
+check("duty title: dismissal", P.friendlyDutyTitle("Dismissal Rm212") === "Dismissal");
+check("duty title: no school", P.friendlyDutyTitle("No School (Labour Day)") === "No school today");
+check("duty title: nothing better to say", P.friendlyDutyTitle("MAPS Testing") === "");
+
 check("daily: poem inside the window", P.evaluateDailyText(S({ windowStart: 750, windowEnd: 800, poemRow: ["mon", "tue", "wed", "thu", "fri"] }), 760, 5) === "thu");
 
 // ---- whole payload from a Thursday-shaped grid ----
