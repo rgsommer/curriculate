@@ -128,6 +128,11 @@ check("colour: -FD Only has no fill", style("A-FD Only") === "transparent", P.st
 check("colour: FD Only is bright green", style("AFD Only") === "#66EE55");
 check("colour: a trailing 4 is the morning marker", style("AAll 3 4") === "#A0522D", P.statusStyle("AAll 3 4"));
 check("colour: a trailing 1 is magenta", style("AB1") === "#EE22EE", P.statusStyle("AB1"));
+// "ends with 1" is the sheet's first rule, so it beats the dark-green ones
+check("colour: FD & B1 also ends in 1, so magenta wins", style("AFD & B1") === "#EE22EE", P.statusStyle("AFD & B1"));
+// but "B1 & B2" is listed above "ends with 4", so the morning marker loses there
+check("colour: B1 & B2 beats the trailing 4", style("AB1 & B2 4") === "#E8912D", P.statusStyle("AB1 & B2 4"));
+check("colour: FD & B1 with the marker is brown", style("AFD & B1 4") === "#A0522D", P.statusStyle("AFD & B1 4"));
 check("colour: nothing for an empty status", P.statusStyle("") === null);
 
 check("daily: poem inside the window", P.evaluateDailyText(S({ windowStart: 750, windowEnd: 800, poemRow: ["mon", "tue", "wed", "thu", "fri"] }), 760, 5) === "thu");

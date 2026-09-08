@@ -640,17 +640,20 @@ export function evaluateStatus(
 export type StatusStyle = { bg: string; fg: string; border?: string };
 
 const STATUS_RULES: { test: (s: string) => boolean; style: StatusStyle }[] = [
+  // The order is the sheet's own (D8:D9, D11:D13), first match winning. Note
+  // that "ends with 1" sits at the very top, so a code ending in 1 — "AB1",
+  // "AFD & B1" — is magenta and never reaches the dark-green rules below.
   { test: (s) => /1$/.test(s), style: { bg: "#EE22EE", fg: "#111111" } },
-  { test: (s) => /4$/.test(s), style: { bg: "#A0522D", fg: "#FFFFFF" } },
   { test: (s) => s.includes("REC"), style: { bg: "#5BE55B", fg: "#14532D" } },
-  { test: (s) => s.includes("All 3"), style: { bg: "#F0993E", fg: "#C4231A" } },
   { test: (s) => s.includes("B1 & B2"), style: { bg: "#E8912D", fg: "#FFFFFF" } },
+  { test: (s) => /4$/.test(s), style: { bg: "#A0522D", fg: "#FFFFFF" } },
   { test: (s) => s.includes("FD & B1"), style: { bg: "#3D6B2E", fg: "#FF6B5E" } },
+  { test: (s) => s.includes("B1"), style: { bg: "#3D6B2E", fg: "#FFFFFF" } },
   { test: (s) => s.includes("FD & B2"), style: { bg: "#6FF0F0", fg: "#C4231A" } },
+  { test: (s) => s.includes("B2"), style: { bg: "#6FF0F0", fg: "#0B4A4A" } },
+  { test: (s) => s.includes("All 3"), style: { bg: "#F0993E", fg: "#C4231A" } },
   { test: (s) => s.includes("-FD Only"), style: { bg: "transparent", fg: "#C4231A", border: "#C4231A" } },
   { test: (s) => s.includes("FD Only"), style: { bg: "#66EE55", fg: "#C4231A" } },
-  { test: (s) => s.includes("B1"), style: { bg: "#3D6B2E", fg: "#FFFFFF" } },
-  { test: (s) => s.includes("B2"), style: { bg: "#6FF0F0", fg: "#0B4A4A" } },
   { test: (s) => s.includes("-000"), style: { bg: "transparent", fg: "#AFAFAF", border: "#CFCFCF" } },
   { test: (s) => s.includes("000"), style: { bg: "#66EE55", fg: "#DCDCDC" } },
 ];
