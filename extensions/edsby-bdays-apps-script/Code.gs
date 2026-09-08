@@ -32,7 +32,11 @@
 
 const CONFIG = {
   SHEET: "Bdays",
-  ZOOM_NODE_ID: "21471167",      // /p/ZoomMyStudents/<this id>
+  // /p/ZoomMyStudents/<this id>. COMMA-SEPARATE SEVERAL when one Zoom does not
+  // cover every grade — a teacher's My Students only lists students they share
+  // a class with, so grade 6 may live on a different node. Students are unioned
+  // by nid across nodes, so overlapping zooms are safe.
+  ZOOM_NODE_ID: "21471167",
   DATA_START_ROW: 4,             // first student row (rows 1-3 are headers/labels)
   // Merge mode (the default) matches existing rows by Edsby nid, updates them
   // in place, appends new students, and moves departed students to the archive
@@ -182,7 +186,12 @@ function diagnoseEdsby_() {
   lines.push("jver:     " + (sess.jver || "(not set — optional; only some calls need it)"));
   lines.push("cver:     " + (sess.cver || "(not set — optional; only some calls need it)"));
   lines.push("User nid: " + (sess.userNid || "(not set — formkey POST retry disabled)"));
-  lines.push("Zoom node: " + (sess.zoomNodeId || "⚠ MISSING"));
+  const nodeIds = zoomNodeIdsOf_(sess.zoomNodeId);
+  lines.push("Zoom node(s): " + (nodeIds.length ? nodeIds.join(", ") : "⚠ MISSING") +
+    (nodeIds.length === 1
+      ? "  — one node lists only students you share a class with; comma-separate " +
+        "more ids if a grade is missing."
+      : ""));
   const synced = PropertiesService.getScriptProperties().getProperty("EDSBY_COOKIE_UPDATED_AT");
   lines.push("Cookie set: " + (synced
     ? synced + " (pushed by the Cookie Sync extension)"
@@ -205,9 +214,9 @@ function diagnoseEdsby_() {
   lines.push("  " + explainStatus_(boot));
 
   // Live probe: the actual students call.
-  const zoom = edsbyGetJson_(sess, sess.zoomNodeId, "ZoomMyStudents", "&stage=1");
+  const zoom = edsbyGetJson_(sess, nodeIds[0] || sess.zoomNodeId, "ZoomMyStudents", "&stage=1");
   lines.push("");
-  lines.push("Probe GET ZoomMyStudents/" + sess.zoomNodeId + " -> HTTP " + zoom.status);
+  lines.push("Probe GET ZoomMyStudents/" + (nodeIds[0] || sess.zoomNodeId) + " -> HTTP " + zoom.status);
   lines.push("  " + explainStatus_(zoom));
   if (zoom.json) {
     const recs = collectStudentRecords_(unwrapSlice_(zoom.json));
@@ -1005,7 +1014,7 @@ function probeNodeAllViews_(sess, nid) {
   };
 }
 
-/** Back-compat single-view check used by resolveZoomNodeId_. */
+/** Back-compat single-view check used by resolveZoomNodeIds_. */
 function verifyZoomNode_(sess, nid) {
   const r = probeNodeAllViews_(sess, nid);
   return r.best ? { count: r.best.count, note: "" } : { count: 0, note: r.note };
@@ -1103,23 +1112,34 @@ function findUserNid_(json) {
 }
 
 /**
- * The node id to use: the configured one if it works, otherwise the best
- * discovered one. Keeps populateBdays() working across a school-year rollover
- * without an edit.
+ * The node id(s) to use: whichever configured nodes return students. Only when
+ * none of them do does it go hunting, so a node that is merely empty alongside
+ * a good one is left alone. Keeps populateBdays working across a school-year
+ * rollover without an edit.
  */
-function resolveZoomNodeId_(sess) {
-  const configured = String(sess.zoomNodeId || "");
-  if (configured) {
-    const v = verifyZoomNode_(sess, configured);
-    if (v.count > 0) return { nid: configured, count: v.count };
-    Logger.log("Configured node " + configured + " returned no students — " + v.note);
-    Logger.log("Searching for the current node id…");
+function resolveZoomNodeIds_(sess) {
+  const configured = zoomNodeIdsOf_(sess.zoomNodeId);
+  const working = [];
+  const dead = [];
+
+  for (let i = 0; i < configured.length; i++) {
+    const v = verifyZoomNode_(sess, configured[i]);
+    if (v.count > 0) working.push({ nid: configured[i], count: v.count });
+    else dead.push({ nid: configured[i], note: v.note });
   }
+
+  for (let i = 0; i < dead.length; i++) {
+    Logger.log("Configured node " + dead[i].nid + " returned no students — " + dead[i].note);
+  }
+  // Only go hunting when NOTHING configured works; a node that is merely empty
+  // alongside a good one is the user's business, not a reason to search.
+  if (working.length > 0) return working.map(function (w) { return w.nid; });
+  if (configured.length) Logger.log("Searching for a working node id…");
 
   const found = harvestNavLinks_(sess);
   let best = null;
   const tried = {};
-  tried[configured] = true;
+  for (let i = 0; i < configured.length; i++) tried[configured[i]] = true;
   for (let i = 0; i < found.links.length; i++) {
     const nid = found.links[i].nid;
     if (tried[nid]) continue;
@@ -1130,11 +1150,11 @@ function resolveZoomNodeId_(sess) {
   if (best) {
     Logger.log("Found node " + best.nid + " with " + best.count + " students. " +
       "Store it as EDSBY_ZOOM_NODE_ID to skip this search next run.");
-    return best;
+    return [best.nid];
   }
   Logger.log("Could not find a working node id. Use the Edsby menu → " +
     "Find my students list for the full report.");
-  return { nid: configured, count: 0 };
+  return configured;
 }
 
 /* ============================================================
@@ -1155,8 +1175,8 @@ function populateBdays() {
   // 1. Get all student records (nid + Classes) from the students listing.
   //    Node ids are per-account and change across school years, so a stale id
   //    is resolved rather than fatal (Edsby error 1030 "no links to node").
-  const resolved = resolveZoomNodeId_(sess);
-  const studentRecords = fetchZoomMyStudents_(sess, resolved.nid);
+  const resolved = resolveZoomNodeIds_(sess);
+  const studentRecords = fetchZoomMyStudents_(sess, resolved);
   if (studentRecords.length === 0) {
     const auth = checkAuthStatus_(sess);
     if (!auth.authenticated) {
@@ -1168,7 +1188,8 @@ function populateBdays() {
     }
     return;
   }
-  Logger.log("Students listing: " + studentRecords.length + " students.");
+  Logger.log("Students listing: " + studentRecords.length + " students from node(s) " +
+    resolved.join(", ") + ".");
 
   // 2. Fetch each student's Panorama (chunked).
   const studentReqs = studentRecords.map(function (r) {
@@ -1205,7 +1226,13 @@ function populateBdays() {
     if (s.dadNid) parentNidsToFetch[s.dadNid] = true;
     if (s.momNid) parentNidsToFetch[s.momNid] = true;
   }
-  Logger.log("After grade filter: " + students.length + " students kept.");
+  Logger.log("After grade filter: " + students.length + " students kept. " +
+    "By grade: " + JSON.stringify(gradeBreakdown_(students)) +
+    (CONFIG.GRADE_FILTER && CONFIG.GRADE_FILTER.length
+      ? " (GRADE_FILTER is limiting this to " + CONFIG.GRADE_FILTER.join(", ") + ")"
+      : " (GRADE_FILTER is empty, so every grade Edsby returns is kept)") +
+    "\nA grade missing here is missing from the zoom node(s), not filtered out — " +
+    "add that grade's /p/ZoomMyStudents/NUMBER to EDSBY_ZOOM_NODE_ID, comma-separated.");
 
   // 2b. Fill any remaining sections from the homeroom teacher, learned from the
   //     students who did resolve. TEACHER_TO_CLASS still wins if it names them.
@@ -1554,8 +1581,73 @@ function refreshFormkey_(sess) {
  * only loads with stage=1), then a formkey POST with _method=GET as the CSRF
  * fallback. Logs a per-view diagnostic so a failure says which step failed.
  */
-function fetchZoomMyStudents_(sess, zoomId) {
-  const nodeId = zoomId || sess.zoomNodeId;
+/**
+ * Pure: the configured node id(s), split on commas/whitespace.
+ * One "My Students" zoom only lists students the signed-in teacher shares a
+ * class with, so a grade they do not teach is simply absent. Several ids are
+ * therefore normal — /avgs takes the same comma-separated form
+ * (backend/behavior/avgsRoutes.js loadZoomRoster).
+ */
+function zoomNodeIdsOf_(value) {
+  return String(value == null ? "" : value)
+    .split(/[,;\s]+/)
+    .map(function (v) { return v.trim(); })
+    .filter(function (v) { return /^\d{4,}$/.test(v); });
+}
+
+/** Pure: count students per grade, for the run log. */
+function gradeBreakdown_(students) {
+  const out = {};
+  const list = students || [];
+  for (let i = 0; i < list.length; i++) {
+    const g = String(list[i] && list[i].grade != null ? list[i].grade : "").trim() || "(no grade)";
+    out[g] = (out[g] || 0) + 1;
+  }
+  return out;
+}
+
+/** Pure: union student records from several nodes, first sighting wins. */
+function unionStudentRecords_(lists) {
+  const seen = {};
+  const out = [];
+  const all = lists || [];
+  for (let i = 0; i < all.length; i++) {
+    const recs = all[i] || [];
+    for (let j = 0; j < recs.length; j++) {
+      const r = recs[j];
+      if (!r || !r.nid || seen[r.nid]) continue;
+      seen[r.nid] = true;
+      out.push(r);
+    }
+  }
+  return out;
+}
+
+/**
+ * Fetch every configured zoom node and union the students.
+ */
+function fetchZoomMyStudents_(sess, zoomIds) {
+  const ids = Array.isArray(zoomIds) ? zoomIds : zoomNodeIdsOf_(zoomIds || sess.zoomNodeId);
+  if (!ids.length) {
+    Logger.log("No zoom node id configured. Set EDSBY_ZOOM_NODE_ID (comma-separate several).");
+    return [];
+  }
+
+  const lists = [];
+  for (let i = 0; i < ids.length; i++) {
+    const recs = fetchOneZoomNode_(sess, ids[i]);
+    Logger.log("Node " + ids[i] + ": " + recs.length + " students.");
+    lists.push(recs);
+  }
+  const union = unionStudentRecords_(lists);
+  if (ids.length > 1) {
+    Logger.log("Union across " + ids.length + " nodes: " + union.length + " unique students.");
+  }
+  return union;
+}
+
+function fetchOneZoomNode_(sess, zoomId) {
+  const nodeId = zoomId;
   let formkey = "";
   const fresh = refreshFormkey_(sess);
   if (fresh.sessionExpired) {

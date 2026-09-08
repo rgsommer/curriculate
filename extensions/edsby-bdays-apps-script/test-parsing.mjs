@@ -27,6 +27,7 @@ module.exports = {
   planSync_, nameKey_, rowValuesFor_, writeRowValues_,
   buildRosterCsv_, rowFieldsFor_, csvCell_, csvDate_, stripTags_, gradeFromGroup_,
   sectionTokensFromText_, pickSection_, extractGroupFromPanorama_, inferSectionsByTeacher_,
+  zoomNodeIdsOf_, unionStudentRecords_, gradeBreakdown_,
   CSV_COLUMNS,
 };
 `);
@@ -327,6 +328,40 @@ for (const col of [3, 4, 9, 10, 11, 12, 13, 15, 18, 20]) {
 const noRows = [];
 M.clearImportedColumns_({ getLastRow: () => 2, getRange: () => ({ clearContent: () => noRows.push(1) }) });
 eq("empty sheet clears nothing", noRows.length, 0);
+
+// ── Several zoom nodes ──────────────────────────────────────────────────────
+// A "My Students" zoom lists only students the signed-in teacher shares a class
+// with, so a grade they do not teach (grade 6 here) is simply absent. Nothing
+// filters it out — GRADE_FILTER is empty. /avgs solves this the same way, with
+// comma-separated node ids (avgsRoutes.js loadZoomRoster).
+group("Zoom node ids");
+eq("single", M.zoomNodeIdsOf_("21471167"), ["21471167"]);
+eq("comma separated", M.zoomNodeIdsOf_("21471167,24880031"), ["21471167", "24880031"]);
+eq("tolerates spaces", M.zoomNodeIdsOf_(" 21471167 , 24880031 "), ["21471167", "24880031"]);
+eq("newline separated", M.zoomNodeIdsOf_("21471167\n24880031"), ["21471167", "24880031"]);
+eq("semicolons too", M.zoomNodeIdsOf_("21471167; 24880031"), ["21471167", "24880031"]);
+eq("junk dropped", M.zoomNodeIdsOf_("21471167, not-an-id, 12"), ["21471167"]);
+eq("empty", M.zoomNodeIdsOf_(""), []);
+eq("null safe", M.zoomNodeIdsOf_(null), []);
+
+group("Unioning students across nodes");
+const recA = [{ nid: 1, classes: [] }, { nid: 2, classes: [] }];
+const recB = [{ nid: 2, classes: [] }, { nid: 3, classes: [] }];
+eq("de-duplicates the overlap", M.unionStudentRecords_([recA, recB]).map((r) => r.nid), [1, 2, 3]);
+eq("first sighting wins", M.unionStudentRecords_([recA, recB]).length, 3);
+eq("single list passes through", M.unionStudentRecords_([recA]).map((r) => r.nid), [1, 2]);
+eq("empty lists", M.unionStudentRecords_([[], []]), []);
+eq("null safe", M.unionStudentRecords_(null), []);
+eq("skips records with no nid", M.unionStudentRecords_([[{ nid: 0 }, { nid: 5 }]]).map((r) => r.nid), [5]);
+
+group("Grade breakdown");
+eq("counts per grade",
+   M.gradeBreakdown_([{ grade: "6" }, { grade: "6" }, { grade: "7" }, { grade: "8" }]),
+   { 6: 2, 7: 1, 8: 1 });
+eq("missing grade is labelled", M.gradeBreakdown_([{ grade: "" }, {}]), { "(no grade)": 2 });
+eq("numeric grades", M.gradeBreakdown_([{ grade: 6 }]), { 6: 1 });
+eq("empty", M.gradeBreakdown_([]), {});
+eq("null safe", M.gradeBreakdown_(null), {});
 
 // ── Section resolution ──────────────────────────────────────────────────────
 // Students whose only shared class is section-less ("Learning Skills" /

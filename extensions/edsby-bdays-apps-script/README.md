@@ -109,6 +109,43 @@ assigned to it still works.
 Menu items mirror their log into a dialog, because `Logger` output is invisible
 when a function runs from a menu rather than the editor.
 
+## A grade is missing (e.g. grade 6)
+
+Nothing in this script filters by grade — `GRADE_FILTER: []` keeps every grade
+Edsby returns. A missing grade means it is **not in the zoom node**: a "My
+Students" zoom lists only students the signed-in teacher shares a class with,
+so a grade you do not teach never appears.
+
+The fix is more than one node. `EDSBY_ZOOM_NODE_ID` (and `CONFIG.ZOOM_NODE_ID`)
+accept a **comma-separated list**, and students are unioned by nid, so
+overlapping zooms are safe:
+
+```
+EDSBY_ZOOM_NODE_ID = 21471167, 24880031
+```
+
+This mirrors `/avgs`, whose node field is documented as "comma-separate several
+if one Zoom doesn't cover every grade" (`EdsbyHonours.jsx:271`) and whose
+`loadZoomRoster` unions the same way (`avgsRoutes.js`).
+
+To find the other id: in Edsby open the page listing that grade's students and
+read the number from `/p/ZoomMyStudents/NUMBER`. If you cannot see those
+students in Edsby yourself, no node id will help — the roster is scoped to your
+account, and someone who teaches that grade has to run it or share the class.
+
+The run log now shows exactly what arrived, per node and per grade:
+
+```
+Node 21471167: 76 students.
+Node 24880031: 31 students.
+Union across 2 nodes: 104 unique students.
+After grade filter: 104 students kept. By grade: {"6":28,"7":34,"8":42}
+  (GRADE_FILTER is empty, so every grade Edsby returns is kept)
+```
+
+Because the CSV export reads the sheet, adding the node fixes both **Update
+Roster** and **Export roster CSV** at once.
+
 ## How the Group (section) is worked out
 
 The Group column wants `8A`, not `8`. Three sources are tried in order of
