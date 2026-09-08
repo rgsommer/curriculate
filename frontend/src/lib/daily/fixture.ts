@@ -108,6 +108,20 @@ export const FIXTURE: RawInputs = {
     ["Lunch Recess", "12:20", "", "minutes before Dismissal list"],
     ["Dismissal", "15:30", "", ""],
   ],
+  // Verses!A1:A400 and Vertical!B4 \u2014 what A5 picks the day's verse from.
+  verses: [
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+    ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],
+  ],
+  verseWeek: [["1"]],
   // The Kiss & Ride tab, as its "Waiting (Recent First)" column is returned.
   waiting: [
     ["Kiss & Ride", "", ""],

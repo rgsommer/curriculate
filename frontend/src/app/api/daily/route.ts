@@ -43,7 +43,7 @@ export async function GET(req: Request) {
   try {
     // Core content plus the optional extras, in parallel. A renamed tab in the
     // optional ranges must not take the whole board down, so those degrade to empty.
-    const [core, sheetTitles, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, pointsRes, displayLinks] = await Promise.all([
+    const [core, sheetTitles, featureRes, formulaRes, poemsRes, poemFormulaRes, verticalRes, riddlesRes, masterRes, versesRes, pointsRes, displayLinks] = await Promise.all([
       readRanges(["DisplayAI!A1:F40", "Setup!A1:D20", "Setup!T1:AA8", "Setup!N1:Q8"]),
       // The Kiss & Ride waiting list is on its own tab. Its name is looked up
       // rather than hard-coded, so renaming the tab does not silently empty the
@@ -61,6 +61,10 @@ export async function GET(req: Request) {
       readRanges(["VerticalAi!D1:J200"]).catch(() => [] as string[][][]),
       readRanges(["Riddles!D1:D400"]).catch(() => [] as string[][][]),
       readRanges(["Master!B1:B2"]).catch(() => [] as string[][][]),
+      // A5 shortens the verse with LEFT(..., 85). Reading its source lets the
+      // board cut at a word boundary instead, and show it in full in the
+      // twenty-minute windows the formula opens.
+      readRanges(["Verses!A1:A400", "Vertical!B4"]).catch(() => [] as string[][][]),
       readRanges(["Points!A3:BZ3", "Points!A46:BZ46"]).catch(() => [] as string[][][]),
       // Links on the header cells. A rich-text link is invisible to the values
       // API, so the grid itself has to be read for the "Pray for …" line.
@@ -107,6 +111,8 @@ export async function GET(req: Request) {
       vertical: verticalRes[0] || [],
       riddles: riddlesRes[0] || [],
       master: masterRes[0] || [],
+      verses: versesRes[0] || [],
+      verseWeek: versesRes[1] || [],
       pointsRow3: ((pointsRes[0] || [])[0]) || [],
       pointsRow46: ((pointsRes[1] || [])[0]) || [],
       displayLinks: displayLinks || [],

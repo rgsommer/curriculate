@@ -290,5 +290,26 @@ tomorrowGrid.splice(1, 0, [" Tomorrow: MAPS Roster Due"]);
 const withTomorrow = P.buildPayload({ display: tomorrowGrid, displayD: [], displayC: [], setup, slots, slotFormulas, feature: "" });
 check("meta tomorrow", withTomorrow.meta.tomorrow === "MAPS Roster Due", withTomorrow.meta.tomorrow);
 
+
+// ---- the verse: A5's LEFT(..., 85), cut at a word boundary instead ----
+check("truncateWords: short text is left alone", P.truncateWords("God is our refuge", 85) === "God is our refuge");
+const cutv = P.truncateWords("Do you ever face temptations? Did you know that in your own strength you will fail? Here is more.", 85);
+check("truncateWords: cuts at a space", !/\sH$/.test(cutv) && cutv.endsWith("\u2026") && cutv.length <= 86, cutv);
+check("truncateWords: no word is broken", cutv.slice(0, -1).split(" ").every((w) => w.length < 20) && "Do you ever face temptations? Did you know that in your own strength you will fail?".startsWith(cutv.slice(0, -1)), cutv);
+const sheetCut = "Do you ever face temptations? Did you know that in your own strength you will fail? H";
+check("tidyTruncated: drops the half word the sheet left", P.tidyTruncated(sheetCut) === "Do you ever face temptations? Did you know that in your own strength you will fail?\u2026", P.tidyTruncated(sheetCut));
+check("tidyTruncated: leaves a finished sentence", P.tidyTruncated("God is our refuge and strength, a very present help in trouble. Psalm 46:1") === "God is our refuge and strength, a very present help in trouble. Psalm 46:1");
+
+const verseRows = ["v1", "v2", "v3", "v4", "v5", "v6", "v7 the long one", "v8", "v9", "v10"].map((v) => [v]);
+const vs = (over) => S({ verses: verseRows.map((r) => r[0]), verseWeek: 1, a9: 600, a11: 660, ...over });
+check("verse: picks week*5 + weekday - 1", P.evaluateVerse(vs({}), 500, 3).text.startsWith("v7"), P.evaluateVerse(vs({}), 500, 3));
+const wrapped = S({ verses: ["a", "b", "c", "d", "e", "f"], verseWeek: 1, a9: 600 });
+check("verse: wraps past the end of the column", P.evaluateVerse(wrapped, 500, 7).text === "e", P.evaluateVerse(wrapped, 500, 7));
+check("verse: full for 20 min from A9", P.evaluateVerse(vs({}), 610, 3).open === true);
+check("verse: short again after that", P.evaluateVerse(vs({}), 640, 3).open === false);
+check("verse: full again for 20 min from A11", P.evaluateVerse(vs({}), 670, 3).open === true);
+check("verse: short before A9", P.evaluateVerse(vs({}), 500, 3).open === false);
+check("verse: empty when the Verses tab is missing", P.evaluateVerse(S({}), 610, 3).text === "");
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
