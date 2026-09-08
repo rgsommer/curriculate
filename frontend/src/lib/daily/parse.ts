@@ -703,3 +703,52 @@ export function friendlyDutyTitle(text: string): string {
   if (/no school/.test(t)) return "No school today";
   return "";
 }
+
+/* ------------------------------------------------------------------ *
+ * Colour that carries meaning
+ *
+ * The board changes class every period, and a room notices a colour change
+ * long before it reads a word. Each subject therefore gets its own accent,
+ * taken from the lesson code's leading letter (J Math, H History, B CE,
+ * G Geography), with a stable fallback hue for any code not listed so a new
+ * subject is never colourless.
+ * ------------------------------------------------------------------ */
+
+export type SubjectTheme = { key: string; accent: string; deep: string };
+
+const SUBJECT_ACCENTS: Record<string, [string, string]> = {
+  J: ["#2F6BD8", "#1B3E80"], // Math — blue
+  H: ["#C2571A", "#7A340B"], // History — rust
+  B: ["#7C5CD6", "#472F86"], // Christian Education — violet
+  G: ["#2E8B4A", "#1A5730"], // Geography — green
+};
+
+/** A stable hue for any code with no accent of its own. */
+function hashedAccent(seed: string): [string, string] {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) % 360;
+  return [`hsl(${h} 55% 42%)`, `hsl(${h} 60% 26%)`];
+}
+
+export function subjectTheme(code: string, subject: string): SubjectTheme {
+  const letter = String(code || "").trim().charAt(0).toUpperCase();
+  const pair = SUBJECT_ACCENTS[letter] || hashedAccent(String(subject || code || "board"));
+  return { key: letter || "?", accent: pair[0], deep: pair[1] };
+}
+
+/**
+ * The weekday's colour, taken from the sheet's own conditional formatting on
+ * the day names so the board speaks the same visual language.
+ * Sheets counts Sunday as 1.
+ */
+export function weekdayColour(weekday: number): { name: string; colour: string } | null {
+  const days: Record<number, [string, string]> = {
+    2: ["Monday", "#5CE1E6"],
+    3: ["Tuesday", "#F9CB9C"],
+    4: ["Wednesday", "#F6C388"],
+    5: ["Thursday", "#B4A7D6"],
+    6: ["Friday", "#E6D5E0"],
+  };
+  const hit = days[weekday];
+  return hit ? { name: hit[0], colour: hit[1] } : null;
+}

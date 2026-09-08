@@ -30,7 +30,22 @@
 body:has(.daily-root) .site-header,
 body:has(.daily-root) .site-footer { display: none !important; }
 
-.board { height: 100vh; height: 100dvh; display: grid; grid-template-rows: auto auto 1fr auto auto auto; background: var(--surface); overflow: hidden; position: relative; }
+.board {
+  --subj: var(--accent);
+  --subj-deep: var(--accent);
+  height: 100vh; height: 100dvh;
+  display: grid; grid-template-rows: auto auto 1fr auto auto auto;
+  background: var(--surface); overflow: hidden; position: relative;
+}
+/* A wash of the subject's colour behind the heading: enough for the room to
+   register the change of class, not enough to fight the text. */
+.top {
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--subj) 13%, transparent), transparent 82%),
+    linear-gradient(90deg, color-mix(in srgb, var(--subj) 6%, transparent), transparent 55%);
+}
+.top .subj { color: var(--subj-deep); }
+.board.red .top .subj { color: var(--alert); }
 .board.previewing { outline: .6vh solid var(--sun); outline-offset: -.6vh; }
 
 /* time scrubber: a slim strip along the bottom edge; quiet until used */
@@ -47,6 +62,7 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .top .title { display: flex; align-items: center; gap: 1vw; flex-wrap: wrap; }
 .top .subj { font-size: clamp(28px, 6.5vh, 80px); font-weight: 500; line-height: 1; }
 .chip { font-size: clamp(11px, 1.7vh, 16px); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); background: var(--chip); padding: .5vh 1vw; border-radius: 999px; font-weight: 400; white-space: nowrap; }
+.top .title .chip { background: color-mix(in srgb, var(--subj) 14%, transparent); color: var(--subj-deep); }
 .chip.on { background: var(--ok-fill); color: var(--ok); font-weight: 600; }
 .chip.off { opacity: .45; text-decoration: line-through; }
 .chip.grace { border: 1px dashed var(--muted); background: transparent; }
@@ -59,14 +75,27 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .top .peek { font-size: clamp(12px, 1.9vh, 19px); color: var(--muted); margin-top: .3vh; }
 .top .peek b { color: var(--ink); font-weight: 500; }
 .block .daily { white-space: pre-line; font-size: clamp(14px, 2.4vh, 26px); }
-.clockbox { text-align: right; }
+/* The clock is highlighted once the class change is close (Setup: "change time
+   to red", minutes before the bell) — the signal the teacher used to get from
+   the sheet's own conditional formatting. */
+.clockbox { text-align: right; border-radius: 10px; padding: .8vh 1.1vw; margin: -.8vh -1.1vw;
+  transition: background .5s ease, box-shadow .5s ease; }
+.clockbox.red { background: var(--alert-fill); box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--alert) 40%, transparent);
+  animation: nearly 1.6s ease-in-out infinite; }
+@keyframes nearly { 50% { box-shadow: inset 0 0 0 2px var(--alert); } }
 .clockbox .clock { font-size: clamp(28px, 6.5vh, 80px); font-weight: 400; font-variant-numeric: tabular-nums; line-height: 1; }
 .clockbox .left { font-size: clamp(13px, 2.1vh, 20px); color: var(--muted); margin-top: .6vh; font-variant-numeric: tabular-nums; }
 .clockbox .left b { font-weight: 600; color: var(--ink); }
 .clockbox.red .left b, .clockbox.red .clock { color: var(--alert); }
+.clockbox.red .left b { font-size: 1.25em; animation: urgent 1.6s ease-in-out infinite; }
 .pbar { height: 1vh; background: var(--chip); }
-.pbar i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
-.board.red .pbar i { background: var(--alert); }
+.pbar i { display: block; height: 100%; width: 0; transition: width .4s;
+  background: linear-gradient(90deg, var(--subj), color-mix(in srgb, var(--subj) 55%, #ffffff)); }
+.board.red .pbar i { background: linear-gradient(90deg, var(--alert), #E8734A); animation: urgent 1.6s ease-in-out infinite; }
+@keyframes urgent { 50% { opacity: .55; } }
+/* The heading arrives when the class does, so a change is noticed. */
+.top, .main { animation: settle .45s ease-out both; }
+@keyframes settle { from { opacity: 0; transform: translateY(-.7vh); } }
 
 /* video tile: small in the header, grows over the lesson area while playing */
 .vid { position: relative; width: clamp(96px, 14vw, 180px); aspect-ratio: 16 / 9; border-radius: 6px; overflow: hidden; background: #000; cursor: pointer; border: 2px solid var(--line); flex: none; align-self: center; }
@@ -83,14 +112,14 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .main { display: grid; grid-template-columns: 1.25fr 1fr; gap: 3vw; padding: 2.2vh 3vw; min-height: 0; overflow: hidden; }
 .main.pic-right { grid-template-columns: 1fr 1.15fr; }
 .main.pic-left { grid-template-columns: 1.15fr 1fr; }
-.eyebrow { font-size: clamp(11px, 1.6vh, 15px); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 500; margin: 0 0 1vh; }
+.eyebrow { font-size: clamp(11px, 1.6vh, 15px); letter-spacing: .14em; text-transform: uppercase; color: var(--subj); font-weight: 600; margin: 0 0 1vh; }
 .question { font-family: var(--font-merriweather), Georgia, serif; font-size: clamp(24px, 4.5vh, 54px); line-height: 1.3; margin: 0 0 2vh; text-wrap: balance; }
 .summary { font-size: clamp(17px, 3.2vh, 34px); margin: 0 0 1.6vh; color: var(--muted); }
 /* Tailwind's preflight strips list markers; the board wants them. */
 .daily-root ul { list-style: disc; }
 .plan { margin: 0; padding-left: 1.3em; font-size: clamp(18px, 3.5vh, 40px); line-height: 1.35; }
 .plan li { margin: 1.2vh 0; }
-.panel { border-left: 1px solid var(--line); padding-left: 3vw; display: flex; flex-direction: column; gap: 2vh; min-height: 0; }
+.panel { border-left: 2px solid color-mix(in srgb, var(--subj) 28%, transparent); padding-left: 3vw; display: flex; flex-direction: column; gap: 2vh; min-height: 0; }
 .pic-left .panel { border-left: 0; border-right: 1px solid var(--line); padding-left: 0; padding-right: 3vw; }
 .block { border-radius: 6px; padding: 1.6vh 1.6vw; }
 .block h3 { margin: 0 0 .8vh; font-size: clamp(13px, 2.2vh, 22px); letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
@@ -98,7 +127,7 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .block ul { margin: 0; padding-left: 1.2em; }
 .block li { margin: .5vh 0; }
 .block.sun { background: var(--sun-fill); color: var(--sun-ink); }
-.block.navy { background: var(--now-fill); }
+.block.navy { background: color-mix(in srgb, var(--subj) 10%, transparent); }
 .block.alert { background: var(--alert-fill); color: var(--alert); }
 .block.quiet { border: 1px dashed var(--line); color: var(--muted); }
 .block.feature p { font-family: var(--font-merriweather), Georgia, serif; white-space: pre-line; font-size: clamp(15px, 2.8vh, 30px); line-height: 1.45; }
@@ -127,7 +156,8 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .pt .c { font-size: clamp(10px, 1.5vh, 14px); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .pt .n { font-size: clamp(14px, 2.4vh, 24px); font-weight: 500; color: var(--ink); font-variant-numeric: tabular-nums; }
 .pt .bar { grid-column: 1 / -1; height: .6vh; background: var(--chip); border-radius: 3px; overflow: hidden; margin-top: .3vh; }
-.pt .bar i { display: block; height: 100%; background: var(--accent); }
+.pt .bar i { display: block; height: 100%; background: var(--subj); }
+.pt .bar i.met { background: var(--ok); }
 .pt .pc { font-size: clamp(10px, 1.5vh, 14px); color: var(--muted); font-variant-numeric: tabular-nums; }
 .entered { display: inline-flex; align-items: center; gap: .5vw; margin-left: 1vw; font-size: clamp(12px, 1.9vh, 18px); color: var(--muted); }
 .entered i { width: 1.6vh; height: 1.6vh; border-radius: 3px; background: var(--ok); display: inline-block; }
@@ -135,6 +165,8 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .entered.no { color: var(--alert); }
 
 .bottom { display: flex; justify-content: space-between; align-items: center; gap: 2vw; padding: .8vh 3vw 1.2vh; font-size: clamp(12px, 1.9vh, 18px); color: var(--muted); }
+.daychip { display: inline-block; padding: .2vh .8vw; border-radius: 4px; margin-right: .8vw;
+  color: #22303F; font-weight: 600; font-size: clamp(11px, 1.7vh, 16px); }
 .bottom .verse { font-family: var(--font-merriweather), Georgia, serif; font-style: italic; }
 .bottom .puzzle { background: var(--sun-fill); color: var(--sun-ink); padding: .6vh 1vw; border-radius: 4px; white-space: nowrap; }
 .bottom .puzzle b { letter-spacing: .14em; font-weight: 600; }
@@ -182,4 +214,9 @@ body:has(.daily-root) .site-footer { display: none !important; }
   .top { grid-template-columns: 1fr; }
   .board { height: auto; min-height: 100vh; }
 }
-@media (prefers-reduced-motion: reduce) { .pbar i { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .pbar i { transition: none; }
+  .top, .main { animation: none; }
+  .board.red .pbar i, .clockbox.red .left b, .clockbox.red { animation: none; }
+  .clockbox { transition: none; }
+}
