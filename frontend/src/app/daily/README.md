@@ -120,23 +120,31 @@ rules (`statusStyle` in `parse.ts`) and shows the code as a coloured badge rathe
 than a plain label — so `A-1000`, which has no text substitution and exists only to
 be coloured, still reads correctly as grey on green.
 
-First match wins, as in Sheets, so the specific rules come first:
+The rules are mirrored in the sheet's own order (D8:D9, D11:D13), first match
+winning:
 
-| Match | Colour |
-| --- | --- |
-| ends with `1` | magenta on black text |
-| ends with `4` (the morning marker) | brown, white text |
-| `REC` | green |
-| `All 3` | orange, red text |
-| `B1 & B2` | orange, white text |
-| `FD & B1` | dark green, red text |
-| `FD & B2` | cyan, red text |
-| `-FD Only` | no fill, red text |
-| `FD Only` | bright green, red text |
-| `B1` | dark green, white text |
-| `B2` | cyan |
-| `-000` | no fill, grey text |
-| `000` | bright green, grey text |
+| # | Match | Colour |
+| --- | --- | --- |
+| 1 | ends with `1` | magenta, black text |
+| 2 | `REC` | bright green |
+| 3 | `B1 & B2` | orange, white text |
+| 4 | ends with `4` (the morning marker) | brown, white text |
+| 5 | `FD & B1` | dark green, red text |
+| 6 | `B1` | dark green, white text |
+| 7 | `FD & B2` | cyan, red text |
+| 8 | `B2` | cyan |
+| 9 | `All 3` | orange, red text |
+| 10 | `-FD Only` | no fill, red text |
+| 11 | `FD Only` | bright green, red text |
+| 12 | `-000` | no fill, grey text |
+| 13 | `000` | bright green, grey text |
+
+Two consequences of that order are worth knowing, and both match the sheet:
+a code ending in 1 (`AB1`, `AFD & B1`) is magenta and never reaches the
+dark-green rules; and `B1 & B2` is listed above the trailing-4 rule, so
+`AB1 & B2 4` stays orange while `AFD & B1 4` goes brown.
+
+The colours are close matches taken from the rule swatches, not exact hexes.
 
 If the sheet's rule order changes, reorder `STATUS_RULES` to match.
 
