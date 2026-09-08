@@ -372,6 +372,8 @@ export type RawInputs = {
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
   setupMessages?: string[][]; // Setup!N1:Q8 — the "For Dismissal Messages" block
   waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
+  verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
+  verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -555,6 +557,7 @@ export type Sources = {
   offsetHours: number; // A7 — the hours the feature cell subtracts from NOW()
   b7: boolean; // manual-message checkbox
   d7: boolean; // lesson-picture checkbox
+  a9: number | null; // DisplayAI!A9 — the verse shows in full for 20 min from here
   a11: number | null; // first time row; the daily text shortens past it
   poemRow: string[]; // Poems!F2:J2, Monday to Friday
   poemF3: string; // Poems!F3
@@ -562,12 +565,15 @@ export type Sources = {
   verticalRow: string[]; // VerticalAi row keyed 1, columns D to J
   slots: Slot[]; // Setup!U1:AA4
   riddle: string; // Riddles!D at the week in Master!B2
+  verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
+  verseWeek: number | null; // Vertical!B4
   pointsClasses: PointsClass[]; // for the D-column status rule
 };
 
 export const EMPTY_SOURCES: Sources = {
-  windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a11: null,
-  poemRow: [], poemF3: "", poemF3Formula: "", verticalRow: [], slots: [], riddle: "", pointsClasses: [],
+  windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
+  poemRow: [], poemF3: "", poemF3Formula: "", verticalRow: [], slots: [], riddle: "",
+  verses: [], verseWeek: null, pointsClasses: [],
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -623,6 +629,68 @@ export function evaluateFeature(src: Sources, minutes: number): FeatureResult {
 }
 
 /**
+ * Cut a long line at a word boundary rather than mid-word.
+ *
+ * The sheet's A5 does LEFT(verse, 85), which lands wherever it lands — "in your
+ * own strength you will fail? H". Here the cut backs up to the last space and
+ * ends with an ellipsis instead.
+ */
+export function truncateWords(text: string, max: number): string {
+  const t = String(text || "").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sp = cut.lastIndexOf(" ");
+  const kept = (sp > max * 0.5 ? cut.slice(0, sp) : cut).replace(/[\s,;:.\u2014-]+$/, "");
+  return `${kept}\u2026`;
+}
+
+/**
+ * A value the sheet has already cut short, tidied.
+ *
+ * Used when the Verses tab cannot be read and the board only has A5's own
+ * LEFT(…, 85) result: if it ends mid-word, back up to the last whole word.
+ */
+export function tidyTruncated(text: string, max = 85): string {
+  const t = String(text || "").trim();
+  if (t.length < max - 5 || /[.!?\u2026\u201d"\u2019']\s*$/.test(t)) return t;
+  const sp = t.lastIndexOf(" ");
+  if (sp <= 0) return t;
+  return `${t.slice(0, sp).replace(/[\s,;:.\u2014-]+$/, "")}\u2026`;
+}
+
+/**
+ * The verse rule from A5, evaluated against the board's clock.
+ *
+ * A5 picks a row of the Verses tab from the week (Vertical!B4) and the weekday,
+ * wrapping round when it runs past the end of the column, and shows it in full
+ * for twenty minutes from A9 and again for twenty minutes from A11 - otherwise
+ * LEFT(..., 85), which lands mid-word.
+ *
+ * This returns the whole row and whether the full form is called for, leaving
+ * the shortening to the caller: the board strips the cell's lead-in at "~"
+ * first, so what gets cut is the scripture rather than the introduction.
+ *
+ * `text` is "" when the Verses tab cannot be read, so the caller can fall back
+ * to the value of A5 itself.
+ */
+export function evaluateVerse(src: Sources, minutes: number, weekday: number): { text: string; open: boolean } {
+  const shut = { text: "", open: false };
+  if (!src.verses.length || src.verseWeek == null) return shut;
+  const count = src.verses.filter((v) => String(v || "").trim() !== "").length;
+  if (!count) return shut;
+  const wanted = src.verseWeek * 5 + weekday - 1;
+  const n = wanted > count ? wanted - count : wanted;
+  const text = String(src.verses[n - 1] || "").trim();
+  if (!text) return shut;
+  const { a9, a11 } = src;
+  const open =
+    a9 != null &&
+    minutes >= a9 &&
+    (minutes < a9 + 20 || (a11 != null && minutes > a11 && minutes < a11 + 20));
+  return { text, open };
+}
+
+/**
  * The daily-update rule: the weekday's poem inside the poem window, otherwise
  * the VerticalAi text for the weekday — its first two lines once the day has
  * started (past A11), in full before that. "Skip 7A " and friends come out.
@@ -670,6 +738,7 @@ export function buildSources(inp: RawInputs): Sources {
     offsetHours: parseFloat(String(row7[0] || "").replace(/[^\d.-]/g, "")) || 0,
     b7: truthy(row7[1] || ""),
     d7: truthy(row7[3] || ""),
+    a9: parseTime((inp.display[8] || [])[0] || ""),
     a11: parseTime((inp.display[10] || [])[0] || ""),
     poemRow: (poems[1] || []).map((s) => String(s || "")),
     poemF3: String((poems[2] || [])[0] || ""),
@@ -677,6 +746,11 @@ export function buildSources(inp: RawInputs): Sources {
     verticalRow: (inp.vertical || []).find((r) => String((r || [])[0] || "").trim() === "1") || [],
     slots,
     riddle: Number.isFinite(week) ? String((riddleRows[week - 1] || [])[0] || "") : "",
+    verses: (inp.verses || []).map((r) => String((r || [])[0] || "")),
+    verseWeek: (() => {
+      const n = parseInt(String(((inp.verseWeek || [])[0] || [])[0] || "").trim(), 10);
+      return Number.isFinite(n) ? n : null;
+    })(),
     pointsClasses: buildPointsClasses(inp.pointsRow3 || [], inp.pointsRow46 || []),
   };
 }

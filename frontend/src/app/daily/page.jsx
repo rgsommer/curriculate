@@ -16,13 +16,28 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, friendlyDutyTitle, statusStyle, subjectTheme, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, evaluateVerse, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
 const POLL_MS = 10_000;
 const FETCH_TIMEOUT_MS = 25_000;
 const SCRUB_RESET_MS = 45_000;
+// The bottom bar holds one line, so the verse is shortened to about the length
+// the sheet's own A5 uses — but at a word boundary.
+const VERSE_MAX = 85;
+// A riddle for the bottom bar at the end of the day, for the days the sheet has
+// none of its own. Picked by the date so it does not change while it is up.
+const HOUSE_RIDDLES = [
+  "What has to be broken before you can use it?",
+  "I am tall when I am young and short when I am old. What am I?",
+  "What has many keys but cannot open a single lock?",
+  "What goes up but never comes down?",
+  "What can travel around the world while staying in a corner?",
+  "The more of me you take, the more you leave behind. What am I?",
+  "What has hands but cannot clap?",
+  "What gets wetter the more it dries?",
+];
 
 function fmt(m) {
   const h = Math.floor(m / 60), mm = Math.floor(m % 60), ap = h >= 12 ? "PM" : "AM";
@@ -310,7 +325,6 @@ export default function DailyPage() {
   const { meta } = data;
   const { P, classes, cur, nextClass } = view;
   const puzzleWord = (meta.puzzle.match(/:\s*(\S+)/) || [, ""])[1];
-  const verse = meta.verse.replace(/^.*?~/, "").trim() || meta.verse;
   const challenge = (meta.other.match(/Math Challenge Question[^:]*:\s*(.*)$/) || [, ""])[1];
   const lastClass = classes[classes.length - 1];
 
@@ -320,6 +334,16 @@ export default function DailyPage() {
   // A payload from an older build (or one a warm server is still caching) can be
   // missing these, and an exception here would freeze the whole board.
   const sources = { ...EMPTY_SOURCES, ...(data.sources || {}) };
+  // A5 shortens the verse with LEFT(..., 85) and lands mid-word. With its source
+  // in hand the board strips the lead-in at "~" first — so what gets shortened is
+  // the scripture, not the introduction — and cuts at a word boundary. Without
+  // it, the value as read is tidied back to the last whole word.
+  const verseSrc = evaluateVerse(sources, t, weekday);
+  const verseRaw = verseSrc.text || meta.verse;
+  const verseQuote = verseRaw.replace(/^.*?~/, "").trim() || verseRaw;
+  const verse = verseSrc.text
+    ? (verseSrc.open ? verseQuote : truncateWords(verseQuote, VERSE_MAX))
+    : tidyTruncated(verseQuote);
   const evaluated = evaluateFeature(sources, t);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
@@ -424,7 +448,15 @@ export default function DailyPage() {
       ? <a className={cls} href={pray.url} target="_blank" rel="noreferrer">{pray.text} ↗</a>
       : <span className={`${cls} nolink`} title="No link found on this cell">{pray.text}</span>;
   };
-  const footer = (showPuzzle) => (
+  // At the end of the day the verse is already large on the screen, so the bar
+  // carries the unscramble if the sheet has one and a riddle otherwise.
+  const riddleOfDay = () => {
+    const own = (meta.riddle || "").replace(/^Q:\s*/, "").trim();
+    if (own && own !== (featureText || "").replace(/^Q:\s*/, "").trim()) return own;
+    const d = new Date();
+    return HOUSE_RIDDLES[(d.getFullYear() * 372 + d.getMonth() * 31 + d.getDate()) % HOUSE_RIDDLES.length];
+  };
+  const footer = (showPuzzle, endOfDay) => (
     <>
       <PointsStrip points={points} currentSec={cur && !cur.duty ? cur.sec : ""} />
       <div className="bottom">
@@ -437,7 +469,9 @@ export default function DailyPage() {
         {prayEl()}
         {showPuzzle && puzzleWord
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
-          : <span className="verse">{verse}</span>}
+          : endOfDay
+            ? <span className="verse riddleline">Riddle: {riddleOfDay()}</span>
+            : <span className="verse">{verse}</span>}
       </div>
       <Scrub
         min={dayMin}
@@ -540,6 +574,8 @@ export default function DailyPage() {
               {row("end of day at", endOfDayAt == null ? "" : `${fmt(endOfDayAt)} (package from ${fmt(endOfDayAt - dismissal.advanceMin)})`)}
               {row("dismissal messages", dismissal.times.map((m) => `${m.label} ${fmt(m.at)}`).join("  ") + `  · ${dismissal.advanceMin} min before`)}
               {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
+              {row("verse (as read)", meta.verse)}
+              {row("verse (evaluated)", verseSrc.text ? `${verseSrc.open ? "full" : "short"} \u2014 ${verse}` : "Verses tab not read; using A5")}
               {row("puzzle", meta.puzzle)}
               {row("riddle", meta.riddle)}
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
@@ -616,7 +652,7 @@ export default function DailyPage() {
           </div>
           {featureImage ? bigPicture(featureImage, "On screen now", "") : dismissalPanel(false)}
         </div>
-        {footer(true)}
+        {footer(true, true)}
       </>
     );
   } else if (!classes.length) {
