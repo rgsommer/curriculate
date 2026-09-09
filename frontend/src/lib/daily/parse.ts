@@ -549,7 +549,9 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
  * does not see it.
  */
 function verticalLesson(rest: string, known: string): { code: string; today: string; plan: string[]; assign: string[] } {
-  const body0 = rest.replace(/[\u2190-\u2BFF\uFE0F\u200D]|[\uD800-\uDBFF][\uDC00-\uDFFF]/g, " ").trim();
+  // Emoji out, bullet characters kept: the assignment block uses them to
+  // separate its points.
+  const body0 = rest.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]|[\uFE0F\u200D\u2600-\u27BF]/g, " ").trim();
   const cm = body0.match(/^[^\n]*?[\u25CF\u25CB\u25AA\u2022~*]?\s*([A-Z]\d{3})\s*:?\s*/);
   const code = cm ? cm[1] : known;
   let body = cm ? body0.slice(cm[0].length) : body0;
@@ -561,8 +563,8 @@ function verticalLesson(rest: string, known: string): { code: string; today: str
     const close = body.lastIndexOf("]");
     const inner = body.slice(open, close > open ? close : undefined).replace(/^\[\s*Assign:?\s*/i, "");
     assign = inner
-      .split("\n")
-      .map((x) => x.replace(/^[\s\-\u2013\u2014\u2022]+/, "").replace(/[\s:;,]+$/, "").trim())
+      .split(/\n|(?=[\u25CF\u25CB\u25AA\u2022]\s*[A-Z])/)
+      .map((x) => x.replace(/^[\s\-\u2013\u2014\u2022\u25CF\u25CB\u25AA]+/, "").replace(/[\s:;,]+$/, "").trim())
       .filter((x) => x.length > 2);
     body = body.slice(0, open);
   }
@@ -619,8 +621,16 @@ export function parseClassText(text: string) {
   //   ●J001  : Introduction: Overview, expectations, textbook, etc.
   //   Slides presentation on Math [Assign: … ]🔍
   // Nothing above finds anything in that, so it is read here instead.
+  const restRaw = raw.slice(m[0].length);
+  // A line carrying the code after a bullet, or an "[Assign: …]" block, is the
+  // Vertical shape saying so. Waiting for the DisplayAI patterns to find nothing
+  // was not enough: a title that ends in a question mark was being read as the
+  // lesson's question, leaving the code and its emoji on screen as the heading.
+  const looksVertical =
+    /^[^\n]{0,40}[\u25CF\u25CB\u25AA\u2022~*]\s*[A-Za-z]\d{3}/.test(restRaw.trim())
+    || /\[\s*Assign:/i.test(restRaw);
   const bare = !today && !plan.length && !assign.length;
-  const v = bare ? verticalLesson(raw.slice(m[0].length), m[4] || "") : null;
+  const v = looksVertical || bare ? verticalLesson(restRaw, m[4] || "") : null;
 
   return {
     duty: false,
@@ -630,7 +640,7 @@ export function parseClassText(text: string) {
     room: "Rm " + m[3],
     code: (v ? v.code : "") || m[4] || "",
     today: v ? v.today : today,
-    q,
+    q: v ? "" : q,
     plan: v ? v.plan : plan,
     assign: v ? v.assign : assign,
     remind,
