@@ -3,6 +3,8 @@
 // Setup cells); output is the JSON the page renders from.
 
 /** A handout, form or reference linked from a lesson cell. */
+
+import { evaluateOr, type Book } from "./formula";
 export type LessonLink = { label: string; url: string };
 
 export type Period = {
@@ -867,8 +869,8 @@ export type RawInputs = {
   displayD: string[][]; // DisplayAI!D1:D40 formulas
   displayC: string[][]; // DisplayAI!C1:C40 formulas (hyperlinks inside lesson cells)
   setup: string[][]; // Setup!A1:F20 values
-  slots: string[][]; // Setup!U1:AA8 values
-  slotFormulas: string[][]; // Setup!U4:AA4 formulas
+  slots: string[][]; // Setup!U1:AB8 values
+  slotFormulas: string[][]; // Setup!U4:AB4 formulas
   feature: string; // Display!E1 (or DisplayAI!E1) formatted value
   featureFormula?: string; // the same cell as a formula — an =IMAGE() has no text value
   // Ingredients for the sheet's own display rules, so the board can evaluate
@@ -880,8 +882,8 @@ export type RawInputs = {
   master?: string[][]; // Master!B1:B2 values
   pointsRow3?: string[]; // Points!A3:BZ3 — class names
   pointsRow46?: string[]; // Points!A46:BZ46 — four flags per class
-  slotBlock?: string[][]; // Setup!T1:AA8 values, for the debug view
-  slotBlockFormulas?: string[][]; // Setup!T1:AA8 formulas, for the debug view
+  slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
+  slotBlockFormulas?: string[][]; // Setup!S1:AB8 formulas — what the board evaluates itself
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
   displayCRuns?: { text: string; url: string }[][]; // every link inside each DisplayAI!C cell
   setupMessages?: string[][]; // Setup!M1:Q8 — column M the weekday names, N to Q the message block
@@ -1092,7 +1094,14 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
  * move them, and what lets an =IMAGE() slot be seen at all.
  * ------------------------------------------------------------------ */
 
-export type Slot = { priority: number | null; name: string; value: string; formula: string };
+export type Slot = {
+  priority: number | null;
+  name: string;
+  value: string; // row 4 as the sheet computed it, at the sheet's clock
+  formula: string; // row 4's rule, which the board re-runs at its own clock
+  content: string; // row 3 — what the rule shows when it fires
+  contentFormula: string;
+};
 
 export type Sources = {
   windowStart: number | null; // Setup!C12
@@ -1106,7 +1115,8 @@ export type Sources = {
   poemF3: string; // Poems!F3
   poemF3Formula: string;
   verticalRow: string[]; // VerticalAi row keyed 1, columns D to J
-  slots: Slot[]; // Setup!U1:AA4
+  slots: Slot[]; // Setup!U1:AB4
+  book: Book; // the grids a Setup formula may reach, for evaluating it here
   riddle: string; // Riddles!D at the week in Master!B2
   verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
   verseWeek: number | null; // Vertical!B4
@@ -1117,7 +1127,7 @@ export type Sources = {
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [],
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {},
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1135,12 +1145,25 @@ export type FeatureResult = { text: string; image: string; source: string };
  *   poem window → manual message (B7) → lesson picture (D7) → the Setup slot
  *   table by priority 1..6 → the riddle before the window → nothing.
  *
+ * Each slot's row 4 is its own timing rule — "the memory verse for the first
+ * ten minutes of CE, but the picture in S2 on the last teaching day of the
+ * week" — written against NOW(). Reading the cell's value gives the answer for
+ * the moment of the read, so the scrubber could not move it; `at` re-runs the
+ * rule at the time on the board instead. A formula the evaluator cannot follow
+ * falls back to the value the sheet computed.
+ *
  * One deliberate difference: the sheet tests each slot with `<>""`, and an
  * =IMAGE() cell has no text value, so the sheet skips its own picture slots.
  * Here a cell holding a picture counts as filled, which is why a flag put in
  * a slot reaches the board.
  */
-export function evaluateFeature(src: Sources, minutes: number): FeatureResult {
+export function evaluateFeature(src: Sources, minutes: number, at?: Date): FeatureResult {
+  const ctx = at && src.book && Object.keys(src.book).length
+    ? { book: src.book, now: at, sheet: "Setup" }
+    : null;
+  // The slot as it reads at the time on the board, not at the time of the read.
+  const live = (s: { value: string; formula: string }): string =>
+    (ctx && s.formula ? evaluateOr(s.formula, s.value, ctx) : s.value).trim();
   const out = (value: string, formula: string, source: string): FeatureResult => ({
     text: imageOf(value, formula) ? "" : String(value || "").trim(),
     image: imageOf(value, formula),
@@ -1151,20 +1174,23 @@ export function evaluateFeature(src: Sources, minutes: number): FeatureResult {
   if (src.windowStart != null && src.windowEnd != null && t >= src.windowStart && t <= src.windowEnd) {
     return out(src.poemF3, src.poemF3Formula, "Poems!F3 (poem window)");
   }
-  const slotAt = (i: number) => src.slots[i] || { priority: null, name: "", value: "", formula: "" };
-  if (src.b7) return out(slotAt(1).value, slotAt(1).formula, "Setup!V4 (B7 ticked)");
+  const slotAt = (i: number) =>
+    src.slots[i] || { priority: null, name: "", value: "", formula: "", content: "", contentFormula: "" };
+  if (src.b7) return out(live(slotAt(1)), slotAt(1).formula, "Setup!V4 (B7 ticked)");
   if (src.d7) {
     const z = slotAt(5);
-    return z.value || imageOf(z.value, z.formula)
-      ? out(z.value, z.formula, "Setup!Z4 (D7 ticked)")
+    const zv = live(z);
+    return zv || imageOf(zv, z.formula)
+      ? out(zv, z.formula, "Setup!Z4 (D7 ticked)")
       : { text: "No class", image: "", source: "D7 ticked, Z4 empty" };
   }
   for (let p = 1; p <= 6; p += 1) {
     const s = src.slots.find((c) => c.priority === p);
     if (!s) continue;
-    const picture = imageOf(s.value, s.formula);
-    const filled = picture ? true : s.value !== "" && !(p === 2 && s.value === "-");
-    if (filled) return out(s.value, s.formula, `${s.name || "slot"} (priority ${p})`);
+    const value = live(s);
+    const picture = imageOf(value, s.formula);
+    const filled = picture ? true : value !== "" && !(p === 2 && value === "-");
+    if (filled) return out(value, s.formula, `${s.name || "slot"} (priority ${p})`);
   }
   if (src.windowStart != null && minutes < src.windowStart && src.riddle) {
     return { text: src.riddle, image: "", source: "Riddles (before the window)" };
@@ -1255,22 +1281,47 @@ export function evaluateDailyText(src: Sources, minutes: number, weekday: number
   return strip(full);
 }
 
+/**
+ * The grids a Setup formula is allowed to reach.
+ *
+ * Only what the board already reads, and only what is small enough to travel in
+ * the payload — a reference past these throws and the board falls back to the
+ * value the sheet computed, which is what it did before it evaluated anything.
+ */
+function buildBook(inp: RawInputs): Book {
+  return {
+    setup: [
+      { top: 1, left: 1, width: 6, height: 20, values: inp.setup || [] }, // A1:F20
+      { top: 1, left: 13, width: 5, height: 8, values: inp.setupMessages || [] }, // M1:Q8
+      { top: 1, left: 19, width: 10, height: 8, values: inp.slotBlock || [], formulas: inp.slotBlockFormulas || [] }, // S1:AB8
+    ],
+    master: [{ top: 1, left: 2, width: 1, height: 2, values: inp.master || [] }], // B1:B2
+  };
+}
+
 /** Gather everything the two rules need out of the raw grids. */
 export function buildSources(inp: RawInputs): Sources {
   const setupRow12 = inp.setup[11] || [];
   const row7 = inp.display[6] || [];
   const priorities = inp.slots[0] || [];
   const names = inp.slots[1] || [];
-  const values = inp.slots[3] || [];
-  const formulas = (inp.slotFormulas || [])[0] || [];
+  const content = inp.slots[2] || []; // row 3 — the slot's own material
+  const values = inp.slots[3] || []; // row 4 — the same, gated by the sheet's clock
+  // The whole formula block when the route sent it, so row 3 comes through as
+  // well as row 4; older payloads carry only row 4.
+  const block = (inp.slotBlockFormulas || []).map((r) => (r || []).slice(2));
+  const formulas = block[3] || (inp.slotFormulas || [])[0] || [];
+  const contentFormulas = block[2] || [];
   const slots: Slot[] = [];
-  for (let i = 0; i < 7; i += 1) {
+  for (let i = 0; i < 8; i += 1) {
     const p = parseInt(String(priorities[i] || "").trim(), 10);
     slots.push({
       priority: Number.isFinite(p) ? p : null,
       name: (names[i] || "").trim(),
       value: (values[i] || "").trim(),
       formula: (formulas[i] || "").trim(),
+      content: (content[i] || "").trim(),
+      contentFormula: (contentFormulas[i] || "").trim(),
     });
   }
   const poems = inp.poems || [];
@@ -1298,6 +1349,7 @@ export function buildSources(inp: RawInputs): Sources {
     })(),
     pointsClasses: buildPointsClasses(inp.pointsRow3 || [], inp.pointsRow46 || []),
     pointsLabels: pointsLabels(inp.pointsRow3 || []),
+    book: buildBook(inp),
   };
 }
 

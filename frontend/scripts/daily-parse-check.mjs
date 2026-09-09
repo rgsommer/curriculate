@@ -8,12 +8,21 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 
-const src = fs.readFileSync(new URL("../src/lib/daily/parse.ts", import.meta.url), "utf8");
-const js = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } }).outputText;
-const tmp = path.join(os.tmpdir(), `daily-parse-${process.pid}.mjs`);
-fs.writeFileSync(tmp, js);
-const P = await import(pathToFileURL(tmp).href);
-fs.unlinkSync(tmp);
+// parse.ts pulls in the formula evaluator, so both modules are transpiled into
+// one temporary directory and the relative import is pointed at the .mjs copy.
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "daily-parse-"));
+const build = (name) => {
+  const src = fs.readFileSync(new URL(`../src/lib/daily/${name}.ts`, import.meta.url), "utf8");
+  const js = ts
+    .transpileModule(src, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2020 } })
+    .outputText.replace(/(from\s+")(\.\/[a-z]+)(")/g, "$1$2.mjs$3");
+  fs.writeFileSync(path.join(dir, `${name}.mjs`), js);
+};
+build("formula");
+build("parse");
+const P = await import(pathToFileURL(path.join(dir, "parse.mjs")).href);
+const F = await import(pathToFileURL(path.join(dir, "formula.mjs")).href);
+fs.rmSync(dir, { recursive: true, force: true });
 
 let failures = 0;
 const check = (label, ok, got) => {
@@ -510,6 +519,83 @@ check("greeting: nothing when the column is empty", P.evaluateGreeting([], 9 * 6
 check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissalReadyMin === 5, P.parseSetup([]).dismissalReadyMin);
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
+
+// ---- the formula evaluator, so Setup's NOW() rules follow the scrubber ----
+// A stand-in for the Setup tab: A1:F20, M1:Q8 and the S1:AB8 slot block.
+const setupA = [];
+setupA[3] = ["", "", "", "", "", ""]; // A4:F4
+const setupM = [
+  ["everyone", "For Dismissal Messages", "", "", ""],
+  ["class", "Lunch", "12:00 PM", "5", ""],
+  ["hard-workers", "", "", "", ""],
+  ["JH Students", "", "15:25:00", "", ""], // O4 — the dismissal time
+  ["students", "", "", "", ""],
+];
+const slotCells = [
+  [], // S1
+  [], // S2 (a picture: no text value, only the formula below)
+  [], // S3
+  [], // S4
+];
+slotCells[0] = ["", "", "3", "1", "2"];              // S..W row 1 — priorities
+slotCells[1] = ["", "", "Memory Verse", "Message", "Lesson Pic"]; // row 2 — names
+slotCells[2] = ["", "", "Trust in the Lord with all your heart.", "", ""]; // row 3 — the material
+slotCells[3] = ["", "", "", "", ""];                  // row 4 — the sheet's own answer, at its clock
+const slotRules = [[], [], [], []];
+slotRules[1] = ['=IMAGE("https://example.com/verse-of-the-week.png")']; // S2
+slotRules[3] = [
+  "", "",
+  // U4: the memory verse for the first ten minutes of a CE class, but the
+  // picture in S2 once the week's last teaching day comes round.
+  '=IF(AND(TIMEVALUE(NOW())>=TIMEVALUE("09:05"),TIMEVALUE(NOW())<TIMEVALUE("09:15")),IF(WEEKDAY(NOW())=6,Setup!S2,Setup!U3),"")',
+];
+const book = {
+  setup: [
+    { top: 1, left: 1, width: 6, height: 20, values: setupA },
+    { top: 1, left: 13, width: 5, height: 8, values: setupM },
+    { top: 1, left: 19, width: 10, height: 8, values: slotCells, formulas: slotRules },
+  ],
+};
+const at = (h, m, day = 8) => new Date(2026, 8, day, h, m, 0); // Sep 8 2026 is a Tuesday
+const ev = (f, when) => F.evaluateFormula(f, { book, now: when, sheet: "Setup" });
+
+check("formula: arithmetic and text", ev("=1+2*3&\" boxes\"", at(9, 0)) === "7 boxes", ev("=1+2*3&\" boxes\"", at(9, 0)));
+check("formula: TIMEVALUE(NOW()) moves with the clock",
+  ev('=IF(TIMEVALUE(NOW())>TIMEVALUE("11:55"),"lunch","before")', at(12, 5)) === "lunch"
+  && ev('=IF(TIMEVALUE(NOW())>TIMEVALUE("11:55"),"lunch","before")', at(9, 5)) === "before");
+check("formula: WEEKDAY counts Sunday as 1", ev("=WEEKDAY(NOW())", at(9, 0, 11)) === "6", ev("=WEEKDAY(NOW())", at(9, 0, 11)));
+check("formula: a reference reads the cell", ev("=Setup!U3", at(9, 0)) === "Trust in the Lord with all your heart.");
+check("formula: an =IMAGE() cell hands on its picture",
+  ev("=Setup!S2", at(9, 0)) === "https://example.com/verse-of-the-week.png");
+check("formula: INDEX over a whole column", ev("=INDEX(Setup!M:M,WEEKDAY(NOW())-1,1)", at(9, 0)) === "class",
+  ev("=INDEX(Setup!M:M,WEEKDAY(NOW())-1,1)", at(9, 0)));
+// The greeting cell, as the sheet writes it.
+const greet = '=if(timevalue(now())<0.5,if(timevalue(now())>timevalue("11:55"),"Enjoy your lunch, ","Good morning, "),if(timevalue(now())<=Setup!O4,"Good afternoon, ","Goodbye, "))&index(Setup!M:M,weekday(now())-1,1)&"!"';
+check("formula: the greeting cell, morning", ev(greet, at(9, 0)) === "Good morning, class!", ev(greet, at(9, 0)));
+check("formula: the greeting cell, afternoon", ev(greet, at(14, 0)) === "Good afternoon, class!", ev(greet, at(14, 0)));
+check("formula: the greeting cell, after dismissal", ev(greet, at(15, 40)) === "Goodbye, class!", ev(greet, at(15, 40)));
+check("formula: an unknown function falls back", F.evaluateOr("=SPARKLINE(A1:B2)", "the sheet's answer", { book, now: at(9, 0), sheet: "Setup" }) === "the sheet's answer");
+
+// The same rule through the E1 evaluator: the slot has no value in the sheet
+// (it was read outside the window), and the board works it out for itself.
+const srcSlots = P.buildSources({
+  display: [[], [], [], [], [], [], ["0", "", "", ""]],
+  displayD: [], displayC: [], setup: setupA,
+  slots: slotCells.map((r) => (r || []).slice(2)),
+  slotRules: [(slotRules[3] || []).slice(2)],
+  slotBlock: slotCells, slotBlockFormulas: slotRules,
+  setupMessages: setupM, feature: "", master: [],
+});
+check("slots: row 3 comes through", srcSlots.slots[0].content === "Trust in the Lord with all your heart.", srcSlots.slots[0]);
+const inWindow = P.evaluateFeature(srcSlots, 9 * 60 + 10, at(9, 10));
+const outOfWindow = P.evaluateFeature(srcSlots, 10 * 60, at(10, 0));
+const onFriday = P.evaluateFeature(srcSlots, 9 * 60 + 10, at(9, 10, 11));
+check("E1: the memory verse shows in its ten minutes", inWindow.text === "Trust in the Lord with all your heart.", inWindow);
+check("E1: and not outside them", outOfWindow.text === "" && outOfWindow.image === "", outOfWindow);
+check("E1: the picture takes its place on the week's last day",
+  onFriday.image === "https://example.com/verse-of-the-week.png" && onFriday.text === "", onFriday);
+check("E1: without a clock it still reads the sheet's own answer",
+  P.evaluateFeature(srcSlots, 9 * 60 + 10).text === "", P.evaluateFeature(srcSlots, 9 * 60 + 10));
 
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

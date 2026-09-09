@@ -67,7 +67,7 @@ export async function GET(req: Request) {
     const VALUES = [
       "DisplayAI!A1:F40",   // 0 the day itself
       "Setup!A1:F20",       // 1 the labelled timing rules
-      "Setup!T1:AA8",       // 2 the E1 slot table
+      "Setup!S1:AB8",       // 2 the E1 slot table (S2 is the picture the CE rule swaps in)
       "Setup!M1:Q8",        // 3 column M the weekday names, N to Q the message times
       "Display!E1",         // 4 the feature cell, either tab
       "DisplayAI!E1",       // 5
@@ -85,7 +85,7 @@ export async function GET(req: Request) {
     const FORMULAS = [
       "DisplayAI!D1:D40",   // 0 the video link on each row
       "DisplayAI!C1:C40",   // 1 links inside the lesson cells
-      "Setup!T1:AA8",       // 2
+      "Setup!S1:AB8",       // 2
       "Display!E1",         // 3 an =IMAGE() cell has no value, only a formula
       "DisplayAI!E1",       // 4
       "Poems!F1:J3",        // 5
@@ -112,12 +112,14 @@ export async function GET(req: Request) {
     const displayC = formulas[1] || [];
     const slotBlockFormulas = formulas[2] || [];
 
-    // The slot table spans T to AA; the E1 formula's HLOOKUP works on U to AA,
-    // so the slots themselves drop the leading T column. The whole block is
-    // carried through for ?debug=1, where its formulas can be inspected.
-    const slots = slotBlock.map((r) => (r || []).slice(1));
-    // buildSources wants row 4 of the U..AA slots as its formula row.
-    const slotFormulas = [((slotBlockFormulas[3] || []).slice(1))];
+    // The block is read from S so the picture in S2 — what the CE rule shows on
+    // the last teaching day of the week — comes with it, and out to AB. The E1
+    // formula's HLOOKUP works on U onwards, so the slots themselves drop the two
+    // leading columns. The whole block is carried through for ?debug=1, where
+    // its formulas can be inspected, and for the board to evaluate itself.
+    const slots = slotBlock.map((r) => (r || []).slice(2));
+    // buildSources wants row 4 of the U.. slots as its formula row.
+    const slotFormulas = [((slotBlockFormulas[3] || []).slice(2))];
     // An =IMAGE() cell has no text value, so the picture's URL only shows up here.
     let featureFormula = (formulas[3]?.[0]?.[0]) || (formulas[4]?.[0]?.[0]) || "";
 

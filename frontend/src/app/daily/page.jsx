@@ -15,10 +15,12 @@
 // DAILY_ACCESS_KEY is set; ?pic=left|off moves or hides pictures (the lesson
 // picture and any image the sheet puts in the feature cell E1).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
+// The Setup slot table's own columns, for ?debug=1.
+const SLOT_COLS = ["U", "V", "W", "X", "Y", "Z", "AA", "AB"];
 const FLAGS = ["FD", "B1", "B2"];
 const POLL_MS = 10_000;
 const FETCH_TIMEOUT_MS = 25_000;
@@ -518,7 +520,12 @@ export default function DailyPage() {
   // The bottom bar has one line for it, so rather than cut the quote short it
   // carries the whole thing and slides it across when it does not fit.
   const verseFull = verseSrc.text ? verseQuote : tidyTruncated(verseQuote);
-  const evaluated = evaluateFeature(sources, t);
+  // The Setup slot rules are written against NOW(); handing the board's own
+  // clock in is what lets the scrubber move them — otherwise E1 keeps showing
+  // whatever was true at the moment the sheet was read.
+  const clock = new Date();
+  clock.setHours(Math.floor(t / 60), t % 60, 0, 0);
+  const evaluated = evaluateFeature(sources, t, clock);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
   // What actually happens at the bell, which is not always the next class: the
@@ -783,6 +790,12 @@ export default function DailyPage() {
               {row("status (as read)", cur ? cur.status : "")}
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
+              {(sources.slots || []).map((sl, i) => (sl.name || sl.formula || sl.content ? (
+                <Fragment key={`slot${i}`}>
+                  {row(`slot ${SLOT_COLS[i] || `#${i + 1}`} ${sl.name || ""}`.trim(),
+                    `priority ${sl.priority == null ? "—" : sl.priority} | row3: ${sl.contentFormula || sl.content || "—"} | row4: ${sl.formula || "—"} | sheet said: ${sl.value || "—"}`)}
+                </Fragment>
+              ) : null))}
               {row("slots", (sources.slots || []).filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}
               {row("E1 picture (as read)", meta.featureImage)}
               {row("E1 text (as read)", meta.feature)}
