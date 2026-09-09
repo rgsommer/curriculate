@@ -187,14 +187,41 @@ function derivePronoun(student) {
   return "";
 }
 
+/**
+ * Pick which membership to act under when a user has more than one.
+ *
+ * The unique index is {schoolId, userId}, so a user CAN belong to several
+ * schools: someone who ran /setup (creating their own school) and later
+ * accepted an invite to the real one ends up with two rows. A bare findOne()
+ * returns whichever Mongo hands back first, so that teacher can land in their
+ * own empty school while colleagues see the imported roster — and it can differ
+ * between requests, which makes it look like an import "only affected one user".
+ *
+ * Prefer an accepted membership, then the most recently updated, then a stable
+ * id tiebreak so the choice never flips on its own.
+ */
+export function chooseMembership(memberships) {
+  const rows = (memberships || []).filter(Boolean);
+  if (rows.length <= 1) return rows[0] || null;
+  const rank = (m) => (m.status === "accepted" ? 0 : m.status === "pending" ? 2 : 1);
+  const time = (m) => new Date(m.updatedAt || m.createdAt || 0).getTime() || 0;
+  return rows.slice().sort((a, b) =>
+    rank(a) - rank(b) ||
+    time(b) - time(a) ||
+    String(a._id).localeCompare(String(b._id))
+  )[0];
+}
+
 /** Load the caller's school membership; 404 if they have none yet. */
 async function loadMembership(req, res, next) {
   try {
-    const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
+    const all = await BehaviorTeacher.find({ userId: req.userId }).lean();
+    const membership = chooseMembership(all);
     if (!membership) {
       return res.status(404).json({ ok: false, error: "No Behaviours school for this account", needsSetup: true });
     }
     req.membership = membership;
+    req.memberships = all;
     req.schoolId = membership.schoolId;
     next();
   } catch (err) {
@@ -265,7 +292,8 @@ function sanitizeConfig(config) {
 
 router.get("/me", authAny, async (req, res, next) => {
   try {
-    const membership = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
+    const allMemberships = await BehaviorTeacher.find({ userId: req.userId }).lean();
+    const membership = chooseMembership(allMemberships);
     if (!membership) return res.json({ ok: true, membership: null, needsSetup: true });
     // Lightweight usage signal: count this week's page loads (best-effort).
     try {
@@ -281,7 +309,28 @@ router.get("/me", authAny, async (req, res, next) => {
     const admins = await BehaviorTeacher.find({ schoolId: membership.schoolId, role: { $in: ["originator", "admin"] } })
       .select("name email role")
       .lean();
-    res.json({ ok: true, membership, school, config: sanitizeConfig(config), admins });
+    // When a user belongs to more than one school, say so: acting under the
+    // wrong one is the usual reason a teacher sees an empty roster.
+    const otherSchools = allMemberships.length > 1
+      ? await BehaviorSchool.find({ _id: { $in: allMemberships.map((m) => m.schoolId) } })
+          .select("name").lean()
+      : [];
+    res.json({
+      ok: true,
+      membership,
+      school,
+      config: sanitizeConfig(config),
+      admins,
+      ...(allMemberships.length > 1 && {
+        memberships: allMemberships.map((m) => ({
+          schoolId: m.schoolId,
+          schoolName: (otherSchools.find((s) => String(s._id) === String(m.schoolId)) || {}).name || "",
+          role: m.role,
+          status: m.status,
+          active: String(m.schoolId) === String(membership.schoolId),
+        })),
+      }),
+    });
   } catch (err) {
     next(err);
   }
