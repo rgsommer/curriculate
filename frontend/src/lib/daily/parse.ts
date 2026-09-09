@@ -329,6 +329,27 @@ export function dayPlanByWeekday(
 ): Record<number, DayClass[]> {
   const out: Record<number, DayClass[]> = {};
   for (let wd = 2; wd <= 6; wd += 1) {
+    // The AI-written column does not always keep the lesson code, but the
+    // column it was written from does. Collect the codes that appear for each
+    // subject on Vertical, in order, and hand them to any class that arrives
+    // without one — a subject that runs twice in a day gets its two codes in
+    // the order they are written.
+    const codes = new Map<string, string[]>();
+    for (const row of vertical || []) {
+      const text = String((row || [])[wd + 3] || "");
+      if (!text) continue;
+      for (const c of classesFromText(text)) {
+        if (!c.code) continue;
+        const list = codes.get(c.subj) || [];
+        if (!list.includes(c.code)) list.push(c.code);
+        codes.set(c.subj, list);
+      }
+    }
+    const takeCode = (subj: string) => {
+      const list = codes.get(subj);
+      return list && list.length ? (list.shift() as string) : "";
+    };
+
     const rows: DayClass[] = [];
     const seen = new Set<string>();
     const n = Math.max((vertical || []).length, (verticalAi || []).length);
@@ -342,16 +363,19 @@ export function dayPlanByWeekday(
         if (pass === 0 ? start == null : start != null) continue;
         const text = String(vRow[wd + 3] || "") || String(aiRow[wd] || "");
         if (!text) continue;
-        classesFromText(text, lessons).forEach((c, i) => {
-          const key = `${c.subj}|${c.code}`;
+        classesFromText(text).forEach((raw, i) => {
+          const code = raw.code || takeCode(raw.subj);
+          const key = `${raw.subj}|${code}`;
           if (seen.has(key)) return;
           // The same class can appear twice, once with its code and once
           // without, when both tabs carry the day. A subject can genuinely run
           // twice in a day, but only when the two carry different codes, so a
           // second copy with no code at all is an echo.
-          if (!c.code && seen.has(`subj:${c.subj}`)) return;
+          if (!code && seen.has(`subj:${raw.subj}`)) return;
           seen.add(key);
-          seen.add(`subj:${c.subj}`);
+          seen.add(`subj:${raw.subj}`);
+          // The lesson's own material is looked up once the code is settled.
+          const c = withLesson({ ...raw, code }, lessons);
           rows.push({ ...c, start: i === 0 ? start : null });
         });
       }

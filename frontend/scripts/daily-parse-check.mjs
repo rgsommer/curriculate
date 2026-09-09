@@ -398,5 +398,19 @@ check("day plan: the timed copy wins over the run-together one", planned.length 
 const echo = P.dayPlanByWeekday([["", "", "Math 7A (23) 202 Today we practise. What helps? - NS7-3 Reminders: none."]], {}, vTimes)[2] || [];
 check("day plan: a codeless echo of a coded class is dropped", echo.length === 2 && echo.every((c) => c.code), echo.map((c) => `${c.subj}:${c.code}`));
 
+
+// ---- the code is on Vertical even when the AI column drops it ----
+const aiNoCode = [["", "", "History 7A (22) 202 Today we introduce the course. What makes a useful perspective? - Handouts Reminders: none."]];
+const vWithCode = [["11:00 AM", "", "", "", "", "History 7A (22) 202 (H001) Today we introduce the course. What makes a useful perspective? - Handouts Reminders: none."]];
+const borrowed = P.dayPlanByWeekday(aiNoCode, L, vWithCode)[2] || [];
+check("code borrowed from Vertical", borrowed.length === 1 && borrowed[0].code === "H001", borrowed.map((c) => `${c.subj}:${c.code}`));
+check("the borrowed code reaches the Lessons row", borrowed[0].page === "p. 2" && borrowed[0].links.some((x) => x.label === "Due Dates handout"), borrowed[0]);
+
+// A subject that runs twice gets its two codes in the order they are written.
+const aiTwice = [["", "", "Math 7A (23) 202 Today we introduce. What helps? - a Reminders: none. Math 7A (23) 202 Today we practise. What next? - b Reminders: none."]];
+const vTwice = [["", "", "", "", "", "Math 7A (23) 202 (J001) Today we introduce. What helps? - a Reminders: none. Math 7A (23) 202 (J002) Today we practise. What next? - b Reminders: none."]];
+const twiceRun = P.dayPlanByWeekday(aiTwice, {}, vTwice)[2] || [];
+check("a subject twice keeps both codes in order", twiceRun.map((c) => c.code).join() === "J001,J002", twiceRun.map((c) => `${c.subj}:${c.code}`));
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
