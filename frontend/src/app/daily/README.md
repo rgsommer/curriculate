@@ -164,6 +164,13 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | all three | All 3 | |
 | trailing ` 4` | `+2` | the bonus of two for being perfect the whole class |
 
+The washroom pass is shut at both ends of the period: for the first few minutes
+nobody walks out during the lesson, and it closes again before the bell. The
+opening window is Setup's grace minutes — the same one the sheet's own status
+rule uses to force B2 off, so the bubble and the chip always agree — and while it
+is shut at the top the chip counts down to when it opens ("Washroom in 7 min").
+The closing window is Setup's "Can go to washroom x min before".
+
 The class group letter sits small beside the words, and the code itself stays in
 the bubble's tooltip. A code with no text label is read as its digits in the
 legend's order — Benefit 1, Benefit 2, Benefit 3 — so `A-1000` is "Sit anywhere"
