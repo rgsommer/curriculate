@@ -733,16 +733,32 @@ export default function DailyPage() {
       </>
     );
   } else if (!classes.length) {
-    // No class rows for today: every scrub position lands here, which can look
-    // like the scrubber is dead. Say so instead.
+    // No lesson text in any row. That is three different situations and only one
+    // of them means the day is empty: the sheet may have the day's times with
+    // nothing filled in yet, or the last read may simply have failed — in which
+    // case this is an old copy and says nothing about today at all. Telling a
+    // classroom "no classes today" in any of them is wrong.
+    const note = error
+      ? "The board could not read the sheet just now, so this is the last copy it has."
+      : P.length
+        ? "The day's times are here, but no lessons are filled in yet."
+        : "Nothing is listed for today yet.";
     body = (
       <>
-        {header({ title: meta.greeting || "No classes today", chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
+        {header({ title: meta.greeting || "Good morning", chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
         <div className="main center">
           <div>
-            <p className="script">{meta.greeting || "No classes today"}</p>
+            <p className="script">{meta.greeting || "Good morning"}</p>
             <p className="question">{verse}</p>
-            <p className="summary">The sheet has no class rows for today, so every time of day shows this screen.</p>
+            <p className="summary">{note}</p>
+            {P.length > 0 && (
+              <div className="agenda">
+                {P.map((x) => [
+                  <span key={`t${x.start}`} className="t">{fmt(x.start)}</span>,
+                  <span key={`s${x.start}`}>{x.subj || x.text || "—"}</span>,
+                ])}
+              </div>
+            )}
           </div>
         </div>
         {footer(false)}
