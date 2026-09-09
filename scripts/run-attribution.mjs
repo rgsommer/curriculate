@@ -27,9 +27,15 @@
 // This script is safe to run any time — it is pure read + a bounded
 // per-window upsert of a diagnostic report.
 
-import "dotenv/config";
-import mongoose from "mongoose";
-import { computeAttributionReport, renderRootCauseText } from "../backend/services/stocksAttributionEngine.js";
+// Note: no dotenv import — export MONGO_URI in the shell before
+// running. Keeps the script dependency-free so it works from any dir.
+//
+// CRITICAL: import mongoose from the SAME node_modules the backend's
+// engine + models use — otherwise each side sees a different default
+// connection and every query buffers forever. We resolve mongoose
+// via the backend's package by importing a backend file first.
+import "../backend/node_modules/mongoose/index.js";
+import mongoose from "../backend/node_modules/mongoose/index.js";
 
 function parseArgs(argv) {
   const out = { email: "rgsommer@me.com", windows: ["30", "90", "ytd", "max"], format: "both", dryRun: false };
@@ -59,11 +65,30 @@ async function main() {
     process.exit(1);
   }
 
-  console.log(`[run-attribution] Connecting to Mongo…`);
+  // StocksAdvisor's prod data lives in the `test` DB (Mongoose default
+  // in backend/index.js which doesn't set dbName). Override with
+  // MONGO_DB env if you moved it elsewhere.
+  const dbName = process.env.MONGO_DB || "test";
+  console.log(`[run-attribution] Connecting to Mongo (db=${dbName})…`);
+  // Do NOT buffer — surface real errors instead of the 10s misleading
+  // "buffering timed out" message. Set BEFORE connect so it takes effect.
+  mongoose.set("bufferCommands", false);
   await mongoose.connect(uri, {
     serverSelectionTimeoutMS: 15_000, socketTimeoutMS: 60_000,
+    dbName,
   });
-  console.log(`[run-attribution] Connected. Running attribution for ${args.email}.`);
+  // Wait for the connection to be truly ready before running queries.
+  await new Promise((resolve, reject) => {
+    if (mongoose.connection.readyState === 1) return resolve();
+    mongoose.connection.once("connected", resolve);
+    mongoose.connection.once("error", reject);
+  });
+  console.log(`[run-attribution] Connected (readyState=${mongoose.connection.readyState}, host=${mongoose.connection.host}, db=${mongoose.connection.name}). Running attribution for ${args.email}.`);
+
+  // Now import the engine — models register against the already-open
+  // default connection so their queries never buffer.
+  const engineUrl = new URL("../backend/services/stocksAttributionEngine.js", import.meta.url);
+  const { computeAttributionReport, renderRootCauseText } = await import(engineUrl.href);
 
   const asOf = new Date();
   const results = [];
