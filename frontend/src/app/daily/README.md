@@ -149,9 +149,25 @@ renamed or missing tab degrades that one rule instead of blanking the board.
 
 The status is a **privilege code**, and the sheet's conditional formatting on
 D9/D11/D13 is what makes it readable across the room. The board mirrors those
-rules (`statusStyle` in `parse.ts`) and shows the code as a coloured badge rather
-than a plain label — so `A-1000`, which has no text substitution and exists only to
-be coloured, still reads correctly as grey on green.
+rules (`statusStyle` in `parse.ts`) and shows it as a coloured bubble — so
+`A-1000`, which has no text substitution and exists only to be coloured, still
+reads correctly as grey on green.
+
+The bubble says **what the benefit is**, not the sheet's shorthand
+(`statusWords`, `BENEFIT_WORDS`), taken from the legend beside the points table:
+
+| Code | On the board | The legend |
+| --- | --- | --- |
+| B1 | Sit anywhere | Benefit 1 — two days in a row at that level: "Sit Anywhere" (SA) or a snack |
+| B2 | Washroom pass | Benefit 2 — one day at that level: the washroom pass, one at a time, while the Washroom chip is green |
+| FD | Extra FD | Benefit 3 — a week's average at that level: an extra Formal Discussion |
+| all three | All 3 | |
+| trailing ` 4` | `+2` | the bonus of two for being perfect the whole class |
+
+The class group letter sits small beside the words, and the code itself stays in
+the bubble's tooltip. A code with no text label is read as its digits in the
+legend's order — Benefit 1, Benefit 2, Benefit 3 — so `A-1000` is "Sit anywhere"
+rather than nothing at all.
 
 The rules are mirrored in the sheet's own order (D8:D9, D11:D13), first match
 winning:

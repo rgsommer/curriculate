@@ -674,8 +674,41 @@ export function parseStatus(s: string) {
     "FD Only": [true, false, false],
     "FD & B2": [true, false, true],
   };
-  const f = map[label] || [false, false, false];
+  // A code with no text label ("A-1000") is the digits themselves, in the order
+  // the legend beside the points table lists the benefits: Benefit 1, Benefit 2,
+  // Benefit 3. Without this they all read as "no benefits".
+  const digits = label.match(/^([01])([01])([01])[01]?$/);
+  const f = digits
+    ? [digits[3] === "1", digits[1] === "1", digits[2] === "1"] as [boolean, boolean, boolean]
+    : map[label] || [false, false, false];
   return { rec: false, letter: m[1] || "", grace: !!m[2], FD: f[0], B1: f[1], B2: f[2], extra: !!m[4], raw };
+}
+
+/**
+ * What each benefit actually is, in the sheet's own words.
+ *
+ * From the legend beside the points table: Benefit 1 is earned by two days in a
+ * row at that level and is "Sit Anywhere" or a snack; Benefit 2 is the washroom
+ * pass, one at a time, on a single day; Benefit 3 is an extra Formal Discussion
+ * for a week's average at that level. The trailing 4 on a code is the bonus of
+ * two for being perfect the whole class.
+ */
+export const BENEFIT_WORDS = { B1: "Sit anywhere", B2: "Washroom pass", FD: "Extra FD" };
+
+/**
+ * The privilege code as words.
+ *
+ * "AB1 & B2" is the sheet's shorthand, and the colour is what the room reads
+ * from the back — but the words are what a student acts on, so the badge carries
+ * those and keeps the code in its tooltip.
+ */
+export function statusWords(status: string): { letter: string; words: string; grace: boolean } | null {
+  const st = parseStatus(status);
+  if (!st) return null;
+  if (st.rec) return { letter: "", words: "Recess", grace: false };
+  const on = [st.B1 && BENEFIT_WORDS.B1, st.B2 && BENEFIT_WORDS.B2, st.FD && BENEFIT_WORDS.FD].filter(Boolean) as string[];
+  const words = on.length === 3 ? "All 3" : on.join(" + ") || "No benefits";
+  return { letter: st.letter, words: st.extra ? `${words} +2` : words, grace: st.grace };
 }
 
 /**
