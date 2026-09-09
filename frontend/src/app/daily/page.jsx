@@ -26,6 +26,11 @@ const SCRUB_RESET_MS = 45_000;
 // The bottom bar holds one line, so the verse is shortened to about the length
 // the sheet's own A5 uses — but at a word boundary.
 const VERSE_MAX = 85;
+// How far the lesson type may be scaled to fill the screen, and how much slack
+// is left alone rather than triggering another search.
+const FIT_MIN = 0.75;
+const FIT_MAX = 1.9;
+const FIT_SLACK = 0.05;
 // A riddle for the bottom bar at the end of the day, for the days the sheet has
 // none of its own. Picked by the date so it does not change while it is up.
 const HOUSE_RIDDLES = [
@@ -298,6 +303,53 @@ export default function DailyPage() {
     return { P, classes, cur, nextClass };
   }, [data, t]);
 
+  // Fill the screen. The lesson area grows its type until it just fits, so a
+  // short lesson is not a page of white space and a long one still needs no
+  // scrolling. Runs after every render but measures once and returns straight
+  // away when the screen is already full.
+  const boardRef = useRef(null);
+  useEffect(() => {
+    const board = boardRef.current;
+    if (!board || typeof ResizeObserver === "undefined") return undefined;
+    let raf = 0;
+    // How far down the real content reaches. The columns are grid items and
+    // stretch to the row, so the container's own scrollHeight says nothing about
+    // empty space below the text — the children have to be measured. A picture
+    // column is elastic by design and is left out of the reckoning.
+    const contentBottom = (main) => {
+      let bottom = 0;
+      for (const col of main.children) {
+        if (col.classList.contains("picture")) continue;
+        for (const kid of col.children) bottom = Math.max(bottom, kid.getBoundingClientRect().bottom);
+        if (!col.children.length) bottom = Math.max(bottom, col.getBoundingClientRect().bottom);
+      }
+      return bottom;
+    };
+    const fit = () => {
+      const main = board.querySelector(".main");
+      if (!main) return;
+      const limit = () => main.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(main).paddingBottom) || 0);
+      const slack = limit() - contentBottom(main);
+      if (slack >= 0 && slack < main.clientHeight * FIT_SLACK) return;
+      let lo = FIT_MIN;
+      let hi = FIT_MAX;
+      for (let i = 0; i < 9; i += 1) {
+        const mid = (lo + hi) / 2;
+        board.style.setProperty("--fit", String(mid));
+        if (contentBottom(main) > limit()) hi = mid;
+        else lo = mid;
+      }
+      board.style.setProperty("--fit", String(lo));
+    };
+    raf = requestAnimationFrame(fit);
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(fit);
+    });
+    ro.observe(board);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  });
+
   // Shrink the video when the period changes.
   const curKey = view && view.cur ? view.cur.start : -1;
   useEffect(() => { setVidBig(false); }, [curKey]);
@@ -484,6 +536,30 @@ export default function DailyPage() {
     </>
   );
   const list = (items, cls) => <ul className={cls || ""}>{items.map((x, i) => <li key={i}>{x}</li>)}</ul>;
+  const linkChips = (links, label) => (links.length ? (
+    <div className="handouts">
+      {label ? <span className="hlabel">{label}</span> : null}
+      {links.map((l) => (
+        <a key={l.url} className="hlink" href={l.url} target="_blank" rel="noreferrer">
+          {l.subj ? <b>{l.subj}</b> : null}{l.subj ? " · " : ""}{l.label} ↗
+        </a>
+      ))}
+    </div>
+  ) : null);
+  // Everything the day needs, gathered before it starts: each class's handouts,
+  // named by the class, so they can be printed on the way in.
+  const dayLinks = (() => {
+    const seen = new Set();
+    const out = [];
+    for (const c of classes) {
+      for (const l of c.links || []) {
+        if (seen.has(l.url)) continue;
+        seen.add(l.url);
+        out.push({ ...l, subj: c.subj });
+      }
+    }
+    return out;
+  })();
   const agenda = () => (
     <div className="agenda">
       {classes.map((p) => [<span key={`t${p.start}`} className="t">{fmt(p.start)}</span>, <span key={`s${p.start}`}>{p.subj} · {p.room}</span>])}
@@ -681,11 +757,14 @@ export default function DailyPage() {
             <p className="script">{meta.greeting || "Good morning"}</p>
             <p className="question">{verse}</p>
             {agenda()}
+            {linkChips(dayLinks, "Materials to print today")}
             {featureImage ? null : featureBlock()}
             {dailyBlock()}
           </div>
         )}
-        {footer(false)}
+        {/* The verse is already large on this screen, so the bar carries the
+            unscramble instead of repeating it. */}
+        {footer(true)}
       </>
     );
   } else if (!cur || cur.duty || cur.empty) {
@@ -733,14 +812,7 @@ export default function DailyPage() {
 
     // Handouts named in the lesson cell, so they can be opened and printed from
     // the board if they were not run off beforehand.
-    const handouts = (cur.links || []).length > 0 ? (
-      <div className="handouts">
-        <span className="hlabel">Handouts</span>
-        {cur.links.map((l) => (
-          <a key={l.url} className="hlink" href={l.url} target="_blank" rel="noreferrer">{l.label} ↗</a>
-        ))}
-      </div>
-    ) : null;
+    const handouts = linkChips(cur.links || [], "Handouts");
     const leftCol = (
       <div>
         <p className="eyebrow">Today</p>
@@ -801,6 +873,7 @@ export default function DailyPage() {
 
   return (
     <div
+      ref={boardRef}
       className={`board${redState ? " red" : ""}${scrub != null ? " previewing" : ""}`}
       style={{ "--subj": theme.accent, "--subj-deep": theme.deep }}
       data-subject={theme.key}
