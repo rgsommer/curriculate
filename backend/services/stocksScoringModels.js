@@ -1,138 +1,151 @@
 // backend/services/stocksScoringModels.js
 //
-// P2 (2026-09-08) — declares the pluggable scoring configurations used
-// by stocksOpportunityScore + stocksEntryScore. Each model is a
-// {opportunityWeights, entryWeights, combineWeights} triple. The
-// production engine still uses model A (CHAMPION) to select today's
-// picks so P0B, P1 and P1-HARDENING behaviour is unchanged; the other
-// models compute and PERSIST scores alongside the champion so P4
-// shadow-portfolio testing can measure whether any of them
-// out-selects the champion.
+// P2  (2026-09-08) — initial declaration of six scoring models (A-F).
+// P2.5 (2026-09-09) — rebuilt Models C, E, F so their OQ weights emphasize
+//                     the REAL signals the P2.5 patch wires:
+//                       • realEpsRevisions       (was: price-target proxy)
+//                       • postEarningsDrift      (was: not implemented)
+//                       • catalystQuality        (was: not implemented)
+//                       • industryStrength       (was: sector-fallback silent)
+//                     Also added `criticalFactors` per model: factors
+//                     WITHOUT which the model MUST NOT report a
+//                     high-confidence score. When a critical factor is
+//                     missing the scorer returns { status: "INSUFFICIENT_DATA" }
+//                     for that model — no weight-redistribution masking.
 //
-// The architecture P2 enforces:
-//
-//   OPPORTUNITY QUALITY (WHAT)     — driven by fundamentals, growth,
-//                                    estimate revisions, quality,
-//                                    relative + industry strength,
-//                                    insider signals, catalyst
-//   ENTRY QUALITY      (WHEN)      — driven by trend, setup, MTF,
-//                                    RSI, RVOL, R:R, price extension
-//
-// A wonderful company with poor entry timing is a WATCH — HIGH-QUALITY
-// / ENTRY-NOT-READY row, NOT a rejected candidate.
-//
-// A mediocre company with a beautiful chart is NOT a high-conviction
-// BUY — the champion combine weights opportunity ≥ entry.
+// Model A remains the CHAMPION / LEGACY control; challenger models
+// (B-F) all give opportunity ≥ entry.
 
-// Weights inside each of `opportunityWeights` and `entryWeights` must
-// sum to ~1.0. `combineWeights` maps how the two sub-scores merge into
-// a single composite for the model.
+export const OQ_FACTORS = [
+  "fundamentals",        // FMP TTM ratios (FCF yield, ROE, D/E)
+  "growth",              // FMP quarterly income (revenue/EPS accel)
+  "revisions",           // P2.5 real EPS/rev estimate revisions (NOT price-target)
+  "priceTargetContext",  // kept as SECONDARY context; never dominant
+  "relativeStrength",    // 1m/3m/6m vs benchmark
+  "insider",             // cluster buys / cluster velocity
+  "industryStrength",    // peer-based 3m RS (or sector-fallback with lower cred)
+  "postEarningsDrift",   // P2.5 surprise + gap-holds evaluation
+  "catalystQuality",     // P2.5 structured catalyst score (only material catalysts count)
+];
+
+export const EQ_FACTORS = ["trend", "setup", "mtf", "rsi", "rvol", "extension"];
+
 export const SCORING_MODELS = {
-  // ─── A — CURRENT / CHAMPION ────────────────────────────────
-  // The historical composite: technical 40 / fundamentals 15 /
-  // growth 15 / revisions 10 / RS 15 / insider 5. Preserved so P4
-  // has a control for shadow testing. Split into OQ + EQ for
-  // reporting only — the champion picks by composite, not OQ/EQ.
+  // ─── A — CURRENT / CHAMPION (P4 control) ───────────────────
   A: {
     id: "A", label: "Current / champion",
     opportunityWeights: {
       fundamentals: 0.30, growth: 0.30, revisions: 0.20,
       relativeStrength: 0.15, insider: 0.05, industryStrength: 0.00,
+      priceTargetContext: 0.00, postEarningsDrift: 0.00, catalystQuality: 0.00,
     },
     entryWeights: {
       trend: 0.35, setup: 0.30, mtf: 0.15, rsi: 0.10, rvol: 0.10, extension: 0.00,
     },
-    combineWeights: { opportunity: 0.40, entry: 0.60 }, // preserves champion 40T / 60 rest -> equivalent bias
-    description: "Preserves current 40% technical / 60% fundamentals+growth+rev+RS+insider weighting split cast as OQ/EQ combine.",
+    combineWeights: { opportunity: 0.40, entry: 0.60 },
+    criticalFactors: [],   // A is the LEGACY control — no critical gate
+    description: "LEGACY entry-heavy control. Preserved for P4 shadow comparison. NEVER updated to new signals; that's why the challengers exist.",
   },
 
   // ─── B — QUALITY + MOMENTUM ────────────────────────────────
-  // Underlying quality (FCF, ROE, debt discipline, growth) + trend
-  // participation. Entry is present but not dominant.
   B: {
     id: "B", label: "Quality + momentum",
     opportunityWeights: {
       fundamentals: 0.35, growth: 0.20, revisions: 0.10,
       relativeStrength: 0.20, insider: 0.05, industryStrength: 0.10,
+      priceTargetContext: 0.00, postEarningsDrift: 0.00, catalystQuality: 0.00,
     },
     entryWeights: {
       trend: 0.45, setup: 0.15, mtf: 0.15, rsi: 0.10, rvol: 0.10, extension: 0.05,
     },
     combineWeights: { opportunity: 0.65, entry: 0.35 },
-    description: "Prefers underlying quality with a trend requirement — entry is a filter, not the selection driver.",
+    criticalFactors: ["fundamentals"],
+    description: "Underlying quality with a trend requirement. Fundamentals are critical — without FCF/ROE/D-E data B returns INSUFFICIENT_DATA.",
   },
 
-  // ─── C — REVISIONS + MOMENTUM ──────────────────────────────
-  // Anchored in estimate revisions (arguably the strongest single
-  // published-alpha factor). Entry mostly trend + MTF.
+  // ─── C — REVISIONS + MOMENTUM (P2.5 rebuilt) ───────────────
+  // Was leaning on the price-target proxy. Now anchored in REAL EPS
+  // revisions. Missing real revisions ⇒ INSUFFICIENT_DATA (must not
+  // silently redistribute weight to fundamentals + RS).
   C: {
-    id: "C", label: "Revisions + momentum",
+    id: "C", label: "Revisions + momentum (real EPS revisions)",
     opportunityWeights: {
-      fundamentals: 0.15, growth: 0.20, revisions: 0.35,
+      fundamentals: 0.10, growth: 0.15, revisions: 0.40,
       relativeStrength: 0.15, insider: 0.05, industryStrength: 0.10,
+      priceTargetContext: 0.05, postEarningsDrift: 0.00, catalystQuality: 0.00,
     },
     entryWeights: {
       trend: 0.40, setup: 0.20, mtf: 0.20, rsi: 0.10, rvol: 0.10, extension: 0.00,
     },
     combineWeights: { opportunity: 0.60, entry: 0.40 },
-    description: "Weights estimate revisions heavily; picks companies with fresh analyst confirmation of accelerating expectations.",
+    criticalFactors: ["revisions"],
+    description: "Real EPS/revenue revision-driven. Requires a real revision baseline (not price-target proxy). Missing → INSUFFICIENT_DATA.",
   },
 
   // ─── D — GARP + REVISIONS + MOMENTUM ───────────────────────
-  // Growth-at-a-reasonable-price + confirming revisions + momentum.
-  // Balanced.
   D: {
     id: "D", label: "GARP + revisions + momentum",
     opportunityWeights: {
       fundamentals: 0.25, growth: 0.25, revisions: 0.20,
       relativeStrength: 0.15, insider: 0.05, industryStrength: 0.10,
+      priceTargetContext: 0.00, postEarningsDrift: 0.00, catalystQuality: 0.00,
     },
     entryWeights: {
       trend: 0.35, setup: 0.25, mtf: 0.15, rsi: 0.10, rvol: 0.10, extension: 0.05,
     },
     combineWeights: { opportunity: 0.60, entry: 0.40 },
-    description: "Balances fundamentals + growth + revisions and a real entry gate. Closest to the intent behind the P2 refactor.",
+    criticalFactors: ["fundamentals", "growth"],
+    description: "Growth-at-a-reasonable-price + revisions + momentum. Fundamentals AND growth both critical.",
   },
 
-  // ─── E — POST-EARNINGS DRIFT / CATALYST ────────────────────
-  // Requires a real earnings catalyst (positive surprise, positive
-  // guidance/rev, constructive post-print price action). Entry
-  // weights emphasize RVOL + constructive holding of the gap.
+  // ─── E — POST-EARNINGS DRIFT / CATALYST (P2.5 rebuilt) ─────
+  // Was aspirational (weights only). Now genuine: requires either a
+  // real post-earnings-drift row OR a material catalyst. Without
+  // either, Model E returns INSUFFICIENT_DATA — it cannot claim
+  // high-confidence post-earnings status.
   E: {
-    id: "E", label: "Post-earnings drift / catalyst",
+    id: "E", label: "Post-earnings drift / catalyst (real signals)",
     opportunityWeights: {
-      fundamentals: 0.15, growth: 0.20, revisions: 0.30,
-      relativeStrength: 0.10, insider: 0.05, industryStrength: 0.20,
+      fundamentals: 0.10, growth: 0.15, revisions: 0.20,
+      relativeStrength: 0.05, insider: 0.05, industryStrength: 0.15,
+      priceTargetContext: 0.00, postEarningsDrift: 0.20, catalystQuality: 0.10,
     },
     entryWeights: {
       trend: 0.20, setup: 0.20, mtf: 0.15, rsi: 0.05, rvol: 0.25, extension: 0.15,
     },
     combineWeights: { opportunity: 0.55, entry: 0.45 },
-    description: "Catalyst-first — combines confirming rev/growth with entry emphasis on relative volume + non-extended gap holds.",
+    // At least ONE of these is required — the coverage gate treats
+    // this as "any-one satisfies critical." Encoded via a special
+    // pseudo-factor key.
+    criticalFactors: ["postEarningsDrift|catalystQuality"],
+    description: "Post-earnings drift + material catalyst. Requires REAL earnings-surprise/drift OR a material catalyst row — otherwise INSUFFICIENT_DATA.",
   },
 
-  // ─── F — RELATIVE-STRENGTH LEADERS ─────────────────────────
-  // Strong stock in strong industry with improving fundamentals.
-  // Industry strength is heavily weighted here.
+  // ─── F — RELATIVE-STRENGTH LEADERS (P2.5 rebuilt) ──────────
+  // Wants: strong company + strong stock + strong INDUSTRY +
+  // improving expectations. Industry strength is critical here —
+  // sector-fallback source still runs but with a REDUCED confidence
+  // stamp (see stocksOpportunityScore.js coverage math).
   F: {
-    id: "F", label: "Relative-strength leaders",
+    id: "F", label: "Relative-strength leaders (strong stock in strong industry)",
     opportunityWeights: {
       fundamentals: 0.15, growth: 0.15, revisions: 0.15,
       relativeStrength: 0.25, insider: 0.05, industryStrength: 0.25,
+      priceTargetContext: 0.00, postEarningsDrift: 0.00, catalystQuality: 0.00,
     },
     entryWeights: {
       trend: 0.40, setup: 0.20, mtf: 0.20, rsi: 0.05, rvol: 0.10, extension: 0.05,
     },
     combineWeights: { opportunity: 0.60, entry: 0.40 },
-    description: "Strong-stock-in-strong-industry leaders with underlying fundamentals confirming.",
+    criticalFactors: ["industryStrength", "relativeStrength"],
+    description: "Strong-company + strong-stock + strong-INDUSTRY (peer-verified) + improving expectations. Uses sector-fallback with lower confidence when peer data unavailable.",
   },
 };
 
 export const CHAMPION_MODEL_ID = "A";
 export const ALL_MODEL_IDS = ["A", "B", "C", "D", "E", "F"];
 
-// Validate a weight bundle — throw at import time on a broken model
-// so a bad edit doesn't reach production silently.
+// Validate that weight bundles sum to ~1.0 at import time.
 function validate() {
   for (const [id, m] of Object.entries(SCORING_MODELS)) {
     const owSum = Object.values(m.opportunityWeights).reduce((a, b) => a + b, 0);

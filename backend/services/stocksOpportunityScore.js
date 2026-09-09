@@ -1,53 +1,47 @@
 // backend/services/stocksOpportunityScore.js
 //
-// P2 (2026-09-08) — OPPORTUNITY QUALITY score. "WHAT to own."
+// P2  (2026-09-08) — OQ scorer with missing-factor weight redistribution.
+// P2.5 (2026-09-09) — HARDENED: critical-factor gating + factorCoveragePct.
 //
-// Deliberately independent of chart / entry setup: two identical
-// companies with different chart timing should score identically on
-// opportunity quality. Whether we act on that opportunity today is
-// the ENTRY QUALITY question, computed by stocksEntryScore.js.
+// A candidate no longer receives OQ 90 when half the important factors
+// are missing and the surviving weights redistribute upward. Each
+// model declares a `criticalFactors` list. If a critical factor is
+// missing, the scorer returns:
 //
-// Consumes factor sub-scorers already in the codebase
-// (stocksMultiFactorScore.js) — each returns { score: 0..1,
-// contributors[] } for auditability. We do NOT re-derive those inside
-// this module; we combine them with the model's per-factor weights.
+//   { status: "INSUFFICIENT_DATA", missingCriticalFactors: [...] }
 //
-// Inputs:
-//   input.fundamentalsScore    — 0..1  from scoreFundamentals
-//   input.growthScore          — 0..1  from scoreGrowth
-//   input.revisionsScore       — 0..1  from scoreEstimateRevisions
-//   input.relativeStrengthScore — 0..1 from scoreRelativeStrength
-//   input.insiderScore         — 0..1  from scoreInsider
-//   input.industryStrengthScore — 0..1 from stocksIndustryStrength
-//                                (may be null → falls back to sector RS)
-//   input.contributors         — { fundamentals, growth, revisions,
-//                                  relativeStrength, insider,
-//                                  industryStrength } — per-factor
-//                                  human-readable contributor strings
-//                                  (for provenance)
-//   model                      — from stocksScoringModels.getModel(id)
+// A non-critical missing factor still redistributes weight (with the
+// composite reported at reduced factorCoveragePct + presentWeightSum
+// so downstream code / P4 attribution can weigh accordingly).
 //
-// Output:
-//   { score: 0..100, factorScores: {...}, factorContributions: [...],
-//     model: id, missingFactors: [...] }
+// Also new: `factorCoveragePct` (0..100) reports the share of the
+// model's declared weight that had data. Downstream consumers can
+// downgrade confidence when coverage is low even for non-critical
+// models.
 //
-// A factor with a null sub-score is EXCLUDED from the weighted sum
-// AND its weight is redistributed proportionally across the present
-// factors. That keeps the score interpretable at 0..1 (× 100) even
-// when e.g. revisions data is missing. The missing factors are
-// reported in `missingFactors` so downstream calibration can weigh
-// coverage vs completeness.
+// Inputs (each optional):
+//   fundamentalsScore, growthScore, revisionsScore, relativeStrengthScore,
+//   insiderScore, industryStrengthScore, priceTargetContextScore,
+//   postEarningsDriftScore, catalystQualityScore
+// Plus meta:
+//   industryStrengthMeta: { source: "industry-peers" | "sector-fallback" | "unavailable" }
+//   revisionsMeta:        { hasReal4wBaseline: bool }
+//   surpriseMeta:         { present: bool }
+//   catalystMeta:         { present: bool }
 
-import { getModel } from "./stocksScoringModels.js";
+import { getModel, OQ_FACTORS } from "./stocksScoringModels.js";
 
-const OQ_FACTORS = [
-  "fundamentals", "growth", "revisions",
-  "relativeStrength", "insider", "industryStrength",
-];
+// Interpret criticalFactors entries: a "|" splits alternatives (any
+// one of them satisfies the critical requirement).
+function isCriticalSatisfied(critEntry, presentSet) {
+  const alts = critEntry.split("|");
+  return alts.some(f => presentSet.has(f));
+}
 
 export function computeOpportunityScore(input, modelIdOrModel = "A") {
   const model = typeof modelIdOrModel === "string" ? getModel(modelIdOrModel) : modelIdOrModel;
   const w = model.opportunityWeights;
+
   const rawScores = {
     fundamentals: pickNumber(input?.fundamentalsScore),
     growth: pickNumber(input?.growthScore),
@@ -55,23 +49,70 @@ export function computeOpportunityScore(input, modelIdOrModel = "A") {
     relativeStrength: pickNumber(input?.relativeStrengthScore),
     insider: pickNumber(input?.insiderScore),
     industryStrength: pickNumber(input?.industryStrengthScore),
+    priceTargetContext: pickNumber(input?.priceTargetContextScore),
+    postEarningsDrift: pickNumber(input?.postEarningsDriftScore),
+    catalystQuality: pickNumber(input?.catalystQualityScore),
   };
 
+  // "Real revisions" gate — Model C's `revisions` factor is only
+  // satisfied when the P2.5 real-EPS-revision baseline is present.
+  // If the score came from the OLD price-target proxy alone (i.e.
+  // revisionsMeta.hasReal4wBaseline === false), TREAT the revisions
+  // sub-score as MISSING for critical-factor checks. It still
+  // contributes to the weighted score at diminished authority, but
+  // Model C's critical gate fires.
+  const revIsReal = !!(input?.revisionsMeta?.hasReal4wBaseline);
+  const presentSet = new Set();
+  for (const f of OQ_FACTORS) {
+    if (rawScores[f] == null) continue;
+    if (f === "revisions" && !revIsReal) continue; // present-for-weight, absent-for-critical
+    presentSet.add(f);
+  }
+  const missingCritical = (model.criticalFactors || []).filter(critEntry => !isCriticalSatisfied(critEntry, presentSet));
+
+  if (missingCritical.length > 0) {
+    return {
+      status: "INSUFFICIENT_DATA",
+      score: null,
+      factorScores: rawScores,
+      factorContributions: [],
+      model: model.id,
+      missingCriticalFactors: missingCritical,
+      factorCoveragePct: 0,
+      presentWeightSum: 0,
+      note: `Model ${model.id} requires ${missingCritical.join(" AND ")} — not present with acceptable coverage.`,
+    };
+  }
+
+  // Standard OQ weighted sum with missing-factor redistribution for
+  // NON-critical factors.
   const presentWeights = {};
   const missing = [];
   let presentWeightSum = 0;
+  let declaredWeightSum = 0;
   for (const f of OQ_FACTORS) {
-    const s = rawScores[f];
     const weight = w[f] || 0;
+    declaredWeightSum += weight;
+    const s = rawScores[f];
     if (s == null) { if (weight > 0) missing.push(f); continue; }
     presentWeights[f] = weight;
     presentWeightSum += weight;
   }
-  if (presentWeightSum <= 0) {
-    return { score: 0, factorScores: rawScores, model: model.id,
-             missingFactors: missing, factorContributions: [] };
+
+  if (presentWeightSum <= 0 || declaredWeightSum <= 0) {
+    return {
+      status: "INSUFFICIENT_DATA",
+      score: null,
+      factorScores: rawScores,
+      factorContributions: [],
+      model: model.id,
+      missingCriticalFactors: [],
+      factorCoveragePct: 0,
+      presentWeightSum: 0,
+      note: `Model ${model.id} had no factor data.`,
+    };
   }
-  // Re-normalize present-factor weights so the composite stays 0..1.
+
   const scaled = 1 / presentWeightSum;
   let weightedSum = 0;
   const contributions = [];
@@ -88,13 +129,31 @@ export function computeOpportunityScore(input, modelIdOrModel = "A") {
       contributors: (input?.contributors && input.contributors[f]) || [],
     });
   }
+  const factorCoveragePct = Math.round((presentWeightSum / declaredWeightSum) * 100);
+
+  // Confidence dampening — industry-strength via sector-fallback halves
+  // its trust for models that explicitly require industry (F).
+  let confidenceStamp = "HIGH";
+  const industrySource = input?.industryStrengthMeta?.source;
+  const modelWantsIndustry = (model.criticalFactors || []).some(c => c.split("|").includes("industryStrength"));
+  if (modelWantsIndustry && industrySource === "sector-fallback") {
+    confidenceStamp = "MEDIUM"; // usable, but not real industry data
+  }
+  if (factorCoveragePct < 60) confidenceStamp = "LOW";
+  if (factorCoveragePct < 40) confidenceStamp = "LOW";
+
   return {
+    status: "OK",
     score: Math.round(weightedSum * 100),
     factorScores: rawScores,
     factorContributions: contributions,
     model: model.id,
-    missingFactors: missing,
+    missingFactors: missing,               // non-critical missing
+    missingCriticalFactors: [],
+    factorCoveragePct,
     presentWeightSum,
+    confidenceStamp,
+    note: null,
   };
 }
 

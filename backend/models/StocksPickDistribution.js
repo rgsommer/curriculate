@@ -73,6 +73,15 @@ const CandidateSchema = new mongoose.Schema(
     // "why did we miss XYZ" analysis has the same view the engine did.
     priceAtScore: { type: Number, default: null },
     dataAsOf: { type: Date, default: null },
+    // P2.5: per-candidate coverage % (0..100) of the CHAMPION model's
+    // declared weight that had real data. Downstream analysis can weigh
+    // confidence by this — a candidate at 50% coverage should never be
+    // reported to the operator with the same confidence as one at 100%.
+    factorCoveragePct: { type: Number, default: null },
+    // Per-model critical-factor status: { A: {status, missing[]}, ... }.
+    // Lets P4 filter out INSUFFICIENT_DATA rows from a challenger's
+    // shadow portfolio without re-computing anything.
+    criticalFactorCoverage: { type: mongoose.Schema.Types.Mixed, default: null },
   },
   { _id: false }
 );
@@ -123,6 +132,11 @@ const PickDistributionSchema = new mongoose.Schema(
     // from this day's distribution (persisted separately in
     // StocksWatchListEntry).
     watchHighQualityCount: { type: Number, default: 0 },
+    // P2.5: Stage-1 shadow funnel record — top-150 tickers by pure
+    // technical score with per-funnel-width flags {narrow, medium, wide}.
+    // Cheap to persist (150 × small rows). Lets P4 measure whether
+    // widening the funnel would have caught additional winners.
+    stage1Shadow: { type: [mongoose.Schema.Types.Mixed], default: [] },
   },
   { timestamps: true }
 );

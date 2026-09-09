@@ -1,105 +1,42 @@
 // backend/services/stocksIndustryStrength.js
 //
-// P2 (2026-09-08) — industry relative-strength signal. "Technology"
-// is too coarse a bucket to steer selection; "Semiconductors" or
-// "Software—Infrastructure" is where the real dispersion lives.
+// P2  (2026-09-08) — initial version: peer-median 3m return with a
+//                    silent sector fallback.
+// P2.5 (2026-09-09) — HARDENED: real peer fetcher wired, minimum peer
+//                    count enforced, multi-window metrics computed
+//                    (1m/3m/6m), stock-vs-peer breakdown returned,
+//                    source explicitly stamped so a sector fallback
+//                    can NEVER masquerade as industry confirmation.
 //
-// Strategy:
-//   1. Ask FMP for the ticker's SECTOR and INDUSTRY (already fetched
-//      by getFundamentals — reuse that).
-//   2. Look up cached PEER lists (fmp stock-peers) for the ticker;
-//      restrict to same industry.
-//   3. Aggregate the median 3-month return of the industry peer set
-//      relative to the benchmark (SPY for US, XIC.TO for TSX).
-//   4. Normalize to 0..1 — > +5pp above bench = 1.0; -5pp below = 0.
-//   5. FALLBACK: if we cannot resolve peers, use the ticker's sector
-//      3-month return from the sector-rotation service already in
-//      the codebase. Report `source: "sector-fallback"` in the return
-//      so provenance is clear that industry data wasn't available.
+// Output shape:
+//   {
+//     score: 0..1 | null,
+//     source: "industry-peers" | "sector-fallback" | "unavailable",
+//     industry, sector,
+//     peerCount,           // number of peers used (null if none)
+//     peerMedianReturn1m, peerMedianReturn3m, peerMedianReturn6m,
+//     stockReturn1m, stockReturn3m, stockReturn6m,
+//     stockVsPeer1m, stockVsPeer3m, stockVsPeer6m,
+//     benchReturn3mPct,
+//     sectorRank, sectorMomentum1mPct,  // only when source=sector-fallback
+//     dataAsOf: Date
+//   }
 //
-// This module never throws — a fetch failure returns { score: null }
-// and the caller (opportunity scorer) treats the factor as missing.
+// Callers use `source` to weigh confidence. A "sector-fallback" row
+// contributes less credibility to Model F (which explicitly cares
+// about industry-level RS).
 
 import { fetchYahooDaily } from "./stocksDiscoveryScore.js";
+import { fetchPeers } from "./stocksPeerFetcher.js";
 
-const TTL_MS = 60 * 60 * 1000; // one-hour cache
+const TTL_MS = 60 * 60 * 1000;
 const CACHE = new Map();
+const MIN_PEER_COUNT = Number(process.env.STOCKS_INDUSTRY_MIN_PEERS || 5);
+const MAX_PEER_FETCH = Number(process.env.STOCKS_INDUSTRY_MAX_PEER_FETCH || 12);
 
 function cacheKey(ticker, industry) {
   return `${String(ticker).toUpperCase()}::${String(industry || "").toLowerCase()}`;
 }
-
-// PUBLIC — compute industry-strength score for a ticker.
-// Signature:
-//   getIndustryStrength(ticker, {
-//     fundamentals,       // { sector, industry } from getFundamentals
-//     benchmarkTicker,    // "SPY" or "XIC.TO" — matches ticker's currency
-//     sectorRotation,     // sectorRotation service snapshot (optional)
-//     peerFetcher,        // async (ticker) => string[] (optional)
-//   })
-export async function getIndustryStrength(ticker, ctx = {}) {
-  if (!ticker) return { score: null, source: "no-ticker" };
-  const fund = ctx.fundamentals;
-  const industry = fund?.industry || null;
-  const sector = fund?.sector || null;
-  const key = cacheKey(ticker, industry);
-  const cached = CACHE.get(key);
-  if (cached && Date.now() - cached.at < TTL_MS) return cached.data;
-
-  // Try industry-peer aggregation first.
-  let data = null;
-  if (industry && typeof ctx.peerFetcher === "function") {
-    try {
-      const peers = await ctx.peerFetcher(ticker) || [];
-      if (peers.length >= 3) {
-        const peerReturns = await Promise.all(peers.slice(0, 10).map(async (p) => {
-          try {
-            const bars = await fetchYahooDaily(p, "6mo");
-            return returnPct(bars, 90);
-          } catch { return null; }
-        }));
-        const validReturns = peerReturns.filter(x => Number.isFinite(x));
-        if (validReturns.length >= 3) {
-          const industryMedian = median(validReturns);
-          const benchBars = ctx.benchmarkTicker
-            ? await fetchYahooDaily(ctx.benchmarkTicker, "6mo").catch(() => null) : null;
-          const benchReturn = benchBars ? returnPct(benchBars, 90) : 0;
-          const relPct = industryMedian - (benchReturn || 0);
-          const score = clamp01((relPct + 5) / 10); // -5..+5 → 0..1
-          data = {
-            score, source: "industry-peers", industry, sector,
-            industryReturn3mPct: industryMedian, benchReturn3mPct: benchReturn,
-            peerCount: validReturns.length,
-          };
-        }
-      }
-    } catch (e) {
-      // fall through to sector
-    }
-  }
-
-  // Sector fallback — use pre-computed sector rotation if provided.
-  if (!data && ctx.sectorRotation && sector) {
-    const secLc = String(sector).toLowerCase();
-    const sr = (ctx.sectorRotation.rankings || []).find(r => String(r.sector).toLowerCase() === secLc);
-    if (sr && Number.isFinite(sr.momentum1mPct)) {
-      // Map 1m momentum to 0..1: -5pp = 0, +5pp = 1.
-      const score = clamp01((sr.momentum1mPct + 5) / 10);
-      data = {
-        score, source: "sector-fallback", industry, sector,
-        sectorRank: sr.rank, sectorMomentum1mPct: sr.momentum1mPct,
-      };
-    }
-  }
-
-  if (!data) {
-    data = { score: null, source: "unavailable", industry, sector };
-  }
-
-  CACHE.set(key, { at: Date.now(), data });
-  return data;
-}
-
 function returnPct(bars, lookbackDays) {
   if (!Array.isArray(bars) || bars.length < lookbackDays + 1) return null;
   const last = bars[bars.length - 1]?.close;
@@ -113,3 +50,91 @@ function median(xs) {
   return s.length % 2 ? s[(s.length - 1) / 2] : 0.5 * (s[s.length / 2 - 1] + s[s.length / 2]);
 }
 function clamp01(x) { return Math.max(0, Math.min(1, Number.isFinite(x) ? x : 0)); }
+
+// PUBLIC
+export async function getIndustryStrength(ticker, ctx = {}) {
+  if (!ticker) return { score: null, source: "no-ticker" };
+  const fund = ctx.fundamentals;
+  const industry = fund?.industry || null;
+  const sector = fund?.sector || null;
+  const key = cacheKey(ticker, industry);
+  const cached = CACHE.get(key);
+  if (cached && Date.now() - cached.at < TTL_MS) return cached.data;
+
+  // Peer fetcher — inject a custom one for tests, otherwise use real.
+  const peerFetcher = ctx.peerFetcher || fetchPeers;
+  let data = null;
+
+  try {
+    const peers = await peerFetcher(ticker) || [];
+    if (peers.length >= MIN_PEER_COUNT) {
+      // Fetch bars in parallel — the ticker + up to MAX_PEER_FETCH peers.
+      const selectedPeers = peers.slice(0, MAX_PEER_FETCH);
+      const [selfBars, ...peerBarsArr] = await Promise.all([
+        fetchYahooDaily(ticker, "6mo").catch(() => null),
+        ...selectedPeers.map(p => fetchYahooDaily(p, "6mo").catch(() => null)),
+      ]);
+      const peerReturns1m = peerBarsArr.map(b => returnPct(b, 21)).filter(x => Number.isFinite(x));
+      const peerReturns3m = peerBarsArr.map(b => returnPct(b, 63)).filter(x => Number.isFinite(x));
+      const peerReturns6m = peerBarsArr.map(b => returnPct(b, 126)).filter(x => Number.isFinite(x));
+
+      if (peerReturns3m.length >= MIN_PEER_COUNT) {
+        const peerMedianReturn1m = peerReturns1m.length >= MIN_PEER_COUNT ? median(peerReturns1m) : null;
+        const peerMedianReturn3m = median(peerReturns3m);
+        const peerMedianReturn6m = peerReturns6m.length >= MIN_PEER_COUNT ? median(peerReturns6m) : null;
+        const stockReturn1m = returnPct(selfBars, 21);
+        const stockReturn3m = returnPct(selfBars, 63);
+        const stockReturn6m = returnPct(selfBars, 126);
+        const stockVsPeer1m = (Number.isFinite(stockReturn1m) && Number.isFinite(peerMedianReturn1m)) ? stockReturn1m - peerMedianReturn1m : null;
+        const stockVsPeer3m = (Number.isFinite(stockReturn3m) && Number.isFinite(peerMedianReturn3m)) ? stockReturn3m - peerMedianReturn3m : null;
+        const stockVsPeer6m = (Number.isFinite(stockReturn6m) && Number.isFinite(peerMedianReturn6m)) ? stockReturn6m - peerMedianReturn6m : null;
+        // Composite: 3m peer median vs benchmark → 0..1. -5pp = 0, +5pp = 1.
+        const benchBars = ctx.benchmarkTicker
+          ? await fetchYahooDaily(ctx.benchmarkTicker, "6mo").catch(() => null) : null;
+        const benchReturn3mPct = benchBars ? returnPct(benchBars, 63) : 0;
+        const relPct = peerMedianReturn3m - (benchReturn3mPct || 0);
+        const score = clamp01((relPct + 5) / 10);
+        data = {
+          score, source: "industry-peers",
+          industry, sector,
+          peerCount: peerReturns3m.length,
+          peerMedianReturn1m, peerMedianReturn3m, peerMedianReturn6m,
+          stockReturn1m, stockReturn3m, stockReturn6m,
+          stockVsPeer1m, stockVsPeer3m, stockVsPeer6m,
+          benchReturn3mPct,
+          dataAsOf: new Date(),
+        };
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Sector fallback — EXPLICITLY labeled. Never pretend sector is industry.
+  if (!data && ctx.sectorRotation && sector) {
+    const secLc = String(sector).toLowerCase();
+    const sr = (ctx.sectorRotation.rankings || []).find(r => String(r.sector).toLowerCase() === secLc);
+    if (sr && Number.isFinite(sr.momentum1mPct)) {
+      const score = clamp01((sr.momentum1mPct + 5) / 10);
+      data = {
+        score, source: "sector-fallback",
+        industry, sector,
+        peerCount: null,
+        peerMedianReturn1m: null, peerMedianReturn3m: null, peerMedianReturn6m: null,
+        stockReturn1m: null, stockReturn3m: null, stockReturn6m: null,
+        stockVsPeer1m: null, stockVsPeer3m: null, stockVsPeer6m: null,
+        benchReturn3mPct: null,
+        sectorRank: sr.rank, sectorMomentum1mPct: sr.momentum1mPct,
+        dataAsOf: new Date(),
+      };
+    }
+  }
+
+  if (!data) {
+    data = {
+      score: null, source: "unavailable",
+      industry, sector, peerCount: null, dataAsOf: new Date(),
+    };
+  }
+
+  CACHE.set(key, { at: Date.now(), data });
+  return data;
+}

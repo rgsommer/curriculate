@@ -20,15 +20,21 @@ import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import StocksPickDistribution from "../models/StocksPickDistribution.js";
 import StocksWatchListEntry from "../models/StocksWatchListEntry.js";
+import StocksScoreSnapshot from "../models/StocksScoreSnapshot.js";
 import { computeOpportunityScore } from "./stocksOpportunityScore.js";
 import { computeEntryScore, combineOqEq, classifyOqEqTier, deriveEntrySubScoresFromTech } from "./stocksEntryScore.js";
 import { SCORING_MODELS, ALL_MODEL_IDS, CHAMPION_MODEL_ID } from "./stocksScoringModels.js";
 import { getIndustryStrength } from "./stocksIndustryStrength.js";
+import { getRealEpsRevisions, realEpsRevisionsToSubScore } from "./stocksRealEpsRevisions.js";
+import { getEarningsSurpriseAndDrift, driftToSubScore } from "./stocksEarningsSurprise.js";
 
-// P2 (2026-09-09) — engine version bump. Rows in
-// StocksPickDistribution stamp this so the calibration corpus knows
-// which funnel / rule set produced them. Bump on rule changes.
-const ENGINE_VERSION = "2.0.0"; // 1.0.0 = P0/P1; 2.0.0 = P2 OQ/EQ split + persistence
+// Engine version bump per released rule/funnel change:
+//   1.0.0 — P0/P1
+//   2.0.0 — P2 OQ/EQ split + all-model persistence
+//   2.1.0 — P2.5 real EPS revisions + earnings-surprise/drift +
+//           true industry strength + coverage/critical-factor gating +
+//           immutable score snapshots + shadow-funnel record
+const ENGINE_VERSION = "2.1.0";
 
 // ─── P0B absolute qualifying thresholds ──────────────────────────────
 // A ticker MUST clear ALL of these to become an actual daily pick.
@@ -57,6 +63,7 @@ function persistPickDistributionAsync({
   email, combined, selectedTickers,
   thresholds, universeSize, scoredCount, rescuedCount,
   noQualifyingOpportunity, note, funnel = null,
+  stage1Shadow = [],
 }) {
   (async () => {
     try {
@@ -131,6 +138,9 @@ function persistPickDistributionAsync({
           failedGates,
           priceAtScore: Number.isFinite(cand.priceAtScore) ? cand.priceAtScore : null,
           dataAsOf: cand.dataAsOf || null,
+          // P2.5 coverage + critical-factor gate provenance
+          factorCoveragePct: Number.isFinite(cand.factorCoveragePct) ? cand.factorCoveragePct : null,
+          criticalFactorCoverage: cand.criticalFactorCoverage || null,
         };
       });
       const qualifiedCount = candidates.filter(c => c.qualified).length;
@@ -147,6 +157,7 @@ function persistPickDistributionAsync({
             engineVersion: ENGINE_VERSION,
             funnel: funnel || null,
             watchHighQualityCount: watchInserts.length,
+            stage1Shadow: Array.isArray(stage1Shadow) ? stage1Shadow : [],
           },
         },
         { upsert: true, setDefaultsOnInsert: true },
@@ -875,6 +886,24 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   let top;
   if (scored.length > 0) {
     const stage2Input = scored.slice(0, MULTI_FACTOR_TOP_K);
+    // P2.5 shadow-funnel record — capture the Stage-1 top-150 by pure
+    // technical score even though we only score the top MULTI_FACTOR_TOP_K
+    // at Stage 2. This lets P4 answer "did widening the funnel to 75 or
+    // 150 catch additional future winners, or just add noise?" without
+    // paying the fundamentals-fetch cost today. Persisted on the
+    // distribution row as `stage1Shadow`.
+    const SHADOW_DEPTH = 150;
+    const stage1Shadow = scored.slice(0, SHADOW_DEPTH).map((c, i) => ({
+      ticker: c.ticker,
+      rank: i + 1,
+      technicalScore: c.deterministicScore,
+      currency: c.currency || "USD",
+      wouldEnterFunnel: {
+        narrow: i < 30,
+        medium: i < 75,
+        wide:   i < 150,
+      },
+    }));
     const [{ getFundamentals }, mfMod, growthMod, insiderMod] = await Promise.all([
       import("./stocksFundamentals.js"),
       import("./stocksMultiFactorScore.js"),
@@ -936,12 +965,22 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           const ccy = cand.currency || "USD";
           const bench = ccy === "CAD" ? xicBars : spyBars;
           const base = String(cand.ticker).replace(/\..*$/, "");
-          const [tickerBars, fundamentals, growth, revisions] = await Promise.all([
+          // P2.5 (2026-09-09): fetch the two new REAL signals alongside
+          // the existing quartet. Each has its own timeout + is soft-fail;
+          // missing data cascades to INSUFFICIENT_DATA for the specialized
+          // model rather than being silently redistributed.
+          const [tickerBars, fundamentals, growth, revisions, realEpsRev, surprise] = await Promise.all([
             fetchYahooDaily(cand.ticker, "1y").catch(() => null),
             getFundamentals(cand.ticker, ccy).catch(() => null),
             getGrowth(cand.ticker).catch(() => null),
-            getEstimateRevisions(cand.ticker).catch(() => null),
+            getEstimateRevisions(cand.ticker).catch(() => null),               // price-target proxy (CONTEXT only, kept for backward compat)
+            getRealEpsRevisions(cand.ticker).catch(() => ({ ok: false })),      // NEW: real EPS/rev revisions
+            getEarningsSurpriseAndDrift(cand.ticker, {                          // NEW: earnings surprise + post-earnings drift
+              benchmarkTicker: ccy === "CAD" ? "XIC.TO" : "SPY",
+            }).catch(() => ({ ok: false })),
           ]);
+          cand.realEpsRevisions = realEpsRev;
+          cand.earningsSurprise = surprise;
           const rs = (tickerBars && bench)
             ? computeRelativeStrengthFromBars(tickerBars, bench)
             : { ok: false };
@@ -986,15 +1025,33 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           } catch { industryStrength = { score: null, source: "unavailable" }; }
           cand.industryStrength = industryStrength;
 
-          // Sub-scores already computed as part of composite.factors —
-          // reuse them so the OQ scorer isn't paying for the same math.
+          // P2.5: OQ inputs now carry (a) the REAL EPS-revision score,
+          // (b) the post-earnings drift score, (c) the price-target
+          // proxy as SECONDARY context only, and (d) meta objects the
+          // scorer uses to enforce critical-factor gating.
+          const realRevSub = realEpsRevisionsToSubScore(realEpsRev);
+          const driftSub = driftToSubScore(surprise);
           const oqInput = {
             fundamentalsScore: composite.factors?.fundamentals?.score ?? null,
             growthScore: composite.factors?.growth?.score ?? null,
-            revisionsScore: composite.factors?.estimate_revisions?.score ?? null,
+            // Prefer the REAL revisions signal when we have a baseline;
+            // otherwise fall back to the price-target proxy for
+            // continuity but flag it in meta so critical gates fire.
+            revisionsScore: realRevSub != null ? realRevSub : (composite.factors?.estimate_revisions?.score ?? null),
             relativeStrengthScore: composite.factors?.relative_strength?.score ?? null,
             insiderScore: composite.factors?.insider?.score ?? null,
             industryStrengthScore: industryStrength?.score ?? null,
+            priceTargetContextScore: composite.factors?.estimate_revisions?.score ?? null,
+            postEarningsDriftScore: driftSub,
+            catalystQualityScore: null, // wiring point: hydrate from StocksCatalystEvent when the news cron persists rows for this ticker
+            // Meta the scorer uses for critical-factor + confidence stamps.
+            revisionsMeta: {
+              hasReal4wBaseline: !!(realEpsRev?.ok && realEpsRev?.hasReal4wBaseline),
+              coverage: realEpsRev?.coverage ?? null,
+            },
+            industryStrengthMeta: { source: industryStrength?.source || "unavailable" },
+            surpriseMeta: { present: !!(surprise?.ok && surprise?.recent) },
+            catalystMeta: { present: false },
           };
           // Entry quality — derived from `tech` (already fetched in
           // Stage 1). Falls back to 0 on missing sub-scores per its
@@ -1007,11 +1064,78 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
             cand.scoreByModel[id] = {
               opportunity: oq.score,
               entry: eq.score,
+              // combineOqEq treats a null OQ (INSUFFICIENT_DATA) as 0
+              // which lets the model still emit a combined score for
+              // ranking, but the status flag below tells consumers to
+              // treat it as unreliable.
               combined: combineOqEq(oq.score, eq.score, id),
-              missingOpportunity: oq.missingFactors,
-              missingEntry: eq.missingFactors,
+              missingOpportunity: oq.missingFactors || [],
+              missingEntry: eq.missingFactors || [],
+              // P2.5 gating provenance
+              status: oq.status || "OK",                              // "OK" | "INSUFFICIENT_DATA"
+              missingCriticalFactors: oq.missingCriticalFactors || [],
+              factorCoveragePct: oq.factorCoveragePct ?? null,
+              confidenceStamp: oq.confidenceStamp || null,
             };
           }
+          // Champion-model coverage carried to top-level so distribution
+          // rows + score snapshot can weigh confidence.
+          const champCoverage = cand.scoreByModel[CHAMPION_MODEL_ID]?.factorCoveragePct ?? null;
+          cand.factorCoveragePct = champCoverage;
+          cand.criticalFactorCoverage = ALL_MODEL_IDS.reduce((acc, id) => {
+            const m = cand.scoreByModel[id];
+            acc[id] = { status: m?.status || "OK", missing: m?.missingCriticalFactors || [] };
+            return acc;
+          }, {});
+
+          // ── P2.5: IMMUTABLE score snapshot (first-write-wins) ──
+          // Persist the exact factor inputs the engine consulted so a
+          // future P4 walk-forward reads what-we-knew-then, not
+          // what-FMP-says-today. Fire-and-forget; failure never blocks.
+          (async () => {
+            try {
+              const pickDate = new Date().toISOString().slice(0, 10);
+              await StocksScoreSnapshot.updateOne(
+                { email, ticker: cand.ticker, pickDate },
+                { $setOnInsert: {                        // ← first-write-wins
+                  email, ticker: cand.ticker, pickDate,
+                  dataAsOf: new Date(),
+                  engineVersion: ENGINE_VERSION,
+                  modelId: CHAMPION_MODEL_ID,
+                  inputs: {
+                    fundamentalsRaw: fundamentals || null,
+                    growthRaw: growth || null,
+                    estimateRevisionRaw: realEpsRev || null,
+                    priceTargetRaw: revisions || null,
+                    techSummary: {
+                      last: cand.tech?.last ?? null,
+                      sma50: cand.tech?.sma50 ?? null,
+                      sma200: cand.tech?.sma200 ?? null,
+                      rsi14: cand.tech?.rsi14 ?? null,
+                      rvol: cand.tech?.rvol ?? null,
+                      setupName: cand.tech?.setupName ?? null,
+                      mtfConfluence: cand.tech?.mtf?.confluence ?? null,
+                    },
+                    industryStrengthRaw: industryStrength || null,
+                    insiderRaw: insider || null,
+                    surpriseHistorySample: surprise?.ok
+                      ? [surprise?.recent, surprise?.prior].filter(Boolean)
+                      : [],
+                    catalystSample: [], // hydrated at score time from StocksCatalystEvent when the news cron persists rows
+                  },
+                  scores: {
+                    compositeRank: cand.compositeRank ?? null,
+                    scoreByModel: cand.scoreByModel,
+                  },
+                  factorCoveragePct: champCoverage,
+                  criticalFactorCoverage: cand.criticalFactorCoverage,
+                }},
+                { upsert: true },
+              );
+            } catch (e) {
+              console.warn(`[score-snapshot] persist failed for ${cand.ticker}:`, e?.message);
+            }
+          })();
           const champion = cand.scoreByModel[CHAMPION_MODEL_ID];
           cand.opportunityScore = champion?.opportunity ?? null;
           cand.entryScore       = champion?.entry ?? null;
@@ -1247,6 +1371,7 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         rescueTopK: RESCUE_TOP_K,
         stage3TopK: null, // adversarial/vision budget lives in renderDailyPicksDeterministic
       },
+      stage1Shadow,
     });
 
     console.log(

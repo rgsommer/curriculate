@@ -266,8 +266,8 @@ function test20_engineFunnelCeilingsRaised() {
 function test21_engineVersionStamped() {
   const src = fs.readFileSync(
     "/Users/richardsommer/dev/curriculate/backend/services/stocksDailyPickEngine.js", "utf-8");
-  assert(/const ENGINE_VERSION = "2\.0\.0"/.test(src),
-    "21. Engine version bumped to 2.0.0 (P2)");
+  assert(/const ENGINE_VERSION = "2\.[01]\.0"/.test(src),
+    "21. Engine version stamped at 2.x.0 (P2 or later)");
   assert(src.includes("engineVersion: ENGINE_VERSION"),
     "21b. Distribution row is stamped with engineVersion");
 }
