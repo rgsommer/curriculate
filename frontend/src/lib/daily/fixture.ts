@@ -109,12 +109,14 @@ export const FIXTURE: RawInputs = {
   riddles: [["Riddle for week 1"], ["Riddle for week 2"]],
   master: [["Week"], ["1"]],
   feature: "Q: A horse is on a 24 foot chain and wants an apple that is 26 feet away. How can the horse get to the apple?",
-  // Setup!N1:Q8 — when the end-of-day package comes up, and how far ahead.
+  // Setup!M1:Q8 — column M who the greeting addresses, Monday to Friday; N to Q
+  // when the end-of-day package comes up and how far ahead.
   setupMessages: [
-    ["For Dismissal Messages", "", "", ""],
-    ["Lunch", "12:00", "", "5"],
-    ["Lunch Recess", "12:20", "", "minutes before Dismissal list"],
-    ["Dismissal", "15:30", "", ""],
+    ["everyone", "For Dismissal Messages", "", "", ""],
+    ["class", "Lunch", "12:00", "", "5"],
+    ["hard-workers", "Lunch Recess", "12:20", "", "minutes before Dismissal list"],
+    ["JH Students", "Dismissal", "15:30", "", ""],
+    ["students"],
   ],
   // Lessons!C1:J400 — C code, E page reference, F homework, I picture, J video.
   lessons: [

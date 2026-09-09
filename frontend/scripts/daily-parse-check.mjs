@@ -485,5 +485,19 @@ check("vertical shape: no code or emoji left in the words", !/B002|\uD83D/.test(
 check("vertical shape: the header still parses", ceLesson.subj === "CE 8A" && ceLesson.room === "Rm 212" && ceLesson.code === "B002", ceLesson);
 check("vertical shape: bulleted points inside Assign become separate items", ceLesson.assign.length === 4 && ceLesson.assign[1] === "Creative" && ceLesson.assign[3].startsWith("Include the verse"), ceLesson.assign);
 
+
+// ---- the bell schedule, and the greeting the sheet computes from NOW() ----
+const bells = P.bellSchedule([["8:55 AM"], ["9:05 AM"], ["10:00 AM"], [""], ["11:00 AM"], ["12:00 PM"], ["2:30 PM"], ["3:25 PM"], ["0:36"], ["9:00 AM"]]);
+check("bell schedule: the day's times in order", bells.join() === "535,545,600,660,720,870,925", bells);
+check("bell schedule: a duration is not a bell", !bells.includes(36), bells);
+check("bell schedule: it stops when the run does", bells.length === 7 && !bells.includes(540), bells);
+
+const who = ["everyone", "class", "hard-workers", "JH Students", "students"];
+check("greeting: morning", P.evaluateGreeting(who, 9 * 60, 930, 4) === "Good morning, hard-workers!", P.evaluateGreeting(who, 9 * 60, 930, 4));
+check("greeting: lunch from 11:56", P.evaluateGreeting(who, 11 * 60 + 56, 930, 2) === "Enjoy your lunch, everyone!", P.evaluateGreeting(who, 11 * 60 + 56, 930, 2));
+check("greeting: afternoon up to dismissal", P.evaluateGreeting(who, 14 * 60, 930, 6) === "Good afternoon, students!");
+check("greeting: goodbye after it", P.evaluateGreeting(who, 15 * 60 + 40, 930, 6) === "Goodbye, students!");
+check("greeting: nothing when the column is empty", P.evaluateGreeting([], 9 * 60, 930, 4) === "");
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
