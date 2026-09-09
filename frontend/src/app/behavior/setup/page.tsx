@@ -326,8 +326,9 @@ function JoinOrCreate({ onDone }: { onDone: () => void }) {
   const [avail, setAvail] = useState<{
     canRequest?: boolean; schoolName?: string; reason?: string; status?: string;
   } | null>(null);
+  const [stage, setStage] = useState<"idle" | "code" | "sent">("idle");
+  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
-  const [sent, setSent] = useState(false);
   const [err, setErr] = useState("");
 
   useEffect(() => {
@@ -339,15 +340,28 @@ function JoinOrCreate({ onDone }: { onDone: () => void }) {
     setErr("");
     try {
       await api("/join/request", { method: "POST", body: {} });
-      setSent(true);
+      setStage("code");
     } catch (e: any) {
-      setErr(e.message || "Could not send the request");
+      setErr(e.message || "Could not send the code");
     } finally {
       setBusy(false);
     }
   }
 
-  if (sent || avail?.status === "pending") {
+  async function verify() {
+    setBusy(true);
+    setErr("");
+    try {
+      await api("/join/verify", { method: "POST", body: { code } });
+      setStage("sent");
+    } catch (e: any) {
+      setErr(e.message || "Could not verify the code");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (stage === "sent" || avail?.status === "pending") {
     return (
       <Card>
         <h2 className="font-semibold">Request sent</h2>
@@ -359,14 +373,46 @@ function JoinOrCreate({ onDone }: { onDone: () => void }) {
     );
   }
 
+  if (stage === "code") {
+    return (
+      <Card>
+        <h2 className="font-semibold">Enter the code we emailed you</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          We sent a 6-digit code to your school address. Entering it proves the mailbox is yours —
+          without it nobody can request access using your email. It expires in 15 minutes.
+        </p>
+        {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            placeholder="123456"
+            className="w-32 rounded-lg border border-slate-300 px-3 py-1.5 font-mono tracking-widest"
+          />
+          <button type="button" onClick={verify} disabled={busy || code.length !== 6}
+            className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+            {busy ? "Checking…" : "Verify"}
+          </button>
+          <button type="button" onClick={request} disabled={busy}
+            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+            Resend
+          </button>
+        </div>
+      </Card>
+    );
+  }
+
   return (
     <div className="space-y-5">
       {avail?.canRequest && (
         <Card>
           <h2 className="font-semibold">Join {avail.schoolName}</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Your email is on this school&apos;s domain. Ask to join and an admin approves you with
-            one click — you will share their students, behaviours and settings.
+            Your email is on this school&apos;s domain. We will email you a code to confirm the
+            address, then an admin approves you with one click — you will share their students,
+            behaviours and settings.
           </p>
           {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
           <button type="button" onClick={request} disabled={busy}
@@ -423,8 +469,8 @@ function JoinRequestsSection({ domain }: { domain: string }) {
         {pending.length} {pending.length === 1 ? "person wants" : "people want"} to join
       </h2>
       <p className="mt-1 text-sm text-slate-500">
-        They signed up with an @{domain} address and asked to join. Approving lets them see this
-        school&apos;s students and behaviours.
+        Each confirmed a code emailed to their @{domain} address, so the mailbox is theirs.
+        Approving lets them see this school&apos;s students and behaviours.
       </p>
       {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
       <ul className="mt-3 divide-y divide-slate-100">

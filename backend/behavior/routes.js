@@ -18,6 +18,7 @@ import { sendEmail } from "./lib/sendEmail.js";
 
 import BehaviorSchool from "./models/BehaviorSchool.js";
 import BehaviorTeacher from "./models/BehaviorTeacher.js";
+import BehaviorJoinChallenge from "./models/BehaviorJoinChallenge.js";
 import BehaviorInvite from "./models/BehaviorInvite.js";
 import BehaviorStudent from "./models/BehaviorStudent.js";
 import Behavior from "./models/Behavior.js";
@@ -1566,6 +1567,44 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
   }
 });
 
+// ── Join-code helpers ────────────────────────────────────────────────────────
+
+const JOIN_CODE_TTL_MS = 15 * 60 * 1000;
+const JOIN_CODE_MAX_ATTEMPTS = 5;
+
+/** A 6-digit code from a CSPRNG. Math.random() is predictable; this is not. */
+export function generateJoinCode() {
+  return String(crypto.randomInt(0, 1000000)).padStart(6, "0");
+}
+
+/** Codes are stored hashed, so a leaked row cannot complete a join. */
+export function hashJoinCode(code, userId) {
+  return crypto.createHash("sha256").update(`${userId}:${String(code).trim()}`).digest("hex");
+}
+
+/**
+ * Pure: may this submitted code be accepted?
+ * Checks expiry and the attempt ceiling BEFORE comparing, so a stale or
+ * exhausted challenge can never be completed, and compares in constant time so
+ * the code cannot be recovered by timing.
+ */
+export function checkJoinCode(challenge, submitted, now = new Date()) {
+  if (!challenge) return { ok: false, reason: "no request pending — ask to join again" };
+  if (new Date(challenge.expiresAt).getTime() <= now.getTime()) {
+    return { ok: false, reason: "code expired — ask to join again", expired: true };
+  }
+  if ((challenge.attempts || 0) >= JOIN_CODE_MAX_ATTEMPTS) {
+    return { ok: false, reason: "too many wrong codes — ask to join again", exhausted: true };
+  }
+  const code = String(submitted || "").trim();
+  if (!/^\d{6}$/.test(code)) return { ok: false, reason: "enter the 6-digit code" };
+
+  const expected = Buffer.from(String(challenge.codeHash || ""), "utf8");
+  const actual = Buffer.from(hashJoinCode(code, challenge.userId), "utf8");
+  const match = expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  return match ? { ok: true } : { ok: false, reason: "that code is not right" };
+}
+
 // ── Domain-based joining (§3) ────────────────────────────────────────────────
 //
 // An admin should not have to type every colleague's address into an invite.
@@ -1622,15 +1661,88 @@ router.post("/join/request", authAny, async (req, res, next) => {
       return res.status(400).json({ ok: false, error: eligibility.reason });
     }
 
-    await BehaviorTeacher.create({
-      schoolId: school._id,
-      userId: req.userId,
-      email: String(req.user.email).toLowerCase(),
-      name: req.user.name || "",
-      role: "teacher",
-      status: "pending",
+    // Prove they can read that mailbox before an admin ever sees the request.
+    const code = generateJoinCode();
+    const email = String(req.user.email).toLowerCase();
+    await BehaviorJoinChallenge.findOneAndUpdate(
+      { schoolId: school._id, userId: req.userId },
+      {
+        $set: {
+          email,
+          codeHash: hashJoinCode(code, req.userId),
+          attempts: 0,
+          expiresAt: new Date(Date.now() + JOIN_CODE_TTL_MS),
+        },
+      },
+      { upsert: true }
+    );
+
+    const fromAddr = process.env.BEHAVIOR_FROM_EMAIL || process.env.SMTP_FROM || process.env.SMTP_USER;
+    await sendEmail({
+      from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
+      to: email,
+      subject: `Your code to join ${school.name}: ${code}`,
+      text: `Your code to join ${school.name} on Behaviours is ${code}.\n\n` +
+        `It expires in 15 minutes. If you did not ask to join, ignore this email — ` +
+        `nobody can join using your address without this code.\n`,
+      html: emailShell({
+        title: `Your code to join ${school.name}`,
+        schoolName: school.name,
+        preheader: `Your Behaviours join code is ${code}.`,
+        contentHtml:
+          `<p style="margin:0 0 12px;color:#334155;line-height:1.6">Enter this code to finish asking to join <strong>${escapeHtml(school.name)}</strong>:</p>` +
+          `<p style="font:700 28px/1.2 monospace;letter-spacing:4px;margin:0 0 12px;color:#0f172a">${code}</p>` +
+          `<p style="color:#64748b;font-size:13px;margin:0">It expires in 15 minutes. If you did not ask to join, ignore this email — nobody can join using your address without this code.</p>`,
+      }),
     });
-    await audit(school._id, "join.requested", req, { meta: { email: req.user.email } });
+
+    await audit(school._id, "join.code_sent", req, { meta: { email } });
+    res.json({ ok: true, status: "code_sent", schoolName: school.name });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Finish a join request by entering the emailed code. Only now does a pending
+ * membership exist, so an admin's approval list contains nobody who has not
+ * proved they read that mailbox.
+ */
+router.post("/join/verify", authAny, async (req, res, next) => {
+  try {
+    const domain = emailDomain(req.user?.email);
+    const school = domain && isSchoolDomain(domain)
+      ? await BehaviorSchool.findOne({ emailDomain: domain }).lean()
+      : null;
+    if (!school) return res.status(400).json({ ok: false, error: "no school on your email domain" });
+
+    const challenge = await BehaviorJoinChallenge.findOne({ schoolId: school._id, userId: req.userId }).lean();
+    const verdict = checkJoinCode(challenge, req.body?.code);
+    if (!verdict.ok) {
+      // Count the guess before answering, so a wrong code always costs an
+      // attempt even if the caller abandons the response.
+      if (challenge && !verdict.expired && !verdict.exhausted) {
+        await BehaviorJoinChallenge.updateOne({ _id: challenge._id }, { $inc: { attempts: 1 } });
+      }
+      if (verdict.expired || verdict.exhausted) {
+        await BehaviorJoinChallenge.deleteOne({ schoolId: school._id, userId: req.userId });
+      }
+      return res.status(400).json({ ok: false, error: verdict.reason });
+    }
+
+    const existing = await BehaviorTeacher.findOne({ schoolId: school._id, userId: req.userId }).lean();
+    if (!existing) {
+      await BehaviorTeacher.create({
+        schoolId: school._id,
+        userId: req.userId,
+        email: String(req.user.email).toLowerCase(),
+        name: req.user.name || "",
+        role: "teacher",
+        status: "pending",
+      });
+    }
+    await BehaviorJoinChallenge.deleteOne({ schoolId: school._id, userId: req.userId });
+    await audit(school._id, "join.requested", req, { meta: { email: req.user.email, verified: true } });
     res.json({ ok: true, status: "pending", schoolName: school.name });
   } catch (err) {
     next(err);
