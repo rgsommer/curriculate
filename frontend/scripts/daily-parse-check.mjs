@@ -412,5 +412,30 @@ const vTwice = [["", "", "", "", "", "Math 7A (23) 202 (J001) Today we introduce
 const twiceRun = P.dayPlanByWeekday(aiTwice, {}, vTwice)[2] || [];
 check("a subject twice keeps both codes in order", twiceRun.map((c) => c.code).join() === "J001,J002", twiceRun.map((c) => `${c.subj}:${c.code}`));
 
+
+// ---- one handout, however many ways it is written ----
+const docA = "https://docs.google.com/document/d/1YzABC/edit?tab=t.0";
+const docB = "https://docs.google.com/document/d/1YzABC/edit?usp=sharing";
+const docC = "https://docs.google.com/document/d/1YzABC/edit";
+check("canonical url: the query does not make a new Google file", P.canonicalUrl(docA) === P.canonicalUrl(docB) && P.canonicalUrl(docB) === P.canonicalUrl(docC), [docA, docB, docC].map(P.canonicalUrl));
+check("canonical url: different files stay different", P.canonicalUrl(docA) !== P.canonicalUrl("https://docs.google.com/document/d/9OTHER/edit"));
+check("canonical url: scheme and www do not matter", P.canonicalUrl("http://tinyurl.com/BCSQuickCheckin") === P.canonicalUrl("https://www.tinyurl.com/bcsquickcheckin/"));
+check("canonical url: an ordinary query still counts", P.canonicalUrl("https://x.org/a?id=1") !== P.canonicalUrl("https://x.org/a?id=2"));
+
+const sameThrice = P.extractLinks(`Print the worksheet ${docA} or here ${docB} or here ${docC}`);
+check("one handout however many spellings", sameThrice.links.length === 1, sameThrice.links);
+
+const lessonDupe = { J003: { code: "J003", page: "", homework: "", image: "", video: "", links: [{ label: "Worksheet", url: docB }] } };
+const merged = P.classesFromText(`Math 7A (23) 202 (J003) Today we practise. What helps? - Print it (${docA}) Reminders: none.`, lessonDupe);
+check("the lesson's copy of a handout is not a second chip", merged[0].links.length === 1, merged[0].links);
+
+
+// Three links in one run of prose each take the words nearest them, not the
+// words that opened the sentence.
+const run = P.extractLinks("Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1A/edit?tab=t.0 Complete the Getting to Know You form http://tinyurl.com/BCSQuickCheckin by Wed List of all assignments this year: https://docs.google.com/document/d/1B/edit?usp=sharing");
+check("three links in one run get three different names", new Set(run.links.map((l) => l.label)).size === 3, run.links.map((l) => l.label));
+check("each name is the words nearest its own link", run.links[1].label.includes("Getting to Know You") && run.links[2].label.includes("assignments"), run.links.map((l) => l.label));
+check("a due date left over from the link before is dropped", run.links[2].label === "List of all assignments this year", run.links[2].label);
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

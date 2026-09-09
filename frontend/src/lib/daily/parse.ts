@@ -243,7 +243,10 @@ export function parseLessons(
     // in them with Insert > Link.
     const links: LessonLink[] = [];
     const seen = new Set<string>();
-    const add = (l: LessonLink) => { if (l.url && !seen.has(l.url)) { seen.add(l.url); links.push(l); } };
+    const add = (l: LessonLink) => {
+      const key = canonicalUrl(l.url);
+      if (l.url && !seen.has(key)) { seen.add(key); links.push(l); }
+    };
     extractLinks(homework).links.forEach(add);
     extractLinks(page).links.forEach(add);
     ((linkRuns[r] || [])[0] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // E
@@ -284,8 +287,13 @@ const CLASS_HEAD = /([A-Z][A-Za-z]*) (\d[A-C]) \((\d+)\) -? ?(\d{3})\b/g;
 /** Fold a lesson row's material into a class parsed from the day's text. */
 function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lessons: Record<string, Lesson>) {
   const l = lessons[normalizeCode(c.code)];
-  const seen = new Set(c.links.map((x) => x.url));
-  const links = c.links.concat((l ? l.links : []).filter((x) => (seen.has(x.url) ? false : seen.add(x.url))));
+  const seen = new Set(c.links.map((x) => canonicalUrl(x.url)));
+  const links = c.links.concat(
+    (l ? l.links : []).filter((x) => {
+      const key = canonicalUrl(x.url);
+      return seen.has(key) ? false : seen.add(key);
+    })
+  );
   return { ...c, links, page: l ? l.page : "", homework: l ? l.homework : "", image: l ? l.image : "" };
 }
 
@@ -387,6 +395,29 @@ export function dayPlanByWeekday(
   return out;
 }
 
+/**
+ * A key that identifies the thing a link points at, not the link's spelling.
+ *
+ * The same handout reaches the board by several routes — written into the lesson
+ * text, on the Lessons row, attached to a phrase — and each copy can carry a
+ * different query string ("/edit?tab=t.0", "/edit?usp=sharing", "/edit"). Google
+ * files are identified by the id in the path, so the query is dropped for those;
+ * everywhere else it is kept, since it usually names a different page.
+ */
+export function canonicalUrl(url: string): string {
+  const u = String(url || "").trim().replace(/[.,;:)\]]+$/, "");
+  const g = u.match(/^https?:\/\/(?:docs|drive)\.google\.com\/([a-z]+)\/(?:u\/\d+\/)?d\/(?:e\/)?([A-Za-z0-9_-]+)/i);
+  if (g) return `google:${g[1].toLowerCase()}:${g[2]}`;
+  const f = u.match(/^https?:\/\/forms\.gle\/([A-Za-z0-9_-]+)/i);
+  if (f) return `forms.gle:${f[1]}`;
+  return u
+    .replace(/#.*$/, "")
+    .replace(/^https?:\/\//i, "")
+    .replace(/^www\./i, "")
+    .replace(/\/+$/, "")
+    .toLowerCase();
+}
+
 /** A readable name for a link when the words around it give nothing away. */
 function linkKind(url: string): string {
   const u = String(url || "");
@@ -413,10 +444,14 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
   const links: LessonLink[] = [];
   const re = new RegExp(URL_RE.source, "g");
   let m: RegExpExecArray | null;
+  let prevEnd = 0;
   while ((m = re.exec(t)) !== null) {
     const url = m[0].replace(/[.,;:)\]]+$/, "");
-    // The words just before the link, back to the last sentence break.
-    const before = t.slice(0, m.index);
+    // The words just before this link: since the previous link, back to the
+    // last sentence break. Reading from the start of the sentence instead gave
+    // every link in a long run the same opening words for a name.
+    const before = t.slice(prevEnd, m.index);
+    prevEnd = m.index + m[0].length;
     // A sentence break needs whitespace after it, or "p.7" splits mid-reference.
     let label = (before.split(/(?:[.!?•]\s+|\s-\s|[[\];]\s*)/).pop() || "")
       .replace(/\(?\s*(?:or\s+)?(?:you\s+can\s+)?(?:get\s+it\s+|print\s+it\s+|available\s+)?(?:from\s+|use\s+|at\s+|via\s+)?(?:this\s+|the\s+)?link[s]?\s*:?\s*$/i, "")
@@ -424,6 +459,9 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
       .replace(/[\s(:,–—-]+$/, "")
       .replace(/\s+(?:at|from|via|on|in|to|of|for)\s*:?\s*$/i, "")
       .replace(/^[\s\-–—•)]+/, "")
+      // "…by Wed List of all assignments" — the due date belongs to the link
+      // before this one, not to this link's name.
+      .replace(/^by\s+\S+(?:\s+\d{1,2})?\s+(?=[A-Z])/i, "")
       .replace(/^\s*(?:Assign|Reminders)\s*:\s*/i, "")
       .trim();
     if (label.length < 4) label = linkKind(url);
@@ -438,7 +476,13 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
     .trim();
   // Same handout named twice in one cell is one handout.
   const seen = new Set<string>();
-  return { links: links.filter((l) => (seen.has(l.url) ? false : seen.add(l.url))), clean };
+  return {
+    links: links.filter((l) => {
+      const key = canonicalUrl(l.url);
+      return seen.has(key) ? false : seen.add(key);
+    }),
+    clean,
+  };
 }
 
 export function parseClassText(text: string) {
@@ -781,8 +825,13 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     const runLinks = ((inp.displayCRuns || [])[i] || [])
       .filter((l) => l.url && !isVideoUrl(l.url))
       .map((l) => ({ label: truncateWords(l.text || linkKind(l.url), 44), url: l.url }));
-    const seenLink = new Set(parsed.links.map((l) => l.url));
-    const links = parsed.links.concat(runLinks.filter((l) => (seenLink.has(l.url) ? false : seenLink.add(l.url))));
+    const seenLink = new Set(parsed.links.map((l) => canonicalUrl(l.url)));
+    const links = parsed.links.concat(
+      runLinks.filter((l) => {
+        const key = canonicalUrl(l.url);
+        return seenLink.has(key) ? false : seenLink.add(key);
+      })
+    );
     // The teacher's own material for this lesson code: handouts, the starting
     // page, the homework, the picture and the video, none of which the
     // student-facing tabs carry.

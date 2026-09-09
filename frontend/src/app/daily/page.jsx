@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, evaluateVerse, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
@@ -557,8 +557,9 @@ export default function DailyPage() {
     const out = [];
     for (const c of (classes.length ? classes : dayPlan)) {
       for (const l of c.links || []) {
-        if (seen.has(l.url)) continue;
-        seen.add(l.url);
+        const key = canonicalUrl(l.url);
+        if (seen.has(key)) continue;
+        seen.add(key);
         out.push({ ...l, subj: c.subj });
       }
     }
@@ -744,7 +745,7 @@ export default function DailyPage() {
     // case this is an old copy and says nothing about today at all. Telling a
     // classroom "no classes today" in any of them is wrong.
     const note = dayPlan.length
-      ? "Today's classes, from the day's plan. The times fill in once the sheet does."
+      ? "Today's classes, from the day's plan."
       : error
         ? "The board could not read the sheet just now, so this is the last copy it has."
         : P.length
