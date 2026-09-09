@@ -546,12 +546,15 @@ export default function DailyPage() {
       ))}
     </div>
   ) : null);
+  // The day's classes as written on VerticalAi, used when DisplayAI's lesson
+  // column has not been filled in yet.
+  const dayPlan = (data.dayPlan || {})[weekday] || [];
   // Everything the day needs, gathered before it starts: each class's handouts,
   // named by the class, so they can be printed on the way in.
   const dayLinks = (() => {
     const seen = new Set();
     const out = [];
-    for (const c of classes) {
+    for (const c of (classes.length ? classes : dayPlan)) {
       for (const l of c.links || []) {
         if (seen.has(l.url)) continue;
         seen.add(l.url);
@@ -652,6 +655,7 @@ export default function DailyPage() {
               {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
               {row("verse (as read)", meta.verse)}
               {row("verse (evaluated)", verseSrc.text ? `${verseSrc.open ? "full" : "short"} \u2014 ${verse}` : "Verses tab not read; using A5")}
+              {row("lesson material", cur ? `page: ${cur.page || "—"} · homework: ${(cur.homework || "—").slice(0, 60)} · image: ${cur.image || "—"} · video: ${cur.video || "—"}` : "")}
               {row("handouts (current class)", cur && (cur.links || []).length ? cur.links.map((l) => `${l.label} \u2192 ${l.url}`).join("  |  ") : "")}
               {row("puzzle", meta.puzzle)}
               {row("riddle", meta.riddle)}
@@ -738,11 +742,13 @@ export default function DailyPage() {
     // nothing filled in yet, or the last read may simply have failed — in which
     // case this is an old copy and says nothing about today at all. Telling a
     // classroom "no classes today" in any of them is wrong.
-    const note = error
-      ? "The board could not read the sheet just now, so this is the last copy it has."
-      : P.length
-        ? "The day's times are here, but no lessons are filled in yet."
-        : "Nothing is listed for today yet.";
+    const note = dayPlan.length
+      ? "Today's classes, from the day's plan. The times fill in once the sheet does."
+      : error
+        ? "The board could not read the sheet just now, so this is the last copy it has."
+        : P.length
+          ? "The day's times are here, but no lessons are filled in yet."
+          : "Nothing is listed for today yet.";
     body = (
       <>
         {header({ title: meta.greeting || "Good morning", chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
@@ -751,14 +757,22 @@ export default function DailyPage() {
             <p className="script">{meta.greeting || "Good morning"}</p>
             <p className="question">{verse}</p>
             <p className="summary">{note}</p>
-            {P.length > 0 && (
+            {dayPlan.length > 0 ? (
+              <div className="agenda">
+                {dayPlan.map((c, i) => [
+                  <span key={`t${i}`} className="t">{c.room || "—"}</span>,
+                  <span key={`s${i}`}><b>{c.subj}</b>{c.today ? ` · ${c.today}` : ""}</span>,
+                ])}
+              </div>
+            ) : P.length > 0 ? (
               <div className="agenda">
                 {P.map((x) => [
                   <span key={`t${x.start}`} className="t">{fmt(x.start)}</span>,
                   <span key={`s${x.start}`}>{x.subj || x.text || "—"}</span>,
                 ])}
               </div>
-            )}
+            ) : null}
+            {linkChips(dayLinks, "Materials to print today")}
           </div>
         </div>
         {footer(false)}
@@ -823,7 +837,10 @@ export default function DailyPage() {
     const phase = elapsed < setup.openMin ? "open" : "work";
     const nx = nextClass(cur.end);
     const isLast = lastClass && lastClass.start === cur.start;
-    const lessonPicOn = opts.pic !== "off" && data.picture && usable(data.picture.url) && elapsed * 60 < setup.picSeconds;
+    // The picture for this lesson comes from its Lessons row when there is one;
+    // the Setup slot picture is the fallback.
+    const lessonPic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
+    const lessonPicOn = opts.pic !== "off" && lessonPic && usable(lessonPic.url) && elapsed * 60 < setup.picSeconds;
     const picOn = !!featureImage || lessonPicOn;
 
     // Handouts named in the lesson cell, so they can be opened and printed from
@@ -848,7 +865,7 @@ export default function DailyPage() {
       side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
     } else if (lessonPicOn) {
       const picLeft = Math.ceil((setup.picSeconds - elapsed * 60) / 60);
-      side = bigPicture(data.picture.url, `Lesson picture · ${cur.code}`, `${picLeft} min left on screen`);
+      side = bigPicture(lessonPic.url, `Lesson picture${cur.code ? ` · ${cur.code}` : ""}`, `${picLeft} min left on screen`);
     } else {
       const blocks = [];
       if (phase === "open") {
@@ -865,7 +882,8 @@ export default function DailyPage() {
       const d = dailyBlock();
       if (d) blocks.push(<div key="d">{d}</div>);
       if (left <= setup.remindersAdvance && cur.remind) blocks.push(<div key="r" className="block navy"><h3>Reminders</h3><p>{cur.remind}</p></div>);
-      if (left <= setup.homeworkAt) blocks.push(<div key="h" className="block alert"><h3>Write in your agenda</h3><p>{cur.assign.length ? cur.assign.join("; ") : cur.remind}</p></div>);
+      const agendaText = cur.assign.length ? cur.assign.join("; ") : cur.homework || cur.remind;
+      if (left <= setup.homeworkAt) blocks.push(<div key="h" className="block alert"><h3>Write in your agenda</h3><p>{agendaText}</p></div>);
       else if (phase !== "open" && cur.assign.length) blocks.push(<div key="a" className="block sun"><h3>Assign</h3>{list(cur.assign)}</div>);
       if (isLast && left <= setup.nextAdvance && meta.headout.length) blocks.push(<div key="x" className="block alert"><h3>Before you head out</h3>{list(meta.headout)}</div>);
       side = <div className="panel">{blocks}</div>;
@@ -875,7 +893,13 @@ export default function DailyPage() {
       <>
         {header({
           title: cur.subj,
-          chips: <><span className="chip">{cur.room}</span><span className="chip">{cur.code}</span></>,
+          chips: (
+            <>
+              <span className="chip">{cur.room}</span>
+              {cur.code ? <span className="chip">{cur.code}</span> : null}
+              {cur.page ? <span className="chip">{cur.page}</span> : null}
+            </>
+          ),
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
