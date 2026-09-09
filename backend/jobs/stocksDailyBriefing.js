@@ -42,6 +42,9 @@ import { getLatestWhaleFilings, format13FBlock } from "../services/stocks13F.js"
 import { getOptionsMetrics, formatOptionsLine } from "../services/stocksOptionsMetrics.js";
 import { monitorPositionStops, formatPositionStopBlock } from "../services/stocksPositionStopMonitor.js";
 import { computeSleeveBalance, formatSleeveBalanceBlock, classifyPosition } from "../services/stocksSleeveEnforcer.js";
+import { buildDecisions, ACTION as DECISION_ACTION } from "../services/stocksDecisionEngine.js";
+import { renderDecisionCard, serializeDecisionsForAi } from "../services/stocksDecisionRenderer.js";
+import { getEstimateRevisions } from "../services/stocksGrowthRevisions.js";
 import { validateRecs, buildValidatorContext, fetchLivePricesForRecs, computeUserExpectancy, fetchLiquidityForRecs } from "../services/stocksRecValidator.js";
 import { computeCalibration, formatCalibrationBlock } from "../services/stocksScoreCalibration.js";
 import { computeHorizonReview, formatHorizonReviewBlock } from "../services/stocksHorizonReview.js";
@@ -4173,6 +4176,126 @@ export async function generateBriefing(profile) {
     console.warn(`[funding-validator] stripped ${fundingStripped.length} unfundable BUY mandate(s):`, fundingStripped.map(f => `${f.ticker} in ${f.account}/${f.currency} (short $${Math.round(f.shortfall)})`).join("; "));
   }
 
+  // ─── P1: DETERMINISTIC DECISION ENGINE ─────────────────────────────
+  // Every held position + every qualifying daily pick becomes one
+  // Decision with a hard action (BUY/SELL/TRIM/HOLD/NO_ACTION/DEFERRED).
+  // The decision card is rendered at the TOP of the briefing so the
+  // operator answers "WHAT DO I DO TODAY?" in <30 seconds. The AI may
+  // explain the reason, uncertainty, or invalidation conditions, but
+  // may NOT change the action.
+  //
+  // INCOME-classified positions need fundamentals + revisions for the
+  // classifier to fire correctly (payout ratio, FCF yield, analyst
+  // target rev). Fetch those in parallel with a hard 8s ceiling; missing
+  // data ⇒ DEFERRED for that position, not a fabricated HOLD.
+  let decisionCard = "";
+  let decisions = [];
+  try {
+    const fundByTicker = {};
+    const revByTicker = {};
+    const incomePositionTickers = (profile.positions || [])
+      .filter(p => (p.qty || 0) > 0)
+      .filter(p => classifyPosition({ ticker: p.ticker }) === "income")
+      .map(p => ({ ticker: p.ticker, currency: p.ccy || "USD" }));
+    if (incomePositionTickers.length > 0) {
+      const fundTask = Promise.all(incomePositionTickers.map(async ({ ticker, currency }) => {
+        try {
+          const [f, r] = await Promise.all([
+            getFundamentals(ticker, currency).catch(() => null),
+            getEstimateRevisions(ticker).catch(() => null),
+          ]);
+          if (f) fundByTicker[ticker] = f;
+          if (r) revByTicker[ticker] = r;
+        } catch { /* per-ticker soft-fail */ }
+      }));
+      await Promise.race([
+        fundTask,
+        new Promise(res => setTimeout(res, 8000)),
+      ]).catch(() => {});
+    }
+    // Concentration % per ticker from canonical byPosition.
+    const canonicalForDec = summary?.canonical || null;
+    const concentrationByTicker = {};
+    const book = canonicalForDec?.book_cad || 0;
+    if (book > 0 && Array.isArray(canonicalForDec?.byPosition)) {
+      const byBase = new Map();
+      for (const p of canonicalForDec.byPosition) {
+        const base = String(p.ticker || "").toUpperCase().replace(/\..*$/, "");
+        byBase.set(base, (byBase.get(base) || 0) + (p.cadValue || 0));
+      }
+      for (const [base, v] of byBase) {
+        concentrationByTicker[base] = (v / book) * 100;
+      }
+    }
+    // Horizon by ticker (base match) for SWING/SPEC time-stop rule.
+    const horizonByTicker = {};
+    for (const hr of (horizonRows || [])) {
+      if (hr?.ticker) horizonByTicker[hr.ticker] = hr;
+    }
+    // Sector-hostile flags from sectorRotation (hostile = newly in
+    // bottom 3). Reuses the existing sector-transitions signal.
+    const sectorRankByTicker = {};
+    const bottomSet = new Set((sectorTransitions?.newLaggards || []).map(x => String(x).toLowerCase()));
+    for (const p of (profile.positions || [])) {
+      const sec = (p.sector || "").toLowerCase();
+      if (!sec) continue;
+      sectorRankByTicker[p.ticker] = {
+        sector: p.sector,
+        hostile: bottomSet.has(sec),
+        rank: null,
+      };
+    }
+    decisions = buildDecisions({
+      positions: profile.positions || [],
+      canonical: canonicalForDec,
+      monitor: stopMonitor,
+      trailStopByTicker: {},
+      fundamentalsByTicker: fundByTicker,
+      revisionsByTicker: revByTicker,
+      horizonByTicker,
+      sectorRankByTicker,
+      concentrationByTicker,
+      mandateRecs: prefixMandateRecs || [],
+      dailyPicks: dailyPicks || [],
+      fxUsdCad: profile.fxUsdCad || 1.37,
+      today: new Date(),
+    });
+    // Every actionable decision must be VALIDATED before rendering as
+    // executable. For SELL/TRIM/BUY: the mandate rec list is the
+    // authoritative validated set (already ran through funding +
+    // paired-trade + price + concentration gates). If a decision has
+    // a companion mandate rec, mark validated; else mark not-validated
+    // and let the renderer show the warning.
+    const validatedMandateSet = new Set(
+      (prefixMandateRecs || []).map(m => `${String(m.ticker || "").toUpperCase()}::${String(m.action || "").toUpperCase()}`)
+    );
+    for (const d of decisions) {
+      if (d.action === DECISION_ACTION.HOLD || d.action === DECISION_ACTION.NO_ACTION || d.action === DECISION_ACTION.DEFERRED) {
+        d.validated = true;
+        continue;
+      }
+      const key = `${String(d.ticker || "").toUpperCase()}::${d.action === "TRIM" ? "TRIM" : d.action}`;
+      const keySell = `${String(d.ticker || "").toUpperCase()}::SELL`;
+      const keyBuy  = `${String(d.ticker || "").toUpperCase()}::BUY`;
+      // BUY decisions from daily picks aren't in the mandate set until
+      // sizing runs; leave those un-tagged (renderer shows a "not yet
+      // validated" warning). SELL/TRIM tied to a monitor-emitted mandate
+      // is validated by the existing gates.
+      if (validatedMandateSet.has(key) || validatedMandateSet.has(keySell) || validatedMandateSet.has(keyBuy)) {
+        d.validated = true;
+      } else {
+        d.validated = false;
+        d.validationFailures = ["no companion mandate rec — decision emitted from classifier but no validated order ticket is available yet"];
+      }
+    }
+    decisionCard = renderDecisionCard(decisions, { canonical: canonicalForDec });
+    console.log(`[decision-engine] ${decisions.length} decisions: ${decisions.map(d => `${d.ticker}=${d.action}`).join(", ") || "(none)"}`);
+  } catch (e) {
+    console.warn("[decision-engine] failed — decision card will be omitted:", e?.message);
+    decisionCard = "";
+    decisions = [];
+  }
+
   // ─── DETERMINISTIC-ONLY MODE (short-circuit) ───
   // When the user hasn't opted in to AI narrative, ship the briefing
   // built entirely from canonical portfolio data + deterministic
@@ -4677,7 +4800,13 @@ export async function generateBriefing(profile) {
       const hasHedge = /(?:consider\s+re-?enter|watch(?:list)?\s+for\s+(?:a?\s*)?pullback|await\s+(?:a?\s*)?(?:better\s+setup|entry|clean\s+setup|pullback)|re-?enter\s+on\s+(?:a?\s*)?pullback|re-?entry\s+once|monitor\s+for\s+re-?entry|pending\s+a\s+clean|patience\s+>\s*forcing)/i.test(line);
       return !hasHedge;
     }).join("\n");
-    md = deterministicPrefix + "\n\n" + md.trim();
+    // P1: DECISION CARD sits ABOVE the deterministic prefix. Answers
+    // "WHAT DO I DO TODAY?" in <30 seconds — actionable BUY/SELL/TRIM
+    // cards at the top with WHY NOW + confidence + freshness, HOLDs
+    // collapsed at the bottom, or a dominant "NO TRADES REQUIRED
+    // TODAY" state when nothing is actionable.
+    const decisionCardPrefix = decisionCard ? decisionCard + "\n\n" : "";
+    md = decisionCardPrefix + deterministicPrefix + "\n\n" + md.trim();
 
     // Force my concentration mandate lines to be the authoritative
     // version in the final briefing. Grok Aug 5 09:42 audit — the AI
@@ -5060,6 +5189,87 @@ export async function generateBriefing(profile) {
       console.warn(`[ai-invent-gate] rejected ${inventedRejected.length} AI-authored BUY(s) on tickers outside the eligible universe: ${inventedRejected.map(x => x.rec.ticker).join(", ")}`);
       acceptedRecs = survivedInvent;
       rejectedRecs = [...rejectedRecs, ...inventedRejected];
+    }
+
+    // ─── P1: decision-contradiction guard ───
+    // Any AI-authored BUY/SELL/TRIM on a ticker the decision engine
+    // classified as HOLD gets rejected as "contradicts-deterministic-hold".
+    // This enforces the P1 architecture rule: AI may explain uncertainty
+    // but MAY NOT change HOLD → SELL etc. via prose or a <RECS> entry.
+    // A companion mandate rec that matches the decision engine's own
+    // SELL/TRIM verdict is unaffected — those are the deterministic
+    // exit tickets, already validated.
+    if (Array.isArray(decisions) && decisions.length > 0) {
+      const decByBase = new Map();
+      const stripBaseDec = (t) => String(t || "").toUpperCase().replace(/\..*$/, "");
+      for (const d of decisions) {
+        decByBase.set(stripBaseDec(d.ticker), d);
+      }
+      const contradictionRejected = [];
+      const survivedContradiction = [];
+      for (const r of acceptedRecs) {
+        const d = decByBase.get(stripBaseDec(r.ticker));
+        const action = String(r.action || "").toUpperCase();
+        // Only flag actionable AI recs (BUY/SELL/TRIM/ADD/EXIT). HOLD
+        // recs don't need this check — they're passive.
+        if (!["BUY", "SELL", "TRIM", "ADD", "EXIT"].includes(action)) {
+          survivedContradiction.push(r);
+          continue;
+        }
+        if (!d) { survivedContradiction.push(r); continue; }
+        const dAct = d.action;
+        // Deterministic HOLD/NO_ACTION vs any AI-authored trade →
+        // contradiction. Reject.
+        if (dAct === DECISION_ACTION.HOLD || dAct === DECISION_ACTION.NO_ACTION) {
+          contradictionRejected.push({
+            rec: r,
+            rejections: [{
+              reason: "contradicts-deterministic-hold",
+              detail:
+                `${r.action} ${r.ticker} rejected — the deterministic decision engine classified this position as ${dAct} ` +
+                `(reason: ${d.reason || "?"}, confidence ${d.confidence}). The AI is not permitted to change HOLD → SELL/TRIM ` +
+                `via a rec; if the reader wants a manual override they must place the trade themselves.`,
+            }],
+          });
+          continue;
+        }
+        // Deterministic SELL/TRIM but AI wrote a BUY on same ticker →
+        // contradiction (unless it's an ADD on a different position type;
+        // conservatively flag it).
+        if ((dAct === DECISION_ACTION.SELL || dAct === DECISION_ACTION.TRIM) && (action === "BUY" || action === "ADD")) {
+          contradictionRejected.push({
+            rec: r,
+            rejections: [{
+              reason: "contradicts-deterministic-exit",
+              detail:
+                `${r.action} ${r.ticker} rejected — the deterministic decision engine classified this position as ${dAct} ` +
+                `(reason: ${d.reason || "?"}). Do not average-down / add to a name the engine wants trimmed or exited.`,
+            }],
+          });
+          continue;
+        }
+        // Deterministic DEFERRED → any AI rec on that ticker is
+        // suspect; reject so the operator sees only the DEFERRED
+        // decision card and does not act on stale evidence.
+        if (dAct === DECISION_ACTION.DEFERRED) {
+          contradictionRejected.push({
+            rec: r,
+            rejections: [{
+              reason: "contradicts-deterministic-deferred",
+              detail:
+                `${r.action} ${r.ticker} rejected — the deterministic decision engine deferred a call on this ticker ` +
+                `(reason: ${d.reason || "?"}). Actionable recs require FRESH evidence.`,
+            }],
+          });
+          continue;
+        }
+        survivedContradiction.push(r);
+      }
+      if (contradictionRejected.length > 0) {
+        console.warn(`[decision-contradict-gate] rejected ${contradictionRejected.length} AI rec(s) contradicting deterministic decisions: ${contradictionRejected.map(x => `${x.rec.action} ${x.rec.ticker} vs ${decByBase.get(stripBaseDec(x.rec.ticker))?.action}`).join(", ")}`);
+        acceptedRecs = survivedContradiction;
+        rejectedRecs = [...rejectedRecs, ...contradictionRejected];
+      }
     }
 
     // Rewrite <RECS> to accepted-only every time recs went through
