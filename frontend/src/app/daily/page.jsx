@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -168,8 +168,11 @@ function Chips({ period, left, setup, status }) {
   const raw = (status || period.status || "").trim();
   const st = parseStatus(raw);
   const style = statusStyle(raw);
-  // The code is a privilege signal the room reads by colour, so the badge
-  // carries the sheet's own conditional formatting rather than a plain label.
+  // The code is a privilege signal the room reads by colour, so the badge keeps
+  // the sheet's own conditional formatting — but it says what the benefit is
+  // ("Washroom pass", "All 3") rather than the sheet's shorthand, which only the
+  // teacher can decode. The code itself stays in the tooltip.
+  const said = statusWords(raw);
   const badge = raw ? (
     <span
       key="badge"
@@ -177,7 +180,8 @@ function Chips({ period, left, setup, status }) {
       style={{ background: style ? style.bg : "var(--chip)", color: style ? style.fg : "var(--muted)", borderColor: style && style.border ? style.border : "transparent" }}
       title={`Privilege code ${raw}`}
     >
-      {raw}
+      {said && said.letter ? <i className="grp">{said.letter}</i> : null}
+      {said ? said.words : raw}
     </span>
   ) : null;
   if (period.duty) return badge ? <div className="points">{badge}</div> : null;

@@ -520,6 +520,21 @@ check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissal
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
+// ---- the privilege code, in words ----
+check("status words: a pair", P.statusWords("AB1 & B2").words === "Sit anywhere + Washroom pass", P.statusWords("AB1 & B2"));
+check("status words: all three", P.statusWords("BAll 3").words === "All 3");
+check("status words: the group letter comes through", P.statusWords("A-FD & B1").letter === "A" && P.statusWords("A-FD & B1").grace === true);
+check("status words: the perfect-class bonus", P.statusWords("BAll 3 4").words === "All 3 +2", P.statusWords("BAll 3 4"));
+check("status words: recess", P.statusWords("REC").words === "Recess");
+// An unlabelled code is the digits themselves: Benefit 1, Benefit 2, Benefit 3.
+check("status words: a bare code reads its digits", P.statusWords("A-1000").words === "Sit anywhere", P.statusWords("A-1000"));
+check("status words: benefit 3 is the extra Formal Discussion", P.statusWords("A0010").words === "Extra FD", P.statusWords("A0010"));
+check("status words: none of them", P.statusWords("A-0000").words === "No benefits");
+check("status digits: the flags line up with the labels", (() => {
+  const a = P.parseStatus("A1100"), b = P.parseStatus("AB1 & B2");
+  return a.B1 === b.B1 && a.B2 === b.B2 && a.FD === b.FD;
+})(), [P.parseStatus("A1100"), P.parseStatus("AB1 & B2")]);
+
 // ---- the formula evaluator, so Setup's NOW() rules follow the scrubber ----
 // A stand-in for the Setup tab: A1:F20, M1:Q8 and the S1:AB8 slot block.
 const setupA = [];
