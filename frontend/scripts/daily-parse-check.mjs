@@ -457,5 +457,21 @@ check("vertical shape: a line break separates one name from the next", vc.links[
 check("vertical shape: survives the run-together split", P.classesFromText(verticalCell)[0].plan.length === 1, P.classesFromText(verticalCell)[0]);
 check("DisplayAI shape still parses as before", P.parseClassText("Math 7B (23) 207 (J003) Today we practice. What helps? - Do NS7-3. Reminders: bring it.").today.startsWith("Today we practice"));
 
+
+// ---- the room reads the AI wording, the times and codes come from Vertical ----
+const shorthand = "Math 7A (23) 202\n\u25CFJ001  : Introduction: Overview, expectations, textbook, etc.\nSlides presentation on Math [Assign: Do the worksheet]";
+const written = "Math 7A (23) 202 Today we introduce the course, materials, and expectations. What helps you learn best in class? - Slides presentation on Math - Complete the Fill-In-the-Blanks worksheet Reminders: handouts in class.";
+const spine = [["10:00 AM", "", "", "", "", shorthand]];
+// VerticalAi is read from D, so Monday is column index 2; Vertical is read
+// from A, so Monday is index 5.
+const prose = [["", "", written]];
+const blended = P.dayPlanByWeekday(prose, {}, spine)[2] || [];
+check("the AI wording is what shows", blended.length === 1 && blended[0].today.startsWith("Today we introduce the course"), blended[0] && blended[0].today);
+check("the time still comes from Vertical", blended[0].start === 600, blended[0] && blended[0].start);
+check("the code still comes from Vertical", blended[0].code === "J001", blended[0] && blended[0].code);
+check("the AI bullets come with it", blended[0].plan.length === 2, blended[0] && blended[0].plan);
+const noProse = P.dayPlanByWeekday([], {}, spine)[2] || [];
+check("without an AI version the shorthand still reads", noProse[0].today === "Introduction: Overview, expectations, textbook, etc.", noProse[0] && noProse[0].today);
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
