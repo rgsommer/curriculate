@@ -33,6 +33,10 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .board {
   --subj: var(--accent);
   --subj-deep: var(--accent);
+  /* Set by the board after each render: the lesson area grows its type until it
+     fills the screen, so a short lesson is not a page of white space and a long
+     one still fits without scrolling. */
+  --fit: 1;
   height: 100vh; height: 100dvh;
   display: grid; grid-template-rows: auto auto 1fr auto auto auto;
   background: var(--surface); overflow: hidden; position: relative;
@@ -78,7 +82,7 @@ body:has(.daily-root) .site-footer { display: none !important; }
    back of the room. */
 .top .peek.soon { color: var(--alert); font-weight: 500; font-size: clamp(14px, 2.4vh, 24px); }
 .top .peek.soon b { color: var(--alert); font-weight: 700; }
-.block .daily { white-space: pre-line; font-size: clamp(14px, 2.4vh, 26px); }
+.block .daily { white-space: pre-line; font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
 /* The clock is highlighted once the class change is close (Setup: "change time
    to red", minutes before the bell) — the signal the teacher used to get from
    the sheet's own conditional formatting. */
@@ -117,17 +121,17 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .main.pic-right { grid-template-columns: 1fr 1.15fr; }
 .main.pic-left { grid-template-columns: 1.15fr 1fr; }
 .eyebrow { font-size: clamp(11px, 1.6vh, 15px); letter-spacing: .14em; text-transform: uppercase; color: var(--subj); font-weight: 600; margin: 0 0 1vh; }
-.question { font-family: var(--font-merriweather), Georgia, serif; font-size: clamp(24px, 4.5vh, 54px); line-height: 1.3; margin: 0 0 2vh; text-wrap: balance; }
-.summary { font-size: clamp(17px, 3.2vh, 34px); margin: 0 0 1.6vh; color: var(--muted); }
+.question { font-family: var(--font-merriweather), Georgia, serif; font-size: calc(clamp(24px, 4.5vh, 54px) * var(--fit)); line-height: 1.3; margin: 0 0 2vh; text-wrap: balance; }
+.summary { font-size: calc(clamp(17px, 3.2vh, 34px) * var(--fit)); margin: 0 0 1.6vh; color: var(--muted); }
 /* Tailwind's preflight strips list markers; the board wants them. */
 .daily-root ul { list-style: disc; }
-.plan { margin: 0; padding-left: 1.3em; font-size: clamp(18px, 3.5vh, 40px); line-height: 1.35; }
+.plan { margin: 0; padding-left: 1.3em; font-size: calc(clamp(18px, 3.5vh, 40px) * var(--fit)); line-height: 1.35; }
 .plan li { margin: 1.2vh 0; }
 .panel { border-left: 2px solid color-mix(in srgb, var(--subj) 28%, transparent); padding-left: 3vw; display: flex; flex-direction: column; gap: 2vh; min-height: 0; }
 .pic-left .panel { border-left: 0; border-right: 1px solid var(--line); padding-left: 0; padding-right: 3vw; }
 .block { border-radius: 6px; padding: 1.6vh 1.6vw; }
-.block h3 { margin: 0 0 .8vh; font-size: clamp(13px, 2.2vh, 22px); letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
-.block p, .block li { font-size: clamp(16px, 3.4vh, 36px); margin: 0; }
+.block h3 { margin: 0 0 .8vh; font-size: calc(clamp(13px, 2.2vh, 22px) * var(--fit)); letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
+.block p, .block li { font-size: calc(clamp(16px, 3.4vh, 36px) * var(--fit)); margin: 0; }
 .block ul { margin: 0; padding-left: 1.2em; }
 .block li { margin: .5vh 0; }
 .block.sun { background: var(--sun-fill); color: var(--sun-ink); }
@@ -136,43 +140,43 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .block.quiet { border: 1px dashed var(--line); color: var(--muted); }
 /* The Kiss & Ride list: names in the order they were called. */
 .block ol.waiting { margin: 0; padding-left: 1.4em; list-style: decimal; font-variant-numeric: tabular-nums; }
-.block ol.waiting li { margin: .3vh 0; font-size: clamp(14px, 2.4vh, 26px); }
+.block ol.waiting li { margin: .3vh 0; font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
 /* The end-of-day package carries four blocks, so it is set a size down and
    never allowed to push past the bottom of the screen. */
 /* The dismissal screen carries more than any other: the goodbye, the verse of
    the day, the head-out list and the blessing all have to fit one viewport. */
-.main.endofday > div:first-child { display: flex; flex-direction: column; gap: 1vh; min-height: 0; overflow: hidden; }
-.main.endofday .script { font-size: clamp(26px, 5.5vh, 66px); }
-.main.endofday .question { font-size: clamp(15px, 2.7vh, 29px); margin: 0; }
-.main.endofday .block li { font-size: clamp(14px, 2.4vh, 26px); }
-.main.endofday .summary.blessing { font-size: clamp(13px, 2.1vh, 22px); margin: 0; }
-.panel.dismissalpanel { gap: 1.4vh; overflow: hidden; }
+.main.endofday > div:first-child { display: flex; flex-direction: column; gap: 1vh; min-height: 0; }
+.main.endofday .script { font-size: calc(clamp(26px, 5.5vh, 66px) * var(--fit)); }
+.main.endofday .question { font-size: calc(clamp(15px, 2.7vh, 29px) * var(--fit)); margin: 0; }
+.main.endofday .block li { font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
+.main.endofday .summary.blessing { font-size: calc(clamp(13px, 2.1vh, 22px) * var(--fit)); margin: 0; }
+.panel.dismissalpanel { gap: 1.4vh; }
 .panel.dismissalpanel .block { padding: 1.2vh 1.4vw; }
-.panel.dismissalpanel .block p, .panel.dismissalpanel .block li { font-size: clamp(14px, 2.5vh, 27px); }
+.panel.dismissalpanel .block p, .panel.dismissalpanel .block li { font-size: calc(clamp(14px, 2.5vh, 27px) * var(--fit)); }
 /* The blessing at the end of the head-out cell, set apart from the list. */
 .summary.blessing { font-family: var(--font-merriweather), Georgia, serif; font-style: italic;
-  font-size: clamp(14px, 2.4vh, 26px); margin-top: 1.6vh; }
+  font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); margin-top: 1.6vh; }
 /* Handouts for the class on screen: clickable, so a forgotten print run can be
    started from the board itself. */
 .handouts { display: flex; flex-wrap: wrap; align-items: center; gap: .6vw .8vw; margin-top: 1.6vh; }
 .handouts .hlabel { font-size: clamp(11px, 1.6vh, 15px); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
-.handouts .hlink { font-size: clamp(13px, 2.1vh, 22px); color: var(--subj-deep); font-weight: 500; text-decoration: none;
+.handouts .hlink { font-size: calc(clamp(13px, 2.1vh, 22px) * var(--fit)); color: var(--subj-deep); font-weight: 500; text-decoration: none;
   background: color-mix(in srgb, var(--subj) 12%, transparent); border: 1px solid color-mix(in srgb, var(--subj) 30%, transparent);
   border-radius: 999px; padding: .4vh 1vw; }
 .handouts .hlink:hover { background: color-mix(in srgb, var(--subj) 22%, transparent); }
-.block.feature p { font-family: var(--font-merriweather), Georgia, serif; white-space: pre-line; font-size: clamp(15px, 2.8vh, 30px); line-height: 1.45; }
-.big { font-size: clamp(34px, 9vh, 110px); font-weight: 600; line-height: 1; margin: 0 0 .6vh; font-variant-numeric: tabular-nums; }
-.script { font-family: var(--font-caveat), "Brush Script MT", cursive; font-weight: 600; font-size: clamp(40px, 9vh, 110px); line-height: 1; margin: 0; }
+.block.feature p { font-family: var(--font-merriweather), Georgia, serif; white-space: pre-line; font-size: calc(clamp(15px, 2.8vh, 30px) * var(--fit)); line-height: 1.45; }
+.big { font-size: calc(clamp(34px, 9vh, 110px) * var(--fit)); font-weight: 600; line-height: 1; margin: 0 0 .6vh; font-variant-numeric: tabular-nums; }
+.script { font-family: var(--font-caveat), "Brush Script MT", cursive; font-weight: 600; font-size: calc(clamp(40px, 9vh, 110px) * var(--fit)); line-height: 1; margin: 0; }
 
 /* A picture in E1 is the point of the screen while it is up, so it takes the
    larger share and the lesson text gives way. */
 .main.pic-feature { grid-template-columns: 1fr 1.9fr; align-items: stretch; }
 .main.pic-left.pic-feature { grid-template-columns: 1.9fr 1fr; }
-.main.pic-feature .question { font-size: clamp(20px, 3.4vh, 38px); }
-.main.pic-feature .plan { font-size: clamp(16px, 2.6vh, 30px); }
-.main.pic-feature .summary { font-size: clamp(15px, 2.4vh, 26px); }
-.main.pic-feature .script { font-size: clamp(28px, 6vh, 72px); }
-.main.pic-feature .big { font-size: clamp(28px, 7vh, 84px); }
+.main.pic-feature .question { font-size: calc(clamp(20px, 3.4vh, 38px) * var(--fit)); }
+.main.pic-feature .plan { font-size: calc(clamp(16px, 2.6vh, 30px) * var(--fit)); }
+.main.pic-feature .summary { font-size: calc(clamp(15px, 2.4vh, 26px) * var(--fit)); }
+.main.pic-feature .script { font-size: calc(clamp(28px, 6vh, 72px) * var(--fit)); }
+.main.pic-feature .big { font-size: calc(clamp(28px, 7vh, 84px) * var(--fit)); }
 
 .picture { display: flex; flex-direction: column; min-height: 0; gap: 1vh; }
 .picture .frame { flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--pic1); display: grid; place-items: center; }
