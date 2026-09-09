@@ -41,6 +41,15 @@ const ShadowFunnelRunSchema = new mongoose.Schema(
     priceAtScore: { type: Number, default: null },
     dataAsOf: { type: Date, default: Date.now },
     engineVersion: { type: String, default: null },
+    // P3 (2026-09-09) — durability. A shadow experiment must never
+    // silently appear successful. The wrapper writes a PENDING row
+    // when it starts, transitions to RUNNING as candidates score,
+    // COMPLETE on clean exit, or FAILED with error detail on crash.
+    // Only rows with runStatus="COMPLETE" are safe to feed to P4.
+    runStatus: { type: String, enum: ["PENDING", "RUNNING", "COMPLETE", "FAILED"], default: "COMPLETE" },
+    runStartedAt: { type: Date, default: null },
+    runCompletedAt: { type: Date, default: null },
+    runError: { type: String, default: null },
   },
   { timestamps: true }
 );

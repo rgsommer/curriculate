@@ -35,6 +35,7 @@ import { computeOpportunityScore } from "./stocksOpportunityScore.js";
 import { computeEntryScore, combineOqEq, classifyOqEqTier, deriveEntrySubScoresFromTech } from "./stocksEntryScore.js";
 import { ALL_MODEL_IDS, CHAMPION_MODEL_ID } from "./stocksScoringModels.js";
 import StocksShadowFunnelRun from "../models/StocksShadowFunnelRun.js";
+import StocksShadowFunnelExperiment from "../models/StocksShadowFunnelExperiment.js";
 
 const FUNNEL_WIDTHS = {
   narrow: { stage1: 30, rescue: 15 },
@@ -72,6 +73,33 @@ export async function runShadowFunnelWidth(width, scored, deps = {}) {
   if (stage1.length === 0) return [];
   const pickDate = new Date().toISOString().slice(0, 10);
 
+  // P3 durability — mark experiment PENDING → RUNNING before doing
+  // any work so a mid-flight crash is visible in ExperimentTracker.
+  // Attempt count auto-increments if a prior attempt reached a
+  // terminal state (COMPLETE / FAILED).
+  let attempt = 1;
+  try {
+    const prior = await StocksShadowFunnelExperiment.findOne({ pickDate, funnel: width }).sort({ attempt: -1 }).lean();
+    if (prior && (prior.status === "COMPLETE" || prior.status === "FAILED")) attempt = (prior.attempt || 1) + 1;
+  } catch { /* soft-fail */ }
+  const experimentKey = { pickDate, funnel: width, attempt };
+  try {
+    await StocksShadowFunnelExperiment.updateOne(experimentKey, {
+      $set: {
+        ...experimentKey,
+        status: "RUNNING",
+        startedAt: new Date(),
+        candidateCount: stage1.length,
+        scoredCount: 0,
+        errorMessage: null,
+        engineVersion: deps.engineVersion || null,
+        trigger: deps.trigger || "engine",
+      },
+    }, { upsert: true });
+  } catch (e) {
+    console.warn(`[shadow-funnel] experiment tracker upsert failed (${width}):`, e?.message);
+  }
+
   const { getFundamentals, getGrowth, getEstimateRevisions,
           computeMultiFactorScore, computeRelativeStrengthFromBars,
           spyBars, xicBars, insiderByBase = new Map(),
@@ -79,6 +107,8 @@ export async function runShadowFunnelWidth(width, scored, deps = {}) {
 
   const results = [];
   const CONC = 5;
+  let hardFail = null;
+  try {
   for (let i = 0; i < stage1.length; i += CONC) {
     const slice = stage1.slice(i, i + CONC);
     await Promise.all(slice.map(async (cand) => {
@@ -160,6 +190,19 @@ export async function runShadowFunnelWidth(width, scored, deps = {}) {
       }
     }));
   }
+  } catch (e) {
+    // P3 — outer failure surfaces via experiment tracker so a crash
+    // never looks like a clean completion.
+    hardFail = e?.message || String(e);
+    console.warn(`[shadow-funnel] ${width} hard failure during scoring:`, hardFail);
+    try {
+      await StocksShadowFunnelExperiment.updateOne(experimentKey, {
+        $set: { status: "FAILED", completedAt: new Date(),
+                scoredCount: results.length, errorMessage: hardFail },
+      });
+    } catch { /* soft-fail */ }
+    return results; // partial results still persisted below? Return early instead.
+  }
   // Re-rank by champion combined descending.
   results.sort((a, b) => (b.combined ?? -1) - (a.combined ?? -1));
   results.forEach((r, i) => { r.rank = i + 1; });
@@ -168,16 +211,30 @@ export async function runShadowFunnelWidth(width, scored, deps = {}) {
   const ops = results.map(r => ({
     updateOne: {
       filter: { pickDate: r.pickDate, funnel: r.funnel, ticker: r.ticker },
-      update: { $set: r },
+      update: { $set: { ...r, runStatus: "COMPLETE", runCompletedAt: new Date() } },
       upsert: true,
     },
   }));
+  let terminal = "COMPLETE";
+  let errMsg = null;
   try {
     if (ops.length > 0) await StocksShadowFunnelRun.bulkWrite(ops, { ordered: false });
   } catch (e) {
-    console.warn(`[shadow-funnel] persist failed (${width}):`, e?.message);
+    terminal = "FAILED";
+    errMsg = e?.message || "persist failed";
+    console.warn(`[shadow-funnel] persist failed (${width}):`, errMsg);
   }
-  console.log(`[shadow-funnel] ${width}: scored ${results.length} candidates`);
+  try {
+    await StocksShadowFunnelExperiment.updateOne(experimentKey, {
+      $set: {
+        status: terminal,
+        completedAt: new Date(),
+        scoredCount: results.length,
+        errorMessage: errMsg,
+      },
+    });
+  } catch { /* soft-fail */ }
+  console.log(`[shadow-funnel] ${width}: scored ${results.length} candidates → ${terminal}`);
   return results;
 }
 
