@@ -154,15 +154,20 @@ rules (`statusStyle` in `parse.ts`) and shows it as a coloured bubble — so
 reads correctly as grey on green.
 
 The bubble says **what the benefit is**, not the sheet's shorthand
-(`statusWords`, `BENEFIT_WORDS`), taken from the legend beside the points table:
+(`statusWords`, `BENEFIT_WORDS`), and only while that benefit is on the table:
 
-| Code | On the board | The legend |
-| --- | --- | --- |
-| B1 | Sit anywhere | Benefit 1 — two days in a row at that level: "Sit Anywhere" (SA) or a snack |
-| B2 | Washroom pass | Benefit 2 — one day at that level: the washroom pass, one at a time, while the Washroom chip is green |
-| FD | Extra FD | Benefit 3 — a week's average at that level: an extra Formal Discussion |
-| all three | All 3 | |
-| trailing ` 4` | `+2` | the bonus of two for being perfect the whole class |
+| Code | On the board | When it shows | The legend |
+| --- | --- | --- | --- |
+| B1 | Free seat | the opening minutes of the class (Setup "Free seat for", 5 by default) — change seats, settle, and the lesson can start | Benefit 1 — two days in a row at that level: "Sit Anywhere" (SA) or a snack |
+| B2 | Free pass | from Setup's grace minutes (15) to the end — nobody walks out during the teaching at the top of the class | Benefit 2 — one day at that level: the pass, one at a time, while the Washroom chip is green |
+| FD | Extra FD | the same window as the pass | Benefit 3 — a week's average at that level: an extra Formal Discussion |
+| all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
+| trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
+
+When nothing is on the table the bubble is not drawn at all, rather than sitting
+there grey. The colour is worked out from what is actually on offer — the code is
+rebuilt in the sheet's own shorthand and put through the same rules — so it can
+never promise more than the words do.
 
 The washroom pass is shut at both ends of the period: for the first few minutes
 nobody walks out during the lesson, and it closes again before the bell. The

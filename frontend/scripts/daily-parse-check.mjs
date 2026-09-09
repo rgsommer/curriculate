@@ -521,15 +521,31 @@ check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissa
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
 // ---- the privilege code, in words ----
-check("status words: a pair", P.statusWords("AB1 & B2").words === "Sit anywhere + Washroom pass", P.statusWords("AB1 & B2"));
+check("status words: a pair", P.statusWords("AB1 & B2").words === "Free seat + Free pass", P.statusWords("AB1 & B2"));
 check("status words: all three", P.statusWords("BAll 3").words === "All 3");
 check("status words: the group letter comes through", P.statusWords("A-FD & B1").letter === "A" && P.statusWords("A-FD & B1").grace === true);
 check("status words: the perfect-class bonus", P.statusWords("BAll 3 4").words === "All 3 +2", P.statusWords("BAll 3 4"));
 check("status words: recess", P.statusWords("REC").words === "Recess");
 // An unlabelled code is the digits themselves: Benefit 1, Benefit 2, Benefit 3.
-check("status words: a bare code reads its digits", P.statusWords("A-1000").words === "Sit anywhere", P.statusWords("A-1000"));
+check("status words: a bare code reads its digits", P.statusWords("A-1000").words === "Free seat", P.statusWords("A-1000"));
 check("status words: benefit 3 is the extra Formal Discussion", P.statusWords("A0010").words === "Extra FD", P.statusWords("A0010"));
-check("status words: none of them", P.statusWords("A-0000").words === "No benefits");
+check("status words: none of them", P.statusWords("A-0000").words === "");
+
+// Each benefit has its own window in the period.
+const win = (elapsed) => ({ elapsed, seatMin: 5, laterMin: 15 });
+check("benefit windows: the free seat is for the opening minutes",
+  P.statusWords("AB1", win(3)).words === "Free seat" && P.statusWords("AB1", win(9)).words === "");
+check("benefit windows: the pass waits out the teaching",
+  P.statusWords("AB2", win(9)).words === "" && P.statusWords("AB2", win(20)).words === "Free pass");
+check("benefit windows: so does the extra Formal Discussion",
+  P.statusWords("AFD Only", win(9)).words === "" && P.statusWords("AFD Only", win(40)).words === "Extra FD");
+check("benefit windows: all three shows from the first minute",
+  P.statusWords("AAll 3", win(1)).words === "All 3" && P.statusWords("AAll 3", win(40)).words === "All 3");
+check("benefit windows: the colour follows what is on offer",
+  P.statusWords("AB1 & B2", win(3)).code === "AB1" && P.statusWords("AB1 & B2", win(20)).code === "AB2",
+  [P.statusWords("AB1 & B2", win(3)), P.statusWords("AB1 & B2", win(20))]);
+check("setup: the free-seat window defaults to five minutes", P.parseSetup([]).seatMin === 5);
+check("setup: a row can change the free-seat window", P.parseSetup([["", "Free seat for", "7", "minutes"]]).seatMin === 7);
 check("status digits: the flags line up with the labels", (() => {
   const a = P.parseStatus("A1100"), b = P.parseStatus("AB1 & B2");
   return a.B1 === b.B1 && a.B2 === b.B2 && a.FD === b.FD;
