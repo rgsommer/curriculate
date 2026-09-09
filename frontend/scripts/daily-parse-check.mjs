@@ -437,5 +437,25 @@ check("three links in one run get three different names", new Set(run.links.map(
 check("each name is the words nearest its own link", run.links[1].label.includes("Getting to Know You") && run.links[2].label.includes("assignments"), run.links.map((l) => l.label));
 check("a due date left over from the link before is dropped", run.links[2].label === "List of all assignments this year", run.links[2].label);
 
+
+// ---- the shape the Vertical tab writes a lesson in ----
+const verticalCell = [
+  "Math 7A (23) 202",
+  "\u25CFJ001  : Introduction: Overview, expectations, textbook, etc.",
+  "Slides presentation on Math [Assign: Complete the Introduction Fill-In-the-Blanks worksheet by Wed Sep 16 handed out in class (or from this link: https://docs.google.com/document/d/1Y_z/edit?tab=t.0 Complete the Getting to Know You form http://tinyurl.com/BCSQuickCheckin by Thu Sep 10",
+  "List of all assignments this year: https://docs.google.com/document/d/1fSE/edit?usp=sharing]\uD83D\uDD0D",
+].join("\n");
+const vc = P.parseClassText(verticalCell);
+check("vertical shape: header", vc.subj === "Math 7A" && vc.room === "Rm 202" && !vc.duty, vc);
+check("vertical shape: code from the bullet marker", vc.code === "J001", vc.code);
+check("vertical shape: the title is the lesson", vc.today === "Introduction: Overview, expectations, textbook, etc.", vc.today);
+check("vertical shape: the activity line becomes a bullet", vc.plan.length === 1 && vc.plan[0] === "Slides presentation on Math", vc.plan);
+check("vertical shape: the Assign block becomes assignments", vc.assign.length === 2 && vc.assign[1].startsWith("List of all assignments"), vc.assign);
+check("vertical shape: no address is left in the words", !/https?:/.test(JSON.stringify([vc.today, vc.plan, vc.assign])), [vc.today, vc.plan, vc.assign]);
+check("vertical shape: three handouts, three names", vc.links.length === 3 && new Set(vc.links.map((l) => l.label)).size === 3, vc.links.map((l) => l.label));
+check("vertical shape: a line break separates one name from the next", vc.links[2].label === "List of all assignments this year", vc.links[2].label);
+check("vertical shape: survives the run-together split", P.classesFromText(verticalCell)[0].plan.length === 1, P.classesFromText(verticalCell)[0]);
+check("DisplayAI shape still parses as before", P.parseClassText("Math 7B (23) 207 (J003) Today we practice. What helps? - Do NS7-3. Reminders: bring it.").today.startsWith("Today we practice"));
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

@@ -305,7 +305,8 @@ function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lesso
 }
 
 export function classesFromText(text: string, lessons: Record<string, Lesson> = {}): DayClass[] {
-  const t = String(text || "").replace(/\s+/g, " ");
+  // Horizontal runs only: the line breaks carry the Vertical tab's lesson shape.
+  const t = String(text || "").replace(/[^\S\n]+/g, " ");
   const starts: number[] = [];
   const re = new RegExp(CLASS_HEAD.source, "g");
   let m: RegExpExecArray | null;
@@ -469,7 +470,7 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
     const before = t.slice(prevEnd, m.index);
     prevEnd = m.index + m[0].length;
     // A sentence break needs whitespace after it, or "p.7" splits mid-reference.
-    let label = (before.split(/(?:[.!?•]\s+|\s-\s|[[\];]\s*)/).pop() || "")
+    let label = (before.split(/(?:[.!?•]\s+|\n|\s-\s|[[\];]\s*)/).pop() || "")
       .replace(/\(?\s*(?:or\s+)?(?:you\s+can\s+)?(?:get\s+it\s+|print\s+it\s+|available\s+)?(?:from\s+|use\s+|at\s+|via\s+)?(?:this\s+|the\s+)?link[s]?\s*:?\s*$/i, "")
       .replace(/\b(?:here|below|online|posted)\s*:?\s*$/i, "")
       .replace(/[\s(:,–—-]+$/, "")
@@ -483,12 +484,16 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
     if (label.length < 4) label = linkKind(url);
     links.push({ label: truncateWords(label, LABEL_MAX), url });
   }
+  // Line breaks are kept: the Vertical tab writes a lesson over several lines
+  // and the shape is what tells its title from its activities.
   const clean = t
     .replace(new RegExp(URL_RE.source, "g"), "")
     .replace(/\(\s*(?:or\s+)?(?:from\s+)?(?:this\s+)?link[s]?\s*:?\s*\)/gi, "")
-    .replace(/\s*\(\s*\)/g, "")
-    .replace(/\s{2,}/g, " ")
-    .replace(/\s+([.,;:])/g, "$1")
+    .replace(/\(?\s*(?:or\s+)?(?:from\s+)?this\s+link[s]?\s*:?/gi, "")
+    .replace(/[^\S\n]*\(\s*\)/g, "")
+    .replace(/[^\S\n]{2,}/g, " ")
+    .replace(/[^\S\n]*\n[^\S\n]*/g, "\n")
+    .replace(/[^\S\n]+([.,;:])/g, "$1")
     .trim();
   // Same handout named twice in one cell is one handout.
   const seen = new Set<string>();
@@ -501,10 +506,41 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
   };
 }
 
+/**
+ * A lesson as the Vertical tab writes it: the header line, then a line carrying
+ * the lesson code and the lesson's title after a colon, then the activities, and
+ * finally an "[Assign: …]" block. The code is marked with a bullet or a tilde
+ * rather than wrapped in brackets, which is why the DisplayAI header pattern
+ * does not see it.
+ */
+function verticalLesson(rest: string, known: string): { code: string; today: string; plan: string[]; assign: string[] } {
+  const body0 = rest.replace(/[\u2190-\u2BFF\uFE0F\u200D]|[\uD800-\uDBFF][\uDC00-\uDFFF]/g, " ").trim();
+  const cm = body0.match(/^[^\n]*?[\u25CF\u25CB\u25AA\u2022~*]?\s*([A-Z]\d{3})\s*:?\s*/);
+  const code = cm ? cm[1] : known;
+  let body = cm ? body0.slice(cm[0].length) : body0;
+
+  // The assignment block runs to the last bracket.
+  let assign: string[] = [];
+  const open = body.search(/\[\s*Assign/i);
+  if (open >= 0) {
+    const close = body.lastIndexOf("]");
+    const inner = body.slice(open, close > open ? close : undefined).replace(/^\[\s*Assign:?\s*/i, "");
+    assign = inner
+      .split("\n")
+      .map((x) => x.replace(/^[\s\-\u2013\u2014\u2022]+/, "").replace(/[\s:;,]+$/, "").trim())
+      .filter((x) => x.length > 2);
+    body = body.slice(0, open);
+  }
+
+  const lines = body.split("\n").map((x) => x.replace(/[\s;:,-]+$/, "").trim()).filter((x) => x.length > 1);
+  return { code, today: lines.shift() || "", plan: lines, assign };
+}
+
 export function parseClassText(text: string) {
   // Handouts come out first: the lesson text reads better without the addresses,
   // and a URL's own "?" no longer gets mistaken for the lesson's question.
   const { links, clean } = extractLinks(String(text || ""));
+  const raw = clean;                       // line breaks kept, for the Vertical shape
   const t = clean.replace(/\s+/g, " ").trim();
   // "Math 7B (23) 207 (J001)" — the lesson code is optional, because the day's
   // plan on the VerticalAi tab writes some classes without one.
@@ -539,17 +575,29 @@ export function parseClassText(text: string) {
     .filter(Boolean);
   const remind = ((rest.match(/Reminders:\s*(.*)$/) || [, ""])[1] || "").trim();
   const sec = (m[1].match(/(\d[A-C])\b/) || [, ""])[1] || "";
+  const plan = bullets.filter((b) => !/^Assign:/i.test(b));
+  const assign = bullets.filter((b) => /^Assign:/i.test(b)).map((b) => b.replace(/^Assign:\s*/i, ""));
+
+  // The Vertical tab writes a lesson in a different shape from DisplayAI's, over
+  // several lines rather than one:
+  //   Math 7A (23) 202
+  //   ●J001  : Introduction: Overview, expectations, textbook, etc.
+  //   Slides presentation on Math [Assign: … ]🔍
+  // Nothing above finds anything in that, so it is read here instead.
+  const bare = !today && !plan.length && !assign.length;
+  const v = bare ? verticalLesson(raw.slice(m[0].length), m[4] || "") : null;
+
   return {
     duty: false,
     rec: false,
     subj: m[1].trim(),
     sec,
     room: "Rm " + m[3],
-    code: m[4] || "",
-    today,
+    code: (v ? v.code : "") || m[4] || "",
+    today: v ? v.today : today,
     q,
-    plan: bullets.filter((b) => !/^Assign:/i.test(b)),
-    assign: bullets.filter((b) => /^Assign:/i.test(b)).map((b) => b.replace(/^Assign:\s*/i, "")),
+    plan: v ? v.plan : plan,
+    assign: v ? v.assign : assign,
     remind,
     links,
   };
