@@ -163,7 +163,7 @@ function parseStatus(raw) {
 
 /* ---------- small pieces ---------- */
 
-function Chips({ period, left, setup, status }) {
+function Chips({ period, left, setup, status, writing }) {
   if (!period) return null;
   const raw = (status || period.status || "").trim();
   const st = parseStatus(raw);
@@ -208,6 +208,16 @@ function Chips({ period, left, setup, status }) {
   );
   if (st && st.on && st.on[2] && !st.grace && period.elapsed <= setup.graceMin + setup.snacksB2Min) {
     items.push(<span key="s" className="chip on">Snacks</span>);
+  }
+  // A class that has had more than one poor day in the last five owes a
+  // corrective writing assignment — the one rule in the legend the sheet does
+  // not work out for itself.
+  if (writing) {
+    items.push(
+      <span key="wr" className="chip writing" title="More than one day of five points or fewer in the last five days">
+        Writing
+      </span>
+    );
   }
   return <div className="points">{items}</div>;
 }
@@ -330,7 +340,7 @@ export default function DailyPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loadNote, setLoadNote] = useState("Contacting the sheet…");
-  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null });
+  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, writing: [], writingNote: "" });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
@@ -365,6 +375,8 @@ export default function DailyPage() {
           numbers: (j.points && j.points.numbers) || p.numbers,
           percents: (j.points && j.points.percents) || p.percents,
           entered: j.points && j.points.entered != null ? j.points.entered : p.entered,
+          writing: (j.points && j.points.writing) || [],
+          writingNote: (j.points && j.points.writingNote) || "",
         }));
       } catch (e) {
         if (alive) setError(e.name === "AbortError" ? "The sheet took too long to answer; retrying." : e.message || "Could not reach the sheet");
@@ -627,7 +639,15 @@ export default function DailyPage() {
       <div className="top">
         <div>
           <div className="title"><span className="subj">{title}</span>{chips}</div>
-          {period && <Chips period={period} left={period.left} setup={setup} status={statusOf(period)} />}
+          {period && (
+            <Chips
+              period={period}
+              left={period.left}
+              setup={setup}
+              status={statusOf(period)}
+              writing={!!(period.sec && (points.writing || []).includes(period.sec))}
+            />
+          )}
           <div className="when">{when}</div>
           {red && nextUp ? (
             <div className="peek soon">
@@ -813,6 +833,7 @@ export default function DailyPage() {
               {row("status (as read)", cur ? cur.status : "")}
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
+              {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
               {(sources.slots || []).map((sl, i) => (sl.name || sl.formula || sl.content ? (
                 <Fragment key={`slot${i}`}>
                   {row(`slot ${SLOT_COLS[i] || `#${i + 1}`} ${sl.name || ""}`.trim(),

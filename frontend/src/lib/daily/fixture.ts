@@ -83,6 +83,27 @@ export const FIXTURE: RawInputs = {
   slotFormulas: [["", "", "", "", "", '=IMAGE("https://upload.wikimedia.org/wikipedia/commons/thumb/2/2b/Quebec_1759.jpg/960px-Quebec_1759.jpg")', ""]],
   // Points row 3 names the classes; row 46 holds four flags each (7A at M, 7B at
   // Z, 7C at AM, 8A at AZ, 8B at BM), which the D-column status rule reads.
+  // Points!A1:BV46 — row 3 names the classes (7A at D, 7B at Q, 7C at AD, 8A at
+  // AQ, 8B at BD), rows 4 down carry each day's score in the class's own column,
+  // and row 46 holds four flags each, which the D-column status rule reads.
+  // 8A has two poor days inside the last five, so it owes a writing assignment.
+  pointsGrid: (() => {
+    const g: string[][] = [];
+    for (let r = 0; r < 46; r += 1) g[r] = [];
+    const cols = [4, 17, 30, 43, 56];
+    ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => { g[2][cols[i] - 1] = n; });
+    const days = [
+      [8, 7, 6, 4, 8],
+      [7, 8, 7, 8, 7],
+      [6, 6, 8, 3, 6],
+      [8, 7, 7, 7, 8],
+      [7, 8, 6, 8, 5],
+    ];
+    days.forEach((row, d) => { row.forEach((v, i) => { g[3 + d][cols[i] - 1] = String(v); }); });
+    const blocks: [number, string][] = [[12, "1100"], [25, "0110"], [38, "1010"], [51, "1110"], [64, "0100"]];
+    blocks.forEach(([base, digits]) => { digits.split("").forEach((d, k) => { g[45][base + k] = d; }); });
+    return g;
+  })(),
   pointsRow3: (() => { const r: string[] = []; r[3] = "7A"; r[16] = "7B"; r[29] = "7C"; r[42] = "8A"; r[55] = "8B"; return r; })(),
   pointsRow46: (() => {
     const r: string[] = [];

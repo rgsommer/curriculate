@@ -36,6 +36,8 @@ export type Points = {
   numbers: number[] | null;
   percents: number[] | null;
   entered: boolean | null;
+  writing: string[]; // classes owed a corrective writing assignment
+  writingNote: string; // how that was worked out, for ?debug=1
 };
 
 export type Setup = {
@@ -950,8 +952,9 @@ export type RawInputs = {
   vertical?: string[][]; // VerticalAi!D1:J200 values
   riddles?: string[][]; // Riddles!D1:D400 values
   master?: string[][]; // Master!B1:B2 values
-  pointsRow3?: string[]; // Points!A3:BZ3 — class names
-  pointsRow46?: string[]; // Points!A46:BZ46 — four flags per class
+  pointsGrid?: string[][]; // Points!A1:BV46 — row 3 the class names, row 46 the flags, the days in between
+  pointsRow3?: string[]; // Points row 3 — class names
+  pointsRow46?: string[]; // Points row 46 — four flags per class
   slotBlock?: string[][]; // Setup!S1:AB8 values — the whole block, S2 included
   slotBlockFormulas?: string[][]; // Setup!S1:AB8 formulas — what the board evaluates itself
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
@@ -999,7 +1002,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       if (!meta.feature || meta.feature === url) meta.feature = "";
     }
   }
-  const points: Points = { numbers: null, percents: null, entered: null };
+  const points: Points = { numbers: null, percents: null, entered: null, ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || []) };
 
   // ---- header cells (rows above the first time row) ----
   const firstTimeRow = rows.findIndex((r) => parseTime(r[0] || "") !== null);
@@ -1437,6 +1440,75 @@ export type PointsClass = { name: string; letter: string; digits: string[] };
 
 /** Where the class names sit in Points row 3, left to right. */
 export const POINTS_NAME_COLS = [4, 17, 30, 43, 56];
+
+/**
+ * Which classes are owed a corrective writing assignment.
+ *
+ * The rule from the legend beside the points table: a poor day — five points or
+ * fewer — more than once inside the last five school days.
+ *
+ * The daily scores live in the Points tab in a block of columns per class, and
+ * the sheet does not compute this, so the block's score column is worked out
+ * here: the column under the class's own name first, since that is where a table
+ * with the class as its heading puts them, otherwise whichever column in the
+ * block actually carries a day's worth of small numbers. `writingNote` says what
+ * it settled on, which is what ?debug=1 prints when the answer looks wrong.
+ */
+export function writingOwed(grid: string[][], row3: string[]): { writing: string[]; writingNote: string } {
+  const rows = grid || [];
+  if (rows.length < 10) return { writing: [], writingNote: "no Points grid" };
+  const at = (r: number, c1: number) => String(((rows[r - 1] || [])[c1 - 1] ?? "")).trim();
+  const score = (r: number, c1: number): number | null => {
+    const v = at(r, c1);
+    if (!/^-?\d+(?:\.\d+)?$/.test(v)) return null;
+    const n = parseFloat(v);
+    return n >= 0 && n <= 20 ? n : null;
+  };
+  // The day rows are the ones between the heading and the flags that carry a
+  // score for any class at all; the last five of those are the week in question.
+  const NAME_ROW = 3;
+  const FLAG_ROW = 46;
+  const cols = POINTS_NAME_COLS.filter((c) => at(NAME_ROW, c));
+  if (!cols.length) return { writing: [], writingNote: "no class names in row 3" };
+
+  const pick = (base: number): number => {
+    let best = 0;
+    let bestCol = 0;
+    for (let off = 0; off <= 8; off += 1) {
+      let n = 0;
+      for (let r = NAME_ROW + 1; r < FLAG_ROW; r += 1) if (score(r, base + off) !== null) n += 1;
+      // The class's own column wins any tie, so a block of equally plausible
+      // columns does not come down to the order they happen to sit in.
+      if (n > best || (off === 0 && n === best && n > 0)) { best = n; bestCol = base + off; }
+    }
+    return best >= 3 ? bestCol : 0;
+  };
+
+  const picked = cols.map((base) => ({ name: at(NAME_ROW, base), base, col: pick(base) }));
+  const scored = picked.filter((p) => p.col);
+  if (!scored.length) return { writing: [], writingNote: "no column in any class block reads as daily scores" };
+
+  const dayRows: number[] = [];
+  for (let r = NAME_ROW + 1; r < FLAG_ROW; r += 1) {
+    if (scored.some((p) => score(r, p.col) !== null)) dayRows.push(r);
+  }
+  const week = dayRows.slice(-5);
+  const writing: string[] = [];
+  for (const p of scored) {
+    const poor = week.filter((r) => { const n = score(r, p.col); return n !== null && n <= 5; }).length;
+    if (poor > 1) writing.push(p.name);
+  }
+  const where = scored.map((p) => `${p.name}=${columnName(p.col)}`).join(" ");
+  return { writing, writingNote: `rows ${week[0] ?? "—"}-${week[week.length - 1] ?? "—"} | ${where}` };
+}
+
+/** 1-based column number to its letters, for the debug view. */
+export function columnName(col: number): string {
+  let n = col;
+  let out = "";
+  while (n > 0) { const r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+  return out;
+}
 
 /** Points row 3 holds the class names; row 46 holds four flags per class. */
 export function buildPointsClasses(row3: string[], row46: string[]): PointsClass[] {

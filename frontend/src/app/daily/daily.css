@@ -75,6 +75,9 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .chip.grace { border: 1px dashed var(--muted); background: transparent; }
 .chip.rec { background: var(--sun-fill); color: var(--sun-ink); font-weight: 600; }
 /* The privilege code, in the sheet's conditional-format colours. */
+/* The corrective writing assignment: the sheet's own brown, and the one chip
+   that is not about a privilege. */
+.chip.writing { background: #7F6000; color: #FFFFFF; font-weight: 700; opacity: 1; text-decoration: none; }
 .statusbadge { display: inline-flex; align-items: baseline; gap: .35em; font-size: clamp(13px, 2.2vh, 22px); font-weight: 600; letter-spacing: .04em; padding: .5vh 1.1vw; border-radius: 999px; border: 2px solid transparent; white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* The class group the code belongs to, kept small beside the benefit itself. */
 .statusbadge .grp { font-style: normal; font-size: .75em; font-weight: 700; opacity: .7; }
