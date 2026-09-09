@@ -1059,7 +1059,26 @@ function formatRecentTradesBlock(recentTrades) {
 // feed adjustment/split artifact that the pick engine let through.
 // Any pick whose price cannot be verified cannot ship.
 async function renderDailyPicksDeterministic(dailyPicks, ctx = {}) {
-  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
+  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) {
+    // P0B: don't emit an empty daily-picks section — emit an explicit
+    // "NO QUALIFYING OPPORTUNITY TODAY" statement. The pick engine now
+    // enforces an absolute qualifying threshold (composite / external
+    // nominations / confirmations) and returns 0 picks on days where
+    // nothing clears it. The user must see this, not a blank space.
+    return [
+      "",
+      "## 🎯 Today's picks — NO QUALIFYING OPPORTUNITY",
+      "",
+      "> **The scanner ran the full eligible universe today and no candidate cleared the absolute qualifying threshold.**",
+      "> ",
+      "> A pick requires all three: composite ≥ threshold, external nominations ≥ threshold, and ≥ N confirmation flags.",
+      "> This is by design — we do not manufacture two ideas every day to fill a card. Waiting is a valid action.",
+      "> ",
+      "> The full ranked distribution (top-30 near-misses + why each fell short) is persisted for empirical calibration",
+      "> and surfaced on the Discover tab under **Near-misses today**.",
+      "",
+    ].join("\n");
+  }
   const { verifyRecPrice } = await import("../services/marketDataIntegrity.js");
   const { auditPickReconciliation } = await import("../services/briefingAudit.js");
   // Tier 3.1/3.2 (audit Aug-28): adversarial verify + chart vision
@@ -1402,7 +1421,25 @@ async function renderDailyPicksDeterministic(dailyPicks, ctx = {}) {
 }
 
 function formatDailyPicksBlock(dailyPicks) {
-  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) return "";
+  if (!Array.isArray(dailyPicks) || dailyPicks.length === 0) {
+    // P0B: when the deterministic pick engine returns 0 qualifying
+    // candidates, the AI MUST preserve that verdict. It may not invent
+    // tickers, backfill from the discovery pool, or re-surface a
+    // blocked candidate as a "monitor" idea. Language is deliberately
+    // stark because prior briefings observed the AI writing "still,
+    // AAPL / MSFT look reasonable here" when we told it we had no
+    // picks — that's the failure mode this block prevents.
+    return `\nTODAY'S SWING-TRADE PICKS: **NONE — NO QUALIFYING OPPORTUNITY TODAY.**
+The deterministic engine ran the full eligible universe and no candidate cleared the absolute qualifying threshold (composite / external nominations / confirmations).
+
+HARD RULES you MUST follow:
+  1. Do NOT invent, backfill, resurrect, or "monitor-list" any BUY ticker in the picks section. There are no picks.
+  2. The "## 🎯 Today's Swing-Trade Picks" section MUST read exactly: "NO QUALIFYING OPPORTUNITY TODAY — the scanner ran the full eligible universe and nothing cleared the absolute qualifying threshold. Waiting is a valid action."
+  3. Do NOT include any BUY-side rec in the trailing <RECS> block sourced from picks. Rec entries from other pipelines (mandates, upswitches) are allowed as usual.
+  4. Do NOT write "however, X still looks interesting" or any similar hedge. The deterministic verdict is the verdict.
+  5. Do NOT lower or bypass the threshold in narrative ("even a lower-conviction name today would be…"). The threshold is not negotiable in prose.
+`;
+  }
   // Split into allowed vs blocked. Blocked picks are demoted to a
   // one-line Watch List entry in §A3 only — no §4 narrative, no
   // scoring paragraph, no <RECS> entry. Per user Aug 5 directive:
@@ -4969,6 +5006,62 @@ export async function generateBriefing(profile) {
         rejectedRecs = [...rejectedRecs, ...movedToRejected];
       }
     }
+    // ─── P0B: AI-invented-ticker gate ───
+    // Every BUY/ADD rec that survives must trace to the deterministic
+    // pick set (dailyPicks) OR to a prefix mandate ticker OR to the
+    // spec discovery pool OR to an already-held ticker (add-on to an
+    // existing position). If the AI wrote a BUY on a ticker that
+    // doesn't appear in any of those, it invented the idea from thin
+    // air — reject it. Prevents the "AI slipped in AAPL because it
+    // 'looks reasonable'" failure mode when the deterministic engine
+    // said we had no qualifying opportunity today.
+    //
+    // Architecture principle: quantitative engine decides WHAT is
+    // eligible; validators decide WHAT is safe; AI RESEARCHES AND
+    // EXPLAINS but DOES NOT OVERRIDE A REJECTION or invent tickets
+    // outside the eligible set.
+    const allowedBuyBases = new Set();
+    const stripBase = (t) => String(t || "").toUpperCase().replace(/\..*$/, "");
+    for (const p of (dailyPicks || [])) {
+      if (!p?.ticker) continue;
+      if (p.blockedReason) continue; // blocked picks are Watch List only
+      if (p.specialSituation?.active) continue; // SCREENED — not a BUY candidate
+      allowedBuyBases.add(stripBase(p.ticker));
+    }
+    for (const m of (prefixMandateRecs || [])) {
+      if (m?.ticker) allowedBuyBases.add(stripBase(m.ticker));
+    }
+    for (const d of (discoveryPool || [])) {
+      if (d?.ticker) allowedBuyBases.add(stripBase(d.ticker));
+    }
+    for (const pos of (profile.positions || [])) {
+      if (pos?.ticker && (pos.qty > 0)) allowedBuyBases.add(stripBase(pos.ticker));
+    }
+    const inventedRejected = [];
+    const survivedInvent = [];
+    for (const r of acceptedRecs) {
+      const action = String(r.action || "").toUpperCase();
+      if (action !== "BUY" && action !== "ADD") { survivedInvent.push(r); continue; }
+      const base = stripBase(r.ticker);
+      if (allowedBuyBases.has(base)) { survivedInvent.push(r); continue; }
+      inventedRejected.push({
+        rec: r,
+        rejections: [{
+          reason: "ai-invented-ticker",
+          detail:
+            `${r.action} ${r.ticker} rejected — ticker not in today's deterministic pick set, mandate list, ` +
+            `discovery pool, or held positions. The AI is not permitted to introduce a BUY on a ticker the ` +
+            `quantitative engine did not surface. If this is a legitimate BUY it must first enter one of ` +
+            `those pipelines (add to universe, pass discovery, or be flagged by external nominations).`,
+        }],
+      });
+    }
+    if (inventedRejected.length > 0) {
+      console.warn(`[ai-invent-gate] rejected ${inventedRejected.length} AI-authored BUY(s) on tickers outside the eligible universe: ${inventedRejected.map(x => x.rec.ticker).join(", ")}`);
+      acceptedRecs = survivedInvent;
+      rejectedRecs = [...rejectedRecs, ...inventedRejected];
+    }
+
     // Rewrite <RECS> to accepted-only every time recs went through
     // validation (was previously only rewritten when there were
     // rejections — but even zero-rejection paths benefit from a

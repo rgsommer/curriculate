@@ -18,6 +18,119 @@ import StocksPortfolio from "../models/StocksPortfolio.js";
 import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
+import StocksPickDistribution from "../models/StocksPickDistribution.js";
+
+// ─── P0B absolute qualifying thresholds ──────────────────────────────
+// A ticker MUST clear ALL of these to become an actual daily pick.
+// If nothing in the entire universe clears them today, NO PICK ships
+// — the briefing renders "NO QUALIFYING OPPORTUNITY TODAY" instead of
+// manufacturing two mediocre ideas. The full ranked distribution is
+// still persisted (StocksPickDistribution) so we can empirically
+// calibrate these numbers from history rather than intuition.
+//
+// Env overrides let ops loosen/tighten without a redeploy while we
+// gather the first 30-60 days of calibration data.
+const ABS_QUALIFYING_COMPOSITE      = Number(process.env.STOCKS_PICK_ABS_COMPOSITE || 75);
+const ABS_QUALIFYING_EXTERNAL       = Number(process.env.STOCKS_PICK_ABS_EXTERNAL || 3);
+const ABS_QUALIFYING_CONFIRMATIONS  = Number(process.env.STOCKS_PICK_ABS_CONFIRMATIONS || 2);
+// Distribution logging depth — captured for calibration, not for
+// display. 30 rows keeps the corpus rich enough to answer "what would
+// composite ≥80 have returned?" without exploding Mongo storage.
+const DISTRIBUTION_TOP_N = 30;
+
+// Persist the full ranked distribution to StocksPickDistribution for
+// calibration analysis. Fire-and-forget — a persistence failure logs a
+// warning but never bubbles up to fail the pick engine (the picks are
+// what matter; the calibration corpus is a nice-to-have that will fill
+// in as long as most days succeed).
+function persistPickDistributionAsync({
+  email, combined, selectedTickers,
+  thresholds, universeSize, scoredCount, rescuedCount,
+  noQualifyingOpportunity, note,
+}) {
+  (async () => {
+    try {
+      const pickDate = new Date().toISOString().slice(0, 10);
+      const top = (combined || []).slice(0, DISTRIBUTION_TOP_N);
+      const candidates = top.map((cand, i) => {
+        const disqualifyReason = classifyDisqualification(cand);
+        const qualified = disqualifyReason == null;
+        const selected = qualified && selectedTickers.has(cand.ticker);
+        return {
+          ticker: cand.ticker,
+          currency: cand.currency || "USD",
+          rank: i + 1,
+          compositeRank: Number.isFinite(cand.compositeRank) ? cand.compositeRank : null,
+          technicalScore: Number.isFinite(cand.deterministicScore) ? cand.deterministicScore : null,
+          externalAdjustment: cand.externalAdjustment || 0,
+          externalConvictionScore: cand.externalConvictionScore || 0,
+          nominationCount: cand.nominationCount || 0,
+          newsCatalystBump: cand.newsCatalystBump || 0,
+          qualityCompounderBump: (cand.compositeRankPreCompounder != null && Number.isFinite(cand.compositeRank))
+            ? cand.compositeRank - cand.compositeRankPreCompounder : 0,
+          setupName: cand.setupName || null,
+          mtfConfluence: cand.mtfConfluence || null,
+          sectorRank: cand.sectorRank ?? null,
+          entryPrice: Number.isFinite(cand.entryPrice) ? cand.entryPrice : null,
+          qualified,
+          selected,
+          disqualifyReason: selected ? "selected" : disqualifyReason,
+        };
+      });
+      const qualifiedCount = candidates.filter(c => c.qualified).length;
+      const selectedCount = candidates.filter(c => c.selected).length;
+      await StocksPickDistribution.findOneAndUpdate(
+        { email, pickDate },
+        {
+          $set: {
+            generatedAt: new Date(),
+            thresholds, universeSize, scoredCount, rescuedCount,
+            candidates, qualifiedCount, selectedCount,
+            noQualifyingOpportunity, note,
+          },
+        },
+        { upsert: true, setDefaultsOnInsert: true },
+      );
+    } catch (e) {
+      console.warn(`[pick-distribution] persist failed for ${email}:`, e?.message);
+    }
+  })();
+}
+
+// Count how many confirmation flags fired on a candidate. Confirmations
+// are DIFFERENT from composite: composite is a continuous score, while
+// confirmations are boolean signals that a serious buyer would want to
+// see agreeing before entering.
+function countConfirmationFlags(cand) {
+  if (!cand) return 0;
+  let n = 0;
+  if (cand.mtfConfluence === "aligned") n++;
+  if ((cand.freshNewsCount || 0) > 0) n++;
+  if ((cand.qualityCompounderBadge || null) != null) n++;
+  if ((cand.nominationCount || 0) >= 1) n++;
+  if ((cand.newsCatalystBump || 0) > 0) n++;
+  // Multi-factor composite that materially exceeds pure technicals
+  // — a candidate that scored much higher on fundamentals+revisions
+  // than on chart alone is another form of confirmation.
+  if (Number.isFinite(cand.compositeRank) &&
+      Number.isFinite(cand.deterministicScore) &&
+      cand.compositeRank - cand.deterministicScore >= 8) n++;
+  return n;
+}
+
+// Classify why a candidate did NOT qualify. Ordered by importance —
+// the FIRST failing rule wins, so the distribution log tells us the
+// PRIMARY reason a near-miss missed. If it qualifies, returns null.
+function classifyDisqualification(cand) {
+  if (!cand) return "not-scored";
+  const comp = Number.isFinite(cand.compositeRank) ? cand.compositeRank : (cand.deterministicScore || 0);
+  if (comp < ABS_QUALIFYING_COMPOSITE) return "below-composite-threshold";
+  const nom = Number(cand.nominationCount || 0);
+  if (nom < ABS_QUALIFYING_EXTERNAL) return "below-external-threshold";
+  const conf = countConfirmationFlags(cand);
+  if (conf < ABS_QUALIFYING_CONFIRMATIONS) return "below-confirmation-count";
+  return null; // qualified
+}
 
 // Per-setup expectancy — surgical kill of losing setup types. The
 // engine-wide kill switch (shouldSuppressPicks) either lets all
@@ -933,6 +1046,11 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
             cand.baseCompositeRank = cand.compositeRank;
             cand.externalAdjustment = conviction?.externalAdjustment || 0;
             cand.externalConvictionScore = conviction?.externalConvictionScore || 0;
+            // P0B: capture nomination count for the absolute qualifying
+            // threshold gate. `nominations` is the raw array of INSIDER
+            // + SELL_SIDE + INSTITUTIONAL entries; length >= ABS_EXTERNAL
+            // is one of the required qualification conditions.
+            cand.nominationCount = Array.isArray(conviction?.nominations) ? conviction.nominations.length : 0;
             cand.compositeRank = Math.min(100, cand.baseCompositeRank + cand.externalAdjustment);
           } catch { /* soft-fail — leave compositeRank unchanged */ }
         }));
@@ -944,10 +1062,62 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // Re-rank on multi-factor composite (now includes external
     // adjustment). Fallback (rare) is technical.
     combined.sort((a, b) => (b.compositeRank ?? b.deterministicScore) - (a.compositeRank ?? a.deterministicScore));
-    top = combined.slice(0, n);
-    console.log(`[pick-engine-multi-factor] scored ${stage2Input.length} technical + ${rescueInput.length} rescue (${promoted.length} promoted), external adjustment applied, final top ${top.length}`);
+
+    // ── P0B: absolute qualifying threshold ────────────────────────
+    // Only candidates that clear ALL of (composite ≥ ABS_COMPOSITE,
+    // nominations ≥ ABS_EXTERNAL, confirmations ≥ ABS_CONFIRMATIONS)
+    // are eligible to become picks. If nothing clears, `top` is empty
+    // and the briefing renders "NO QUALIFYING OPPORTUNITY TODAY". We
+    // deliberately do NOT relax the threshold when nothing qualifies —
+    // manufacturing two picks a day was the failure mode this fixes.
+    const qualifiedCombined = combined.filter(c => classifyDisqualification(c) == null);
+    top = qualifiedCombined.slice(0, n);
+
+    // Persist the full ranked distribution BEFORE the threshold filter
+    // so the calibration corpus captures near-misses (rank 3-10) too.
+    // Fire-and-forget — a Mongo hiccup must not block the pick engine.
+    persistPickDistributionAsync({
+      email,
+      combined,
+      selectedTickers: new Set(top.map(p => p.ticker)),
+      thresholds: {
+        absComposite: ABS_QUALIFYING_COMPOSITE,
+        absExternal: ABS_QUALIFYING_EXTERNAL,
+        absConfirmations: ABS_QUALIFYING_CONFIRMATIONS,
+        n,
+        minScore,
+      },
+      universeSize: universe.length,
+      scoredCount: stage2Input.length,
+      rescuedCount: promoted.length,
+      noQualifyingOpportunity: qualifiedCombined.length === 0,
+      note: gate.canary ? "kill-switch canary" : null,
+    });
+
+    console.log(
+      `[pick-engine-multi-factor] scored ${stage2Input.length} technical + ${rescueInput.length} rescue (${promoted.length} promoted); ` +
+      `${qualifiedCombined.length}/${combined.length} cleared absolute threshold (comp≥${ABS_QUALIFYING_COMPOSITE}, nom≥${ABS_QUALIFYING_EXTERNAL}, conf≥${ABS_QUALIFYING_CONFIRMATIONS}); ` +
+      `final top ${top.length}` +
+      (qualifiedCombined.length === 0 ? " — NO QUALIFYING OPPORTUNITY TODAY" : "")
+    );
   } else {
     top = [];
+    // Still log an empty distribution so the calibration corpus knows
+    // the engine ran and produced nothing (vs the engine not running).
+    persistPickDistributionAsync({
+      email, combined: [], selectedTickers: new Set(),
+      thresholds: {
+        absComposite: ABS_QUALIFYING_COMPOSITE,
+        absExternal: ABS_QUALIFYING_EXTERNAL,
+        absConfirmations: ABS_QUALIFYING_CONFIRMATIONS,
+        n, minScore,
+      },
+      universeSize: universe.length,
+      scoredCount: 0,
+      rescuedCount: 0,
+      noQualifyingOpportunity: true,
+      note: "no candidates scored above minScore",
+    });
   }
 
   // Tag each pick with viaCanary so the persist site can flag it in

@@ -1,0 +1,103 @@
+// StocksPickDistribution
+//
+// P0B (2026-09-08) — empirical calibration corpus for the daily pick
+// engine. Every time generateDailyPicksForUser runs, we persist the
+// full ranked candidate distribution (top 30 by composite) BEFORE the
+// absolute qualifying threshold applies. The daily record captures:
+//
+//   • which tickers were in the running that day
+//   • their composite score, technical sub-score, external adjustment,
+//     news bump, quality-compounder bump, sector rank
+//   • whether each cleared the absolute qualifying threshold
+//   • the effective threshold values on that day (so a future threshold
+//     change doesn't invalidate the calibration corpus — we know what
+//     was in force at the time)
+//
+// Purpose: with this history we can answer "what would picks with
+// composite ≥80 have returned over the last 90 days?" — the answer
+// drives the ABS_QUALIFYING_THRESHOLD, not intuition. Also the source
+// data for the "missed winners" diagnostic (weekly): tickers that
+// were in this distribution but NOT selected AND subsequently made a
+// major move → identify why they were below the threshold.
+//
+// Not user-scoped by default: the pick universe is the same for every
+// user right now (portfolio-independent). email is stored so a future
+// per-user universe migration doesn't need a schema change.
+
+import mongoose from "mongoose";
+
+const CandidateSchema = new mongoose.Schema(
+  {
+    ticker: { type: String, required: true, index: true },
+    currency: { type: String, default: "USD" },
+    rank: { type: Number, required: true },      // 1 = top
+    compositeRank: { type: Number, default: null },
+    technicalScore: { type: Number, default: null },
+    externalAdjustment: { type: Number, default: 0 },
+    externalConvictionScore: { type: Number, default: 0 },
+    nominationCount: { type: Number, default: 0 },
+    newsCatalystBump: { type: Number, default: 0 },
+    qualityCompounderBump: { type: Number, default: 0 },
+    setupName: { type: String, default: null },
+    mtfConfluence: { type: String, default: null },
+    sectorRank: { type: Number, default: null },
+    entryPrice: { type: Number, default: null },
+    // Whether this candidate cleared the day's absolute qualifying
+    // threshold. Selected candidates have qualified=true AND rank ≤ n.
+    qualified: { type: Boolean, default: false, index: true },
+    // Whether the pick was actually surfaced in today's briefing (top-n
+    // AND qualified). false for ranks below n even if they qualified —
+    // capture the runner-up story for calibration.
+    selected: { type: Boolean, default: false, index: true },
+    // If the candidate did not qualify, WHY not. One of:
+    //   below-composite-threshold  (compositeRank < ABS_COMPOSITE)
+    //   below-external-threshold   (nominationCount < ABS_EXTERNAL)
+    //   below-confirmation-count   (fewer than ABS_CONFIRMATIONS)
+    //   selected                   (cleared)
+    disqualifyReason: { type: String, default: null },
+  },
+  { _id: false }
+);
+
+const PickDistributionSchema = new mongoose.Schema(
+  {
+    email: { type: String, required: true, index: true },
+    pickDate: { type: String, required: true, index: true }, // "YYYY-MM-DD"
+    generatedAt: { type: Date, required: true, default: Date.now },
+    // Threshold values in force at generation time.
+    thresholds: {
+      absComposite: { type: Number, default: null },
+      absExternal: { type: Number, default: null },
+      absConfirmations: { type: Number, default: null },
+      n: { type: Number, default: null },
+      minScore: { type: Number, default: null },
+    },
+    universeSize: { type: Number, default: 0 },
+    scoredCount: { type: Number, default: 0 },
+    rescuedCount: { type: Number, default: 0 },
+    // Full ranked distribution — top 30 (or fewer if the universe is
+    // small). Rank 1 = highest composite.
+    candidates: { type: [CandidateSchema], default: [] },
+    // How many qualified vs how many were surfaced.
+    qualifiedCount: { type: Number, default: 0 },
+    selectedCount: { type: Number, default: 0 },
+    // "NO QUALIFYING OPPORTUNITY TODAY" flag for quick queries. true
+    // when nothing in the universe cleared the threshold; the day was
+    // valid, we just didn't have signal strength.
+    noQualifyingOpportunity: { type: Boolean, default: false, index: true },
+    // Free-form note (e.g. "kill-switch canary" or "engine suppressed").
+    note: { type: String, default: null },
+  },
+  { timestamps: true }
+);
+
+// One distribution row per (email, pickDate) — an idempotent upsert
+// key so a cron retry doesn't dupe.
+PickDistributionSchema.index({ email: 1, pickDate: 1 }, { unique: true });
+
+const StocksPickDistribution = mongoose.model(
+  "StocksPickDistribution",
+  PickDistributionSchema
+);
+
+export default StocksPickDistribution;
