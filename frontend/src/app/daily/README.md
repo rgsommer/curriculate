@@ -41,6 +41,11 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `DisplayAI!C1:D40` as formulas | `HYPERLINK()` targets in the lesson or status cells → the video tile. |
 | `Setup!A1:D20` | Timing rules, matched by the label text in column B (see below). |
 | `Setup!T1:AA8` (values and formulas) | The feature-slot table. Column T labels the rows; the E1 formula's `HLOOKUP` runs on U to AA, so the slots proper start one column in: row 1 priority, row 2 name, row 4 value, row 7 seconds on screen. `?debug=1` prints the whole block with its formulas, which is how to see what actually decides E1. |
+| `Setup!N1:Q8` | The "For Dismissal Messages" block: when the end-of-day material comes forward (lunch, lunch recess, dismissal) and how many minutes ahead. |
+| `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D400`, `Master!B1:B2` | Ingredients for the display rules the board evaluates itself. |
+| `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
+| `Points!A3:BZ3`, `Points!A46:BZ46` | Class names and the four privilege flags per class, for the status badge. |
+| The Kiss & Ride tab | Its "Waiting (Recent First)" column, for the dismissal panel. The tab is found by name (`listSheetTitles`, cached an hour) and the column by its header cell. |
 | `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
 The non-teaching rows get a friendlier heading than the sheet's own label, because
@@ -52,6 +57,24 @@ better wording keeps its own text.
 Lesson cells are split using the shape the AI text already has:
 `Subject Sec (n) Room (Code) Today we … Question? - bullet - bullet Reminders: …`
 Cells that do not match (Lunch, Recess Duty, Dismissal) become "change of class" screens.
+
+### The read budget
+
+Google allows 60 Sheets read requests a minute per user, and a classroom screen
+polls every 10 seconds, so a refresh has to be cheap. One refresh is **three
+requests**: one `values:batchGet` for every value range above, one for the
+formula ranges, and one grid read for the links (`readGridLinks`, which serves
+both the "Pray for …" line and the lesson-cell handouts). The tab list is cached
+for an hour on top of that.
+
+Most polls are answered from the in-memory copy. A sheet edit pings
+`/api/daily/ping` and marks it dirty, but a refresh still happens at most once
+every 20 seconds. If Sheets does answer 429 the board sits out 90 seconds and
+serves the last read, flagged stale, rather than retrying into the same wall.
+
+`values:batchGet` fails the whole batch if any one range names a tab that is not
+there, so a 400 triggers a one-off probe of each range; the offenders are
+remembered and left out of later batches (`readRangesSafe`).
 
 ## Timing rules (Setup tab)
 
@@ -194,7 +217,7 @@ video. If no link is found the text shows in grey instead, so the difference is 
 The link is looked for in three places, because Sheets stores them three ways: a
 `=HYPERLINK()` formula, a **rich-text link** applied to the cell text with Insert › Link
 (which appears in neither the cell's value nor its formula, so the grid itself has to be
-read — `readCellLinks` in `lib/daily/sheets.ts`), and a bare URL inside the text.
+read — `readGridLinks` in `lib/daily/sheets.ts`), and a bare URL inside the text.
 
 ## Checking what the board sees
 

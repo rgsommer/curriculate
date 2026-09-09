@@ -100,22 +100,69 @@ export async function readRanges(ranges: string[], render: RenderOption = "FORMA
 }
 
 /**
- * Every link inside each cell of a range, with the words it is attached to.
+ * One batch read that survives a range naming a tab that is not there.
  *
- * `readCellLinks` answers "is there a link on this cell", which is all the
- * "Pray for …" line needs. A lesson cell can carry several — one per handout —
- * so this walks the rich-text runs and pairs each link with its own text.
+ * `values:batchGet` fails the whole batch if any range is unparseable, and the
+ * board asks for a dozen ranges across half the workbook. So a 400 triggers a
+ * one-off probe of each range; the offenders are remembered and left out of
+ * every later batch. Quota and auth errors are not swallowed - they have to
+ * reach the caller so it can back off.
  *
- * Returns one array of links per row of the range.
+ * Returns one grid per requested range, in order, empty for the ones that are
+ * known to be missing.
  */
-export async function readCellLinkRuns(range: string): Promise<{ text: string; url: string }[][]> {
+const badRanges = new Set<string>();
+
+export async function readRangesSafe(
+  ranges: string[],
+  render: RenderOption = "FORMATTED_VALUE"
+): Promise<string[][][]> {
+  const wanted = ranges.filter((r) => !badRanges.has(r));
+  if (!wanted.length) return ranges.map(() => [] as string[][]);
+  let got: string[][][];
+  try {
+    got = await readRanges(wanted, render);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "";
+    if (!/Sheets API 400/.test(msg)) throw e;
+    got = [];
+    for (const r of wanted) {
+      try {
+        got.push((await readRanges([r], render))[0] || []);
+      } catch {
+        badRanges.add(r);
+        got.push([]);
+      }
+    }
+  }
+  const byRange = new Map(wanted.map((r, i) => [r, got[i] || ([] as string[][])]));
+  return ranges.map((r) => byRange.get(r) || ([] as string[][]));
+}
+
+/**
+ * The links in a range, read from the grid itself, in one request.
+ *
+ * A link in Sheets comes in two forms: a `=HYPERLINK()` formula, which shows up
+ * in a FORMULA read, and a rich-text link applied to the cell's text with
+ * Insert > Link, which appears in neither the value nor the formula. Both live
+ * in the grid, so the grid is what gets read.
+ *
+ * `first` is one URL per cell ("" where there is none), which is what the
+ * "Pray for ..." line needs. `runs` is every link in each cell paired with the
+ * words it is attached to, which is what a lesson cell's handouts need. They
+ * used to be two calls against the same range; the board is close enough to the
+ * Sheets read quota that they are now one.
+ */
+export type GridLinks = { first: string[][]; runs: { text: string; url: string }[][][] };
+
+export async function readGridLinks(range: string): Promise<GridLinks> {
   const sheetId = process.env.DAILY_SHEET_ID || DEFAULT_SHEET_ID;
   const params = new URLSearchParams();
   params.set("ranges", range);
   params.set("includeGridData", "true");
   params.set(
     "fields",
-    "sheets.data.rowData.values(formattedValue,hyperlink,textFormatRuns(startIndex,format.link.uri))"
+    "sheets.data.rowData.values(formattedValue,hyperlink,textFormatRuns(startIndex,format.link.uri),userEnteredFormat.textFormat.link.uri)"
   );
 
   const headers: Record<string, string> = { accept: "application/json" };
@@ -138,6 +185,7 @@ export async function readCellLinkRuns(range: string): Promise<{ text: string; u
             formattedValue?: string;
             hyperlink?: string;
             textFormatRuns?: { startIndex?: number; format?: { link?: { uri?: string } } }[];
+            userEnteredFormat?: { textFormat?: { link?: { uri?: string } } };
           }[];
         }[];
       }[];
@@ -146,24 +194,32 @@ export async function readCellLinkRuns(range: string): Promise<{ text: string; u
   };
   if (!res.ok) throw new Error(`Sheets API ${res.status}: ${data.error?.message || "request failed"}`);
 
-  return (data.sheets?.[0]?.data?.[0]?.rowData || []).map((row) => {
-    const out: { text: string; url: string }[] = [];
-    for (const cell of row.values || []) {
+  const rows = data.sheets?.[0]?.data?.[0]?.rowData || [];
+  const first: string[][] = [];
+  const runs: { text: string; url: string }[][][] = [];
+  rows.forEach((row) => {
+    const firstRow: string[] = [];
+    const runRow: { text: string; url: string }[][] = [];
+    (row.values || []).forEach((cell) => {
       const value = cell.formattedValue || "";
-      const runs = cell.textFormatRuns || [];
-      if (runs.length) {
-        runs.forEach((run, i) => {
-          const uri = run.format?.link?.uri;
-          if (!uri) return;
-          const from = run.startIndex || 0;
-          const to = runs[i + 1]?.startIndex ?? value.length;
-          out.push({ text: value.slice(from, to).trim(), url: uri });
-        });
-      }
-      if (!out.length && cell.hyperlink) out.push({ text: value.trim(), url: cell.hyperlink });
-    }
-    return out;
+      const cellRuns: { text: string; url: string }[] = [];
+      (cell.textFormatRuns || []).forEach((run, i) => {
+        const uri = run.format?.link?.uri;
+        if (!uri) return;
+        const from = run.startIndex || 0;
+        const to = (cell.textFormatRuns || [])[i + 1]?.startIndex ?? value.length;
+        cellRuns.push({ text: value.slice(from, to).trim(), url: uri });
+      });
+      if (!cellRuns.length && cell.hyperlink) cellRuns.push({ text: value.trim(), url: cell.hyperlink });
+      firstRow.push(
+        cell.hyperlink || cellRuns[0]?.url || cell.userEnteredFormat?.textFormat?.link?.uri || ""
+      );
+      runRow.push(cellRuns);
+    });
+    first.push(firstRow);
+    runs.push(runRow);
   });
+  return { first, runs };
 }
 
 /**
@@ -173,7 +229,11 @@ export async function readCellLinkRuns(range: string): Promise<{ text: string; u
  * if that tab is renamed, so it is found by name at read time rather than
  * hard-coded into a range.
  */
+let titleCache: { at: number; titles: string[] } | null = null;
+const TITLE_TTL_MS = 60 * 60 * 1000;
+
 export async function listSheetTitles(): Promise<string[]> {
+  if (titleCache && Date.now() - titleCache.at < TITLE_TTL_MS) return titleCache.titles;
   const sheetId = process.env.DAILY_SHEET_ID || DEFAULT_SHEET_ID;
   const params = new URLSearchParams();
   params.set("fields", "sheets.properties.title");
@@ -195,63 +255,8 @@ export async function listSheetTitles(): Promise<string[]> {
     error?: { message?: string };
   };
   if (!res.ok) throw new Error(`Sheets API ${res.status}: ${data.error?.message || "request failed"}`);
-  return (data.sheets || []).map((sh) => sh.properties?.title || "").filter(Boolean);
+  const titles = (data.sheets || []).map((sh) => sh.properties?.title || "").filter(Boolean);
+  titleCache = { at: Date.now(), titles };
+  return titles;
 }
 
-/**
- * Links attached to cells, which the values API cannot see.
- *
- * A link in Sheets comes in two forms: a `=HYPERLINK()` formula, which shows up
- * in a FORMULA read, and a rich-text link applied to the cell's text with
- * Insert › Link, which appears in neither the value nor the formula. This reads
- * the grid itself so both are found.
- *
- * Returns a grid of URLs shaped like the range, "" where a cell has no link.
- */
-export async function readCellLinks(range: string): Promise<string[][]> {
-  const sheetId = process.env.DAILY_SHEET_ID || DEFAULT_SHEET_ID;
-  const params = new URLSearchParams();
-  params.set("ranges", range);
-  params.set("includeGridData", "true");
-  params.set(
-    "fields",
-    "sheets.data.rowData.values(hyperlink,textFormatRuns.format.link.uri,userEnteredFormat.textFormat.link.uri)"
-  );
-
-  const headers: Record<string, string> = { accept: "application/json" };
-  const sa = readServiceAccount();
-  if (sa) {
-    headers.Authorization = `Bearer ${await mintAccessToken(sa)}`;
-  } else if (process.env.DAILY_SHEETS_API_KEY) {
-    params.set("key", process.env.DAILY_SHEETS_API_KEY);
-  } else {
-    throw new Error("Set DAILY_SHEETS_SERVICE_ACCOUNT or DAILY_SHEETS_API_KEY");
-  }
-
-  const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(sheetId)}?${params}`;
-  const res = await fetch(url, { headers, cache: "no-store" });
-  const data = (await res.json().catch(() => ({}))) as {
-    sheets?: {
-      data?: {
-        rowData?: {
-          values?: {
-            hyperlink?: string;
-            textFormatRuns?: { format?: { link?: { uri?: string } } }[];
-            userEnteredFormat?: { textFormat?: { link?: { uri?: string } } };
-          }[];
-        }[];
-      }[];
-    }[];
-    error?: { message?: string };
-  };
-  if (!res.ok) throw new Error(`Sheets API ${res.status}: ${data.error?.message || "request failed"}`);
-
-  const rows = data.sheets?.[0]?.data?.[0]?.rowData || [];
-  return rows.map((row) =>
-    (row.values || []).map((c) => {
-      if (!c) return "";
-      const run = (c.textFormatRuns || []).map((r) => r?.format?.link?.uri).find(Boolean);
-      return c.hyperlink || run || c.userEnteredFormat?.textFormat?.link?.uri || "";
-    })
-  );
-}
