@@ -27,6 +27,8 @@ import { SCORING_MODELS, ALL_MODEL_IDS, CHAMPION_MODEL_ID } from "./stocksScorin
 import { getIndustryStrength } from "./stocksIndustryStrength.js";
 import { getRealEpsRevisions, realEpsRevisionsToSubScore } from "./stocksRealEpsRevisions.js";
 import { getEarningsSurpriseAndDrift, driftToSubScore } from "./stocksEarningsSurprise.js";
+import { hydrateCatalystEventsForTicker } from "./stocksCatalystIngest.js";
+import { runShadowFunnels } from "./stocksShadowFunnel.js";
 
 // Engine version bump per released rule/funnel change:
 //   1.0.0 — P0/P1
@@ -34,7 +36,10 @@ import { getEarningsSurpriseAndDrift, driftToSubScore } from "./stocksEarningsSu
 //   2.1.0 — P2.5 real EPS revisions + earnings-surprise/drift +
 //           true industry strength + coverage/critical-factor gating +
 //           immutable score snapshots + shadow-funnel record
-const ENGINE_VERSION = "2.1.0";
+//   2.2.0 — P2.6 earnings release-timing alignment + catalyst hydration +
+//           Model E subtype provenance + EPS-revision edge-case handling +
+//           env-gated wide-funnel shadow experiment
+const ENGINE_VERSION = "2.2.0";
 
 // ─── P0B absolute qualifying thresholds ──────────────────────────────
 // A ticker MUST clear ALL of these to become an actual daily pick.
@@ -141,6 +146,8 @@ function persistPickDistributionAsync({
           // P2.5 coverage + critical-factor gate provenance
           factorCoveragePct: Number.isFinite(cand.factorCoveragePct) ? cand.factorCoveragePct : null,
           criticalFactorCoverage: cand.criticalFactorCoverage || null,
+          // P2.6: Model E subtype tag — POST_EARNINGS | CATALYST | BOTH | null
+          postEarningsSubtype: cand.postEarningsSubtype || null,
         };
       });
       const qualifiedCount = candidates.filter(c => c.qualified).length;
@@ -969,18 +976,24 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           // the existing quartet. Each has its own timeout + is soft-fail;
           // missing data cascades to INSUFFICIENT_DATA for the specialized
           // model rather than being silently redistributed.
-          const [tickerBars, fundamentals, growth, revisions, realEpsRev, surprise] = await Promise.all([
+          const [tickerBars, fundamentals, growth, revisions, realEpsRev, surprise, catalystHydrate] = await Promise.all([
             fetchYahooDaily(cand.ticker, "1y").catch(() => null),
             getFundamentals(cand.ticker, ccy).catch(() => null),
             getGrowth(cand.ticker).catch(() => null),
             getEstimateRevisions(cand.ticker).catch(() => null),               // price-target proxy (CONTEXT only, kept for backward compat)
-            getRealEpsRevisions(cand.ticker).catch(() => ({ ok: false })),      // NEW: real EPS/rev revisions
-            getEarningsSurpriseAndDrift(cand.ticker, {                          // NEW: earnings surprise + post-earnings drift
+            getRealEpsRevisions(cand.ticker).catch(() => ({ ok: false })),      // real EPS/rev revisions (P2.5)
+            getEarningsSurpriseAndDrift(cand.ticker, {                          // earnings surprise + drift (P2.5, retimed in P2.6)
               benchmarkTicker: ccy === "CAD" ? "XIC.TO" : "SPY",
             }).catch(() => ({ ok: false })),
+            // P2.6: hydrate catalyst events per candidate. Persists to
+            // StocksCatalystEvent, deduplicates by canonical key, and
+            // returns the best-material score in 0..1.
+            hydrateCatalystEventsForTicker(cand.ticker, { lookbackDays: 21 })
+              .catch(() => ({ events: [], catalystQualityScore: null })),
           ]);
           cand.realEpsRevisions = realEpsRev;
           cand.earningsSurprise = surprise;
+          cand.catalystHydrate = catalystHydrate;
           const rs = (tickerBars && bench)
             ? computeRelativeStrengthFromBars(tickerBars, bench)
             : { ok: false };
@@ -1043,16 +1056,33 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
             industryStrengthScore: industryStrength?.score ?? null,
             priceTargetContextScore: composite.factors?.estimate_revisions?.score ?? null,
             postEarningsDriftScore: driftSub,
-            catalystQualityScore: null, // wiring point: hydrate from StocksCatalystEvent when the news cron persists rows for this ticker
-            // Meta the scorer uses for critical-factor + confidence stamps.
+            // P2.6: catalystQualityScore hydrated from the material-catalyst
+            // pipeline. Null if no material catalyst in the lookback window
+            // (spec: NEWS_NOISE never contributes; the isMaterial gate
+            // enforces materiality ≥ 30 by default).
+            catalystQualityScore: catalystHydrate?.catalystQualityScore ?? null,
             revisionsMeta: {
               hasReal4wBaseline: !!(realEpsRev?.ok && realEpsRev?.hasReal4wBaseline),
               coverage: realEpsRev?.coverage ?? null,
             },
             industryStrengthMeta: { source: industryStrength?.source || "unavailable" },
             surpriseMeta: { present: !!(surprise?.ok && surprise?.recent) },
-            catalystMeta: { present: false },
+            catalystMeta: {
+              present: !!(catalystHydrate?.catalystQualityScore != null),
+              bestCategory: catalystHydrate?.bestCategory || null,
+              bestMateriality: catalystHydrate?.bestMateriality || null,
+              materialCount: catalystHydrate?.materialCount || 0,
+            },
           };
+          // P2.6 — Model E subtype provenance. Only one of drift or
+          // catalyst may be present, or both. The subtype tag must NOT
+          // let a catalyst-driven candidate be presented as post-earnings.
+          const driftPresent = Number.isFinite(oqInput.postEarningsDriftScore);
+          const catalystPresent = Number.isFinite(oqInput.catalystQualityScore);
+          cand.postEarningsSubtype = driftPresent && catalystPresent ? "BOTH"
+                                   : driftPresent ? "POST_EARNINGS"
+                                   : catalystPresent ? "CATALYST"
+                                   : null;
           // Entry quality — derived from `tech` (already fetched in
           // Stage 1). Falls back to 0 on missing sub-scores per its
           // own renormalization logic.
@@ -1380,6 +1410,23 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       `final top ${top.length}` +
       (qualifiedCombined.length === 0 ? " — NO QUALIFYING OPPORTUNITY TODAY" : "")
     );
+
+    // ── P2.6: WIDE-FUNNEL SHADOW EXPERIMENT ─────────────────────
+    // Fires only when env `STOCKS_SHADOW_FUNNEL_WIDTHS` names one or
+    // more widths (medium / wide). Runs a real Stage-2 pass on the
+    // wider slice against THIS market snapshot and persists per-
+    // candidate results to StocksShadowFunnelRun. Fire-and-forget so
+    // a shadow failure never blocks production. Ops should schedule
+    // this weekly, not every tick — the intent is experimental
+    // evidence, not a production funnel widen.
+    runShadowFunnels(scored, {
+      getFundamentals, getGrowth, getEstimateRevisions,
+      computeMultiFactorScore, computeRelativeStrengthFromBars,
+      spyBars, xicBars,
+      insiderByBase,
+      sectorRotation: ctx?.sectorRotation || null,
+      engineVersion: ENGINE_VERSION,
+    }).catch((e) => console.warn("[shadow-funnel] top-level failure:", e?.message));
   } else {
     top = [];
     // Still log an empty distribution so the calibration corpus knows

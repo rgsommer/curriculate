@@ -133,9 +133,47 @@ async function loadBaselineSnapshot(ticker, minDaysAgo, maxDaysAgo) {
   } catch { return null; }
 }
 
+// P2.6 (2026-09-09) — robust EPS revision math.
+// Vanilla percent-change explodes around zero and around sign flips.
+// Callers now use pctChangeStructured(), which returns:
+//   { pct, note, capped, flavor: "normal" | "near-zero" | "sign-flip-up"
+//                              | "sign-flip-down" | "both-negative" | null }
+// pct is bounded to ±500%. Downstream scoring reads pct but the
+// composite scorer also inspects flavor to decide whether to treat the
+// magnitude at face value or dampen it.
+const NEAR_ZERO_FLOOR = Number(process.env.STOCKS_REVISION_NEAR_ZERO_FLOOR || 0.05); // per-share dollar
+const REVISION_PCT_CAP = Number(process.env.STOCKS_REVISION_PCT_CAP || 500);
+export function pctChangeStructured(oldV, newV) {
+  if (!Number.isFinite(oldV) || !Number.isFinite(newV)) return { pct: null, note: "missing", flavor: null };
+  // Near-zero denominator: a tiny baseline blows up the ratio. Report
+  // the DELTA rather than a spurious percentage.
+  if (Math.abs(oldV) < NEAR_ZERO_FLOOR) {
+    const delta = newV - oldV;
+    // Sign-flip through zero — surface separately.
+    if (oldV <= 0 && newV > 0) return { pct: null, note: "sign-flip-up", flavor: "sign-flip-up", delta };
+    if (oldV >= 0 && newV < 0) return { pct: null, note: "sign-flip-down", flavor: "sign-flip-down", delta };
+    return { pct: null, note: "near-zero-denominator", flavor: "near-zero", delta };
+  }
+  // Both negative and getting less negative — an EPS estimate that
+  // moved from −$2.00 to −$1.20 is +40% improvement in the underlying,
+  // but naïvely (−1.20 − −2.00) / |−2.00| = +0.40 → 40%. OK, that's
+  // actually the correct sign. Flag flavor for provenance regardless.
+  const raw = ((newV - oldV) / Math.abs(oldV)) * 100;
+  const capped = raw > REVISION_PCT_CAP || raw < -REVISION_PCT_CAP;
+  const pct = capped ? Math.max(-REVISION_PCT_CAP, Math.min(REVISION_PCT_CAP, raw)) : raw;
+  let flavor = "normal";
+  if (oldV < 0 && newV < 0) flavor = "both-negative";
+  else if (oldV < 0 && newV > 0) flavor = "sign-flip-up";
+  else if (oldV > 0 && newV < 0) flavor = "sign-flip-down";
+  return { pct, note: capped ? "capped" : null, flavor, capped };
+}
+
+// Back-compat shim: some callers want a plain number. Returns pct or
+// null (never a fabricated infinity). Sign-flip through zero returns
+// null so the caller inspects flavor separately.
 function pctChange(oldV, newV) {
-  if (!Number.isFinite(oldV) || !Number.isFinite(newV) || oldV === 0) return null;
-  return ((newV - oldV) / Math.abs(oldV)) * 100;
+  const s = pctChangeStructured(oldV, newV);
+  return s.pct;
 }
 
 // Score components → composite 0..100.
@@ -204,10 +242,21 @@ export async function getRealEpsRevisions(ticker) {
       loadBaselineSnapshot(ticker, 21, 45),
       loadBaselineSnapshot(ticker, 63, 100),
     ]);
-    const epsRevision4wPct = pctChange(b4w?.fy0_eps, today?.fy0_eps);
-    const epsRevisionFy14wPct = pctChange(b4w?.fy1_eps, today?.fy1_eps);
-    const revenueRevision4wPct = pctChange(b4w?.fy0_revenue, today?.fy0_revenue);
-    const epsRevision12wPct = pctChange(b12w?.fy0_eps, today?.fy0_eps);
+    const fy0EpsStruct = pctChangeStructured(b4w?.fy0_eps, today?.fy0_eps);
+    const fy1EpsStruct = pctChangeStructured(b4w?.fy1_eps, today?.fy1_eps);
+    const revStruct    = pctChangeStructured(b4w?.fy0_revenue, today?.fy0_revenue);
+    const eps12wStruct = pctChangeStructured(b12w?.fy0_eps, today?.fy0_eps);
+    const epsRevision4wPct     = fy0EpsStruct.pct;
+    const epsRevisionFy14wPct  = fy1EpsStruct.pct;
+    const revenueRevision4wPct = revStruct.pct;
+    const epsRevision12wPct    = eps12wStruct.pct;
+    // Per-metric flavor stamp — downstream consumers can weight or
+    // dampen when a metric is near-zero / sign-flipped rather than
+    // treating the raw pct as a normal magnitude.
+    const revisionFlavors = {
+      fy0Eps: fy0EpsStruct.flavor, fy1Eps: fy1EpsStruct.flavor,
+      revenue: revStruct.flavor, eps12w: eps12wStruct.flavor,
+    };
     const analystCount = firstNonNullNumber(today?.analystCountEps, today?.analystCountRevenue);
     // Revision direction: +1 up, -1 down, 0 neutral. Uses fy0 EPS 4w Δ.
     let revisionDirection = null;
@@ -239,6 +288,17 @@ export async function getRealEpsRevisions(ticker) {
       hasReal4wBaseline: !!b4w,
       hasReal12wBaseline: !!b12w,
       evidence,
+      // P2.6 — per-metric flavor stamps so downstream can distinguish
+      // "normal +8% EPS revision" from "near-zero denominator" or
+      // "sign flip through zero". These are provenance-only; the
+      // composite has already dampened near-zero cases (see below).
+      revisionFlavors,
+      // Baseline vs today snapshots — needed for the near-zero and
+      // sign-flip tests and for a future auditor to see the raw numbers.
+      baselineFy0Eps: b4w?.fy0_eps ?? null,
+      todayFy0Eps: today?.fy0_eps ?? null,
+      baselineFy1Eps: b4w?.fy1_eps ?? null,
+      todayFy1Eps: today?.fy1_eps ?? null,
     };
   } catch (e) {
     return { ok: false, reason: e?.message || "fetch failed" };

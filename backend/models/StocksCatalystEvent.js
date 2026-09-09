@@ -57,6 +57,11 @@ const CatalystSchema = new mongoose.Schema(
 
     classifiedBy: { type: String, default: "deterministic-keyword-v1" },
     classifiedAt: { type: Date, default: Date.now },
+    // P2.6: canonical dedupe key so the same corporate event covered
+    // by many outlets collapses to one row. Format documented in
+    // stocksCatalystIngest.dedupeKey.
+    dedupeKey: { type: String, default: null, index: true },
+    sourceDate: { type: String, default: null },
   },
   { timestamps: true }
 );

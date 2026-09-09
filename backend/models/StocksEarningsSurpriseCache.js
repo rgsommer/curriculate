@@ -22,6 +22,22 @@ const EarningsSurpriseSchema = new mongoose.Schema(
     estimatedRevenue: { type: Number, default: null },
     revenueSurprisePct: { type: Number, default: null },
 
+    // P2.6: release-timing metadata + explicit temporal alignment.
+    // releaseTiming ∈ {pre-market, after-market, during-market, unknown}
+    // timingConfident is true iff we had a bmo/amc label from FMP; for
+    // during-market / unknown we ran the conservative after-market
+    // alignment (never uses a pre-release price as post-release).
+    releaseTiming: { type: String, default: null },
+    timingConfident: { type: Boolean, default: false },
+    preEventTradingDate: { type: String, default: null },
+    reactionTradingDate: { type: String, default: null },
+    preEventClose: { type: Number, default: null },
+    reactionOpen: { type: Number, default: null },
+    reactionDay1Close: { type: Number, default: null },
+    reactionDay3Close: { type: Number, default: null },
+    reactionDay5Close: { type: Number, default: null },
+    gapRetentionPct: { type: Number, default: null },
+
     // Post-earnings drift evaluation (populated when we can score it —
     // needs enough post-report bars from Yahoo). ALL fields optional so
     // an outdated report that failed to fetch bars still persists.

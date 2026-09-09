@@ -328,8 +328,8 @@ function test22_engineWiresNewSignals() {
     "22d. Engine passes industryStrengthMeta through to OQ scorer");
   assert(src.includes("stage1Shadow"),
     "22e. Engine builds and persists stage1Shadow (funnel widen record)");
-  assert(/ENGINE_VERSION = "2\.1\.0"/.test(src),
-    "22f. Engine version bumped to 2.1.0 (P2.5)");
+  assert(/ENGINE_VERSION = "2\.[12]\.0"/.test(src),
+    "22f. Engine version at 2.1.0 (P2.5) or later");
 }
 
 // ─── Simulated post-earnings drift outcomes ────────────────────────

@@ -82,6 +82,12 @@ const CandidateSchema = new mongoose.Schema(
     // Lets P4 filter out INSUFFICIENT_DATA rows from a challenger's
     // shadow portfolio without re-computing anything.
     criticalFactorCoverage: { type: mongoose.Schema.Types.Mixed, default: null },
+    // P2.6 — Model E subtype provenance:
+    //   POST_EARNINGS = post-earnings drift signal drove the score
+    //   CATALYST      = a material catalyst drove the score
+    //   BOTH          = both present
+    //   null          = neither (Model E would be INSUFFICIENT_DATA)
+    postEarningsSubtype: { type: String, default: null },
   },
   { _id: false }
 );

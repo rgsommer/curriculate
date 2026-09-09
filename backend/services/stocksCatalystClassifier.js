@@ -214,6 +214,7 @@ export async function persistCatalyst(item, classified = null) {
     source: item.source || "unknown",
     sourceId,
     eventDate: String(item.eventDate || new Date().toISOString().slice(0, 10)),
+    sourceDate: item.sourceDate || null,
     headline: item.headline || null,
     url: item.url || null,
     category: c.category,
@@ -223,6 +224,7 @@ export async function persistCatalyst(item, classified = null) {
     extras: c.extras,
     classifiedBy: c.classifiedBy,
     classifiedAt: new Date(),
+    dedupeKey: item.dedupeKey || null,
   };
   try {
     await StocksCatalystEvent.updateOne(
