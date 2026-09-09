@@ -186,7 +186,22 @@ function Chips({ period, left, setup, status }) {
   ) : null;
   if (period.duty) return badge ? <div className="points">{badge}</div> : null;
   const items = [badge];
-  items.push(<span key="w" className={`chip ${left > setup.washroomBefore ? "on" : "off"}`}>Washroom</span>);
+  // The pass is not usable during the lesson at the top of the period — nobody
+  // walks out while the teaching is going on — nor in the last few minutes. The
+  // opening window is the same one the sheet's own status rule uses to force the
+  // pass off (Setup's grace minutes), so both move together. While it is shut at
+  // the top the chip says when it opens, which is what a student wants to know.
+  const opensIn = Math.max(0, Math.ceil(setup.graceMin - period.elapsed));
+  const washroomOn = opensIn <= 0 && left > setup.washroomBefore;
+  items.push(
+    <span
+      key="w"
+      className={`chip ${washroomOn ? "on" : "off"}`}
+      title={opensIn > 0 ? `The pass opens ${setup.graceMin} minutes into the class` : ""}
+    >
+      {opensIn > 0 ? `Washroom in ${opensIn} min` : "Washroom"}
+    </span>
+  );
   if (st && st.on && st.on[2] && !st.grace && period.elapsed <= setup.graceMin + setup.snacksB2Min) {
     items.push(<span key="s" className="chip on">Snacks</span>);
   }
