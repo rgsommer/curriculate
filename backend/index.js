@@ -151,6 +151,18 @@ import { scheduleQuestradePoll } from "./jobs/questradePoll.js";
 import stocksOptionsFlowRouter from "./routes/stocksOptionsFlow.js";
 import travelRouter from "./routes/travel.js";
 import { scheduleDailyBriefing, scheduleMonthlyReport, scheduleWeeklyDiscovery, scheduleDiscoveryOutcomeTracker, scheduleDailyPortfolioSnapshot, scheduleExternalNominationsSync } from "./jobs/stocksDailyBriefing.js";
+import { runDailyPositionSnapshotJob } from "./jobs/stocksDailyPositionSnapshot.js";
+import cron from "node-cron";
+// P3.5 (2026-09-09): per-ticker daily snapshot for forward-only exact
+// history — companion to the aggregate portfolio-snapshot cron. Fires
+// weekdays at 16:35 ET so market-close prices are settled.
+function scheduleDailyPositionSnapshotP3() {
+  cron.schedule("35 16 * * 1-5", async () => {
+    try { await runDailyPositionSnapshotJob(); }
+    catch (e) { console.warn("[cron:daily-position-snapshot] failed:", e?.message); }
+  }, { timezone: "America/Toronto" });
+  console.log("[cron] daily-position-snapshot scheduled (16:35 ET, Mon-Fri)");
+}
 import { scheduleIntradayUpdates } from "./jobs/stocksIntradayUpdate.js";
 import { scheduleEodRecap } from "./jobs/stocksEodRecap.js";
 import { scheduleRecOutcomeNightly, runRecOutcomeSweep } from "./jobs/stocksRecOutcomeNightly.js";
@@ -19944,6 +19956,7 @@ server.listen(PORT, () => {
   scheduleWeeklyDiscovery();
   scheduleDiscoveryOutcomeTracker();
   scheduleDailyPortfolioSnapshot();
+  scheduleDailyPositionSnapshotP3();
   scheduleExternalNominationsSync();
   scheduleSpecialSituationsPoll();
   scheduleCoverageKpiCron();

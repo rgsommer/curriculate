@@ -1,36 +1,33 @@
 // backend/services/stocksPositionLedger.js
 //
-// P3 (2026-09-09) — reconstruct the canonical position performance
+// P3.5 (2026-09-09) — reconstruct the canonical position performance
 // ledger from existing trade / rec / snapshot data. FIFO round-trip
 // matching; every row stamps dataQuality ∈ {COMPLETE, PARTIAL, UNATTRIBUTABLE}.
 // Never fabricates missing detail.
 //
-// Steps per (email, ticker, account):
-//   1. Pull all StocksTradeJournal legs for the ticker+account, sorted
-//      by executedAt.
-//   2. FIFO-match BUYs against subsequent SELLs. Each SELL leg closes
-//      the oldest open BUY quantity first.
-//   3. Emit one LedgerEntry per BUY leg (partially closed → isPartial;
-//      fully closed → isOpen=false with exit fields set; still open →
-//      isOpen=true with exit fields null).
-//   4. Attempt recommendation linkage via TradeJournal.linkedAdviceRecId
-//      and StocksAdviceRec history; failure ⇒ recommendationId=null.
-//   5. Persist to StocksPositionLedgerEntry (idempotent).
-//
-// Fees are LEG_FEE_ESTIMATE_NATIVE per leg unless a leg carries an
-// explicit fee (schema doesn't today) — surfaced as "estimated" for
-// transparency.
+// P3.5 change vs P3:
+//   • CAD P&L uses the FULL-VALUE method via computeCadPnl(). For a USD
+//     name held by a CAD investor: PnL = shares × exitPriceUsd × exitFx
+//                                       − shares × entryPriceUsd × entryFx
+//                                       − feesCad
+//     — NOT (native gain × exit FX), which was quietly wrong when FX
+//     moved between entry and exit.
+//   • Fees are ATTRIBUTED PER LEG via estimateLegFee + aggregateFees.
+//     Each row stamps feeSource ∈ {ACTUAL, ESTIMATED, UNKNOWN} and
+//     feeEstimateMethod for auditability.
+//   • FX decomposition (localReturnPct + fxReturnPct + interactionPct)
+//     comes from computeCadPnl and reconciles exactly to the combined
+//     CAD return within floating-point noise.
 //
 // Callers: buildPortfolioLedger({ email }) → { rows, coverage }.
 
 import StocksTradeJournal from "../models/StocksTradeJournal.js";
-import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksPositionLedgerEntry from "../models/StocksPositionLedgerEntry.js";
 import { classifyPosition } from "./stocksSleeveEnforcer.js";
 import { pickBenchmarkFor, getMatchedReturnPct, getMatchedAlphaPct } from "./stocksBenchmarkMatched.js";
 import { fetchYahooDaily } from "./stocksDiscoveryScore.js";
-
-const LEG_FEE_ESTIMATE_NATIVE = 6.95; // CIBC / Questrade rough per-leg fee
+import { computeCadPnl } from "./stocksFxDecomposition.js";
+import { estimateLegFee, aggregateFees } from "./stocksFeeAttribution.js";
 
 function baseTicker(t) { return String(t || "").toUpperCase().replace(/\..*$/, ""); }
 function ymd(d) { return d instanceof Date ? d.toISOString().slice(0, 10) : String(d || "").slice(0, 10); }
@@ -53,6 +50,17 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
       totalLegs++;
       const key = `${baseTicker(leg.ticker)}::${t.account || ""}`;
       if (!bucket.has(key)) bucket.set(key, []);
+      // Estimate per-leg fee using per-broker default. actualFeeNative
+      // wins when present; TradeJournal doesn't persist it today, so
+      // most rows will stamp feeSource = ESTIMATED.
+      const brokerCode = (t.account || "").toLowerCase().startsWith("questrade") ? "questrade"
+                       : (t.account || "").toLowerCase().startsWith("cibc") ? "cibc-ie" : null;
+      const feeInfo = estimateLegFee({ side: leg.side, currency: leg.currency }, {
+        brokerCode,
+        actualFeeNative: Number.isFinite(leg.commission) ? leg.commission
+                       : Number.isFinite(leg.feeNative) ? leg.feeNative : undefined,
+        actualFeeCurrency: leg.feeCurrency || leg.currency,
+      });
       bucket.get(key).push({
         side: leg.side,
         ticker: String(leg.ticker).toUpperCase(),
@@ -65,6 +73,7 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
         recommendationId: t.linkedAdviceRecId || null,
         account: t.account || null,
         accountName: t.accountName || null,
+        feeInfo,
       });
     }
   }
@@ -87,10 +96,36 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
         const head = openBuys[0];
         const closed = Math.min(head.remainingShares, sellShares);
         const buy = head.leg;
-        const realizedNative = (leg.price - buy.price) * closed - LEG_FEE_ESTIMATE_NATIVE * 2;
+
+        // Full-value CAD PnL via P3.5 FX decomposition. When FX is
+        // missing for USD legs, computeCadPnl returns nulls with
+        // note:"missing-fx" — the row is stamped PARTIAL below.
+        const fees = aggregateFees(
+          [buy.feeInfo, leg.feeInfo],
+          { fxUsdCad: leg.fxUsdCad || buy.fxUsdCad || 1.37 },
+        );
+        const pnl = computeCadPnl({
+          shares: closed,
+          entryPriceNative: buy.price,
+          exitPriceNative: leg.price,
+          currency: buy.currency,
+          entryFxCadPerUsd: buy.currency === "CAD" ? 1 : buy.fxUsdCad,
+          exitFxCadPerUsd: buy.currency === "CAD" ? 1 : leg.fxUsdCad,
+          feesCad: fees.totalCad || 0,
+        });
+        const realizedNative = (leg.price - buy.price) * closed - (buy.feeInfo?.feeNative || 0) - (leg.feeInfo?.feeNative || 0);
         const holdingPeriodDays = Math.max(0, Math.round((new Date(leg.when) - new Date(buy.when)) / 86400000));
         const isPartial = closed < buy.shares;
         const sleeve = classifyPosition({ ticker: buy.ticker });
+
+        // Data quality — if USD leg without FX, or PnL couldn't be
+        // computed cleanly, degrade to PARTIAL and record missing.
+        const missing = [];
+        let quality = "COMPLETE";
+        if (buy.currency === "USD" && !(buy.fxUsdCad > 0)) { missing.push("entryFx"); quality = "PARTIAL"; }
+        if (buy.currency === "USD" && !(leg.fxUsdCad > 0)) { missing.push("exitFx"); quality = "PARTIAL"; }
+        if (!(pnl.realizedPnLCad != null)) { missing.push("realizedPnLCad"); quality = "PARTIAL"; }
+
         rows.push({
           email, ticker: buy.ticker, account: buy.account, sleeve,
           entryDate: new Date(buy.when),
@@ -98,17 +133,24 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
           entryCurrency: buy.currency, entryFx: buy.fxUsdCad,
           exitDate: new Date(leg.when),
           exitPrice: leg.price, exitShares: closed, exitFx: leg.fxUsdCad,
+          entryValueCad: pnl.entryValueCad, exitValueCad: pnl.exitValueCad,
           realizedPnLNative: realizedNative,
-          realizedPnLCad: buy.currency === "CAD" ? realizedNative
-                        : realizedNative * (leg.fxUsdCad || buy.fxUsdCad || 1.37),
+          realizedPnLCad: pnl.realizedPnLCad,
           unrealizedPnLNative: null, unrealizedPnLCad: null,
-          feesEstimatedNative: LEG_FEE_ESTIMATE_NATIVE * 2,
+          feesEstimatedNative: (buy.feeInfo?.feeNative || 0) + (leg.feeInfo?.feeNative || 0),
+          feesCad: fees.totalCad,
+          feeSource: fees.worstSource,
+          feeEstimateMethods: [buy.feeInfo?.feeEstimateMethod, leg.feeInfo?.feeEstimateMethod].filter(Boolean),
           holdingPeriodDays,
           recommendationId: buy.recommendationId || null,
           isOpen: false, isPartial,
           brokerRef: `${buy.tradeRef}::${leg.tradeRef}::${closed}`,
-          dataQuality: "COMPLETE",
-          missingFields: [],
+          dataQuality: quality,
+          missingFields: missing,
+          localReturnPct: pnl.localReturnPct,
+          fxReturnPct: pnl.fxReturnPct,
+          interactionPct: pnl.interactionPct,
+          combinedCadReturnPct: pnl.combinedCadReturnPct,
         });
         coveredLegs++;
         head.remainingShares -= closed;
@@ -128,7 +170,10 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
           exitFx: leg.fxUsdCad,
           realizedPnLNative: null, realizedPnLCad: null,
           unrealizedPnLNative: null, unrealizedPnLCad: null,
-          feesEstimatedNative: LEG_FEE_ESTIMATE_NATIVE,
+          feesEstimatedNative: leg.feeInfo?.feeNative || 0,
+          feesCad: (leg.feeInfo?.feeCurrency === "CAD" ? leg.feeInfo?.feeNative : (leg.feeInfo?.feeNative || 0) * (leg.fxUsdCad || 1.37)),
+          feeSource: leg.feeInfo?.feeSource || "UNKNOWN",
+          feeEstimateMethods: leg.feeInfo?.feeEstimateMethod ? [leg.feeInfo.feeEstimateMethod] : [],
           holdingPeriodDays: null,
           recommendationId: null,
           isOpen: false, isPartial: false,
@@ -139,32 +184,59 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
         });
       }
     }
-    // Any remaining openBuys → open positions. mark unrealized.
+    // Any remaining openBuys → open positions. mark unrealized via
+    // computeCadPnl too, using a synthetic exit at priceNow + entryFx
+    // (no realized FX gain when unrealized — mark to market at entry FX
+    // avoids double-counting FX until the position closes).
     for (const { leg: buy, remainingShares } of openBuys) {
       let priceNow = null;
       try {
         const bars = await fetchYahooDaily(buy.ticker, "1mo");
         priceNow = Array.isArray(bars) && bars.length > 0 ? bars[bars.length - 1].close : null;
       } catch { priceNow = null; }
-      const unrealizedNative = Number.isFinite(priceNow) ? (priceNow - buy.price) * remainingShares : null;
       const sleeve = classifyPosition({ ticker: buy.ticker });
+      let unrealizedPnLCad = null, entryValueCad = null, exitValueCad = null;
+      let localReturnPct = null, fxReturnPct = null, interactionPct = null, combinedCadReturnPct = null;
+      if (Number.isFinite(priceNow)) {
+        const pnl = computeCadPnl({
+          shares: remainingShares,
+          entryPriceNative: buy.price,
+          exitPriceNative: priceNow,
+          currency: buy.currency,
+          entryFxCadPerUsd: buy.currency === "CAD" ? 1 : buy.fxUsdCad,
+          exitFxCadPerUsd: buy.currency === "CAD" ? 1 : buy.fxUsdCad, // mark unrealized FX at entry
+          feesCad: (buy.feeInfo?.feeCurrency === "CAD" ? buy.feeInfo?.feeNative : (buy.feeInfo?.feeNative || 0) * (buy.fxUsdCad || 1.37)),
+        });
+        unrealizedPnLCad = pnl.realizedPnLCad;
+        entryValueCad = pnl.entryValueCad;
+        exitValueCad = pnl.exitValueCad;
+        localReturnPct = pnl.localReturnPct;
+        fxReturnPct = pnl.fxReturnPct;
+        interactionPct = pnl.interactionPct;
+        combinedCadReturnPct = pnl.combinedCadReturnPct;
+      }
+      const unrealizedNative = Number.isFinite(priceNow) ? (priceNow - buy.price) * remainingShares : null;
       rows.push({
         email, ticker: buy.ticker, account: buy.account, sleeve,
         entryDate: new Date(buy.when),
         entryPrice: buy.price, entryShares: remainingShares,
         entryCurrency: buy.currency, entryFx: buy.fxUsdCad,
         exitDate: null, exitPrice: null, exitShares: null, exitFx: null,
+        entryValueCad, exitValueCad,
         realizedPnLNative: null, realizedPnLCad: null,
         unrealizedPnLNative: unrealizedNative,
-        unrealizedPnLCad: buy.currency === "CAD" ? unrealizedNative
-                        : (unrealizedNative != null ? unrealizedNative * (buy.fxUsdCad || 1.37) : null),
-        feesEstimatedNative: LEG_FEE_ESTIMATE_NATIVE,
+        unrealizedPnLCad,
+        feesEstimatedNative: buy.feeInfo?.feeNative || 0,
+        feesCad: (buy.feeInfo?.feeCurrency === "CAD" ? buy.feeInfo?.feeNative : (buy.feeInfo?.feeNative || 0) * (buy.fxUsdCad || 1.37)),
+        feeSource: buy.feeInfo?.feeSource || "UNKNOWN",
+        feeEstimateMethods: buy.feeInfo?.feeEstimateMethod ? [buy.feeInfo.feeEstimateMethod] : [],
         holdingPeriodDays: Math.max(0, Math.round((priceAsOf - new Date(buy.when)) / 86400000)),
         recommendationId: buy.recommendationId || null,
         isOpen: true, isPartial: false,
         brokerRef: `${buy.tradeRef}::open::${remainingShares}`,
         dataQuality: Number.isFinite(priceNow) ? "COMPLETE" : "PARTIAL",
         missingFields: Number.isFinite(priceNow) ? [] : ["priceNow"],
+        localReturnPct, fxReturnPct, interactionPct, combinedCadReturnPct,
       });
       coveredLegs++;
     }
@@ -189,9 +261,11 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
       const from = row.entryDate;
       const to = row.exitDate || priceAsOf;
       if (!from || !to) continue;
+      // Security return: in NATIVE currency (matches benchmark's own
+      // currency by construction — pickBenchmarkFor uses a same-ccy
+      // proxy). This isolates selection alpha from FX.
       const secReturn = (() => {
         if (row.isOpen) {
-          // priceNow − entryPrice / entryPrice
           const pn = row.entryPrice + (row.unrealizedPnLNative || 0) / (row.entryShares || 1);
           return Number.isFinite(pn) && row.entryPrice > 0 ? ((pn - row.entryPrice) / row.entryPrice) * 100 : null;
         }
@@ -204,17 +278,6 @@ export async function buildPortfolioLedger({ email, computeAlpha = true, priceAs
       row.matchedAlphaPct = getMatchedAlphaPct({
         securityReturnPct: secReturn, benchmarkReturnPct: bres.pct,
       });
-
-      // FX decomposition for USD securities held by a CAD investor.
-      if (row.entryCurrency === "USD" && Number.isFinite(row.entryFx) && Number.isFinite(row.exitFx || row.entryFx)) {
-        const fxFrom = row.entryFx;
-        const fxTo = row.exitFx || row.entryFx;
-        row.localReturnPct = secReturn;
-        row.fxReturnPct = fxFrom > 0 ? ((fxTo - fxFrom) / fxFrom) * 100 : null;
-        if (Number.isFinite(row.localReturnPct) && Number.isFinite(row.fxReturnPct)) {
-          row.combinedCadReturnPct = ((1 + row.localReturnPct / 100) * (1 + row.fxReturnPct / 100) - 1) * 100;
-        }
-      }
     }
   }
 

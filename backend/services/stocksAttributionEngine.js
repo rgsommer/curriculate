@@ -1,52 +1,98 @@
 // backend/services/stocksAttributionEngine.js
 //
-// P3 (2026-09-09) — portfolio attribution engine. Ties the ledger,
-// matched-benchmark, exit-forward, and passive-comparison pieces
-// into a single report and produces the ROOT-CAUSE ranking.
+// P3.5 (2026-09-09) — portfolio attribution engine, correctness pass.
 //
-// The engine emits a StocksAttributionReport row per (email, asOfDate)
-// with:
-//   • header            — window bounds, coverage %
-//   • waterfall         — additive attribution (only defensible parts)
-//   • rootCause         — top 3 drags + top 3 offsets, ranked by pp
-//   • details           — sleeve · selection · entry · exit · sizing ·
-//                          replacement · sector · FX · churn · cash ·
-//                          realVsPassive
-//   • dataQuality       — per-component coverage
-//   • notes             — "DESCRIPTIVE / NON-ADDITIVE" flags per §16
+// v3.5 changes vs 3.0:
+//   • Portfolio return uses computePortfolioReturn (simple / Modified
+//     Dietz / TWR depending on external cash-flow presence + snapshot
+//     density) instead of naive (end−start)/start, which was wrong
+//     whenever deposits or withdrawals occurred in the window.
+//   • CAD PnL and FX decomposition come from stocksFxDecomposition
+//     (full-value method, not native × exit FX).
+//   • Fees are aggregated per leg with a feeSource stamp so the
+//     waterfall row can be labeled "actual" vs "estimated".
+//   • Cash attribution is chain-linked daily (chained (1+drag) per
+//     interval, from stocksCashAttributionDaily) instead of the
+//     coarse avgCashShare × totalReturn.
+//   • Replacement pairing goes through stocksReplacementPairing —
+//     provenance first (EXPLICIT_REDEPLOY, SAME_MANDATE_BATCH,
+//     LINKED_ADVICE_REC, DECISION_ENGINE_TAG), TEMPORAL only as
+//     LOW-confidence fallback and reported separately.
+//   • Entry-timing attribution comes from
+//     stocksEntryTimingAttribution and is labelled DESCRIPTIVE.
+//   • Waterfall separates ADDITIVE contributions (they sum to the
+//     portfolio-minus-passive gap up to a small residual) from
+//     DESCRIPTIVE diagnostics (selection alpha, entry-timing,
+//     exit-forward, replacement value-add). Weights and pp figures
+//     never mix across the two categories in the aggregate roll-ups.
+//   • Two selection alphas are produced:
+//       (a) recommendation-quality  — how did our recs perform vs
+//                                     benchmark, ignoring what we
+//                                     actually filled at?
+//       (b) actual-position         — how did our actual fills
+//                                     perform vs benchmark?
+//     The gap between the two is IMPLEMENTATION_ALPHA (how much did
+//     the fill / no-fill / late-fill process cost).
+//   • Sleeve attribution reports CAPITAL-WEIGHTED contribution to
+//     TOTAL portfolio return in pp (sleeveShare × sleeveReturn),
+//     not raw CAD PnL, so it sums cleanly to a whole-portfolio pp.
 //
-// The output is intentionally VERBOSE — a UI can pull any slice; a
-// text renderer can produce the root-cause statement §17 wants.
-//
-// This is a DIAGNOSTIC engine. It never modifies picks, decisions, or
-// portfolio state.
+// The engine is DIAGNOSTIC only — it never modifies picks, decisions,
+// or portfolio state.
 
 import StocksAttributionReport from "../models/StocksAttributionReport.js";
 import StocksPositionLedgerEntry from "../models/StocksPositionLedgerEntry.js";
 import StocksExitForwardMetric from "../models/StocksExitForwardMetric.js";
 import StocksPortfolioSnapshot from "../models/StocksPortfolioSnapshot.js";
-import StocksTradeJournal from "../models/StocksTradeJournal.js";
+import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import { buildPortfolioLedger } from "./stocksPositionLedger.js";
 import { stampExitForwardOnClose, backfillExitForwardMetrics } from "./stocksExitForward.js";
-import { pickBenchmarkFor, getMatchedReturnPct } from "./stocksBenchmarkMatched.js";
+import { pickBenchmarkFor, getMatchedReturnPct, getMatchedAlphaPct } from "./stocksBenchmarkMatched.js";
 import { fetchYahooDaily } from "./stocksDiscoveryScore.js";
+import { computePortfolioReturn } from "./stocksPortfolioReturn.js";
+import { computeDailyCashAttribution } from "./stocksCashAttributionDaily.js";
+import { pairReplacementTrades } from "./stocksReplacementPairing.js";
+import { computeEntryTimingAttribution } from "./stocksEntryTimingAttribution.js";
 
-const ENGINE_VERSION = "3.0.0";
+const ENGINE_VERSION = "3.5.0";
 
 function ymd(d) { return d instanceof Date ? d.toISOString().slice(0, 10) : String(d || "").slice(0, 10); }
 
 // PUBLIC — produce the report for a user over a window.
 // windowDays default 90; asOf defaults to today.
+// Pass windowDays = "ytd" for calendar-YTD; "max" for the longest
+// window with ≥ 2 snapshots.
 export async function computeAttributionReport({
   email, windowDays = 90, asOf = new Date(),
 } = {}) {
   if (!email) throw new Error("email required");
-  const asOfYmd = ymd(asOf);
-  const windowStart = ymd(new Date(asOf.getTime() - windowDays * 86400_000));
+  const asOfDate = asOf instanceof Date ? asOf : new Date(asOf);
+  const asOfYmd = ymd(asOfDate);
 
-  // 1) Ledger
+  // Snapshots first — needed both for the window boundary and for
+  // portfolio-return method selection.
+  const allSnaps = await StocksPortfolioSnapshot.find({
+    email, accountId: "__total__",
+    date: { $lte: asOfYmd },
+  }).sort({ date: 1 }).lean();
+
+  // Resolve window bounds
+  let windowStart, effectiveWindowDays;
+  if (windowDays === "ytd") {
+    windowStart = `${asOfDate.getUTCFullYear()}-01-01`;
+    effectiveWindowDays = Math.max(1, Math.round((asOfDate - new Date(windowStart)) / 86400_000));
+  } else if (windowDays === "max") {
+    windowStart = allSnaps.length > 0 ? ymd(allSnaps[0].date) : ymd(new Date(asOfDate.getTime() - 365 * 86400_000));
+    effectiveWindowDays = Math.max(1, Math.round((asOfDate - new Date(windowStart)) / 86400_000));
+  } else {
+    effectiveWindowDays = Number(windowDays) || 90;
+    windowStart = ymd(new Date(asOfDate.getTime() - effectiveWindowDays * 86400_000));
+  }
+  const snaps = allSnaps.filter(s => ymd(s.date) >= windowStart && ymd(s.date) <= asOfYmd);
+
+  // 1) Ledger — build full ledger, filter to window
   const { rows: allLedgerRows, coverage: legCov } = await buildPortfolioLedger({
-    email, priceAsOf: asOf,
+    email, priceAsOf: asOfDate,
   });
   const rows = allLedgerRows.filter(r =>
     !r.entryDate || ymd(r.entryDate) >= windowStart ||
@@ -59,18 +105,13 @@ export async function computeAttributionReport({
       await stampExitForwardOnClose({ email, row: { ...r, exitAction: "SELL" } }).catch(() => null);
     }
   }
-  // Trigger a lightweight backfill; if the horizons haven't elapsed
-  // they stay PENDING (no fake data).
-  const backfill = await backfillExitForwardMetrics({ email, asOf }).catch(() => null);
+  const backfill = await backfillExitForwardMetrics({ email, asOf: asOfDate }).catch(() => null);
 
-  // 2) Real portfolio return over window (from snapshots).
-  const snaps = await StocksPortfolioSnapshot.find({
-    email, accountId: "__total__",
-    date: { $gte: windowStart, $lte: asOfYmd },
-  }).sort({ date: 1 }).lean();
-  const portfolioReturnPct = snaps.length >= 2 && snaps[0].totalCad > 0
-    ? ((snaps[snaps.length - 1].totalCad - snaps[0].totalCad) / snaps[0].totalCad) * 100
-    : null;
+  // 2) Portfolio return via cash-flow-aware method selector.
+  const returnResult = await computePortfolioReturn({
+    email, snaps, windowStartYmd: windowStart, windowEndYmd: asOfYmd,
+  });
+  const portfolioReturnPct = returnResult.portfolioReturnPct;
 
   // 3) Passive alternatives over the same window.
   const passiveTargets = ["XEQT.TO", "XIC.TO", "SPY", "VTI"];
@@ -79,39 +120,93 @@ export async function computeAttributionReport({
     const bres = await getMatchedReturnPct({ ticker: t, fromDate: windowStart, toDate: asOfYmd });
     passiveRows.push({ ticker: t, returnPct: bres.pct, note: bres.note });
   }
+  const passiveBaseline = passiveRows.find(p => p.ticker === "XEQT.TO")?.returnPct
+                       ?? passiveRows.find(p => p.ticker === "SPY")?.returnPct
+                       ?? null;
 
-  // 4) Sleeve attribution — sum realized+unrealized CAD PnL by sleeve.
-  const sleeveMap = new Map(); // sleeve → { capitalCad, pnlCad, alphaSum, alphaCount }
-  for (const r of rows) {
+  // 4) Sleeve attribution — capital-weighted contribution to TOTAL
+  // portfolio return in pp. Formula:
+  //   sleeveContribPp = (sleeveCapitalCad / totalCapitalCad) × sleeveReturnPct
+  // where sleeveReturnPct is the capital-weighted average security
+  // return across all rows in that sleeve. This sums cleanly to the
+  // capital-weighted portfolio return.
+  const attributable = rows.filter(r => r.dataQuality !== "UNATTRIBUTABLE" && Number.isFinite(r.matchedAlphaPct));
+  const entryCapitalCad = (r) => {
+    if (Number.isFinite(r.entryValueCad)) return r.entryValueCad;
+    if (r.entryPrice > 0 && r.entryShares > 0) {
+      return r.entryPrice * r.entryShares * (r.entryCurrency === "CAD" ? 1 : (r.entryFx || 1.37));
+    }
+    return 0;
+  };
+  const totalCapital = attributable.reduce((s, r) => s + entryCapitalCad(r), 0);
+
+  const sleeveMap = new Map();
+  for (const r of attributable) {
     const s = r.sleeve || "unknown";
-    const capital = (r.entryPrice || 0) * (r.entryShares || 0) * (r.entryCurrency === "CAD" ? 1 : (r.entryFx || 1.37));
-    const pnl = (r.realizedPnLCad || 0) + (r.unrealizedPnLCad || 0);
-    const bucket = sleeveMap.get(s) || { capitalCad: 0, pnlCad: 0, alphaSum: 0, alphaCount: 0, tickers: [] };
-    bucket.capitalCad += capital; bucket.pnlCad += pnl;
+    const cap = entryCapitalCad(r);
+    const ret = r.securityReturnPct || 0;
+    const bucket = sleeveMap.get(s) || {
+      capitalCad: 0, capWeightedReturnSum: 0, pnlCad: 0,
+      alphaSum: 0, alphaCount: 0, tickers: [],
+    };
+    bucket.capitalCad += cap;
+    bucket.capWeightedReturnSum += cap * ret;
+    bucket.pnlCad += (r.realizedPnLCad || 0) + (r.unrealizedPnLCad || 0);
     bucket.tickers.push(r.ticker);
     if (Number.isFinite(r.matchedAlphaPct)) { bucket.alphaSum += r.matchedAlphaPct; bucket.alphaCount++; }
     sleeveMap.set(s, bucket);
   }
-  const sleeveAttribution = [...sleeveMap.entries()].map(([sleeve, b]) => ({
-    sleeve, capitalCad: b.capitalCad, pnlCad: b.pnlCad,
-    positions: b.tickers.length,
-    meanAlphaPct: b.alphaCount > 0 ? b.alphaSum / b.alphaCount : null,
-  })).sort((a, b) => (b.pnlCad || 0) - (a.pnlCad || 0));
+  const sleeveAttribution = [...sleeveMap.entries()].map(([sleeve, b]) => {
+    const sleeveReturnPct = b.capitalCad > 0 ? b.capWeightedReturnSum / b.capitalCad : null;
+    const sleeveWeight = totalCapital > 0 ? b.capitalCad / totalCapital : null;
+    const sleeveContribPp = (Number.isFinite(sleeveReturnPct) && Number.isFinite(sleeveWeight))
+      ? sleeveWeight * sleeveReturnPct : null;
+    return {
+      sleeve,
+      positions: b.tickers.length,
+      capitalCad: b.capitalCad,
+      sleeveWeight,
+      sleeveReturnPct,
+      sleeveContribPp,
+      pnlCad: b.pnlCad,
+      meanAlphaPct: b.alphaCount > 0 ? b.alphaSum / b.alphaCount : null,
+    };
+  }).sort((a, b) => (b.sleeveContribPp || 0) - (a.sleeveContribPp || 0));
 
-  // 5) Selection alpha — mean matched alpha across attributable rows.
-  const attributable = rows.filter(r => r.dataQuality !== "UNATTRIBUTABLE" && Number.isFinite(r.matchedAlphaPct));
-  const meanSelectionAlphaPp = attributable.length > 0
+  // 5) Selection alpha — TWO measures:
+  //    (a) recommendation-quality: for every rec in the window, alpha
+  //        of rec.entryPrice → benchmark-matched return of rec ticker
+  //        vs matched-benchmark. Answers: "if we'd filled at the rec
+  //        price and held for the intended horizon, did we beat?"
+  //    (b) actual-position: mean matched alpha across attributable
+  //        rows (what we ACTUALLY filled at, weighted or not).
+  //    The gap = IMPLEMENTATION_ALPHA.
+  const meanActualAlphaPp = attributable.length > 0
     ? attributable.reduce((s, r) => s + r.matchedAlphaPct, 0) / attributable.length : null;
+
+  const recQualityAlphaResult = await computeRecommendationQualityAlpha({
+    email, fromYmd: windowStart, toYmd: asOfYmd, asOf: asOfDate,
+  });
+
+  // Capital-weighted actual alpha (better contribution measure than
+  // simple mean when position sizes vary widely).
+  const capWeightedActualAlphaPp = totalCapital > 0
+    ? attributable.reduce((s, r) => s + (r.matchedAlphaPct || 0) * (entryCapitalCad(r) / totalCapital), 0)
+    : null;
+
+  const implementationAlphaPp = (Number.isFinite(recQualityAlphaResult.meanRecAlphaPp) && Number.isFinite(meanActualAlphaPp))
+    ? meanActualAlphaPp - recQualityAlphaResult.meanRecAlphaPp : null;
+
   const winners = attributable.filter(r => r.matchedAlphaPct > 0);
   const losers  = attributable.filter(r => r.matchedAlphaPct < 0);
   const hitRatePct = attributable.length > 0 ? (winners.length / attributable.length) * 100 : null;
   const avgWinner  = winners.length ? winners.reduce((s, r) => s + r.matchedAlphaPct, 0) / winners.length : null;
   const avgLoser   = losers.length  ? losers.reduce((s, r)  => s + r.matchedAlphaPct, 0) / losers.length : null;
 
-  // 6) Exit-forward summary.
+  // 6) Exit-forward summary — unchanged from P3, DESCRIPTIVE.
   const exitMetrics = await StocksExitForwardMetric.find({
     email: String(email).toLowerCase(),
-    exitDate: { $gte: new Date(windowStart), $lte: asOf },
+    exitDate: { $gte: new Date(windowStart), $lte: asOfDate },
   }).lean();
   const exitByClass = { GOOD_EXIT: 0, NEUTRAL: 0, PREMATURE_EXIT: 0, LATE_EXIT: 0, PENDING: 0 };
   const exitAlphaAvg = { d1: [], d5: [], d10: [], d20: [], d60: [] };
@@ -127,72 +222,82 @@ export async function computeAttributionReport({
   const exitCoverageEligible = exitMetrics.length > 0
     ? Math.round(exitMetrics.filter(m => m.classification !== "PENDING").length / exitMetrics.length * 100) : 0;
 
-  // 7) Sizing effect — actual vs equal-weight over the SAME rows.
+  // 7) Sizing effect — actual (capital-weighted) vs equal-weight.
+  //    ADDITIVE — real "did we bet more on the winners" test.
   const eqWeightPct = attributable.length > 0
     ? attributable.reduce((s, r) => s + (r.securityReturnPct || 0), 0) / attributable.length : null;
-  const totalCapital = attributable.reduce((s, r) => s + ((r.entryPrice || 0) * (r.entryShares || 0)) *
-    (r.entryCurrency === "CAD" ? 1 : (r.entryFx || 1.37)), 0);
   const capWeightedPct = totalCapital > 0
     ? attributable.reduce((s, r) => {
-        const cap = ((r.entryPrice || 0) * (r.entryShares || 0)) *
-          (r.entryCurrency === "CAD" ? 1 : (r.entryFx || 1.37));
+        const cap = entryCapitalCad(r);
         return s + (r.securityReturnPct || 0) * (cap / totalCapital);
       }, 0)
     : null;
   const sizingEffectPp = (Number.isFinite(capWeightedPct) && Number.isFinite(eqWeightPct))
     ? capWeightedPct - eqWeightPct : null;
 
-  // 8) Replacement-trade effect — pair each SELL with a same-day BUY
-  // within the same account, compare forward 20d return delta.
-  const replacementPairs = await computeReplacementPairs({ email, asOf, windowStart });
+  // 8) Replacement pairing — provenance-based, LOW-confidence pairs
+  //    reported separately.
+  const replacement = await pairReplacementTrades({
+    email, fromYmd: windowStart, toYmd: asOfYmd, asOf: asOfDate,
+  });
 
-  // 9) FX attribution — sum fxReturnPct contribution over USD holdings
-  // weighted by USD capital share.
+  // 9) FX attribution — sum fxReturnPct + interactionPct contribution
+  //    over USD holdings weighted by USD capital share. ADDITIVE.
   const usdRows = rows.filter(r => r.entryCurrency === "USD" && Number.isFinite(r.fxReturnPct));
-  const usdCapitalCad = usdRows.reduce((s, r) => s + (r.entryPrice || 0) * (r.entryShares || 0) * (r.entryFx || 1.37), 0);
+  const usdCapitalCad = usdRows.reduce((s, r) => s + entryCapitalCad(r), 0);
   const usdFxContribPp = totalCapital > 0 && usdCapitalCad > 0
     ? usdRows.reduce((s, r) => {
-        const cap = (r.entryPrice || 0) * (r.entryShares || 0) * (r.entryFx || 1.37);
-        return s + (r.fxReturnPct || 0) * (cap / totalCapital);
+        const cap = entryCapitalCad(r);
+        const fx = r.fxReturnPct || 0;
+        const inter = r.interactionPct || 0;
+        return s + (fx + inter) * (cap / totalCapital);
       }, 0)
     : null;
 
-  // 10) Churn effect — trade count, avg holding days, estimated fees.
+  // 10) Churn / fees — sum feesCad (from ledger, aggregated per leg).
   const closedRows = rows.filter(r => r.exitDate && r.dataQuality !== "UNATTRIBUTABLE");
   const avgHoldingDays = closedRows.length > 0
     ? closedRows.reduce((s, r) => s + (r.holdingPeriodDays || 0), 0) / closedRows.length : null;
-  const feesCadEstimate = rows.reduce((s, r) => s + (r.feesEstimatedNative || 0) *
-    (r.entryCurrency === "CAD" ? 1 : (r.entryFx || 1.37)), 0);
-  const feesEffectPp = (portfolioReturnPct != null && snaps.length >= 2 && snaps[0].totalCad > 0)
-    ? -(feesCadEstimate / snaps[0].totalCad) * 100 : null;
+  const feesCadTotal = rows.reduce((s, r) => s + (Number(r.feesCad) || 0), 0);
+  const feeSources = [...new Set(rows.map(r => r.feeSource).filter(Boolean))];
+  const worstFeeSource = feeSources.includes("UNKNOWN") ? "UNKNOWN"
+                       : feeSources.includes("ESTIMATED") ? "ESTIMATED" : "ACTUAL";
+  const startCapitalCad = snaps.length > 0 ? Number(snaps[0].totalCad) : null;
+  const feesEffectPp = (portfolioReturnPct != null && startCapitalCad > 0)
+    ? -(feesCadTotal / startCapitalCad) * 100 : null;
   const numTrades = rows.length;
 
-  // 11) Cash effect — measure whether portfolio held cash during
-  // window when passive-alt was up or down. Descriptive: average cash
-  // share across snapshots × passive return over window.
-  const avgCashShare = snaps.length > 0
-    ? snaps.reduce((s, x) => s + ((x.cashCad || 0) + (x.cashUsd || 0) * (x.fxUsdCad || 1.37)) / (x.totalCad || 1), 0) / snaps.length : null;
-  const passiveBaseline = passiveRows.find(p => p.ticker === "XEQT.TO")?.returnPct
-                        ?? passiveRows.find(p => p.ticker === "SPY")?.returnPct
-                        ?? null;
-  const cashEffectPp = (Number.isFinite(avgCashShare) && Number.isFinite(passiveBaseline))
-    ? -(avgCashShare * passiveBaseline) : null;
+  // 11) Cash attribution — daily chain-linked (P3.5). Falls back to
+  //     coarse estimate if snapshot density is too low.
+  const cashResult = await computeDailyCashAttribution({ snaps, benchmarkTicker: "XEQT.TO" });
+  const cashEffectPp = cashResult.cumulativeCashDragPp;
 
-  // 12) Sector attribution — per-sector alpha (nulls if sector not stamped).
+  // 12) Sector attribution — capital-weighted contribution in pp,
+  //     mirrors sleeve treatment.
   const sectorMap = new Map();
   for (const r of attributable) {
     const sec = r.sector || "unknown";
-    if (!sectorMap.has(sec)) sectorMap.set(sec, { count: 0, alphaSum: 0, pnlCad: 0 });
+    if (!sectorMap.has(sec)) sectorMap.set(sec, {
+      capitalCad: 0, capWeightedReturnSum: 0, alphaSum: 0, alphaCount: 0, pnlCad: 0, count: 0,
+    });
     const b = sectorMap.get(sec);
+    const cap = entryCapitalCad(r);
+    b.capitalCad += cap;
+    b.capWeightedReturnSum += cap * (r.securityReturnPct || 0);
     b.count++;
     b.alphaSum += r.matchedAlphaPct;
     b.pnlCad += (r.realizedPnLCad || 0) + (r.unrealizedPnLCad || 0);
   }
   const sectorAttribution = [...sectorMap.entries()].map(([sector, b]) => ({
     sector, positions: b.count,
+    capitalCad: b.capitalCad,
+    sectorWeight: totalCapital > 0 ? b.capitalCad / totalCapital : null,
+    sectorReturnPct: b.capitalCad > 0 ? b.capWeightedReturnSum / b.capitalCad : null,
+    sectorContribPp: (totalCapital > 0 && b.capitalCad > 0)
+      ? (b.capitalCad / totalCapital) * (b.capWeightedReturnSum / b.capitalCad) : null,
     meanAlphaPct: b.count > 0 ? b.alphaSum / b.count : null,
     pnlCad: b.pnlCad,
-  })).sort((a, b) => (b.pnlCad || 0) - (a.pnlCad || 0));
+  })).sort((a, b) => (b.sectorContribPp || 0) - (a.sectorContribPp || 0));
 
   // 13) Real vs passive table (spec §14).
   const realVsPassive = passiveRows.map(p => ({
@@ -202,39 +307,102 @@ export async function computeAttributionReport({
     alphaPp: Number.isFinite(portfolioReturnPct) && Number.isFinite(p.returnPct) ? portfolioReturnPct - p.returnPct : null,
   }));
 
-  // 14) Waterfall — only ADDITIVE components. Sizing / cash / fees /
-  // FX / churn are legitimately additive vs a passive benchmark;
-  // selection / entry / exit are cast as DESCRIPTIVE only because
-  // they double-count with sizing and each other.
+  // 14) Waterfall — separated additive vs descriptive per P3.5 §7.
+  const additiveContributions = [
+    { label: "Sizing effect (vs equal-weight)", pp: sizingEffectPp, confidence: "HIGH" },
+    { label: "Cash drag (daily chain-linked)", pp: cashEffectPp, confidence: cashResult.coverage === "COMPLETE" ? "HIGH" : cashResult.coverage === "PARTIAL" ? "MEDIUM" : "LOW" },
+    { label: "FX (USD holdings, incl. interaction)", pp: usdFxContribPp, confidence: usdCapitalCad > 0 ? "HIGH" : "LOW" },
+    { label: `Fees / churn (${worstFeeSource.toLowerCase()})`, pp: feesEffectPp, confidence: worstFeeSource === "ACTUAL" ? "HIGH" : "MEDIUM" },
+  ].filter(x => Number.isFinite(x.pp));
+
+  const descriptiveDiagnostics = [
+    Number.isFinite(recQualityAlphaResult.meanRecAlphaPp) ? {
+      label: "Recommendation-quality alpha (mean, per-rec matched window)",
+      pp: recQualityAlphaResult.meanRecAlphaPp,
+      coveragePct: recQualityAlphaResult.coveragePct,
+      note: "How our recs performed at recommended entry price. NOT additive.",
+    } : null,
+    Number.isFinite(meanActualAlphaPp) ? {
+      label: "Actual-position alpha (mean, per-fill matched window)",
+      pp: meanActualAlphaPp,
+      coveragePct: attributable.length > 0
+        ? Math.round(attributable.length / Math.max(1, rows.length) * 100) : 0,
+      note: "How our actual fills performed vs matched benchmark. NOT additive.",
+    } : null,
+    Number.isFinite(capWeightedActualAlphaPp) ? {
+      label: "Actual-position alpha (capital-weighted)",
+      pp: capWeightedActualAlphaPp,
+      note: "Weighted by entry capital — reflects the sizes actually deployed.",
+    } : null,
+    Number.isFinite(implementationAlphaPp) ? {
+      label: "Implementation alpha (actual − rec)",
+      pp: implementationAlphaPp,
+      note: "Cost of fill quality: negative = worse than recs, positive = execution beat the rec.",
+    } : null,
+    Number.isFinite(exitAlphaMean.d20) ? {
+      label: "Exit-forward alpha (mean, 20d)",
+      pp: -exitAlphaMean.d20,
+      note: "Return of underlying 20d AFTER exit, negated. Positive = we sold at a good time.",
+    } : null,
+  ].filter(Boolean);
+
   const waterfall = {
     passiveBenchmarkTicker: "XEQT.TO",
     passiveReturnPct: passiveBaseline,
     portfolioReturnPct,
-    additiveComponents: [
-      { label: "Sizing effect (vs equal-weight)", pp: sizingEffectPp },
-      { label: "Cash drag", pp: cashEffectPp },
-      { label: "FX (USD holdings)", pp: usdFxContribPp },
-      { label: "Fees / churn (estimated)", pp: feesEffectPp },
-    ].filter(x => Number.isFinite(x.pp)),
-    residualPp: null, // filled below
-    residualNote: "Residual is the unexplained gap between portfolio and passive after the additive components. Includes selection quality, market timing, and reconstruction gaps.",
+    portfolioReturnMethod: returnResult.returnMethod,
+    portfolioReturnMethodReason: returnResult.returnMethodReason,
+    externalCashFlowCad: returnResult.externalCashFlowCad,
+    additiveComponents: additiveContributions,
+    descriptiveComponents: descriptiveDiagnostics,
+    residualPp: null,
+    residualNote: "Residual is portfolio − passive − Σ(additive). Absorbs selection quality, market timing, and any reconstruction gaps not captured above.",
   };
   if (Number.isFinite(portfolioReturnPct) && Number.isFinite(passiveBaseline)) {
-    const additive = waterfall.additiveComponents.reduce((s, x) => s + x.pp, 0);
+    const additive = additiveContributions.reduce((s, x) => s + x.pp, 0);
     waterfall.residualPp = (portfolioReturnPct - passiveBaseline) - additive;
   }
 
-  // 15) Root cause — top 3 drags + top 3 offsets, mixing additive +
-  // descriptive components. Descriptive items include selection alpha
-  // and exit-forward alpha averages so the operator sees what MIGHT
-  // be driving results even when we can't cleanly additive-attribute.
-  const rootCandidates = [
-    ...(waterfall.additiveComponents || []),
-    Number.isFinite(meanSelectionAlphaPp) ? { label: "Mean selection alpha (descriptive)", pp: meanSelectionAlphaPp, descriptive: true } : null,
-    Number.isFinite(exitAlphaMean.d20) ? { label: "Exit-forward alpha (20d, descriptive)", pp: -exitAlphaMean.d20, descriptive: true } : null,
-  ].filter(Boolean);
-  const drags   = [...rootCandidates].filter(x => x.pp < 0).sort((a, b) => a.pp - b.pp).slice(0, 3);
-  const offsets = [...rootCandidates].filter(x => x.pp > 0).sort((a, b) => b.pp - a.pp).slice(0, 3);
+  // 15) Root cause — ranked by absolute pp within additive; descriptive
+  //     items are tagged and NOT summed with additive.
+  const additiveDrags = [...additiveContributions].filter(x => x.pp < 0).sort((a, b) => a.pp - b.pp).slice(0, 3);
+  const additiveOffsets = [...additiveContributions].filter(x => x.pp > 0).sort((a, b) => b.pp - a.pp).slice(0, 3);
+  const descriptiveWorst = [...descriptiveDiagnostics].filter(x => x.pp < 0).sort((a, b) => a.pp - b.pp).slice(0, 3);
+  const descriptiveBest = [...descriptiveDiagnostics].filter(x => x.pp > 0).sort((a, b) => b.pp - a.pp).slice(0, 3);
+
+  // 16) Entry-timing attribution — DESCRIPTIVE.
+  const entryTiming = await computeEntryTimingAttribution({
+    email, fromYmd: windowStart, toYmd: asOfYmd,
+  });
+
+  // 17) Worst / best actual decisions — top 5 alpha winners, top 5
+  //     alpha losers, weighted by entry capital so the ranking
+  //     reflects portfolio impact rather than a single-share bet.
+  const ranked = [...attributable].map(r => ({
+    ticker: r.ticker,
+    account: r.account,
+    entryDate: r.entryDate,
+    exitDate: r.exitDate,
+    isOpen: r.isOpen,
+    entryPrice: r.entryPrice,
+    exitPrice: r.exitPrice,
+    entryShares: r.entryShares,
+    entryCapitalCad: entryCapitalCad(r),
+    securityReturnPct: r.securityReturnPct,
+    benchmarkTicker: r.benchmarkTicker,
+    benchmarkReturnPctMatched: r.benchmarkReturnPctMatched,
+    matchedAlphaPct: r.matchedAlphaPct,
+    realizedPnLCad: r.realizedPnLCad,
+    unrealizedPnLCad: r.unrealizedPnLCad,
+    contribPp: totalCapital > 0 ? (entryCapitalCad(r) / totalCapital) * (r.securityReturnPct || 0) : null,
+    holdingPeriodDays: r.holdingPeriodDays,
+    sleeve: r.sleeve,
+    recommendationId: r.recommendationId,
+  }));
+  const bestDecisions = [...ranked].filter(r => Number.isFinite(r.contribPp))
+    .sort((a, b) => (b.contribPp || 0) - (a.contribPp || 0)).slice(0, 5);
+  const worstDecisions = [...ranked].filter(r => Number.isFinite(r.contribPp))
+    .sort((a, b) => (a.contribPp || 0) - (b.contribPp || 0)).slice(0, 5);
 
   // Data quality summary.
   const dataQuality = {
@@ -243,31 +411,65 @@ export async function computeAttributionReport({
     exitForwardEligiblePct: exitCoverageEligible,
     attributableRows: attributable.length,
     unattributableRows: rows.filter(r => r.dataQuality === "UNATTRIBUTABLE").length,
-    fxCoveragePct: rows.length > 0 ? Math.round((usdRows.length + rows.filter(r => r.entryCurrency === "CAD").length) / rows.length * 100) : 0,
-    windowDays,
+    fxCoveragePct: rows.length > 0
+      ? Math.round((usdRows.length + rows.filter(r => r.entryCurrency === "CAD").length) / rows.length * 100) : 0,
+    windowDays: effectiveWindowDays,
     windowStart,
     asOfDate: asOfYmd,
+    cashFlowCoverage: returnResult.cashFlowCoverage,
+    cashAttributionCoverage: cashResult.coverage,
+    replacementPairingCoverage: replacement.coverage,
+    entryTimingCoverage: entryTiming.coverage,
+    feeSource: worstFeeSource,
   };
+
+  // 18) Sufficiency check per spec §12: refuse false confidence when
+  //     the evidence is too thin.
+  const insufficientEvidence = [];
+  if (snaps.length < 3) insufficientEvidence.push("Portfolio snapshot history too short (<3 daily rows in window).");
+  if (attributable.length === 0) insufficientEvidence.push("No attributable ledger rows — cannot compute selection alpha.");
+  if (returnResult.returnMethod == null) insufficientEvidence.push("Portfolio return method could not be selected.");
+  if (passiveBaseline == null) insufficientEvidence.push("Passive baseline benchmark unavailable.");
+
+  const sufficient = insufficientEvidence.length === 0;
 
   const report = {
     email, asOfDate: asOfYmd, windowStart,
     engineVersion: ENGINE_VERSION,
+    sufficient,
+    insufficientEvidence,
     header: {
-      windowDays, windowStart, asOfDate: asOfYmd,
+      windowDays: effectiveWindowDays,
+      windowStart,
+      asOfDate: asOfYmd,
       portfolioReturnPct,
+      portfolioReturnMethod: returnResult.returnMethod,
+      externalCashFlowCad: returnResult.externalCashFlowCad,
       passiveReturnPct: passiveBaseline,
+      passiveBenchmarkTicker: "XEQT.TO",
       alphaVsPassivePp: Number.isFinite(portfolioReturnPct) && Number.isFinite(passiveBaseline)
         ? portfolioReturnPct - passiveBaseline : null,
     },
     waterfall,
-    rootCause: { drags, offsets },
+    rootCause: {
+      additiveDrags,
+      additiveOffsets,
+      descriptiveWorst,
+      descriptiveBest,
+    },
     details: {
       sleeveAttribution,
       selectionAlpha: {
-        meanAlphaPp: meanSelectionAlphaPp,
+        recommendationQualityMeanAlphaPp: recQualityAlphaResult.meanRecAlphaPp,
+        recommendationQualityCoveragePct: recQualityAlphaResult.coveragePct,
+        actualPositionMeanAlphaPp: meanActualAlphaPp,
+        actualPositionCapWeightedAlphaPp: capWeightedActualAlphaPp,
+        implementationAlphaPp,
         hitRatePct, avgWinner, avgLoser,
         winnerCount: winners.length, loserCount: losers.length,
+        note: "Two selection measures. recommendation-quality = rec price → matched benchmark. actual-position = fill price → matched benchmark. Gap = implementation alpha.",
       },
+      entryTiming,
       exitForward: {
         classificationCounts: exitByClass,
         meanExitAlphaPct: exitAlphaMean,
@@ -278,33 +480,48 @@ export async function computeAttributionReport({
         equalWeightedReturnPct: eqWeightPct,
         sizingEffectPp,
       },
-      replacementTrades: replacementPairs,
+      replacementTrades: {
+        pairs: replacement.pairs,
+        coverage: replacement.coverage,
+        methodCounts: replacement.methodCounts,
+        note: replacement.note,
+      },
       sectorAttribution,
       fxAttribution: {
         usdCapitalCad, usdFxContribPp,
-        note: "Contribution to portfolio return in pp, weighted by USD capital share.",
+        note: "Contribution to portfolio return in pp, weighted by USD capital share. Includes local × FX interaction cross term.",
       },
       churnEffect: {
-        numTrades, avgHoldingDays, feesCadEstimate, feesEffectPp,
+        numTrades, avgHoldingDays,
+        feesCadTotal, feesEffectPp, feeSource: worstFeeSource,
       },
       cashEffect: {
-        avgCashShare, passiveBenchmarkForCash: "XEQT.TO", cashEffectPp,
+        cumulativeCashDragPp: cashResult.cumulativeCashDragPp,
+        benchmarkTicker: cashResult.benchmarkTicker,
+        intervals: cashResult.dailyIntervals,
+        coverage: cashResult.coverage,
+        note: cashResult.note,
       },
       realVsPassive,
+      bestDecisions,
+      worstDecisions,
     },
     dataQuality,
     notes: [
-      "Selection / entry / exit alpha are DESCRIPTIVE / NON-ADDITIVE. The waterfall's residual absorbs their combined effect vs the passive benchmark.",
+      "P3.5: additive components (sizing, cash drag, FX, fees) SUM to explain portfolio − passive up to a small residual. Descriptive components (selection alpha, entry-timing, exit-forward) are DIAGNOSTIC ONLY and NEVER added to the waterfall.",
+      "Selection alpha is reported in two forms: recommendation-quality (rec price → benchmark) AND actual-position (fill price → benchmark). Their gap is implementation alpha.",
+      "Sleeve and sector attribution report CAPITAL-WEIGHTED CONTRIBUTION IN PP (sleeveWeight × sleeveReturn), which sum to the whole-portfolio return. Raw CAD PnL is retained alongside for context but is NOT the additive number.",
       "UNATTRIBUTABLE ledger rows (SELL with no matching BUY) are EXCLUDED from all alpha computations.",
       "Exit-forward classification is PENDING until all five horizons elapse. Wait for classification before drawing conclusions.",
+      "Portfolio return method: " + String(returnResult.returnMethod) + " (" + String(returnResult.returnMethodReason) + "). External cash flow over window: " + String(Math.round((returnResult.externalCashFlowCad || 0) * 100) / 100) + " CAD.",
       backfill ? `Exit-forward backfill: filled ${backfill.filledHorizons} horizons across ${backfill.updatedRows} rows.` : null,
     ].filter(Boolean),
   };
 
   try {
     await StocksAttributionReport.updateOne(
-      { email, asOfDate: asOfYmd },
-      { $set: { ...report, generatedAt: new Date() } },
+      { email, asOfDate: asOfYmd, windowDays: effectiveWindowDays },
+      { $set: { ...report, windowDays: effectiveWindowDays, generatedAt: new Date() } },
       { upsert: true },
     );
   } catch (e) {
@@ -313,91 +530,122 @@ export async function computeAttributionReport({
   return report;
 }
 
+// PUBLIC — recommendation-quality alpha. For every rec generated in
+// the window, computes the matched-benchmark alpha of holding the rec
+// ticker from rec.generatedAt for a horizon (rec.horizonDays or 20)
+// versus its benchmark, using rec.entryPrice (not the actual fill).
+async function computeRecommendationQualityAlpha({ email, fromYmd, toYmd, asOf }) {
+  const recs = await StocksAdviceRec.find({
+    email: String(email || "").toLowerCase(),
+    generatedAt: { $gte: new Date(fromYmd), $lte: new Date(toYmd + "T23:59:59Z") },
+    action: { $in: ["BUY", "ADD", "REDEPLOY"] },
+    entryPrice: { $gt: 0 },
+  }).lean().catch(() => []);
+  if (!Array.isArray(recs) || recs.length === 0) {
+    return { meanRecAlphaPp: null, coveragePct: 0, perRec: [] };
+  }
+  const barsCache = new Map();
+  async function getBars(t, range = "6mo") {
+    const k = `${t}::${range}`;
+    if (barsCache.has(k)) return barsCache.get(k);
+    const b = await fetchYahooDaily(t, range).catch(() => null);
+    barsCache.set(k, b);
+    return b;
+  }
+  const perRec = [];
+  for (const r of recs) {
+    const ticker = (r.ticker || "").toUpperCase();
+    if (!ticker) continue;
+    const horizon = Math.max(5, Math.min(60, Number(r.horizonDays) || 20));
+    const from = ymd(r.generatedAt);
+    const targetToDate = new Date(new Date(from).getTime() + horizon * 86400_000);
+    const to = ymd(targetToDate > asOf ? asOf : targetToDate);
+    if (from > to) continue;
+    const bars = await getBars(ticker);
+    if (!Array.isArray(bars) || bars.length === 0) continue;
+    // Read forward price at the horizon end.
+    const closeAt = (targetYmd) => {
+      const rev = [...bars].reverse();
+      return rev.find(b => (b.date || "").slice(0, 10) <= targetYmd)?.close || null;
+    };
+    const priceAtHorizon = closeAt(to);
+    if (!(priceAtHorizon > 0)) continue;
+    const recEntry = Number(r.entryPrice);
+    if (!(recEntry > 0)) continue;
+    const recTickerReturnPct = ((priceAtHorizon - recEntry) / recEntry) * 100;
+    const bench = pickBenchmarkFor({ ticker, currency: r.currency });
+    const benchBars = await getBars(bench);
+    const bres = await getMatchedReturnPct({ ticker: bench, fromDate: from, toDate: to, bars: benchBars });
+    const alpha = getMatchedAlphaPct({ securityReturnPct: recTickerReturnPct, benchmarkReturnPct: bres.pct });
+    perRec.push({
+      recId: String(r._id), ticker, from, to,
+      recEntryPrice: recEntry, priceAtHorizon,
+      recTickerReturnPct, benchmarkTicker: bench, benchmarkReturnPct: bres.pct,
+      alphaPp: alpha,
+    });
+  }
+  const withAlpha = perRec.filter(x => Number.isFinite(x.alphaPp));
+  const meanRecAlphaPp = withAlpha.length > 0
+    ? withAlpha.reduce((s, x) => s + x.alphaPp, 0) / withAlpha.length : null;
+  const coveragePct = recs.length > 0 ? Math.round((withAlpha.length / recs.length) * 100) : 0;
+  return { meanRecAlphaPp, coveragePct, perRec };
+}
+
 // PUBLIC — root-cause text render. Consumers can wrap this in a UI or
 // email footer.
 export function renderRootCauseText(report) {
   if (!report?.rootCause) return "No attribution data.";
-  const drags = (report.rootCause.drags || []);
-  const offsets = (report.rootCause.offsets || []);
+  const additiveDrags = report.rootCause.additiveDrags || report.rootCause.drags || [];
+  const additiveOffsets = report.rootCause.additiveOffsets || report.rootCause.offsets || [];
+  const descriptiveWorst = report.rootCause.descriptiveWorst || [];
+  const descriptiveBest = report.rootCause.descriptiveBest || [];
   const lines = [];
   lines.push("PORTFOLIO DIAGNOSIS");
   lines.push("");
   const alpha = report.header?.alphaVsPassivePp;
+  const bench = report.waterfall?.passiveBenchmarkTicker || report.header?.passiveBenchmarkTicker || "XEQT.TO";
+  const wd = report.header?.windowDays;
   if (Number.isFinite(alpha)) {
     const sign = alpha >= 0 ? "+" : "";
-    lines.push(`Actual portfolio: ${sign}${alpha.toFixed(1)}pp vs ${report.waterfall.passiveBenchmarkTicker} over ${report.header.windowDays}d`);
+    lines.push(`Actual portfolio: ${sign}${alpha.toFixed(1)}pp vs ${bench} over ${wd}d`);
+    lines.push(`Method: ${report.header?.portfolioReturnMethod || "unknown"} · Snapshots: ${report.dataQuality?.portfolioSnapshotDays ?? "n/a"}`);
     lines.push("");
   }
-  if (drags.length > 0) {
-    lines.push("Primary drag:");
-    drags.forEach((d, i) => lines.push(`  ${i + 1}. ${d.label}: ${d.pp.toFixed(1)}pp${d.descriptive ? "  (descriptive)" : ""}`));
-  }
-  if (offsets.length > 0) {
+  if (report.insufficientEvidence?.length > 0) {
+    lines.push("WE DO NOT YET HAVE ENOUGH CLEAN HISTORY TO KNOW.");
+    for (const r of report.insufficientEvidence) lines.push(`  · ${r}`);
     lines.push("");
-    lines.push("Offsets:");
-    offsets.forEach((d, i) => lines.push(`  ${i + 1}. ${d.label}: +${d.pp.toFixed(1)}pp${d.descriptive ? "  (descriptive)" : ""}`));
+  }
+  if (additiveDrags.length > 0) {
+    lines.push("Additive drag (sums to the gap):");
+    additiveDrags.forEach((d, i) => lines.push(`  ${i + 1}. ${d.label}: ${d.pp.toFixed(1)}pp  [${d.confidence || "?"}]`));
+  }
+  if (additiveOffsets.length > 0) {
+    lines.push("");
+    lines.push("Additive offsets:");
+    additiveOffsets.forEach((d, i) => lines.push(`  ${i + 1}. ${d.label}: +${d.pp.toFixed(1)}pp  [${d.confidence || "?"}]`));
+  }
+  if (descriptiveWorst.length > 0 || descriptiveBest.length > 0) {
+    lines.push("");
+    lines.push("Descriptive diagnostics (NOT additive):");
+    for (const d of descriptiveWorst) lines.push(`  · ${d.label}: ${d.pp.toFixed(1)}pp`);
+    for (const d of descriptiveBest) lines.push(`  · ${d.label}: +${d.pp.toFixed(1)}pp`);
   }
   if (report.dataQuality) {
     const dq = report.dataQuality;
     lines.push("");
-    lines.push(`Trade-leg coverage: ${dq.tradeLegCoveragePct}%  ·  Exit-forward eligible: ${dq.exitForwardEligiblePct}%  ·  Snapshots: ${dq.portfolioSnapshotDays}`);
+    lines.push(`Trade-leg coverage: ${dq.tradeLegCoveragePct}%  ·  Exit-forward eligible: ${dq.exitForwardEligiblePct}%  ·  Snapshots: ${dq.portfolioSnapshotDays}  ·  Fee source: ${dq.feeSource}`);
+    lines.push(`Cash flow: ${dq.cashFlowCoverage}  ·  Cash attribution: ${dq.cashAttributionCoverage}  ·  Replacement pairs: ${dq.replacementPairingCoverage?.matchedPairs || 0} matched, ${dq.replacementPairingCoverage?.highConfidencePairs || 0} high-confidence`);
   }
   return lines.join("\n");
 }
 
-// Helper: replacement-trade pairing. Same-day (±3d) SELL + BUY in same
-// account. Compare 20d forward returns.
-async function computeReplacementPairs({ email, asOf, windowStart }) {
-  const trades = await StocksTradeJournal.find({
-    email: String(email).toLowerCase(),
-    executedAt: { $gte: new Date(windowStart), $lte: asOf },
-  }).sort({ executedAt: 1 }).lean();
-  const pairs = [];
-  const sellByAccount = new Map();
-  for (const t of trades) {
-    for (const leg of (t.legs || [])) {
-      if (!leg.ticker) continue;
-      const acct = t.account || "";
-      if (leg.side === "SELL") {
-        if (!sellByAccount.has(acct)) sellByAccount.set(acct, []);
-        sellByAccount.get(acct).push({ leg, t });
-      }
-      if (leg.side === "BUY") {
-        const list = sellByAccount.get(acct) || [];
-        // find a SELL within 3 days
-        const idx = list.findIndex(s => Math.abs(new Date(t.executedAt) - new Date(s.t.executedAt)) <= 3 * 86400_000);
-        if (idx < 0) continue;
-        const s = list.splice(idx, 1)[0];
-        pairs.push({
-          soldTicker: s.leg.ticker, boughtTicker: leg.ticker,
-          soldOn: ymd(s.t.executedAt), boughtOn: ymd(t.executedAt),
-          soldPrice: s.leg.pricePerShare, boughtPrice: leg.pricePerShare,
-        });
-      }
-    }
-  }
-  // Compute 20d forward returns for each pair.
-  const HORIZON_D = 20;
-  for (const p of pairs) {
-    const forwardYmd = ymd(new Date(new Date(p.boughtOn).getTime() + HORIZON_D * 86400_000));
-    if (forwardYmd > ymd(asOf)) { p.replacementValueAddedPp = null; p.note = "horizon not yet elapsed"; continue; }
-    const [oldBars, newBars] = await Promise.all([
-      fetchYahooDaily(p.soldTicker, "6mo").catch(() => null),
-      fetchYahooDaily(p.boughtTicker, "6mo").catch(() => null),
-    ]);
-    const readAt = (bars, targetYmd) => {
-      if (!Array.isArray(bars)) return null;
-      const rev = [...bars].reverse();
-      const bar = rev.find(b => (b.date || "").slice(0, 10) <= targetYmd);
-      return bar ? bar.close : null;
-    };
-    const oldFwd = readAt(oldBars, forwardYmd);
-    const newFwd = readAt(newBars, forwardYmd);
-    const oldR = oldFwd && p.soldPrice ? ((oldFwd - p.soldPrice) / p.soldPrice) * 100 : null;
-    const newR = newFwd && p.boughtPrice ? ((newFwd - p.boughtPrice) / p.boughtPrice) * 100 : null;
-    p.oldReturn20dPct = oldR;
-    p.newReturn20dPct = newR;
-    p.replacementValueAddedPp = Number.isFinite(oldR) && Number.isFinite(newR) ? newR - oldR : null;
-  }
-  return pairs;
+// LEGACY — kept for backwards compatibility with earlier tests. The
+// engine now delegates to pairReplacementTrades from
+// stocksReplacementPairing.js which is provenance-aware.
+export async function computeReplacementPairs({ email, asOf, windowStart }) {
+  const r = await pairReplacementTrades({
+    email, fromYmd: windowStart, toYmd: ymd(asOf), asOf,
+  });
+  return r.pairs;
 }

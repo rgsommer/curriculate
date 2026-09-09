@@ -21,8 +21,11 @@ const AttributionReportSchema = new mongoose.Schema(
     email: { type: String, required: true, lowercase: true, index: true },
     asOfDate: { type: String, required: true, index: true }, // YYYY-MM-DD
     windowStart: { type: String, default: null },
+    windowDays: { type: Number, default: null, index: true }, // P3.5 — 30/90/YTD/max
     generatedAt: { type: Date, default: Date.now },
-    engineVersion: { type: String, default: "3.0.0" },
+    engineVersion: { type: String, default: "3.5.0" },
+    sufficient: { type: Boolean, default: true },
+    insufficientEvidence: { type: [String], default: [] },
 
     header: { type: mongoose.Schema.Types.Mixed, default: {} },
     waterfall: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -34,7 +37,11 @@ const AttributionReportSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-AttributionReportSchema.index({ email: 1, asOfDate: 1 }, { unique: true });
+// Multi-window support (P3.5): allow one row per (email, asOfDate,
+// windowDays). Existing unique index on (email, asOfDate) needs to be
+// dropped by an operator before this new one takes hold, if any older
+// prod rows exist.
+AttributionReportSchema.index({ email: 1, asOfDate: 1, windowDays: 1 }, { unique: true, sparse: true });
 
 const StocksAttributionReport = mongoose.model("StocksAttributionReport", AttributionReportSchema);
 export default StocksAttributionReport;

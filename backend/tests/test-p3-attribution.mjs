@@ -130,9 +130,11 @@ function test12_rootCauseRenderer() {
   const txt = renderRootCauseText(report);
   assert(txt.includes("PORTFOLIO DIAGNOSIS"), "12. Root-cause renders top header");
   assert(txt.includes("-3.4pp vs XEQT.TO"), "12b. Alpha vs passive appears with correct sign");
-  assert(/Primary drag:\s*\n\s*1\. Sizing effect/.test(txt), "12c. Drags sorted worst-first");
-  assert(/Offsets:\s*\n\s*1\. FX/.test(txt), "12d. Offsets sorted best-first");
-  assert(/descriptive/.test(txt), "12e. Descriptive tag surfaces for non-additive components");
+  // P3.5 renamed the sections; the renderer accepts both drags/offsets
+  // and additiveDrags/additiveOffsets. Assert on the P3.5 wording.
+  assert(/Additive drag \(sums to the gap\):\s*\n\s*1\. Sizing effect/.test(txt), "12c. Drags sorted worst-first");
+  assert(/Additive offsets:\s*\n\s*1\. FX/.test(txt), "12d. Offsets sorted best-first");
+  assert(/Descriptive diagnostics|descriptive/i.test(txt), "12e. Descriptive tag surfaces for non-additive components");
 }
 
 // ─── Model presence checks (spec deliverables) ────────────────────
@@ -207,7 +209,9 @@ function test19_attributionEngineExists() {
   assert(src.includes("computeReplacementPairs"), "19c. Replacement-trade attribution wired");
   assert(src.includes("stampExitForwardOnClose"), "19d. Exit-forward seeding invoked");
   assert(src.includes("backfillExitForwardMetrics"), "19e. Exit-forward backfill invoked");
-  assert(src.includes("DESCRIPTIVE / NON-ADDITIVE"), "19f. Notes surface DESCRIPTIVE flag per spec §16");
+  // P3.5 rephrased the descriptive-flag note; either wording is acceptable.
+  assert(src.includes("DESCRIPTIVE / NON-ADDITIVE") || src.includes("DESCRIPTIVE ONLY") || src.includes("descriptiveComponents"),
+    "19f. Notes surface DESCRIPTIVE / non-additive flag per spec §16 (P3 or P3.5 wording)");
 }
 
 function test20_positionLedgerFifo() {

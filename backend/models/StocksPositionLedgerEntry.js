@@ -39,8 +39,22 @@ const LedgerEntrySchema = new mongoose.Schema(
     unrealizedPnLNative: { type: Number, default: null },
     unrealizedPnLCad: { type: Number, default: null },
 
-    // Fees / commissions if known (aggregated across BUY + SELL legs)
+    // Fees / commissions if known (aggregated across BUY + SELL legs).
+    // P3.5: feeSource stamps whether we have ACTUAL broker fills,
+    // ESTIMATED per-broker defaults, or UNKNOWN.
     feesEstimatedNative: { type: Number, default: 0 },
+    feesCad: { type: Number, default: 0 },
+    feeSource: {
+      type: String,
+      enum: ["ACTUAL", "ESTIMATED", "UNKNOWN"],
+      default: "ESTIMATED",
+    },
+    feeEstimateMethods: { type: [String], default: [] },
+
+    // Full-value CAD valuations (P3.5 — computed via computeCadPnl,
+    // NOT native × exit FX). Present for both entry and exit sides.
+    entryValueCad: { type: Number, default: null },
+    exitValueCad: { type: Number, default: null },
 
     // Holding period + attribution linkage
     holdingPeriodDays: { type: Number, default: null },
@@ -73,9 +87,12 @@ const LedgerEntrySchema = new mongoose.Schema(
     securityReturnPct: { type: Number, default: null },
     matchedAlphaPct: { type: Number, default: null },
 
-    // FX decomposition (CAD investor holding USD security)
+    // FX decomposition (CAD investor holding USD security). P3.5:
+    // interactionPct is the r_local × r_fx cross term so the three
+    // pieces reconcile exactly to combinedCadReturnPct.
     localReturnPct: { type: Number, default: null },
     fxReturnPct: { type: Number, default: null },
+    interactionPct: { type: Number, default: null },
     combinedCadReturnPct: { type: Number, default: null },
 
     reconstructedAt: { type: Date, default: Date.now },
