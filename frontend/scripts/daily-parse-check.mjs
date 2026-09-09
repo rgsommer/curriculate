@@ -379,5 +379,24 @@ const mathRow = withLessons.periods.find((x) => x.code === "J003");
 check("period picks up its lesson row", mathRow && mathRow.page === "p. 7" && mathRow.homework.startsWith("Complete NS7-3"), mathRow && { page: mathRow.page, homework: mathRow.homework });
 check("row video still wins over the lesson video", mathRow && mathRow.video === "https://youtu.be/mathvideo1", mathRow && mathRow.video);
 
+
+// ---- the day's plan paired with the times in Vertical column A ----
+const dutyRun = P.classesFromText("Reminders: assembly follow-up next class. Playground CE 8A (21) - 212 (B002) Today we learn about the finer points. What was the main message? - Discuss Reminders: none.");
+check("day plan: the word before the subject is not swallowed", dutyRun[0].subj === "CE 8A", dutyRun[0].subj);
+
+const mathText = "Math 7A (23) 202 (J003) Today we practise equations. What helps? - NS7-3 Reminders: none.";
+const histText = "History 7A (22) 202 (H001) Today we introduce the course. What makes a useful perspective? - Handouts Reminders: none.";
+// Vertical: column A the time, F to J the weekday. Row 0 is a run-together copy
+// on VerticalAi with no time; rows 1 and 2 carry times.
+const vAi = [["", "", histText + " " + mathText]];
+const vTimes = [[], ["11:00 AM", "", "", "", "", histText], ["10:00 AM", "", "", "", "", mathText]];
+const planned = P.dayPlanByWeekday(vAi, {}, vTimes)[2] || [];
+check("day plan: times come from Vertical column A", planned.map((c) => c.start).join() === "600,660", planned.map((c) => [c.subj, c.start]));
+check("day plan: sorted by time", planned[0].subj === "Math 7A" && planned[1].subj === "History 7A", planned.map((c) => c.subj));
+check("day plan: the timed copy wins over the run-together one", planned.length === 2, planned.map((c) => c.subj));
+
+const echo = P.dayPlanByWeekday([["", "", "Math 7A (23) 202 Today we practise. What helps? - NS7-3 Reminders: none."]], {}, vTimes)[2] || [];
+check("day plan: a codeless echo of a coded class is dropped", echo.length === 2 && echo.every((c) => c.code), echo.map((c) => `${c.subj}:${c.code}`));
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

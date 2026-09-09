@@ -241,7 +241,7 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .agenda { display: grid; grid-template-columns: auto 1fr; gap: .6vh 2vw; font-size: calc(clamp(15px, 2.6vh, 28px) * var(--fit)); text-align: left; margin-top: 2vh; font-variant-numeric: tabular-nums; }
 .agenda .t { color: var(--muted); }
 /* On a centred screen the times still read as a column, but a centred one. */
-.main.center .agenda { width: max-content; margin-left: auto; margin-right: auto; }
+.main.center .agenda { max-width: 100%; margin-left: auto; margin-right: auto; }
 .main.blank { grid-template-columns: 1fr; place-items: center; }
 .main.blank p { font-size: clamp(18px, 3vh, 32px); color: var(--muted); letter-spacing: .2em; text-transform: uppercase; }
 .notice { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 4vh 6vw; }
