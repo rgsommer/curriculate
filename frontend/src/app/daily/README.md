@@ -46,6 +46,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
 | `Points!A3:BZ3`, `Points!A46:BZ46` | Class names and the four privilege flags per class, for the status badge. |
 | `Lessons!C1:J400` (values, formulas, and the links inside E and F) | The teacher's own material, keyed by lesson code in column C ("~H001" or "H001"): E the starting page reference, F the homework, I the lesson picture, J the video. The student-facing tabs leave this out on purpose, so it is looked up by code and folded into whichever class carries that code. |
+| `Vertical!A1:J200` | Column A the period times, F to J Monday to Friday — the day's plan with a row per period. B4 (the week the verse is indexed by) is inside this block, so it costs no extra range. |
 | `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
 | The Kiss & Ride tab | Its "Waiting (Recent First)" column, for the dismissal panel. The tab is found by name (`listSheetTitles`, cached an hour) and the column by its header cell. |
 | `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |

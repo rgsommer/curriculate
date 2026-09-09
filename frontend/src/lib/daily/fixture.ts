@@ -135,6 +135,20 @@ export const FIXTURE: RawInputs = {
     [[], [{ text: "Due Dates handout", url: "https://example.org/due-dates.pdf" }]],
     [],
   ],
+  // Vertical!A1:J200 — column A the period times, F to J the day's plan. The
+  // same three classes on every weekday so the fallback previews whatever day
+  // it is.
+  verticalTimes: [
+    [],
+    [],
+    [],
+    ["", "1"],
+    ...([
+      ["10:00 AM", "Math 7A (23) 202 (J003) Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class."],
+      ["11:00 AM", "History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17."],
+      ["2:30 PM", "Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class."],
+    ] as [string, string][]).map(([at, text]) => [at, "", "", "", "", text, text, text, text, text]),
+  ],
   // Verses!A1:A400 and Vertical!B4 \u2014 what A5 picks the day's verse from.
   verses: [
     ['Do you ever face temptations? Did you know that in your own strength you will fail? Here\u2019s a promise for those trusting in God. ~"No temptation has overtaken you that is not common to man. God is faithful, and he will not let you be tempted beyond your ability." 1 Corinthians 10:13'],

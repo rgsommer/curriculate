@@ -273,9 +273,13 @@ export function parseLessons(
 export type DayClass = {
   subj: string; room: string; code: string; today: string; q: string;
   links: LessonLink[]; page: string; homework: string; image: string;
+  start: number | null; // from Vertical column A, when the row carries a time
 };
 
-const CLASS_HEAD = /([A-Z][A-Za-z]*(?: [A-Za-z]+)* \d[A-C]) \((\d+)\) -? ?(\d{3})\b/g;
+// One word before the section, not several: the day's plan runs classes together
+// with duty words between them, and a greedier subject swallowed the word before
+// it ("Playground CE 8A").
+const CLASS_HEAD = /([A-Z][A-Za-z]*) (\d[A-C]) \((\d+)\) -? ?(\d{3})\b/g;
 
 /** Fold a lesson row's material into a class parsed from the day's text. */
 function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lessons: Record<string, Lesson>) {
@@ -300,23 +304,61 @@ export function classesFromText(text: string, lessons: Record<string, Lesson> = 
     const key = `${c.subj}|${c.code}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push(withLesson({ subj: c.subj, room: c.room, code: c.code, today: c.today, q: c.q, links: c.links }, lessons));
+    out.push({ ...withLesson({ subj: c.subj, room: c.room, code: c.code, today: c.today, q: c.q, links: c.links }, lessons), start: null });
   });
   return out;
 }
 
 /**
- * VerticalAi columns F to J are Monday to Friday; the range starts at D, so the
- * weekday number (Sunday = 1, as Sheets counts) is also the column index. Every
- * row of the column is searched, so it does not matter which row the day's plan
- * is written on.
+ * The day's plan, by weekday.
+ *
+ * Two tabs carry it. Vertical is laid out a row per period — column A the time,
+ * columns F to J Monday to Friday — so when a row has both a time and a class in
+ * the weekday's column, the class gets its time. VerticalAi holds the same
+ * columns without the times (its range starts at D, so the weekday number is the
+ * column index there; Vertical starts at A, so it is the weekday plus three).
+ *
+ * A row that yields several classes gives its time to the first of them; if no
+ * row pairs up at all, the whole column is read as one run of text, which is how
+ * it worked before any times were available.
  */
-export function dayPlanByWeekday(vertical: string[][], lessons: Record<string, Lesson> = {}): Record<number, DayClass[]> {
+export function dayPlanByWeekday(
+  verticalAi: string[][],
+  lessons: Record<string, Lesson> = {},
+  vertical: string[][] = []
+): Record<number, DayClass[]> {
   const out: Record<number, DayClass[]> = {};
   for (let wd = 2; wd <= 6; wd += 1) {
-    const text = (vertical || []).map((r) => String((r || [])[wd] || "")).filter(Boolean).join(" \n ");
-    const classes = classesFromText(text, lessons);
-    if (classes.length) out[wd] = classes;
+    const rows: DayClass[] = [];
+    const seen = new Set<string>();
+    const n = Math.max((vertical || []).length, (verticalAi || []).length);
+    // Rows that carry a time go first, so that when the same class also appears
+    // in a run-together cell it is the timed copy that survives the dedupe.
+    for (let pass = 0; pass < 2; pass += 1) {
+      for (let r = 0; r < n; r += 1) {
+        const vRow = (vertical || [])[r] || [];
+        const aiRow = (verticalAi || [])[r] || [];
+        const start = parseTime(String(vRow[0] || ""));
+        if (pass === 0 ? start == null : start != null) continue;
+        const text = String(vRow[wd + 3] || "") || String(aiRow[wd] || "");
+        if (!text) continue;
+        classesFromText(text, lessons).forEach((c, i) => {
+          const key = `${c.subj}|${c.code}`;
+          if (seen.has(key)) return;
+          // The same class can appear twice, once with its code and once
+          // without, when both tabs carry the day. A subject can genuinely run
+          // twice in a day, but only when the two carry different codes, so a
+          // second copy with no code at all is an echo.
+          if (!c.code && seen.has(`subj:${c.subj}`)) return;
+          seen.add(key);
+          seen.add(`subj:${c.subj}`);
+          rows.push({ ...c, start: i === 0 ? start : null });
+        });
+      }
+    }
+    if (rows.length) out[wd] = rows.some((c) => c.start != null)
+      ? rows.slice().sort((a, b) => (a.start ?? 1e9) - (b.start ?? 1e9))
+      : rows;
   }
   return out;
 }
@@ -583,6 +625,7 @@ export type RawInputs = {
   displayCRuns?: { text: string; url: string }[][]; // every link inside each DisplayAI!C cell
   setupMessages?: string[][]; // Setup!N1:Q8 — the "For Dismissal Messages" block
   waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
+  verticalTimes?: string[][]; // Vertical!A1:J200 — column A the period times
   lessons?: string[][]; // Lessons!C1:J400 values — the teacher's own material by code
   lessonFormulas?: string[][]; // Lessons!C1:J400 formulas
   lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E and F
@@ -763,7 +806,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   return {
     fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
     dismissal: parseDismissal(inp.setupMessages || []),
-    dayPlan: dayPlanByWeekday(inp.vertical || [], lessons),
+    dayPlan: dayPlanByWeekday(inp.vertical || [], lessons, inp.verticalTimes || []),
     waiting: parseWaiting(inp.waiting || []),
     sources: buildSources(inp),
     slotBlock: inp.slotBlock || [],

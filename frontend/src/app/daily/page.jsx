@@ -329,14 +329,15 @@ export default function DailyPage() {
       const main = board.querySelector(".main");
       if (!main) return;
       const limit = () => main.getBoundingClientRect().bottom - (parseFloat(getComputedStyle(main).paddingBottom) || 0);
+      const wide = () => main.scrollWidth > main.clientWidth + 1;
       const slack = limit() - contentBottom(main);
-      if (slack >= 0 && slack < main.clientHeight * FIT_SLACK) return;
+      if (slack >= 0 && slack < main.clientHeight * FIT_SLACK && !wide()) return;
       let lo = FIT_MIN;
       let hi = FIT_MAX;
       for (let i = 0; i < 9; i += 1) {
         const mid = (lo + hi) / 2;
         board.style.setProperty("--fit", String(mid));
-        if (contentBottom(main) > limit()) hi = mid;
+        if (contentBottom(main) > limit() || wide()) hi = mid;
         else lo = mid;
       }
       board.style.setProperty("--fit", String(lo));
@@ -760,8 +761,13 @@ export default function DailyPage() {
             {dayPlan.length > 0 ? (
               <div className="agenda">
                 {dayPlan.map((c, i) => [
-                  <span key={`t${i}`} className="t">{c.room || "—"}</span>,
-                  <span key={`s${i}`}><b>{c.subj}</b>{c.today ? ` · ${c.today}` : ""}</span>,
+                  <span key={`t${i}`} className="t">{c.start != null ? fmt(c.start) : c.room || "—"}</span>,
+                  <span key={`s${i}`}>
+                    <b>{c.subj}</b>
+                    {c.start != null && c.room ? ` · ${c.room}` : ""}
+                    {c.page ? ` · ${c.page}` : ""}
+                    {c.today ? ` · ${c.today}` : ""}
+                  </span>,
                 ])}
               </div>
             ) : P.length > 0 ? (

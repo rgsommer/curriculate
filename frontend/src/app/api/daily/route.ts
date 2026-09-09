@@ -76,7 +76,7 @@ export async function GET(req: Request) {
       "Riddles!D1:D400",    // 8
       "Master!B1:B2",       // 9
       "Verses!A1:A400",     // 10 what A5 picks the day's verse from
-      "Vertical!B4",        // 11
+      "Vertical!A1:J200",   // 11 column A the period times, F to J the day's plan
       "Points!A3:BZ3",      // 12
       "Points!A46:BZ46",    // 13
       "Lessons!C1:J400",    // 14 the teacher's own material, keyed by lesson code
@@ -148,7 +148,9 @@ export async function GET(req: Request) {
       lessonFormulas: formulas[6] || [],
       lessonLinkRuns: lessonGrid.runs || [],
       verses: values[10] || [],
-      verseWeek: values[11] || [],
+      // Vertical!B4 lives inside the block above, so it costs no extra range.
+      verseWeek: [[(((values[11] || [])[3] || [])[1]) || ""]],
+      verticalTimes: values[11] || [],
       pointsRow3: (values[12] || [])[0] || [],
       pointsRow46: (values[13] || [])[0] || [],
       displayLinks: grid.first || [],
