@@ -42,8 +42,10 @@ export default function SetupPage() {
   }
   if (loading) return <p className="text-slate-500">Loading…</p>;
 
-  // No school yet → create one (this caller becomes the originator).
-  if (!me?.membership) return <CreateSchool onCreated={refresh} />;
+  // No school yet. If one already exists on this email domain, joining it is
+  // almost always what was meant — creating a second school for the same staff
+  // is how colleagues end up unable to see each other's roster.
+  if (!me?.membership) return <JoinOrCreate onDone={refresh} />;
 
   const isAdmin = me.membership.role === "originator" || me.membership.role === "admin";
   if (!isAdmin) return <ReadOnlySettings me={me} />;
@@ -66,6 +68,7 @@ export default function SetupPage() {
       <GuddSettings config={me.config} />
       <AdminDigestSettings config={me.config} myEmail={me.membership?.email || ""} />
       <EdsbySection edsby={me.config?.edsby} />
+      <JoinRequestsSection domain={me.school?.emailDomain || ""} />
       <InviteSection domain={me.school?.emailDomain || ""} isOriginator={me.membership.role === "originator"} />
       <RosterSection />
       <AddStudentSection />
@@ -308,6 +311,149 @@ function ConfigSection({ config }: { config: any }) {
         </p>
       </div>
       <div className="mt-4"><SaveButton state={saveState} onClick={save} label="Save configuration" /></div>
+    </Card>
+  );
+}
+
+/**
+ * Shown to a signed-in user who belongs to no school yet.
+ *
+ * If a school already exists on their email domain, offer to join it. This is a
+ * REQUEST an admin approves, not an automatic join: signup does not verify that
+ * the address is theirs, so the domain is a hint rather than proof.
+ */
+function JoinOrCreate({ onDone }: { onDone: () => void }) {
+  const [avail, setAvail] = useState<{
+    canRequest?: boolean; schoolName?: string; reason?: string; status?: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    api<any>("/join/available").then(setAvail).catch(() => setAvail({ canRequest: false }));
+  }, []);
+
+  async function request() {
+    setBusy(true);
+    setErr("");
+    try {
+      await api("/join/request", { method: "POST", body: {} });
+      setSent(true);
+    } catch (e: any) {
+      setErr(e.message || "Could not send the request");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent || avail?.status === "pending") {
+    return (
+      <Card>
+        <h2 className="font-semibold">Request sent</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          An admin at {avail?.schoolName || "your school"} needs to approve you. You will see the
+          roster as soon as they do — no need to sign up again.
+        </p>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {avail?.canRequest && (
+        <Card>
+          <h2 className="font-semibold">Join {avail.schoolName}</h2>
+          <p className="mt-1 text-sm text-slate-600">
+            Your email is on this school&apos;s domain. Ask to join and an admin approves you with
+            one click — you will share their students, behaviours and settings.
+          </p>
+          {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+          <button type="button" onClick={request} disabled={busy}
+            className="mt-3 rounded-lg bg-slate-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">
+            {busy ? "Sending…" : `Ask to join ${avail.schoolName}`}
+          </button>
+          <p className="mt-3 text-xs text-slate-400">
+            Only create a separate school below if you are genuinely a different school — staff who
+            create their own cannot see each other&apos;s roster.
+          </p>
+        </Card>
+      )}
+      <CreateSchool onCreated={onDone} />
+    </div>
+  );
+}
+
+/** Admin: colleagues waiting on a domain-based join request. */
+function JoinRequestsSection({ domain }: { domain: string }) {
+  const [pending, setPending] = useState<any[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function load() {
+    try {
+      const r = await api<any>("/join/requests");
+      setPending(r.pending || []);
+    } catch (e: any) {
+      setErr(e.message || "");
+      setPending([]);
+    }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function decide(userIds: string[], approve: boolean) {
+    setBusy(true);
+    setErr("");
+    try {
+      await api("/join/decide", { method: "POST", body: { userIds, approve } });
+      await load();
+    } catch (e: any) {
+      setErr(e.message || "Could not update");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Nothing waiting: stay out of the way rather than showing an empty panel.
+  if (!pending || pending.length === 0) return null;
+
+  return (
+    <Card>
+      <h2 className="font-semibold">
+        {pending.length} {pending.length === 1 ? "person wants" : "people want"} to join
+      </h2>
+      <p className="mt-1 text-sm text-slate-500">
+        They signed up with an @{domain} address and asked to join. Approving lets them see this
+        school&apos;s students and behaviours.
+      </p>
+      {err && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
+      <ul className="mt-3 divide-y divide-slate-100">
+        {pending.map((p) => (
+          <li key={p.userId} className="flex items-center justify-between gap-3 py-2">
+            <span className="text-sm">
+              <span className="font-medium">{p.name || p.email}</span>
+              {p.name && <span className="text-slate-500"> · {p.email}</span>}
+            </span>
+            <span className="flex gap-2">
+              <button type="button" disabled={busy} onClick={() => decide([p.userId], true)}
+                className="rounded-lg bg-slate-900 px-3 py-1 text-xs text-white disabled:opacity-40">
+                Approve
+              </button>
+              <button type="button" disabled={busy} onClick={() => decide([p.userId], false)}
+                className="rounded-lg border border-slate-300 px-3 py-1 text-xs disabled:opacity-40">
+                Deny
+              </button>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {pending.length > 1 && (
+        <button type="button" disabled={busy}
+          onClick={() => decide(pending.map((p) => p.userId), true)}
+          className="mt-3 rounded-lg border border-slate-300 px-3 py-1.5 text-sm disabled:opacity-40">
+          Approve all {pending.length}
+        </button>
+      )}
     </Card>
   );
 }

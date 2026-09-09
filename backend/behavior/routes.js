@@ -63,6 +63,54 @@ function emailDomain(email) {
   return at === -1 ? "" : e.slice(at + 1).trim();
 }
 
+// Public mailbox providers. A school whose originator signed up with a personal
+// address must never offer domain-based joining — @gmail.com would let anyone
+// on earth request access to a student roster.
+const PUBLIC_EMAIL_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "outlook.com", "hotmail.com", "live.com", "msn.com",
+  "yahoo.com", "yahoo.co.uk", "ymail.com", "aol.com", "icloud.com", "me.com", "mac.com",
+  "proton.me", "protonmail.com", "gmx.com", "mail.com", "zoho.com", "yandex.com",
+  "fastmail.com", "hey.com", "tutanota.com", "pm.me",
+]);
+
+/** Is this domain one a school may use for domain-based joining? */
+export function isSchoolDomain(domain) {
+  const d = String(domain || "").toLowerCase().trim();
+  if (!d || !d.includes(".")) return false;
+  if (d.length > 253) return false;
+  return !PUBLIC_EMAIL_DOMAINS.has(d);
+}
+
+/**
+ * Decide what a signed-in user may do about a school matching their domain.
+ *
+ * Deliberately NOT auto-join: signup does not verify email ownership
+ * (POST /auth/signup creates the account outright), so a matching domain
+ * proves nothing on its own. Anyone able to type name@school.org would
+ * otherwise read the whole roster. A request an admin approves keeps a human
+ * between an unverified address and student data, while sparing the admin from
+ * typing every colleague's address into an invite.
+ */
+export function joinEligibility({ userEmail, school, existingMembership }) {
+  const domain = emailDomain(userEmail);
+  if (!domain) return { canRequest: false, reason: "no email domain" };
+  if (!school) return { canRequest: false, reason: "no school for that domain" };
+  if (!isSchoolDomain(school.emailDomain)) {
+    return { canRequest: false, reason: "school uses a public email domain" };
+  }
+  if (domain !== String(school.emailDomain || "").toLowerCase()) {
+    return { canRequest: false, reason: "email domain does not match the school" };
+  }
+  if (existingMembership) {
+    return {
+      canRequest: false,
+      reason: existingMembership.status === "pending" ? "already requested" : "already a member",
+      status: existingMembership.status,
+    };
+  }
+  return { canRequest: true, schoolId: school._id, schoolName: school.name };
+}
+
 // Sanitise an offence-category array to the allowed set; positives carry none.
 // Clamp an incident intensity weight to the allowed set {0.5, 1, 1.5, 2}.
 function clampWeight(w) {
@@ -1513,6 +1561,124 @@ router.post("/roster/import", authAny, loadMembership, requireAdmin, upload.sing
       meta: { imported, updated, deactivated, skippedCount: skipped.length, housesCreated, headerMap },
     });
     res.json({ ok: true, imported, updated, deactivated, skipped, housesCreated, headerMap });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Domain-based joining (§3) ────────────────────────────────────────────────
+//
+// An admin should not have to type every colleague's address into an invite.
+// A user whose email domain matches a school can ASK to join; an admin approves
+// with one click. Not an auto-join: signup does not verify email ownership, so
+// a matching domain is a hint, not proof. The pending row grants nothing —
+// loadMembership prefers accepted memberships and every read is scoped by
+// schoolId, so a pending user sees no student data.
+
+/** What can this signed-in user do about a school on their email domain? */
+router.get("/join/available", authAny, async (req, res, next) => {
+  try {
+    const domain = emailDomain(req.user?.email);
+    const school = domain && isSchoolDomain(domain)
+      ? await BehaviorSchool.findOne({ emailDomain: domain }).lean()
+      : null;
+    const existing = school
+      ? await BehaviorTeacher.findOne({ schoolId: school._id, userId: req.userId }).lean()
+      : null;
+
+    const eligibility = joinEligibility({
+      userEmail: req.user?.email,
+      school,
+      existingMembership: existing,
+    });
+    res.json({
+      ok: true,
+      ...eligibility,
+      // Never leak that a school exists on a domain the caller is not part of.
+      schoolName: eligibility.canRequest || existing ? (school?.name || "") : "",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Ask to join the school on your email domain. Creates a PENDING membership. */
+router.post("/join/request", authAny, async (req, res, next) => {
+  try {
+    const domain = emailDomain(req.user?.email);
+    const school = domain && isSchoolDomain(domain)
+      ? await BehaviorSchool.findOne({ emailDomain: domain }).lean()
+      : null;
+    const existing = school
+      ? await BehaviorTeacher.findOne({ schoolId: school._id, userId: req.userId }).lean()
+      : null;
+
+    const eligibility = joinEligibility({
+      userEmail: req.user?.email,
+      school,
+      existingMembership: existing,
+    });
+    if (!eligibility.canRequest) {
+      return res.status(400).json({ ok: false, error: eligibility.reason });
+    }
+
+    await BehaviorTeacher.create({
+      schoolId: school._id,
+      userId: req.userId,
+      email: String(req.user.email).toLowerCase(),
+      name: req.user.name || "",
+      role: "teacher",
+      status: "pending",
+    });
+    await audit(school._id, "join.requested", req, { meta: { email: req.user.email } });
+    res.json({ ok: true, status: "pending", schoolName: school.name });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/** Admin: who is waiting. */
+router.get("/join/requests", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const pending = await BehaviorTeacher.find({ schoolId: req.schoolId, status: "pending" })
+      .select("userId email name role createdAt")
+      .sort({ createdAt: 1 })
+      .lean();
+    res.json({ ok: true, pending });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Admin: approve or deny waiting requests. Approving accepts them as teachers;
+ * denying removes the row so the person can ask again if it was a mistake.
+ * Accepts one userId or a list, so "approve all" is a single call.
+ */
+router.post("/join/decide", authAny, loadMembership, requireAdmin, async (req, res, next) => {
+  try {
+    const ids = (Array.isArray(req.body?.userIds) ? req.body.userIds : [req.body?.userId])
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    if (!ids.length) return res.status(400).json({ ok: false, error: "userId or userIds required" });
+
+    const approve = req.body?.approve !== false;
+    // Scoped to this school AND to pending rows, so this can never flip an
+    // existing accepted membership or touch another school's.
+    const filter = { schoolId: req.schoolId, status: "pending", userId: { $in: ids } };
+
+    let changed;
+    if (approve) {
+      const r = await BehaviorTeacher.updateMany(filter, { $set: { status: "accepted" } });
+      changed = r.modifiedCount ?? r.nModified ?? 0;
+    } else {
+      const r = await BehaviorTeacher.deleteMany(filter);
+      changed = r.deletedCount ?? 0;
+    }
+    await audit(req.schoolId, approve ? "join.approved" : "join.denied", req, {
+      meta: { count: changed, userIds: ids },
+    });
+    res.json({ ok: true, [approve ? "approved" : "denied"]: changed });
   } catch (err) {
     next(err);
   }
