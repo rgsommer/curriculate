@@ -375,6 +375,39 @@ export function dayPlanByWeekday(
       return list && list.length ? (list.shift() as string) : "";
     };
 
+    // Vertical is the spine — it carries the times and the codes — but it is the
+    // teacher's shorthand. VerticalAi is the same lessons written for the room,
+    // so where both describe the same class the AI wording is what gets shown.
+    const written = new Map<string, DayClass>();
+    for (const row of verticalAi || []) {
+      const text = String((row || [])[wd] || "");
+      if (!text) continue;
+      for (const c of classesFromText(text)) {
+        if (!c.today) continue;
+        const byBoth = `${c.subj}|${c.code}`;
+        if (!written.has(byBoth)) written.set(byBoth, c);
+        if (!written.has(c.subj)) written.set(c.subj, c);
+      }
+    }
+    const asWritten = (c: DayClass): DayClass => {
+      const a = written.get(`${c.subj}|${c.code}`) || written.get(c.subj);
+      if (!a || !a.today || a.today === c.today) return c;
+      const seenUrl = new Set(c.links.map((x) => canonicalUrl(x.url)));
+      return {
+        ...c,
+        today: a.today,
+        q: a.q || c.q,
+        plan: a.plan.length ? a.plan : c.plan,
+        assign: a.assign.length ? a.assign : c.assign,
+        links: c.links.concat(
+          a.links.filter((x) => {
+            const k = canonicalUrl(x.url);
+            return seenUrl.has(k) ? false : seenUrl.add(k);
+          })
+        ),
+      };
+    };
+
     const rows: DayClass[] = [];
     const seen = new Set<string>();
     const n = Math.max((vertical || []).length, (verticalAi || []).length);
@@ -400,7 +433,7 @@ export function dayPlanByWeekday(
           seen.add(key);
           seen.add(`subj:${raw.subj}`);
           // The lesson's own material is looked up once the code is settled.
-          const c = withLesson({ ...raw, code }, lessons);
+          const c = withLesson(asWritten({ ...raw, code }), lessons);
           rows.push({ ...c, start: i === 0 ? start : null });
         });
       }

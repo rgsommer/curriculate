@@ -33,6 +33,10 @@ const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
 // A riddle for the bottom bar at the end of the day, for the days the sheet has
 // none of its own. Picked by the date so it does not change while it is up.
+// Said before lunch, where the end-of-day benediction used to appear.
+const LUNCH_GRACE =
+  "For food in a world where many walk in hunger, for faith in a world where many walk in fear, "
+  + "and for friends in a world where many walk alone \u2014 we give You thanks.";
 const HOUSE_RIDDLES = [
   "What has to be broken before you can use it?",
   "I am tall when I am young and short when I am old. What am I?",
@@ -75,11 +79,39 @@ function driveId(url) {
  * right place. The rows DisplayAI carries are kept alongside, so the gaps
  * between classes still read as changes of class.
  */
-function periodsFromPlan(rows, timed) {
-  const bounds = Array.from(new Set([...rows.map((r) => r.start), ...timed.map((c) => c.start)])).sort((a, b) => a - b);
-  const endAfter = (start) => bounds.find((b) => b > start) ?? start + 60;
+function periodsFromPlan(rows, plan) {
+  const timed = plan.filter((c) => c.start != null);
   const planned = new Set(timed.map((c) => c.start));
-  const out = timed.map((c) => ({
+  // A class the plan gives no time to still has to appear. The day's blank time
+  // rows are the slots left for them, taken in order — without this the
+  // afternoon simply vanished whenever Vertical carried times for the morning
+  // only.
+  const spare = rows
+    .filter((r) => r.empty && !planned.has(r.start))
+    .map((r) => r.start)
+    .sort((a, b) => a - b);
+  const all = [];
+  let cursor = 0;
+  let lastAt = -1;
+  for (const c of plan) {
+    if (c.start != null) {
+      lastAt = c.start;
+      all.push(c);
+      continue;
+    }
+    // The next blank slot after the class before it, so an untimed afternoon
+    // does not land back in the morning.
+    while (cursor < spare.length && spare[cursor] <= lastAt) cursor += 1;
+    if (cursor >= spare.length) continue;
+    lastAt = spare[cursor];
+    all.push({ ...c, start: spare[cursor] });
+    cursor += 1;
+  }
+  const used = new Set(all.map((c) => c.start));
+
+  const bounds = Array.from(new Set([...rows.map((r) => r.start), ...all.map((c) => c.start)])).sort((a, b) => a - b);
+  const endAfter = (start) => bounds.find((b) => b > start) ?? start + 60;
+  const out = all.map((c) => ({
     start: c.start,
     end: endAfter(c.start),
     text: c.today,
@@ -103,7 +135,7 @@ function periodsFromPlan(rows, timed) {
     homework: c.homework || "",
     image: c.image || "",
   }));
-  for (const r of rows) if (!planned.has(r.start)) out.push({ ...r, end: endAfter(r.start) });
+  for (const r of rows) if (!used.has(r.start)) out.push({ ...r, end: endAfter(r.start) });
   return out.sort((a, b) => a.start - b.start);
 }
 
@@ -339,10 +371,8 @@ export default function DailyPage() {
     // the board runs its ordinary class screens and the scrubber moves between
     // them — 11:00 AM shows the 11:00 AM class — instead of one static list.
     const wd = new Date().getDay() + 1;
-    const timedPlan = ((data.dayPlan || {})[wd] || []).filter((c) => c.start != null);
-    const P = rows.some((p) => !p.duty && !p.empty) || !timedPlan.length
-      ? rows
-      : periodsFromPlan(rows, timedPlan);
+    const plan = (data.dayPlan || {})[wd] || [];
+    const P = rows.some((p) => !p.duty && !p.empty) || !plan.length ? rows : periodsFromPlan(rows, plan);
     const classes = P.filter((p) => !p.duty && !p.empty);
     let cur = null;
     for (const p of P) if (t >= p.start && t < p.end) { cur = p; break; }
@@ -367,9 +397,11 @@ export default function DailyPage() {
     const contentBottom = (main) => {
       let bottom = 0;
       for (const col of main.children) {
-        if (col.classList.contains("picture")) continue;
+        // A picture is elastic by design, and an empty column is stretched to
+        // the row — measuring either would report a full screen and stop the
+        // type ever growing.
+        if (col.classList.contains("picture") || !col.children.length) continue;
         for (const kid of col.children) bottom = Math.max(bottom, kid.getBoundingClientRect().bottom);
-        if (!col.children.length) bottom = Math.max(bottom, col.getBoundingClientRect().bottom);
       }
       return bottom;
     };
@@ -470,8 +502,10 @@ export default function DailyPage() {
   // dismissal package. The nation of the day comes forward then and before each
   // of the sheet's other message times as well.
   const endOfDaySoon = endOfDayAt != null && t >= endOfDayAt - dismissal.advanceMin && t < endOfDayAt;
-  const msgSoon = endOfDaySoon
-    || !!dismissal.times.find((m) => t >= m.at - dismissal.advanceMin && t < m.at);
+  const msgNear = dismissal.times.find((m) => t >= m.at - dismissal.advanceMin && t < m.at) || null;
+  const msgSoon = endOfDaySoon || !!msgNear;
+  // The last minutes before lunch get a grace, not the end-of-day benediction.
+  const lunchSoon = !endOfDaySoon && !!msgNear && /lunch/i.test(msgNear.label);
   const nextRow = P.find((p) => !p.empty && p.start >= (cur ? cur.end : t)) || null;
   const nextUp = nextRow
     ? {
@@ -705,6 +739,8 @@ export default function DailyPage() {
               {row("Kiss & Ride waiting", waiting.length ? waiting.join(" | ") : "")}
               {row("verse (as read)", meta.verse)}
               {row("verse (evaluated)", verseSrc.text ? `${verseSrc.open ? "full" : "short"} \u2014 ${verse}` : "Verses tab not read; using A5")}
+              {row("day plan", dayPlan.length ? dayPlan.map((c) => `${c.start == null ? "--:--" : fmt(c.start)} ${c.subj}${c.code ? ` (${c.code})` : ""}`).join("  |  ") : "")}
+              {row("periods in view", P.map((x) => `${fmt(x.start)}${x.subj ? ` ${x.subj}` : x.empty ? " —" : " duty"}`).join("  |  "))}
               {row("lesson material", cur ? `page: ${cur.page || "—"} · homework: ${(cur.homework || "—").slice(0, 60)} · image: ${cur.image || "—"} · video: ${cur.video || "—"}` : "")}
               {row("handouts (current class)", cur && (cur.links || []).length ? cur.links.map((l) => `${l.label} \u2192 ${l.url}`).join("  |  ") : "")}
               {row("puzzle", meta.puzzle)}
@@ -891,7 +927,6 @@ export default function DailyPage() {
     redState = left <= setup.redAt;
     const phase = elapsed < setup.openMin ? "open" : "work";
     const nx = nextClass(cur.end);
-    const isLast = lastClass && lastClass.start === cur.start;
     // The picture for this lesson comes from its Lessons row when there is one;
     // the Setup slot picture is the fallback.
     const lessonPic = cur.image ? { url: cur.image, seconds: setup.picSeconds } : data.picture;
@@ -940,8 +975,11 @@ export default function DailyPage() {
       const agendaText = cur.assign.length ? cur.assign.join("; ") : cur.homework || cur.remind;
       if (left <= setup.homeworkAt) blocks.push(<div key="h" className="block alert"><h3>Write in your agenda</h3><p>{agendaText}</p></div>);
       else if (phase !== "open" && cur.assign.length) blocks.push(<div key="a" className="block sun"><h3>Assign</h3>{list(cur.assign)}</div>);
-      if (isLast && left <= setup.nextAdvance && meta.headout.length) blocks.push(<div key="x" className="block alert"><h3>Before you head out</h3>{list(meta.headout)}</div>);
-      side = <div className="panel">{blocks}</div>;
+      // "Before you head out" belongs to the end of the day, and the end of the
+      // day is the dismissal time — not simply the last class on the board,
+      // which is what used to put the benediction up before lunch.
+      if (lunchSoon) blocks.push(<div key="l" className="block sun"><h3>Before lunch</h3><p>{LUNCH_GRACE}</p></div>);
+      side = blocks.length ? <div className="panel">{blocks}</div> : null;
     }
 
     body = (
@@ -958,7 +996,7 @@ export default function DailyPage() {
           when: `${fmt(cur.start)} to ${fmt(cur.end)} · ${cur.end - cur.start} min`,
           leftHtml: <><b>{left} min</b> left</>, pct, red: redState, period: cur,
         })}
-        <div className={`main${picOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !endOfDaySoon ? " pic-feature" : ""}`}>
+        <div className={`main${side ? "" : " solo"}${picOn && !endOfDaySoon ? ` pic-${opts.pic}` : ""}${featureImage && !endOfDaySoon ? " pic-feature" : ""}`}>
           {picOn && !endOfDaySoon && opts.pic === "left" ? <>{side}{leftCol}</> : <>{leftCol}{side}</>}
         </div>
         {footer(left <= setup.nextAdvance)}
