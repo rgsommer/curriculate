@@ -520,6 +520,24 @@ check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissal
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
+// ---- the corrective writing assignment ----
+const pgrid = (() => {
+  const g = [];
+  for (let r = 0; r < 46; r += 1) g[r] = [];
+  const cols = [4, 17, 30, 43, 56];
+  ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => { g[2][cols[i] - 1] = n; });
+  // Six days: only the last five count, so 7A's poor day outside the window
+  // must not add to its tally — it has one inside, which is not enough.
+  [[2, 7, 6, 8, 8], [2, 8, 7, 8, 7], [8, 6, 8, 3, 6], [8, 7, 7, 7, 8], [7, 8, 6, 4, 5], [9, 9, 9, 9, 9]]
+    .forEach((row, d) => { row.forEach((v, i) => { g[3 + d][cols[i] - 1] = String(v); }); });
+  return g;
+})();
+const owed = P.writingOwed(pgrid, pgrid[2]);
+check("writing: two poor days in the last five", owed.writing.join() === "8A", owed);
+check("writing: the note says which columns it read", /8A=AQ/.test(owed.writingNote), owed.writingNote);
+check("writing: an empty grid says so", P.writingOwed([], []).writing.length === 0);
+check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && P.columnName(74) === "BV");
+
 // ---- the privilege code, in words ----
 check("status words: a pair", P.statusWords("AB1 & B2").words === "Free seat + Free pass", P.statusWords("AB1 & B2"));
 check("status words: all three", P.statusWords("BAll 3").words === "All 3");

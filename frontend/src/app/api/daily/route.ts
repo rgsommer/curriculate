@@ -77,10 +77,11 @@ export async function GET(req: Request) {
       "Master!B1:B2",       // 9
       "Verses!A1:A400",     // 10 what A5 picks the day's verse from
       "Vertical!A1:J200",   // 11 column A the period times, F to J the day's plan
-      "Points!A3:BZ3",      // 12
-      "Points!A46:BZ46",    // 13
-      "Lessons!C1:J400",    // 14 the teacher's own material, keyed by lesson code
-      ...(waitingRange ? [waitingRange] : []), // 15
+      // Row 3 the class names, row 46 the four privilege flags, and the days in
+      // between — one read where there used to be two.
+      "Points!A1:BV46",     // 12
+      "Lessons!C1:J400",    // 13 the teacher's own material, keyed by lesson code
+      ...(waitingRange ? [waitingRange] : []), // 14
     ];
     const FORMULAS = [
       "DisplayAI!D1:D40",   // 0 the video link on each row
@@ -106,7 +107,7 @@ export async function GET(req: Request) {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[15] || []) : [];
+    const waiting = waitingRange ? (values[14] || []) : [];
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
@@ -146,15 +147,16 @@ export async function GET(req: Request) {
       vertical: values[7] || [],
       riddles: values[8] || [],
       master: values[9] || [],
-      lessons: values[14] || [],
+      lessons: values[13] || [],
       lessonFormulas: formulas[6] || [],
       lessonLinkRuns: lessonGrid.runs || [],
       verses: values[10] || [],
       // Vertical!B4 lives inside the block above, so it costs no extra range.
       verseWeek: [[(((values[11] || [])[3] || [])[1]) || ""]],
       verticalTimes: values[11] || [],
-      pointsRow3: (values[12] || [])[0] || [],
-      pointsRow46: (values[13] || [])[0] || [],
+      pointsGrid: values[12] || [],
+      pointsRow3: (values[12] || [])[2] || [],
+      pointsRow46: (values[12] || [])[45] || [],
       displayLinks: grid.first || [],
       displayCRuns: (grid.runs || []).map((row) => (row || [])[2] || []),
       setupMessages,

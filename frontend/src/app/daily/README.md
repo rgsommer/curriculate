@@ -44,7 +44,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Setup!N1:Q8` | The "For Dismissal Messages" block: when the end-of-day material comes forward (lunch, lunch recess, dismissal) and how many minutes ahead. |
 | `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D400`, `Master!B1:B2` | Ingredients for the display rules the board evaluates itself. |
 | `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
-| `Points!A3:BZ3`, `Points!A46:BZ46` | Class names and the four privilege flags per class, for the status badge and the points strip labels. |
+| `Points!A1:BV46` | Row 3 the class names, row 46 the four privilege flags each, and the days in between — the status bubble, the points strip labels and the writing penalty all come from this one read. |
 | `Lessons!C1:J400` (values, formulas, and the links inside E and F) | The teacher's own material, keyed by lesson code in column C ("~H001" or "H001"): E the starting page reference, F the homework, I the lesson picture, J the video. The student-facing tabs leave this out on purpose, so it is looked up by code and folded into whichever class carries that code. |
 | `Vertical!A1:J200` | Column A the period times, F to J Monday to Friday — the day's plan with a row per period. B4 (the week the verse is indexed by) is inside this block, so it costs no extra range. |
 | `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
@@ -163,6 +163,20 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | FD | Extra FD | the same window as the pass | Benefit 3 — a week's average at that level: an extra Formal Discussion |
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
+
+### The writing penalty
+
+The legend's last row — *"Writing assignment penalty if below x points z times in
+previous y days"* — is the one rule the sheet does not work out for itself, so
+the board does: **more than one day of five points or fewer inside the last five
+school days** puts a brown **Writing** chip beside the class on screen.
+
+The daily scores sit in the Points tab in a block of columns per class.
+`writingOwed` finds each block's score column — the column under the class's own
+name first, since that is where a table headed by the class puts them, otherwise
+whichever column in the block carries a day's worth of small numbers — and
+`?debug=1` prints the row range and the column it settled on for each class
+("`8A=AQ`"), which is the first place to look if a chip is missing or wrong.
 
 When nothing is on the table the bubble is not drawn at all, rather than sitting
 there grey. The colour is worked out from what is actually on offer — the code is
