@@ -157,6 +157,9 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .main.endofday .block li { font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
 .main.endofday .summary.blessing { font-size: calc(clamp(13px, 2.1vh, 22px) * var(--fit)); margin: 0; }
 .panel.dismissalpanel { gap: 1.4vh; }
+/* The one instruction the room has to act on before the bell. */
+.panel.dismissalpanel .block.ready { border: 2px solid var(--alert); }
+.panel.dismissalpanel .block.ready p { font-weight: 500; }
 .panel.dismissalpanel .block { padding: 1.2vh 1.4vw; }
 .panel.dismissalpanel .block p, .panel.dismissalpanel .block li { font-size: calc(clamp(14px, 2.5vh, 27px) * var(--fit)); }
 /* The blessing at the end of the head-out cell, set apart from the list. */

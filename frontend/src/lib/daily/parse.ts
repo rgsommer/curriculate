@@ -46,6 +46,7 @@ export type Setup = {
   dismissalAt: number | null;
   riddleUntil: number | null;
   graceMin: number;
+  dismissalReadyMin: number;
   washroomBefore: number;
   snacksB2Min: number;
   openMin: number;
@@ -108,6 +109,7 @@ export const DEFAULT_SETUP: Setup = {
   dismissalAt: null,
   riddleUntil: null,
   graceMin: 15,
+  dismissalReadyMin: 5,
   washroomBefore: 10,
   snacksB2Min: 5,
   openMin: 5,
@@ -674,18 +676,47 @@ export function parseStatus(s: string) {
   return { rec: false, letter: m[1] || "", grace: !!m[2], FD: f[0], B1: f[1], B2: f[2], extra: !!m[4], raw };
 }
 
-/** "Plans for Thursday, Sep 10, 2026...   -660--871--220--820--290-" → title + point values. */
+/**
+ * "Plans for Thursday, Sep 10, 2026...   -660--871--220--820--290-" → title
+ * and one point value per class.
+ *
+ * Each class's value is written "-value-", so two neighbours share the run of
+ * dashes between them: two dashes when both wrappers are written out, one when
+ * the sheet joins them, and three when the value itself is negative ("--871").
+ * Splitting on the dash and counting the empty pieces tells those apart. A
+ * regex could not: matching "-660-" ate the dash that started "-871-", so on a
+ * sheet written with single dashes every second class vanished from the strip
+ * — four classes showed as two.
+ */
 export function parsePlansLine(s: string) {
   const t = String(s || "");
   const title = (t.match(/^(Plans for [^.]*\.{3})/) || [, t.trim()])[1] || t.trim();
   const tail = t.slice(title.length);
-  const re = /-(-?\d+(?:\.\d+)?)(%?)-/g;
-  const vals: RegExpExecArray[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(tail)) !== null) vals.push(m);
-  if (!vals.length) return { title, kind: null as null | "numbers" | "percents", values: [] as number[] };
-  const kind = vals.some((v) => v[2] === "%") ? "percents" : "numbers";
-  return { title, kind, values: vals.map((v) => parseFloat(v[1])) };
+  const values: number[] = [];
+  let percent = false;
+  let gap = 0;
+  for (const raw of tail.split("-")) {
+    const piece = raw.trim();
+    if (!piece) { gap += 1; continue; }
+    const m = piece.match(/^(\d+(?:\.\d+)?)(%?)$/);
+    if (m) {
+      if (m[2] === "%") percent = true;
+      values.push(parseFloat(m[1]) * (gap >= 2 ? -1 : 1));
+    }
+    gap = 0;
+  }
+  if (!values.length) return { title, kind: null as null | "numbers" | "percents", values: [] as number[] };
+  return { title, kind: (percent ? "percents" : "numbers") as "numbers" | "percents", values };
+}
+
+/**
+ * The class names from Points row 3, left to right — the order the plans line
+ * writes its values in. Reading them from the sheet is what lets the strip
+ * name the sections actually taught this year rather than a fixed 7A…8C list,
+ * which mislabelled every chip after a dropped section.
+ */
+export function pointsLabels(row3: string[]): string[] {
+  return POINTS_NAME_COLS.map((c) => String((row3 || [])[c - 1] || "").trim()).filter(Boolean);
 }
 
 function num(s: string, d: number): number {
@@ -821,6 +852,9 @@ export function parseSetup(rows: string[][]): Setup {
       out.blankFrom = parseTime(c);
       out.blankTo = parseTime(d);
     } else if (label.startsWith("show dismissal list")) out.dismissalAt = parseTime(d) ?? parseTime(c);
+    // No such row in the sheet yet; add one labelled "Stand ready for dismissal"
+    // with the minutes in column C to change it from five.
+    else if (/^(stand ready|get ready|dismissal ready)/.test(label)) out.dismissalReadyMin = num(c, out.dismissalReadyMin);
     else if (label.startsWith("show pregnancy weeks")) out.graceMin = num(d, out.graceMin);
     else if (label.startsWith("can go to washroom")) out.washroomBefore = num(d, out.washroomBefore);
     else if (label.startsWith("snacks are allowed")) out.snacksB2Min = num(c, out.snacksB2Min);
@@ -832,7 +866,7 @@ export type RawInputs = {
   display: string[][]; // DisplayAI!A1:F40 formatted values
   displayD: string[][]; // DisplayAI!D1:D40 formulas
   displayC: string[][]; // DisplayAI!C1:C40 formulas (hyperlinks inside lesson cells)
-  setup: string[][]; // Setup!A1:D20 values
+  setup: string[][]; // Setup!A1:F20 values
   slots: string[][]; // Setup!U1:AA8 values
   slotFormulas: string[][]; // Setup!U4:AA4 formulas
   feature: string; // Display!E1 (or DisplayAI!E1) formatted value
@@ -1077,12 +1111,13 @@ export type Sources = {
   verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
   verseWeek: number | null; // Vertical!B4
   pointsClasses: PointsClass[]; // for the D-column status rule
+  pointsLabels: string[]; // Points row 3 — the classes taught this year, in order
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [],
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [],
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1262,6 +1297,7 @@ export function buildSources(inp: RawInputs): Sources {
       return Number.isFinite(n) ? n : null;
     })(),
     pointsClasses: buildPointsClasses(inp.pointsRow3 || [], inp.pointsRow46 || []),
+    pointsLabels: pointsLabels(inp.pointsRow3 || []),
   };
 }
 
@@ -1276,6 +1312,9 @@ export function buildSources(inp: RawInputs): Sources {
  * ------------------------------------------------------------------ */
 
 export type PointsClass = { name: string; letter: string; digits: string[] };
+
+/** Where the class names sit in Points row 3, left to right. */
+export const POINTS_NAME_COLS = [4, 17, 30, 43, 56];
 
 /** Points row 3 holds the class names; row 46 holds four flags per class. */
 export function buildPointsClasses(row3: string[], row46: string[]): PointsClass[] {
