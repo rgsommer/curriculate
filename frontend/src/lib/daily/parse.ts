@@ -275,7 +275,8 @@ export function parseLessons(
  */
 export type DayClass = {
   subj: string; room: string; code: string; today: string; q: string;
-  links: LessonLink[]; page: string; homework: string; image: string;
+  plan: string[]; assign: string[]; remind: string;
+  links: LessonLink[]; page: string; homework: string; image: string; video: string;
   start: number | null; // from Vertical column A, when the row carries a time
 };
 
@@ -294,7 +295,13 @@ function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lesso
       return seen.has(key) ? false : seen.add(key);
     })
   );
-  return { ...c, links, page: l ? l.page : "", homework: l ? l.homework : "", image: l ? l.image : "" };
+  return {
+    ...c, links,
+    page: l ? l.page : "",
+    homework: l ? l.homework : "",
+    image: l ? l.image : "",
+    video: l ? l.video : "",
+  };
 }
 
 export function classesFromText(text: string, lessons: Record<string, Lesson> = {}): DayClass[] {
@@ -312,7 +319,16 @@ export function classesFromText(text: string, lessons: Record<string, Lesson> = 
     const key = `${c.subj}|${c.code}`;
     if (seen.has(key)) return;
     seen.add(key);
-    out.push({ ...withLesson({ subj: c.subj, room: c.room, code: c.code, today: c.today, q: c.q, links: c.links }, lessons), start: null });
+    out.push({
+      ...withLesson(
+        {
+          subj: c.subj, room: c.room, code: c.code, today: c.today, q: c.q,
+          plan: c.plan, assign: c.assign, remind: c.remind, links: c.links,
+        },
+        lessons
+      ),
+      start: null,
+    });
   });
   return out;
 }

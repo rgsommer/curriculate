@@ -67,6 +67,46 @@ function driveId(url) {
   const m = /drive\.google\.com\/file\/d\/([^/]+)/.exec(url || "");
   return m ? m[1] : null;
 }
+/**
+ * Periods built from the day's plan, for the days DisplayAI has not filled in.
+ *
+ * Each planned class runs to the next boundary — the next planned class, or the
+ * next time row DisplayAI does have, which is what keeps lunch and recess in the
+ * right place. The rows DisplayAI carries are kept alongside, so the gaps
+ * between classes still read as changes of class.
+ */
+function periodsFromPlan(rows, timed) {
+  const bounds = Array.from(new Set([...rows.map((r) => r.start), ...timed.map((c) => c.start)])).sort((a, b) => a - b);
+  const endAfter = (start) => bounds.find((b) => b > start) ?? start + 60;
+  const planned = new Set(timed.map((c) => c.start));
+  const out = timed.map((c) => ({
+    start: c.start,
+    end: endAfter(c.start),
+    text: c.today,
+    status: "",
+    flag: "",
+    video: c.video || "",
+    empty: false,
+    duty: false,
+    rec: false,
+    subj: c.subj,
+    sec: (c.subj.match(/(\d[A-C])\b/) || [, ""])[1],
+    room: c.room,
+    code: c.code,
+    today: c.today,
+    q: c.q,
+    plan: c.plan || [],
+    assign: c.assign || [],
+    remind: c.remind || "",
+    links: c.links || [],
+    page: c.page || "",
+    homework: c.homework || "",
+    image: c.image || "",
+  }));
+  for (const r of rows) if (!planned.has(r.start)) out.push({ ...r, end: endAfter(r.start) });
+  return out.sort((a, b) => a.start - b.start);
+}
+
 function parseStatus(raw) {
   const s = (raw || "").trim();
   if (!s) return null;
@@ -294,7 +334,15 @@ export default function DailyPage() {
 
   const view = useMemo(() => {
     if (!data) return null;
-    const P = data.periods;
+    const rows = data.periods;
+    // When DisplayAI has no lessons in it, the day's plan stands in for them, so
+    // the board runs its ordinary class screens and the scrubber moves between
+    // them — 11:00 AM shows the 11:00 AM class — instead of one static list.
+    const wd = new Date().getDay() + 1;
+    const timedPlan = ((data.dayPlan || {})[wd] || []).filter((c) => c.start != null);
+    const P = rows.some((p) => !p.duty && !p.empty) || !timedPlan.length
+      ? rows
+      : periodsFromPlan(rows, timedPlan);
     const classes = P.filter((p) => !p.duty && !p.empty);
     let cur = null;
     for (const p of P) if (t >= p.start && t < p.end) { cur = p; break; }
