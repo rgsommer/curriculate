@@ -79,16 +79,18 @@ function driveId(url) {
  * right place. The rows DisplayAI carries are kept alongside, so the gaps
  * between classes still read as changes of class.
  */
-function periodsFromPlan(rows, plan) {
+function periodsFromPlan(rows, plan, bell) {
   const timed = plan.filter((c) => c.start != null);
   const planned = new Set(timed.map((c) => c.start));
   // A class the plan gives no time to still has to appear. The day's blank time
   // rows are the slots left for them, taken in order — without this the
   // afternoon simply vanished whenever Vertical carried times for the morning
   // only.
-  const spare = rows
-    .filter((r) => r.empty && !planned.has(r.start))
-    .map((r) => r.start)
+  // Slots a class with no time can go in: a bell time that no timed class has
+  // taken and that DisplayAI has not named (lunch, recess, dismissal keep theirs).
+  const named = new Set(rows.filter((r) => !r.empty).map((r) => r.start));
+  const spare = Array.from(new Set([...bell, ...rows.filter((r) => r.empty).map((r) => r.start)]))
+    .filter((at) => !planned.has(at) && !named.has(at))
     .sort((a, b) => a - b);
   const all = [];
   let cursor = 0;
@@ -109,7 +111,9 @@ function periodsFromPlan(rows, plan) {
   }
   const used = new Set(all.map((c) => c.start));
 
-  const bounds = Array.from(new Set([...rows.map((r) => r.start), ...all.map((c) => c.start)])).sort((a, b) => a - b);
+  // Every period runs to the next bell, not to the next row DisplayAI happens
+  // to carry — that is what stretched a twenty-minute recess over an hour.
+  const bounds = Array.from(new Set([...bell, ...rows.map((r) => r.start), ...all.map((c) => c.start)])).sort((a, b) => a - b);
   const endAfter = (start) => bounds.find((b) => b > start) ?? start + 60;
   const out = all.map((c) => ({
     start: c.start,
@@ -372,7 +376,16 @@ export default function DailyPage() {
     // them — 11:00 AM shows the 11:00 AM class — instead of one static list.
     const wd = new Date().getDay() + 1;
     const plan = (data.dayPlan || {})[wd] || [];
-    const P = rows.some((p) => !p.duty && !p.empty) || !plan.length ? rows : periodsFromPlan(rows, plan);
+    const bell = data.dayTimes || [];
+    const built = rows.some((p) => !p.duty && !p.empty) || !plan.length ? rows : periodsFromPlan(rows, plan, bell);
+    // Vertical column A is the school's own bell schedule, so nothing runs past
+    // the next bell whatever the sheet's rows imply.
+    const P = bell.length
+      ? built.map((p) => {
+          const next = bell.find((b) => b > p.start);
+          return next != null && next < p.end ? { ...p, end: next } : p;
+        })
+      : built;
     const classes = P.filter((p) => !p.duty && !p.empty);
     let cur = null;
     for (const p of P) if (t >= p.start && t < p.end) { cur = p; break; }
@@ -740,6 +753,7 @@ export default function DailyPage() {
               {row("verse (as read)", meta.verse)}
               {row("verse (evaluated)", verseSrc.text ? `${verseSrc.open ? "full" : "short"} \u2014 ${verse}` : "Verses tab not read; using A5")}
               {row("day plan", dayPlan.length ? dayPlan.map((c) => `${c.start == null ? "--:--" : fmt(c.start)} ${c.subj}${c.code ? ` (${c.code})` : ""}`).join("  |  ") : "")}
+              {row("bell schedule", (data.dayTimes || []).map(fmt).join("  ") || "")}
               {row("periods in view", P.map((x) => `${fmt(x.start)}${x.subj ? ` ${x.subj}` : x.empty ? " —" : " duty"}`).join("  |  "))}
               {row("lesson material", cur ? `page: ${cur.page || "—"} · homework: ${(cur.homework || "—").slice(0, 60)} · image: ${cur.image || "—"} · video: ${cur.video || "—"}` : "")}
               {row("handouts (current class)", cur && (cur.links || []).length ? cur.links.map((l) => `${l.label} \u2192 ${l.url}`).join("  |  ") : "")}

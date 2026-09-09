@@ -83,6 +83,8 @@ export type Payload = {
   // and the Kiss & Ride waiting list they show alongside.
   dismissal: Dismissal;
   waiting: string[];
+  // Every period start on Vertical column A: the day's actual bell schedule.
+  dayTimes: number[];
   // The day's classes as written on VerticalAi, one entry per weekday, for when
   // DisplayAI's lesson column has not been filled in yet.
   dayPlan: Record<number, DayClass[]>;
@@ -976,6 +978,13 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   return {
     fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
     dismissal: parseDismissal(inp.setupMessages || []),
+    dayTimes: Array.from(
+      new Set(
+        (inp.verticalTimes || [])
+          .map((r) => parseTime(String((r || [])[0] || "")))
+          .filter((n): n is number => n != null)
+      )
+    ).sort((a, b) => a - b),
     dayPlan: dayPlanByWeekday(inp.vertical || [], lessons, inp.verticalTimes || []),
     waiting: parseWaiting(inp.waiting || []),
     sources: buildSources(inp),
