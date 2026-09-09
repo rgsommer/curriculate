@@ -1,30 +1,27 @@
 // backend/services/stocksDecisionRenderer.js
 //
-// P1 (2026-09-08) — renders the DECISION CARD at the top of the daily
-// briefing. Answers ONE question in <30 seconds:
+// P1 (2026-09-08) + P1 HARDENING (2026-09-08 patch)
+//
+// Renders the DECISION CARD at the top of the daily briefing. Answers
 //
 //     WHAT DO I DO TODAY?
 //
-// Consumes Decision[] from stocksDecisionEngine.buildDecisions and
-// emits a markdown block that goes ABOVE every other briefing section.
-//
-// Rendering rules:
-//   • BUY / SELL / TRIM / DEFERRED rise to the top (actionable).
-//   • HOLD / NO_ACTION collapse into ONE line at the bottom when none
-//     of them individually needs a review-date callout.
-//   • When zero actionable decisions exist, render a dominant
-//     "🟢 NO TRADES REQUIRED TODAY" state and elide the individual
-//     HOLD list entirely (expandable behind a subtle summary line).
-//   • Every actionable card carries WHY NOW (one sentence), the
-//     confidence stamp, and the evidence-freshness stamp.
+// P1 hardening changes:
+//   • Review-date rendering is well-formed. No more malformed
+//     "Next review: or earlier if ..." fragments. Every review has a
+//     first-class `label` string and the renderer emits it verbatim.
+//   • Un-validated BUY decisions are NEVER rendered as executable.
+//     They move to a distinct "OPPORTUNITY IDENTIFIED — ORDER NOT
+//     READY" section below the primary card so the reader cannot
+//     confuse a research candidate for a placeable order.
+//   • CORE HOLD renders "No scheduled review — event driven" instead
+//     of a padded conditional.
 //   • DEFERRED cards are visually distinct — no action, no confidence
-//     — the operator needs to see them so they know a decision could
-//     not be made rather than assume all-quiet.
-//
-// Deliberately does NOT include: sector-rotation commentary, factor
-// tables, alternative ETFs, technical diagnostics, research homework.
-// Those live under the fold in later briefing sections. The card is
-// pure signal.
+//     mask — the operator needs to see them so they know a decision
+//     could not be made rather than assume all-quiet.
+//   • The card excludes noise: no sector-rotation commentary, no
+//     factor tables, no alternative ETFs, no technical diagnostics,
+//     no research homework. Those belong under the fold.
 
 const ACTION_BADGES = {
   BUY:       "🔵",
@@ -44,9 +41,6 @@ const ACTION_LABEL = {
   DEFERRED:  "ACTION DEFERRED — DATA INSUFFICIENT",
 };
 
-// Ranking: actionable first, then deferred (surface but non-executable),
-// then HOLD/NO_ACTION last. Within each action bucket, sort by
-// confidence (HIGH first) so the most reliable calls are on top.
 const ACTION_ORDER = { SELL: 0, TRIM: 1, BUY: 2, DEFERRED: 3, HOLD: 4, NO_ACTION: 5 };
 const CONFIDENCE_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 
@@ -62,58 +56,59 @@ function sortDecisions(decisions) {
   });
 }
 
+// P1 HARDENING: well-formed review-date rendering. Every review has a
+// `.label` — a single, human-readable, complete phrase. No conditional
+// prefixes, no "or earlier if" glue with empty fields.
 function renderReviewLine(review) {
   if (!review) return "";
-  const bits = [];
-  if (review.date) bits.push(`by ${review.date}`);
-  if (review.condition) bits.push(`or earlier if ${review.condition}`);
-  if (review.type && !review.date && !review.condition) bits.push(review.type);
-  return bits.length ? `> Next review: ${bits.join(" ")}` : "";
+  const label = String(review.label || "").trim();
+  if (!label) return "";
+  return `> Next review: ${label}`;
 }
 
-function isActionable(d) {
-  return d.action === "BUY" || d.action === "SELL" || d.action === "TRIM" || d.action === "DEFERRED";
+function isPrimaryActionable(d) {
+  // A decision qualifies for the PRIMARY card only if it has a
+  // hard action AND has passed validation. Un-validated BUY moves
+  // to the secondary "opportunity identified" section.
+  if (d.action === "DEFERRED") return true;
+  if (d.action === "SELL" || d.action === "TRIM") {
+    return d.validated !== false;
+  }
+  if (d.action === "BUY") {
+    return d.validated === true;
+  }
+  return false;
 }
 
-// Every actionable card must be validated before it is rendered as
-// executable. If the validation report on the decision shows a
-// failure, the card renders in a WARNING state ("NOT VALIDATED —
-// resolve before placing") so the operator does not act on it.
+function isUnvalidatedOpportunity(d) {
+  return d.action === "BUY" && d.validated !== true;
+}
+
 function renderValidationBadge(d) {
-  if (!isActionable(d) || d.action === "DEFERRED") return "";
+  if (d.action === "DEFERRED") return "";
   if (d.validated === false) {
     const failures = (d.validationFailures || []).join("; ") || "no failure detail";
     return `\n> ⚠ **NOT VALIDATED** — do not place: ${failures}`;
   }
-  if (d.validated === true) return "";
-  // Undefined validated = renderer was called before validation ran.
-  // Surface conservatively.
-  return `\n> ⚠ **Order not yet validated** — do not place until validation completes.`;
+  return "";
 }
 
-function renderActionableCard(d) {
+function renderPrimaryCard(d) {
   const badge = ACTION_BADGES[d.action] || "•";
   const label = ACTION_LABEL[d.action] || d.action;
   const parts = [];
-  // Header line: badge, ticker, action label, share count (BUY/SELL/TRIM only)
   const shareStr = (d.shares != null && d.shares > 0 && d.action !== "HOLD" && d.action !== "NO_ACTION")
     ? ` ${d.shares} sh`
     : "";
   const acctStr = d.account ? ` (${d.account})` : "";
   parts.push(`### ${badge} ${d.ticker} — ${label}${shareStr}${acctStr}`);
-  // Body
-  if (d.orderInstruction) {
-    parts.push(`> Order: ${d.orderInstruction}`);
-  }
-  if (d.whyNow) {
-    parts.push(`> **Why now:** ${d.whyNow}`);
-  }
-  if (d.reason && d.reason !== d.whyNow) {
-    parts.push(`> Rule: \`${d.reason}\``);
-  }
+  if (d.orderInstruction) parts.push(`> Order: ${d.orderInstruction}`);
+  if (d.whyNow) parts.push(`> **Why now:** ${d.whyNow}`);
+  if (d.primaryRule) parts.push(`> Rule: \`${d.primaryRule}\``);
   const conf = d.confidence ? `confidence ${d.confidence}` : "";
   const fresh = d.evidenceFreshness ? `evidence ${d.evidenceFreshness}` : "";
-  const meta = [conf, fresh].filter(Boolean).join(" · ");
+  const stype = d.securityType && d.sleeve === "income" ? `type ${d.securityType}` : "";
+  const meta = [conf, fresh, stype].filter(Boolean).join(" · ");
   if (meta) parts.push(`> ${meta}`);
   const reviewLine = renderReviewLine(d.nextReview);
   if (reviewLine) parts.push(reviewLine);
@@ -122,9 +117,26 @@ function renderActionableCard(d) {
   return parts.join("\n");
 }
 
+// Secondary section — an OPPORTUNITY IDENTIFIED card. Clearly labeled
+// as non-actionable so the reader does not confuse it for a validated
+// order.
+function renderOpportunityCard(d) {
+  const parts = [];
+  const acctStr = d.account ? ` (${d.account})` : "";
+  parts.push(`### 🔎 ${d.ticker} — OPPORTUNITY IDENTIFIED · ORDER NOT READY${acctStr}`);
+  if (d.whyNow) parts.push(`> **Signal:** ${d.whyNow}`);
+  if (d.primaryRule) parts.push(`> Rule: \`${d.primaryRule}\``);
+  const conf = d.confidence ? `confidence ${d.confidence}` : "";
+  const fresh = d.evidenceFreshness ? `evidence ${d.evidenceFreshness}` : "";
+  const meta = [conf, fresh].filter(Boolean).join(" · ");
+  if (meta) parts.push(`> ${meta}`);
+  const failures = (d.validationFailures || []).filter(Boolean);
+  const detail = failures.length ? failures.join("; ") : "sizing / account selection / cash / currency / concentration checks did not complete before render";
+  parts.push(`> ⚠ **NOT executable today** — ${detail}. Card will render as BUY once the order pipeline validates.`);
+  return parts.join("\n");
+}
+
 function renderHoldSummary(holds) {
-  // Group by sleeve for compact display. A caller who wants the full
-  // per-ticker list can look under the §2 Positions section.
   if (!holds || holds.length === 0) return "";
   const bySleeve = new Map();
   for (const h of holds) {
@@ -144,14 +156,15 @@ function renderHoldSummary(holds) {
 // stocksDecisionEngine.buildDecisions.
 export function renderDecisionCard(decisions, ctx = {}) {
   const sorted = sortDecisions(decisions);
-  const actionable = sorted.filter(isActionable);
-  const holds      = sorted.filter(d => !isActionable(d));
+  const primary       = sorted.filter(isPrimaryActionable);
+  const opportunities = sorted.filter(isUnvalidatedOpportunity);
+  const holds         = sorted.filter(d => !isPrimaryActionable(d) && !isUnvalidatedOpportunity(d));
 
   const lines = [];
   lines.push("## 🎯 TODAY'S DECISIONS");
   lines.push("");
 
-  if (actionable.length === 0) {
+  if (primary.length === 0) {
     lines.push("### 🟢 NO TRADES REQUIRED TODAY");
     lines.push("");
     if (holds.length > 0) {
@@ -160,45 +173,57 @@ export function renderDecisionCard(decisions, ctx = {}) {
     } else {
       lines.push("> No held positions and no new qualifying opportunities.");
     }
-    // Expandable-detail hint. In markdown-rendered clients that
-    // support <details>, this collapses; otherwise it's a short note.
-    lines.push("");
-    lines.push("<details><summary>Show per-position review dates</summary>");
-    lines.push("");
-    for (const h of holds) {
-      const rev = renderReviewLine(h.nextReview);
-      lines.push(`- **${h.ticker}** [${(h.sleeve || "?").toUpperCase()}] — ${h.reason || "hold"}${rev ? `. ${rev.replace(/^> ?/, "")}` : ""}`);
+    if (holds.length > 0) {
+      lines.push("");
+      lines.push("<details><summary>Show per-position review schedule</summary>");
+      lines.push("");
+      for (const h of holds) {
+        const rev = renderReviewLine(h.nextReview);
+        const label = rev ? rev.replace(/^> ?/, "") : "No scheduled review — event driven.";
+        lines.push(`- **${h.ticker}** [${(h.sleeve || "?").toUpperCase()}] — ${h.primaryRule || h.reason || "hold"}. ${label}`);
+      }
+      lines.push("");
+      lines.push("</details>");
     }
-    lines.push("");
-    lines.push("</details>");
-    return lines.join("\n");
+  } else {
+    for (const d of primary) {
+      lines.push(renderPrimaryCard(d));
+      lines.push("");
+    }
+    if (holds.length > 0) {
+      lines.push("---");
+      lines.push("");
+      const summary = renderHoldSummary(holds);
+      if (summary) lines.push(summary);
+    }
   }
 
-  for (const d of actionable) {
-    lines.push(renderActionableCard(d));
+  if (opportunities.length > 0) {
     lines.push("");
-  }
-
-  if (holds.length > 0) {
     lines.push("---");
     lines.push("");
-    const summary = renderHoldSummary(holds);
-    if (summary) lines.push(summary);
+    lines.push("### 🔎 Opportunities identified — orders not yet ready");
+    lines.push("");
+    for (const d of opportunities) {
+      lines.push(renderOpportunityCard(d));
+      lines.push("");
+    }
+    lines.push("> Opportunities listed here have passed the quantitative qualifying threshold but have not completed the executable pipeline (sizing → account → cash/proceeds → currency → concentration → sleeve → contradiction). They will appear as BUY on a future briefing once all gates pass.");
   }
 
   return lines.join("\n");
 }
 
-// PUBLIC — render a compact machine-readable JSON view of the decisions
-// so the AI prompt can reference the exact deterministic verdict per
-// ticker. The AI can quote the reason but cannot change the action.
+// PUBLIC — serialize decisions for the AI prompt so it can reference
+// the exact deterministic verdict per ticker WITHOUT changing the action.
 export function serializeDecisionsForAi(decisions) {
   const rows = (decisions || []).map(d => ({
     ticker: d.ticker,
     sleeve: d.sleeve,
     action: d.action,
     shares: d.shares || null,
-    reason: d.reason,
+    primaryRule: d.primaryRule || d.reason,
+    securityType: d.securityType || null,
     confidence: d.confidence,
     evidenceFreshness: d.evidenceFreshness,
     validated: d.validated ?? null,
