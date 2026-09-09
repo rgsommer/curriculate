@@ -144,9 +144,9 @@ export const FIXTURE: RawInputs = {
     [],
     ["", "1"],
     ...([
-      ["10:00 AM", "Math 7A (23) 202 (J003) Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class."],
-      ["11:00 AM", "History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17."],
-      ["2:30 PM", "Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class."],
+      ["10:00 AM", "Math 7A (23) 202\n\u25CFJ003  : Introduction: Overview, expectations, textbook, etc.\nSlides presentation on Math [Assign: Complete the Introduction Fill-In-the-Blanks worksheet by Wed Sep 16 handed out in class (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0\nList of all assignments this year: https://docs.google.com/document/d/1fSEu4/edit?usp=sharing]\uD83D\uDD0D"],
+      ["11:00 AM", "History 7A (22) 202\n\u25CFH001  : Intro (First Class): handouts and the first written task.\nCourse overview slides, pages 1 and 3 [Assign: Complete written task \u201cHistorical Perspective\u201d (3 questions) due Thu Sep 17]"],
+      ["2:30 PM", "Geography 8A (22) 212\n\u25CFG002  : Population patterns: vocabulary and first reading.\nOral read p2, then build the Chapter 1 term list [Assign: Finish the Chapter 1 term list for next class]"],
     ] as [string, string][]).map(([at, text]) => [at, "", "", "", "", text, text, text, text, text]),
   ],
   // Verses!A1:A400 and Vertical!B4 \u2014 what A5 picks the day's verse from.
