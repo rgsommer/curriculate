@@ -167,21 +167,25 @@ function Chips({ period, left, setup, status }) {
   if (!period) return null;
   const raw = (status || period.status || "").trim();
   const st = parseStatus(raw);
-  const style = statusStyle(raw);
   // The code is a privilege signal the room reads by colour, so the badge keeps
   // the sheet's own conditional formatting — but it says what the benefit is
-  // ("Washroom pass", "All 3") rather than the sheet's shorthand, which only the
-  // teacher can decode. The code itself stays in the tooltip.
-  const said = statusWords(raw);
-  const badge = raw ? (
+  // ("Free pass", "All 3") rather than the sheet's shorthand, which only the
+  // teacher can decode, and it says it only while that benefit is on the table.
+  // The colour follows what is on offer, not what was earned earlier in the
+  // period; the code itself stays in the tooltip.
+  const said = statusWords(raw, period.duty
+    ? undefined
+    : { elapsed: period.elapsed, seatMin: setup.seatMin, laterMin: setup.graceMin });
+  const style = statusStyle(said ? said.code : raw);
+  const badge = said && said.words ? (
     <span
       key="badge"
       className="statusbadge"
       style={{ background: style ? style.bg : "var(--chip)", color: style ? style.fg : "var(--muted)", borderColor: style && style.border ? style.border : "transparent" }}
       title={`Privilege code ${raw}`}
     >
-      {said && said.letter ? <i className="grp">{said.letter}</i> : null}
-      {said ? said.words : raw}
+      {said.letter ? <i className="grp">{said.letter}</i> : null}
+      {said.words}
     </span>
   ) : null;
   if (period.duty) return badge ? <div className="points">{badge}</div> : null;

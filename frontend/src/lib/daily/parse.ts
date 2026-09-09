@@ -51,6 +51,7 @@ export type Setup = {
   dismissalReadyMin: number;
   washroomBefore: number;
   snacksB2Min: number;
+  seatMin: number; // how long the free seat is on the table at the top of a class
   openMin: number;
   picSeconds: number;
 };
@@ -114,6 +115,7 @@ export const DEFAULT_SETUP: Setup = {
   dismissalReadyMin: 5,
   washroomBefore: 10,
   snacksB2Min: 5,
+  seatMin: 5,
   openMin: 5,
   picSeconds: 600,
 };
@@ -693,7 +695,19 @@ export function parseStatus(s: string) {
  * for a week's average at that level. The trailing 4 on a code is the bonus of
  * two for being perfect the whole class.
  */
-export const BENEFIT_WORDS = { B1: "Sit anywhere", B2: "Washroom pass", FD: "Extra FD" };
+export const BENEFIT_WORDS = { B1: "Free seat", B2: "Free pass", FD: "Extra FD" };
+
+/** The sheet's own name for a set of benefits, so its colour rules still apply. */
+export function benefitLabel(on: { B1: boolean; B2: boolean; FD: boolean }): string {
+  if (on.B1 && on.B2 && on.FD) return "All 3";
+  if (on.B1 && on.B2) return "B1 & B2";
+  if (on.FD && on.B1) return "FD & B1";
+  if (on.FD && on.B2) return "FD & B2";
+  if (on.FD) return "FD Only";
+  if (on.B1) return "B1";
+  if (on.B2) return "B2";
+  return "";
+}
 
 /**
  * The privilege code as words.
@@ -702,13 +716,33 @@ export const BENEFIT_WORDS = { B1: "Sit anywhere", B2: "Washroom pass", FD: "Ext
  * from the back — but the words are what a student acts on, so the badge carries
  * those and keeps the code in its tooltip.
  */
-export function statusWords(status: string): { letter: string; words: string; grace: boolean } | null {
+export function statusWords(
+  status: string,
+  when?: { elapsed: number; seatMin: number; laterMin: number }
+): { letter: string; words: string; grace: boolean; code: string } | null {
   const st = parseStatus(status);
   if (!st) return null;
-  if (st.rec) return { letter: "", words: "Recess", grace: false };
-  const on = [st.B1 && BENEFIT_WORDS.B1, st.B2 && BENEFIT_WORDS.B2, st.FD && BENEFIT_WORDS.FD].filter(Boolean) as string[];
-  const words = on.length === 3 ? "All 3" : on.join(" + ") || "No benefits";
-  return { letter: st.letter, words: st.extra ? `${words} +2` : words, grace: st.grace };
+  if (st.rec) return { letter: "", words: "Recess", grace: false, code: st.raw };
+  // Each benefit has its moment in the period. The free seat belongs to the
+  // first few minutes — change seats, settle, and the lesson can start — while
+  // the pass and the extra Formal Discussion wait out the teaching at the top of
+  // the class and then stay for the rest of it. All three together is the whole
+  // class's reward and shows from the first minute.
+  const all = st.B1 && st.B2 && st.FD;
+  const on = {
+    B1: st.B1 && (all || !when || when.elapsed <= when.seatMin),
+    B2: st.B2 && (all || !when || when.elapsed >= when.laterMin),
+    FD: st.FD && (all || !when || when.elapsed >= when.laterMin),
+  };
+  const label = benefitLabel(on);
+  const words = label === "All 3"
+    ? "All 3"
+    : [on.B1 && BENEFIT_WORDS.B1, on.B2 && BENEFIT_WORDS.B2, on.FD && BENEFIT_WORDS.FD]
+      .filter(Boolean).join(" + ");
+  // Rebuilt in the sheet's own shorthand so its conditional formatting colours
+  // what is actually on offer, rather than what was earned but is not available.
+  const code = label ? `${st.letter}${st.grace ? "-" : ""}${label}${st.extra ? " 4" : ""}` : "";
+  return { letter: st.letter, words: words && st.extra ? `${words} +2` : words, grace: st.grace, code };
 }
 
 /**
@@ -893,6 +927,9 @@ export function parseSetup(rows: string[][]): Setup {
     else if (label.startsWith("show pregnancy weeks")) out.graceMin = num(d, out.graceMin);
     else if (label.startsWith("can go to washroom")) out.washroomBefore = num(d, out.washroomBefore);
     else if (label.startsWith("snacks are allowed")) out.snacksB2Min = num(c, out.snacksB2Min);
+    // No such row in the sheet yet; add one labelled "Free seat for" with the
+    // minutes in column C to change it from five.
+    else if (/^(free seat|seat change|sit anywhere)/.test(label)) out.seatMin = num(c, out.seatMin);
   }
   return out;
 }
