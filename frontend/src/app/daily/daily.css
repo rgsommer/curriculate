@@ -56,7 +56,7 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .board.previewing { outline: .6vh solid var(--sun); outline-offset: -.6vh; }
 
 /* time scrubber: a slim strip along the bottom edge; quiet until used */
-.scrub { display: flex; align-items: center; gap: 1.2vw; padding: .4vh 3vw .8vh; border-top: 1px solid var(--line); font-size: clamp(12px, 1.8vh, 17px); color: var(--muted); }
+.scrub { display: flex; align-items: center; gap: 1.2vw; padding: .4vh 3vw .8vh; border-top: 1px solid var(--line); font-size: clamp(13px, 2vh, 24px); color: var(--muted); }
 .scrub input[type="range"] { flex: 1; height: 1.2vh; accent-color: var(--muted); cursor: pointer; margin: 0; }
 .scrub.active { color: var(--sun-ink); background: var(--sun-fill); }
 .scrub.active input[type="range"] { accent-color: var(--sun-ink); }
@@ -191,20 +191,20 @@ body:has(.daily-root) .site-footer { display: none !important; }
 
 .ptsrow { border-top: 1px solid var(--line); padding: .8vh 3vw 0; overflow: hidden; }
 .pts { display: flex; gap: 1.6vw; align-items: center; justify-content: center; flex-wrap: nowrap; }
-.pt { display: grid; grid-template-columns: auto auto auto; gap: 0 .6vw; align-items: baseline; padding: .3vh .8vw; border-radius: 4px; border: 1px solid transparent; white-space: nowrap; }
+.pt { display: grid; grid-template-columns: auto auto auto; gap: 0 .6vw; align-items: baseline; padding: .3vh .8vw; border-radius: 4px; border: 1px solid transparent; white-space: nowrap; min-width: 0; }
 .pt.cur { border-color: var(--accent); background: var(--now-fill); }
-.pt .c { font-size: clamp(12px, 1.9vh, 20px); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
-.pt .n { font-size: clamp(17px, 3vh, 32px); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+.pt .c { font-size: clamp(13px, 2.1vh, 28px); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.pt .n { font-size: clamp(18px, 3.4vh, 44px); font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
 .pt .bar { grid-column: 1 / -1; height: .9vh; min-height: 6px; background: var(--chip); border-radius: 3px; overflow: hidden; margin-top: .4vh; }
 .pt .bar i { display: block; height: 100%; background: var(--subj); }
 .pt .bar i.met { background: var(--ok); }
-.pt .pc { font-size: clamp(12px, 1.9vh, 20px); color: var(--ink); font-variant-numeric: tabular-nums; }
+.pt .pc { font-size: clamp(13px, 2.1vh, 28px); color: var(--ink); font-variant-numeric: tabular-nums; }
 .entered { display: inline-flex; align-items: center; gap: .5vw; margin-left: 1vw; font-size: clamp(12px, 1.9vh, 18px); color: var(--muted); }
 .entered i { width: 1.6vh; height: 1.6vh; border-radius: 3px; background: var(--ok); display: inline-block; }
 .entered.no i { background: var(--alert); }
 .entered.no { color: var(--alert); }
 
-.bottom { display: flex; justify-content: space-between; align-items: center; gap: 2vw; padding: .9vh 3vw 1.3vh; font-size: clamp(14px, 2.3vh, 24px); color: var(--ink); }
+.bottom { display: flex; justify-content: space-between; align-items: center; gap: 1.4vw; padding: .9vh 3vw 1.3vh; font-size: clamp(15px, 2.6vh, 34px); color: var(--ink); }
 .daychip { display: inline-block; padding: .2vh .8vw; border-radius: 4px; margin-right: .8vw;
   color: #22303F; font-weight: 600; font-size: clamp(11px, 1.7vh, 16px); }
 .bottom .verse { font-family: var(--font-merriweather), Georgia, serif; font-style: italic; color: var(--ink); }
@@ -223,8 +223,11 @@ body:has(.daily-root) .site-footer { display: none !important; }
 /* The week line is context, not the message: it stays a step back. At the
    larger size the three parts have to share one line, so the verse gives way
    first rather than the row wrapping. */
-.bottom > span:first-child { color: var(--muted); flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bottom .verse { flex: 1 1 auto; min-width: 0; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bottom > span:first-child { color: var(--muted); flex: 0 0 auto; white-space: nowrap; }
+/* The verse is already an excerpt, so it is the part that gives way when the
+   row is tight — the week line and the link keep their words. */
+.bottom .verse { flex: 1 100 auto; min-width: 0; font-size: .82em;
+  text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prayrow { display: inline-flex; align-items: center; gap: .8vw; }
 .prayrow .vid { width: clamp(56px, 7vw, 96px); border-width: 1px; }
 .prayrow .vid .cap { display: none; }
