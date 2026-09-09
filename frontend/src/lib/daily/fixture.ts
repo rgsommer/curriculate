@@ -99,6 +99,9 @@ export const FIXTURE: RawInputs = {
   poemFormulas: [[], [], []],
   vertical: [
     ["", "", "", "", "", "", ""],
+    // Row 2 is the day's plan, one column per weekday (F to J) — the same three
+    // classes on every day so the fallback can be previewed whatever day it is.
+    ["2", "", "Before I forget, here are your TOP things to remember/do for today...... Math 7A (23) 202 Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class. History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17. Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class.", "Before I forget, here are your TOP things to remember/do for today...... Math 7A (23) 202 Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class. History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17. Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class.", "Before I forget, here are your TOP things to remember/do for today...... Math 7A (23) 202 Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class. History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17. Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class.", "Before I forget, here are your TOP things to remember/do for today...... Math 7A (23) 202 Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class. History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17. Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class.", "Before I forget, here are your TOP things to remember/do for today...... Math 7A (23) 202 Today we practise solving equations. What helps you learn best in class? - Complete NS7-3: p. 7 problems. - Complete the Introduction Fill-In-the-Blanks worksheet (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0) Reminders: Handouts in class. History 7A (22) 202 (H001) Today we introduce the course and begin the first assignment. What makes a useful historical perspective? - Pass out Intro and Due Dates handouts Reminders: Written task due Thu Sep 17. Geography 8A (22) 212 (G002) Today we build vocabulary and begin reading about population patterns. How do maps show where people live and why? - Oral read p2 Reminders: Terms quiz next class."],
     ["1", "", "Mon update", "Tue update", "Wed update",
       "Things you need to know for today...\nGeography 8A term list is due next class.\nSkip 7A Bring your textbook to every class.\nDress-down payments due Fri Sep 25.",
       "Fri update"],
@@ -112,6 +115,25 @@ export const FIXTURE: RawInputs = {
     ["Lunch", "12:00", "", "5"],
     ["Lunch Recess", "12:20", "", "minutes before Dismissal list"],
     ["Dismissal", "15:30", "", ""],
+  ],
+  // Lessons!C1:J400 — C code, E page reference, F homework, I picture, J video.
+  lessons: [
+    ["Code", "", "Page", "Homework", "", "", "Picture", "Video"],
+    ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review sheet: https://example.org/unit1-review.pdf", "", "", "", "https://youtu.be/lessonvideo1"],
+    ["~H001", "", "p. 2", "Written task \u201cHistorical Perspective\u201d, due Thu Sep 17", "", "", "https://example.com/history.png", ""],
+    ["G002", "", "p. 18-23", "Finish the Chapter 1 term list", "", "", "", ""],
+  ],
+  lessonFormulas: [
+    [],
+    [],
+    ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', ""],
+    [],
+  ],
+  lessonLinkRuns: [
+    [],
+    [],
+    [[], [{ text: "Due Dates handout", url: "https://example.org/due-dates.pdf" }]],
+    [],
   ],
   // Verses!A1:A400 and Vertical!B4 \u2014 what A5 picks the day's verse from.
   verses: [

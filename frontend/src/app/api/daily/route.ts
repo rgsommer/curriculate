@@ -79,7 +79,8 @@ export async function GET(req: Request) {
       "Vertical!B4",        // 11
       "Points!A3:BZ3",      // 12
       "Points!A46:BZ46",    // 13
-      ...(waitingRange ? [waitingRange] : []), // 14
+      "Lessons!C1:J400",    // 14 the teacher's own material, keyed by lesson code
+      ...(waitingRange ? [waitingRange] : []), // 15
     ];
     const FORMULAS = [
       "DisplayAI!D1:D40",   // 0 the video link on each row
@@ -88,12 +89,16 @@ export async function GET(req: Request) {
       "Display!E1",         // 3 an =IMAGE() cell has no value, only a formula
       "DisplayAI!E1",       // 4
       "Poems!F1:J3",        // 5
+      "Lessons!C1:J400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
     ];
 
-    const [values, formulas, grid] = await Promise.all([
+    const [values, formulas, grid, lessonGrid] = await Promise.all([
       readRangesSafe(VALUES),
       readRangesSafe(FORMULAS, "FORMULA"),
       readGridLinks("DisplayAI!A1:F40").catch(() => ({ first: [], runs: [] })),
+      // Handouts on the Lessons rows are often a link attached to a phrase in
+      // the page or homework cell, which the values API cannot see.
+      readGridLinks("Lessons!E1:F400").catch(() => ({ first: [], runs: [] })),
     ]);
 
     const display = values[0] || [];
@@ -101,7 +106,7 @@ export async function GET(req: Request) {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[14] || []) : [];
+    const waiting = waitingRange ? (values[15] || []) : [];
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
@@ -139,6 +144,9 @@ export async function GET(req: Request) {
       vertical: values[7] || [],
       riddles: values[8] || [],
       master: values[9] || [],
+      lessons: values[14] || [],
+      lessonFormulas: formulas[6] || [],
+      lessonLinkRuns: lessonGrid.runs || [],
       verses: values[10] || [],
       verseWeek: values[11] || [],
       pointsRow3: (values[12] || [])[0] || [],

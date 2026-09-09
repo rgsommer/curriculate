@@ -24,7 +24,10 @@ export type Period = {
   plan: string[];
   assign: string[];
   remind: string;
-  links: LessonLink[]; // handouts and forms named in the lesson text
+  links: LessonLink[]; // handouts and forms named in the lesson text, and on Lessons
+  page: string; // Lessons E — the starting page reference
+  homework: string; // Lessons F
+  image: string; // Lessons I — the lesson picture
 };
 
 export type Points = {
@@ -80,6 +83,9 @@ export type Payload = {
   // and the Kiss & Ride waiting list they show alongside.
   dismissal: Dismissal;
   waiting: string[];
+  // The day's classes as written on VerticalAi, one entry per weekday, for when
+  // DisplayAI's lesson column has not been filled in yet.
+  dayPlan: Record<number, DayClass[]>;
   picture: { url: string; seconds: number } | null;
   sources: Sources;
   // Setup!T1:AA8 as values and formulas, shown by ?debug=1 so the cells that
@@ -183,6 +189,138 @@ export function urlFromFormula(f: string): string {
 // Long enough for a real handout name, short enough to sit on one chip.
 const LABEL_MAX = 56;
 
+/**
+ * The Lessons tab, keyed by lesson code.
+ *
+ * The student-facing tabs (Display, DisplayAI, Vertical, VerticalAi) deliberately
+ * leave out the teacher's own material, so the handouts, the lesson picture and
+ * the video are not there to be read. They are on Lessons, one row per lesson
+ * code: C the code (written "~H001" or "H001"), E the starting page reference,
+ * F the homework — the cell whose links the board has been picking up — I the
+ * lesson picture and J the video.
+ */
+export type Lesson = {
+  code: string;
+  page: string;
+  homework: string;
+  image: string;
+  video: string;
+  links: LessonLink[];
+};
+
+/** "~H001", " h001 " and "H001" are the same lesson. */
+export function normalizeCode(raw: string): string {
+  return String(raw || "").trim().replace(/^~+/, "").toUpperCase();
+}
+
+const LESSON_CODE = /^~?[A-Za-z]\d{3}$/;
+
+export function parseLessons(
+  values: string[][],
+  formulas: string[][] = [],
+  linkRuns: { text: string; url: string }[][][] = []
+): Record<string, Lesson> {
+  const out: Record<string, Lesson> = {};
+  (values || []).forEach((row, r) => {
+    const raw = ((row || [])[0] || "").trim(); // C
+    if (!LESSON_CODE.test(raw)) return;
+    const code = normalizeCode(raw);
+    if (out[code]) return; // first row for a code wins
+    const f = formulas[r] || [];
+    const cell = (i: number) => String((row || [])[i] || "").trim();
+    const formula = (i: number) => String(f[i] || "").trim();
+
+    const pick = (i: number, want: (u: string) => boolean) => {
+      const candidates = [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || [])];
+      return candidates.find((u) => u && want(u)) || "";
+    };
+    const image = pick(6, isImageUrl); // I
+    const video = pick(7, isVideoUrl); // J
+    const page = cell(2); // E
+    const homework = cell(3); // F
+
+    // Handouts: written into the homework or page cells, or attached to a phrase
+    // in them with Insert > Link.
+    const links: LessonLink[] = [];
+    const seen = new Set<string>();
+    const add = (l: LessonLink) => { if (l.url && !seen.has(l.url)) { seen.add(l.url); links.push(l); } };
+    extractLinks(homework).links.forEach(add);
+    extractLinks(page).links.forEach(add);
+    ((linkRuns[r] || [])[0] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // E
+    ((linkRuns[r] || [])[1] || []).forEach((l) => add({ label: l.text || "Handout", url: l.url })); // F
+
+    out[code] = {
+      code,
+      page,
+      homework: extractLinks(homework).clean,
+      image: image ? normalizeImageUrl(image) : "",
+      video,
+      links: links.filter((l) => !isVideoUrl(l.url)),
+    };
+  });
+  return out;
+}
+
+/**
+ * The day's classes as written on the VerticalAi tab.
+ *
+ * DisplayAI's lesson column is filled from the sheet's own clock, so before the
+ * day starts it can be empty and the board has nothing to show. The same
+ * lessons are written out one column per weekday on VerticalAi (F to J), run
+ * together in one cell, so this finds each class header in that text and parses
+ * the chunk that follows it.
+ */
+export type DayClass = {
+  subj: string; room: string; code: string; today: string; q: string;
+  links: LessonLink[]; page: string; homework: string; image: string;
+};
+
+const CLASS_HEAD = /([A-Z][A-Za-z]*(?: [A-Za-z]+)* \d[A-C]) \((\d+)\) -? ?(\d{3})\b/g;
+
+/** Fold a lesson row's material into a class parsed from the day's text. */
+function withLesson<T extends { code: string; links: LessonLink[] }>(c: T, lessons: Record<string, Lesson>) {
+  const l = lessons[normalizeCode(c.code)];
+  const seen = new Set(c.links.map((x) => x.url));
+  const links = c.links.concat((l ? l.links : []).filter((x) => (seen.has(x.url) ? false : seen.add(x.url))));
+  return { ...c, links, page: l ? l.page : "", homework: l ? l.homework : "", image: l ? l.image : "" };
+}
+
+export function classesFromText(text: string, lessons: Record<string, Lesson> = {}): DayClass[] {
+  const t = String(text || "").replace(/\s+/g, " ");
+  const starts: number[] = [];
+  const re = new RegExp(CLASS_HEAD.source, "g");
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(t)) !== null) starts.push(m.index);
+  const out: DayClass[] = [];
+  const seen = new Set<string>();
+  starts.forEach((from, i) => {
+    const chunk = t.slice(from, i + 1 < starts.length ? starts[i + 1] : undefined);
+    const c = parseClassText(chunk);
+    if (c.duty || !c.subj) return;
+    const key = `${c.subj}|${c.code}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push(withLesson({ subj: c.subj, room: c.room, code: c.code, today: c.today, q: c.q, links: c.links }, lessons));
+  });
+  return out;
+}
+
+/**
+ * VerticalAi columns F to J are Monday to Friday; the range starts at D, so the
+ * weekday number (Sunday = 1, as Sheets counts) is also the column index. Every
+ * row of the column is searched, so it does not matter which row the day's plan
+ * is written on.
+ */
+export function dayPlanByWeekday(vertical: string[][], lessons: Record<string, Lesson> = {}): Record<number, DayClass[]> {
+  const out: Record<number, DayClass[]> = {};
+  for (let wd = 2; wd <= 6; wd += 1) {
+    const text = (vertical || []).map((r) => String((r || [])[wd] || "")).filter(Boolean).join(" \n ");
+    const classes = classesFromText(text, lessons);
+    if (classes.length) out[wd] = classes;
+  }
+  return out;
+}
+
 /** A readable name for a link when the words around it give nothing away. */
 function linkKind(url: string): string {
   const u = String(url || "");
@@ -213,7 +351,8 @@ export function extractLinks(text: string): { links: LessonLink[]; clean: string
     const url = m[0].replace(/[.,;:)\]]+$/, "");
     // The words just before the link, back to the last sentence break.
     const before = t.slice(0, m.index);
-    let label = (before.split(/(?:[.!?•]|\s-\s|\[|\]|;)\s*/).pop() || "")
+    // A sentence break needs whitespace after it, or "p.7" splits mid-reference.
+    let label = (before.split(/(?:[.!?•]\s+|\s-\s|[[\];]\s*)/).pop() || "")
       .replace(/\(?\s*(?:or\s+)?(?:you\s+can\s+)?(?:get\s+it\s+|print\s+it\s+|available\s+)?(?:from\s+|use\s+|at\s+|via\s+)?(?:this\s+|the\s+)?link[s]?\s*:?\s*$/i, "")
       .replace(/\b(?:here|below|online|posted)\s*:?\s*$/i, "")
       .replace(/[\s(:,–—-]+$/, "")
@@ -241,7 +380,9 @@ export function parseClassText(text: string) {
   // and a URL's own "?" no longer gets mistaken for the lesson's question.
   const { links, clean } = extractLinks(String(text || ""));
   const t = clean.replace(/\s+/g, " ").trim();
-  const m = t.match(/^(.+?) \((\d+)\) -? ?(\d{3}) \(([A-Z]\d{3})/);
+  // "Math 7B (23) 207 (J001)" — the lesson code is optional, because the day's
+  // plan on the VerticalAi tab writes some classes without one.
+  const m = t.match(/^(.+?) \((\d+)\) -? ?(\d{3})(?: \(([A-Z]\d{3}))?/);
   if (!m) {
     return {
       duty: true,
@@ -258,7 +399,11 @@ export function parseClassText(text: string) {
       links,
     };
   }
-  const rest = t.slice(m[0].length).replace(/^[^)]*\)\s*/, "");
+  // With a code the header runs on into "J003 📷 📿)", so the rest starts after
+  // that bracket; without one it starts straight after the room, and eating to
+  // the next ")" would swallow the lesson.
+  const afterHeader = t.slice(m[0].length);
+  const rest = m[4] ? afterHeader.replace(/^[^)]*\)\s*/, "") : afterHeader.trim();
   const today = (rest.match(/(Today we[^.?!]*[.?!])/) || [, ""])[1] || "";
   const q = ((rest.match(/([^.?!]*\?)/) || [, ""])[1] || "").trim();
   const body = (rest.match(/\?(.*?)(?:Reminders:|$)/) || [, ""])[1] || "";
@@ -274,7 +419,7 @@ export function parseClassText(text: string) {
     subj: m[1].trim(),
     sec,
     room: "Rm " + m[3],
-    code: m[4],
+    code: m[4] || "",
     today,
     q,
     plan: bullets.filter((b) => !/^Assign:/i.test(b)),
@@ -438,6 +583,9 @@ export type RawInputs = {
   displayCRuns?: { text: string; url: string }[][]; // every link inside each DisplayAI!C cell
   setupMessages?: string[][]; // Setup!N1:Q8 — the "For Dismissal Messages" block
   waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
+  lessons?: string[][]; // Lessons!C1:J400 values — the teacher's own material by code
+  lessonFormulas?: string[][]; // Lessons!C1:J400 formulas
+  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E and F
   verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
   verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
 };
@@ -524,6 +672,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   });
 
   // ---- period rows ----
+  const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || []);
   const periods: Period[] = [];
   for (let i = firstTimeRow; i >= 0 && i < rows.length; i++) {
     const r = rows[i] || [];
@@ -555,10 +704,10 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
 
     const dFormula = cell(inp.displayD, i, 0);
     const cFormula = cell(inp.displayC, i, 0);
-    const candidates = [urlFromFormula(dFormula), urlFromFormula(cFormula), ...(text.match(URL_RE) || [])].filter(Boolean);
-    const video = candidates.find(isVideoUrl) || "";
-
     const parsed = parseClassText(text);
+    const candidates = [urlFromFormula(dFormula), urlFromFormula(cFormula), ...(text.match(URL_RE) || [])].filter(Boolean);
+    // The row's own link wins; otherwise the video on the lesson's Lessons row.
+    const video = candidates.find(isVideoUrl) || (lessons[normalizeCode(parsed.code)] || { video: "" }).video || "";
     // A handout can be a rich-text link on the lesson cell rather than a URL in
     // its words; those live in neither the value nor the formula, so they come
     // from the grid and are merged in here.
@@ -567,6 +716,10 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       .map((l) => ({ label: truncateWords(l.text || linkKind(l.url), 44), url: l.url }));
     const seenLink = new Set(parsed.links.map((l) => l.url));
     const links = parsed.links.concat(runLinks.filter((l) => (seenLink.has(l.url) ? false : seenLink.add(l.url))));
+    // The teacher's own material for this lesson code: handouts, the starting
+    // page, the homework, the picture and the video, none of which the
+    // student-facing tabs carry.
+    const withMat = withLesson({ code: parsed.code, links }, lessons);
     periods.push({
       start,
       end,
@@ -576,7 +729,10 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
       video,
       empty: text === "",
       ...parsed,
-      links,
+      links: withMat.links,
+      page: withMat.page,
+      homework: withMat.homework,
+      image: withMat.image,
     });
   }
 
@@ -607,6 +763,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   return {
     fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
     dismissal: parseDismissal(inp.setupMessages || []),
+    dayPlan: dayPlanByWeekday(inp.vertical || [], lessons),
     waiting: parseWaiting(inp.waiting || []),
     sources: buildSources(inp),
     slotBlock: inp.slotBlock || [],

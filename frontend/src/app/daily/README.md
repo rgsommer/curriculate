@@ -45,6 +45,8 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D400`, `Master!B1:B2` | Ingredients for the display rules the board evaluates itself. |
 | `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
 | `Points!A3:BZ3`, `Points!A46:BZ46` | Class names and the four privilege flags per class, for the status badge. |
+| `Lessons!C1:J400` (values, formulas, and the links inside E and F) | The teacher's own material, keyed by lesson code in column C ("~H001" or "H001"): E the starting page reference, F the homework, I the lesson picture, J the video. The student-facing tabs leave this out on purpose, so it is looked up by code and folded into whichever class carries that code. |
+| `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
 | The Kiss & Ride tab | Its "Waiting (Recent First)" column, for the dismissal panel. The tab is found by name (`listSheetTitles`, cached an hour) and the column by its header cell. |
 | `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
@@ -61,10 +63,10 @@ Cells that do not match (Lunch, Recess Duty, Dismissal) become "change of class"
 ### The read budget
 
 Google allows 60 Sheets read requests a minute per user, and a classroom screen
-polls every 10 seconds, so a refresh has to be cheap. One refresh is **three
+polls every 10 seconds, so a refresh has to be cheap. One refresh is **four
 requests**: one `values:batchGet` for every value range above, one for the
-formula ranges, and one grid read for the links (`readGridLinks`, which serves
-both the "Pray for …" line and the lesson-cell handouts). The tab list is cached
+formula ranges, and two grid reads for the links (`readGridLinks` over the
+DisplayAI rows and over the Lessons page/homework columns). The tab list is cached
 for an hour on top of that.
 
 Most polls are answered from the in-memory copy. A sheet edit pings

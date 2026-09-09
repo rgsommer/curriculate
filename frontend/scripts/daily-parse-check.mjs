@@ -335,5 +335,49 @@ runGrid[8] = [{ text: "Due Dates handout", url: "https://example.org/due.pdf" }]
 const withRuns = P.buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature: "", displayCRuns: runGrid });
 check("rich-text handout merged in", (withRuns.periods[0].links || []).some((l) => l.label === "Due Dates handout"), withRuns.periods[0].links);
 
+
+// ---- the day's plan from the VerticalAi tab ----
+const dayText = 'Before I forget, here are your TOP things to remember/do for today...... Math 7A (23) 202 Today we introduce the course, materials, and expectations. What helps you learn best in class? - Slides presentation on Math - Complete the Introduction Fill-In-the-Blanks worksheet by Wed Sep 16 Reminders: Handouts in class; link posted. CE 8A (21) - 212 (B002) Today we learn about the finer points from assemblies. What was the main message you noticed? - Discuss Boy/Girl assemblies. Reminders: Bring signed permission slip. Math 7A (23) 202 (J002) Today we practice place value and order of operations. What strategies help you avoid mistakes? - Do NS7-1: p. 2 Reminders: Bring homework. Geography 8B (22) 211 Today we meet and start the first assignment. What matters most for you in this class? - First Class introductions Reminders: none.';
+const dayClasses = P.classesFromText(dayText);
+check("day plan: one entry per class", dayClasses.length === 4, dayClasses.map((c) => `${c.subj} ${c.code}`));
+check("day plan: header without a code still parses", dayClasses[0].subj === "Math 7A" && dayClasses[0].room === "Rm 202" && dayClasses[0].code === "", dayClasses[0]);
+check("day plan: header with a code keeps it", dayClasses[1].subj === "CE 8A" && dayClasses[1].code === "B002", dayClasses[1]);
+check("day plan: the lead-in is not a class", !dayClasses.some((c) => /Before I forget/.test(c.subj)), dayClasses.map((c) => c.subj));
+check("day plan: today text survives the split", dayClasses[3].today.startsWith("Today we meet"), dayClasses[3].today);
+check("day plan: question survives the split", dayClasses[0].q === "What helps you learn best in class?", dayClasses[0].q);
+check("day plan: same class twice is one", P.classesFromText(dayText + " " + dayText).length === 4);
+check("day plan: nothing from ordinary prose", P.classesFromText("Remember to bring your Bible tomorrow.").length === 0);
+
+const byDay = P.dayPlanByWeekday([[], ["", "", "", "", dayText]]);
+check("day plan: F to J are Monday to Friday", (byDay[4] || []).length === 4 && !byDay[2], Object.keys(byDay));
+
+
+// ---- the Lessons tab: the teacher's own material, keyed by lesson code ----
+const lessonRows = [
+  ["Code", "", "Page", "Homework", "", "", "Picture", "Video"],
+  ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review: https://example.org/unit1.pdf", "", "", "", "https://youtu.be/lessonvid"],
+  ["h001", "", "p. 2", "Written task due Thu Sep 17", "", "", "https://example.com/history.png", ""],
+  ["not a code", "", "x", "y", "", "", "", ""],
+];
+const lessonForms = [[], [], ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', ""], []];
+const lessonRuns = [[], [], [[], [{ text: "Due Dates handout", url: "https://example.org/due.pdf" }]], []];
+const L = P.parseLessons(lessonRows, lessonForms, lessonRuns);
+check("lessons: keyed by code without the tilde", !!L.J003 && !!L.H001 && Object.keys(L).length === 2, Object.keys(L));
+check("lessons: page and homework", L.J003.page === "p. 7" && L.J003.homework.startsWith("Complete NS7-3"), L.J003);
+check("lessons: the homework link becomes a handout", L.J003.links.length === 1 && L.J003.links[0].url === "https://example.org/unit1.pdf", L.J003.links);
+check("lessons: the address leaves the homework text", !/https?:/.test(L.J003.homework), L.J003.homework);
+check("lessons: video from column J", L.J003.video === "https://youtu.be/lessonvid", L.J003.video);
+check("lessons: picture from an =IMAGE() in column I", L.H001.image === "https://example.com/history.png", L.H001.image);
+check("lessons: a rich-text handout in the homework cell", L.H001.links.some((x) => x.label === "Due Dates handout"), L.H001.links);
+check("lessons: a row that is not a lesson is skipped", !L["NOT A CODE"], Object.keys(L));
+
+const dayWithMat = P.classesFromText("History 7A (22) 202 (H001) Today we introduce the course. What makes a useful perspective? - Handouts Reminders: none.", L);
+check("day plan carries the lesson's material", dayWithMat[0].page === "p. 2" && dayWithMat[0].image === "https://example.com/history.png" && dayWithMat[0].links.length === 1, dayWithMat[0]);
+
+const withLessons = P.buildPayload({ display, displayD, displayC, setup, slots, slotFormulas, feature: "", lessons: lessonRows, lessonFormulas: lessonForms, lessonLinkRuns: lessonRuns });
+const mathRow = withLessons.periods.find((x) => x.code === "J003");
+check("period picks up its lesson row", mathRow && mathRow.page === "p. 7" && mathRow.homework.startsWith("Complete NS7-3"), mathRow && { page: mathRow.page, homework: mathRow.homework });
+check("row video still wins over the lesson video", mathRow && mathRow.video === "https://youtu.be/mathvideo1", mathRow && mathRow.video);
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
