@@ -247,15 +247,18 @@ function VideoTile({ url, big, setBig }) {
   );
 }
 
-function PointsStrip({ points, currentSec }) {
+function PointsStrip({ points, labels, currentSec }) {
   const nums = points.numbers || [], pcts = points.percents || [];
   const n = Math.max(nums.length, pcts.length);
+  // The sheet's own names (Points row 3) when it has them, so the chips follow
+  // the sections taught this year; CLASS_LABELS is only the fallback.
+  const names = (labels || []).length >= n ? labels : CLASS_LABELS;
   if (!n && points.entered == null) return null;
   return (
     <div className="ptsrow">
       <div className="pts">
         {Array.from({ length: n }).map((_, i) => {
-          const label = CLASS_LABELS[i] || `#${i + 1}`;
+          const label = names[i] || `#${i + 1}`;
           const pct = pcts[i];
           return (
             <div key={label} className={`pt${label === currentSec ? " cur" : ""}`}>
@@ -542,13 +545,17 @@ export default function DailyPage() {
   const dismissalRow = P.find((p) => /dismiss/i.test(`${p.subj || ""} ${p.text || ""}`));
   const endOfDayAt = [
     dismissalRow ? dismissalRow.start : null,
+    (data.dayTimes || []).length ? data.dayTimes[data.dayTimes.length - 1] : null,
     setup.dismissalAt,
     (dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at,
   ].find((x) => x != null) ?? null;
   // The last few minutes of the day: E1 gives its side of the screen over to the
   // dismissal package. The nation of the day comes forward then and before each
   // of the sheet's other message times as well.
-  const endOfDaySoon = endOfDayAt != null && t >= endOfDayAt - dismissal.advanceMin && t < endOfDayAt;
+  // The minutes before the last bell: the class tidies up and stands ready for
+  // the homeroom teacher. The end-of-day package comes up with it.
+  const readyMin = Math.max(setup.dismissalReadyMin || 5, dismissal.advanceMin || 0);
+  const endOfDaySoon = endOfDayAt != null && t >= endOfDayAt - readyMin && t < endOfDayAt;
   const msgNear = dismissal.times.find((m) => t >= m.at - dismissal.advanceMin && t < m.at) || null;
   const msgSoon = endOfDaySoon || !!msgNear;
   // The last minutes before lunch get a grace, not the end-of-day benediction.
@@ -640,7 +647,7 @@ export default function DailyPage() {
   };
   const footer = (showPuzzle, endOfDay) => (
     <>
-      <PointsStrip points={points} currentSec={cur && !cur.duty ? cur.sec : ""} />
+      <PointsStrip points={points} labels={sources.pointsLabels} currentSec={cur && !cur.duty ? cur.sec : ""} />
       <div className="bottom">
         <span>
           {today && (
@@ -707,8 +714,14 @@ export default function DailyPage() {
     ? <div className="block navy"><h3>Today</h3><p className="daily">{dailyText}</p></div> : null);
   // The end-of-day package that takes over the feature side: what is on
   // tomorrow, the head-out list, and the Kiss & Ride names waiting outside.
-  const dismissalPanel = (withHeadout) => (
+  const dismissalPanel = (withHeadout, readyAt) => (
     <div className="panel dismissalpanel">
+      {readyAt != null ? (
+        <div className="block alert ready">
+          <h3>Get ready for dismissal</h3>
+          <p>Tidy your area, tuck your chair in and stand behind it — ready for your homeroom teacher by {fmt(readyAt)}.</p>
+        </div>
+      ) : null}
       {meta.tomorrow ? <div className="block sun"><h3>Tomorrow</h3><p>{meta.tomorrow}</p></div> : null}
       {withHeadout && meta.headout.length > 0
         ? <div className="block alert"><h3>Before you head out</h3>{list(meta.headout)}</div> : null}
@@ -769,6 +782,7 @@ export default function DailyPage() {
               {row("status (evaluated)", cur ? statusOf(cur) : "")}
               {row("status (as read)", cur ? cur.status : "")}
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
+              {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
               {row("slots", (sources.slots || []).filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}
               {row("E1 picture (as read)", meta.featureImage)}
               {row("E1 text (as read)", meta.feature)}
@@ -1005,7 +1019,7 @@ export default function DailyPage() {
     if (endOfDaySoon) {
       // The last few minutes of the day: E1 gives its side of the screen over to
       // the dismissal package.
-      side = dismissalPanel(true);
+      side = dismissalPanel(true, endOfDayAt);
     } else if (featureImage) {
       side = bigPicture(featureImage, `On screen now · ${cur.code}`, "");
     } else if (lessonPicOn) {

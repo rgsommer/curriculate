@@ -39,12 +39,12 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | --- | --- |
 | `DisplayAI!A1:F40` | Greeting (A1), week line (A3), verse (A5), unscramble (C7), "Plans for…" line with class points and the entered flag (C8/D8), then the time rows: A time, C lesson text, D status, F flag. |
 | `DisplayAI!C1:D40` as formulas | `HYPERLINK()` targets in the lesson or status cells → the video tile. |
-| `Setup!A1:D20` | Timing rules, matched by the label text in column B (see below). |
+| `Setup!A1:F20` | Timing rules, matched by the label text in column B, values in C/D (see below). |
 | `Setup!T1:AA8` (values and formulas) | The feature-slot table. Column T labels the rows; the E1 formula's `HLOOKUP` runs on U to AA, so the slots proper start one column in: row 1 priority, row 2 name, row 4 value, row 7 seconds on screen. `?debug=1` prints the whole block with its formulas, which is how to see what actually decides E1. |
 | `Setup!N1:Q8` | The "For Dismissal Messages" block: when the end-of-day material comes forward (lunch, lunch recess, dismissal) and how many minutes ahead. |
 | `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D400`, `Master!B1:B2` | Ingredients for the display rules the board evaluates itself. |
 | `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
-| `Points!A3:BZ3`, `Points!A46:BZ46` | Class names and the four privilege flags per class, for the status badge. |
+| `Points!A3:BZ3`, `Points!A46:BZ46` | Class names and the four privilege flags per class, for the status badge and the points strip labels. |
 | `Lessons!C1:J400` (values, formulas, and the links inside E and F) | The teacher's own material, keyed by lesson code in column C ("~H001" or "H001"): E the starting page reference, F the homework, I the lesson picture, J the video. The student-facing tabs leave this out on purpose, so it is looked up by code and folded into whichever class carries that code. |
 | `Vertical!A1:J200` | Column A the period times, F to J Monday to Friday — the day's plan with a row per period. B4 (the week the verse is indexed by) is inside this block, so it costs no extra range. |
 | `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
@@ -89,6 +89,7 @@ remembered and left out of later batches (`readRangesSafe`).
 | Show homework … minutes before end of class | "Write in your agenda" block appears |
 | Blank screen during announcements (C:D) | Blank screen between those times |
 | Show Dismissal List (D) | Dismissal screen with the "Before you head out" list from that time |
+| Stand ready for dismissal (C) | "Get ready for dismissal" block appears N minutes before the last bell — five if the row is missing, which it is in the sheet today |
 | Show pregnancy weeks during (D) | Grace window (minutes) for the status chips at each end of a period |
 | Can go to washroom x min before (D) | "Washroom" chip switches off N minutes before the end |
 | Snacks are allowed with B2 (C) | "Snacks" chip for N minutes once B2 is on |

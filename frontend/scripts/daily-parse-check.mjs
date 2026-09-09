@@ -37,6 +37,12 @@ check("status All 3 with 4", (() => { const s = P.parseStatus("BAll 3 4"); retur
 
 const pl = P.parsePlansLine("Plans for Saturday, Sep 5, 2026...    -275%--272%--137%--205%--181%-");
 check("plans percents", pl.kind === "percents" && pl.values.join() === "275,272,137,205,181" && pl.title === "Plans for Saturday, Sep 5, 2026...", pl);
+const plSingle = P.parsePlansLine("Plans for Monday, Sep 7, 2026...    -660-871-220-820-");
+check("plans: neighbours may share one dash", plSingle.values.join() === "660,871,220,820", plSingle);
+const plNeg = P.parsePlansLine("Plans for Monday, Sep 7, 2026...    -660---871--220-");
+check("plans: three dashes is a negative value", plNeg.values.join() === "660,-871,220", plNeg);
+check("points labels: read from row 3, in column order",
+  P.pointsLabels((() => { const r = []; r[3] = "7A"; r[16] = "7B"; r[42] = "8A"; r[55] = "8B"; return r; })()).join() === "7A,7B,8A,8B");
 const pn = P.parsePlansLine("Plans for Thursday, Sep 10, 2026...    -660--871--220--820--290-");
 check("plans numbers", pn.kind === "numbers" && pn.values.join() === "660,871,220,820,290", pn);
 
@@ -498,6 +504,12 @@ check("greeting: lunch from 11:56", P.evaluateGreeting(who, 11 * 60 + 56, 930, 2
 check("greeting: afternoon up to dismissal", P.evaluateGreeting(who, 14 * 60, 930, 6) === "Good afternoon, students!");
 check("greeting: goodbye after it", P.evaluateGreeting(who, 15 * 60 + 40, 930, 6) === "Goodbye, students!");
 check("greeting: nothing when the column is empty", P.evaluateGreeting([], 9 * 60, 930, 4) === "");
+
+
+// ---- the stand-ready window before the last bell ----
+check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissalReadyMin === 5, P.parseSetup([]).dismissalReadyMin);
+check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
+check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);

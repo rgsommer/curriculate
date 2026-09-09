@@ -66,7 +66,7 @@ export async function GET(req: Request) {
 
     const VALUES = [
       "DisplayAI!A1:F40",   // 0 the day itself
-      "Setup!A1:D20",       // 1 the labelled timing rules
+      "Setup!A1:F20",       // 1 the labelled timing rules
       "Setup!T1:AA8",       // 2 the E1 slot table
       "Setup!M1:Q8",        // 3 column M the weekday names, N to Q the message times
       "Display!E1",         // 4 the feature cell, either tab
