@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 const FLAGS = ["FD", "B1", "B2"];
@@ -31,6 +31,8 @@ const VERSE_MAX = 85;
 const FIT_MIN = 0.75;
 const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
+// The shortest a period may be cut to by the bell schedule.
+const MIN_PERIOD_MIN = 10;
 // A riddle for the bottom bar at the end of the day, for the days the sheet has
 // none of its own. Picked by the date so it does not change while it is up.
 // Said before lunch, where the end-of-day benediction used to appear.
@@ -382,7 +384,9 @@ export default function DailyPage() {
     // the next bell whatever the sheet's rows imply.
     const P = bell.length
       ? built.map((p) => {
-          const next = bell.find((b) => b > p.start);
+          // Never shorten a period to less than a few minutes: a bell that close
+          // to its start is not a bell, it is something else in that column.
+          const next = bell.find((b) => b >= p.start + MIN_PERIOD_MIN);
           return next != null && next < p.end ? { ...p, end: next } : p;
         })
       : built;
@@ -444,6 +448,24 @@ export default function DailyPage() {
     return () => { cancelAnimationFrame(raf); ro.disconnect(); };
   });
 
+  // Slide the verse along the bottom bar when it is longer than the bar. The
+  // distance is measured rather than guessed, so a short verse sits still.
+  const verseRef = useRef(null);
+  useEffect(() => {
+    const box = verseRef.current;
+    if (!box) return;
+    const text = box.firstElementChild;
+    if (!text) return;
+    const over = text.scrollWidth - box.clientWidth;
+    if (over > 8) {
+      box.style.setProperty("--over", `${over}px`);
+      box.style.setProperty("--dur", `${Math.round(over / 45) + 10}s`);
+      box.classList.add("scrolling");
+    } else {
+      box.classList.remove("scrolling");
+    }
+  });
+
   // Shrink the video when the period changes.
   const curKey = view && view.cur ? view.cur.start : -1;
   useEffect(() => { setVidBig(false); }, [curKey]);
@@ -490,6 +512,9 @@ export default function DailyPage() {
   const verse = verseSrc.text
     ? (verseSrc.open ? verseQuote : truncateWords(verseQuote, VERSE_MAX))
     : tidyTruncated(verseQuote);
+  // The bottom bar has one line for it, so rather than cut the quote short it
+  // carries the whole thing and slides it across when it does not fit.
+  const verseFull = verseSrc.text ? verseQuote : tidyTruncated(verseQuote);
   const evaluated = evaluateFeature(sources, t);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
@@ -499,6 +524,15 @@ export default function DailyPage() {
   // Setup's "For Dismissal Messages" block: the times the end-of-day material
   // comes forward (lunch, lunch recess, dismissal) and how far ahead of each.
   const dismissal = data.dismissal || { advanceMin: 5, times: [] };
+  // A1 is a NOW() formula like the rest of the display cells, so the board works
+  // it out from its own clock and the scrubber moves it with everything else.
+  const greeting =
+    evaluateGreeting(
+      data.audiences || [],
+      t,
+      (dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at ?? null,
+      weekday
+    ) || meta.greeting || "Good morning";
   const waiting = data.waiting || [];
   // When the teaching day ends. The sheet says so in three places and any one of
   // them may be blank, so the first that is set wins: the DisplayAI dismissal
@@ -619,7 +653,7 @@ export default function DailyPage() {
           ? <span className="puzzle">Unscramble for a treat: <b>{puzzleWord}</b></span>
           : endOfDay
             ? <span className="verse riddleline">Riddle: {riddleOfDay()}</span>
-            : <span className="verse">{verse}</span>}
+            : <span className="verse" ref={verseRef}><span className="vtext">{verseFull}</span></span>}
       </div>
       <Scrub
         min={dayMin}
@@ -822,7 +856,7 @@ export default function DailyPage() {
         {header({ title: "Dismissal", chips: null, when: `From ${fmt(endOfDayAt)}`, leftHtml: <b>Day complete</b>, pct: 100 })}
         <div className={`main pic-right endofday${featureImage ? " pic-feature" : ""}`}>
           <div>
-            <p className="script">Well done, {(meta.greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
+            <p className="script">Well done, {(greeting.match(/,\s*(.*?)!?$/) || [, "everyone"])[1]}.</p>
             {verse ? <p className="question">{verse}</p> : null}
             {meta.headout.length > 0 && (
               <div className="block alert" style={{ textAlign: "left", display: "inline-block" }}>
@@ -851,10 +885,10 @@ export default function DailyPage() {
           : "Nothing is listed for today yet.";
     body = (
       <>
-        {header({ title: meta.greeting || "Good morning", chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
+        {header({ title: greeting, chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
         <div className="main center">
           <div>
-            <p className="script">{meta.greeting || "Good morning"}</p>
+            <p className="script">{greeting}</p>
             <p className="question">{verse}</p>
             <p className="summary">{note}</p>
             {dayPlan.length > 0 ? (
@@ -886,10 +920,10 @@ export default function DailyPage() {
   } else if (!cur && classes.length && t < classes[0].start) {
     body = (
       <>
-        {header({ title: "Good morning", chips: null, when: meta.plans, leftHtml: <>First class at <b>{fmt(classes[0].start)}</b></>, pct: 0 })}
+        {header({ title: greeting, chips: null, when: meta.plans, leftHtml: <>First class at <b>{fmt(classes[0].start)}</b></>, pct: 0 })}
         {withPicture(
           <div>
-            <p className="script">{meta.greeting || "Good morning"}</p>
+            <p className="script">{greeting}</p>
             <p className="question">{verse}</p>
             {agenda()}
             {linkChips(dayLinks, "Materials to print today")}

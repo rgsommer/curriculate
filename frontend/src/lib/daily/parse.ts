@@ -83,6 +83,8 @@ export type Payload = {
   // and the Kiss & Ride waiting list they show alongside.
   dismissal: Dismissal;
   waiting: string[];
+  // Setup column M: who the greeting addresses, Monday to Friday.
+  audiences: string[];
   // Every period start on Vertical column A: the day's actual bell schedule.
   dayTimes: number[];
   // The day's classes as written on VerticalAi, one entry per weekday, for when
@@ -755,6 +757,54 @@ export function parseWaiting(rows: string[][]): string[] {
   return out;
 }
 
+/**
+ * The bell schedule from Vertical column A.
+ *
+ * The column is read for 200 rows and only the first block of it is the day's
+ * timetable — further down it can hold anything. So a time is taken only while
+ * it is a school-day time and later than the one before it; the first value
+ * that breaks that run ends the schedule. A stray value must never become a
+ * bell, because a bell cuts a class short.
+ */
+export function bellSchedule(rows: string[][]): number[] {
+  const out: number[] = [];
+  for (const r of rows || []) {
+    const at = parseTime(String((r || [])[0] || ""));
+    if (at == null) continue;
+    if (at < 5 * 60 || at > 21 * 60) continue;
+    if (out.length && at <= out[out.length - 1]) break;
+    out.push(at);
+  }
+  return out;
+}
+
+/**
+ * The greeting, evaluated against the board's clock.
+ *
+ * A1 is a NOW() formula like every other display cell:
+ *   before noon  \u2014 "Enjoy your lunch, " past 11:55, otherwise "Good morning, "
+ *   after noon   \u2014 "Good afternoon, " up to the dismissal time, then "Goodbye, "
+ * followed by the name for the weekday from Setup column M ("everyone",
+ * "hard-workers", "JH Students" \u2026). Reading its result would freeze it to the
+ * sheet's clock, so the board works it out itself and the scrubber moves it.
+ *
+ * Returns "" when column M has nothing for the day, so the caller can fall back
+ * to A1 as read.
+ */
+export function evaluateGreeting(
+  audiences: string[],
+  minutes: number,
+  dismissalAt: number | null,
+  weekday: number
+): string {
+  const who = String(audiences[weekday - 2] || "").trim();
+  if (!who) return "";
+  const opening = minutes < 12 * 60
+    ? (minutes > 11 * 60 + 55 ? "Enjoy your lunch" : "Good morning")
+    : (dismissalAt != null && minutes <= dismissalAt ? "Good afternoon" : "Goodbye");
+  return `${opening}, ${who}!`;
+}
+
 /** Setup!A1:D20 — matched by the label in column B so row shuffles do not break it. */
 export function parseSetup(rows: string[][]): Setup {
   const out: Setup = { ...DEFAULT_SETUP };
@@ -800,7 +850,7 @@ export type RawInputs = {
   slotBlockFormulas?: string[][]; // Setup!T1:AA8 formulas, for the debug view
   displayLinks?: string[][]; // DisplayAI!A1:F40 cell links (rich text and HYPERLINK alike)
   displayCRuns?: { text: string; url: string }[][]; // every link inside each DisplayAI!C cell
-  setupMessages?: string[][]; // Setup!N1:Q8 — the "For Dismissal Messages" block
+  setupMessages?: string[][]; // Setup!M1:Q8 — column M the weekday names, N to Q the message block
   waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
   verticalTimes?: string[][]; // Vertical!A1:J200 — column A the period times
   lessons?: string[][]; // Lessons!C1:J400 values — the teacher's own material by code
@@ -987,14 +1037,9 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
 
   return {
     fetchedAt: now.toISOString(), meta, periods, points, setup, picture,
-    dismissal: parseDismissal(inp.setupMessages || []),
-    dayTimes: Array.from(
-      new Set(
-        (inp.verticalTimes || [])
-          .map((r) => parseTime(String((r || [])[0] || "")))
-          .filter((n): n is number => n != null)
-      )
-    ).sort((a, b) => a - b),
+    dismissal: parseDismissal((inp.setupMessages || []).map((r) => (r || []).slice(1))),
+    audiences: (inp.setupMessages || []).map((r) => String((r || [])[0] || "").trim()),
+    dayTimes: bellSchedule(inp.verticalTimes || []),
     dayPlan: dayPlanByWeekday(inp.vertical || [], lessons, inp.verticalTimes || []),
     waiting: parseWaiting(inp.waiting || []),
     sources: buildSources(inp),

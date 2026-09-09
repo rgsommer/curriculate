@@ -228,6 +228,15 @@ body:has(.daily-root) .site-footer { display: none !important; }
    row is tight — the week line and the link keep their words. */
 .bottom .verse { flex: 1 100 auto; min-width: 0; font-size: .82em;
   text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Longer than the bar: the whole verse slides across and back rather than
+   ending in an ellipsis. The distance is measured by the board. */
+.bottom .verse .vtext { display: inline-block; }
+.bottom .verse.scrolling { text-overflow: clip; }
+.bottom .verse.scrolling .vtext { animation: verseScroll var(--dur, 18s) ease-in-out infinite alternate; }
+@keyframes verseScroll {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(calc(-1 * var(--over, 0px))); }
+}
 .prayrow { display: inline-flex; align-items: center; gap: .8vw; }
 .prayrow .vid { width: clamp(56px, 7vw, 96px); border-width: 1px; }
 .prayrow .vid .cap { display: none; }
@@ -272,6 +281,8 @@ body:has(.daily-root) .site-footer { display: none !important; }
 @media (prefers-reduced-motion: reduce) {
   .pbar i { transition: none; }
   .top, .main { animation: none; }
-  .board.red .pbar i, .clockbox.red .left b, .clockbox.red, .bottom .pray.pop { animation: none; }
+  .board.red .pbar i, .clockbox.red .left b, .clockbox.red, .bottom .pray.pop,
+  .bottom .verse.scrolling .vtext { animation: none; }
+  .bottom .verse.scrolling { text-overflow: ellipsis; }
   .clockbox { transition: none; }
 }

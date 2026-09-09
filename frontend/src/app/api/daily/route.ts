@@ -68,7 +68,7 @@ export async function GET(req: Request) {
       "DisplayAI!A1:F40",   // 0 the day itself
       "Setup!A1:D20",       // 1 the labelled timing rules
       "Setup!T1:AA8",       // 2 the E1 slot table
-      "Setup!N1:Q8",        // 3 the dismissal message times
+      "Setup!M1:Q8",        // 3 column M the weekday names, N to Q the message times
       "Display!E1",         // 4 the feature cell, either tab
       "DisplayAI!E1",       // 5
       "Poems!F1:J3",        // 6
