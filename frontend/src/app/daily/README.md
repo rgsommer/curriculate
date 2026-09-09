@@ -40,7 +40,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `DisplayAI!A1:F40` | Greeting (A1), week line (A3), verse (A5), unscramble (C7), "Plans for…" line with class points and the entered flag (C8/D8), then the time rows: A time, C lesson text, D status, F flag. |
 | `DisplayAI!C1:D40` as formulas | `HYPERLINK()` targets in the lesson or status cells → the video tile. |
 | `Setup!A1:F20` | Timing rules, matched by the label text in column B, values in C/D (see below). |
-| `Setup!T1:AA8` (values and formulas) | The feature-slot table. Column T labels the rows; the E1 formula's `HLOOKUP` runs on U to AA, so the slots proper start one column in: row 1 priority, row 2 name, row 4 value, row 7 seconds on screen. `?debug=1` prints the whole block with its formulas, which is how to see what actually decides E1. |
+| `Setup!S1:AB8` (values and formulas) | The feature-slot table. S carries the picture the CE rule swaps in on the week's last teaching day and T labels the rows; the E1 formula's `HLOOKUP` runs on U onwards, so the slots proper start two columns in: row 1 priority, row 2 name, row 3 the slot's own material, row 4 the rule that gates it, row 7 seconds on screen. The board re-runs each row-4 rule at its own clock (see below), so the scrubber moves them. `?debug=1` prints every slot with both formulas and what the sheet itself said. |
 | `Setup!N1:Q8` | The "For Dismissal Messages" block: when the end-of-day material comes forward (lunch, lunch recess, dismissal) and how many minutes ahead. |
 | `Poems!F1:J3`, `VerticalAi!D1:J200`, `Riddles!D1:D400`, `Master!B1:B2` | Ingredients for the display rules the board evaluates itself. |
 | `Verses!A1:A400`, `Vertical!B4` | What A5 picks the day's verse from, so the board can cut it at a word boundary rather than mid-word. |
@@ -180,6 +180,18 @@ dark-green rules; and `B1 & B2` is listed above the trailing-4 rule, so
 The colours are close matches taken from the rule swatches, not exact hexes.
 
 If the sheet's rule order changes, reorder `STATUS_RULES` to match.
+
+**The slot rules are evaluated here, not read.** Each slot's row 4 is its own
+timing rule written against `NOW()` — "the memory verse for the first ten minutes
+of CE, but the picture in S2 on the week's last teaching day". Reading the cell's
+value gives the answer for the instant of the read, which is why the scrubber
+could not move E1. `lib/daily/formula.ts` is a small Sheets evaluator (IF, AND,
+NOW, TIMEVALUE, WEEKDAY, INDEX, HLOOKUP, cell and range references, …) and the
+board runs those formulas itself with `NOW()` bound to the time on screen. A
+formula it cannot follow, or one reaching past the ranges the board reads, throws
+and the sheet's own value is used instead — the behaviour before it existed. The
+grids a formula may reach are `Setup!A1:F20`, `Setup!M1:Q8`, `Setup!S1:AB8` and
+`Master!B1:B2`.
 
 **One deliberate difference from the sheet.** The slot test in E1 is `<>""`, and an
 `=IMAGE()` cell has no text value at all — so the sheet skips its own picture slots
