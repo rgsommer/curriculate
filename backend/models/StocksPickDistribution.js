@@ -30,7 +30,7 @@ const CandidateSchema = new mongoose.Schema(
   {
     ticker: { type: String, required: true, index: true },
     currency: { type: String, default: "USD" },
-    rank: { type: Number, required: true },      // 1 = top
+    rank: { type: Number, required: true },      // 1 = top (by champion composite)
     compositeRank: { type: Number, default: null },
     technicalScore: { type: Number, default: null },
     externalAdjustment: { type: Number, default: 0 },
@@ -42,19 +42,37 @@ const CandidateSchema = new mongoose.Schema(
     mtfConfluence: { type: String, default: null },
     sectorRank: { type: Number, default: null },
     entryPrice: { type: Number, default: null },
-    // Whether this candidate cleared the day's absolute qualifying
-    // threshold. Selected candidates have qualified=true AND rank ≤ n.
     qualified: { type: Boolean, default: false, index: true },
-    // Whether the pick was actually surfaced in today's briefing (top-n
-    // AND qualified). false for ranks below n even if they qualified —
-    // capture the runner-up story for calibration.
     selected: { type: Boolean, default: false, index: true },
-    // If the candidate did not qualify, WHY not. One of:
-    //   below-composite-threshold  (compositeRank < ABS_COMPOSITE)
-    //   below-external-threshold   (nominationCount < ABS_EXTERNAL)
-    //   below-confirmation-count   (fewer than ABS_CONFIRMATIONS)
-    //   selected                   (cleared)
     disqualifyReason: { type: String, default: null },
+
+    // ─── P2 additions: OQ/EQ split + provenance for missed-winner audit
+    // Opportunity Quality (WHAT to own) — independent of chart timing.
+    opportunityScore: { type: Number, default: null },
+    // Entry Quality (WHEN to buy) — chart / setup / MTF / RVOL / etc.
+    entryScore: { type: Number, default: null },
+    // Tier from stocksEntryScore.classifyOqEqTier:
+    //   BUY_CANDIDATE | WATCH_HIGH_QUALITY_NO_ENTRY |
+    //   WATCH_SETUP_NO_QUALITY | OK | BELOW_THRESHOLD
+    oqEqTier: { type: String, default: null, index: true },
+    // Industry-strength signal { score, source, industry, sector, … }
+    industryStrength: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Full factor breakdown at score time so P3/P4 alpha attribution
+    // can decompose winners into which factor carried the pick.
+    factorBreakdown: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Per-model composite scores { A, B, C, D, E, F } for future shadow
+    // testing (P4). Champion picks by scoreByModel.A; challengers'
+    // scores are captured but not acted on until P4 promotes.
+    scoreByModel: { type: mongoose.Schema.Types.Mixed, default: null },
+    // Gates the candidate FAILED, ordered by point of failure. E.g.:
+    //   ["stage1-below-tech-floor"]  (never entered Stage 2)
+    //   ["stage2-below-composite-threshold", "no-external-nomination"]
+    // Empty array = passed every gate ⇒ selected.
+    failedGates: { type: [String], default: [] },
+    // Snapshot price / as-of at score time — needed so a later
+    // "why did we miss XYZ" analysis has the same view the engine did.
+    priceAtScore: { type: Number, default: null },
+    dataAsOf: { type: Date, default: null },
   },
   { _id: false }
 );
@@ -87,6 +105,24 @@ const PickDistributionSchema = new mongoose.Schema(
     noQualifyingOpportunity: { type: Boolean, default: false, index: true },
     // Free-form note (e.g. "kill-switch canary" or "engine suppressed").
     note: { type: String, default: null },
+    // P2: which scoring model produced the `selected` set (champion is
+    // "A"). All models' per-candidate scores appear in candidate.scoreByModel.
+    championModelId: { type: String, default: "A" },
+    // P2: engine version so the calibration corpus knows which rules
+    // and funnel produced this row. Bump on rule changes.
+    engineVersion: { type: String, default: null },
+    // P2: funnel widths in force at generation time — universe,
+    // stage-1 preserved, stage-2 fundamentals input, rescue-pool.
+    funnel: {
+      universeSize: { type: Number, default: null },
+      stage1TopK: { type: Number, default: null },
+      rescueTopK: { type: Number, default: null },
+      stage3TopK: { type: Number, default: null }, // adversarial/vision budget
+    },
+    // P2: how many WATCH — HIGH-QUALITY-NO-ENTRY rows were emitted
+    // from this day's distribution (persisted separately in
+    // StocksWatchListEntry).
+    watchHighQualityCount: { type: Number, default: 0 },
   },
   { timestamps: true }
 );

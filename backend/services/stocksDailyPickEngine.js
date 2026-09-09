@@ -19,6 +19,16 @@ import StocksAdviceRec from "../models/StocksAdviceRec.js";
 import StocksDiscoveryCandidate from "../models/StocksDiscoveryCandidate.js";
 import StocksDailyPick from "../models/StocksDailyPick.js";
 import StocksPickDistribution from "../models/StocksPickDistribution.js";
+import StocksWatchListEntry from "../models/StocksWatchListEntry.js";
+import { computeOpportunityScore } from "./stocksOpportunityScore.js";
+import { computeEntryScore, combineOqEq, classifyOqEqTier, deriveEntrySubScoresFromTech } from "./stocksEntryScore.js";
+import { SCORING_MODELS, ALL_MODEL_IDS, CHAMPION_MODEL_ID } from "./stocksScoringModels.js";
+import { getIndustryStrength } from "./stocksIndustryStrength.js";
+
+// P2 (2026-09-09) — engine version bump. Rows in
+// StocksPickDistribution stamp this so the calibration corpus knows
+// which funnel / rule set produced them. Bump on rule changes.
+const ENGINE_VERSION = "2.0.0"; // 1.0.0 = P0/P1; 2.0.0 = P2 OQ/EQ split + persistence
 
 // ─── P0B absolute qualifying thresholds ──────────────────────────────
 // A ticker MUST clear ALL of these to become an actual daily pick.
@@ -46,16 +56,52 @@ const DISTRIBUTION_TOP_N = 30;
 function persistPickDistributionAsync({
   email, combined, selectedTickers,
   thresholds, universeSize, scoredCount, rescuedCount,
-  noQualifyingOpportunity, note,
+  noQualifyingOpportunity, note, funnel = null,
 }) {
   (async () => {
     try {
       const pickDate = new Date().toISOString().slice(0, 10);
       const top = (combined || []).slice(0, DISTRIBUTION_TOP_N);
+      const watchInserts = [];
       const candidates = top.map((cand, i) => {
         const disqualifyReason = classifyDisqualification(cand);
         const qualified = disqualifyReason == null;
         const selected = qualified && selectedTickers.has(cand.ticker);
+
+        // P2: build the failedGates list from what actually filtered
+        // this candidate. Ordered by point-of-failure so downstream
+        // analysis can attribute misses to a specific gate.
+        const failedGates = [];
+        if (!Number.isFinite(cand.compositeRank)) failedGates.push("stage2-not-scored");
+        if (disqualifyReason && !selected) failedGates.push(disqualifyReason);
+        if (cand.oqEqTier === "WATCH_HIGH_QUALITY_NO_ENTRY") failedGates.push("entry-quality-not-ready");
+        if (cand.oqEqTier === "WATCH_SETUP_NO_QUALITY") failedGates.push("opportunity-quality-below-threshold");
+
+        // WATCH — HIGH-QUALITY / ENTRY-NOT-READY tracking: persist to
+        // its own model so P3/P4 can measure whether these become
+        // winners while we wait for entry. Only pool candidates whose
+        // OQ genuinely cleared 75+ so we don't dilute with mediocrities.
+        if (cand.oqEqTier === "WATCH_HIGH_QUALITY_NO_ENTRY" &&
+            Number.isFinite(cand.opportunityScore) && cand.opportunityScore >= 75) {
+          watchInserts.push({
+            email, pickDate,
+            ticker: cand.ticker,
+            currency: cand.currency || "USD",
+            reason: "high-quality-no-entry",
+            opportunityScore: cand.opportunityScore,
+            entryScore: cand.entryScore,
+            modelId: CHAMPION_MODEL_ID,
+            factorSnapshot: {
+              factorBreakdown: cand.factorBreakdown || null,
+              scoreByModel: cand.scoreByModel || null,
+              industryStrength: cand.industryStrength || null,
+              setupName: cand.setupName || null,
+              mtfConfluence: cand.mtfConfluence || null,
+            },
+            priceAtAdd: cand.priceAtScore || cand.entryPrice || null,
+          });
+        }
+
         return {
           ticker: cand.ticker,
           currency: cand.currency || "USD",
@@ -75,6 +121,16 @@ function persistPickDistributionAsync({
           qualified,
           selected,
           disqualifyReason: selected ? "selected" : disqualifyReason,
+          // P2 provenance
+          opportunityScore: Number.isFinite(cand.opportunityScore) ? cand.opportunityScore : null,
+          entryScore: Number.isFinite(cand.entryScore) ? cand.entryScore : null,
+          oqEqTier: cand.oqEqTier || null,
+          industryStrength: cand.industryStrength || null,
+          factorBreakdown: cand.factorBreakdown || null,
+          scoreByModel: cand.scoreByModel || null,
+          failedGates,
+          priceAtScore: Number.isFinite(cand.priceAtScore) ? cand.priceAtScore : null,
+          dataAsOf: cand.dataAsOf || null,
         };
       });
       const qualifiedCount = candidates.filter(c => c.qualified).length;
@@ -87,10 +143,30 @@ function persistPickDistributionAsync({
             thresholds, universeSize, scoredCount, rescuedCount,
             candidates, qualifiedCount, selectedCount,
             noQualifyingOpportunity, note,
+            championModelId: CHAMPION_MODEL_ID,
+            engineVersion: ENGINE_VERSION,
+            funnel: funnel || null,
+            watchHighQualityCount: watchInserts.length,
           },
         },
         { upsert: true, setDefaultsOnInsert: true },
       );
+      // Fire-and-forget WATCH-list upserts. Bulk write with per-ticker
+      // idempotent upsert keys so a retry never dupes.
+      if (watchInserts.length > 0) {
+        try {
+          const ops = watchInserts.map(doc => ({
+            updateOne: {
+              filter: { email: doc.email, pickDate: doc.pickDate, ticker: doc.ticker },
+              update: { $set: doc },
+              upsert: true,
+            },
+          }));
+          await StocksWatchListEntry.bulkWrite(ops, { ordered: false });
+        } catch (e) {
+          console.warn(`[watch-list] persist failed for ${email}:`, e?.message);
+        }
+      }
     } catch (e) {
       console.warn(`[pick-distribution] persist failed for ${email}:`, e?.message);
     }
@@ -734,6 +810,11 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
         mtfConfluence: tech.mtf?.confluence || null,
         atr14: tech.atr14,
         watchTrigger,
+        // P2 (2026-09-09): keep the tech snapshot on the candidate so
+        // downstream Entry Quality scorer can derive sub-scores from
+        // trend/RSI/RVOL/MTF/extension WITHOUT re-fetching. Small
+        // memory-per-candidate cost, zero additional API calls.
+        tech,
         rationale: (() => {
           // Show ALL contributors (positive AND negative) so the operator
           // can trace how we got to the composite. rawSum here comes from
@@ -785,7 +866,12 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
   // The daily-pick output is now driven by the composite. Stage 2 runs
   // unconditionally so the algorithm the UI backtest promises is the
   // same one the production pick engine uses.
-  const MULTI_FACTOR_TOP_K = Math.max(10, Math.min(60, Number(process.env.STOCKS_MULTI_FACTOR_TOP_K) || 30));
+  // P2 (2026-09-09): raised max ceiling from 60 → 150 so ops can widen
+  // the medium-cost fundamentals funnel via env without a code change.
+  // Default stays at 30 to preserve current API cost / latency; the
+  // dominant driver of API cost is FMP fundamentals fetches, which
+  // scale roughly linearly with this number.
+  const MULTI_FACTOR_TOP_K = Math.max(10, Math.min(150, Number(process.env.STOCKS_MULTI_FACTOR_TOP_K) || 30));
   let top;
   if (scored.length > 0) {
     const stage2Input = scored.slice(0, MULTI_FACTOR_TOP_K);
@@ -877,6 +963,66 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
           // technical score in a side field for auditability + backtest
           // comparisons, but let compositeRank drive selection.
           cand.compositeRank = composite.score;
+
+          // ── P2: OPPORTUNITY QUALITY / ENTRY QUALITY split ────────
+          // Compute BOTH scores per candidate, for all declared models.
+          // Champion (model A) still drives production selection. The
+          // OQ/EQ tier is persisted so P4 shadow-portfolio testing can
+          // measure whether any challenger picks better winners than
+          // the champion, and so WATCH — HIGH-QUALITY / ENTRY-NOT-READY
+          // rows can be surfaced without polluting today's decisions.
+          //
+          // Industry strength is fetched here (with sector fallback so
+          // the score is always populated when at least sector data
+          // exists). One extra fetch per Stage-2 candidate; peer count
+          // ≤ 10 so the wall-clock is bounded.
+          let industryStrength = null;
+          try {
+            industryStrength = await getIndustryStrength(cand.ticker, {
+              fundamentals,
+              benchmarkTicker: ccy === "CAD" ? "XIC.TO" : "SPY",
+              sectorRotation: ctx?.sectorRotation || null,
+            });
+          } catch { industryStrength = { score: null, source: "unavailable" }; }
+          cand.industryStrength = industryStrength;
+
+          // Sub-scores already computed as part of composite.factors —
+          // reuse them so the OQ scorer isn't paying for the same math.
+          const oqInput = {
+            fundamentalsScore: composite.factors?.fundamentals?.score ?? null,
+            growthScore: composite.factors?.growth?.score ?? null,
+            revisionsScore: composite.factors?.estimate_revisions?.score ?? null,
+            relativeStrengthScore: composite.factors?.relative_strength?.score ?? null,
+            insiderScore: composite.factors?.insider?.score ?? null,
+            industryStrengthScore: industryStrength?.score ?? null,
+          };
+          // Entry quality — derived from `tech` (already fetched in
+          // Stage 1). Falls back to 0 on missing sub-scores per its
+          // own renormalization logic.
+          const entrySubs = deriveEntrySubScoresFromTech(cand.tech || null);
+          cand.scoreByModel = {};
+          for (const id of ALL_MODEL_IDS) {
+            const oq = computeOpportunityScore(oqInput, id);
+            const eq = computeEntryScore(entrySubs, id, { derivedFromTech: true });
+            cand.scoreByModel[id] = {
+              opportunity: oq.score,
+              entry: eq.score,
+              combined: combineOqEq(oq.score, eq.score, id),
+              missingOpportunity: oq.missingFactors,
+              missingEntry: eq.missingFactors,
+            };
+          }
+          const champion = cand.scoreByModel[CHAMPION_MODEL_ID];
+          cand.opportunityScore = champion?.opportunity ?? null;
+          cand.entryScore       = champion?.entry ?? null;
+          cand.oqEqTier = classifyOqEqTier({
+            opportunityScore: cand.opportunityScore,
+            entryScore: cand.entryScore,
+          });
+          cand.priceAtScore = Number.isFinite(cand.entryPrice) ? cand.entryPrice
+                             : (Number.isFinite(cand.tech?.last) ? cand.tech.last : null);
+          cand.dataAsOf = new Date();
+          cand.failedGates = [];
           // ── Tier 3.1: Quality-Compounder archetype bump ────────
           // A candidate that meets 4-of-5 durability tests (high ROE,
           // FCF conversion, low leverage, margin durability, positive
@@ -905,7 +1051,10 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
     // for "a pullback name with weak technicals but 80% revenue growth
     // never gets fundamentals scored." Bounded at RESCUE_TOP_K so FMP
     // calls stay capped (main K + rescue K = ~45 per tick worst case).
-    const RESCUE_TOP_K = Math.max(5, Math.min(30, Number(process.env.STOCKS_RESCUE_TOP_K) || 15));
+    // P2 (2026-09-09): raised max ceiling 30 → 75 for the OQ-driven
+    // fundamentals-rescue pool. Same rationale as MULTI_FACTOR_TOP_K
+    // — env-tunable widening without a code change; default preserved.
+    const RESCUE_TOP_K = Math.max(5, Math.min(75, Number(process.env.STOCKS_RESCUE_TOP_K) || 15));
     const FUNDAMENTALS_RESCUE_PROMOTION = 60; // multi-factor composite ≥ 60 to promote
     rescueScored.sort((a, b) => b.deterministicScore - a.deterministicScore);
     const rescueInput = rescueScored.slice(0, RESCUE_TOP_K);
@@ -1092,6 +1241,12 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       rescuedCount: promoted.length,
       noQualifyingOpportunity: qualifiedCombined.length === 0,
       note: gate.canary ? "kill-switch canary" : null,
+      funnel: {
+        universeSize: universe.length,
+        stage1TopK: MULTI_FACTOR_TOP_K,
+        rescueTopK: RESCUE_TOP_K,
+        stage3TopK: null, // adversarial/vision budget lives in renderDailyPicksDeterministic
+      },
     });
 
     console.log(
@@ -1117,6 +1272,12 @@ export async function generateDailyPicksForUser({ email, n = 2, minScore = 40, c
       rescuedCount: 0,
       noQualifyingOpportunity: true,
       note: "no candidates scored above minScore",
+      funnel: {
+        universeSize: universe.length,
+        stage1TopK: MULTI_FACTOR_TOP_K,
+        rescueTopK: null,
+        stage3TopK: null,
+      },
     });
   }
 
