@@ -950,12 +950,19 @@ export default function DailyPage() {
     // Handouts named in the lesson cell, so they can be opened and printed from
     // the board if they were not run off beforehand.
     const handouts = linkChips(cur.links || [], "Handouts");
+    // Some lessons are a title and an assignment and nothing else. The lesson
+    // column is where the class looks, so the assignment goes there rather than
+    // leaving that half of the screen empty and the panel overfull.
+    const assignOnLeft = !cur.plan.length && cur.assign.length > 0;
+    const lessonList = assignOnLeft ? cur.assign : cur.plan;
     const leftCol = (
       <div>
         <p className="eyebrow">Today</p>
-        <p className="question">{cur.q || cur.subj}</p>
-        <p className="summary">{cur.today}</p>
-        {phase === "open" ? null : list(cur.plan, "plan")}
+        {/* A lesson written without a question leads with what it is about,
+            rather than repeating the class name under the class name. */}
+        <p className="question">{cur.q || cur.today || cur.subj}</p>
+        {cur.q && cur.today ? <p className="summary">{cur.today}</p> : null}
+        {phase === "open" ? null : list(lessonList, "plan")}
         {handouts}
       </div>
     );
@@ -988,7 +995,7 @@ export default function DailyPage() {
       if (left <= setup.remindersAdvance && cur.remind) blocks.push(<div key="r" className="block navy"><h3>Reminders</h3><p>{cur.remind}</p></div>);
       const agendaText = cur.assign.length ? cur.assign.join("; ") : cur.homework || cur.remind;
       if (left <= setup.homeworkAt) blocks.push(<div key="h" className="block alert"><h3>Write in your agenda</h3><p>{agendaText}</p></div>);
-      else if (phase !== "open" && cur.assign.length) blocks.push(<div key="a" className="block sun"><h3>Assign</h3>{list(cur.assign)}</div>);
+      else if (phase !== "open" && cur.assign.length && !assignOnLeft) blocks.push(<div key="a" className="block sun"><h3>Assign</h3>{list(cur.assign)}</div>);
       // "Before you head out" belongs to the end of the day, and the end of the
       // day is the dismissal time — not simply the last class on the board,
       // which is what used to put the benediction up before lunch.

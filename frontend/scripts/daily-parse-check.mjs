@@ -473,5 +473,17 @@ check("the AI bullets come with it", blended[0].plan.length === 2, blended[0] &&
 const noProse = P.dayPlanByWeekday([], {}, spine)[2] || [];
 check("without an AI version the shorthand still reads", noProse[0].today === "Introduction: Overview, expectations, textbook, etc.", noProse[0] && noProse[0].today);
 
+
+// ---- a Vertical lesson whose title happens to end in a question mark ----
+const ceCell = "CE 8A (22) - 212\n\u25CFB002 \uD83D\uDCF7 \uD83C\uDF7F: Continue 'Can I Trust the Bible?' presentation "
+  + "[Assign: Take one aspect of this year\u2019s theme verse to make a letter-sized poster. "
+  + "It should be \u25CFCreative \u25CFColourful \u25CFInclude the verse Due Wed Sep 16]\uD83D\uDD0D";
+const ceLesson = P.parseClassText(ceCell);
+check("vertical shape: recognised by its own marks, not by the others failing", ceLesson.today === "Continue 'Can I Trust the Bible?' presentation", ceLesson.today);
+check("vertical shape: the title is not read as the lesson question", ceLesson.q === "", ceLesson.q);
+check("vertical shape: no code or emoji left in the words", !/B002|\uD83D/.test(ceLesson.today), ceLesson.today);
+check("vertical shape: the header still parses", ceLesson.subj === "CE 8A" && ceLesson.room === "Rm 212" && ceLesson.code === "B002", ceLesson);
+check("vertical shape: bulleted points inside Assign become separate items", ceLesson.assign.length === 4 && ceLesson.assign[1] === "Creative" && ceLesson.assign[3].startsWith("Include the verse"), ceLesson.assign);
+
 console.log(failures ? `\n${failures} failing` : "\nall checks passed");
 process.exit(failures ? 1 : 0);
