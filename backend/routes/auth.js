@@ -8,6 +8,7 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import TeacherProfile from "../models/TeacherProfile.js";
 import AccessCode from "../models/AccessCode.js";
+import { sendEmail } from "../behavior/lib/sendEmail.js";
 
 const router = express.Router();
 
@@ -75,7 +76,7 @@ function buildResetLink(email, rawToken) {
   const appBase =
     process.env.APP_BASE_URL ||
     process.env.TEACHER_APP_URL ||
-    "http://localhost:5173";
+    "https://www.curriculate.net";
 
   return `${String(appBase).replace(/\/+$/, "")}/reset-password?token=${rawToken}&email=${encodeURIComponent(
     email
@@ -284,9 +285,26 @@ router.post("/forgot-password", async (req, res) => {
 
     console.log("🔐 Password reset link (dev):", resetLink);
     console.log("[forgot-password] email =", email, "userFound =", !!user);
-    console.log("[forgot-password] NODE_ENV =", process.env.NODE_ENV);
-    console.log("[forgot-password] RETURN_RESET_TOKEN =", process.env.RETURN_RESET_TOKEN);
-    console.log("[forgot-password] devReturn =", isDevReturnEnabled());
+
+    // Actually email the link. Non-fatal: on failure we still return ok (the
+    // link is in the server logs as a fallback) and never leak the error.
+    try {
+      await sendEmail({
+        to: email,
+        subject: "Reset your Curriculate password",
+        text:
+          `We received a request to reset your Curriculate password.\n\n` +
+          `Reset it here (link expires in 30 minutes):\n${resetLink}\n\n` +
+          `If you didn't request this, you can safely ignore this email.`,
+        html:
+          `<p>We received a request to reset your Curriculate password.</p>` +
+          `<p><a href="${resetLink}" style="display:inline-block;background:#0f766e;color:#fff;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600">Reset your password</a></p>` +
+          `<p style="color:#64748b;font-size:13px">This link expires in 30 minutes. If you didn't request this, you can safely ignore this email.</p>` +
+          `<p style="color:#94a3b8;font-size:12px">Or paste this link into your browser:<br>${resetLink}</p>`,
+      });
+    } catch (mailErr) {
+      console.error("[forgot-password] email send failed:", mailErr?.message || mailErr);
+    }
 
     if (isDevReturnEnabled()) {
       return res.json({ ok: true, resetToken: rawToken, resetLink });
