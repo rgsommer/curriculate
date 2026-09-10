@@ -64,19 +64,12 @@ function recordCellImagesForBoard() {
     } catch (e) {
       return; // that tab is not in this sheet
     }
+    // getValues() hands a picture back as a CellImage, so the whole range is
+    // read in one go — no per-cell round trips.
     var values = range.getValues();
-    var formulas = range.getFormulas();
     for (var r = 0; r < values.length; r += 1) {
       for (var c = 0; c < values[r].length; c += 1) {
         var image = asCellImage_(values[r][c]);
-        // Belt and braces: on some versions getValues() hands a picture back as
-        // an empty string rather than a CellImage, so a cell that is blank in
-        // both the values and the formulas is asked directly. Only those cells,
-        // so this stays one round trip per genuinely empty cell.
-        if (!image && values[r][c] === '' && !(formulas[r] || [])[c]) {
-          var probe = range.getCell(r + 1, c + 1);
-          if (probe.getValueType() === SpreadsheetApp.ValueType.IMAGE) image = asCellImage_(probe.getValue());
-        }
         if (!image) continue;
         var cell = range.getCell(r + 1, c + 1);
         var ref = cell.getSheet().getName() + '!' + cell.getA1Notation().replace(/\$/g, '');
@@ -108,9 +101,16 @@ function recordCellImagesForBoard() {
   return message;
 }
 
-/** A cell holding a picture reads back as a CellImage; everything else does not. */
+/**
+ * A cell holding a picture reads back as a CellImage; everything else does not.
+ *
+ * The documented test is the value's own valueType. `getValueType()` is not a
+ * method on Range — asking a cell for it throws — so the check belongs on what
+ * comes out of getValue()/getValues(), not on the cell.
+ */
 function asCellImage_(value) {
   if (!value || typeof value !== 'object') return null;
+  if (value.valueType && value.valueType === SpreadsheetApp.ValueType.IMAGE) return value;
   return typeof value.getContentUrl === 'function' ? value : null;
 }
 
