@@ -208,6 +208,10 @@ body:has(.daily-root) .site-footer { display: none !important; }
    scaled up to fill it rather than sitting at whatever size the file happens to
    be, which on a projector is the difference between a flag and a stamp. */
 .picture.fill .frame img { width: 100%; height: 100%; object-fit: contain; }
+/* O Canada: the words beside the flag, sized to be sung from across the room. */
+.main.anthem .words { align-self: center; }
+.main.anthem .words p { font-family: var(--font-merriweather), Georgia, serif; font-size: calc(clamp(18px, 4.2vh, 46px) * var(--fit)); line-height: 1.35; margin: 0 0 1.2vh; white-space: pre-line; }
+.main.anthem .words p:last-child { margin-bottom: 0; }
 
 .ptsrow { border-top: 1px solid var(--line); padding: .8vh 3vw 0; overflow: hidden; }
 .pts { display: flex; gap: 1.6vw; align-items: center; justify-content: center; flex-wrap: nowrap; }

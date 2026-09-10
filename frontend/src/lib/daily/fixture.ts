@@ -113,12 +113,23 @@ export const FIXTURE: RawInputs = {
     });
     return r;
   })(),
+  // F is Monday and J Friday. Row 1 names the language the day sings in, row 2
+  // carries the words, row 3 the flag.
   poems: [
-    ["Mon", "Tue", "Wed", "Thu", "Fri"],
-    ["Monday poem", "Tuesday poem", "Wednesday poem", "The fisherman goes out at dawn", "Friday poem"],
+    ["O Canada \u2014 English", "\u00d4 Canada \u2014 fran\u00e7ais", "O Canada \u2014 English", "\u00d4 Canada \u2014 fran\u00e7ais", "O Canada \u2014 English"],
+    [
+      "O Canada! Our home and native land!\nTrue patriot love in all of us command.",
+      "\u00d4 Canada! Terre de nos a\u00efeux,\nTon front est ceint de fleurons glorieux!",
+      "O Canada! Our home and native land!\nTrue patriot love in all of us command.",
+      "O Canada! Our home and native land!\nTrue patriot love in all of us command.\nWith glowing hearts we see thee rise,\nThe True North strong and free!",
+      "O Canada! Our home and native land!\nTrue patriot love in all of us command.",
+    ],
     ["Poem of the week: The Fisherman, by Abbie Farwell Brown"],
   ],
-  poemFormulas: [[], [], []],
+  poemFormulas: [
+    [], [],
+    ["", "", "", '=IMAGE("https://example.org/flag-of-canada.png")', ""],
+  ],
   vertical: [
     ["", "", "", "", "", "", ""],
     // Row 2 is the day's plan, one column per weekday (F to J) — the same three

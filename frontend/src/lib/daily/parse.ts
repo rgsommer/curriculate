@@ -54,6 +54,7 @@ export type Setup = {
   washroomBefore: number;
   snacksB2Min: number;
   seatMin: number; // how long the free seat is on the table at the top of a class
+  anthemMin: number; // how long O Canada holds the screen after the announcements
   openMin: number;
   picSeconds: number;
 };
@@ -118,6 +119,7 @@ export const DEFAULT_SETUP: Setup = {
   washroomBefore: 10,
   snacksB2Min: 5,
   seatMin: 5,
+  anthemMin: 5,
   openMin: 5,
   picSeconds: 600,
 };
@@ -946,6 +948,9 @@ export function parseSetup(rows: string[][]): Setup {
     // No such row in the sheet yet; add one labelled "Free seat for" with the
     // minutes in column C to change it from five.
     else if (/^(free seat|seat change|sit anywhere)/.test(label)) out.seatMin = num(c, out.seatMin);
+    // No such row in the sheet yet; add one labelled "O Canada for" with the
+    // minutes in column C to change it from five.
+    else if (/^(o canada|anthem)/.test(label)) out.anthemMin = num(c, out.anthemMin);
   }
   return out;
 }
@@ -1201,6 +1206,8 @@ export type Sources = {
   poemRow: string[]; // Poems!F2:J2, Monday to Friday
   poemF3: string; // Poems!F3
   poemF3Formula: string;
+  poemGrid: string[][]; // Poems!F1:J3 values — the anthem's flag and words by weekday
+  poemGridFormulas: string[][]; // the same as formulas, where an =IMAGE() hides
   verticalRow: string[]; // VerticalAi row keyed 1, columns D to J
   slots: Slot[]; // Setup!U1:AB4
   book: Book; // the grids a Setup formula may reach, for evaluating it here
@@ -1213,7 +1220,8 @@ export type Sources = {
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
-  poemRow: [], poemF3: "", poemF3Formula: "", verticalRow: [], slots: [], riddle: "",
+  poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
+  verticalRow: [], slots: [], riddle: "",
   verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {},
 };
 
@@ -1426,6 +1434,8 @@ export function buildSources(inp: RawInputs): Sources {
     poemRow: (poems[1] || []).map((s) => String(s || "")),
     poemF3: String((poems[2] || [])[0] || ""),
     poemF3Formula: String(((inp.poemFormulas || [])[2] || [])[0] || ""),
+    poemGrid: (poems || []).map((r) => (r || []).map((c) => String(c || ""))),
+    poemGridFormulas: (inp.poemFormulas || []).map((r) => (r || []).map((c) => String(c || ""))),
     verticalRow: (inp.vertical || []).find((r) => String((r || [])[0] || "").trim() === "1") || [],
     slots,
     riddle: Number.isFinite(week) ? String((riddleRows[week - 1] || [])[0] || "") : "",
@@ -1525,6 +1535,36 @@ export function columnName(col: number): string {
   let out = "";
   while (n > 0) { const r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
   return out;
+}
+
+/**
+ * O Canada: the flag and the words, from the day's column of Poems!F1:J3.
+ *
+ * F is Monday and J Friday, and the column carries the anthem in whichever
+ * language that day sings it. The flag is a picture in row 3; the words are
+ * whatever text the column holds. A picture put in the cell with Insert >
+ * Image > Image in cell has no value and no formula the API can read, so the
+ * URL has to be in the cell — `=IMAGE("…")`, a link, or the address itself.
+ */
+export function anthemOfDay(
+  poems: string[][],
+  formulas: string[][],
+  weekday: number
+): { image: string; lines: string[] } {
+  const col = weekday - 2; // Sheets counts Sunday as 1, so Monday is column F
+  if (col < 0 || col > 4) return { image: "", lines: [] };
+  const at = (row: number, grid: string[][]) => String(((grid || [])[row] || [])[col] || "").trim();
+  let image = "";
+  const lines: string[] = [];
+  for (let row = 0; row < 3; row += 1) {
+    const value = at(row, poems);
+    const formula = at(row, formulas);
+    const url = [urlFromFormula(formula), (value.match(URL_RE) || [])[0]].find((u) => u && isImageUrl(u)) || "";
+    if (url && !image) image = normalizeImageUrl(url);
+    const text = value.replace(URL_RE, "").trim();
+    if (text) lines.push(text);
+  }
+  return { image, lines };
 }
 
 /** Points row 3 holds the class names; row 46 holds four flags per class. */
