@@ -122,6 +122,14 @@ export function timeWeightedReturn({ snaps, cashFlows }) {
 // PUBLIC — dispatcher. Chooses the best-supported method.
 // Optional `cashFlows` overrides the Mongo fetch — pass it in tests or
 // when the caller already has flows in hand.
+//
+// P3.6 correctness: `snaps` is trimmed at the caller to the requested
+// window. When those snaps' span (first→last snap date) is shorter than
+// the requested window, we cap `windowDays` at the SNAP SPAN and only
+// include cash flows that fall INSIDE that snap span. Otherwise a
+// nine-month YTD window with three months of snapshots blows up
+// Modified Dietz — deposits that happened before the first snap have
+// no matching valuation and distort the denominator.
 export async function computePortfolioReturn({ email, snaps, windowStartYmd, windowEndYmd, method = "auto", cashFlows: cashFlowsOverride }) {
   if (!Array.isArray(snaps) || snaps.length < 2) {
     return {
@@ -133,11 +141,26 @@ export async function computePortfolioReturn({ email, snaps, windowStartYmd, win
   const first = snaps[0], last = snaps[snaps.length - 1];
   const startCad = Number(first.totalCad);
   const endCad = Number(last.totalCad);
-  const flows = Array.isArray(cashFlowsOverride)
+  // Bound cash-flow extraction to the SNAP SPAN, not the requested
+  // window — snapshots outside the window would already have been
+  // trimmed by the caller. If snap span < requested window, we compute
+  // the return over the snap span only and let the caller expose
+  // reducedFromWindow in the returned note.
+  const snapSpanFromYmd = ymd(first.date);
+  const snapSpanToYmd = ymd(last.date);
+  const rawFlows = Array.isArray(cashFlowsOverride)
     ? cashFlowsOverride
-    : await extractCashFlowsFromJournal({ email, fromYmd: windowStartYmd, toYmd: windowEndYmd });
+    : await extractCashFlowsFromJournal({ email, fromYmd: snapSpanFromYmd, toYmd: snapSpanToYmd });
+  const flows = rawFlows.filter(f => {
+    const d = ymd(f.date);
+    return d >= snapSpanFromYmd && d <= snapSpanToYmd;
+  });
   const externalCashFlowCad = flows.reduce((s, f) => s + f.signedCad, 0);
   const windowDays = Math.max(1, Math.round((new Date(last.date) - new Date(first.date)) / 86400_000));
+  const requestedDays = Math.max(1, Math.round((new Date(windowEndYmd) - new Date(windowStartYmd)) / 86400_000));
+  const reducedFromWindow = windowDays < requestedDays * 0.9
+    ? { snapSpanDays: windowDays, requestedWindowDays: requestedDays, snapSpanFromYmd, snapSpanToYmd }
+    : null;
   const flowsWithDays = flows.map(f => ({
     ...f,
     daysFromStart: Math.max(0, Math.round((new Date(f.date) - new Date(first.date)) / 86400_000)),
@@ -181,7 +204,10 @@ export async function computePortfolioReturn({ email, snaps, windowStartYmd, win
     externalCashFlowCad,
     cashFlowCoverage,
     intervals,
-    note: chosen === "simple" && flows.length > 0
+    reducedFromWindow,
+    note: reducedFromWindow
+      ? `Return covers only the snap span (${reducedFromWindow.snapSpanFromYmd}..${reducedFromWindow.snapSpanToYmd}, ${reducedFromWindow.snapSpanDays}d) — snapshots do not span the full requested ${reducedFromWindow.requestedWindowDays}d window. Compare against benchmark return over the same reduced window, not the full requested one.`
+      : chosen === "simple" && flows.length > 0
       ? "Simple selected despite detected flows — should not happen; caller override."
       : null,
   };

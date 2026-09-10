@@ -1,22 +1,30 @@
 // backend/services/stocksBenchmarkMatched.js
 //
-// P3 (2026-09-09) — matched-period benchmark helpers.
-// Every question of the form "did our stock beat the correct
-// benchmark over exactly the period we held it?" routes through here.
+// P3 (2026-09-09) + P3.6 (2026-09-10) — matched-period benchmark helpers.
+// Every question of the form "did our stock beat the correct benchmark
+// over exactly the period we held it?" routes through here.
+//
+// P3.6 changes:
+//   • Uses the resilient market-data adapter (Yahoo primary, FMP
+//     fallback, DATA_UNAVAILABLE final) with full provenance.
+//   • Missing data → { pct: null, status: "DATA_UNAVAILABLE" }.
+//     NEVER coerced to zero — zero is a legitimate market return.
+//   • Alpha becomes null when either side is null.
 //
 // Benchmark assignment (deterministic, spec §2):
 //   • .TO / .V / .NE / .CN suffix  → XIC.TO (S&P/TSX Composite)
 //   • Explicit CAD currency        → XIC.TO
 //   • Everything else              → SPY (S&P 500)
 //   • "core-etf" sleeve override   → XEQT.TO for CAD investor
-//     (only used when the caller flags a global-equity CORE holding)
 //
 // Public API:
 //   pickBenchmarkFor({ ticker, currency, sleeve? }) → "SPY" | "XIC.TO" | "XEQT.TO"
-//   getMatchedReturnPct({ ticker, fromDate, toDate }) → { pct, note }
-//   getMatchedAlphaPct({ securityReturnPct, benchmarkReturnPct }) → number
+//   getMatchedReturnPct({ ticker, fromDate, toDate }) →
+//     { pct, status, note, marketDataSource?, fallbackUsed?,
+//       actualRange?, fetchAsOf? }
+//   getMatchedAlphaPct({ securityReturnPct, benchmarkReturnPct }) → number|null
 
-import { fetchYahooDaily } from "./stocksDiscoveryScore.js";
+import { fetchDailyBars } from "./stocksMarketDataAdapter.js";
 
 export function pickBenchmarkFor({ ticker, currency, sleeve } = {}) {
   const t = String(ticker || "").toUpperCase();
@@ -34,6 +42,7 @@ function returnBetween(bars, fromYmd, toYmd) {
   let a = null, b = null;
   for (const bar of bars) {
     const d = ymd(bar.date);
+    if (!d) continue;
     if (d >= fromYmd && a == null) a = bar;
     if (d <= toYmd) b = bar; else break;
   }
@@ -44,17 +53,58 @@ function returnBetween(bars, fromYmd, toYmd) {
 // PUBLIC — matched-period return for any ticker over [from, to].
 // `bars` may be pre-fetched and injected via ctx (test-friendly).
 export async function getMatchedReturnPct({ ticker, fromDate, toDate, bars = null }) {
-  if (!ticker || !fromDate || !toDate) return { pct: null, note: "missing input" };
+  if (!ticker || !fromDate || !toDate) {
+    return { pct: null, status: "DATA_UNAVAILABLE", note: "missing-input" };
+  }
   const fromYmd = ymd(fromDate);
   const toYmd = ymd(toDate);
-  if (fromYmd > toYmd) return { pct: null, note: "from > to" };
-  const yb = bars || await fetchYahooDaily(ticker, "2y").catch(() => null);
-  if (!Array.isArray(yb) || yb.length === 0) return { pct: null, note: "bench-bars-unavailable" };
-  const pct = returnBetween(yb, fromYmd, toYmd);
-  if (pct == null) return { pct: null, note: "no matching bars in window" };
-  return { pct, note: null };
+  if (fromYmd > toYmd) return { pct: null, status: "DATA_UNAVAILABLE", note: "from-after-to" };
+
+  // Injected bars for tests take precedence — they arrive with .date already.
+  if (Array.isArray(bars)) {
+    if (bars.length === 0) return { pct: null, status: "DATA_UNAVAILABLE", note: "bench-bars-empty" };
+    const pct = returnBetween(bars, fromYmd, toYmd);
+    if (pct == null) return { pct: null, status: "DATA_UNAVAILABLE", note: "no-matching-bars-in-window" };
+    return { pct, status: "OK", note: null, marketDataSource: "INJECTED" };
+  }
+
+  const src = await fetchDailyBars({ symbol: ticker, fromYmd, toYmd });
+  if (src.status !== "OK" || !Array.isArray(src.bars) || src.bars.length === 0) {
+    return {
+      pct: null,
+      status: "DATA_UNAVAILABLE",
+      note: src.fallbackReason || "bench-bars-unavailable",
+      marketDataSource: src.marketDataSource,
+      fallbackUsed: src.fallbackUsed,
+      actualRange: src.actualRange,
+      fetchAsOf: src.fetchAsOf,
+    };
+  }
+  const pct = returnBetween(src.bars, fromYmd, toYmd);
+  if (pct == null) {
+    return {
+      pct: null,
+      status: "DATA_UNAVAILABLE",
+      note: "no-matching-bars-in-window",
+      marketDataSource: src.marketDataSource,
+      fallbackUsed: src.fallbackUsed,
+      actualRange: src.actualRange,
+      fetchAsOf: src.fetchAsOf,
+    };
+  }
+  return {
+    pct,
+    status: "OK",
+    note: null,
+    marketDataSource: src.marketDataSource,
+    fallbackUsed: src.fallbackUsed,
+    actualRange: src.actualRange,
+    fetchAsOf: src.fetchAsOf,
+  };
 }
 
+// PUBLIC — matched alpha. Returns null if EITHER side is not a finite
+// number — never masks missing data as zero.
 export function getMatchedAlphaPct({ securityReturnPct, benchmarkReturnPct }) {
   if (!Number.isFinite(securityReturnPct) || !Number.isFinite(benchmarkReturnPct)) return null;
   return securityReturnPct - benchmarkReturnPct;

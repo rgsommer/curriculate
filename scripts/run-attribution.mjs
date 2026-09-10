@@ -90,6 +90,18 @@ async function main() {
   const engineUrl = new URL("../backend/services/stocksAttributionEngine.js", import.meta.url);
   const { computeAttributionReport, renderRootCauseText } = await import(engineUrl.href);
 
+  // P3.6 §11 — verify the daily snapshot writer once, right now, so we
+  // establish a real Sept-10 forward baseline instead of waiting until
+  // 16:35 ET.
+  if (!process.env.SKIP_SNAPSHOT_VERIFY) {
+    console.log(`\n[run-attribution] Verifying daily snapshot writer for ${args.email}…`);
+    const snapUrl = new URL("../backend/jobs/stocksDailyPositionSnapshot.js", import.meta.url);
+    const { writeDailyPositionSnapshotForUser } = await import(snapUrl.href);
+    const snapStart = Date.now();
+    const snapResult = await writeDailyPositionSnapshotForUser(args.email);
+    console.log(`[snapshot-verify] ${JSON.stringify(snapResult)} (${Date.now() - snapStart}ms)`);
+  }
+
   const asOf = new Date();
   const results = [];
   for (const w of args.windows) {
@@ -144,8 +156,37 @@ async function main() {
       console.log(`  Cumulative drag: ${(ce.cumulativeCashDragPp ?? 0).toFixed(2)}pp  (bench=${ce.benchmarkTicker}, coverage=${ce.coverage})`);
       console.log(`\n---- REAL VS PASSIVE ----\n`);
       for (const rvp of (report.details?.realVsPassive || [])) {
-        console.log(`  ${rvp.ticker.padEnd(9)} passive=${(rvp.passiveReturnPct ?? 0).toFixed(2)}%  portfolio=${(rvp.portfolioReturnPct ?? 0).toFixed(2)}%  alpha=${(rvp.alphaPp ?? 0).toFixed(2)}pp`);
+        const passive = Number.isFinite(rvp.passiveReturnPct)
+          ? `${rvp.passiveReturnPct.toFixed(2)}%` : "DATA_UNAVAILABLE";
+        const portfolio = Number.isFinite(rvp.portfolioReturnPct)
+          ? `${rvp.portfolioReturnPct.toFixed(2)}%` : "DATA_UNAVAILABLE";
+        const alpha = Number.isFinite(rvp.alphaPp)
+          ? `${rvp.alphaPp.toFixed(2)}pp` : "DATA_UNAVAILABLE";
+        const src = rvp.marketDataSource ? ` [${rvp.marketDataSource}${rvp.fallbackUsed ? "-fallback" : ""}]` : "";
+        console.log(`  ${rvp.ticker.padEnd(9)} passive=${passive}${src}  portfolio=${portfolio}  alpha=${alpha}`);
       }
+      console.log(`\n---- METRIC CONFIDENCE ----\n`);
+      for (const [k, v] of Object.entries(report.metricConfidence || {})) {
+        console.log(`  ${k.padEnd(30)} ${v}`);
+      }
+      console.log(`\n---- DATA-QUALITY DASHBOARD ----\n`);
+      for (const [k, v] of Object.entries(report.dataQualityDashboard || {})) {
+        console.log(`  ${k.padEnd(35)} ${v}${typeof v === "number" && !k.includes("Days") ? "%" : ""}`);
+      }
+      console.log(`\n---- DATA RESCUE ----\n`);
+      const dr = report.dataRescue || {};
+      console.log(`  Unattributable breakdown: ${JSON.stringify(dr.unattributableReasonBreakdown?.byReason || {})}`);
+      console.log(`  Opening-balance lots recovered: ${dr.openingBalanceLots?.length || 0}`);
+      for (const l of (dr.openingBalanceLots || []).slice(0, 10)) {
+        console.log(`    ${l.ticker.padEnd(8)} ${l.account || "-"} shares=${l.shares} avgCost=${l.entryPrice || "?"} provenance=${l.entryProvenance} confidence=${l.confidence}`);
+      }
+      console.log(`  Rec link reconciliation: before=${JSON.stringify(dr.recLinkReconciliation?.before)}  after=${JSON.stringify(dr.recLinkReconciliation?.after)}`);
+      console.log(`  Transfer candidates: ${dr.transferCandidates?.length || 0}`);
+      for (const tc of (dr.transferCandidates || []).slice(0, 5)) {
+        console.log(`    ${tc.ticker} ${tc.shares}sh ${tc.soldAccount}→${tc.boughtAccount} ${tc.soldOn}→${tc.boughtOn}  ${tc.classification}`);
+      }
+      console.log(`\n---- DIAGNOSTIC CLASSIFICATION ----\n`);
+      console.log(`  ${report.diagnosticClassification?.class}: ${report.diagnosticClassification?.label}`);
       console.log(`\n---- DATA QUALITY ----\n`);
       console.log(JSON.stringify(report.dataQuality, null, 2));
     }

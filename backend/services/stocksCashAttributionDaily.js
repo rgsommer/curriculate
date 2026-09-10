@@ -28,17 +28,20 @@ export async function computeDailyCashAttribution({ snaps, benchmarkTicker = "XE
   if (!Array.isArray(snaps) || snaps.length < 2) {
     return {
       cumulativeCashDragPp: null,
+      benchmarkTicker,
       dailyIntervals: [], coverage: "NONE",
       note: "insufficient-snapshots",
     };
   }
   const first = snaps[0], last = snaps[snaps.length - 1];
   const bars = await fetchYahooDaily(benchmarkTicker, "1y").catch(() => null);
+  // P3.6 shape fix: fetchYahooDaily now emits .date on every bar.
   const barByYmd = new Map((bars || []).map(b => [(b.date || "").slice(0, 10), Number(b.close)]));
 
   if (!barByYmd.size) {
     return {
       cumulativeCashDragPp: null,
+      benchmarkTicker,
       dailyIntervals: [], coverage: "NONE",
       note: "bench-bars-unavailable",
     };

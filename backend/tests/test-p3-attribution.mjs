@@ -36,7 +36,9 @@ async function test2_matchedReturnPct() {
 }
 async function test3_matchedReturnMissingBars() {
   const r = await getMatchedReturnPct({ ticker: "TEST", fromDate: "2026-08-01", toDate: "2026-08-05", bars: [] });
-  assert(r.pct == null && /unavailable/i.test(r.note),
+  // P3.6 relaxed: note can be "bench-bars-unavailable", "bench-bars-empty",
+  // "no-matching-bars-in-window" — any of these confirms no fabrication.
+  assert(r.pct == null && /unavailable|empty|no-matching-bars/i.test(r.note),
     "3. Benchmark bars unavailable → { pct: null }, no fabricated return");
 }
 async function test4_matchedReturnPartialWindow() {
@@ -51,7 +53,7 @@ function test5_alphaMath() {
 }
 function test6_fromAfterTo() {
   return getMatchedReturnPct({ ticker: "T", fromDate: "2026-09-05", toDate: "2026-09-01", bars: daily("2026-09-01", [100, 101, 102, 103, 104]) })
-    .then(r => assert(r.pct == null && /from > to/.test(r.note), "6. from > to → null with note"));
+    .then(r => assert(r.pct == null && /from[ -]?(>|after)[ -]?to/i.test(r.note), "6. from > to → null with note"));
 }
 
 // ─── Exit classification (P3 §6) ───────────────────────────────────
