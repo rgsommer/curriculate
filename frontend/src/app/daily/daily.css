@@ -204,6 +204,10 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .picture .frame { flex: 1; min-height: 0; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: var(--pic1); display: grid; place-items: center; }
 .picture .frame img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .picture .capline { display: flex; justify-content: space-between; font-size: clamp(12px, 2vh, 20px); color: var(--muted); }
+/* A picture that has the screen to itself — the flag during the anthem — is
+   scaled up to fill it rather than sitting at whatever size the file happens to
+   be, which on a projector is the difference between a flag and a stamp. */
+.picture.fill .frame img { width: 100%; height: 100%; object-fit: contain; }
 
 .ptsrow { border-top: 1px solid var(--line); padding: .8vh 3vw 0; overflow: hidden; }
 .pts { display: flex; gap: 1.6vw; align-items: center; justify-content: center; flex-wrap: nowrap; }
