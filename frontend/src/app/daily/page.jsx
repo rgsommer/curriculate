@@ -603,7 +603,7 @@ export default function DailyPage() {
   clock.setHours(Math.floor(t / 60), t % 60, 0, 0);
   const evaluated = evaluateFeature(sources, t, clock);
   // The anthem's own column of Poems: the flag and the words for today.
-  const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday);
+  const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday, sources.cellImages);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
   // What actually happens at the bell, which is not always the next class: the
@@ -880,6 +880,7 @@ export default function DailyPage() {
               {row("status (as read)", cur ? cur.status : "")}
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
+              {row("recorded pictures", Object.entries(sources.cellImages || {}).map(([k, v]) => `${k} → ${v}`).join("  ·  ") || "none — run the Apps Script in apps-script/mirror-cell-images.gs")}
               {row("O Canada", `${setup.blankTo != null ? `${fmt(setup.blankTo)} for ${setup.anthemMin} min` : "no window"}  ·  flag: ${anthem.image || "none the API can read"}  ·  ${anthem.lines.length} line(s) of words`)}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}

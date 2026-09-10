@@ -182,15 +182,30 @@ picture put into a cell with Insert &rsaquo; Image — either kind — is invisi
 to the board: that cell has neither a value nor a formula to read, and the flag,
 the feature cartoon and the lesson pictures all arrive empty.
 
-`apps-script/mirror-cell-images.gs` fixes it in the sheet. Pasted into
-Extensions &rsaquo; Apps Script and run, it turns every in-cell picture into an
-`=IMAGE("…")` formula pointing at the same picture: the sheet looks exactly the
-same, and the formula is something the API can read. A picture inserted from a
-URL keeps that URL; one pasted or uploaded has its bytes copied to a Drive folder
-shared with anyone who has the link, because the projector's browser is not
-signed in as the teacher and Google's own temporary image URLs are tagged to the
-account that asked for them and expire within the hour. Give it an hourly
-trigger, or call it from the on-edit trigger that already pings the board.
+`apps-script/mirror-cell-images.gs` fixes it in the sheet, without touching how
+the pictures are put there. The teacher keeps inserting and pasting them; the
+script finds the cells holding one, takes Google's temporary address, fetches the
+bytes while it is still good, writes them to a Drive folder shared with anyone
+who has the link — the projector's browser is not signed in as the teacher, and
+Google's own image address is tagged to whoever asked for it and expires within
+the hour — and records the durable address on a hidden **BoardImages** tab: cell
+address in column A, picture address in column B.
+
+The board reads that tab (`BoardImages!A2:B200`) and uses the address wherever
+the picture itself cannot be seen: the anthem flag, the feature cell, a lesson's
+picture by its row, and any Setup rule whose reference lands on a picture cell.
+
+The cells themselves are left exactly as they are. In particular **nothing is
+written to `Lessons!J`** — that is the video column, and an `=IMAGE()` formula
+put there would be read as the lesson's video. A picture that has not changed is
+not uploaded again: the bytes are fingerprinted, so the address stays the same
+from run to run.
+
+Give it an hourly trigger, or call it from the on-edit trigger that already
+pings the board. A trigger cannot be bound to one column — Apps Script fires them
+for the whole spreadsheet — so `onEditRecordImages` filters on the edited range;
+and since inserting a picture often arrives as a *change* rather than an *edit*,
+with no range to filter on, the hourly trigger is the dependable one.
 
 ### The writing penalty
 

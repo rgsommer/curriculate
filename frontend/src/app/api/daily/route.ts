@@ -92,7 +92,10 @@ export async function GET(req: Request) {
       "Master!A1:K2",       // 18 B2 the week, K2 the anthem time
       "Subjects!U1:U40",    // 19 the standing lines the daily update ends with
       "MathChallenge!A1:C60", // 20 the question and its solution
-      ...(waitingRange ? [waitingRange] : []), // 21
+      // What the sheet's own script recorded for the pictures the API cannot
+      // see: cell address, then a durable address for the picture in it.
+      "BoardImages!A2:B200", // 21
+      ...(waitingRange ? [waitingRange] : []), // 22
     ];
     const FORMULAS = [
       "DisplayAI!D1:D40",   // 0 the video link on each row
@@ -120,7 +123,7 @@ export async function GET(req: Request) {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[21] || []) : [];
+    const waiting = waitingRange ? (values[22] || []) : [];
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
@@ -174,6 +177,7 @@ export async function GET(req: Request) {
       masterWide: values[18] || [],
       subjects: values[19] || [],
       mathChallenge: values[20] || [],
+      cellImages: values[21] || [],
       pointsGrid: values[12] || [],
       pointsRow3: (values[12] || [])[2] || [],
       pointsRow46: (values[12] || [])[45] || [],
