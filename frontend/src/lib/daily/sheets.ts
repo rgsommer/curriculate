@@ -103,40 +103,79 @@ export async function readRanges(ranges: string[], render: RenderOption = "FORMA
  * One batch read that survives a range naming a tab that is not there.
  *
  * `values:batchGet` fails the whole batch if any range is unparseable, and the
- * board asks for a dozen ranges across half the workbook. So a 400 triggers a
- * one-off probe of each range; the offenders are remembered and left out of
- * every later batch. Quota and auth errors are not swallowed - they have to
- * reach the caller so it can back off.
+ * board asks for two dozen ranges across half the workbook — several of them
+ * optional tabs a given sheet may simply not have.
  *
- * Returns one grid per requested range, in order, empty for the ones that are
- * known to be missing.
+ * So the tab list decides first. It is already read and cached for an hour, so
+ * dropping the ranges whose tab is not in it costs nothing and means the batch
+ * is never sent with a range that cannot work. That matters more than it
+ * sounds: this used to answer a 400 by probing every range on its own, which
+ * for two dozen ranges is two dozen requests against a quota of sixty a minute
+ * — one missing tab could spend the whole allowance and turn a 400 into a 429,
+ * and with it the board's "could not read the sheet".
+ *
+ * If a 400 still comes back, Google's message names the range it could not
+ * parse. That one is remembered and the batch retried, a few times at most.
+ * Quota and auth errors are not swallowed — they have to reach the caller so it
+ * can back off.
+ *
+ * Returns one grid per requested range, in order, empty for the ones left out.
  */
 const badRanges = new Set<string>();
+
+/** The tab a range names, if it names one. "'Kiss & Ride'!A1:B2" → "Kiss & Ride" */
+export function tabOfRange(range: string): string {
+  const bang = String(range || "").lastIndexOf("!");
+  if (bang < 0) return "";
+  return String(range).slice(0, bang).replace(/^'|'$/g, "").replace(/''/g, "'").trim();
+}
+
+/** The range named in a Sheets 400, which says which one it could not parse. */
+export function rangeFromError(message: string, candidates: string[]): string {
+  const m = String(message || "").match(/(?:Unable to parse range|range):\s*(.+?)\s*$/i);
+  const named = (m ? m[1] : "").trim();
+  if (!named) return "";
+  return candidates.find((r) => r === named)
+    || candidates.find((r) => r.replace(/'/g, "") === named.replace(/'/g, ""))
+    || "";
+}
 
 export async function readRangesSafe(
   ranges: string[],
   render: RenderOption = "FORMATTED_VALUE"
 ): Promise<string[][][]> {
-  const wanted = ranges.filter((r) => !badRanges.has(r));
-  if (!wanted.length) return ranges.map(() => [] as string[][]);
-  let got: string[][][];
+  // The tab list is cached for an hour, so this is free almost every time.
+  let titles: string[] = [];
   try {
-    got = await readRanges(wanted, render);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "";
-    if (!/Sheets API 400/.test(msg)) throw e;
-    got = [];
-    for (const r of wanted) {
-      try {
-        got.push((await readRanges([r], render))[0] || []);
-      } catch {
-        badRanges.add(r);
-        got.push([]);
-      }
+    titles = await listSheetTitles();
+  } catch {
+    titles = []; // no list to go on; let the batch speak for itself
+  }
+  const present = new Set(titles.map((t) => t.toLowerCase()));
+  const known = (r: string) => {
+    const tab = tabOfRange(r);
+    return !tab || !present.size || present.has(tab.toLowerCase());
+  };
+
+  let wanted = ranges.filter((r) => !badRanges.has(r) && known(r));
+  const results = new Map<string, string[][]>();
+
+  for (let attempt = 0; wanted.length && attempt < 4; attempt += 1) {
+    try {
+      const got = await readRanges(wanted, render);
+      wanted.forEach((r, i) => results.set(r, got[i] || []));
+      break;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      if (!/Sheets API 400/.test(msg)) throw e;
+      const offender = rangeFromError(msg, wanted);
+      if (!offender) break; // cannot tell which; better nothing than a probe storm
+      badRanges.add(offender);
+      wanted = wanted.filter((r) => r !== offender);
     }
   }
-  const byRange = new Map(wanted.map((r, i) => [r, got[i] || ([] as string[][])]));
-  return ranges.map((r) => byRange.get(r) || ([] as string[][]));
+
+  return ranges.map((r) => results.get(r) || ([] as string[][]));
 }
 
 /**
