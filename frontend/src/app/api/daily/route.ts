@@ -80,7 +80,7 @@ export async function GET(req: Request) {
       // Row 3 the class names, row 46 the four privilege flags, and the days in
       // between — one read where there used to be two.
       "Points!A1:BV46",     // 12
-      "Lessons!C1:J400",    // 13 the teacher's own material, keyed by lesson code
+      "Lessons!C1:K400",    // 13 the teacher's own material, keyed by lesson code
       // The tabs the Setup slot rules reach into. They cost nothing extra — a
       // values batch is one request however many ranges it names — and without
       // them every one of those formulas throws and falls back to whatever the
@@ -104,7 +104,7 @@ export async function GET(req: Request) {
       "Display!E1",         // 3 an =IMAGE() cell has no value, only a formula
       "DisplayAI!E1",       // 4
       "Poems!F1:J3",        // 5
-      "Lessons!C1:J400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
+      "Lessons!C1:K400",    // 6 an =IMAGE() or =HYPERLINK() in the picture and video columns
     ];
 
     const [values, formulas, grid, lessonGrid] = await Promise.all([
@@ -113,9 +113,9 @@ export async function GET(req: Request) {
       readGridLinks("DisplayAI!A1:F40").catch(() => ({ first: [], runs: [] })),
       // Handouts on the Lessons rows are often a link attached to a phrase in
       // the page or homework cell, which the values API cannot see.
-      // E and F for the handouts, I and J because a picture or a video can be a
+      // E and F for the handouts, I to K because a picture or a video can be a
       // link attached to the cell's text, which no value or formula shows.
-      readGridLinks("Lessons!E1:J400").catch(() => ({ first: [], runs: [] })),
+      readGridLinks("Lessons!E1:K400").catch(() => ({ first: [], runs: [] })),
     ]);
 
     const display = values[0] || [];

@@ -261,8 +261,14 @@ export function parseLessons(
       return candidates.find((u) => u && prefer(u)) || candidates.find(Boolean) || "";
     };
     // The read starts at C, so this row of the grid is the same row of the sheet.
-    const image = anyUrl(6, isImageUrl) || images[cellImageKey(`Lessons!I${r + 1}`)] || ""; // I
-    const video = anyUrl(7, isVideoUrl); // J
+    // I is the picture and K the video; J is the mirror column the sheet's own
+    // script can write an =IMAGE() into, so it is a third place to look for the
+    // picture and no place at all to look for the video.
+    const image = anyUrl(6, isImageUrl) // I
+      || images[cellImageKey(`Lessons!I${r + 1}`)]
+      || anyUrl(7, isImageUrl) // J, the mirror
+      || "";
+    const video = anyUrl(8, isVideoUrl); // K
     const page = cell(2); // E
     const homework = cell(3); // F
 
@@ -983,9 +989,9 @@ export type RawInputs = {
   setupMessages?: string[][]; // Setup!M1:Q8 — column M the weekday names, N to Q the message block
   waiting?: string[][]; // the Kiss & Ride tab, for its "Waiting (Recent First)" column
   verticalTimes?: string[][]; // Vertical!A1:J200 — column A the period times
-  lessons?: string[][]; // Lessons!C1:J400 values — the teacher's own material by code
-  lessonFormulas?: string[][]; // Lessons!C1:J400 formulas
-  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E to J
+  lessons?: string[][]; // Lessons!C1:K400 values — the teacher's own material by code
+  lessonFormulas?: string[][]; // Lessons!C1:K400 formulas
+  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E to K
   verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
   verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
   // The tabs the Setup slot rules reach into, so the board can run them itself.
