@@ -54,6 +54,12 @@ export const FIXTURE: RawInputs = {
     ["", "Can go to washroom x min before", "", "10"],
     ["", "Display riddle answer every", "3", "Lesson pic"],
     ["", "Snacks are allowed with B2 for", "5", "minutes"],
+    ...Array.from({ length: 15 }, () => [] as string[]), // rows 20 to 34
+    // Rows 35 to 40 are what the sheet's own plans line is built from: F the
+    // class, K its total, L its percentage.
+    ...([["7A", "660", "275%"], ["7B", "871", "272%"], ["7C", "220", "137%"],
+      ["8A", "820", "205%"], ["8B", "290", "181%"], ["8C", "0", "0%"]] as [string, string, string][])
+      .map(([name, total, pct]) => ["", "", "", "", "", name, "", "", "", "", total, pct]),
   ],
   // Setup!S1:AB8. S carries the picture the CE rule swaps in on the week's last
   // teaching day and T is a row label; the E1 formula's HLOOKUP runs on U
@@ -92,6 +98,9 @@ export const FIXTURE: RawInputs = {
     for (let r = 0; r < 46; r += 1) g[r] = [];
     const cols = [4, 17, 30, 43, 56];
     ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => { g[2][cols[i] - 1] = n; });
+    // Row 2, every thirteenth column from G: what the plans line tests to know
+    // which classes exist this year.
+    [7, 20, 33, 46, 59].forEach((c) => { g[1][c - 1] = "x"; });
     const days = [
       [8, 7, 6, 4, 8],
       [7, 8, 7, 8, 7],
