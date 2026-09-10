@@ -948,10 +948,17 @@ export default function DailyPage() {
               ))}
             {!evaluated.image && !meta.featureImage && !(data.picture && data.picture.url) && <p>No picture URL came back from the sheet.</p>}
           </div>
-          <p>A picture only reaches this page if the cell itself holds it, for example
-            <code>=IMAGE(&quot;https://…&quot;)</code>. An image inserted over the grid
-            (Insert &rsaquo; Image &rsaquo; Image in cell is fine; floating images are not)
-            cannot be read by the sheet API and will always show as empty here.</p>
+          <p>A picture reaches this page only as an address in the cell —
+            <code>=IMAGE(&quot;https://…&quot;)</code>, a link, or the address written out.
+            A picture <em>put into</em> the cell (Insert &rsaquo; Image, either kind) cannot
+            be read at all: the Sheets API has no image field anywhere in it, so such a
+            cell has neither a value nor a formula and always shows as empty here.</p>
+          <p>The fix is in the sheet, not on this page.
+            <code>frontend/src/app/daily/apps-script/mirror-cell-images.gs</code> in the
+            repository is an Apps Script that turns every in-cell picture into an
+            <code>=IMAGE()</code> formula pointing at the same picture — the sheet looks
+            the same afterwards, and the board can then see it. Paste it into
+            Extensions &rsaquo; Apps Script, run it once, and give it an hourly trigger.</p>
         </div>
       </div>
     );

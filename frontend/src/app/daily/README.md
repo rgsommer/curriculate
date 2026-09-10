@@ -173,6 +173,25 @@ brief focus while everyone settles. After that it is not gone: it carries on
 along the bottom bar, where it stays all day, just no longer the thing at the
 front of the room.
 
+### Pictures the API cannot see
+
+The Sheets REST API has **no image field**. Its `CellData` carries formats,
+formulas, notes, hyperlinks and chips, and nothing else; there is no image type
+in `ExtendedValue` and no image schema anywhere in the discovery document. So a
+picture put into a cell with Insert &rsaquo; Image — either kind — is invisible
+to the board: that cell has neither a value nor a formula to read, and the flag,
+the feature cartoon and the lesson pictures all arrive empty.
+
+`apps-script/mirror-cell-images.gs` fixes it in the sheet. Pasted into
+Extensions &rsaquo; Apps Script and run, it turns every in-cell picture into an
+`=IMAGE("…")` formula pointing at the same picture: the sheet looks exactly the
+same, and the formula is something the API can read. A picture inserted from a
+URL keeps that URL; one pasted or uploaded has its bytes copied to a Drive folder
+shared with anyone who has the link, because the projector's browser is not
+signed in as the teacher and Google's own temporary image URLs are tagged to the
+account that asked for them and expire within the hour. Give it an hourly
+trigger, or call it from the on-edit trigger that already pings the board.
+
 ### The writing penalty
 
 The legend's last row — *"Writing assignment penalty if below x points z times in
