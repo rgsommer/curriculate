@@ -178,8 +178,11 @@ export const FIXTURE: RawInputs = {
     [],
     [],
     ["", "1"],
+    // A stray bell left over from a year with a class in that minute: it must
+    // not become a one-minute repeat of the class before it.
     ...([
       ["10:00 AM", "Math 7A (23) 202\n\u25CFJ003  : Introduction: Overview, expectations, textbook, etc.\nSlides presentation on Math [Assign: Complete the Introduction Fill-In-the-Blanks worksheet by Wed Sep 16 handed out in class (or from this link: https://docs.google.com/document/d/1YzABCdefGHIjkLMnop/edit?tab=t.0\nList of all assignments this year: https://docs.google.com/document/d/1fSEu4/edit?usp=sharing]\uD83D\uDD0D"],
+      ["10:59 AM", ""],
       ["11:00 AM", "History 7A (22) 202\n\u25CFH001  : Intro (First Class): handouts and the first written task.\nCourse overview slides, pages 1 and 3 [Assign: Complete written task \u201cHistorical Perspective\u201d (3 questions) due Thu Sep 17]"],
       ["2:30 PM", "Geography 8A (22) 212\n\u25CFG002  : Population patterns: vocabulary and first reading.\nOral read p2, then build the Chapter 1 term list [Assign: Finish the Chapter 1 term list for next class]"],
     ] as [string, string][]).map(([at, text]) => [at, "", "", "", "", text, text, text, text, text]),
