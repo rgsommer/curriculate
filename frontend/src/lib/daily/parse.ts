@@ -833,8 +833,15 @@ export function pointsFromSetup(setup: string[][], pointsGrid: string[][]): Clas
     if (!cell(pointsGrid, 2, POINTS_PRESENT_COLS[i])) continue; // no such class this year
     const row = PLANS_FIRST_ROW + i;
     const name = cell(setup, row, 6).replace(/[\s:.\-]+$/, ""); // F
-    const total = value(cell(setup, row, 11)); // K
-    const percent = value(cell(setup, row, 12)); // L
+    // Which of the pair is the percentage is decided by the cell that says so,
+    // not by which column it sits in — a sheet is free to keep them the other
+    // way round, and a total rendered as "660%" would be nonsense.
+    const k = cell(setup, row, 11);
+    const l = cell(setup, row, 12);
+    const kPct = k.includes("%");
+    const lPct = l.includes("%");
+    const total = value(kPct && !lPct ? l : k);
+    const percent = value(kPct && !lPct ? k : l);
     if (!name && total == null && percent == null) continue;
     out.push({ name, total, percent });
   }
