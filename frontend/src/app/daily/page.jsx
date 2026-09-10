@@ -1038,7 +1038,9 @@ export default function DailyPage() {
       <>
         {header({
           title, chips: null, when: cur ? `${fmt(cur.start)} to ${fmt(cur.end)}` : "",
-          leftHtml: nx ? <><b>{nx.subj}</b> in {mins} min</> : <b>Day complete</b>,
+          leftHtml: nx
+            ? <><b>{nx.subj}</b> in {mins} min</>
+            : <b>{endOfDayAt != null && t >= endOfDayAt ? "Day complete" : "Nothing scheduled"}</b>,
           pct: cur ? ((t - cur.start) / (cur.end - cur.start)) * 100 : 0, period: cur,
           red: redState,
         })}
@@ -1050,7 +1052,27 @@ export default function DailyPage() {
             <p className="summary">{nx.today}</p>
           </div>
         ) : (
-          <div><p className="script">{title}</p></div>
+          // Nothing after this one. Rather than a lone caption on an empty
+          // screen, the room gets the day: whatever the board does know, so it
+          // is plain at a glance whether the gap is the timetable or the sheet.
+          <div>
+            <p className="script">{title}</p>
+            {classes.length ? agenda() : dayPlan.length ? (
+              <div className="agenda">
+                {dayPlan.map((c, i) => [
+                  <span key={`t${i}`} className="t">{c.start != null ? fmt(c.start) : c.room || "\u2014"}</span>,
+                  <span key={`s${i}`}><b>{c.subj}</b>{c.room ? ` \u00b7 ${c.room}` : ""}</span>,
+                ])}
+              </div>
+            ) : P.length ? (
+              <div className="agenda">
+                {P.map((x) => [
+                  <span key={`t${x.start}`} className="t">{fmt(x.start)}</span>,
+                  <span key={`s${x.start}`}>{x.subj || x.text || "\u2014"}</span>,
+                ])}
+              </div>
+            ) : <p className="summary">The sheet has nothing listed for the rest of today.</p>}
+          </div>
         ))}
         {footer(true)}
       </>
