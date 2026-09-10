@@ -24,7 +24,7 @@ module.exports = {
   STUDENT_VIEW_RE, STUDENT_LIST_VIEWS, isPlausibleNid_, identityCandidates_,
   sidOf_, sidsInSetCookie_, classifySetCookie_, explainStatusShort_,
   groupTokenOf_, isHomeroomClass_, ownedColumns_, clearImportedColumns_,
-  planSync_, nameKey_, rowValuesFor_, writeRowValues_,
+  planSync_, nameKey_, rowValuesFor_, writeRowValues_, archiveGuard_,
   buildRosterCsv_, rowFieldsFor_, csvCell_, csvDate_, stripTags_, gradeFromGroup_,
   sectionTokensFromText_, pickSection_, extractGroupFromPanorama_, inferSectionsByTeacher_,
   zoomNodeIdsOf_, unionStudentRecords_, gradeBreakdown_,
@@ -540,6 +540,71 @@ const tagged = M.buildRosterCsv_([
 ok("no bracketed tag in the output", !/\[/.test(tagged.csv));
 ok("the name survives", tagged.csv.includes("Smith"));
 
+// ── Regression: Benjamin Whitaker ───────────────────────────────────────────
+// A real student, present in Edsby, was archived. Cause: the student's nid
+// comes from the ZOOM row, but extractStudent_ (which reads Panorama) never
+// returned one and populateBdays never copied it across. Column U was therefore
+// written blank on every run, nid matching never engaged, and a sheet saying
+// "Ben" where Edsby says "Benjamin" looked like a departure.
+group("Regression: a present student must not be archived");
+const withNid = { nid: 11326682, lastName: "Whitaker", prefFirst: "Benjamin", grade: "7" };
+eq("the nid reaches column U", M.rowValuesFor_(withNid, {})[M.CONFIG.COLS.edsbyNid], 11326682);
+ok("column U is not blank", M.rowValuesFor_(withNid, {})[M.CONFIG.COLS.edsbyNid] !== "");
+// With the nid present the sheet's spelling no longer matters.
+let p = M.planSync_([{ row: 12, nid: "11326682", lastName: "Whitaker", firstName: "Ben" }], [withNid]);
+eq("matched by nid despite Ben/Benjamin", p.updates.map((u) => u.row), [12]);
+eq("not archived", p.archives.length, 0);
+eq("not duplicated", p.appends.length, 0);
+
+// Belt and braces: a row whose nid is stale still matches on the name.
+p = M.planSync_([{ row: 12, nid: "999999", lastName: "Whitaker", firstName: "Benjamin" }], [withNid]);
+eq("stale nid falls back to the name", p.updates.map((u) => u.row), [12]);
+eq("and is not archived", p.archives.length, 0);
+
+// ── Hand-added students are never archived ──────────────────────────────────
+// A new arrival can exist in Edsby yet be absent from the zoom (which lists
+// only students sharing a class with you), so they must be addable by hand.
+// Archiving them on the next run would delete work nobody asked us to touch.
+group("Hand-added rows survive");
+p = M.planSync_([
+  { row: 4, nid: "1001", lastName: "Byron", firstName: "Ada" },
+  { row: 5, nid: "", lastName: "Peters", firstName: "Zoe" },   // typed in by hand
+], [{ nid: "1001", lastName: "Byron", prefFirst: "Ada" }]);
+eq("the hand-added row is NOT archived", p.archives.length, 0);
+eq("it is reported instead", p.unmatched.map((u) => u.row), [5]);
+eq("the imported student still updates", p.updates.map((u) => u.row), [4]);
+
+// Once she appears in the zoom, her row is adopted rather than duplicated.
+p = M.planSync_([{ row: 5, nid: "", lastName: "Peters", firstName: "Zoe" }],
+                [{ nid: "2002", lastName: "Peters", prefFirst: "Zoe" }]);
+eq("adopted by name when Edsby catches up", p.updates.map((u) => u.row), [5]);
+eq("no duplicate row", p.appends.length, 0);
+eq("nothing archived", p.archives.length, 0);
+
+// A row the import DID create, now gone from Edsby, still archives.
+p = M.planSync_([{ row: 6, nid: "3003", lastName: "Gone", firstName: "Student" }], []);
+eq("a departed imported student is archived", p.archives.map((a) => a.row), [6]);
+eq("and is not counted as hand-added", p.unmatched.length, 0);
+eq("blank padding is neither", M.planSync_([{ row: 7, nid: "", lastName: "", firstName: "" }], []).unmatched.length, 0);
+
+// ── Mass-archive guard ──────────────────────────────────────────────────────
+// Wholesale archiving is far likelier to be a matching failure than everyone
+// leaving, and the cost is the notes on those rows.
+group("Mass-archive guard");
+const planOf = (n) => ({ archives: Array.from({ length: n }, (_, i) => ({ row: i + 4 })) });
+ok("a few departures are allowed", M.archiveGuard_(planOf(5), 100, 0.25).allowed);
+ok("exactly at the limit is allowed", M.archiveGuard_(planOf(25), 100, 0.25).allowed);
+ok("over the limit is refused", !M.archiveGuard_(planOf(60), 100, 0.25).allowed);
+ok("the refusal explains matching, not departure",
+   /failed to MATCH/i.test(M.archiveGuard_(planOf(60), 100, 0.25).message));
+ok("it states nothing changed",
+   /Nothing has been changed/i.test(M.archiveGuard_(planOf(60), 100, 0.25).message));
+ok("it names the escape hatch",
+   /MAX_ARCHIVE_FRACTION/.test(M.archiveGuard_(planOf(60), 100, 0.25).message));
+ok("archiving nothing is always fine", M.archiveGuard_(planOf(0), 100, 0.25).allowed);
+ok("an empty sheet is fine", M.archiveGuard_(planOf(3), 0, 0.25).allowed);
+ok("a raised limit permits a real mass departure", M.archiveGuard_(planOf(60), 100, 0.9).allowed);
+
 // ── Sync planning ───────────────────────────────────────────────────────────
 // Former grade 8s and departed students used to vanish silently, because a
 // wipe-and-rewrite cannot tell "left" from "never here". The Edsby nid in
@@ -599,10 +664,10 @@ eq("duplicate row claims once", plan.updates.length, 1);
 eq("the duplicate is archived", plan.archives.map((a) => a.row), [5]);
 
 // Degenerate inputs.
-eq("empty sheet, empty Edsby", M.planSync_([], []), { updates: [], appends: [], archives: [] });
+eq("empty sheet, empty Edsby", M.planSync_([], []), { updates: [], appends: [], archives: [], unmatched: [] });
 eq("empty sheet appends everyone", M.planSync_([], [stu("1", "A", "B")]).appends.length, 1);
 eq("empty Edsby archives everyone", M.planSync_([row(4, "1", "A", "B")], []).archives.length, 1);
-eq("null safe", M.planSync_(null, null), { updates: [], appends: [], archives: [] });
+eq("null safe", M.planSync_(null, null), { updates: [], appends: [], archives: [], unmatched: [] });
 
 group("Row values");
 const rv = M.rowValuesFor_(

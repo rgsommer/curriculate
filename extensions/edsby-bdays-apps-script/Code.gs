@@ -44,6 +44,11 @@ const CONFIG = {
   // step and clears every imported column first.
   CLEAR_OLD_ROWS: false,
   ARCHIVE_SHEET: "Bdays Archive",
+  // Refuse to archive more than this fraction of the sheet in one run. A
+  // matching failure looks exactly like everyone leaving at once, and moving
+  // rows to the archive costs the notes kept on them. Raise it for a genuine
+  // mass departure (a whole grade at year end), or use CLEAR_OLD_ROWS.
+  MAX_ARCHIVE_FRACTION: 0.25,
 
   // Roster CSV export (Edsby menu → Export roster CSV). Column headers are the
   // canonical ones from backend/behavior/lib/rosterImport.js, so the file
@@ -1215,6 +1220,11 @@ function populateBdays() {
     // Group (section) resolution, in order of trust. Steps 1 and 2 are per
     // student; the homeroom-teacher pass runs after the loop, once there are
     // resolved students to learn from.
+    // The nid comes from the zoom row, not Panorama — extractStudent_ never had
+    // it. Without this, column U is written blank, every run falls back to name
+    // matching, and a sheet that says "Ben" where Edsby says "Benjamin"
+    // archives that student and re-adds them.
+    s.nid = studentRecords[i] && studentRecords[i].nid || "";
     s.zoomClasses = studentRecords[i] && studentRecords[i].classes || [];
     s.group = extractGroupFromClasses_(s.zoomClasses, s.grade);
     s.groupSource = s.group ? "own classes" : "";
@@ -1294,7 +1304,7 @@ function populateBdays() {
   if (CONFIG.CLEAR_OLD_ROWS) {
     clearImportedColumns_(sheet);
     writeStudents_(sheet, students, parentEmails);
-    summary = { updated: 0, added: students.length, archived: 0 };
+    summary = { updated: 0, added: students.length, archived: 0, kept: 0 };
   } else {
     summary = syncStudents_(sheet, students, parentEmails);
   }
@@ -1307,7 +1317,8 @@ function populateBdays() {
   }
 
   Logger.log("Bdays synced: " + summary.updated + " updated, " + summary.added +
-    " added, " + summary.archived + " archived to \"" + CONFIG.ARCHIVE_SHEET + "\" — " +
+    " added, " + summary.archived + " archived to \"" + CONFIG.ARCHIVE_SHEET + "\", " +
+    (summary.kept || 0) + " hand-added kept — " +
     students.length + " students in Edsby, " +
     Object.keys(parentEmails).length + " parent emails.");
 }
@@ -1369,6 +1380,36 @@ function rowValuesFor_(s, parentEmails) {
 }
 
 /**
+ * Pure: should this run be allowed to archive?
+ *
+ * Archiving most of the sheet at once is far more likely to be a matching
+ * failure than a mass departure — and the cost is real, since the notes kept on
+ * those rows go with them. Refusing is recoverable; archiving is not.
+ */
+function archiveGuard_(plan, existingRows, maxFraction) {
+  const archives = (plan && plan.archives ? plan.archives.length : 0);
+  const total = existingRows || 0;
+  const limit = typeof maxFraction === "number" ? maxFraction : 0.25;
+  if (archives === 0 || total === 0) return { allowed: true };
+
+  const fraction = archives / total;
+  if (fraction <= limit) return { allowed: true };
+
+  return {
+    allowed: false,
+    fraction: fraction,
+    message:
+      "Refusing to archive " + archives + " of " + total + " rows (" +
+      Math.round(fraction * 100) + "%) in one run — that is above the " +
+      Math.round(limit * 100) + "% limit and usually means rows failed to MATCH, " +
+      "not that everyone left. Nothing has been changed. " +
+      "A big archive alongside a big add is the same students being re-created " +
+      "rather than matched. If this really is a mass departure, raise " +
+      "CONFIG.MAX_ARCHIVE_FRACTION.",
+  };
+}
+
+/**
  * Merge Edsby's roster into the sheet: update rows we already have, append new
  * students, archive the rest. Only the columns in CONFIG.COLS are written, so
  * hand-kept notes and the column-T formula are left alone.
@@ -1376,6 +1417,12 @@ function rowValuesFor_(s, parentEmails) {
 function syncStudents_(sheet, students, parentEmails) {
   const existing = readExistingRows_(sheet);
   const plan = planSync_(existing, students);
+
+  const guard = archiveGuard_(plan, existing.length, CONFIG.MAX_ARCHIVE_FRACTION);
+  if (!guard.allowed) {
+    Logger.log(guard.message);
+    throw new Error(guard.message);
+  }
 
   // 1. Departed students leave first, so the appends below land on a compact
   //    block and row numbers stop moving afterwards.
@@ -1401,7 +1448,19 @@ function syncStudents_(sheet, students, parentEmails) {
   //    in unowned columns travel with their row.
   sortDataRows_(sheet);
 
-  return { updated: plan2.updates.length, added: plan2.appends.length, archived: archived };
+  const kept = (plan2.unmatched || []).length;
+  if (kept) {
+    Logger.log(kept + " row(s) are not in Edsby but were never imported by this " +
+      "script (no id in column U), so they were LEFT IN PLACE — hand-added " +
+      "students stay put. Delete them yourself if they have actually left:\n  " +
+      plan2.unmatched.map(function (u) { return "row " + u.row + " — " + u.name; }).join("\n  "));
+  }
+  return {
+    updated: plan2.updates.length,
+    added: plan2.appends.length,
+    archived: archived,
+    kept: kept,
+  };
 }
 
 /**
@@ -2362,17 +2421,17 @@ function planSync_(existing, students) {
   const rows = existing || [];
   const list = students || [];
 
+  // Index by BOTH keys. Indexing a row only by its nid meant a student whose
+  // nid changed — or was never written — could not be found by name either, so
+  // the row was archived and the student re-added as new, losing its notes.
   const byNid = {};
   const byName = {};
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     const nid = String(r.nid == null ? "" : r.nid).trim();
-    if (nid) {
-      if (!byNid[nid]) byNid[nid] = r;
-    } else {
-      const key = nameKey_(r.lastName, r.firstName);
-      if (key && !byName[key]) byName[key] = r;
-    }
+    if (nid && !byNid[nid]) byNid[nid] = r;
+    const key = nameKey_(r.lastName, r.firstName);
+    if (key && !byName[key]) byName[key] = r;
   }
 
   const updates = [];
@@ -2382,10 +2441,10 @@ function planSync_(existing, students) {
   for (let i = 0; i < list.length; i++) {
     const st = list[i];
     const nid = String(st.nid == null ? "" : st.nid).trim();
-    let hit = nid && byNid[nid] ? byNid[nid] : null;
+    let hit = nid && byNid[nid] && !claimed[byNid[nid].row] ? byNid[nid] : null;
     if (!hit) {
       const key = nameKey_(st.lastName, st.prefFirst || st.firstName);
-      if (key && byName[key]) hit = byName[key];
+      if (key && byName[key] && !claimed[byName[key].row]) hit = byName[key];
     }
     if (hit && !claimed[hit.row]) {
       claimed[hit.row] = true;
@@ -2395,16 +2454,26 @@ function planSync_(existing, students) {
     }
   }
 
+  // Only archive rows THIS IMPORT created — the ones carrying an Edsby nid.
+  //
+  // A row without a nid was never imported: it is a hand-added student (one who
+  // exists in Edsby but is not in the zoom yet, e.g. a new arrival not enrolled
+  // in any of your classes), or a leftover the first run could not match.
+  // Archiving those would silently delete work nobody asked us to touch, so
+  // they stay put and are reported instead.
   const archives = [];
+  const unmatched = [];
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     if (claimed[r.row]) continue;
-    // An entirely blank row is padding, not a departed student.
-    if (!String(r.nid || "").trim() && !nameKey_(r.lastName, r.firstName)) continue;
+    const named = nameKey_(r.lastName, r.firstName);
+    const nid = String(r.nid || "").trim();
+    if (!nid && !named) continue;                       // blank padding row
+    if (!nid) { unmatched.push({ row: r.row, name: named }); continue; }
     archives.push({ row: r.row, reason: "not in Edsby" });
   }
 
-  return { updates: updates, appends: appends, archives: archives };
+  return { updates: updates, appends: appends, archives: archives, unmatched: unmatched };
 }
 
 /** Read the sheet's data rows down to the key/name columns planSync_ needs. */

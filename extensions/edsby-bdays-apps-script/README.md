@@ -245,6 +245,22 @@ way, and both paths write the same file.
   deleted.
 - The data rows are then sorted by last name, first name.
 
+**Only rows this import created are ever archived** — the ones carrying an id in
+column U. A row without one was never imported: it is a student you typed in by
+hand, or a leftover the first run could not match. Those are **left in place**
+and reported in the log, because archiving them would delete work nobody asked
+the script to touch.
+
+That is how to handle a student who is in Edsby but not in your zoom — a new
+arrival not yet enrolled in any of your classes. Add their row by hand, leave
+column U blank, and no run will remove them. When they do appear in the zoom,
+their row is adopted by name and the id filled in, rather than duplicated.
+
+A run also **refuses to archive more than `MAX_ARCHIVE_FRACTION`** (25%) of the
+sheet at once and changes nothing instead. Wholesale archiving is far more
+likely to be a matching failure than everyone leaving, and the cost is the notes
+on those rows. Raise it for a genuine mass departure.
+
 On the first merge run the sheet has no nids yet, so rows are adopted by
 last+first name (case- and spacing-insensitive) instead of being archived
 wholesale. After that the nid is authoritative, so a student who changes
