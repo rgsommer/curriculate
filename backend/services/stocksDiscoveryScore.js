@@ -51,10 +51,28 @@ export async function fetchYahooDaily(symbol, range = "1y") {
     const result = j?.chart?.result?.[0];
     const ts = result?.timestamp || [];
     const closes = result?.indicators?.quote?.[0]?.close || [];
+    const opens = result?.indicators?.quote?.[0]?.open || [];
+    const highs = result?.indicators?.quote?.[0]?.high || [];
+    const lows = result?.indicators?.quote?.[0]?.low || [];
     const vols = result?.indicators?.quote?.[0]?.volume || [];
     const points = [];
     for (let i = 0; i < ts.length; i++) {
-      if (Number.isFinite(closes[i])) points.push({ t: ts[i], close: closes[i], vol: vols[i] ?? null });
+      if (!Number.isFinite(closes[i])) continue;
+      // P3.6: always emit .date (YMD, UTC) so every downstream
+      // ymd(bar.date) call in the attribution pipeline works. The
+      // shape mismatch (fetch returned .t only, callers read .date)
+      // was the real "Yahoo unavailable" bug.
+      const isoDate = new Date(ts[i] * 1000).toISOString().slice(0, 10);
+      points.push({
+        t: ts[i],
+        date: isoDate,
+        open: Number.isFinite(opens[i]) ? opens[i] : closes[i],
+        high: Number.isFinite(highs[i]) ? highs[i] : closes[i],
+        low: Number.isFinite(lows[i]) ? lows[i] : closes[i],
+        close: closes[i],
+        volume: vols[i] ?? null,
+        vol: vols[i] ?? null,  // legacy alias kept so no consumer breaks
+      });
     }
     return points.length ? points : null;
   } catch {

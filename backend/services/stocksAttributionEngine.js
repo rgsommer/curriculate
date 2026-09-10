@@ -53,8 +53,16 @@ import { computePortfolioReturn } from "./stocksPortfolioReturn.js";
 import { computeDailyCashAttribution } from "./stocksCashAttributionDaily.js";
 import { pairReplacementTrades } from "./stocksReplacementPairing.js";
 import { computeEntryTimingAttribution } from "./stocksEntryTimingAttribution.js";
+import { runDataRescue, classifyUnattributableRows } from "./stocksDataRescue.js";
+import StocksTradeJournal from "../models/StocksTradeJournal.js";
+import StocksDailyPositionSnapshot from "../models/StocksDailyPositionSnapshot.js";
 
-const ENGINE_VERSION = "3.5.0";
+const ENGINE_VERSION = "3.6.0";
+
+// Per-metric confidence contract — every metric stands independently
+// so a low daily-cash confidence never suppresses a valid 90d
+// portfolio-vs-XEQT comparison.
+const CONFIDENCE = { HIGH: "HIGH", MEDIUM: "MEDIUM", LOW: "LOW", UNAVAILABLE: "UNAVAILABLE" };
 
 function ymd(d) { return d instanceof Date ? d.toISOString().slice(0, 10) : String(d || "").slice(0, 10); }
 
@@ -113,15 +121,32 @@ export async function computeAttributionReport({
   });
   const portfolioReturnPct = returnResult.portfolioReturnPct;
 
-  // 3) Passive alternatives over the same window.
+  // P3.6 §14 — when snap span < requested window (YTD-with-3mo-snaps
+  // case), compare against the benchmark over the SAME reduced window,
+  // not the full requested one. Otherwise alpha is meaningless.
+  const benchFromYmd = returnResult.reducedFromWindow?.snapSpanFromYmd || windowStart;
+  const benchToYmd = returnResult.reducedFromWindow?.snapSpanToYmd || asOfYmd;
+
+  // 3) Passive alternatives over the same window. Every entry carries
+  //    provenance from the market-data adapter — bench return NEVER
+  //    coerces to zero when data is missing (P3.6).
   const passiveTargets = ["XEQT.TO", "XIC.TO", "SPY", "VTI"];
   const passiveRows = [];
   for (const t of passiveTargets) {
-    const bres = await getMatchedReturnPct({ ticker: t, fromDate: windowStart, toDate: asOfYmd });
-    passiveRows.push({ ticker: t, returnPct: bres.pct, note: bres.note });
+    const bres = await getMatchedReturnPct({ ticker: t, fromDate: benchFromYmd, toDate: benchToYmd });
+    passiveRows.push({
+      ticker: t,
+      returnPct: bres.pct,                 // null when DATA_UNAVAILABLE
+      status: bres.status,
+      note: bres.note,
+      marketDataSource: bres.marketDataSource || null,
+      fallbackUsed: bres.fallbackUsed || false,
+      actualRange: bres.actualRange || null,
+      fetchAsOf: bres.fetchAsOf || null,
+    });
   }
-  const passiveBaseline = passiveRows.find(p => p.ticker === "XEQT.TO")?.returnPct
-                       ?? passiveRows.find(p => p.ticker === "SPY")?.returnPct
+  const passiveBaseline = passiveRows.find(p => p.ticker === "XEQT.TO" && Number.isFinite(p.returnPct))?.returnPct
+                       ?? passiveRows.find(p => p.ticker === "SPY" && Number.isFinite(p.returnPct))?.returnPct
                        ?? null;
 
   // 4) Sleeve attribution — capital-weighted contribution to TOTAL
@@ -299,12 +324,18 @@ export async function computeAttributionReport({
     pnlCad: b.pnlCad,
   })).sort((a, b) => (b.sectorContribPp || 0) - (a.sectorContribPp || 0));
 
-  // 13) Real vs passive table (spec §14).
+  // 13) Real vs passive table (spec §14). Passive returns carry
+  //     provenance; alpha is null (never zero) when either side missing.
   const realVsPassive = passiveRows.map(p => ({
     ticker: p.ticker,
-    passiveReturnPct: p.returnPct,
+    passiveReturnPct: p.returnPct,            // null when DATA_UNAVAILABLE
+    passiveStatus: p.status,                  // "OK" | "DATA_UNAVAILABLE"
+    marketDataSource: p.marketDataSource,
+    fallbackUsed: p.fallbackUsed,
     portfolioReturnPct,
-    alphaPp: Number.isFinite(portfolioReturnPct) && Number.isFinite(p.returnPct) ? portfolioReturnPct - p.returnPct : null,
+    alphaPp: Number.isFinite(portfolioReturnPct) && Number.isFinite(p.returnPct)
+      ? portfolioReturnPct - p.returnPct : null,
+    alphaStatus: (Number.isFinite(portfolioReturnPct) && Number.isFinite(p.returnPct)) ? "OK" : "DATA_UNAVAILABLE",
   }));
 
   // 14) Waterfall — separated additive vs descriptive per P3.5 §7.
@@ -423,20 +454,111 @@ export async function computeAttributionReport({
     feeSource: worstFeeSource,
   };
 
-  // 18) Sufficiency check per spec §12: refuse false confidence when
-  //     the evidence is too thin.
+  // 18) P3.6 — data rescue + per-metric confidence.
+  const trades = await StocksTradeJournal.find({ email: String(email).toLowerCase() }).sort({ executedAt: 1 }).lean();
+  const [rescueResult, unattribBreakdown] = await Promise.all([
+    runDataRescue({ email }),
+    Promise.resolve(classifyUnattributableRows({ ledgerRows: rows, trades })),
+  ]);
+
+  // Per-metric confidence — each stands on its own so a LOW cash-attribution
+  // does not suppress a valid portfolio-vs-passive comparison.
+  const metricConfidence = {
+    portfolioReturn: returnResult.returnMethod == null ? CONFIDENCE.UNAVAILABLE
+                    : returnResult.returnMethod === "time-weighted" ? CONFIDENCE.HIGH
+                    : returnResult.returnMethod === "modified-dietz" ? CONFIDENCE.MEDIUM
+                    : snaps.length >= 3 ? CONFIDENCE.MEDIUM : CONFIDENCE.LOW,
+    passiveRelativeReturn: (portfolioReturnPct != null && Number.isFinite(passiveBaseline))
+                    ? (snaps.length >= 5 ? CONFIDENCE.HIGH : CONFIDENCE.MEDIUM)
+                    : CONFIDENCE.UNAVAILABLE,
+    recommendationSelectionAlpha: recQualityAlphaResult.meanRecAlphaPp == null ? CONFIDENCE.UNAVAILABLE
+                    : recQualityAlphaResult.coveragePct >= 60 ? CONFIDENCE.HIGH
+                    : recQualityAlphaResult.coveragePct >= 30 ? CONFIDENCE.MEDIUM : CONFIDENCE.LOW,
+    actualPositionAlpha: attributable.length === 0 ? CONFIDENCE.UNAVAILABLE
+                    : attributable.length >= 20 ? CONFIDENCE.HIGH
+                    : attributable.length >= 5 ? CONFIDENCE.MEDIUM : CONFIDENCE.LOW,
+    entryTiming: entryTiming.coverage.eligibleBuys === 0 ? CONFIDENCE.UNAVAILABLE
+                    : entryTiming.coverage.coveragePct >= 60 ? CONFIDENCE.MEDIUM : CONFIDENCE.LOW,
+    exitTiming: exitCoverageEligible >= 60 ? CONFIDENCE.MEDIUM
+                    : exitCoverageEligible >= 20 ? CONFIDENCE.LOW : CONFIDENCE.UNAVAILABLE,
+    sizingEffect: Number.isFinite(sizingEffectPp) ? CONFIDENCE.MEDIUM : CONFIDENCE.UNAVAILABLE,
+    sleeveAttribution: sleeveAttribution.length === 0 ? CONFIDENCE.UNAVAILABLE
+                    : attributable.length >= 5 ? CONFIDENCE.MEDIUM : CONFIDENCE.LOW,
+    replacementTrades: replacement.coverage.highConfidencePairs > 0 ? CONFIDENCE.MEDIUM
+                    : replacement.coverage.matchedPairs > 0 ? CONFIDENCE.LOW : CONFIDENCE.UNAVAILABLE,
+    cashEffect: cashResult.coverage === "COMPLETE" ? CONFIDENCE.HIGH
+                    : cashResult.coverage === "PARTIAL" ? CONFIDENCE.MEDIUM
+                    : cashResult.coverage === "LOW_COVERAGE" ? CONFIDENCE.LOW : CONFIDENCE.UNAVAILABLE,
+    fxEffect: usdCapitalCad > 0 && Number.isFinite(usdFxContribPp) ? CONFIDENCE.MEDIUM : CONFIDENCE.UNAVAILABLE,
+  };
+
+  // Sufficiency is now DIAGNOSTIC only — never suppresses valid metrics.
   const insufficientEvidence = [];
-  if (snaps.length < 3) insufficientEvidence.push("Portfolio snapshot history too short (<3 daily rows in window).");
-  if (attributable.length === 0) insufficientEvidence.push("No attributable ledger rows — cannot compute selection alpha.");
+  if (snaps.length < 3) insufficientEvidence.push("Portfolio snapshot history too short (<3 rows in window).");
+  if (attributable.length === 0 && (unattribBreakdown.total > 0 || rescueResult.openingBalanceLots.length > 0)) {
+    insufficientEvidence.push(`${unattribBreakdown.total} unattributable ledger rows — trade history is a partial reconstruction; see unattributableReasonBreakdown for per-row reasons.`);
+  } else if (attributable.length === 0) {
+    insufficientEvidence.push("No attributable ledger rows — cannot compute selection alpha.");
+  }
   if (returnResult.returnMethod == null) insufficientEvidence.push("Portfolio return method could not be selected.");
   if (passiveBaseline == null) insufficientEvidence.push("Passive baseline benchmark unavailable.");
 
-  const sufficient = insufficientEvidence.length === 0;
+  // Classify overall diagnostic power (A/B/C per spec §16). Metrics-first:
+  // if we can measure portfolio-vs-passive reliably, we are at least B.
+  let diagnosticClassification;
+  if (metricConfidence.passiveRelativeReturn === CONFIDENCE.HIGH
+      && metricConfidence.actualPositionAlpha !== CONFIDENCE.UNAVAILABLE
+      && metricConfidence.sleeveAttribution !== CONFIDENCE.UNAVAILABLE) {
+    diagnosticClassification = { class: "A", label: "SUFFICIENT FOR PRELIMINARY DIAGNOSIS" };
+  } else if (metricConfidence.passiveRelativeReturn === CONFIDENCE.HIGH
+             || metricConfidence.passiveRelativeReturn === CONFIDENCE.MEDIUM) {
+    diagnosticClassification = { class: "B", label: "PARTIALLY SUFFICIENT — relative performance measurable, decomposition incomplete" };
+  } else {
+    diagnosticClassification = { class: "C", label: "INSUFFICIENT — cannot measure relative portfolio performance reliably" };
+  }
+
+  // Count distinct daily-position-snapshot trading days for this user.
+  const dailySnapDates = await StocksDailyPositionSnapshot.distinct("date", {
+    email: String(email).toLowerCase(),
+    date: { $lte: asOfYmd },
+  }).catch(() => []);
+
+  // Data-quality dashboard (§12) — compact, coverage % + confidence tags.
+  const dataQualityDashboard = {
+    marketPricePct: passiveRows.filter(p => p.status === "OK").length / passiveRows.length * 100 | 0,
+    benchmarkCoveragePct: passiveRows.filter(p => Number.isFinite(p.returnPct)).length / passiveRows.length * 100 | 0,
+    portfolioSnapshotDays: snaps.length,
+    tradeReconstructionCoveragePct: legCov.coveragePct,
+    recommendationLinkageBeforePct: (rescueResult.recLinkReconciliation.before.explicit /
+      Math.max(1, rescueResult.recLinkReconciliation.before.explicit + rescueResult.recLinkReconciliation.before.none) * 100) | 0,
+    recommendationLinkageAfterPct: ((rescueResult.recLinkReconciliation.after.explicit
+      + rescueResult.recLinkReconciliation.after.reconciledMandate
+      + rescueResult.recLinkReconciliation.after.reconciledTime) /
+      Math.max(1, rescueResult.recLinkReconciliation.after.explicit
+        + rescueResult.recLinkReconciliation.after.reconciledMandate
+        + rescueResult.recLinkReconciliation.after.reconciledTime
+        + rescueResult.recLinkReconciliation.after.none) * 100) | 0,
+    fxCoveragePct: rows.length > 0
+      ? Math.round((usdRows.length + rows.filter(r => r.entryCurrency === "CAD").length) / rows.length * 100) : 0,
+    dailyPositionSnapshotTradingDays: dailySnapDates.length,
+  };
+
+  const sufficient = diagnosticClassification.class !== "C";
 
   const report = {
     email, asOfDate: asOfYmd, windowStart,
     engineVersion: ENGINE_VERSION,
     sufficient,
+    diagnosticClassification,
+    metricConfidence,
+    dataQualityDashboard,
+    dataRescue: {
+      unattributableReasonBreakdown: unattribBreakdown,
+      openingBalanceLots: rescueResult.openingBalanceLots,
+      openingBalanceNote: rescueResult.openingBalanceNote,
+      recLinkReconciliation: rescueResult.recLinkReconciliation,
+      transferCandidates: rescueResult.transferCandidates,
+    },
     insufficientEvidence,
     header: {
       windowDays: effectiveWindowDays,
@@ -445,6 +567,10 @@ export async function computeAttributionReport({
       portfolioReturnPct,
       portfolioReturnMethod: returnResult.returnMethod,
       externalCashFlowCad: returnResult.externalCashFlowCad,
+      reducedFromWindow: returnResult.reducedFromWindow,
+      returnNote: returnResult.note,
+      benchmarkFromYmd: benchFromYmd,
+      benchmarkToYmd: benchToYmd,
       passiveReturnPct: passiveBaseline,
       passiveBenchmarkTicker: "XEQT.TO",
       alphaVsPassivePp: Number.isFinite(portfolioReturnPct) && Number.isFinite(passiveBaseline)

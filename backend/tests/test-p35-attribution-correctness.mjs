@@ -277,8 +277,8 @@ function test19_entry_timing_labelled_descriptive() {
 function test20_engine_v35_and_two_selection_alphas() {
   const src = fs.readFileSync(
     "/Users/richardsommer/dev/curriculate/backend/services/stocksAttributionEngine.js", "utf-8");
-  assert(/ENGINE_VERSION\s*=\s*"3\.5\.\d+"/.test(src),
-    "20a. Engine version bumped to 3.5.x");
+  assert(/ENGINE_VERSION\s*=\s*"3\.[56]\.\d+"/.test(src),
+    "20a. Engine version bumped to 3.5.x or later (P3.6 accepted)");
   assert(src.includes("additiveComponents") && src.includes("descriptiveComponents"),
     "20b. Waterfall separates additive vs descriptive");
   assert(src.includes("recommendationQualityMeanAlphaPp"),
