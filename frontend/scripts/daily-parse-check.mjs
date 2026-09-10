@@ -522,6 +522,30 @@ check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissal
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
+// ---- the pictures the API cannot see, recorded on the helper tab ----
+{
+  const recorded = P.buildCellImages([
+    ["Poems!F3", "https://lh3.googleusercontent.com/d/FLAGMON"],
+    ["poems!$G$3", "https://lh3.googleusercontent.com/d/FLAGTUE"],
+    ["Lessons!I4", "https://lh3.googleusercontent.com/d/LESSON4"],
+    ["Display!E1", "https://lh3.googleusercontent.com/d/FEATURE"],
+    ["Setup!S2", "not a url"],
+  ]);
+  check("recorded pictures: a cell key is tidied", recorded[P.cellImageKey("Poems!f3")] === "https://lh3.googleusercontent.com/d/FLAGMON", recorded);
+  check("recorded pictures: dollars and case do not matter", recorded["poems!G3"] === "https://lh3.googleusercontent.com/d/FLAGTUE", recorded);
+  check("recorded pictures: anything that is not an address is left out", recorded["setup!S2"] === undefined);
+  // The anthem takes the recorded flag when the cell itself shows nothing.
+  const poems = [["Mon"], ["O Canada!"], [""]];
+  const flag = P.anthemOfDay(poems, [], 2, recorded);
+  check("anthem: the recorded flag stands in for the picture in the cell",
+    flag.image === "https://lh3.googleusercontent.com/d/FLAGMON", flag);
+  // And a lesson's picture, by the row it sits on.
+  const rows = [["Code"], ["~J003"], ["~H001"], ["~G002"]];
+  const L = P.parseLessons(rows, [], [], recorded);
+  check("lesson picture: the recorded one is used when the cell holds the picture itself",
+    L.G002.image === "https://lh3.googleusercontent.com/d/LESSON4", L.G002);
+}
+
 // ---- O Canada: the flag and the words, from the day's column of Poems ----
 {
   const poems = [

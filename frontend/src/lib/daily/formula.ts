@@ -33,6 +33,9 @@ export type Ctx = {
   book: Book;
   now: Date; // the board's clock — the scrubbed time, not the read time
   sheet?: string; // the tab an unqualified reference belongs to
+  // Pictures the API cannot see, by cell ("poems!F3"), recorded by the sheet's
+  // own script. A rule that reaches such a cell gets the picture's address.
+  images?: Record<string, string>;
 };
 
 type Matrix = Val[][];
@@ -96,6 +99,14 @@ function timeSerial(s: string): number {
  * References
  * ------------------------------------------------------------------ */
 
+/** 1-based column number to its letters, the inverse of colToNumber. */
+export function columnLetters(col: number): string {
+  let n = col;
+  let out = "";
+  while (n > 0) { const r = (n - 1) % 26; out = String.fromCharCode(65 + r) + out; n = Math.floor((n - 1) / 26); }
+  return out;
+}
+
 export function colToNumber(letters: string): number {
   let n = 0;
   for (const ch of letters.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
@@ -125,7 +136,11 @@ function cellAt(ctx: Ctx, sheet: string, row: number, col: number): string {
     if (value) return value;
     const formula = String((((g.formulas || [])[r] || [])[c] ?? "")).trim();
     const pic = formula.match(IMAGE_IN_FORMULA) || formula.match(LINK_IN_FORMULA);
-    return pic ? pic[1] : "";
+    if (pic) return pic[1];
+    // Neither a value nor a formula: a picture may have been put in the cell,
+    // in which case the sheet's script has recorded where it lives.
+    const key = `${sheet.toLowerCase()}!${columnLetters(col)}${row}`;
+    return (ctx.images || {})[key] || "";
   }
   throw new FormulaError(`${sheet}!${row}/${col} is outside what the board reads`);
 }

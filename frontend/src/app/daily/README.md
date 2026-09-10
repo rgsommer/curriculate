@@ -182,7 +182,24 @@ picture put into a cell with Insert &rsaquo; Image — either kind — is invisi
 to the board: that cell has neither a value nor a formula to read, and the flag,
 the feature cartoon and the lesson pictures all arrive empty.
 
-`apps-script/mirror-cell-images.gs` fixes it in the sheet. Pasted into
+`apps-script/mirror-cell-images.gs` fixes it in the sheet, without touching how
+the pictures are put there. The teacher keeps inserting and pasting them; the
+script finds the cells holding one, takes Google's temporary address, fetches the
+bytes while it is still good, writes them to a Drive folder shared with anyone
+who has the link, and records the durable address on a hidden **BoardImages**
+tab — cell address in column A, picture address in column B. The board reads that
+tab (`BoardImages!A2:B200`) and uses the address wherever the picture itself
+cannot be seen: the anthem flag, the feature cell, a lesson's picture, and any
+Setup rule that reaches a picture cell.
+
+The cells themselves are left exactly as they are. In particular **nothing is
+written to `Lessons!J`** — that is the video column, and an `=IMAGE()` formula
+put there would be read as the lesson's video.
+
+A picture that has not changed is not uploaded again: the bytes are
+fingerprinted, so the address stays the same from run to run.
+
+Older note: Pasted into
 Extensions &rsaquo; Apps Script and run, it turns every in-cell picture into an
 `=IMAGE("…")` formula pointing at the same picture: the sheet looks exactly the
 same, and the formula is something the API can read. A picture inserted from a

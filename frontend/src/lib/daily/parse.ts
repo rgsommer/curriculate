@@ -232,7 +232,8 @@ const LESSON_CODE = /^~?[A-Za-z]\d{3}$/;
 export function parseLessons(
   values: string[][],
   formulas: string[][] = [],
-  linkRuns: { text: string; url: string }[][][] = []
+  linkRuns: { text: string; url: string }[][][] = [],
+  images: CellImages = {}
 ): Record<string, Lesson> {
   const out: Record<string, Lesson> = {};
   (values || []).forEach((row, r) => {
@@ -259,7 +260,8 @@ export function parseLessons(
       const candidates = [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || []), runOf(i - 2)];
       return candidates.find((u) => u && prefer(u)) || candidates.find(Boolean) || "";
     };
-    const image = anyUrl(6, isImageUrl); // I
+    // The read starts at C, so this row of the grid is the same row of the sheet.
+    const image = anyUrl(6, isImageUrl) || images[cellImageKey(`Lessons!I${r + 1}`)] || ""; // I
     const video = anyUrl(7, isVideoUrl); // J
     const page = cell(2); // E
     const homework = cell(3); // F
@@ -994,6 +996,7 @@ export type RawInputs = {
   masterWide?: string[][]; // Master!A1:K2
   subjects?: string[][]; // Subjects!U1:U40
   mathChallenge?: string[][]; // MathChallenge!A1:C60
+  cellImages?: string[][]; // BoardImages!A2:B200 — cell address, durable picture address
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -1020,10 +1023,13 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   // bare image URL. An =IMAGE() cell has no text value at all, so the formula is
   // the only place the URL shows up. When there is a picture, the board gives it
   // the big slot and does not also print the URL as text.
+  const cellImages = buildCellImages(inp.cellImages || []);
   {
     const fromFormula = urlFromFormula(inp.featureFormula || "");
     const fromValue = (meta.feature.match(URL_RE) || [])[0] || "";
-    const url = [fromFormula, fromValue].find((u) => u && isImageUrl(u)) || "";
+    // A picture put into E1 itself has neither, so the sheet's script records it.
+    const recorded = cellImages[cellImageKey("Display!E1")] || cellImages[cellImageKey("DisplayAI!E1")] || "";
+    const url = [fromFormula, fromValue].find((u) => u && isImageUrl(u)) || recorded;
     if (url) {
       meta.featureImage = normalizeImageUrl(url);
       if (!meta.feature || meta.feature === url) meta.feature = "";
@@ -1078,7 +1084,7 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
   });
 
   // ---- period rows ----
-  const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || []);
+  const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || [], cellImages);
   const periods: Period[] = [];
   for (let i = firstTimeRow; i >= 0 && i < rows.length; i++) {
     const r = rows[i] || [];
@@ -1225,13 +1231,14 @@ export type Sources = {
   verseWeek: number | null; // Vertical!B4
   pointsClasses: PointsClass[]; // for the D-column status rule
   pointsLabels: string[]; // Points row 3 — the classes taught this year, in order
+  cellImages: CellImages; // the pictures the API cannot see, by cell
 };
 
 export const EMPTY_SOURCES: Sources = {
   windowStart: null, windowEnd: null, offsetHours: 0, b7: false, d7: false, a9: null, a11: null,
   poemRow: [], poemF3: "", poemF3Formula: "", poemGrid: [], poemGridFormulas: [],
   verticalRow: [], slots: [], riddle: "",
-  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {},
+  verses: [], verseWeek: null, pointsClasses: [], pointsLabels: [], book: {}, cellImages: {},
 };
 
 const truthy = (s: string) => /^(TRUE|1|YES)$/i.test(String(s || "").trim());
@@ -1263,7 +1270,7 @@ export type FeatureResult = { text: string; image: string; source: string };
  */
 export function evaluateFeature(src: Sources, minutes: number, at?: Date): FeatureResult {
   const ctx = at && src.book && Object.keys(src.book).length
-    ? { book: src.book, now: at, sheet: "Setup" }
+    ? { book: src.book, now: at, sheet: "Setup", images: src.cellImages || {} }
     : null;
   // The slot as it reads at the time on the board, not at the time of the read.
   const live = (s: { value: string; formula: string; generator?: string }): string => {
@@ -1482,6 +1489,7 @@ export function buildSources(inp: RawInputs): Sources {
     pointsClasses: buildPointsClasses(inp.pointsRow3 || [], inp.pointsRow46 || []),
     pointsLabels: pointsLabels(inp.pointsRow3 || []),
     book: buildBook(inp),
+    cellImages: buildCellImages(inp.cellImages || []),
   };
 }
 
@@ -1573,6 +1581,34 @@ export function columnName(col: number): string {
 }
 
 /**
+ * The pictures the API cannot see, by the cell they are in.
+ *
+ * A picture put into a cell with Insert > Image has no value and no formula —
+ * the Sheets API has no image field at all — so the sheet's own script records a
+ * durable address for each one on a helper tab, and the board reads that. The
+ * keys are plain A1 references, "Poems!F3", tidied so a stray dollar or a
+ * lower-case column still matches.
+ */
+export type CellImages = Record<string, string>;
+
+export function cellImageKey(ref: string): string {
+  const t = String(ref || "").trim().replace(/\$/g, "").replace(/'/g, "");
+  const bang = t.lastIndexOf("!");
+  if (bang < 0) return t.toUpperCase();
+  return `${t.slice(0, bang).trim().toLowerCase()}!${t.slice(bang + 1).trim().toUpperCase()}`;
+}
+
+export function buildCellImages(rows: string[][]): CellImages {
+  const out: CellImages = {};
+  for (const r of rows || []) {
+    const ref = String((r || [])[0] || "").trim();
+    const url = String((r || [])[1] || "").trim();
+    if (ref && /^https?:\/\//.test(url)) out[cellImageKey(ref)] = normalizeImageUrl(url);
+  }
+  return out;
+}
+
+/**
  * O Canada: the flag and the words, from the day's column of Poems!F1:J3.
  *
  * F is Monday and J Friday, and the column carries the anthem in whichever
@@ -1584,17 +1620,21 @@ export function columnName(col: number): string {
 export function anthemOfDay(
   poems: string[][],
   formulas: string[][],
-  weekday: number
+  weekday: number,
+  images: CellImages = {}
 ): { image: string; lines: string[] } {
   const col = weekday - 2; // Sheets counts Sunday as 1, so Monday is column F
   if (col < 0 || col > 4) return { image: "", lines: [] };
+  const letter = String.fromCharCode(70 + col); // F to J
   const at = (row: number, grid: string[][]) => String(((grid || [])[row] || [])[col] || "").trim();
   let image = "";
   const lines: string[] = [];
   for (let row = 0; row < 3; row += 1) {
     const value = at(row, poems);
     const formula = at(row, formulas);
-    const url = [urlFromFormula(formula), (value.match(URL_RE) || [])[0]].find((u) => u && isImageUrl(u)) || "";
+    const url = [urlFromFormula(formula), (value.match(URL_RE) || [])[0]].find((u) => u && isImageUrl(u))
+      || images[cellImageKey(`Poems!${letter}${row + 1}`)]
+      || "";
     if (url && !image) image = normalizeImageUrl(url);
     const text = value.replace(URL_RE, "").trim();
     if (text) lines.push(text);
