@@ -48,6 +48,8 @@ const pl = P.parsePlansLine("Plans for Saturday, Sep 5, 2026...    -275%--272%--
 check("plans percents", pl.kind === "percents" && pl.values.join() === "275,272,137,205,181" && pl.title === "Plans for Saturday, Sep 5, 2026...", pl);
 const plSingle = P.parsePlansLine("Plans for Monday, Sep 7, 2026...    -660-871-220-820-");
 check("plans: neighbours may share one dash", plSingle.values.join() === "660,871,220,820", plSingle);
+const plStar = P.parsePlansLine("Plans for Thursday, Sep 10, 2026...    *10-0-0-19-9-");
+check("plans: a marked first value still counts", plStar.values.join() === "10,0,0,19,9", plStar);
 const plNeg = P.parsePlansLine("Plans for Monday, Sep 7, 2026...    -660---871--220-");
 check("plans: three dashes is a negative value", plNeg.values.join() === "660,-871,220", plNeg);
 check("points labels: read from row 3, in column order",
