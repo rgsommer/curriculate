@@ -802,8 +802,8 @@ export default function DailyPage() {
   const usable = (url) => !!url && !badImages[url];
   const evaluatedImage = evaluated.image || meta.featureImage;
   const featureImage = opts.pic === "off" || !usable(evaluatedImage) ? "" : evaluatedImage;
-  const bigPicture = (url, caption, note) => (
-    <div className="picture">
+  const bigPicture = (url, caption, note, cls = "") => (
+    <div className={`picture${cls ? ` ${cls}` : ""}`}>
       <div className="frame">
         <img src={url} alt={caption || "Picture on the board"} onError={() => markBad(url)} />
       </div>
@@ -924,7 +924,12 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: "", pct: 0 })}
-        <div className="main blank"><p>Please listen</p></div>
+        {/* The flag stands during the anthem, so a picture in the feature cell
+            takes the screen here rather than being thrown away — the blank
+            screen used to be decided before E1 was ever consulted. */}
+        {featureImage
+          ? <div className="main solo">{bigPicture(featureImage, "Please listen", "", "fill")}</div>
+          : <div className="main blank"><p>Please listen</p></div>}
         {footer(false)}
       </>
     );
@@ -967,7 +972,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: greeting, chips: null, when: meta.plans, leftHtml: "", pct: 0 })}
-        <div className="main center">
+        {withPicture(
           <div>
             <p className="script">{greeting}</p>
             <p className="question">{verse}</p>
@@ -994,7 +999,7 @@ export default function DailyPage() {
             ) : null}
             {linkChips(dayLinks, "Materials to print today")}
           </div>
-        </div>
+        )}
         {footer(false)}
       </>
     );
