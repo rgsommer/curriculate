@@ -781,7 +781,7 @@ export function statusWords(
  */
 export function parsePlansLine(s: string) {
   const t = String(s || "");
-  const title = (t.match(/^(Plans for [^.]*\.{3})/) || [, t.trim()])[1] || t.trim();
+  const title = (t.match(/^((?:Plans|That's it) for [^.]*\.{3})/) || [, t.trim()])[1] || t.trim();
   const tail = t.slice(title.length);
   const values: number[] = [];
   let percent = false;
@@ -801,6 +801,44 @@ export function parsePlansLine(s: string) {
   }
   if (!values.length) return { title, kind: null as null | "numbers" | "percents", values: [] as number[] };
   return { title, kind: (percent ? "percents" : "numbers") as "numbers" | "percents", values };
+}
+
+/**
+ * Each class's points, from the cells the sheet's own plans line is built out of.
+ *
+ * That line reads `Setup!F35 & Setup!K35 & "-"` for each class, using K on an odd
+ * minute and L on an even one — the alternation is only because one cell can
+ * hold one number at a time. Reading F, K and L directly gives the board the
+ * label, the total and the percentage together, so both can be on screen at once
+ * and neither has to be caught on the right minute.
+ *
+ * A class counts only when its column in Points row 2 has something in it, which
+ * is the same test the line makes: G, T, AG, AT, BG, BT — every thirteenth
+ * column, the blocks the Points tab is laid out in.
+ */
+export type ClassPoints = { name: string; total: number | null; percent: number | null };
+
+const POINTS_PRESENT_COLS = [7, 20, 33, 46, 59, 72]; // G, T, AG, AT, BG, BT
+const PLANS_FIRST_ROW = 35; // Setup rows 35 to 40, one per class
+
+export function pointsFromSetup(setup: string[][], pointsGrid: string[][]): ClassPoints[] {
+  const cell = (rows: string[][], row: number, col: number) =>
+    String(((rows || [])[row - 1] || [])[col - 1] ?? "").trim();
+  const value = (s: string): number | null => {
+    const n = parseFloat(s.replace(/[^\d.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  };
+  const out: ClassPoints[] = [];
+  for (let i = 0; i < POINTS_PRESENT_COLS.length; i += 1) {
+    if (!cell(pointsGrid, 2, POINTS_PRESENT_COLS[i])) continue; // no such class this year
+    const row = PLANS_FIRST_ROW + i;
+    const name = cell(setup, row, 6).replace(/[\s:.\-]+$/, ""); // F
+    const total = value(cell(setup, row, 11)); // K
+    const percent = value(cell(setup, row, 12)); // L
+    if (!name && total == null && percent == null) continue;
+    out.push({ name, total, percent });
+  }
+  return out;
 }
 
 /**
@@ -1041,6 +1079,11 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     }
   }
   const points: Points = { numbers: null, percents: null, entered: null, ...writingOwed(inp.pointsGrid || [], inp.pointsRow3 || []) };
+  // The cells the sheet builds its own plans line from carry the total and the
+  // percentage side by side, so the board takes them from there rather than
+  // reading whichever of the two the line happened to be showing at the moment
+  // it was fetched. The line itself is still parsed, as the fallback.
+  const classPoints = pointsFromSetup(inp.setup || [], inp.pointsGrid || []);
 
   // ---- header cells (rows above the first time row) ----
   const firstTimeRow = rows.findIndex((r) => parseTime(r[0] || "") !== null);
@@ -1077,7 +1120,8 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     else if (!meta.verse && a.length > 40 && !/^Q:/.test(a)) meta.verse = a;
     else if (!meta.riddle && /^Q:/.test(a)) meta.riddle = a;
     if (/UNSCRAMBLE/i.test(c)) meta.puzzle = c.replace(/\s*(_\s*)+$/g, "").trim();
-    if (/^Plans for/i.test(c)) {
+    // Past four o'clock the same cell says "That's it for …" instead.
+    if (/^(Plans|That's it) for/i.test(c)) {
       const p = parsePlansLine(c);
       meta.plans = p.title;
       if (p.kind === "numbers") points.numbers = p.values;
@@ -1087,6 +1131,13 @@ export function buildPayload(inp: RawInputs, now = new Date()): Payload {
     }
     if (/^Q:/.test(c) && !meta.riddle) meta.riddle = c;
   });
+
+  // Whatever the line was showing when it was read, the paired cells are the
+  // better answer: both numbers at once, for the classes that exist this year.
+  if (classPoints.length) {
+    if (classPoints.some((c) => c.total != null)) points.numbers = classPoints.map((c) => c.total ?? 0);
+    if (classPoints.some((c) => c.percent != null)) points.percents = classPoints.map((c) => c.percent ?? 0);
+  }
 
   // ---- period rows ----
   const lessons = parseLessons(inp.lessons || [], inp.lessonFormulas || [], inp.lessonLinkRuns || [], cellImages);
@@ -1498,7 +1549,12 @@ export function buildSources(inp: RawInputs): Sources {
       return Number.isFinite(n) ? n : null;
     })(),
     pointsClasses: buildPointsClasses(inp.pointsRow3 || [], inp.pointsRow46 || []),
-    pointsLabels: pointsLabels(inp.pointsRow3 || []),
+    // The plans line's own labels name the classes that exist this year; Points
+    // row 3 is the fallback for a sheet that does not carry them.
+    pointsLabels: (() => {
+      const named = pointsFromSetup(inp.setup || [], inp.pointsGrid || []).map((c) => c.name);
+      return named.some(Boolean) ? named : pointsLabels(inp.pointsRow3 || []);
+    })(),
     book: buildBook(inp),
     cellImages: buildCellImages(inp.cellImages || []),
   };

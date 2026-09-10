@@ -541,6 +541,33 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     P.evaluateDailyText(note, 11 * 60, 5, true));
 }
 
+// ---- the points, from the cells the plans line is built out of ----
+{
+  const setup = [];
+  for (let r = 0; r < 40; r += 1) setup[r] = [];
+  // Rows 35 to 40: F the label, K the total, L the percentage.
+  [["7A", "660", "275%"], ["7B", "871", "272%"], ["7C", "220", "137%"],
+   ["8A", "820", "205%"], ["8B", "290", "181%"], ["8C", "0", "0%"]]
+    .forEach(([name, total, pct], i) => {
+      setup[34 + i][5] = name; setup[34 + i][10] = total; setup[34 + i][11] = pct;
+    });
+  // Points row 2: a class counts only where its column has something. 8C is
+  // not taught this year, so its column is blank and it drops out.
+  const grid = [[], []];
+  [7, 20, 33, 46, 59].forEach((c) => { grid[1][c - 1] = "x"; });
+  const cp = P.pointsFromSetup(setup, grid);
+  check("class points: one per class that exists this year",
+    cp.map((c) => c.name).join() === "7A,7B,7C,8A,8B", cp.map((c) => c.name));
+  check("class points: the total and the percentage together, no waiting a minute",
+    cp[0].total === 660 && cp[0].percent === 275 && cp[4].total === 290 && cp[4].percent === 181, cp[0]);
+  check("class points: a sheet without those rows says nothing",
+    P.pointsFromSetup([], grid).length === 0);
+  const plansAfterFour = P.parsePlansLine("That's it for Thursday, Sep 10, 2026...    -10-0-0-19-9-");
+  check("plans: the line still reads after four o'clock",
+    plansAfterFour.title === "That's it for Thursday, Sep 10, 2026..." && plansAfterFour.values.join() === "10,0,0,19,9",
+    plansAfterFour);
+}
+
 // ---- reading ranges for tabs the sheet may not have ----
 {
   check("range tab: plain", SH.tabOfRange("BoardImages!A2:B200") === "BoardImages");
