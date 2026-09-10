@@ -1382,19 +1382,25 @@ export function evaluateVerse(src: Sources, minutes: number, weekday: number): {
  * the VerticalAi text for the weekday — its first two lines once the day has
  * started (past A11), in full before that. "Skip 7A " and friends come out.
  */
-export function evaluateDailyText(src: Sources, minutes: number, weekday: number): string {
+export function evaluateDailyText(src: Sources, minutes: number, weekday: number, inClass = false): string {
   const strip = (s: string) => String(s || "").replace(/Skip \d[A-C]\s*/g, "").trim();
   const t = minutes - (src.offsetHours || 0) * 60;
 
   if (src.windowStart != null && src.windowEnd != null && t >= src.windowStart && t < src.windowEnd) {
     return strip(src.poemRow[weekday - 2] || "");
   }
-  const full = src.verticalRow[weekday] || "";
+  const full = strip(src.verticalRow[weekday] || "");
+  // The cell can be the whole day's plan, one class after another. Shortened to
+  // its first lines that is always the *first* class of the day, so the History
+  // screen carried Math's blurb in a panel headed "Today". Each class has its
+  // own screen, so during one the day's plan has nothing to add.
+  const isDayPlan = new RegExp(`^${CLASS_HEAD.source}`).test(full);
+  if (isDayPlan) return inClass ? "" : full;
   if (src.a11 != null && minutes > src.a11) {
-    const lines = String(full).split("\n");
+    const lines = full.split("\n");
     return strip(lines.slice(0, 2).join("\n"));
   }
-  return strip(full);
+  return full;
 }
 
 /**

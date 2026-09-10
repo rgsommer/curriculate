@@ -604,7 +604,8 @@ export default function DailyPage() {
   const evaluated = evaluateFeature(sources, t, clock);
   // The anthem's own column of Poems: the flag and the words for today.
   const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday, sources.cellImages);
-  const dailyText = evaluateDailyText(sources, t, weekday);
+  // During a class the day's plan has nothing to add — that class is the screen.
+  const dailyText = evaluateDailyText(sources, t, weekday, !!(cur && !cur.duty && !cur.empty));
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
   // What actually happens at the bell, which is not always the next class: the
   // next row of the timetable, lunch and recess included. Used for the red
