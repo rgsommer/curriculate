@@ -20,8 +20,10 @@ const build = (name) => {
 };
 build("formula");
 build("parse");
+build("sheets");
 const P = await import(pathToFileURL(path.join(dir, "parse.mjs")).href);
 const F = await import(pathToFileURL(path.join(dir, "formula.mjs")).href);
+const SH = await import(pathToFileURL(path.join(dir, "sheets.mjs")).href);
 fs.rmSync(dir, { recursive: true, force: true });
 
 let failures = 0;
@@ -537,6 +539,20 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
   check("daily text: a real note still shows, cut to its first lines",
     P.evaluateDailyText(note, 11 * 60, 5, true) === "Things you need to know for today...\nGeography term list due next class.",
     P.evaluateDailyText(note, 11 * 60, 5, true));
+}
+
+// ---- reading ranges for tabs the sheet may not have ----
+{
+  check("range tab: plain", SH.tabOfRange("BoardImages!A2:B200") === "BoardImages");
+  check("range tab: quoted", SH.tabOfRange("'Kiss & Ride'!A1:H60") === "Kiss & Ride");
+  check("range tab: none", SH.tabOfRange("A1:B2") === "");
+  const ranges = ["Setup!A1:P40", "BoardImages!A2:B200", "'Kiss & Ride'!A1:H60"];
+  check("range from a 400: the one Google names",
+    SH.rangeFromError("Sheets API 400: Unable to parse range: BoardImages!A2:B200", ranges) === "BoardImages!A2:B200");
+  check("range from a 400: quotes do not have to match",
+    SH.rangeFromError("Sheets API 400: Unable to parse range: Kiss & Ride!A1:H60", ranges) === "'Kiss & Ride'!A1:H60");
+  check("range from a 400: nothing named, nothing guessed",
+    SH.rangeFromError("Sheets API 429: Quota exceeded", ranges) === "");
 }
 
 // ---- the pictures the API cannot see, recorded on the helper tab ----
