@@ -99,7 +99,9 @@ export async function GET(req: Request) {
       readGridLinks("DisplayAI!A1:F40").catch(() => ({ first: [], runs: [] })),
       // Handouts on the Lessons rows are often a link attached to a phrase in
       // the page or homework cell, which the values API cannot see.
-      readGridLinks("Lessons!E1:F400").catch(() => ({ first: [], runs: [] })),
+      // E and F for the handouts, I and J because a picture or a video can be a
+      // link attached to the cell's text, which no value or formula shows.
+      readGridLinks("Lessons!E1:J400").catch(() => ({ first: [], runs: [] })),
     ]);
 
     const display = values[0] || [];

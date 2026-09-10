@@ -522,6 +522,21 @@ check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissal
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
+// ---- the lesson picture and video, from Lessons I and J ----
+{
+  const rows = [];
+  rows[0] = ["~H001", "", "p. 12", "Read p12-18", "", "", "https://drive.google.com/open?id=ABC123", ""];
+  rows[1] = ["~J002", "", "", "", "", "", "", ""];
+  const runs = [];
+  runs[1] = []; runs[1][4] = [{ text: "the diagram", url: "https://example.org/diagram.png" }];
+  const L = P.parseLessons(rows, [], runs);
+  check("lesson picture: a Drive open?id link is the picture",
+    L.H001.image === "https://lh3.googleusercontent.com/d/ABC123", L.H001);
+  check("lesson picture: a link attached to the cell's text counts",
+    L.J002.image === "https://example.org/diagram.png", L.J002);
+  check("lesson row: page and homework still read", L.H001.page === "p. 12" && L.H001.homework === "Read p12-18");
+}
+
 // ---- the corrective writing assignment ----
 const pgrid = (() => {
   const g = [];

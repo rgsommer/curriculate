@@ -157,7 +157,7 @@ export function isImageUrl(u: string): boolean {
   return (
     /\.(png|jpe?g|gif|webp|svg|bmp|avif|heic)(\?|#|$)/i.test(s) ||
     /googleusercontent\.com\//i.test(s) ||
-    /drive\.google\.com\/(file\/d\/|uc\?|thumbnail\?)/i.test(s) ||
+    /drive\.google\.com\/(file\/d\/|uc\?|open\?|thumbnail\?)/i.test(s) ||
     /photos\.(google|app\.goo)\./i.test(s) ||
     /\/image|image\//i.test(s)
   );
@@ -246,8 +246,19 @@ export function parseLessons(
       const candidates = [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || [])];
       return candidates.find((u) => u && want(u)) || "";
     };
-    const image = pick(6, isImageUrl); // I
-    const video = pick(7, isVideoUrl); // J
+    // Column I is the picture column and J the video column, so what they hold
+    // is what they are for: a URL there is taken even when it does not look like
+    // a picture. A Drive link written "open?id=…" passes no image test at all,
+    // and requiring one left the lesson picture out. A link attached to the
+    // cell's text (Insert > Link) counts too — the cell then has neither a value
+    // nor a formula to read.
+    const runOf = (i: number) => (((linkRuns[r] || [])[i] || [])[0] || {}).url || "";
+    const anyUrl = (i: number, prefer: (u: string) => boolean) => {
+      const candidates = [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || []), runOf(i - 2)];
+      return candidates.find((u) => u && prefer(u)) || candidates.find(Boolean) || "";
+    };
+    const image = anyUrl(6, isImageUrl); // I
+    const video = anyUrl(7, isVideoUrl); // J
     const page = cell(2); // E
     const homework = cell(3); // F
 
@@ -967,7 +978,7 @@ export type RawInputs = {
   verticalTimes?: string[][]; // Vertical!A1:J200 — column A the period times
   lessons?: string[][]; // Lessons!C1:J400 values — the teacher's own material by code
   lessonFormulas?: string[][]; // Lessons!C1:J400 formulas
-  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E and F
+  lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E to J
   verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
   verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
 };
