@@ -1502,9 +1502,12 @@ export function writingOwed(grid: string[][], row3: string[]): { writing: string
   const scored = picked.filter((p) => p.col);
   if (!scored.length) return { writing: [], writingNote: "no column in any class block reads as daily scores" };
 
+  // A day counts only once it has actually been scored. Rows waiting for the
+  // rest of the year read as a column of noughts, and counting those made every
+  // class look like it had had a run of poor days before the year began.
   const dayRows: number[] = [];
   for (let r = NAME_ROW + 1; r < FLAG_ROW; r += 1) {
-    if (scored.some((p) => score(r, p.col) !== null)) dayRows.push(r);
+    if (scored.some((p) => (score(r, p.col) ?? 0) > 0)) dayRows.push(r);
   }
   const week = dayRows.slice(-5);
   const writing: string[] = [];
