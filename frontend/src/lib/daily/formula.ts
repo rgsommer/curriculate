@@ -36,9 +36,34 @@ export type Ctx = {
 };
 
 type Matrix = Val[][];
-type Val = string | number | boolean | null | Matrix;
+/** A LAMBDA, as LET binds it: the parameter names and the body's tokens. */
+type Fn = { lambda: true; params: string[]; body: Tok[]; scope: Scope };
+type Val = string | number | boolean | null | Matrix | Fn;
+type Scope = Map<string, Val>;
+type Arg = { toks: Tok[]; run: () => Val };
+
+const isFn = (v: Val): v is Fn => !!v && typeof v === "object" && !Array.isArray(v) && (v as Fn).lambda === true;
 
 const isMatrix = (v: Val): v is Matrix => Array.isArray(v);
+
+/** Apply a scalar operation element by element, the way Sheets spreads one. */
+function broadcast(a: Val, b: Val, op: (x: Val, y: Val) => Val): Val {
+  if (!isMatrix(a) && !isMatrix(b)) return op(a, b);
+  const rows = Math.max(isMatrix(a) ? a.length : 1, isMatrix(b) ? b.length : 1);
+  const cols = Math.max(
+    isMatrix(a) ? Math.max(...a.map((r) => r.length)) : 1,
+    isMatrix(b) ? Math.max(...b.map((r) => r.length)) : 1
+  );
+  const cell = (m: Val, r: number, c: number) =>
+    (isMatrix(m) ? (m[Math.min(r, m.length - 1)] || [])[Math.min(c, (m[0] || []).length - 1)] ?? "" : m);
+  const out: Matrix = [];
+  for (let r = 0; r < rows; r += 1) {
+    const row: Val[] = [];
+    for (let c = 0; c < cols; c += 1) row.push(op(cell(a, r, c), cell(b, r, c)));
+    out.push(row);
+  }
+  return out;
+}
 
 /* ------------------------------------------------------------------ *
  * Serial numbers
@@ -164,6 +189,7 @@ function tokenize(src: string): Tok[] {
 const TIME_LIKE = /^\d{1,2}:\d{2}(?::\d{2})?\s*(?:[AaPp][Mm])?$/;
 
 function single(v: Val): string | number | boolean | null {
+  if (isFn(v)) throw new FormulaError("a LAMBDA is not a value");
   if (isMatrix(v)) {
     const first = (v[0] || [])[0];
     return first === undefined ? null : (first as string | number | boolean | null);
@@ -219,7 +245,12 @@ function looksNumeric(v: Val): boolean {
   return /^-?[\d.,]+%?$/.test(t) || TIME_LIKE.test(t);
 }
 
-function compare(a: Val, b: Val, op: string): boolean {
+function compare(a: Val, b: Val, op: string): Val {
+  if (isMatrix(a) || isMatrix(b)) return broadcast(a, b, (x, y) => compareOne(x, y, op));
+  return compareOne(a, b, op);
+}
+
+function compareOne(a: Val, b: Val, op: string): boolean {
   const bothNumeric = looksNumeric(a) && looksNumeric(b);
   const x: number | string = bothNumeric ? toNum(a) : toStr(a).toLowerCase();
   const y: number | string = bothNumeric ? toNum(b) : toStr(b).toLowerCase();
@@ -241,7 +272,7 @@ function compare(a: Val, b: Val, op: string): boolean {
 class Parser {
   private i = 0;
 
-  constructor(private toks: Tok[], private ctx: Ctx) {}
+  constructor(private toks: Tok[], private ctx: Ctx, private scope: Scope = new Map()) {}
 
   parse(): Val {
     const v = this.expr();
@@ -294,9 +325,14 @@ class Parser {
       const t = this.peek();
       if (!t || t.kind !== "op" || (t.text !== "*" && t.text !== "/")) return left;
       this.i += 1;
-      const right = toNum(this.unary());
-      if (t.text === "/" && right === 0) throw new FormulaError("divide by zero");
-      left = t.text === "*" ? toNum(left) * right : toNum(left) / right;
+      const right = this.unary();
+      // Two arrays of conditions multiplied together is how the sheet says AND
+      // across a range, so the operators have to spread the way Sheets does.
+      left = broadcast(left, right, (x, y) => {
+        const d = toNum(y);
+        if (t.text === "/" && d === 0) throw new FormulaError("divide by zero");
+        return t.text === "*" ? toNum(x) * d : toNum(x) / d;
+      });
     }
   }
 
@@ -330,15 +366,18 @@ class Parser {
       const upper = t.text.toUpperCase();
       if (upper === "TRUE") { if (this.eat("(")) this.expect(")"); return true; }
       if (upper === "FALSE") { if (this.eat("(")) this.expect(")"); return false; }
+      // A name LET has bound, used on its own rather than called.
+      const bound = this.scope.get(upper);
+      if (bound !== undefined && !(this.peek() && this.peek()!.kind === "op" && this.peek()!.text === "(")) return bound;
       this.expect("(");
-      const args: (() => Val)[] = [];
+      const args: Arg[] = [];
       if (!this.eat(")")) {
         for (;;) {
           const start = this.i;
           this.skipArg();
           const end = this.i;
           const toks = this.toks.slice(start, end);
-          args.push(() => new Parser(toks, this.ctx).parse());
+          args.push({ toks, run: () => new Parser(toks, this.ctx, this.scope).parse() });
           if (this.eat(",") || this.eat(";")) continue;
           this.expect(")");
           break;
@@ -359,6 +398,28 @@ class Parser {
       else if (t.text === ")" || t.text === "}") { if (depth === 0) return; depth -= 1; }
       else if ((t.text === "," || t.text === ";") && depth === 0) return;
     }
+  }
+
+  /** The rows and columns a reference covers, for ROW() and COLUMN(). */
+  private refSpan(text: string): { top: number; bottom: number; left: number; right: number } {
+    let sheet = this.ctx.sheet || "";
+    let rest = text;
+    const bang = text.lastIndexOf("!");
+    if (bang >= 0) { sheet = text.slice(0, bang).replace(/^'|'$/g, ""); rest = text.slice(bang + 1); }
+    const parts = rest.split(":").map((x) => x.replace(/\$/g, ""));
+    const one = (x: string) => {
+      const m = x.match(/^([A-Za-z]{1,3})(\d+)?$/);
+      if (!m) throw new FormulaError(`bad reference ${x}`);
+      return { col: colToNumber(m[1]), row: m[2] ? parseInt(m[2], 10) : null };
+    };
+    const a = one(parts[0]);
+    const b = parts.length > 1 ? one(parts[1]) : a;
+    const bottom = b.row ?? sheetBottom(this.ctx, sheet);
+    const top = a.row ?? 1;
+    return {
+      top: Math.min(top, bottom), bottom: Math.max(top, bottom),
+      left: Math.min(a.col, b.col), right: Math.max(a.col, b.col),
+    };
   }
 
   private resolve(text: string): Val {
@@ -397,13 +458,13 @@ class Parser {
     return out;
   }
 
-  private call(name: string, args: (() => Val)[]): Val {
+  private call(name: string, args: Arg[]): Val {
     const arg = (i: number): Val => {
       if (i >= args.length) throw new FormulaError(`${name} wants more arguments`);
-      return args[i]();
+      return args[i].run();
     };
-    const opt = (i: number, dflt: Val): Val => (i < args.length ? args[i]() : dflt);
-    const all = (): Val[] => args.map((f) => f());
+    const opt = (i: number, dflt: Val): Val => (i < args.length ? args[i].run() : dflt);
+    const all = (): Val[] => args.map((f) => f.run());
     const flat = (): Val[] => {
       const out: Val[] = [];
       for (const v of all()) {
@@ -412,11 +473,18 @@ class Parser {
       }
       return out;
     };
+    // A LAMBDA that LET bound: upcoming(1) rather than a built-in.
+    const fn = this.scope.get(name);
+    if (isFn(fn)) {
+      const inner: Scope = new Map(fn.scope);
+      fn.params.forEach((pname, i) => inner.set(pname, i < args.length ? args[i].run() : ""));
+      return new Parser(fn.body, this.ctx, inner).parse();
+    }
 
     switch (name) {
       case "IF": return toBool(arg(0)) ? arg(1) : opt(2, "");
       case "IFS": {
-        for (let i = 0; i + 1 < args.length; i += 2) if (toBool(args[i]())) return args[i + 1]();
+        for (let i = 0; i + 1 < args.length; i += 2) if (toBool(args[i].run())) return args[i + 1].run();
         throw new FormulaError("IFS matched nothing");
       }
       case "IFERROR": try { return arg(0); } catch { return opt(1, ""); }
@@ -450,12 +518,85 @@ class Parser {
       }
       case "INDEX": {
         const m = arg(0);
-        if (!isMatrix(m)) return args.length > 1 ? m : m;
-        const r = args.length > 1 ? toNum(arg(1)) : 1;
-        const c = args.length > 2 ? toNum(arg(2)) : 1;
-        const row = m[Math.max(1, r) - 1] || [];
-        return row[Math.max(1, c) - 1] ?? "";
+        if (!isMatrix(m)) return m;
+        // An omitted row or column means the whole of that column or row —
+        // INDEX(range, , col) is how the sheet takes one weekday's column.
+        const blank = (i: number) => i >= args.length || args[i].toks.length === 0;
+        const r = blank(1) ? 0 : toNum(arg(1));
+        const c = blank(2) ? 0 : toNum(arg(2));
+        if (r === 0 && c === 0) return m;
+        if (r === 0) return m.map((row) => [row[Math.max(1, c) - 1] ?? ""]);
+        if (c === 0) return [(m[Math.max(1, r) - 1] || []).slice()];
+        return (m[Math.max(1, r) - 1] || [])[Math.max(1, c) - 1] ?? "";
       }
+      case "LET": {
+        // LET(name, value, …, result), each name visible to the ones after it.
+        const inner: Scope = new Map(this.scope);
+        for (let i = 0; i + 1 < args.length; i += 2) {
+          const nameToks = args[i].toks;
+          if (nameToks.length !== 1 || nameToks[0].kind !== "name") throw new FormulaError("LET wants a name");
+          inner.set(nameToks[0].text.toUpperCase(), new Parser(args[i + 1].toks, this.ctx, inner).parse());
+        }
+        const last = args[args.length - 1];
+        if (!last) throw new FormulaError("LET with no result");
+        return new Parser(last.toks, this.ctx, inner).parse();
+      }
+      case "LAMBDA": {
+        const params: string[] = [];
+        for (let i = 0; i + 1 < args.length; i += 1) {
+          const toks = args[i].toks;
+          if (toks.length !== 1 || toks[0].kind !== "name") throw new FormulaError("LAMBDA wants names");
+          params.push(toks[0].text.toUpperCase());
+        }
+        return { lambda: true, params, body: args[args.length - 1].toks, scope: this.scope };
+      }
+      case "FILTER": {
+        const src = arg(0);
+        if (!isMatrix(src)) throw new FormulaError("FILTER wants a range");
+        let keep: boolean[] = src.map(() => true);
+        for (let i = 1; i < args.length; i += 1) {
+          const cond = args[i].run();
+          const rows = isMatrix(cond) ? cond.map((r) => toBool((r || [])[0] ?? "")) : src.map(() => toBool(cond));
+          keep = keep.map((k, r) => k && (rows[r] ?? false));
+        }
+        const out = src.filter((_, r) => keep[r]);
+        if (!out.length) throw new FormulaError("FILTER kept nothing");
+        return out;
+      }
+      case "ROW": case "COLUMN": {
+        const toks = args[0] ? args[0].toks : [];
+        if (toks.length !== 1 || toks[0].kind !== "ref") throw new FormulaError(`${name} wants a reference`);
+        const span = this.refSpan(toks[0].text);
+        const out: Matrix = [];
+        if (name === "ROW") for (let r = span.top; r <= span.bottom; r += 1) out.push([r]);
+        else for (let c = span.left; c <= span.right; c += 1) out.push([c]);
+        return out;
+      }
+      case "RANDBETWEEN": {
+        // Deterministic for the day: a projector re-renders every few seconds
+        // and a fresh number each time would make the line jump about.
+        const lo = Math.ceil(toNum(arg(0)));
+        const hi = Math.floor(toNum(arg(1)));
+        if (hi < lo) throw new FormulaError("RANDBETWEEN backwards");
+        const seed = Math.floor(toSerial(this.ctx.now));
+        return lo + (((seed * 2654435761) >>> 0) % (hi - lo + 1));
+      }
+      case "DATEVALUE": {
+        const v = single(arg(0));
+        if (typeof v === "number") return Math.floor(v);
+        const t = String(v ?? "").trim();
+        const ms = Date.parse(t.replace(/-/g, "/"));
+        if (!Number.isFinite(ms)) throw new FormulaError(`not a date: ${t}`);
+        const d = new Date(ms);
+        return Math.floor(toSerial(d));
+      }
+      case "DAYS": return Math.floor(toNum(arg(0))) - Math.floor(toNum(arg(1)));
+      case "MOD": {
+        const b = toNum(arg(1));
+        if (b === 0) throw new FormulaError("MOD by zero");
+        return ((toNum(arg(0)) % b) + b) % b;
+      }
+      case "TEXT": return formatSerial(toNum(arg(0)), toStr(arg(1)));
       case "MATCH": {
         const needle = arg(0);
         const hay = arg(1);
@@ -488,6 +629,23 @@ class Parser {
       case "LOWER": return toStr(arg(0)).toLowerCase();
       case "PROPER": return toStr(arg(0)).replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
       case "CONCATENATE": case "CONCAT": return flat().map((v) => toStr(v)).join("");
+      case "JOIN": {
+        const sep = toStr(arg(0));
+        const rest: Val[] = [];
+        for (let i = 1; i < args.length; i += 1) {
+          const v = args[i].run();
+          if (isMatrix(v)) for (const row of v) rest.push(...row);
+          else rest.push(v);
+        }
+        // Sheets keeps the blanks, and the rules downstream tidy up after it.
+        return rest.map((v) => toStr(v)).join(sep);
+      }
+      case "INDIRECT": {
+        // The slot rules build a reference out of text — indirect("Display!"&Z3).
+        const ref = toStr(arg(0)).trim();
+        if (!ref) throw new FormulaError("INDIRECT with nothing to point at");
+        return this.resolve(ref);
+      }
       case "SUBSTITUTE": return toStr(arg(0)).split(toStr(arg(1))).join(toStr(arg(2)));
       case "VALUE": return toNum(arg(0));
       case "N": return looksNumeric(arg(0)) ? toNum(arg(0)) : 0;
@@ -506,6 +664,49 @@ class Parser {
       default: throw new FormulaError(`unsupported function ${name}`);
     }
   }
+}
+
+/**
+ * TEXT()'s date and time patterns, enough of them for the sheet's own use:
+ * "dddd, mmm d h:mm" and its neighbours.
+ */
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+export function formatSerial(serial: number, pattern: string): string {
+  const ms = EPOCH + Math.round(serial * DAY_MS);
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const ampm = /am\/pm|a\/p/i.test(pattern);
+  const hour24 = d.getUTCHours();
+  const hour = ampm ? ((hour24 % 12) || 12) : hour24;
+  let out = "";
+  let i = 0;
+  let seenHour = false;
+  while (i < pattern.length) {
+    const rest = pattern.slice(i);
+    const run = (rest.match(/^(d+|m+|y+|h+|s+|am\/pm|a\/p)/i) || [])[0];
+    if (!run) {
+      if (rest[0] === '"') { const end = rest.indexOf('"', 1); out += rest.slice(1, end < 0 ? undefined : end); i += end < 0 ? rest.length : end + 1; continue; }
+      out += rest[0];
+      i += 1;
+      continue;
+    }
+    const key = run.toLowerCase();
+    if (key[0] === "d") out += key.length >= 4 ? DAY_NAMES[d.getUTCDay()] : key.length === 3 ? DAY_NAMES[d.getUTCDay()].slice(0, 3) : key.length === 2 ? pad(d.getUTCDate()) : String(d.getUTCDate());
+    else if (key[0] === "y") out += key.length <= 2 ? pad(d.getUTCFullYear() % 100) : String(d.getUTCFullYear());
+    else if (key[0] === "h") { out += key.length >= 2 ? pad(hour) : String(hour); seenHour = true; }
+    else if (key[0] === "s") out += key.length >= 2 ? pad(d.getUTCSeconds()) : String(d.getUTCSeconds());
+    else if (key === "am/pm" || key === "a/p") out += hour24 < 12 ? (key === "a/p" ? "A" : "AM") : (key === "a/p" ? "P" : "PM");
+    else if (key[0] === "m") {
+      // "mm" is minutes when it follows an hour, months otherwise — the same
+      // rule Sheets uses.
+      if (seenHour) { out += key.length >= 2 ? pad(d.getUTCMinutes()) : String(d.getUTCMinutes()); seenHour = false; }
+      else out += key.length >= 4 ? MONTH_NAMES[d.getUTCMonth()] : key.length === 3 ? MONTH_NAMES[d.getUTCMonth()].slice(0, 3) : key.length === 2 ? pad(d.getUTCMonth() + 1) : String(d.getUTCMonth() + 1);
+    }
+    i += run.length;
+  }
+  return out;
 }
 
 /**

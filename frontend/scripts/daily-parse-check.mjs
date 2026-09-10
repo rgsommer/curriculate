@@ -670,6 +670,66 @@ const greet = '=if(timevalue(now())<0.5,if(timevalue(now())>timevalue("11:55"),"
 check("formula: the greeting cell, morning", ev(greet, at(9, 0)) === "Good morning, class!", ev(greet, at(9, 0)));
 check("formula: the greeting cell, afternoon", ev(greet, at(14, 0)) === "Good afternoon, class!", ev(greet, at(14, 0)));
 check("formula: the greeting cell, after dismissal", ev(greet, at(15, 40)) === "Goodbye, class!", ev(greet, at(15, 40)));
+// The memory-verse slot as the sheet writes it, cut down to the parts that
+// decide what shows: the week's card, the poem, and Setup C19 choosing which
+// column of Poems the poem comes from.
+{
+  const setupA = [];
+  setupA[18] = ["", "", "TRUE"]; // C19
+  const book2 = {
+    setup: [{ top: 1, left: 1, width: 6, height: 20, values: setupA },
+            { top: 1, left: 19, width: 10, height: 8, values: [[], [], [], []] }],
+    master: [{ top: 1, left: 1, width: 11, height: 2, values: [[], ["", "3"]] }], // B2 = week 3
+    poems: [{ top: 1, left: 1, width: 2, height: 60,
+              values: [["A one", "B one"], ["A two", "B two"], ["A three", "B three"]] }],
+    memorycards: [{ top: 1, left: 8, width: 1, height: 40, values: [["Trust in the Lord"], [""], ["@@@@"], ["with all your heart."]] }],
+  };
+  const at2 = (h, m) => new Date(2026, 8, 8, h, m, 0); // a Tuesday
+  const ev2 = (f) => F.evaluateFormula(f, { book: book2, now: at2(9, 10), sheet: "Setup" });
+  check("formula: JOIN over a column", ev2('=join("|",MemoryCards!H:H)').startsWith("Trust in the Lord||@@@@|with all your heart."), ev2('=join("|",MemoryCards!H:H)'));
+  check("formula: Setup C19 picks the other column of Poems",
+    ev2("=index(if(C19,Poems!B:B,Poems!A:A),Master!B2,1)") === "B three",
+    ev2("=index(if(C19,Poems!B:B,Poems!A:A),Master!B2,1)"));
+  setupA[18] = ["", "", "FALSE"];
+  check("formula: and the usual column when it is off",
+    ev2("=index(if(C19,Poems!B:B,Poems!A:A),Master!B2,1)") === "A three");
+  check("formula: INDIRECT builds a reference from text",
+    F.evaluateFormula('=indirect("Setup!C19")', { book: book2, now: at2(9, 10), sheet: "Setup" }) === "FALSE");
+}
+
+// The Daily Update cell (Setup!W5) in miniature: LET binding names, a LAMBDA
+// called by name, FILTER over a weekday column with a ROW() condition, and
+// TEXT() formatting a date.
+{
+  const va = [];
+  for (let r = 0; r < 14; r += 1) va[r] = [];
+  // VerticalAi F..J, rows 6..14 — Thursday is column I.
+  const put = (row, col, v) => { va[row - 1][col - 1] = v; };
+  // The grid starts at column D, so column I is the fifth of it.
+  ["one", "two", "skip-10", "skip-11", "five"].forEach((v, k) => put(6 + k, 6, v));
+  const book3 = {
+    verticalai: [{ top: 1, left: 4, width: 7, height: 20, values: va }],
+    setup: [{ top: 1, left: 1, width: 16, height: 40, values: (() => {
+      const g = []; for (let r = 0; r < 40; r += 1) g[r] = [];
+      g[28][12] = "Here is today"; // M29
+      g[27][1] = "9/17/2026 14:30"; g[27][2] = "History test"; // B28, C28
+      return g;
+    })() }],
+  };
+  const ev3 = (f) => F.evaluateFormula(f, { book: book3, now: new Date(2026, 8, 10, 9, 10, 0), sheet: "Setup" });
+  check("formula: INDEX takes a whole column", JSON.stringify(ev3("=index(VerticalAi!F6:J14,,4)")) !== "", ev3("=index(VerticalAi!F6:J14,,4)"));
+  const filt = '=join("|",filter(index(VerticalAi!F6:J14,,4),(row(VerticalAi!F6:F14)<>8)*(row(VerticalAi!F6:F14)<>9)))';
+  check("formula: FILTER with a ROW condition", ev3(filt) === "one|two|five||||", ev3(filt));
+  check("formula: LET binds names", ev3("=let(a,2,b,a*3,a+b)") === "8", ev3("=let(a,2,b,a*3,a+b)"));
+  check("formula: a LAMBDA called by the name LET gave it",
+    ev3('=let(twice,lambda(n,n*2),twice(4)&"")') === "8", ev3('=let(twice,lambda(n,n*2),twice(4)&"")'));
+  check("formula: TEXT formats a date", ev3('=text(datevalue("9/17/2026 14:30"),"dddd, mmm d")') === "Thursday, Sep 17",
+    ev3('=text(datevalue("9/17/2026 14:30"),"dddd, mmm d")'));
+  check("formula: RANDBETWEEN is steady through the day",
+    ev3("=randbetween(1,9)") === ev3("=randbetween(1,9)"));
+  check("formula: MOD and DAYS", ev3("=mod(days(45000,44990),4)") === "2", ev3("=mod(days(45000,44990),4)"));
+}
+
 check("formula: an unknown function falls back", F.evaluateOr("=SPARKLINE(A1:B2)", "the sheet's answer", { book, now: at(9, 0), sheet: "Setup" }) === "the sheet's answer");
 
 // The same rule through the E1 evaluator: the slot has no value in the sheet
