@@ -298,24 +298,34 @@ function VideoTile({ url, big, setBig }) {
   );
 }
 
-function PointsStrip({ points, labels, currentSec }) {
+function PointsStrip({ points, labels, currentSec, showPercent }) {
   const nums = points.numbers || [], pcts = points.percents || [];
   const n = Math.max(nums.length, pcts.length);
   // The sheet's own names (Points row 3) when it has them, so the chips follow
   // the sections taught this year; CLASS_LABELS is only the fallback.
   const names = (labels || []).length >= n ? labels : CLASS_LABELS;
   if (!n && points.entered == null) return null;
+  // One number at a time, the way the sheet's own line does it — the strip has
+  // six classes across the foot of the screen and two figures each is a row of
+  // small print. Which one is showing is said once, at the left, rather than
+  // marked on every chip.
+  const havePct = pcts.some((v) => v != null);
+  const haveNum = nums.some((v) => v != null);
+  const percentNow = showPercent && havePct;
   return (
     <div className="ptsrow">
       <div className="pts">
+        {haveNum && havePct ? (
+          <span className="ptswhat">{percentNow ? "of target" : "points"}</span>
+        ) : null}
         {Array.from({ length: n }).map((_, i) => {
           const label = names[i] || `#${i + 1}`;
           const pct = pcts[i];
+          const shown = percentNow ? (pct != null ? `${pct}%` : "—") : (nums[i] != null ? nums[i] : "—");
           return (
             <div key={label} className={`pt${label === currentSec ? " cur" : ""}`}>
               <span className="c">{label}</span>
-              <span className="n">{nums[i] != null ? nums[i] : "—"}</span>
-              <span className="pc">{pct != null ? `${pct}%` : ""}</span>
+              <span className="n">{shown}</span>
               <div className="bar"><i className={pct >= 100 ? "met" : ""} style={{ width: `${Math.min(100, (pct || 0) / 3)}%` }} /></div>
             </div>
           );
@@ -745,7 +755,14 @@ export default function DailyPage() {
   };
   const footer = (showPuzzle, endOfDay) => (
     <>
-      <PointsStrip points={points} labels={sources.pointsLabels} currentSec={cur && !cur.duty ? cur.sec : ""} />
+      {/* The sheet swaps the two on the minute; the board follows the same beat,
+          off its own clock so the scrubber moves it like everything else. */}
+      <PointsStrip
+        points={points}
+        labels={sources.pointsLabels}
+        currentSec={cur && !cur.duty ? cur.sec : ""}
+        showPercent={Math.floor(t) % 2 === 0}
+      />
       <div className="bottom">
         <span>
           {today && (

@@ -560,6 +560,15 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     cp.map((c) => c.name).join() === "7A,7B,7C,8A,8B", cp.map((c) => c.name));
   check("class points: the total and the percentage together, no waiting a minute",
     cp[0].total === 660 && cp[0].percent === 275 && cp[4].total === 290 && cp[4].percent === 181, cp[0]);
+  // The pair is told apart by the cell that carries the per-cent sign, not by
+  // which column it is in.
+  const swapped = [];
+  for (let r = 0; r < 40; r += 1) swapped[r] = [];
+  swapped[34][5] = "7A"; swapped[34][10] = "275%"; swapped[34][11] = "660";
+  const sw = P.pointsFromSetup(swapped, grid);
+  check("class points: the per-cent sign says which is which, not the column",
+    sw[0].total === 660 && sw[0].percent === 275, sw[0]);
+
   check("class points: a sheet without those rows says nothing",
     P.pointsFromSetup([], grid).length === 0);
   const plansAfterFour = P.parsePlansLine("That's it for Thursday, Sep 10, 2026...    -10-0-0-19-9-");
