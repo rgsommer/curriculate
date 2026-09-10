@@ -626,6 +626,17 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
   const M = P.parseLessons(noMirror, [], []);
   check("lessons: the column can be taken out again and the video is still the video",
     M.H001.video === "https://youtu.be/hist" && M.B004.video === "https://youtu.be/ce", [M.H001.video, M.B004.video]);
+  // What a mirror script leaves behind: J holds an =IMAGE() formula, so the
+  // cell's value is empty and only the formula carries the address.
+  const mirrored = P.parseLessons(
+    [["~H001", "", "p. 2", "Written task due Thu", "", "", "", "", "https://youtu.be/hist"]],
+    [["", "", "", "", "", "", "", '=IMAGE("https://lh3.googleusercontent.com/d/MIRRORED")', ""]],
+    []
+  );
+  check("lessons: an =IMAGE() written into the mirror column is the picture",
+    mirrored.H001.image === "https://lh3.googleusercontent.com/d/MIRRORED"
+    && mirrored.H001.video === "https://youtu.be/hist", mirrored.H001);
+
   check("lessons: and the picture is still the picture",
     M.H001.image === "https://lh3.googleusercontent.com/d/ABC123" && M.B004.image === "https://example.org/pic.png",
     [M.H001.image, M.B004.image]);
