@@ -769,7 +769,10 @@ export function parsePlansLine(s: string) {
   for (const raw of tail.split("-")) {
     const piece = raw.trim();
     if (!piece) { gap += 1; continue; }
-    const m = piece.match(/^(\d+(?:\.\d+)?)(%?)$/);
+    // The first value can carry a marker — the sheet writes "*10" on a day it
+    // wants flagged — and dropping the piece dropped that class and shifted
+    // every later one a place to the left.
+    const m = piece.match(/^[*+~!#\u2020]?\s*(\d+(?:\.\d+)?)(%?)$/);
     if (m) {
       if (m[2] === "%") percent = true;
       values.push(parseFloat(m[1]) * (gap >= 2 ? -1 : 1));
