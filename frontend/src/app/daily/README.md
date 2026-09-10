@@ -182,6 +182,7 @@ picture put into a cell with Insert &rsaquo; Image — either kind — is invisi
 to the board: that cell has neither a value nor a formula to read, and the flag,
 the feature cartoon and the lesson pictures all arrive empty.
 
+<<<<<<< HEAD
 `apps-script/mirror-cell-images.gs` fixes it in the sheet, without touching how
 the pictures are put there. The teacher keeps inserting and pasting them; the
 script finds the cells holding one, takes Google's temporary address, fetches the
@@ -200,6 +201,9 @@ A picture that has not changed is not uploaded again: the bytes are
 fingerprinted, so the address stays the same from run to run.
 
 Older note: Pasted into
+=======
+`apps-script/mirror-cell-images.gs` fixes it in the sheet. Pasted into
+>>>>>>> origin/main
 Extensions &rsaquo; Apps Script and run, it turns every in-cell picture into an
 `=IMAGE("…")` formula pointing at the same picture: the sheet looks exactly the
 same, and the formula is something the API can read. A picture inserted from a
