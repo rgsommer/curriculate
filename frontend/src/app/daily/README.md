@@ -195,11 +195,14 @@ The board reads that tab (`BoardImages!A2:B200`) and uses the address wherever
 the picture itself cannot be seen: the anthem flag, the feature cell, a lesson's
 picture by its row, and any Setup rule whose reference lands on a picture cell.
 
-The cells themselves are left exactly as they are. In particular **nothing is
-written to `Lessons!J`** — that is the video column, and an `=IMAGE()` formula
-put there would be read as the lesson's video. A picture that has not changed is
-not uploaded again: the bytes are fingerprinted, so the address stays the same
+The cells themselves are left exactly as they are. A picture that has not changed
+is not uploaded again: the bytes are fingerprinted, so the address stays the same
 from run to run.
+
+On the Lessons tab, **I is the picture, J the mirror column** — where a script of
+your own can write an `=IMAGE()` for the picture in I — **and K the video**. The
+board looks for the picture in I, then in what BoardImages recorded, then in J;
+the video comes only from K.
 
 Give it an hourly trigger, or call it from the on-edit trigger that already
 pings the board. A trigger cannot be bound to one column — Apps Script fires them

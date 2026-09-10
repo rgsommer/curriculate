@@ -152,16 +152,18 @@ export const FIXTURE: RawInputs = {
     ["students"],
   ],
   // Lessons!C1:J400 — C code, E page reference, F homework, I picture, J video.
+  // C to K: I the picture, J the mirror column the sheet's own script can write
+  // an =IMAGE() into, K the video.
   lessons: [
-    ["Code", "", "Page", "Homework", "", "", "Picture", "Video"],
-    ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review sheet: https://example.org/unit1-review.pdf", "", "", "", "https://youtu.be/lessonvideo1"],
-    ["~H001", "", "p. 2", "Written task \u201cHistorical Perspective\u201d, due Thu Sep 17", "", "", "https://example.com/history.png", ""],
-    ["G002", "", "p. 18-23", "Finish the Chapter 1 term list", "", "", "", ""],
+    ["Code", "", "Page", "Homework", "", "", "Picture", "Mirror", "Video"],
+    ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review sheet: https://example.org/unit1-review.pdf", "", "", "", "", "https://youtu.be/lessonvideo1"],
+    ["~H001", "", "p. 2", "Written task \u201cHistorical Perspective\u201d, due Thu Sep 17", "", "", "https://example.com/history.png", "", ""],
+    ["G002", "", "p. 18-23", "Finish the Chapter 1 term list", "", "", "", "", ""],
   ],
   lessonFormulas: [
     [],
     [],
-    ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', ""],
+    ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', "", ""],
     [],
   ],
   lessonLinkRuns: [

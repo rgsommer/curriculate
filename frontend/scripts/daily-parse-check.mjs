@@ -371,19 +371,19 @@ check("day plan: F to J are Monday to Friday", (byDay[4] || []).length === 4 && 
 
 // ---- the Lessons tab: the teacher's own material, keyed by lesson code ----
 const lessonRows = [
-  ["Code", "", "Page", "Homework", "", "", "Picture", "Video"],
-  ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review: https://example.org/unit1.pdf", "", "", "", "https://youtu.be/lessonvid"],
-  ["h001", "", "p. 2", "Written task due Thu Sep 17", "", "", "https://example.com/history.png", ""],
-  ["not a code", "", "x", "y", "", "", "", ""],
+  ["Code", "", "Page", "Homework", "", "", "Picture", "Mirror", "Video"],
+  ["~J003", "", "p. 7", "Complete NS7-3 p.7 and the Unit 1 review: https://example.org/unit1.pdf", "", "", "", "", "https://youtu.be/lessonvid"],
+  ["h001", "", "p. 2", "Written task due Thu Sep 17", "", "", "https://example.com/history.png", "", ""],
+  ["not a code", "", "x", "y", "", "", "", "", ""],
 ];
-const lessonForms = [[], [], ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', ""], []];
+const lessonForms = [[], [], ["", "", "", "", "", "", '=IMAGE("https://example.com/history.png")', "", ""], []];
 const lessonRuns = [[], [], [[], [{ text: "Due Dates handout", url: "https://example.org/due.pdf" }]], []];
 const L = P.parseLessons(lessonRows, lessonForms, lessonRuns);
 check("lessons: keyed by code without the tilde", !!L.J003 && !!L.H001 && Object.keys(L).length === 2, Object.keys(L));
 check("lessons: page and homework", L.J003.page === "p. 7" && L.J003.homework.startsWith("Complete NS7-3"), L.J003);
 check("lessons: the homework link becomes a handout", L.J003.links.length === 1 && L.J003.links[0].url === "https://example.org/unit1.pdf", L.J003.links);
 check("lessons: the address leaves the homework text", !/https?:/.test(L.J003.homework), L.J003.homework);
-check("lessons: video from column J", L.J003.video === "https://youtu.be/lessonvid", L.J003.video);
+check("lessons: video from column K", L.J003.video === "https://youtu.be/lessonvid", L.J003.video);
 check("lessons: picture from an =IMAGE() in column I", L.H001.image === "https://example.com/history.png", L.H001.image);
 check("lessons: a rich-text handout in the homework cell", L.H001.links.some((x) => x.label === "Due Dates handout"), L.H001.links);
 check("lessons: a row that is not a lesson is skipped", !L["NOT A CODE"], Object.keys(L));
@@ -584,8 +584,10 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
 // ---- the lesson picture and video, from Lessons I and J ----
 {
   const rows = [];
-  rows[0] = ["~H001", "", "p. 12", "Read p12-18", "", "", "https://drive.google.com/open?id=ABC123", ""];
-  rows[1] = ["~J002", "", "", "", "", "", "", ""];
+  // C to K: I the picture, J the mirror, K the video.
+  rows[0] = ["~H001", "", "p. 12", "Read p12-18", "", "", "https://drive.google.com/open?id=ABC123", "", "https://youtu.be/hist"];
+  rows[1] = ["~J002", "", "", "", "", "", "", "", ""];
+  rows[2] = ["~B004", "", "", "", "", "", "", "https://example.org/mirrored.png", "https://youtu.be/ce"];
   const runs = [];
   runs[1] = []; runs[1][4] = [{ text: "the diagram", url: "https://example.org/diagram.png" }];
   const L = P.parseLessons(rows, [], runs);
@@ -594,6 +596,10 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
   check("lesson picture: a link attached to the cell's text counts",
     L.J002.image === "https://example.org/diagram.png", L.J002);
   check("lesson row: page and homework still read", L.H001.page === "p. 12" && L.H001.homework === "Read p12-18");
+  check("lesson video: comes from K, not from the mirror column",
+    L.H001.video === "https://youtu.be/hist" && L.B004.video === "https://youtu.be/ce", [L.H001.video, L.B004.video]);
+  check("lesson picture: the mirror column counts when I is empty",
+    L.B004.image === "https://example.org/mirrored.png", L.B004);
 }
 
 // ---- the corrective writing assignment ----
