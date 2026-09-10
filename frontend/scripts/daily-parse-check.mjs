@@ -522,6 +522,23 @@ check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissal
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
+// ---- the "Today" panel must not carry another class's lesson ----
+{
+  const dayPlan = "Math 7A (23) 202\nToday we practice proportional reasoning and graphing.\n"
+    + "History 7A (23) 202\nToday we begin the course with expectations.";
+  const src = { ...P.EMPTY_SOURCES, verticalRow: [], a11: 9 * 60 };
+  src.verticalRow[5] = dayPlan;
+  check("daily text: the day's plan is not shown during a class",
+    P.evaluateDailyText(src, 11 * 60 + 6, 5, true) === "", P.evaluateDailyText(src, 11 * 60 + 6, 5, true));
+  check("daily text: but it is between classes", /Math 7A/.test(P.evaluateDailyText(src, 11 * 60 + 6, 5, false)));
+  // A genuine daily note is still shortened as before.
+  const note = { ...P.EMPTY_SOURCES, verticalRow: [], a11: 9 * 60 };
+  note.verticalRow[5] = "Things you need to know for today...\nGeography term list due next class.\nAnd a third line.";
+  check("daily text: a real note still shows, cut to its first lines",
+    P.evaluateDailyText(note, 11 * 60, 5, true) === "Things you need to know for today...\nGeography term list due next class.",
+    P.evaluateDailyText(note, 11 * 60, 5, true));
+}
+
 // ---- the pictures the API cannot see, recorded on the helper tab ----
 {
   const recorded = P.buildCellImages([
