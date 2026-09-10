@@ -616,6 +616,19 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
     L.H001.video === "https://youtu.be/hist" && L.B004.video === "https://youtu.be/ce", [L.H001.video, L.B004.video]);
   check("lesson picture: the mirror column counts when I is empty",
     L.B004.image === "https://example.org/mirrored.png", L.B004);
+
+  // The same rows with the mirror column taken back out: the video is in J now,
+  // and the board must still tell it from the picture.
+  const noMirror = [
+    ["~H001", "", "p. 12", "Read p12-18", "", "", "https://drive.google.com/open?id=ABC123", "https://youtu.be/hist"],
+    ["~B004", "", "", "", "", "", "https://example.org/pic.png", "https://youtu.be/ce"],
+  ];
+  const M = P.parseLessons(noMirror, [], []);
+  check("lessons: the column can be taken out again and the video is still the video",
+    M.H001.video === "https://youtu.be/hist" && M.B004.video === "https://youtu.be/ce", [M.H001.video, M.B004.video]);
+  check("lessons: and the picture is still the picture",
+    M.H001.image === "https://lh3.googleusercontent.com/d/ABC123" && M.B004.image === "https://example.org/pic.png",
+    [M.H001.image, M.B004.image]);
 }
 
 // ---- the corrective writing assignment ----

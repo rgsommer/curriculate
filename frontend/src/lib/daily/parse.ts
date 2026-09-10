@@ -249,26 +249,25 @@ export function parseLessons(
       const candidates = [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || [])];
       return candidates.find((u) => u && want(u)) || "";
     };
-    // Column I is the picture column and J the video column, so what they hold
-    // is what they are for: a URL there is taken even when it does not look like
-    // a picture. A Drive link written "open?id=…" passes no image test at all,
-    // and requiring one left the lesson picture out. A link attached to the
-    // cell's text (Insert > Link) counts too — the cell then has neither a value
-    // nor a formula to read.
+    // The picture and the video live at the end of the row, and the sheet may or
+    // may not carry a mirror column between them — so the columns are read for
+    // what they hold rather than by position. A link attached to the cell's text
+    // (Insert > Link) counts too: the cell then has neither a value nor a
+    // formula to read. This is what lets a column be inserted or removed there
+    // without the board showing a video where a picture should be.
     const runOf = (i: number) => (((linkRuns[r] || [])[i] || [])[0] || {}).url || "";
-    const anyUrl = (i: number, prefer: (u: string) => boolean) => {
-      const candidates = [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || []), runOf(i - 2)];
-      return candidates.find((u) => u && prefer(u)) || candidates.find(Boolean) || "";
-    };
+    const urlsAt = (i: number) => [urlFromFormula(formula(i)), ...(cell(i).match(URL_RE) || []), runOf(i - 2)]
+      .filter(Boolean) as string[];
+    const tail: string[] = [];
+    for (let i = 6; i <= 8; i += 1) tail.push(...urlsAt(i)); // I to K
     // The read starts at C, so this row of the grid is the same row of the sheet.
-    // I is the picture and K the video; J is the mirror column the sheet's own
-    // script can write an =IMAGE() into, so it is a third place to look for the
-    // picture and no place at all to look for the video.
-    const image = anyUrl(6, isImageUrl) // I
+    const video = tail.find(isVideoUrl) || "";
+    const image = tail.find((u) => isImageUrl(u) && u !== video)
       || images[cellImageKey(`Lessons!I${r + 1}`)]
-      || anyUrl(7, isImageUrl) // J, the mirror
+      // A Drive link written "open?id=…" passes no image test at all, so
+      // anything left that is not the video is taken as the picture.
+      || tail.find((u) => u !== video)
       || "";
-    const video = anyUrl(8, isVideoUrl); // K
     const page = cell(2); // E
     const homework = cell(3); // F
 
