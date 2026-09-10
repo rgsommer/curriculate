@@ -841,6 +841,8 @@ export default function DailyPage() {
               {row("status (as read)", cur ? cur.status : "")}
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
+              {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
+              {row("lesson video", (cur && cur.video) || "—")}
               {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
               {(sources.slots || []).map((sl, i) => (sl.name || sl.formula || sl.content ? (
                 <Fragment key={`slot${i}`}>
