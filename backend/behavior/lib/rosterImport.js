@@ -73,6 +73,22 @@ function parseDob(s) {
   return isNaN(d.getTime()) ? null : d;
 }
 
+// The "Common/Preferred Name" column often holds the student's FULL name
+// ("Gurshan Grewal") rather than a nickname. Stored as-is it doubles the surname
+// everywhere names render as `${preferredName || firstName} ${lastName}`
+// ("Gurshan Grewal Grewal"). Keep preferredName as a true preferred FIRST name:
+// drop a trailing surname, and blank it out when it just repeats the first name.
+function cleanPreferred(preferred, first, last) {
+  let p = String(preferred || "").trim();
+  if (!p) return "";
+  const l = String(last || "").trim();
+  if (l && p.toLowerCase().endsWith(" " + l.toLowerCase())) {
+    p = p.slice(0, p.length - l.length).trim();
+  }
+  if (p.toLowerCase() === String(first || "").trim().toLowerCase()) return "";
+  return p;
+}
+
 /**
  * Map an array of record objects (each carrying `__rowNo`) + the header list
  * into student records + a list of skipped rows. Shared by the CSV and XLSX
@@ -119,7 +135,7 @@ function buildStudents(records, headers) {
       externalId: get(row, "externalId"),
       lastName,
       firstName,
-      preferredName,
+      preferredName: cleanPreferred(preferredName, firstName, lastName),
       gender: stripTags(get(row, "gender")),
       classGroup: stripTags(get(row, "classGroup")),
       grade: stripTags(get(row, "grade")),
