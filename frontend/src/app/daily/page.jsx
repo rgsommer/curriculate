@@ -30,7 +30,7 @@ const SCRUB_RESET_MS = 45_000;
 const VERSE_MAX = 85;
 // How far the lesson type may be scaled to fill the screen, and how much slack
 // is left alone rather than triggering another search.
-const FIT_MIN = 0.75;
+const FIT_MIN = 0.66;
 const FIT_MAX = 1.9;
 const FIT_SLACK = 0.05;
 // The shortest a period may be cut to by the bell schedule.
@@ -348,6 +348,7 @@ export default function DailyPage() {
   const [badImages, setBadImages] = useState({});
   const [prayBig, setPrayBig] = useState(false);
   const scrubTouched = useRef(0);
+  const seenVersion = useRef(null);
 
   // URL options (client only)
   useEffect(() => {
@@ -378,6 +379,13 @@ export default function DailyPage() {
           writing: (j.points && j.points.writing) || [],
           writingNote: (j.points && j.points.writingNote) || "",
         }));
+        // A picture that failed once — a Drive link not yet shared, a blip —
+        // was dropped for the life of the page, and a projector page runs all
+        // day. A fresh read of the sheet is a fresh chance for it to load.
+        if (j.version != null && j.version !== seenVersion.current) {
+          seenVersion.current = j.version;
+          setBadImages((b) => (Object.keys(b).length ? {} : b));
+        }
       } catch (e) {
         if (alive) setError(e.name === "AbortError" ? "The sheet took too long to answer; retrying." : e.message || "Could not reach the sheet");
       } finally {
@@ -1084,6 +1092,18 @@ export default function DailyPage() {
       side = bigPicture(lessonPic.url, `Lesson picture${cur.code ? ` · ${cur.code}` : ""}`, `${picLeft} min left on screen`);
     } else {
       const blocks = [];
+      // The class opens on the verse: a couple of minutes' focus on it while
+      // everyone settles, in full and large. After the opening it is not gone —
+      // it carries on along the bottom bar, where it stays all day — just no
+      // longer the thing at the front of the room.
+      if (phase === "open" && verseFull) {
+        blocks.push(
+          <div key="v" className="block versefocus">
+            <h3>Verse of the day</h3>
+            <p>{verseFull}</p>
+          </div>
+        );
+      }
       if (phase === "open") {
         let o;
         if (/^Math/.test(cur.subj) && challenge) o = { h: "Math challenge", p: `${challenge} Treat for the first correct answer in; max one win a week.` };

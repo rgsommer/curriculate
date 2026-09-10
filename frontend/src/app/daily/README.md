@@ -164,6 +164,14 @@ The bubble says **what the benefit is**, not the sheet's shorthand
 | all three | All 3 | the whole class, from the first minute — it is the class's own reward | the "both" column, orange |
 | trailing ` 4` | `+2` | with whatever else shows | the bonus of two for being perfect the whole class |
 
+### The opening minutes
+
+A class opens on the verse. For the first `openMin` minutes (Setup, 5 by
+default) the day's verse leads the panel in full, large and in the serif — the
+brief focus while everyone settles. After that it is not gone: it carries on
+along the bottom bar, where it stays all day, just no longer the thing at the
+front of the room.
+
 ### The writing penalty
 
 The legend's last row — *"Writing assignment penalty if below x points z times in

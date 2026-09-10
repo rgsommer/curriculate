@@ -140,6 +140,10 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .plan li { margin: 1.2vh 0; }
 .panel { min-width: 0; border-left: 2px solid color-mix(in srgb, var(--subj) 28%, transparent); padding-left: 3vw; display: flex; flex-direction: column; gap: 2vh; min-height: 0; }
 .pic-left .panel { border-left: 0; border-right: 1px solid var(--line); padding-left: 0; padding-right: 3vw; }
+/* The panel is a flex column, so without this its blocks compress and clip
+   their own text — and the fit measurement, which reads where the blocks reach,
+   sees a screen that fits while the room sees a sentence cut in half. */
+.panel > .block, .panel > div { flex: 0 0 auto; }
 .block { border-radius: 6px; padding: 1.6vh 1.6vw; }
 .block h3 { margin: 0 0 .8vh; font-size: calc(clamp(13px, 2.2vh, 22px) * var(--fit)); letter-spacing: .1em; text-transform: uppercase; font-weight: 600; }
 .block p, .block li { font-size: calc(clamp(16px, 3.4vh, 36px) * var(--fit)); margin: 0; }
@@ -149,6 +153,10 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .block.navy { background: color-mix(in srgb, var(--subj) 10%, transparent); }
 .block.alert { background: var(--alert-fill); color: var(--alert); }
 .block.quiet { border: 1px dashed var(--line); color: var(--muted); }
+/* The opening minutes of a class: the verse in full, large, and then it gives
+   the screen back to the lesson and carries on along the bottom bar. */
+.block.versefocus { background: color-mix(in srgb, var(--subj) 8%, transparent); border-left: 4px solid var(--subj); }
+.block.versefocus p { font-family: var(--font-merriweather), Georgia, serif; font-style: italic; font-size: calc(clamp(18px, 4vh, 44px) * var(--fit)); line-height: 1.25; }
 /* The Kiss & Ride list: names in the order they were called. */
 .block ol.waiting { margin: 0; padding-left: 1.4em; list-style: decimal; font-variant-numeric: tabular-nums; }
 .block ol.waiting li { margin: .3vh 0; font-size: calc(clamp(14px, 2.4vh, 26px) * var(--fit)); }
