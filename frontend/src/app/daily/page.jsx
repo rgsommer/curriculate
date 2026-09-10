@@ -119,7 +119,22 @@ function periodsFromPlan(rows, plan, bell) {
   // to carry — that is what stretched a twenty-minute recess over an hour.
   const bounds = Array.from(new Set([...bell, ...rows.map((r) => r.start), ...all.map((c) => c.start)])).sort((a, b) => a - b);
   const endAfter = (start) => bounds.find((b) => b > start) ?? start + 60;
-  const out = all.map((c) => ({
+  // DisplayAI is the live, AI-written version of any class it does carry, so it
+  // wins for that period; the plan only fills in what that row does not have.
+  const live = new Map(rows.filter((r) => !r.empty && !r.duty && r.subj).map((r) => [r.start, r]));
+  const out = all.map((c) => {
+    const l = live.get(c.start);
+    if (l) {
+      return {
+        ...l,
+        end: endAfter(c.start),
+        code: l.code || c.code,
+        page: l.page || c.page,
+        image: l.image || c.image,
+        links: (l.links || []).length ? l.links : (c.links || []),
+      };
+    }
+    return {
     start: c.start,
     end: endAfter(c.start),
     text: c.today,
@@ -142,7 +157,8 @@ function periodsFromPlan(rows, plan, bell) {
     page: c.page || "",
     homework: c.homework || "",
     image: c.image || "",
-  }));
+    };
+  });
   for (const r of rows) if (!used.has(r.start)) out.push({ ...r, end: endAfter(r.start) });
   return out.sort((a, b) => a.start - b.start);
 }
@@ -427,7 +443,11 @@ export default function DailyPage() {
     const wd = new Date().getDay() + 1;
     const plan = (data.dayPlan || {})[wd] || [];
     const bell = data.dayTimes || [];
-    const built = rows.some((p) => !p.duty && !p.empty) || !plan.length ? rows : periodsFromPlan(rows, plan, bell);
+    // DisplayAI fills from the sheet's own clock, so first thing in the morning
+    // it carries one class and the rest of the day is not in it yet. The plan is
+    // therefore merged in rather than used only when DisplayAI is empty —
+    // otherwise the board believed the day ended after the one class it had.
+    const built = plan.length ? periodsFromPlan(rows, plan, bell) : rows;
     // Vertical column A is the school's own bell schedule, so nothing runs past
     // the next bell whatever the sheet's rows imply.
     const P = bell.length
@@ -593,11 +613,15 @@ export default function DailyPage() {
   // message block. Without this the board fell through to "No classes today"
   // once the last row had passed.
   const dismissalRow = P.find((p) => /dismiss/i.test(`${p.subj || ""} ${p.text || ""}`));
+  // What the sheet says about dismissal, in order of how plainly it says it. The
+  // last bell comes last: Vertical's time column runs on past the school day, so
+  // taking it ahead of the sheet's own "Dismissal" put the end of the day at
+  // 4:25 and the class screens ran an hour past home time.
   const endOfDayAt = [
     dismissalRow ? dismissalRow.start : null,
-    (data.dayTimes || []).length ? data.dayTimes[data.dayTimes.length - 1] : null,
-    setup.dismissalAt,
     (dismissal.times.find((m) => /dismiss/i.test(m.label)) || {}).at,
+    setup.dismissalAt,
+    (data.dayTimes || []).length ? data.dayTimes[data.dayTimes.length - 1] : null,
   ].find((x) => x != null) ?? null;
   // The last few minutes of the day: E1 gives its side of the screen over to the
   // dismissal package. The nation of the day comes forward then and before each

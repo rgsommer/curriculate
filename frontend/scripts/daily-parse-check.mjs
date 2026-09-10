@@ -553,6 +553,18 @@ const owed = P.writingOwed(pgrid, pgrid[2]);
 check("writing: two poor days in the last five", owed.writing.join() === "8A", owed);
 check("writing: the note says which columns it read", /8A=AQ/.test(owed.writingNote), owed.writingNote);
 check("writing: an empty grid says so", P.writingOwed([], []).writing.length === 0);
+// A year not yet played: the score rows are still noughts, and a nought is not
+// a poor day — it is a day that has not happened.
+{
+  const g = [];
+  for (let r = 0; r < 46; r += 1) g[r] = [];
+  const cols = [4, 17, 30, 43, 56];
+  ["7A", "7B", "7C", "8A", "8B"].forEach((n, i) => { g[2][cols[i] - 1] = n; });
+  [[8, 7, 6, 9, 8], [7, 8, 7, 8, 7]].forEach((row, d) => { row.forEach((v, i) => { g[3 + d][cols[i] - 1] = String(v); }); });
+  for (let r = 5; r < 45; r += 1) cols.forEach((c) => { g[r][c - 1] = "0"; });
+  const owed = P.writingOwed(g, g[2]);
+  check("writing: unplayed days do not count as poor ones", owed.writing.length === 0, owed);
+}
 check("column letters", P.columnName(4) === "D" && P.columnName(43) === "AQ" && P.columnName(74) === "BV");
 
 // ---- the privilege code, in words ----
