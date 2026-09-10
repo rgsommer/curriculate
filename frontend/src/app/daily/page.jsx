@@ -16,7 +16,7 @@
 // picture and any image the sheet puts in the feature cell E1).
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
+import { EMPTY_SOURCES, evaluateDailyText, evaluateFeature, evaluateGreeting, evaluateStatus, evaluateVerse, canonicalUrl, friendlyDutyTitle, anthemOfDay, statusStyle, statusWords, subjectTheme, tidyTruncated, truncateWords, weekdayColour } from "@/lib/daily/parse";
 
 const CLASS_LABELS = ["7A", "7B", "7C", "8A", "8B", "8C"];
 // The Setup slot table's own columns, for ?debug=1.
@@ -589,6 +589,8 @@ export default function DailyPage() {
   const clock = new Date();
   clock.setHours(Math.floor(t / 60), t % 60, 0, 0);
   const evaluated = evaluateFeature(sources, t, clock);
+  // The anthem's own column of Poems: the flag and the words for today.
+  const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday);
   const dailyText = evaluateDailyText(sources, t, weekday);
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
   // What actually happens at the bell, which is not always the next class: the
@@ -865,6 +867,7 @@ export default function DailyPage() {
               {row("status (as read)", cur ? cur.status : "")}
               {row("points classes", (sources.pointsClasses || []).map((c) => `${c.name}=${c.letter}${c.digits.join("")}`).join("  "))}
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
+              {row("O Canada", `${setup.blankTo != null ? `${fmt(setup.blankTo)} for ${setup.anthemMin} min` : "no window"}  ·  flag: ${anthem.image || "none the API can read"}  ·  ${anthem.lines.length} line(s) of words`)}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
               {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
@@ -954,6 +957,21 @@ export default function DailyPage() {
         {featureImage
           ? <div className="main solo">{bigPicture(featureImage, "Please listen", "", "fill")}</div>
           : <div className="main blank"><p>Please listen</p></div>}
+        {footer(false)}
+      </>
+    );
+  } else if (setup.blankTo != null && t >= setup.blankTo && t < setup.blankTo + setup.anthemMin && (anthem.image || anthem.lines.length)) {
+    // O Canada, straight after the announcements: the flag and the words, in
+    // whichever language the day's column of Poems carries them.
+    body = (
+      <>
+        {header({ title: "O Canada", chips: null, when: `Until ${fmt(setup.blankTo + setup.anthemMin)}`, leftHtml: <b>Please stand</b>, pct: 0 })}
+        <div className={`main anthem${anthem.image && anthem.lines.length ? " pic-right" : " solo"}`}>
+          {anthem.lines.length ? (
+            <div className="words">{anthem.lines.map((l, i) => <p key={i}>{l}</p>)}</div>
+          ) : null}
+          {anthem.image ? bigPicture(anthem.image, "", "", "fill") : null}
+        </div>
         {footer(false)}
       </>
     );

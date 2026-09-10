@@ -87,6 +87,7 @@ remembered and left out of later batches (`readRangesSafe`).
 | Time in advance to show reminders | Reminders block appears N minutes before the end |
 | Change time to red | Clock, countdown and progress bar turn red |
 | Show homework … minutes before end of class | "Write in your agenda" block appears |
+| O Canada for (C) | The anthem holds the screen for N minutes after the announcements — the words and the flag from the day's column of `Poems!F1:J3` — 5 if the row is missing, which it is in the sheet today |
 | Blank screen during announcements (C:D) | The feature cell has the screen to itself between those times — the flag for the anthem, scaled to fill — with "Please listen" underneath; a blank screen when E1 holds no picture |
 | Show Dismissal List (D) | Dismissal screen with the "Before you head out" list from that time |
 | Stand ready for dismissal (C) | "Get ready for dismissal" block appears N minutes before the last bell — five if the row is missing, which it is in the sheet today |

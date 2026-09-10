@@ -522,6 +522,24 @@ check("setup: ready window defaults to five minutes", P.parseSetup([]).dismissal
 check("setup: a row can change it", P.parseSetup([["", "Stand ready for dismissal", "8", "minutes"]]).dismissalReadyMin === 8);
 check("setup: the other labels still read", P.parseSetup([["", "Change time to red", "3", "minutes before end"]]).redAt === 3);
 
+// ---- O Canada: the flag and the words, from the day's column of Poems ----
+{
+  const poems = [
+    ["O Canada \u2014 English", "\u00d4 Canada \u2014 fran\u00e7ais", "", "", ""],
+    ["O Canada! Our home and native land!", "\u00d4 Canada! Terre de nos a\u00efeux,", "", "", ""],
+    ["", "", "", "", ""],
+  ];
+  const f = [[], [], ["", '=IMAGE("https://example.org/flag.png")', "", "", ""]];
+  const tue = P.anthemOfDay(poems, f, 3); // Sheets counts Sunday as 1
+  check("anthem: the day's own column", tue.lines[0] === "\u00d4 Canada \u2014 fran\u00e7ais" && /Terre de nos/.test(tue.lines[1]), tue);
+  check("anthem: the flag comes out of the picture cell", tue.image === "https://example.org/flag.png", tue);
+  const mon = P.anthemOfDay(poems, f, 2);
+  check("anthem: Monday sings in English and has no flag of its own", mon.lines[0] === "O Canada \u2014 English" && mon.image === "", mon);
+  check("anthem: the weekend has no column", P.anthemOfDay(poems, f, 1).lines.length === 0);
+  check("setup: the anthem window defaults to five minutes", P.parseSetup([]).anthemMin === 5);
+  check("setup: a row can change the anthem window", P.parseSetup([["", "O Canada for", "4", "minutes"]]).anthemMin === 4);
+}
+
 // ---- the lesson picture and video, from Lessons I and J ----
 {
   const rows = [];
