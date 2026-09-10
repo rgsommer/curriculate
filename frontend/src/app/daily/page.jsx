@@ -458,12 +458,25 @@ export default function DailyPage() {
           return next != null && next < p.end ? { ...p, end: next } : p;
         })
       : built;
-    const classes = P.filter((p) => !p.duty && !p.empty);
+    // A class cannot be a minute long. The time column carries bells left over
+    // from years with a class in that minute, and each one turned into a sliver
+    // of a period repeating the class before it — "10:00 Math 7A, 10:59 Math
+    // 7A" on the agenda. The sliver goes and the class before it keeps the time.
+    const kept = [];
+    for (const p of P) {
+      const prev = kept[kept.length - 1];
+      if (!p.duty && !p.empty && p.end - p.start < MIN_PERIOD_MIN) {
+        if (prev && prev.end <= p.start) prev.end = p.end;
+        continue;
+      }
+      kept.push({ ...p });
+    }
+    const classes = kept.filter((p) => !p.duty && !p.empty);
     let cur = null;
-    for (const p of P) if (t >= p.start && t < p.end) { cur = p; break; }
+    for (const p of kept) if (t >= p.start && t < p.end) { cur = p; break; }
     const nextClass = (after) => classes.find((c) => c.start >= after) || null;
     if (cur) cur = { ...cur, elapsed: t - cur.start, left: cur.end - t };
-    return { P, classes, cur, nextClass };
+    return { P: kept, classes, cur, nextClass };
   }, [data, t]);
 
   // Fill the screen. The lesson area grows its type until it just fits, so a
