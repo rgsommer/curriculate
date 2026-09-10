@@ -986,6 +986,14 @@ export type RawInputs = {
   lessonLinkRuns?: { text: string; url: string }[][][]; // links inside Lessons E to J
   verses?: string[][]; // Verses!A1:A400 — the source A5 picks the day's verse from
   verseWeek?: string[][]; // Vertical!B4 — the week number A5 indexes with
+  // The tabs the Setup slot rules reach into, so the board can run them itself.
+  displayTab?: string[][]; // Display!A1:F20
+  poemsAB?: string[][]; // Poems!A1:B60
+  memoryCards?: string[][]; // MemoryCards!H1:H40
+  vocab?: string[][]; // Vocab!A1:B60
+  masterWide?: string[][]; // Master!A1:K2
+  subjects?: string[][]; // Subjects!U1:U40
+  mathChallenge?: string[][]; // MathChallenge!A1:C60
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -1191,8 +1199,9 @@ export type Slot = {
   name: string;
   value: string; // row 4 as the sheet computed it, at the sheet's clock
   formula: string; // row 4's rule, which the board re-runs at its own clock
-  content: string; // row 3 — what the rule shows when it fires
+  content: string; // row 3 — the condition that decides whether the rule fires
   contentFormula: string;
+  generator: string; // row 5 — a rule that writes row 4 when row 4 is only a value
 };
 
 export type Sources = {
@@ -1257,8 +1266,13 @@ export function evaluateFeature(src: Sources, minutes: number, at?: Date): Featu
     ? { book: src.book, now: at, sheet: "Setup" }
     : null;
   // The slot as it reads at the time on the board, not at the time of the read.
-  const live = (s: { value: string; formula: string }): string =>
-    (ctx && s.formula ? evaluateOr(s.formula, s.value, ctx) : s.value).trim();
+  const live = (s: { value: string; formula: string; generator?: string }): string => {
+    if (!ctx) return s.value.trim();
+    // A slot whose row 4 is only a value keeps its rule in row 5; running that
+    // is what makes the cell current rather than as last pasted.
+    const rule = s.formula || (s.generator && !s.formula ? s.generator : "");
+    return (rule ? evaluateOr(rule, s.value, ctx) : s.value).trim();
+  };
   const out = (value: string, formula: string, source: string): FeatureResult => ({
     text: imageOf(value, formula) ? "" : String(value || "").trim(),
     image: imageOf(value, formula),
@@ -1270,7 +1284,7 @@ export function evaluateFeature(src: Sources, minutes: number, at?: Date): Featu
     return out(src.poemF3, src.poemF3Formula, "Poems!F3 (poem window)");
   }
   const slotAt = (i: number) =>
-    src.slots[i] || { priority: null, name: "", value: "", formula: "", content: "", contentFormula: "" };
+    src.slots[i] || { priority: null, name: "", value: "", formula: "", content: "", contentFormula: "", generator: "" };
   if (src.b7) return out(live(slotAt(1)), slotAt(1).formula, "Setup!V4 (B7 ticked)");
   if (src.d7) {
     const z = slotAt(5);
@@ -1386,11 +1400,27 @@ export function evaluateDailyText(src: Sources, minutes: number, weekday: number
 function buildBook(inp: RawInputs): Book {
   return {
     setup: [
-      { top: 1, left: 1, width: 6, height: 20, values: inp.setup || [] }, // A1:F20
+      { top: 1, left: 1, width: 16, height: 40, values: inp.setup || [] }, // A1:P40
       { top: 1, left: 13, width: 5, height: 8, values: inp.setupMessages || [] }, // M1:Q8
       { top: 1, left: 19, width: 10, height: 8, values: inp.slotBlock || [], formulas: inp.slotBlockFormulas || [] }, // S1:AB8
     ],
-    master: [{ top: 1, left: 2, width: 1, height: 2, values: inp.master || [] }], // B1:B2
+    master: (inp.masterWide || []).length
+      ? [{ top: 1, left: 1, width: 11, height: 2, values: inp.masterWide || [] }] // A1:K2
+      : [{ top: 1, left: 2, width: 1, height: 2, values: inp.master || [] }], // B1:B2
+    display: [{ top: 1, left: 1, width: 6, height: 20, values: inp.displayTab || [] }], // A1:F20
+    poems: [
+      { top: 1, left: 1, width: 2, height: 60, values: inp.poemsAB || [] }, // A1:B60
+      { top: 1, left: 6, width: 5, height: 3, values: inp.poems || [], formulas: inp.poemFormulas || [] }, // F1:J3
+    ],
+    memorycards: [{ top: 1, left: 8, width: 1, height: 40, values: inp.memoryCards || [] }], // H1:H40
+    vocab: [{ top: 1, left: 1, width: 2, height: 60, values: inp.vocab || [] }], // A1:B60
+    // The heads of Vertical and VerticalAi, out of reads the board already
+    // makes: B4 is the week number several of the slot rules index with, and
+    // F6:J14 is the day's plan the daily update is written from.
+    vertical: [{ top: 1, left: 1, width: 11, height: 20, values: (inp.verticalTimes || []).slice(0, 20) }],
+    verticalai: [{ top: 1, left: 4, width: 7, height: 20, values: (inp.vertical || []).slice(0, 20) }],
+    subjects: [{ top: 1, left: 21, width: 1, height: 40, values: inp.subjects || [] }], // U1:U40
+    mathchallenge: [{ top: 1, left: 1, width: 3, height: 60, values: inp.mathChallenge || [] }], // A1:C60
   };
 }
 
@@ -1407,6 +1437,10 @@ export function buildSources(inp: RawInputs): Sources {
   const block = (inp.slotBlockFormulas || []).map((r) => (r || []).slice(2));
   const formulas = block[3] || (inp.slotFormulas || [])[0] || [];
   const contentFormulas = block[2] || [];
+  // Row 5 is where a slot keeps the rule that writes its row 4 — the daily
+  // update is generated there and pasted into row 4, so reading row 4 alone
+  // gives whatever was pasted last, which can be a term out of date.
+  const generators = block[4] || [];
   const slots: Slot[] = [];
   for (let i = 0; i < 8; i += 1) {
     const p = parseInt(String(priorities[i] || "").trim(), 10);
@@ -1417,6 +1451,7 @@ export function buildSources(inp: RawInputs): Sources {
       formula: (formulas[i] || "").trim(),
       content: (content[i] || "").trim(),
       contentFormula: (contentFormulas[i] || "").trim(),
+      generator: (generators[i] || "").trim(),
     });
   }
   const poems = inp.poems || [];

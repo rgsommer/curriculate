@@ -874,7 +874,7 @@ export default function DailyPage() {
               {(sources.slots || []).map((sl, i) => (sl.name || sl.formula || sl.content ? (
                 <Fragment key={`slot${i}`}>
                   {row(`slot ${SLOT_COLS[i] || `#${i + 1}`} ${sl.name || ""}`.trim(),
-                    `priority ${sl.priority == null ? "—" : sl.priority} | row3: ${sl.contentFormula || sl.content || "—"} | row4: ${sl.formula || "—"} | sheet said: ${sl.value || "—"}`)}
+                    `priority ${sl.priority == null ? "—" : sl.priority} | row3: ${sl.contentFormula || sl.content || "—"} | row4: ${sl.formula || "—"} | row5: ${sl.generator || "—"} | sheet said: ${sl.value || "—"}`)}
                 </Fragment>
               ) : null))}
               {row("slots", (sources.slots || []).filter((x) => x.name).map((x) => `${x.name}=${x.priority ?? "-"}${x.value || x.formula ? "*" : ""}`).join("  "))}

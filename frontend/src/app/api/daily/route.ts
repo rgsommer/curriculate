@@ -66,7 +66,7 @@ export async function GET(req: Request) {
 
     const VALUES = [
       "DisplayAI!A1:F40",   // 0 the day itself
-      "Setup!A1:F20",       // 1 the labelled timing rules
+      "Setup!A1:P40",       // 1 the labelled timing rules, and the columns the slot rules substitute from
       "Setup!S1:AB8",       // 2 the E1 slot table (S2 is the picture the CE rule swaps in)
       "Setup!M1:Q8",        // 3 column M the weekday names, N to Q the message times
       "Display!E1",         // 4 the feature cell, either tab
@@ -76,12 +76,23 @@ export async function GET(req: Request) {
       "Riddles!D1:D400",    // 8
       "Master!B1:B2",       // 9
       "Verses!A1:A400",     // 10 what A5 picks the day's verse from
-      "Vertical!A1:J200",   // 11 column A the period times, F to J the day's plan
+      "Vertical!A1:K200",   // 11 column A the period times, F to K the day's plan
       // Row 3 the class names, row 46 the four privilege flags, and the days in
       // between — one read where there used to be two.
       "Points!A1:BV46",     // 12
       "Lessons!C1:J400",    // 13 the teacher's own material, keyed by lesson code
-      ...(waitingRange ? [waitingRange] : []), // 14
+      // The tabs the Setup slot rules reach into. They cost nothing extra — a
+      // values batch is one request however many ranges it names — and without
+      // them every one of those formulas throws and falls back to whatever the
+      // sheet computed at the moment of the read, which the scrubber cannot move.
+      "Display!A1:F20",     // 14 A7 the hour offset, A9/A11/A13 the times, B7/D7 the switches, C7/C9/C11 the rows
+      "Poems!A1:B60",       // 15 A the poem of the week, B the alternate (Setup C19)
+      "MemoryCards!H1:H40", // 16 the memory verse, joined
+      "Vocab!A1:B60",       // 17 the week's vocabulary
+      "Master!A1:K2",       // 18 B2 the week, K2 the anthem time
+      "Subjects!U1:U40",    // 19 the standing lines the daily update ends with
+      "MathChallenge!A1:C60", // 20 the question and its solution
+      ...(waitingRange ? [waitingRange] : []), // 21
     ];
     const FORMULAS = [
       "DisplayAI!D1:D40",   // 0 the video link on each row
@@ -109,7 +120,7 @@ export async function GET(req: Request) {
     const slotBlock = values[2] || [];
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
-    const waiting = waitingRange ? (values[14] || []) : [];
+    const waiting = waitingRange ? (values[21] || []) : [];
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
@@ -156,6 +167,13 @@ export async function GET(req: Request) {
       // Vertical!B4 lives inside the block above, so it costs no extra range.
       verseWeek: [[(((values[11] || [])[3] || [])[1]) || ""]],
       verticalTimes: values[11] || [],
+      displayTab: values[14] || [],
+      poemsAB: values[15] || [],
+      memoryCards: values[16] || [],
+      vocab: values[17] || [],
+      masterWide: values[18] || [],
+      subjects: values[19] || [],
+      mathChallenge: values[20] || [],
       pointsGrid: values[12] || [],
       pointsRow3: (values[12] || [])[2] || [],
       pointsRow46: (values[12] || [])[45] || [],
