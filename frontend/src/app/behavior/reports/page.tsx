@@ -19,7 +19,22 @@ type Stats = {
   strikeBuckets: Array<{ strikes: string; students: number }>;
 };
 
-const PIE_COLORS = ["#0f172a", "#f97316", "#22c55e"];
+// Validated categorical palette (dataviz reference, light surface): blue,
+// orange, aqua, yellow, magenta, green, violet, red — safe adjacent contrast.
+const PALETTE = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"];
+const PIE_COLORS = ["#2a78d6", "#eb6834", "#008300"];
+
+// Long behaviour names overflow and collide on the y-axis. Render each tick on a
+// single line, truncated with an ellipsis; the full name still shows in the tooltip.
+function BehaviourTick({ x, y, payload }: any) {
+  const s = String(payload?.value ?? "");
+  const label = s.length > 26 ? s.slice(0, 25) + "…" : s;
+  return (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={11} fill="#52514e">
+      {label}
+    </text>
+  );
+}
 
 export default function ReportsPage() {
   const [months, setMonths] = useState(12);
@@ -68,8 +83,8 @@ export default function ReportsPage() {
             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip />
             <Legend />
-            <Line type="monotone" dataKey="incidents" stroke="#0f172a" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="notices" stroke="#f97316" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="incidents" stroke="#2a78d6" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="notices" stroke="#eb6834" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -78,9 +93,11 @@ export default function ReportsPage() {
         <ResponsiveContainer width="100%" height={Math.max(160, data.topTypes.length * 30)}>
           <BarChart data={data.topTypes} layout="vertical" margin={{ left: 40, right: 16 }}>
             <XAxis type="number" tick={{ fontSize: 11 }} allowDecimals={false} />
-            <YAxis type="category" dataKey="type" tick={{ fontSize: 11 }} width={120} />
+            <YAxis type="category" dataKey="type" tick={<BehaviourTick />} width={170} tickLine={false} />
             <Tooltip />
-            <Bar dataKey="count" fill="#0f172a" radius={[0, 3, 3, 0]} />
+            <Bar dataKey="count" radius={[0, 3, 3, 0]}>
+              {data.topTypes.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+            </Bar>
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -93,7 +110,9 @@ export default function ReportsPage() {
               <XAxis dataKey="class" tick={{ fontSize: 11 }} />
               <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
               <Tooltip />
-              <Bar dataKey="count" fill="#0f172a" radius={[3, 3, 0, 0]} />
+              <Bar dataKey="count" radius={[3, 3, 0, 0]}>
+                {data.classCounts.map((_, i) => <Cell key={i} fill={PALETTE[i % PALETTE.length]} />)}
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -118,7 +137,7 @@ export default function ReportsPage() {
             <XAxis dataKey="strikes" tick={{ fontSize: 11 }} />
             <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
             <Tooltip />
-            <Bar dataKey="students" fill="#f97316" radius={[3, 3, 0, 0]} />
+            <Bar dataKey="students" fill="#eb6834" radius={[3, 3, 0, 0]} />
           </BarChart>
         </ResponsiveContainer>
       </ChartCard>
