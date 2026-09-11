@@ -60,8 +60,15 @@ export default function HousesPortal() {
   useEffect(() => {
     let initial = "";
     try {
-      const q = (new URLSearchParams(window.location.search).get("code") || "").trim();
+      const url = new URL(window.location.href);
+      const q = (url.searchParams.get("code") || "").trim();
       if (/^\d{3,6}$/.test(q)) initial = q;
+      // One-shot: consume ?code= and strip it, so a stale link doesn't re-apply
+      // a dead code on every refresh (the viewer can always reach the entry form).
+      if (url.searchParams.has("code")) {
+        url.searchParams.delete("code");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
     } catch { /* ignore */ }
     if (!initial) initial = localStorage.getItem(KEY) || "";
     if (initial) { localStorage.setItem(KEY, initial); setCode(initial); }
