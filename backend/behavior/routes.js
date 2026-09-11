@@ -642,12 +642,12 @@ router.post("/test-email", authAny, loadMembership, requireAdmin, async (req, re
         from: fromAddr ? { name: "Behaviours", address: fromAddr } : undefined,
         to,
         subject: "Behaviours — test email ✓",
-        text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString()}.`,
+        text: `This is a test from Behaviours. If you received it, email delivery is working.\n\nSent ${new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}.`,
         html: emailShell({
           title: "Email delivery is working ✓",
           contentHtml:
             `<p style="margin:0 0 10px;color:#334155;line-height:1.6">This is a test from Behaviours. If you can read this, your email delivery is set up correctly.</p>` +
-            `<p style="margin:0;color:#94a3b8;font-size:13px">Sent ${escapeHtml(new Date().toLocaleString())}.</p>`,
+            `<p style="margin:0;color:#94a3b8;font-size:13px">Sent ${escapeHtml(new Date().toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}.</p>`,
         }),
       });
       await audit(req.schoolId, "email.test_sent", req, { meta: { to } });
@@ -2952,7 +2952,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     const tDocs = await BehaviorTeacher.find({ _id: { $in: tIds } }).select("name").lean();
     const tName = Object.fromEntries(tDocs.map((t) => [String(t._id), t.name]));
     const lines = incidents.map((i) => {
-      const d = new Date(i.timestamp).toLocaleString("en-CA");
+      const d = new Date(i.timestamp).toLocaleString("en-CA", { timeZone: SCHOOL_TZ });
       const notes = (i.teacherNotes || []).map((n) => `    • teacher note (${n.name || "teacher"}): ${n.text}`).join("\n");
       const w = i.weight && i.weight !== 1 ? ` [intensity ×${i.weight}]` : "";
       return `- ${d} — ${i.behaviorSnapshot?.name || ""}${i.detailText ? `: ${i.detailText}` : ""}${w} [logged by ${tName[String(i.teacherId)] || "teacher"}]${notes ? `\n${notes}` : ""}`;
@@ -2996,7 +2996,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
     // exist only as notices home, so the note text is the record of what
     // happened. For "current", a brief line is enough.
     const noticeLines = notices.map((n) => {
-      const date = new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA");
+      const date = new Date(n.sentAt || n.createdAt).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ });
       const to = describeRecipients(n);
       const toLabel = to.length ? ` → emailed ${to.join(" + ")}` : "";
       if (scope !== "all") return `- ${date}: notice #${n.sequenceNo} (${n.reason}, ${n.status})${toLabel}`;
@@ -3012,7 +3012,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       ...notices.map((n) => new Date(n.sentAt || n.createdAt).getTime()),
     ].filter((t) => t && !isNaN(t)).sort((a, b) => a - b);
     const span = allTs.length
-      ? `${new Date(allTs[0]).toLocaleDateString("en-CA")} to ${new Date(allTs[allTs.length - 1]).toLocaleDateString("en-CA")}`
+      ? `${new Date(allTs[0]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} to ${new Date(allTs[allTs.length - 1]).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}`
       : "—";
 
     // How staff have MANAGED this student — the diligence record. This summary
@@ -3129,7 +3129,7 @@ router.post("/students/:id/admin-summary", authAny, loadMembership, async (req, 
       practiceText +
       `\n${scope === "current" ? "CURRENT trigger incidents" : "FULL incident history"} (incl. private teacher notes):\n${lines.join("\n") || "(none)"}\n\n` +
       (consequencesLogged.length
-        ? `Consequences applied & documented by staff:\n${consequencesLogged.map((c) => `- ${new Date(c.at).toLocaleDateString("en-CA")} — ${c.type}${c.detail ? `: ${c.detail}` : ""}${c.byName ? ` [by ${c.byName}]` : ""}`).join("\n")}\n\n`
+        ? `Consequences applied & documented by staff:\n${consequencesLogged.map((c) => `- ${new Date(c.at).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} — ${c.type}${c.detail ? `: ${c.detail}` : ""}${c.byName ? ` [by ${c.byName}]` : ""}`).join("\n")}\n\n`
         : "") +
       `Notices home${scope === "all" ? " (full content = the record of earlier offences)" : ""}:\n${noticeLines.join("\n") || "(none)"}`;
     const prompt =
@@ -3291,7 +3291,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
     }).sort({ timestamp: 1 }).select("timestamp").lean();
     const positivesNew = !firstPositive || Date.now() - new Date(firstPositive.timestamp).getTime() < 90 * DAY_MS;
     const positiveNote = positivesNew
-      ? `\nNOTE: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}. The small number of positive events (${positiveCount}) reflects that it is NEW — do NOT characterise the teacher/division as unbalanced, lacking positives, or skewed toward discipline; if anything, note that positive tracking is just getting underway.`
+      ? `\nNOTE: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})` : ""}. The small number of positive events (${positiveCount}) reflects that it is NEW — do NOT characterise the teacher/division as unbalanced, lacking positives, or skewed toward discipline; if anything, note that positive tracking is just getting underway.`
       : "";
 
     const who = scope === "me" ? (req.membership.name || "this teacher") : "all teachers (division-wide)";
@@ -3379,7 +3379,7 @@ router.post("/executive-summary", authAny, loadMembership, async (req, res, next
       (legacyOffences ? " — these include the historical notices already counted in the offence total above, not additional events." : ".") + `\n` +
       `Consequence follow-through: ${fuResolved} of ${fuTotal} resolved (${fuResolvedPct}%), ${fu.not_done} missed, ${fu.open} still open.\n` +
       `Current strike load (division): ${atThreshold} student(s) at or one away from the ${triggerCount}-strike trigger.` +
-      (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA")})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
+      (positivesNew ? `\n\nNote: positive-behaviour recognition was only recently introduced${firstPositive ? ` (first positive logged ${new Date(firstPositive.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })})` : ""}, so the small number of positives simply reflects that it's just getting underway.` : "");
 
     let summary = `Executive summary — ${who} (last ${months} months)\n\n${fallbackText}`;
     let aiUsed = false;
@@ -3741,7 +3741,7 @@ router.post("/students/:id/white-slip", authAny, loadMembership, canLog, async (
     const greeting = parentNames.length === 1 ? `Dear ${parentNames[0]},`
       : parentNames.length >= 2 ? `Dear ${parentNames[0]} and ${parentNames[1]},`
       : "Dear Parent/Guardian,";
-    const reasonLines = reasons.map((i) => `  • ${new Date(i.timestamp).toLocaleDateString("en-CA")}: ${i.behaviorSnapshot?.name}${i.detailText ? ` — ${i.detailText}` : ""}`).join("\n");
+    const reasonLines = reasons.map((i) => `  • ${new Date(i.timestamp).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })}: ${i.behaviorSnapshot?.name}${i.detailText ? ` — ${i.detailText}` : ""}`).join("\n");
     const note =
       `${greeting}\n\n` +
       `I'm writing to let you know that a white slip is being recommended for ${first} in light of the following behavioural matters:\n\n${reasonLines}\n\n` +
@@ -5268,7 +5268,7 @@ router.post("/homework/outstanding/post", authAny, loadMembership, canLog, async
       for (const it of o.items) {
         const k = `${it.subject || "—"} ${it.type === "work" ? "(class work)" : ""}`.trim();
         (groups[k] ||= { grade: it.categoryGrade, lines: [] });
-        groups[k].lines.push(`  • ${new Date(it.date).toLocaleDateString("en-CA")} — ${it.description || "(no description)"}`);
+        groups[k].lines.push(`  • ${new Date(it.date).toLocaleDateString("en-CA", { timeZone: SCHOOL_TZ })} — ${it.description || "(no description)"}`);
       }
       const blocks = Object.entries(groups).map(([k, g]) =>
         `${k}${g.grade != null ? ` — current grade ${g.grade}/10` : ""}:\n${g.lines.join("\n")}`

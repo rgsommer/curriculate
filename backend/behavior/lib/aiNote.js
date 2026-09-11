@@ -18,6 +18,9 @@
 
 const DEFAULT_TIMEOUT_MS = 12_000;
 
+// School-local timezone so dates render in the school's day, not the UTC server's.
+const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
+
 /**
  * @typedef {Object} NoteContext
  * @property {string} studentName      preferred name (or first name)
@@ -37,7 +40,7 @@ const DEFAULT_TIMEOUT_MS = 12_000;
 function fmtDate(d) {
   const dt = new Date(d);
   if (isNaN(dt.getTime())) return "";
-  return dt.toLocaleDateString("en-CA", { month: "short", day: "numeric" });
+  return dt.toLocaleDateString("en-CA", { month: "short", day: "numeric", timeZone: SCHOOL_TZ });
 }
 
 /**
