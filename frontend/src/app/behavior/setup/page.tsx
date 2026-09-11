@@ -1486,8 +1486,8 @@ function HousesSection({ config }: { config?: any }) {
           <button onClick={() => setPortalCodeTo()} disabled={portalBusy} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm disabled:opacity-40">
             {portalBusy ? "…" : portalCode ? "Random" : "Generate code"}
           </button>
-          {portalCode && <a href="/houses" target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
-          {portalCode && <a href="/houses/display" target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the wall display ↗</a>}
+          {portalCode && <a href={`/houses?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the portal ↗</a>}
+          {portalCode && <a href={`/houses/display?code=${encodeURIComponent(portalCode)}`} target="_blank" rel="noreferrer" className="text-xs text-slate-500 underline">open the wall display ↗</a>}
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input

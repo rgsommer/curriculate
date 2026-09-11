@@ -55,10 +55,16 @@ export default function HousesPortal() {
     }
   }
 
-  // Restore the saved code (entered once, remembered on this device).
+  // A ?code= in the URL (e.g. the "open the portal" link) wins over any code
+  // remembered on this device, so a rotated code always takes effect.
   useEffect(() => {
-    const saved = localStorage.getItem(KEY) || "";
-    if (saved) setCode(saved);
+    let initial = "";
+    try {
+      const q = (new URLSearchParams(window.location.search).get("code") || "").trim();
+      if (/^\d{3,6}$/.test(q)) initial = q;
+    } catch { /* ignore */ }
+    if (!initial) initial = localStorage.getItem(KEY) || "";
+    if (initial) { localStorage.setItem(KEY, initial); setCode(initial); }
   }, []);
 
   // Load + auto-refresh standings while a code is active.
@@ -68,7 +74,13 @@ export default function HousesPortal() {
     const load = async () => {
       const r = await fetchBoard(code);
       if (!alive) return;
-      if (!r.ok) { setErr(r.error || "error"); setBoard(null); return; }
+      if (!r.ok) {
+        setErr(r.error || "error"); setBoard(null);
+        // A rotated/invalid saved code shouldn't strand the viewer retrying it —
+        // drop it and show the entry form so they can enter the current one.
+        if (/no school/i.test(r.error || "")) { localStorage.removeItem(KEY); setCode(""); }
+        return;
+      }
       setErr("");
       setBoard(r.board!);
     };
