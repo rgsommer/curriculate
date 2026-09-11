@@ -293,6 +293,25 @@ router.post("/setup", authAny, async (req, res, next) => {
     const existing = await BehaviorTeacher.findOne({ userId: req.userId }).lean();
     if (existing) return res.status(409).json({ ok: false, error: "Account already belongs to a Behaviours school" });
 
+    // If this person was invited to an existing school, JOIN that school rather
+    // than creating a parallel one. Without this, an invited teacher who reaches
+    // the first-run setup screen (e.g. before clicking their invite link) spins
+    // up a duplicate empty school and gets stranded on its "import roster" page.
+    const myEmail = String(req.user?.email || "").toLowerCase();
+    const pendingInvite = myEmail
+      ? await BehaviorInvite.findOne({ email: myEmail, status: "pending" }).lean()
+      : null;
+    if (pendingInvite) {
+      await BehaviorTeacher.findOneAndUpdate(
+        { schoolId: pendingInvite.schoolId, userId: req.userId },
+        { $set: { email: myEmail, name: req.user.name || "", role: pendingInvite.role, status: "accepted" } },
+        { upsert: true }
+      );
+      await BehaviorInvite.updateOne({ _id: pendingInvite._id }, { $set: { status: "accepted" } });
+      await audit(pendingInvite.schoolId, "invite.accepted", req, { meta: { email: myEmail, role: pendingInvite.role, via: "setup" } });
+      return res.json({ ok: true, schoolId: pendingInvite.schoolId, joined: true });
+    }
+
     const schoolName = String(req.body?.schoolName || "").trim();
     if (!schoolName) return res.status(400).json({ ok: false, error: "schoolName required" });
 
