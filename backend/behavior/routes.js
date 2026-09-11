@@ -3455,24 +3455,38 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
     const pad = (n) => String(n).padStart(2, "0");
 
     const incidents = await BehaviorIncident.find({ schoolId: req.schoolId, timestamp: { $gt: cutoff } })
-      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode timestamp studentId")
+      .select("behaviorSnapshot.name behaviorSnapshot.triggerMode behaviorSnapshot.kind behaviorSnapshot.points timestamp studentId")
       .lean();
     const studentsAll = await BehaviorStudent.find({ schoolId: req.schoolId }).select("classGroup").lean();
     const classById = Object.fromEntries(studentsAll.map((s) => [String(s._id), s.classGroup || "—"]));
 
     const incByMonth = {};
+    const posByMonth = {};
     const byType = {};
     const byClass = {};
     const byMode = { THRESHOLD: 0, IMMEDIATE: 0, INTERACTION: 0 };
+    let posCount = 0;
     for (const i of incidents) {
       const mk = new Date(i.timestamp).toISOString().slice(0, 7);
       incByMonth[mk] = (incByMonth[mk] || 0) + 1;
+      if (i.behaviorSnapshot?.kind === "positive" || (i.behaviorSnapshot?.points || 0) > 0) {
+        posByMonth[mk] = (posByMonth[mk] || 0) + 1;
+        posCount += 1;
+      }
       const nm = i.behaviorSnapshot?.name || "Other";
       byType[nm] = (byType[nm] || 0) + 1;
       const cls = classById[String(i.studentId)] || "—";
       byClass[cls] = (byClass[cls] || 0) + 1;
       const mode = i.behaviorSnapshot?.triggerMode || "THRESHOLD";
       byMode[mode] = (byMode[mode] || 0) + 1;
+    }
+
+    // Consequences (white slips, detentions, calls home, …) by month.
+    const consequences = await BehaviorConsequence.find({ schoolId: req.schoolId, at: { $gt: cutoff } }).select("at").lean();
+    const consByMonth = {};
+    for (const c of consequences) {
+      const mk = new Date(c.at).toISOString().slice(0, 7);
+      consByMonth[mk] = (consByMonth[mk] || 0) + 1;
     }
 
     const notices = await BehaviorNotice.find({ schoolId: req.schoolId, createdAt: { $gt: cutoff } }).select("createdAt status").lean();
@@ -3491,7 +3505,13 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       axis.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}`);
       d.setMonth(d.getMonth() + 1);
     }
-    const monthly = axis.map((mk) => ({ month: mk, incidents: incByMonth[mk] || 0, notices: notByMonth[mk] || 0 }));
+    const monthly = axis.map((mk) => ({
+      month: mk,
+      incidents: incByMonth[mk] || 0,
+      positives: posByMonth[mk] || 0,
+      notices: notByMonth[mk] || 0,
+      consequences: consByMonth[mk] || 0,
+    }));
 
     // Current strike load (shared count).
     const agg = await BehaviorIncident.aggregate([
@@ -3513,6 +3533,8 @@ router.get("/stats", authAny, loadMembership, async (req, res, next) => {
       triggerCount,
       totals: {
         incidents: incidents.length,
+        positives: posCount,
+        consequences: consequences.length,
         notices: notices.length,
         noticesSent,
         students: activeStudents,

@@ -11,8 +11,8 @@ import { api, getToken, loginHref } from "../_lib/api";
 type Stats = {
   months: number;
   triggerCount: number;
-  totals: { incidents: number; notices: number; noticesSent: number; students: number; atOrNearThreshold: number; interactions: number };
-  monthly: Array<{ month: string; incidents: number; notices: number }>;
+  totals: { incidents: number; positives: number; consequences: number; notices: number; noticesSent: number; students: number; atOrNearThreshold: number; interactions: number };
+  monthly: Array<{ month: string; incidents: number; positives: number; notices: number; consequences: number }>;
   topTypes: Array<{ type: string; count: number }>;
   classCounts: Array<{ class: string; count: number }>;
   modePie: Array<{ name: string; value: number }>;
@@ -69,13 +69,15 @@ export default function ReportsPage() {
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <Stat label="Incidents" value={t.incidents} />
+        <Stat label="Positives" value={t.positives} />
+        <Stat label="Consequences" value={t.consequences} />
         <Stat label="Interactions (no note)" value={t.interactions} />
         <Stat label="Notices home" value={`${t.noticesSent}/${t.notices}`} />
         <Stat label="Active students" value={t.students} />
         <Stat label={`At / near ${data.triggerCount}-strike`} value={t.atOrNearThreshold} accent={t.atOrNearThreshold > 0} />
       </div>
 
-      <ChartCard title="Incidents & notices over time">
+      <ChartCard title="Activity over time (incidents, positives, consequences, notices)">
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={data.monthly} margin={{ left: -20, right: 8, top: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -84,7 +86,9 @@ export default function ReportsPage() {
             <Tooltip />
             <Legend />
             <Line type="monotone" dataKey="incidents" stroke="#2a78d6" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="positives" stroke="#008300" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="notices" stroke="#eb6834" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="consequences" stroke="#4a3aa7" strokeWidth={2} dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
