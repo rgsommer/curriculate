@@ -3768,6 +3768,8 @@ async function buildSchoolInsights(schoolId, config) {
   const fadeCutoff = now - fadeDays * DAY_MS;
   const d180 = new Date(now - 180 * DAY_MS);
   const d90 = now - 90 * DAY_MS;
+  const d60 = now - 60 * DAY_MS; // teacher-support window: tighter than 90d so a
+  // new term's counts aren't inflated by last term's logs (summer gap separates them)
   const d14 = now - 14 * DAY_MS;
   const d28 = now - 28 * DAY_MS;
 
@@ -3826,7 +3828,7 @@ async function buildSchoolInsights(schoolId, config) {
   // (90d). Objective counts, framed supportively — not a performance verdict.
   const tStats = {};
   for (const i of incs) {
-    if (new Date(i.timestamp).getTime() <= d90) continue;
+    if (new Date(i.timestamp).getTime() <= d60) continue;
     const t = String(i.teacherId);
     (tStats[t] ||= { neg: 0, pos: 0, students: new Set() });
     tStats[t].students.add(String(i.studentId));
@@ -3940,7 +3942,7 @@ async function composeAdminDigest(schoolId, config) {
   const flagged = insights.teachers.filter((t) => t.flag);
   const suggestions = flagged.length
     ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">` +
-        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} offence(s) and only ${t.positives} positive(s) this term — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
+        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} offence(s) and only ${t.positives} positive(s) in the last 60 days — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
       `</ul>`
     : `<p style="margin:0;color:#64748b">No staff stand out as needing support this week. 👍</p>`;
 
