@@ -115,6 +115,11 @@ function guddStatus(incidents, config) {
 }
 
 // Immediate white slip: record it as a consequence and email the logging teacher
+// School-local timezone for rendering dates/times in server-sent emails. The
+// server runs in UTC, so without this a 3:34pm occurrence prints as "7:34pm".
+// Override per deployment with SCHOOL_TZ; defaults to Ontario.
+const SCHOOL_TZ = process.env.SCHOOL_TZ || "America/Toronto";
+
 // (CC the VP) — "White Slip: reason, teacher, date". Never sent to a parent.
 async function fireWhiteSlip({ req, student, config, behaviorName, detailText, at, relatedIncidentId = null }) {
   const studentName = `${student.preferredName || student.firstName} ${student.lastName}`.trim();
@@ -140,7 +145,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
       text:
         `WHITE SLIP\n\nStudent: ${studentName}${student.classGroup ? ` (${student.classGroup})` : ""}\n` +
         `Reason: ${behaviorName}${detailText ? `\nDetail: ${detailText}` : ""}\n` +
-        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA")}\n\n— Behaviours`,
+        `Teacher: ${teacherName}\nDate: ${when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ })}\n\n— Behaviours`,
       html: emailShell({
         title: "White Slip",
         schoolName: config?.branding?.schoolName || "Behaviours",
@@ -151,7 +156,7 @@ async function fireWhiteSlip({ req, student, config, behaviorName, detailText, a
           `<tr><td style="padding:4px 0;color:#64748b">Reason</td><td style="padding:4px 0">${escapeHtml(behaviorName)}</td></tr>` +
           (detailText ? `<tr><td style="padding:4px 0;color:#64748b">Detail</td><td style="padding:4px 0">${escapeHtml(detailText)}</td></tr>` : "") +
           `<tr><td style="padding:4px 0;color:#64748b">Teacher</td><td style="padding:4px 0">${escapeHtml(teacherName)}</td></tr>` +
-          `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA"))}</td></tr>` +
+          `<tr><td style="padding:4px 0;color:#64748b">Date</td><td style="padding:4px 0">${escapeHtml(when.toLocaleString("en-CA", { timeZone: SCHOOL_TZ }))}</td></tr>` +
           `</table>`,
       }),
     });
