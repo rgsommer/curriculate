@@ -1155,22 +1155,72 @@ function HousesSection({ config }: { config?: any }) {
         api<{ students: any[] }>("/students"),
       ]);
       const houseById: Record<string, any> = Object.fromEntries((hs.houses || []).map((h) => [String(h._id), h]));
+      const esc = (x: any) => String(x).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
+
+      type Row = { name: string; grade: string; gender: string };
       const rows = (st.students || [])
         .filter((s) => s.houseId)
         .map((s) => {
           const h = houseById[String(s.houseId)] || {};
-          const grp = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : "";
+          const grp = s.houseGroup === 1 || s.houseGroup === 2 ? s.houseGroup : 0;
           const room = grp === 1 ? (h.roomGroup1 || "") : grp === 2 ? (h.roomGroup2 || "") : "";
-          return { house: h.name || "—", houseSort: h.sortOrder ?? 99, name: `${s.lastName}, ${s.firstName}`, grade: s.grade || "", grp, room };
-        })
-        .sort((a, b) => a.houseSort - b.houseSort || a.house.localeCompare(b.house) || (Number(a.grp) || 0) - (Number(b.grp) || 0) || a.name.localeCompare(b.name));
-      const esc = (x: any) => String(x).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c] as string));
-      const body = rows.map((r) =>
-        `<tr><td>${esc(r.house)}</td><td>${esc(r.name)}</td><td>${esc(r.grade)}</td><td style="text-align:center">${r.grp ? "#" + r.grp : ""}</td><td>${esc(r.room)}</td></tr>`
-      ).join("");
+          return {
+            house: h.name || "—", houseSort: h.sortOrder ?? 99, grp, room,
+            name: `${s.lastName}, ${s.firstName}`, grade: String(s.grade || "").trim(), gender: String(s.gender || "").trim(),
+          };
+        });
+
+      // Gender + grade counts for a footer line.
+      const breakdown = (items: Row[]) => {
+        const g: Record<string, number> = {};
+        const gr: Record<string, number> = {};
+        for (const r of items) {
+          const gk = r.gender ? r.gender.charAt(0).toUpperCase() : "—";
+          g[gk] = (g[gk] || 0) + 1;
+          const grk = r.grade || "—";
+          gr[grk] = (gr[grk] || 0) + 1;
+        }
+        const gStr = Object.entries(g).sort((a, b) => a[0].localeCompare(b[0])).map(([k, v]) => `${k}: ${v}`).join(" · ");
+        const grStr = Object.entries(gr).sort((a, b) => (Number(a[0]) || 99) - (Number(b[0]) || 99) || a[0].localeCompare(b[0])).map(([k, v]) => `Gr ${k}: ${v}`).join(" · ");
+        return `${items.length} student${items.length === 1 ? "" : "s"} &nbsp;·&nbsp; ${gStr || "—"} &nbsp;·&nbsp; ${grStr || "—"}`;
+      };
+      const tableFor = (items: Row[]) =>
+        `<table><thead><tr><th>Student</th><th>Grade</th><th>Gender</th></tr></thead><tbody>` +
+        items.sort((a, b) => a.name.localeCompare(b.name)).map((r) =>
+          `<tr><td>${esc(r.name)}</td><td style="text-align:center">${esc(r.grade)}</td><td style="text-align:center">${esc(r.gender)}</td></tr>`).join("") +
+        `</tbody></table>`;
+
+      // Group rows by house, then by group/room within each house.
+      const houseNames = Array.from(new Set(rows.map((r) => r.house)))
+        .sort((a, b) => (rows.find((r) => r.house === a)!.houseSort) - (rows.find((r) => r.house === b)!.houseSort) || a.localeCompare(b));
+      const sections = houseNames.map((hn) => {
+        const hRows = rows.filter((r) => r.house === hn);
+        const groups: Array<{ grp: number; room: string }> = [];
+        for (const r of hRows) if (!groups.some((x) => x.grp === r.grp)) groups.push({ grp: r.grp, room: r.room });
+        groups.sort((a, b) => a.grp - b.grp);
+        const roomsHtml = groups.map((g) => {
+          const gRows = hRows.filter((r) => r.grp === g.grp);
+          const label = g.grp ? `Group #${g.grp}${g.room ? ` — Room ${esc(g.room)}` : ""}` : "Unassigned group";
+          return `<div class="room"><h3>${label}</h3>${tableFor(gRows)}<p class="foot">Room total — ${breakdown(gRows)}</p></div>`;
+        }).join("");
+        return `<section class="house"><h2>${esc(hn)}</h2>${roomsHtml}<p class="hfoot">House total, ${esc(hn)} — ${breakdown(hRows)}</p></section>`;
+      }).join("");
+
       const html = `<!doctype html><meta charset="utf-8"><title>Houses list</title>` +
-        `<style>body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;margin:24px}h1{font-size:16pt}table{width:100%;border-collapse:collapse;margin-top:10px}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}th{background:#0f766e;color:#fff}tr:nth-child(even) td{background:#f1f5f9}@media print{@page{margin:1.2cm}}</style>` +
-        `<h1>Houses — student list</h1><table><thead><tr><th>House</th><th>Student</th><th>Grade</th><th>Group</th><th>Room</th></tr></thead><tbody>${body || `<tr><td colspan="5">No students assigned to a house yet.</td></tr>`}</tbody></table>`;
+        `<style>` +
+        `body{font-family:Arial,Helvetica,sans-serif;font-size:11pt;margin:24px;color:#0f172a}` +
+        `h1{font-size:16pt;margin:0 0 6px}h2{font-size:14pt;color:#0f766e;margin:0 0 4px}h3{font-size:12pt;margin:14px 0 4px}` +
+        `table{width:100%;border-collapse:collapse;margin-top:6px}th,td{border:1px solid #cbd5e1;padding:5px 8px;text-align:left}` +
+        `th{background:#0f766e;color:#fff}tr:nth-child(even) td{background:#f1f5f9}` +
+        `.foot{margin:6px 0 0;font-size:10pt;color:#475569;background:#ecfdf5;border:1px solid #a7f3d0;padding:5px 8px;border-radius:4px}` +
+        `.hfoot{margin:12px 0 0;font-size:10.5pt;font-weight:bold;color:#0f172a;background:#f1f5f9;border:1px solid #cbd5e1;padding:6px 8px;border-radius:4px}` +
+        `.house + .house{page-break-before:always}` +   /* new page per house */
+        `.room + .room{page-break-before:always}` +      /* break between rooms */
+        `.room,.house{page-break-inside:auto}` +
+        `@media print{@page{margin:1.2cm}}` +
+        `</style>` +
+        `<h1>Houses — student list</h1>` +
+        (sections || `<p>No students assigned to a house yet.</p>`);
       const w = window.open("", "_blank");
       if (w) { w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 250); }
     } catch (e: any) {
