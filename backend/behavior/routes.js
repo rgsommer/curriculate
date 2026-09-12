@@ -3977,6 +3977,21 @@ async function composeAdminDigest(schoolId, config) {
     [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
   const wkWhiteSlips = consRows.filter((c) => /white slip/i.test(c.type || "")).length;
 
+  // Positive recognitions logged in the last 7 days — celebrate the good, by name.
+  const posIncs = await BehaviorIncident.find({
+    schoolId, timestamp: { $gt: since7 },
+    $or: [{ "behaviorSnapshot.kind": "positive" }, { "behaviorSnapshot.points": { $gt: 0 } }],
+  }).select("behaviorSnapshot.name studentId teacherId timestamp").sort({ timestamp: -1 }).lean();
+  const posStudents = posIncs.length
+    ? await BehaviorStudent.find({ _id: { $in: posIncs.map((i) => i.studentId) } }).select("firstName preferredName lastName classGroup").lean()
+    : [];
+  const pName = Object.fromEntries(posStudents.map((s) =>
+    [String(s._id), `${s.preferredName || s.firstName} ${s.lastName || ""}`.trim() + (s.classGroup ? ` (${s.classGroup})` : "")]));
+  const posTeachers = posIncs.length
+    ? await BehaviorTeacher.find({ _id: { $in: [...new Set(posIncs.map((i) => String(i.teacherId)))] } }).select("name").lean()
+    : [];
+  const ptName = Object.fromEntries(posTeachers.map((t) => [String(t._id), t.name]));
+
   const li = (s) => `<li style="margin:3px 0">${s}</li>`;
   const section = (title, inner) => `<h3 style="margin:18px 0 6px;font-size:15px;color:#0f172a">${title}</h3>${inner}`;
   const flagged = insights.teachers.filter((t) => t.flag);
@@ -3996,6 +4011,10 @@ async function composeAdminDigest(schoolId, config) {
       consRows.length
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${consRows.slice(0, 15).map((c) => li(`<strong>${escapeHtml(cName[String(c.studentId)] || "—")}</strong> — ${escapeHtml(c.type || "consequence")}${c.detail ? `: ${escapeHtml(c.detail)}` : ""} <span style="color:#94a3b8">· ${escapeHtml(c.byName || "")}</span>`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None.</p>`) +
+    section("Positives (last 7 days)",
+      posIncs.length
+        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Positive")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
+        : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
     section("Most-logged (90 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
@@ -4007,6 +4026,7 @@ async function composeAdminDigest(schoolId, config) {
     `${wkNeg} offences · ${wkPos} positives · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
+    `Positives: ${posIncs.slice(0, 8).map((i) => `${pName[String(i.studentId)] || "—"} — ${i.behaviorSnapshot?.name || "Positive"}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
