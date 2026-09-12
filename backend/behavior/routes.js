@@ -4835,6 +4835,14 @@ router.get("/public/houses", async (req, res, next) => {
     const pointMatch = { schoolId: sid };
     if (config.housePointsResetAt) pointMatch.at = { $gt: new Date(config.housePointsResetAt) };
     const totalById = await houseTotals(sid, config);
+    // Only currently-enrolled students appear in the per-student displays —
+    // graduated/withdrawn (deactivated) students keep their history but drop off
+    // the leaderboards. Also track each active student's CURRENT house so points
+    // earned before a (re)assignment resolve to the right house today.
+    const activeStudents = await BehaviorStudent.find({ schoolId: sid, active: true }).select("_id houseId").lean();
+    const activeIds = activeStudents.map((s) => s._id);
+    const activeIdSet = new Set(activeIds.map((id) => String(id)));
+    const houseByStudent = Object.fromEntries(activeStudents.map((s) => [String(s._id), s.houseId ? String(s.houseId) : null]));
     const members = await BehaviorStudent.aggregate([
       { $match: { schoolId: sid, active: true, houseId: { $ne: null } } },
       { $group: { _id: "$houseId", n: { $sum: 1 } } },
@@ -4872,21 +4880,29 @@ router.get("/public/houses", async (req, res, next) => {
     }));
 
     // Recent point activity — last ~12 POSITIVE awards (no deductions, no names).
-    const recent = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } }).sort({ at: -1 }).limit(12).select("houseId points reason at").lean();
-    const activity = recent.map((e) => ({
-      house: houseById[String(e.houseId)]?.name || "",
-      color: houseById[String(e.houseId)]?.color || "#0f172a",
-      points: e.points,
-      reason: e.reason || "",
-      at: e.at,
-    }));
+    // Exclude awards to students no longer on the roster (graduated students'
+    // canned reasons looked like duplicates of current students'), and resolve
+    // each award's house from the student's CURRENT assignment when the stored
+    // one is stale (e.g. points earned before a house (re)assignment).
+    const recentRaw = await HousePointEvent.find({ ...pointMatch, points: { $gt: 0 } })
+      .sort({ at: -1 }).limit(40).select("houseId studentId points reason at").lean();
+    const activity = [];
+    for (const e of recentRaw) {
+      if (e.studentId && !activeIdSet.has(String(e.studentId))) continue; // not on the roster
+      let hid = e.houseId && houseById[String(e.houseId)] ? String(e.houseId) : null;
+      if (!hid && e.studentId) { const cur = houseByStudent[String(e.studentId)]; if (cur && houseById[cur]) hid = cur; }
+      if (!hid) continue;
+      const h = houseById[hid];
+      activity.push({ house: h.name, color: h.color || "#0f172a", points: e.points, reason: e.reason || "", at: e.at });
+      if (activity.length >= 12) break;
+    }
 
     // Daily winners (today): student who earned the most positive points, and the
     // house that earned the most net points since local midnight.
     const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
     const [topStuAgg, topHouseAgg] = await Promise.all([
       HousePointEvent.aggregate([
-        { $match: { schoolId: sid, studentId: { $ne: null }, points: { $gt: 0 }, at: { $gt: dayStart } } },
+        { $match: { schoolId: sid, studentId: { $in: activeIds }, points: { $gt: 0 }, at: { $gt: dayStart } } },
         { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
         { $sort: { pts: -1 } }, { $limit: 1 },
       ]),
@@ -4913,7 +4929,7 @@ router.get("/public/houses", async (req, res, next) => {
 
     // Top 3 students overall (positive points earned since the reset).
     const topStuOverall = await HousePointEvent.aggregate([
-      { $match: { ...pointMatch, studentId: { $ne: null }, points: { $gt: 0 } } },
+      { $match: { ...pointMatch, studentId: { $in: activeIds }, points: { $gt: 0 } } },
       { $group: { _id: "$studentId", pts: { $sum: "$points" } } },
       { $sort: { pts: -1 } }, { $limit: 3 },
     ]);
