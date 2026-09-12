@@ -3992,7 +3992,7 @@ async function composeAdminDigest(schoolId, config) {
     `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
     `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} offence(s) · ${wkPos} positive(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
     section("At or near a notice", top(insights.atThreshold, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.strikes}/${r.triggerCount} strikes`)) +
-    section("Consequences issued (last 7 days)",
+    section("Consequences issued / recommended (last 7 days)",
       consRows.length
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${consRows.slice(0, 15).map((c) => li(`<strong>${escapeHtml(cName[String(c.studentId)] || "—")}</strong> — ${escapeHtml(c.type || "consequence")}${c.detail ? `: ${escapeHtml(c.detail)}` : ""} <span style="color:#94a3b8">· ${escapeHtml(c.byName || "")}</span>`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None.</p>`) +
@@ -4006,7 +4006,7 @@ async function composeAdminDigest(schoolId, config) {
     `Week in review for ${school?.name || "your school"}.\n` +
     `${wkNeg} offences · ${wkPos} positives · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
-    `Consequences issued: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
+    `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
