@@ -732,7 +732,7 @@ export default function LogIncidentPage() {
           <label className="flex items-start gap-2 text-sm">
             <input type="checkbox" checked={sendImmediately} onChange={(e) => setSendImmediately(e.target.checked)} className="mt-0.5" />
             <span>
-              <span className="font-medium">Prepare a notice now — don&apos;t wait for the strike count</span> — bundles this offence with
+              <span className="font-medium">Prepare a notice now — don&apos;t wait for the strike count</span> — bundles this incident with
               any strikes already in the queue and drafts the note now, instead of waiting for the threshold. You still review and press Send,
               and it goes out only through your normal delivery settings — never automatically to a parent.
             </span>
@@ -740,7 +740,7 @@ export default function LogIncidentPage() {
         )}
         {kindFilter === "positive" && (
           <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-700">
-            Positive behaviours earn house points and are documented — they never count as a strike. Enough of them sends a good-news note home.
+            Encouraging behaviours earn house points and are documented — they never count as a strike. Enough of them sends a good-news note home.
           </p>
         )}
 
@@ -948,7 +948,7 @@ function BatchLog({
         {celebrated.length > 0 && (
           <div className="rounded-xl border border-green-300 bg-green-50 p-5">
             <h2 className="font-semibold text-green-900">{celebrated.length} earned a good-news note home 🎉</h2>
-            <p className="mt-1 text-sm text-green-800">Enough positives accumulated — a celebratory note is queued for each.</p>
+            <p className="mt-1 text-sm text-green-800">Enough encouragements accumulated — a celebratory note is queued for each.</p>
             <ul className="mt-2 space-y-1">
               {celebrated.map((r) => (
                 <li key={r.studentId} className="flex items-center justify-between text-sm">

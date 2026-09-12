@@ -68,8 +68,8 @@ export default function ReportsPage() {
 
       {/* Totals */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <Stat label="Incidents" value={t.incidents} />
-        <Stat label="Positives" value={t.positives} />
+        <Stat label="Total logged" value={t.incidents} />
+        <Stat label="Encouragements" value={t.positives} />
         <Stat label="Consequences" value={t.consequences} />
         <Stat label="Interactions (no note)" value={t.interactions} />
         <Stat label="Notices home" value={`${t.noticesSent}/${t.notices}`} />
@@ -77,7 +77,7 @@ export default function ReportsPage() {
         <Stat label={`At / near ${data.triggerCount}-strike`} value={t.atOrNearThreshold} accent={t.atOrNearThreshold > 0} />
       </div>
 
-      <ChartCard title="Activity over time (incidents, positives, consequences, notices)">
+      <ChartCard title="Activity over time (incidents, encouragements, consequences, notices)">
         <ResponsiveContainer width="100%" height={240}>
           <LineChart data={data.monthly} margin={{ left: -20, right: 8, top: 8 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -86,7 +86,7 @@ export default function ReportsPage() {
             <Tooltip />
             <Legend />
             <Line type="monotone" dataKey="incidents" stroke="#2a78d6" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="positives" stroke="#008300" strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey="positives" name="encouragements" stroke="#008300" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="notices" stroke="#eb6834" strokeWidth={2} dot={false} />
             <Line type="monotone" dataKey="consequences" stroke="#4a3aa7" strokeWidth={2} dot={false} />
           </LineChart>

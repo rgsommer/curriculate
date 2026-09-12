@@ -61,7 +61,7 @@ export default function InterventionPage() {
       {data.trends && data.trends.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold">Behaviour trend (last 6 months)</h2>
-          <p className="mt-0.5 text-xs text-slate-400"><span className="text-red-500">■</span> offences · <span className="text-green-600">■</span> positives</p>
+          <p className="mt-0.5 text-xs text-slate-400"><span className="text-red-500">■</span> incidents · <span className="text-green-600">■</span> encouragements</p>
           {(() => {
             const max = Math.max(1, ...data.trends.map((t) => t.neg + t.pos));
             return (
@@ -86,7 +86,7 @@ export default function InterventionPage() {
       {data.proactive && data.proactive.length > 0 && (
         <section className="rounded-xl border border-orange-200 bg-orange-50/50 p-5">
           <h2 className="font-semibold text-orange-900">Students to get ahead of</h2>
-          <p className="mt-0.5 text-xs text-slate-500">Offences rising in the last 2 weeks — a chance to step in before it reaches a notice.</p>
+          <p className="mt-0.5 text-xs text-slate-500">Incidents rising in the last 2 weeks — a chance to step in before it reaches a notice.</p>
           <ul className="mt-2 divide-y divide-orange-100">
             {data.proactive.map((p) => (
               <li key={p.studentId} className="flex items-center justify-between gap-2 py-2 text-sm">
@@ -230,9 +230,9 @@ export default function InterventionPage() {
       {data.teachers && data.teachers.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-semibold">Staff activity (last 60 days)</h2>
-          <p className="mt-0.5 text-xs text-slate-400">Offences vs positives logged. A ★ flags a heavier-than-typical offence load with few positives — a teacher who may welcome support or co-planning, not a performance judgement.</p>
+          <p className="mt-0.5 text-xs text-slate-400">Incidents vs encouragements logged. A ★ flags a heavier-than-typical incident load with few encouragements — a teacher who may welcome support or co-planning, not a performance judgement.</p>
           <table className="mt-2 w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Teacher</th><th className="text-right">Offences</th><th className="text-right">Positives</th><th className="text-right">Students</th><th className="text-right">Positive%</th></tr></thead>
+            <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Teacher</th><th className="text-right">Incidents</th><th className="text-right">Encouragements</th><th className="text-right">Students</th><th className="text-right">Encourage%</th></tr></thead>
             <tbody>
               {data.teachers.map((t) => (
                 <tr key={t.teacherId} className={`border-t border-slate-100 ${t.flag ? "bg-amber-50" : ""}`}>

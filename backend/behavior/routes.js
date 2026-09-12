@@ -3997,7 +3997,7 @@ async function composeAdminDigest(schoolId, config) {
   const flagged = insights.teachers.filter((t) => t.flag);
   const suggestions = flagged.length
     ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">` +
-        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} offence(s) and only ${t.positives} positive(s) in the last 60 days — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
+        flagged.map((t) => li(`<strong>${escapeHtml(t.name)}</strong> logged ${t.negatives} incident(s) and only ${t.positives} encouragement(s) in the last 60 days — a supportive check-in or co-planning may help, and encourage logging the good too.`)).join("") +
       `</ul>`
     : `<p style="margin:0;color:#64748b">No staff stand out as needing support this week. 👍</p>`;
 
@@ -4005,15 +4005,15 @@ async function composeAdminDigest(schoolId, config) {
 
   const contentHtml =
     `<p style="margin:0 0 4px;color:#334155">Week in review for <strong>${escapeHtml(school?.name || "your school")}</strong>.</p>` +
-    `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} offence(s) · ${wkPos} positive(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
+    `<p style="margin:0 0 12px;color:#64748b;font-size:13px">${wkNeg} incident(s) · ${wkPos} encouragement(s) · ${wkInt} documented interaction(s) · ${wkWhiteSlips} white slip(s) · ${wkNotices} notice(s) sent home (last 7 days).</p>` +
     section("At or near a notice", top(insights.atThreshold, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.strikes}/${r.triggerCount} strikes`)) +
     section("Consequences issued / recommended (last 7 days)",
       consRows.length
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${consRows.slice(0, 15).map((c) => li(`<strong>${escapeHtml(cName[String(c.studentId)] || "—")}</strong> — ${escapeHtml(c.type || "consequence")}${c.detail ? `: ${escapeHtml(c.detail)}` : ""} <span style="color:#94a3b8">· ${escapeHtml(c.byName || "")}</span>`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None.</p>`) +
-    section("Positives (last 7 days)",
+    section("Encouragements (last 7 days)",
       posIncs.length
-        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Positive")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
+        ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Encouragement")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
     section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
@@ -4023,17 +4023,17 @@ async function composeAdminDigest(schoolId, config) {
 
   const text =
     `Week in review for ${school?.name || "your school"}.\n` +
-    `${wkNeg} offences · ${wkPos} positives · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
+    `${wkNeg} incidents · ${wkPos} encouragements · ${wkInt} interactions · ${wkWhiteSlips} white slips · ${wkNotices} notices sent (last 7 days).\n\n` +
     `At/near a notice: ${insights.atThreshold.slice(0, 6).map((r) => `${r.name} (${r.strikes}/${r.triggerCount})`).join(", ") || "none"}.\n` +
     `Consequences issued / recommended: ${consRows.slice(0, 8).map((c) => `${cName[String(c.studentId)] || "—"} — ${c.type}`).join("; ") || "none"}.\n` +
-    `Positives: ${posIncs.slice(0, 8).map((i) => `${pName[String(i.studentId)] || "—"} — ${i.behaviorSnapshot?.name || "Positive"}`).join("; ") || "none"}.\n` +
+    `Encouragements: ${posIncs.slice(0, 8).map((i) => `${pName[String(i.studentId)] || "—"} — ${i.behaviorSnapshot?.name || "Encouragement"}`).join("; ") || "none"}.\n` +
     `Rising lately: ${insights.proactive.slice(0, 6).map((r) => `${r.name} (${r.recent}/2wk)`).join(", ") || "none"}.\n` +
     `Staff who may welcome support: ${flagged.map((t) => t.name).join(", ") || "none"}.\n\n` +
     `Open the dashboard → School insights for the full picture.`;
 
   return {
     subject: `Behaviours weekly digest — ${school?.name || "your school"}`,
-    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Behaviours", preheader: `${wkNeg} offences · ${wkPos} positives · ${wkNotices} notices this week`, contentHtml }),
+    html: emailShell({ title: "Weekly behaviour digest", schoolName: school?.name || "Behaviours", preheader: `${wkNeg} incidents · ${wkPos} encouragements · ${wkNotices} notices this week`, contentHtml }),
     text,
   };
 }
