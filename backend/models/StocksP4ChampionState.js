@@ -23,7 +23,9 @@ const Schema = new mongoose.Schema(
     modelId: { type: String, required: true, index: true },
     state: {
       type: String,
-      enum: ["INCUMBENT", "CHALLENGER", "PROMOTION_ELIGIBLE", "PROMOTED", "RETIRED"],
+      // P4.1: CONTROL is Model G (passive). CONTROLs are never
+      // evaluated for promotion. INCUMBENT is Model A (production).
+      enum: ["INCUMBENT", "CHALLENGER", "CONTROL", "PROMOTION_ELIGIBLE", "PROMOTED", "RETIRED"],
       default: "CHALLENGER",
       index: true,
     },

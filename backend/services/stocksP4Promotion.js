@@ -18,6 +18,7 @@ import StocksP4ChampionState from "../models/StocksP4ChampionState.js";
 import StocksP4Outcome from "../models/StocksP4Outcome.js";
 import StocksP4PickRecord from "../models/StocksP4PickRecord.js";
 import StocksP4Experiment from "../models/StocksP4Experiment.js";
+import StocksP4ExperimentStatus from "../models/StocksP4ExperimentStatus.js";
 import { CHAMPION_MODEL_ID, ALL_MODEL_IDS } from "./stocksScoringModels.js";
 
 // PUBLIC — evaluate every challenger against the frozen promotion
@@ -27,10 +28,14 @@ import { CHAMPION_MODEL_ID, ALL_MODEL_IDS } from "./stocksScoringModels.js";
 export async function evaluatePromotions({ experimentId, horizonDays = 20 }) {
   const experiment = await StocksP4Experiment.findOne({ experimentId }).lean();
   if (!experiment) throw new Error(`Unknown experimentId: ${experimentId}`);
+  const st = await StocksP4ExperimentStatus.findOne({ experimentId }).lean().catch(() => null);
+  if (st && st.status === "PILOT_INVALID") {
+    return { experimentId, status: "EXCLUDED", reason: st.invalidationReason, proposals: [] };
+  }
   const criteria = experiment.promotionCriteria;
 
   const outcomes = await StocksP4Outcome.find({ experimentId }).lean();
-  const byModel = new Map(); // model → array of {alphaPp, ticker, sector, ...}
+  const byModel = new Map();
   for (const o of outcomes) {
     const h = (o.horizons || []).find(x => x.horizonDays === horizonDays && x.status === "FILLED");
     if (!h || !Number.isFinite(h.alphaPp)) continue;
@@ -40,8 +45,13 @@ export async function evaluatePromotions({ experimentId, horizonDays = 20 }) {
 
   const champion = statsFor(byModel.get(CHAMPION_MODEL_ID) || []);
   const proposals = [];
+  // P4.1 §4: only real challengers (B-F) can be evaluated for promotion.
+  // Model G is the passive CONTROL — reported for context but never
+  // promoted. ALL_MODEL_IDS excludes G by construction, but we also
+  // hard-skip here for clarity.
   for (const model of ALL_MODEL_IDS) {
     if (model === CHAMPION_MODEL_ID) continue;
+    if (model === "G") continue;
     const samples = byModel.get(model) || [];
     const stats = statsFor(samples);
     const robust = robustnessCheck(samples, criteria);

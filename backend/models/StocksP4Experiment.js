@@ -15,7 +15,17 @@ import mongoose from "mongoose";
 const Schema = new mongoose.Schema(
   {
     experimentId: { type: String, required: true, unique: true, index: true },
-    startDate: { type: String, required: true, index: true },   // YYYY-MM-DD
+    // P4.1 trading-date semantics (spec §6): startDate is the local
+    // wall-clock date the row was written (may be a Saturday when a
+    // Fri-evening run is captured); tradingDate is the last completed
+    // US market session — Fri after close → Fri, weekend/Mon-premarket
+    // → Fri, holiday → prior business day. Every price observation
+    // and outcome is anchored to tradingDate, NEVER startDate.
+    startDate: { type: String, required: true, index: true },       // YYYY-MM-DD wall clock
+    tradingDate: { type: String, default: null, index: true },      // last completed US session
+    createdAtUtc: { type: Date, default: Date.now },
+    localExperimentDate: { type: String, default: null },
+    referenceTradingDate: { type: String, default: null },          // alias for tradingDate for clarity
     engineVersion: { type: String, required: true },
 
     // Frozen model definitions — objects, not references, so future
@@ -47,15 +57,28 @@ const Schema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// FIRST-WRITE-WINS: freeze the pre-save hook so an accidental
-// findOneAndUpdate cannot rewrite an existing definition. Callers
-// must create a NEW experimentId for material changes.
+// P4.1 immutability enforcement — APPLICATION-LEVEL (Mongo itself
+// does not enforce write-once, we do). Every mutation path Mongoose
+// exposes is guarded:
+//   save() on existing doc          — rejected
+//   updateOne / updateMany          — rejected
+//   findOneAndUpdate / findByIdAndUpdate — rejected
+//   replaceOne                      — rejected
+//   bulkWrite updateOne op          — rejected via the same hooks
+// Only inserts through `new(...).save()` for a NEW doc succeed.
+// Status changes (VALID → PILOT_INVALID) live in the separate
+// StocksP4ExperimentStatus collection so this row stays frozen.
 Schema.pre("save", function (next) {
   if (!this.isNew) {
-    return next(new Error("StocksP4Experiment: existing rows are immutable. Create a new experimentId instead."));
+    return next(new Error("StocksP4Experiment: existing rows are immutable. Store status changes in StocksP4ExperimentStatus."));
   }
   next();
 });
+for (const op of ["updateOne", "updateMany", "findOneAndUpdate", "replaceOne", "findByIdAndUpdate"]) {
+  Schema.pre(op, function (next) {
+    next(new Error(`StocksP4Experiment: ${op} is disabled — rows are immutable. Store status changes in StocksP4ExperimentStatus.`));
+  });
+}
 
 const StocksP4Experiment = mongoose.model("StocksP4Experiment", Schema);
 export default StocksP4Experiment;

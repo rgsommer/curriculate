@@ -71,14 +71,27 @@ Schema.index(
   { unique: true }
 );
 
-// Immutable once written. Any changes must be a NEW row (typically
-// via a NEW experimentId when weights change).
+// P4.1 immutability enforcement — APPLICATION-LEVEL, every mutation
+// path guarded. Only NEW insertions succeed; outcome data lives in
+// StocksP4Outcome, status changes in StocksP4ExperimentStatus.
 Schema.pre("save", function (next) {
-  if (!this.isNew) {
-    return next(new Error("StocksP4PickRecord: rows are immutable once written."));
-  }
+  if (!this.isNew) return next(new Error("StocksP4PickRecord: rows are immutable once written."));
   next();
 });
+for (const op of ["updateOne", "updateMany", "findOneAndUpdate", "replaceOne", "findByIdAndUpdate"]) {
+  Schema.pre(op, function (next) {
+    // Allow bulkWrite/upsert flow: when a query cannot match anything
+    // (unique index enforces one-shot insert), the pre-hook still
+    // fires. We whitelist `$setOnInsert` writes — those are inserts,
+    // not mutations. `$set` on an existing row is forbidden.
+    const upd = typeof this.getUpdate === "function" ? this.getUpdate() : null;
+    const opts = typeof this.getOptions === "function" ? this.getOptions() : {};
+    const keys = upd ? Object.keys(upd) : [];
+    const onlySetOnInsert = keys.length > 0 && keys.every(k => k === "$setOnInsert");
+    if (onlySetOnInsert && opts.upsert) return next();
+    return next(new Error(`StocksP4PickRecord: ${op} with $set/$unset is disabled — rows are immutable. Use a new insert.`));
+  });
+}
 
 const StocksP4PickRecord = mongoose.model("StocksP4PickRecord", Schema);
 export default StocksP4PickRecord;
