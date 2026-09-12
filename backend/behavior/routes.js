@@ -4064,7 +4064,10 @@ router.post("/admin-digest", authAny, loadMembership, requireAdmin, async (req, 
 // student's positive and negative contributions are each capped (0 = unlimited);
 // house-level awards (no studentId — e.g. house events) are never capped.
 async function houseTotals(schoolId, cfg) {
-  const match = { schoolId };
+  // Points earned by students no longer on the roster (graduated/withdrawn) drop
+  // out of the standings; whole-house awards (no studentId) always count.
+  const activeIds = (await BehaviorStudent.find({ schoolId, active: true }).select("_id").lean()).map((s) => s._id);
+  const match = { schoolId, $or: [{ studentId: null }, { studentId: { $in: activeIds } }] };
   if (cfg?.housePointsResetAt) match.at = { $gt: new Date(cfg.housePointsResetAt) };
   const posCap = Number(cfg?.houseCaps?.positive) || 0;
   const negCap = Number(cfg?.houseCaps?.negative) || 0;
