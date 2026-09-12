@@ -124,7 +124,12 @@ export async function GET(req: Request) {
     // Within the window (~2 days before the deadline through grace): nudge the
     // people we can reach — non-responding members + still-pending invitees.
     // Throttled to ~once a day, so they get a heads-up 1–2 days out.
-    if (now > dl - NUDGE_LEAD_MS) {
+    //
+    // The upper bound (dl + GRACE_MS) is essential: reveal-type engagements exit above
+    // at line ~118 (revealed past grace), but SIGN-UPS never reveal, so without this cap
+    // a signup stays "active" forever and keeps matching `now > dl - NUDGE_LEAD_MS` —
+    // firing a bogus "final call, closes within the hour" months after the party.
+    if (now > dl - NUDGE_LEAD_MS && now <= dl + GRACE_MS) {
       const lastNudge = e.deadline_nudged_at
         ? new Date(e.deadline_nudged_at as string).getTime()
         : 0;
