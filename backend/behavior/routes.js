@@ -3794,9 +3794,9 @@ async function buildSchoolInsights(schoolId, config) {
   const now = Date.now();
   const fadeCutoff = now - fadeDays * DAY_MS;
   const d180 = new Date(now - 180 * DAY_MS);
-  const d90 = now - 90 * DAY_MS;
-  const d60 = now - 60 * DAY_MS; // teacher-support window: tighter than 90d so a
-  // new term's counts aren't inflated by last term's logs (summer gap separates them)
+  const d60 = now - 60 * DAY_MS; // rolling window for most-logged / by-class /
+  // staff-support stats: tighter than 90d so a new term's counts aren't inflated
+  // by last term's logs (the summer gap separates the terms cleanly)
   const d14 = now - 14 * DAY_MS;
   const d28 = now - 28 * DAY_MS;
 
@@ -3834,10 +3834,10 @@ async function buildSchoolInsights(schoolId, config) {
     .map((sid) => ({ studentId: sid, name: nameOf(sById[sid]), classGroup: sById[sid].classGroup || "—", grade: sById[sid].grade || "—", strikes: strikes[sid], triggerCount, lastAt: new Date(lastStrike[sid]) }))
     .sort((a, b) => b.strikes - a.strikes || b.lastAt - a.lastAt);
 
-  // Most-logged (90d) + per-class counts (90d).
+  // Most-logged (60d) + per-class counts (60d).
   const count90 = {}; const last90 = {}; const classCounts = {};
   for (const i of incs) {
-    if (new Date(i.timestamp).getTime() <= d90) continue;
+    if (new Date(i.timestamp).getTime() <= d60) continue;
     const sid = String(i.studentId);
     count90[sid] = (count90[sid] || 0) + 1;
     const t = new Date(i.timestamp).getTime();
@@ -3852,7 +3852,7 @@ async function buildSchoolInsights(schoolId, config) {
     .sort((a, b) => b.count - a.count || a.classGroup.localeCompare(b.classGroup));
 
   // Teachers who may welcome support: high offence volume + low positive share
-  // (90d). Objective counts, framed supportively — not a performance verdict.
+  // (60d). Objective counts, framed supportively — not a performance verdict.
   const tStats = {};
   for (const i of incs) {
     if (new Date(i.timestamp).getTime() <= d60) continue;
@@ -4016,7 +4016,7 @@ async function composeAdminDigest(schoolId, config) {
         ? `<ul style="margin:0;padding-left:18px;color:#334155;line-height:1.6">${posIncs.slice(0, 15).map((i) => li(`<strong>${escapeHtml(pName[String(i.studentId)] || "—")}</strong> — ${escapeHtml(i.behaviorSnapshot?.name || "Positive")}${ptName[String(i.teacherId)] ? ` <span style="color:#94a3b8">· ${escapeHtml(ptName[String(i.teacherId)])}</span>` : ""}`)).join("")}</ul>`
         : `<p style="margin:0;color:#64748b">None logged — encourage staff to catch the good too.</p>`) +
     section("Students to get ahead of (rising lately)", top(insights.proactive, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.recent} in 2 weeks${r.prior ? ` (was ${r.prior})` : ""}`)) +
-    section("Most-logged (90 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
+    section("Most-logged (60 days)", top(insights.topRepeat, (r) => `${escapeHtml(r.name)} <span style="color:#94a3b8">${escapeHtml(r.classGroup)}</span> — ${r.count}`)) +
     section("Suggested support for staff", suggestions) +
     `<hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0">` +
     `<p style="margin:0;font-size:13px;color:#64748b">Open the dashboard → <strong>School insights</strong> for trends, the full staff view, and to act on any of the above.</p>`;

@@ -170,7 +170,7 @@ export default function InterventionPage() {
 
       {/* Most-logged */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Most-logged (last 90 days)</h2>
+        <h2 className="font-semibold">Most-logged (last 60 days)</h2>
         {data.topRepeat.length === 0 && <p className="mt-1 text-sm text-slate-400">No incidents logged recently.</p>}
         <ul className="mt-2 divide-y divide-slate-100">
           {data.topRepeat.map((r) => (
@@ -190,7 +190,7 @@ export default function InterventionPage() {
 
       {/* By class */}
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="font-semibold">Incidents by class (last 90 days)</h2>
+        <h2 className="font-semibold">Incidents by class (last 60 days)</h2>
         {data.byClass.length === 0 && <p className="mt-1 text-sm text-slate-400">No data yet.</p>}
         <ul className="mt-3 space-y-2">
           {data.byClass.map((c) => (
@@ -229,7 +229,7 @@ export default function InterventionPage() {
       {/* Teachers who may welcome support */}
       {data.teachers && data.teachers.length > 0 && (
         <section className="rounded-xl border border-slate-200 bg-white p-5">
-          <h2 className="font-semibold">Staff activity (last 90 days)</h2>
+          <h2 className="font-semibold">Staff activity (last 60 days)</h2>
           <p className="mt-0.5 text-xs text-slate-400">Offences vs positives logged. A ★ flags a heavier-than-typical offence load with few positives — a teacher who may welcome support or co-planning, not a performance judgement.</p>
           <table className="mt-2 w-full text-sm">
             <thead><tr className="text-left text-xs uppercase text-slate-400"><th className="py-1">Teacher</th><th className="text-right">Offences</th><th className="text-right">Positives</th><th className="text-right">Students</th><th className="text-right">Positive%</th></tr></thead>
