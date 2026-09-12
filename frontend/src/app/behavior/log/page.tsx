@@ -603,19 +603,19 @@ export default function LogIncidentPage() {
             onClick={() => { setKindFilter("negative"); setBehaviorId(""); setKeywordFilter(""); }}
             className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "negative" ? "border-red-600 bg-red-600 text-white" : "border-red-200 bg-white text-red-600"}`}
           >
-            ✕ Negative
+            ✕ Correcting
           </button>
           <button
             type="button"
             onClick={() => { setKindFilter("positive"); setBehaviorId(""); setKeywordFilter(""); }}
             className={`rounded-xl border px-4 py-3 text-base font-semibold ${kindFilter === "positive" ? "border-green-600 bg-green-600 text-white" : "border-green-200 bg-white text-green-600"}`}
           >
-            ✓ Positive
+            ✓ Encouraging
           </button>
         </div>
 
         <div>
-          <span className="mb-1 block text-sm font-medium text-slate-600">{kindFilter === "positive" ? "Positive behaviour" : "Behaviour"}</span>
+          <span className="mb-1 block text-sm font-medium text-slate-600">{kindFilter === "positive" ? "Encouraging behaviour" : "Behaviour"}</span>
           {/* Keyword chips to narrow the list quickly (like the class chips). */}
           {keywords.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
