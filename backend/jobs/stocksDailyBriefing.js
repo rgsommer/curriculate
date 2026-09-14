@@ -1072,7 +1072,9 @@ async function renderDailyPicksDeterministic(dailyPicks, ctx = {}) {
       "",
       "## 🎯 Today's picks — NO QUALIFYING OPPORTUNITY",
       "",
-      "> **The scanner ran the full eligible universe today and no candidate cleared the absolute qualifying threshold.**",
+      "> **PRODUCTION MODEL A — NO QUALIFYING OPPORTUNITY.** The scanner ran the full eligible universe under the incumbent Model A and no candidate cleared its absolute qualifying threshold.",
+      "> ",
+      "> _AlphaForge shadow experiment: Models A-F are running prospectively; challengers cannot authorize production trades until they clear pre-registered promotion criteria._",
       "> ",
       "> A pick requires all three: composite ≥ threshold, external nominations ≥ threshold, and ≥ N confirmation flags.",
       "> This is by design — we do not manufacture two ideas every day to fill a card. Waiting is a valid action.",
@@ -1700,7 +1702,7 @@ export function validateMandateFunding({ md, mandateRecs, canonical }) {
   return { md: filteredMd, mandateRecs: filteredRecs, fundingStripped };
 }
 
-function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null, dailyPicks = [] }) {
+function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], stopMonitor, sleeveBalance, positions, cashAccounts, fxUsdCad, horizonRows, tradingRegime, sectorRotation, sectorTransitions = null, recentExits, mandateLivePrices, riskVar, quantSignals, pickGateStatus = null, dailyPicks = [], dataFreshness = null }) {
   // Concentration mandate metadata (populated inside the §1 loop below).
   // Returned alongside the rendered markdown so the caller can enforce
   // these lines as the authoritative version in the final briefing —
@@ -2832,7 +2834,11 @@ function renderDeterministicPrefix({ monitorAlerts, monitorStopHitRecs = [], sto
   // you buy" ordering the operator expects when placing orders top-down.
   const combinedMandatory = [...mandatory, ...mandatoryLater];
   if (combinedMandatory.length === 0) {
-    chunks.push("None. Portfolio is inside all hard rules today.");
+    // P4.2 spec §3: the "portfolio is inside all hard rules" claim
+    // may appear ONLY when every input the hard-rule check needs is
+    // fresh. Otherwise say so honestly and fail closed for risk-input
+    // staleness.
+    chunks.push(dataFreshness?.mandateLineText || "None. Portfolio is inside all hard rules today.");
   } else {
     // Paired sub-items (REDEPLOY, CORE DEPLOY, etc.) are emitted as
     // separate mandatory[] entries but MUST render as indented children
@@ -4134,6 +4140,18 @@ export async function generateBriefing(profile) {
         return null;
       })
     : null;
+  // P4.2: fetch every-source freshness once so the §1 mandate line and
+  // (later) the section-header "Snapshot AsOf" chip can render the
+  // correct wording per spec §3. Fail-open — if the fetch errors,
+  // fall back to the historical wording rather than blocking the
+  // briefing.
+  let p4_dataFreshness = null;
+  try {
+    const { describeBriefingDataFreshness } = await import("../services/stocksBriefingDataFreshness.js");
+    p4_dataFreshness = await describeBriefingDataFreshness({ email: profile.email });
+  } catch (e) {
+    console.warn("[briefing] freshness fetch failed:", e?.message);
+  }
   const {
     md: deterministicPrefixRaw,
     concentrationMandates: prefixConcentrationMandates,
@@ -4157,6 +4175,7 @@ export async function generateBriefing(profile) {
     quantSignals,
     pickGateStatus,
     dailyPicks,
+    dataFreshness: p4_dataFreshness,
   });
 
   // ─── Pre-LLM funding validation ───
@@ -6520,6 +6539,7 @@ export async function runDailyPortfolioSnapshotJob(opts = {}) {
   const query = opts.onlyEmail ? { email: opts.onlyEmail.toLowerCase() } : {};
   const docs = await StocksPortfolio.find(query);
   let ok = 0, fail = 0, priceRefreshes = 0;
+  const failureDetail = [];  // P4.2 — surface WHY each failure happened
   for (const doc of docs) {
     try {
       // Refresh live prices BEFORE snapshotting — otherwise the snapshot
@@ -6562,19 +6582,28 @@ export async function runDailyPortfolioSnapshotJob(opts = {}) {
       ok++;
     } catch (e) {
       fail++;
+      const detail = { email: doc.email, error: e?.message?.slice(0, 300) || String(e).slice(0, 300),
+                       snapshotFailures: e?.snapshotFailures || null, totalWrote: e?.totalWrote ?? null };
+      failureDetail.push(detail);
       console.warn("[stocks-portfolio-snapshot] fail:", doc.email, e?.message);
     }
   }
-  const summary = { ok, fail, priceRefreshes };
+  const summary = { ok, fail, priceRefreshes, failureDetail };
   console.log(`[stocks-portfolio-snapshot] wrote ${ok}, failed ${fail}, refreshed ${priceRefreshes} prices`);
-  // Tier-2026-09 P0A: heartbeat so the diagnostics endpoint (and the
-  // buildPreviousDayRecap staleness gate) can tell "cron hasn't fired"
-  // apart from "cron fired but wrote 0". Prior state — this job had NO
-  // heartbeat, so an 8-day stale snapshot from Sep 8 back to Aug 31
-  // went undetected. Pattern mirrors runExternalNominationsSync.
+  // P0A + P4.2: heartbeat with HONEST error reporting. Prior behavior
+  // stamped lastError=null even when fail>0 because each per-user
+  // catch swallowed the error and only console.warn'd. Now we stamp
+  // lastError whenever fail>0 so the diagnostic + staleness gate know
+  // the writer is not silently failing.
+  const anyFailure = fail > 0;
   await StocksSystemHeartbeat.findOneAndUpdate(
     { name: "stocks-portfolio-snapshot" },
-    { $set: { lastTickAt: new Date(), lastRunSummary: summary, lastError: null, lastErrorAt: null } },
+    { $set: {
+        lastTickAt: new Date(),
+        lastRunSummary: summary,
+        lastError: anyFailure ? `partial-failure: ok=${ok} fail=${fail} — ${JSON.stringify(failureDetail).slice(0, 400)}` : null,
+        lastErrorAt: anyFailure ? new Date() : null,
+      } },
     { upsert: true, setDefaultsOnInsert: true }
   ).catch(() => {});
   return summary;
