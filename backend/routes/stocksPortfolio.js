@@ -165,30 +165,57 @@ export async function writeDailySnapshot(doc) {
   const aggCashCad = perAccount.reduce((s, r) => s + r.cashCad, 0);
   const aggCashUsd = perAccount.reduce((s, r) => s + r.cashUsd, 0);
 
+  // Tier-2026-09 P4.2: switch from Promise.all → Promise.allSettled +
+  // aggregate the outcome so a partial failure (per-account row
+  // clashing on a legacy unique index, or a schema-validator throw)
+  // NEVER silently loses the __total__ row. Also surface which
+  // account failed so the diagnostic tells us WHY, not just "1 fail".
+  //
+  // The legacy `email_1_date_1` unique index on stocksportfoliosnapshots
+  // was already what caused Sep 1..11's __total__ series to vanish
+  // even while per-account rows sometimes landed. That index has been
+  // dropped in prod, but the failure-mode is otherwise silent — every
+  // future partial failure must report itself.
   const upserts = [
-    ...perAccount.map(r =>
-      StocksPortfolioSnapshot.findOneAndUpdate(
+    ...perAccount.map(r => ({
+      key: `account:${r.accountId}`,
+      p: StocksPortfolioSnapshot.findOneAndUpdate(
         { email: r.email, date: r.date, accountId: r.accountId },
         { $set: r },
         { upsert: true, new: true, setDefaultsOnInsert: true }
-      )
-    ),
-    StocksPortfolioSnapshot.findOneAndUpdate(
-      { email: doc.email, date, accountId: "__total__" },
-      { $set: {
-          email: doc.email, date, accountId: "__total__",
-          totalCad: aggTotal,
-          equitiesCad: aggEquities,
-          cashCad: aggCashCad,
-          cashUsd: aggCashUsd,
-          fxUsdCad: fx,
-          positionsCount: (doc.positions || []).length,
-        }
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    ),
+      ),
+    })),
+    {
+      key: "account:__total__",
+      p: StocksPortfolioSnapshot.findOneAndUpdate(
+        { email: doc.email, date, accountId: "__total__" },
+        { $set: {
+            email: doc.email, date, accountId: "__total__",
+            totalCad: aggTotal,
+            equitiesCad: aggEquities,
+            cashCad: aggCashCad,
+            cashUsd: aggCashUsd,
+            fxUsdCad: fx,
+            positionsCount: (doc.positions || []).length,
+          }
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      ),
+    },
   ];
-  await Promise.all(upserts);
+  const results = await Promise.allSettled(upserts.map(u => u.p));
+  const failures = results
+    .map((r, i) => (r.status === "rejected" ? { key: upserts[i].key, reason: r.reason?.message || String(r.reason) } : null))
+    .filter(Boolean);
+  const totalRes = results[results.length - 1];
+  const totalWrote = totalRes.status === "fulfilled" && !!totalRes.value;
+  if (failures.length > 0 || !totalWrote) {
+    const err = new Error(`writeDailySnapshot partial failure: totalWrote=${totalWrote} failures=${JSON.stringify(failures)}`);
+    err.snapshotFailures = failures;
+    err.totalWrote = totalWrote;
+    throw err;
+  }
+  return { accountsWritten: perAccount.length, totalWrote };
 }
 
 function sanitizePortfolioInput(body, email) {
