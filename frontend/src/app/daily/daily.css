@@ -236,7 +236,24 @@ body:has(.daily-root) .site-footer { display: none !important; }
 .bottom .verse { font-family: var(--font-merriweather), Georgia, serif; font-style: italic; color: var(--ink); }
 .bottom .puzzle { background: var(--sun-fill); color: var(--sun-ink); padding: .6vh 1vw; border-radius: 4px; white-space: nowrap; }
 .bottom .puzzle b { letter-spacing: .14em; font-weight: 600; }
-.bottom .stale { color: var(--alert); }
+/* The sheet is not answering. A dot beside the week line, not a sentence: the
+   room has a lesson on the screen and does not need the wording. The message
+   itself is in the tooltip, and in ?debug=1. */
+.bottom .stale {
+  display: inline-block;
+  width: 0.8vh;
+  height: 0.8vh;
+  margin-left: 0.7vw;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: var(--alert);
+  animation: stale-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes stale-pulse {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
 .bottom .pray { color: var(--accent); font-weight: 500; white-space: nowrap; }
 /* Five minutes before lunch and before dismissal the nation of the day comes
    forward again, so it is not missed on the way out. */

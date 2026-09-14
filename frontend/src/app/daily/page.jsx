@@ -24,6 +24,11 @@ const SLOT_COLS = ["U", "V", "W", "X", "Y", "Z", "AA", "AB"];
 const FLAGS = ["FD", "B1", "B2"];
 const POLL_MS = 10_000;
 const FETCH_TIMEOUT_MS = 25_000;
+// A read that fails waits longer each time rather than hammering a sheet that
+// is already struggling, up to a minute; and nothing is said on screen until
+// it has failed this many times running (a minute or so of real trouble).
+const MAX_POLL_MS = 60_000;
+const FAIL_QUIET = 3;
 const SCRUB_RESET_MS = 45_000;
 // The bottom bar holds one line, so the verse is shortened to about the length
 // the sheet's own A5 uses — but at a word boundary.
@@ -384,18 +389,36 @@ export default function DailyPage() {
   }, []);
 
   // Poll the sheet. Keep both numbers and percents as they alternate on the date line.
+  //
+  // Reads do not overlap and they back off. The board used to fire one every
+  // ten seconds whatever was happening, so a slow read — a cold function, a
+  // sheet that takes its time — had two or three more piled up behind it, each
+  // one making the next slower, each one timing out in turn and putting "the
+  // sheet took too long to answer" across the bottom of the projector. One at
+  // a time, and a failure waits longer before trying again, is most of the fix.
   useEffect(() => {
     let alive = true;
+    let timer = null;
+    // One read at a time, and how many have failed in a row — both belong to
+    // this run of the effect, not to the page: kept on a ref, a remount finds
+    // the previous run's read still in flight, declines to start its own, and
+    // the board never polls again.
+    let reading = false;
+    let failures = 0;
     const load = async () => {
+      if (!alive) return;
+      if (reading) { timer = setTimeout(load, POLL_MS); return; }
+      reading = true;
       const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+      const cutoff = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
       try {
         const res = await fetch(`/api/daily${opts.k ? `?k=${encodeURIComponent(opts.k)}` : ""}`, { cache: "no-store", signal: ctrl.signal });
         const text = await res.text();
         let j;
         try { j = JSON.parse(text); } catch { j = { error: `Unexpected reply (${res.status}): ${text.slice(0, 120)}` }; }
         if (!alive) return;
-        if (!res.ok || !j.periods) { setError(j.error || `HTTP ${res.status}`); return; }
+        if (!res.ok || !j.periods) { fail(j.error || `HTTP ${res.status}`); return; }
+        failures = 0;
         setData(j);
         setError(j.stale ? `Showing the last good copy. ${j.error || ""}` : "");
         setPoints((p) => ({
@@ -414,15 +437,27 @@ export default function DailyPage() {
           setBadImages((b) => (Object.keys(b).length ? {} : b));
         }
       } catch (e) {
-        if (alive) setError(e.name === "AbortError" ? "The sheet took too long to answer; retrying." : e.message || "Could not reach the sheet");
+        if (alive) fail(e.name === "AbortError" ? "The sheet took too long to answer." : e.message || "Could not reach the sheet");
       } finally {
-        clearTimeout(timer);
+        clearTimeout(cutoff);
+        reading = false;
+        if (alive) timer = setTimeout(load, nextDelay());
       }
     };
+    // A failure is kept to itself until it has happened FAIL_QUIET times
+    // running; the copy on screen is still today's, and a single missed read
+    // says nothing about it.
+    const fail = (message) => {
+      failures += 1;
+      setError(failures >= FAIL_QUIET ? message : "");
+    };
+    const nextDelay = () => (failures
+      ? Math.min(POLL_MS * 2 ** failures, MAX_POLL_MS)
+      : POLL_MS);
+
     load();
-    const id = setInterval(load, POLL_MS);
     const note = setTimeout(() => setLoadNote("Still waiting… the first load after a quiet spell can take a few seconds."), 8000);
-    return () => { alive = false; clearInterval(id); clearTimeout(note); };
+    return () => { alive = false; if (timer) clearTimeout(timer); clearTimeout(note); };
   }, [opts.k]);
 
   // Clock tick every 5 s (the display only needs minute resolution, but the red phase should not lag)
@@ -770,7 +805,11 @@ export default function DailyPage() {
           {today && (
             <span className="daychip" style={{ background: today.colour }}>{today.name}</span>
           )}
-          {meta.line}{error ? <span className="stale"> · {error}</span> : null}
+          {meta.line}
+          {/* The room does not need the wording of a Sheets error across the
+              bottom of the projector — a dot it can ignore, and the whole
+              message in the tooltip for whoever is standing at the board. */}
+          {error ? <span className="stale" title={error} aria-label={error} role="img" /> : null}
         </span>
         {prayEl()}
         {showPuzzle && puzzleWord
