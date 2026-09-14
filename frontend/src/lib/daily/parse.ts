@@ -2,9 +2,9 @@
 // with plain node. Input is the raw cell grid of the DisplayAI tab (plus a few
 // Setup cells); output is the JSON the page renders from.
 
-/** A handout, form or reference linked from a lesson cell. */
+import { evaluateOr, parseA1, type Book } from "./formula";
 
-import { evaluateOr, type Book } from "./formula";
+/** A handout, form or reference linked from a lesson cell. */
 export type LessonLink = { label: string; url: string };
 
 export type Period = {
@@ -1048,6 +1048,11 @@ export type RawInputs = {
   subjects?: string[][]; // Subjects!U1:U40
   mathChallenge?: string[][]; // MathChallenge!A1:C60
   cellImages?: string[][]; // BoardImages!A2:B200 — cell address, durable picture address
+  // Ranges the slot rules themselves named, read because they named them: the
+  // list a rule indexes into can live on any tab, and one the board does not
+  // hold makes the rule throw and fall back to the sheet's own value — which,
+  // for a picture, is nothing at all.
+  extraGrids?: { range: string; values: string[][] }[];
 };
 
 const isErr = (s: string) => /^#(N\/A|REF!|VALUE!|ERROR!|DIV\/0!|NAME\?)/.test(s.trim());
@@ -1298,6 +1303,7 @@ export type Sources = {
   verticalRow: string[]; // VerticalAi row keyed 1, columns D to J
   slots: Slot[]; // Setup!U1:AB4
   book: Book; // the grids a Setup formula may reach, for evaluating it here
+  extraRanges?: string[]; // the ranges of those the rules themselves named
   riddle: string; // Riddles!D at the week in Master!B2
   verses: string[]; // Verses!A — the whole column, indexed the way A5 indexes it
   verseWeek: number | null; // Vertical!B4
@@ -1484,7 +1490,7 @@ export function evaluateDailyText(src: Sources, minutes: number, weekday: number
  * value the sheet computed, which is what it did before it evaluated anything.
  */
 function buildBook(inp: RawInputs): Book {
-  return {
+  const book: Book = {
     setup: [
       { top: 1, left: 1, width: 16, height: 40, values: inp.setup || [] }, // A1:P40
       { top: 1, left: 13, width: 5, height: 8, values: inp.setupMessages || [] }, // M1:Q8
@@ -1508,6 +1514,22 @@ function buildBook(inp: RawInputs): Book {
     subjects: [{ top: 1, left: 21, width: 1, height: 40, values: inp.subjects || [] }], // U1:U40
     mathchallenge: [{ top: 1, left: 1, width: 3, height: 60, values: inp.mathChallenge || [] }], // A1:C60
   };
+  // Whatever the rules asked for on top of that. A tab the book already has
+  // gains another grid rather than replacing it, so the ranges read by name
+  // still answer first.
+  for (const extra of inp.extraGrids || []) {
+    const at = parseA1(extra.range);
+    if (!at) continue;
+    const key = at.sheet.toLowerCase();
+    (book[key] || (book[key] = [])).push({
+      top: at.top,
+      left: at.left,
+      width: at.right - at.left + 1,
+      height: at.bottom - at.top + 1,
+      values: extra.values || [],
+    });
+  }
+  return book;
 }
 
 /** Gather everything the two rules need out of the raw grids. */
@@ -1573,6 +1595,8 @@ export function buildSources(inp: RawInputs): Sources {
       return named.some(Boolean) ? named : pointsLabels(inp.pointsRow3 || []);
     })(),
     book: buildBook(inp),
+    // What the rules asked for beyond the fixed reads, for ?debug=1.
+    extraRanges: (inp.extraGrids || []).map((g) => g.range),
     cellImages: buildCellImages(inp.cellImages || []),
     // Exactly what those six rows hold, untouched, so a wrong answer can be told
     // from a wrong place to look.
@@ -1699,6 +1723,26 @@ export function buildCellImages(rows: string[][]): CellImages {
 }
 
 /**
+ * The picture a formula hands back, when the address is not in the cell itself.
+ *
+ * `=IMAGE("https://…")` carries its address and is read straight off; a rule
+ * that picks one — the day's flag out of a column, the term's cartoon out of a
+ * list — carries only the way to find it, so it is run and the answer tested.
+ */
+function imageFromRule(
+  formula: string,
+  ctx: { book: Book; now: Date } | undefined,
+  sheet: string,
+  images: CellImages = {}
+): string {
+  const rule = String(formula || "").trim();
+  if (!rule.startsWith("=") || !ctx || !ctx.book || !Object.keys(ctx.book).length) return "";
+  const answer = evaluateOr(rule, "", { book: ctx.book, now: ctx.now, sheet, images });
+  const url = (String(answer).match(URL_RE) || [])[0] || "";
+  return url && isImageUrl(url) ? normalizeImageUrl(url) : "";
+}
+
+/**
  * O Canada: the flag and the words, from the day's column of Poems!F1:J3.
  *
  * F is Monday and J Friday, and the column carries the anthem in whichever
@@ -1711,7 +1755,12 @@ export function anthemOfDay(
   poems: string[][],
   formulas: string[][],
   weekday: number,
-  images: CellImages = {}
+  images: CellImages = {},
+  // The board's own book and clock, so a cell whose picture arrives by way of a
+  // formula — `=IMAGE(Flags!B3)`, or the day's pick out of a list — is followed
+  // rather than read. Without this the flag shows only when its address is
+  // written into the cell itself.
+  ctx?: { book: Book; now: Date }
 ): { image: string; lines: string[] } {
   const col = weekday - 2; // Sheets counts Sunday as 1, so Monday is column F
   if (col < 0 || col > 4) return { image: "", lines: [] };
@@ -1724,6 +1773,7 @@ export function anthemOfDay(
     const formula = at(row, formulas);
     const url = [urlFromFormula(formula), (value.match(URL_RE) || [])[0]].find((u) => u && isImageUrl(u))
       || images[cellImageKey(`Poems!${letter}${row + 1}`)]
+      || imageFromRule(formula, ctx, "Poems", images)
       || "";
     if (url && !image) image = normalizeImageUrl(url);
     const text = value.replace(URL_RE, "").trim();

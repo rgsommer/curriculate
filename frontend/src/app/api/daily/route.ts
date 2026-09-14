@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listSheetTitles, readGridLinks, readRanges, readRangesSafe } from "@/lib/daily/sheets";
 import { buildPayload, refFromFormula, urlFromFormula, type Payload } from "@/lib/daily/parse";
+import { mergeRanges, rangeCovers, referencedRanges } from "@/lib/daily/formula";
 import { FIXTURE } from "@/lib/daily/fixture";
 import { dailyCache } from "@/lib/daily/cache";
 
@@ -26,6 +27,9 @@ const CACHE_MAX_AGE_MS = 120_000;
 const MIN_REFRESH_MS = 20_000;
 // How long to sit out after a 429 before asking again.
 const QUOTA_BACKOFF_MS = 90_000;
+// A ceiling on the ranges taken from the rules, so a formula naming half the
+// spreadsheet cannot turn one refresh into a long read.
+const MAX_EXTRA_RANGES = 8;
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
@@ -64,6 +68,8 @@ export async function GET(req: Request) {
     const waitingTab = (sheetTitles || []).find((t) => /kiss\s*&?\s*ride/i.test(t)) || "";
     const waitingRange = waitingTab ? `'${waitingTab.replace(/'/g, "''")}'!A1:H60` : "";
 
+    const cachedExtra = c.extraRanges.slice(0, MAX_EXTRA_RANGES);
+
     const VALUES = [
       "DisplayAI!A1:F40",   // 0 the day itself
       "Setup!A1:P40",       // 1 the labelled timing rules, and the columns the slot rules substitute from
@@ -96,6 +102,11 @@ export async function GET(req: Request) {
       // see: cell address, then a durable address for the picture in it.
       "BoardImages!A2:B200", // 21
       ...(waitingRange ? [waitingRange] : []), // 22
+      // And whatever the slot rules themselves asked for last time round: the
+      // list of pictures a rule indexes into can live on a tab of its own, and
+      // a rule that reaches past what the board holds throws and falls back to
+      // the value the sheet computed — which for a picture cell is nothing.
+      ...cachedExtra,
     ];
     const FORMULAS = [
       "DisplayAI!D1:D40",   // 0 the video link on each row
@@ -124,6 +135,8 @@ export async function GET(req: Request) {
     const setupMessages = values[3] || [];
     const feature = (values[4]?.[0]?.[0]) || (values[5]?.[0]?.[0]) || "";
     const waiting = waitingRange ? (values[22] || []) : [];
+    const extraAt = waitingRange ? 23 : 22;
+    const extraGrids = cachedExtra.map((range, i) => ({ range, values: values[extraAt + i] || [] }));
 
     const displayD = formulas[0] || [];
     const displayC = formulas[1] || [];
@@ -153,6 +166,30 @@ export async function GET(req: Request) {
         featureFormula = urlFromFormula(f) ? f : v || featureFormula;
       } catch {
         /* the reference did not resolve; carry on with what we have */
+      }
+    }
+
+    // The rules name where they look. Anything they name that the fixed reads do
+    // not already cover is read now — one extra request — and remembered, so
+    // from the next refresh it travels in the values batch for nothing.
+    const named = referencedRanges([
+      ...slotBlockFormulas.flatMap((r) => (r || []).map((cell) => String(cell || ""))),
+      featureFormula,
+    ]);
+    // Each reference is checked on its own before they are merged: the rules
+    // reach all over Setup, and one box round the lot of them would look like a
+    // range nothing covers even though every cell in it is already read.
+    const wanted = mergeRanges(
+      named.filter((r) => ![...VALUES, ...cachedExtra].some((have) => rangeCovers(have, r)))
+    );
+    if (wanted.length) {
+      const fresh = wanted.slice(0, Math.max(0, MAX_EXTRA_RANGES - cachedExtra.length));
+      c.extraRanges = [...cachedExtra, ...fresh].slice(0, MAX_EXTRA_RANGES);
+      try {
+        const more = await readRangesSafe(fresh);
+        fresh.forEach((range, i) => extraGrids.push({ range, values: more[i] || [] }));
+      } catch {
+        /* the tabs those rules name could not be read; the rules fall back */
       }
     }
 
@@ -187,6 +224,7 @@ export async function GET(req: Request) {
       waiting,
       slotBlock,
       slotBlockFormulas,
+      extraGrids,
     });
     c.body = body;
     c.at = Date.now();

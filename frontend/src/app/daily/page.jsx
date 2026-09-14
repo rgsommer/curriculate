@@ -614,7 +614,8 @@ export default function DailyPage() {
   clock.setHours(Math.floor(t / 60), t % 60, 0, 0);
   const evaluated = evaluateFeature(sources, t, clock);
   // The anthem's own column of Poems: the flag and the words for today.
-  const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday, sources.cellImages);
+  const anthem = anthemOfDay(sources.poemGrid, sources.poemGridFormulas, weekday, sources.cellImages,
+    { book: sources.book, now: clock });
   // During a class the day's plan has nothing to add — that class is the screen.
   const dailyText = evaluateDailyText(sources, t, weekday, !!(cur && !cur.duty && !cur.empty));
   const peekNext = classes.find((c) => c.start >= (cur ? cur.end : t)) || null;
@@ -868,6 +869,16 @@ export default function DailyPage() {
       <div className="capline"><span>{caption}</span><span>{note}</span></div>
     </div>
   );
+  // The anthem screen: the words on one side, the flag on the other. Shown
+  // through the announcements as well as the anthem itself.
+  const anthemMain = () => (
+    <div className={`main anthem${anthem.image && anthem.lines.length ? " pic-right" : " solo"}`}>
+      {anthem.lines.length ? (
+        <div className="words">{anthem.lines.map((l, i) => <p key={i}>{l}</p>)}</div>
+      ) : null}
+      {anthem.image && usable(anthem.image) ? bigPicture(anthem.image, "", "", "fill") : null}
+    </div>
+  );
   // Between classes and before school there is no lesson column, so the picture
   // shares the screen with whatever text that screen carries.
   const withPicture = (content) => (featureImage
@@ -901,6 +912,13 @@ export default function DailyPage() {
               {row("points labels", (sources.pointsLabels || []).join(", ") || "—")}
               {row("recorded pictures", Object.entries(sources.cellImages || {}).map(([k, v]) => `${k} → ${v}`).join("  ·  ") || "none — run the Apps Script in apps-script/mirror-cell-images.gs")}
               {row("O Canada", `${setup.blankTo != null ? `${fmt(setup.blankTo)} for ${setup.anthemMin} min` : "no window"}  ·  flag: ${anthem.image || "none the API can read"}  ·  ${anthem.lines.length} line(s) of words`)}
+              {row("O Canada column", (() => {
+                const col = weekday - 2;
+                if (col < 0 || col > 4) return "not a school day";
+                const letter = String.fromCharCode(70 + col);
+                return [1, 2, 3].map((r) => `${letter}${r}: ${(((sources.poemGridFormulas || [])[r - 1] || [])[col] || ((sources.poemGrid || [])[r - 1] || [])[col] || "—")}`).join("  ·  ");
+              })())}
+              {row("ranges the rules named", (sources.extraRanges || []).join(", ") || "none beyond the fixed reads")}
               {row("lesson picture", cur ? `${cur.image || "—"}  ·  shows for the first ${Math.round(setup.picSeconds / 60)} min, ${Math.round(cur.elapsed)} min in${cur.image && badImages[cur.image] ? "  ·  DID NOT LOAD" : ""}` : "—")}
               {row("lesson video", (cur && cur.video) || "—")}
               {row("writing owed", `${(points.writing || []).join(", ") || "none"}  ·  ${points.writingNote || "—"}`)}
@@ -992,13 +1010,17 @@ export default function DailyPage() {
   if (setup.blankFrom != null && setup.blankTo != null && t >= setup.blankFrom && t < setup.blankTo) {
     body = (
       <>
-        {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: "", pct: 0 })}
-        {/* The flag stands during the anthem, so a picture in the feature cell
-            takes the screen here rather than being thrown away — the blank
-            screen used to be decided before E1 was ever consulted. */}
-        {featureImage
-          ? <div className="main solo">{bigPicture(featureImage, "Please listen", "", "fill")}</div>
-          : <div className="main blank"><p>Please listen</p></div>}
+        {header({ title: "Announcements", chips: null, when: `Screen blank until ${fmt(setup.blankTo)}`, leftHtml: <b>Please listen</b>, pct: 0 })}
+        {/* The flag and the words stand through the announcements as well as
+            the anthem that follows them — the room is already on its feet, and
+            a blank screen for those minutes helps nobody. Failing an anthem, a
+            picture in the feature cell takes the screen rather than being
+            thrown away, which is what the blank screen used to do. */}
+        {anthem.image || anthem.lines.length
+          ? anthemMain()
+          : featureImage
+            ? <div className="main solo">{bigPicture(featureImage, "Please listen", "", "fill")}</div>
+            : <div className="main blank"><p>Please listen</p></div>}
         {footer(false)}
       </>
     );
@@ -1008,12 +1030,7 @@ export default function DailyPage() {
     body = (
       <>
         {header({ title: "O Canada", chips: null, when: `Until ${fmt(setup.blankTo + setup.anthemMin)}`, leftHtml: <b>Please stand</b>, pct: 0 })}
-        <div className={`main anthem${anthem.image && anthem.lines.length ? " pic-right" : " solo"}`}>
-          {anthem.lines.length ? (
-            <div className="words">{anthem.lines.map((l, i) => <p key={i}>{l}</p>)}</div>
-          ) : null}
-          {anthem.image ? bigPicture(anthem.image, "", "", "fill") : null}
-        </div>
+        {anthemMain()}
         {footer(false)}
       </>
     );

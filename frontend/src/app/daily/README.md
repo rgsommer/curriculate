@@ -49,6 +49,7 @@ Paste the whole JSON file as the value of `DAILY_SHEETS_SERVICE_ACCOUNT`.
 | `Vertical!A1:J200` | Column A the period times, F to J Monday to Friday — the day's plan with a row per period. B4 (the week the verse is indexed by) is inside this block, so it costs no extra range. |
 | `VerticalAi!D1:J200` | Also the day's plan: columns F to J are Monday to Friday, and each holds the day's classes run together in one cell. Used when DisplayAI's lesson column has not been filled in yet. |
 | The Kiss & Ride tab | Its "Waiting (Recent First)" column, for the dismissal panel. The tab is found by name (`listSheetTitles`, cached an hour) and the column by its header cell. |
+| Whatever the rules name | A slot rule can index a list on a tab nothing else reads — the term's cartoons, the flags. Every reference in those rules is checked against the ranges above and anything left over is read as well (`referencedRanges` / `mergeRanges` / `rangeCovers`), merged to one range per tab, capped at 400 rows and eight ranges, and remembered so it travels in the ordinary values batch from the next refresh on. `?debug=1` lists them under "ranges the rules named". |
 | `Display!E1` / `DisplayAI!E1` | The feature cell (poem, riddle, message, **or a picture**) — the sheet's own priority logic is reused as-is. Read as both a value and a formula, because an `=IMAGE()` cell has no text value at all. |
 
 The non-teaching rows get a friendlier heading than the sheet's own label, because
@@ -87,7 +88,7 @@ remembered and left out of later batches (`readRangesSafe`).
 | Time in advance to show reminders | Reminders block appears N minutes before the end |
 | Change time to red | Clock, countdown and progress bar turn red |
 | Show homework … minutes before end of class | "Write in your agenda" block appears |
-| O Canada for (C) | The anthem holds the screen for N minutes after the announcements — the words and the flag from the day's column of `Poems!F1:J3` — 5 if the row is missing, which it is in the sheet today |
+| O Canada for (C) | The anthem holds the screen for N minutes after the announcements — the words and the flag from the day's column of `Poems!F1:J3` — 5 if the row is missing, which it is in the sheet today. The announcements before it carry the same screen rather than a blank one. The flag may be written into the cell or picked by a rule (`=IMAGE(INDEX(Flags!B:B, …))`), which is run at the board's clock |
 | Blank screen during announcements (C:D) | The feature cell has the screen to itself between those times — the flag for the anthem, scaled to fill — with "Please listen" underneath; a blank screen when E1 holds no picture |
 | Show Dismissal List (D) | Dismissal screen with the "Before you head out" list from that time |
 | Stand ready for dismissal (C) | "Get ready for dismissal" block appears N minutes before the last bell — five if the row is missing, which it is in the sheet today |

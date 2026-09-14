@@ -745,3 +745,110 @@ export function evaluateFormula(formula: string, ctx: Ctx): string {
 export function evaluateOr(formula: string, fallback: string, ctx: Ctx): string {
   try { return evaluateFormula(formula, ctx); } catch { return fallback; }
 }
+
+/* ------------------------------------------------------------------ *
+ * What a rule reaches for
+ *
+ * A slot rule can point anywhere in the book — "the picture for today" is an
+ * INDEX down a column of addresses on a tab of its own — and the board only
+ * holds the ranges it was told to read. A reference past those throws, the
+ * caller falls back to the value the sheet computed, and an =IMAGE() cell's
+ * computed value is nothing at all: the picture simply never appears.
+ *
+ * So the ranges are taken from the rules themselves, and the route reads what
+ * they name. A whole-column reference is capped rather than refused — the
+ * lists these rules index into are tens of rows, not thousands.
+ * ------------------------------------------------------------------ */
+
+const REF_ROW_CAP = 400;
+
+/** Every range a set of rules names, one per reference, capped and deduped. */
+export function referencedRanges(formulas: string[], rowCap = REF_ROW_CAP): string[] {
+  const out: string[] = [];
+  const note = (text: string) => {
+    const bang = text.lastIndexOf("!");
+    if (bang < 0) return; // unqualified: the rule's own tab, which is already read
+    const sheet = text.slice(0, bang).replace(/^'|'$/g, "").replace(/''/g, "'").trim();
+    if (!sheet || /[[\]]/.test(sheet)) return;
+    const parts = text.slice(bang + 1).split(":").map((p) => p.replace(/\$/g, ""));
+    const one = (p: string) => {
+      const m = p.match(/^([A-Za-z]{1,3})(\d+)?$/);
+      return m ? { col: colToNumber(m[1]), row: m[2] ? parseInt(m[2], 10) : null } : null;
+    };
+    const a = one(parts[0]);
+    const b = parts.length > 1 ? one(parts[1]) : a;
+    if (!a || !b) return;
+    const top = Math.max(1, Math.min(a.row ?? 1, b.row ?? 1));
+    const bottom = Math.min(rowCap, Math.max(a.row ?? rowCap, b.row ?? rowCap));
+    const range = `${quoteSheet(sheet)}!${columnLetters(Math.min(a.col, b.col))}${top}`
+      + `:${columnLetters(Math.max(a.col, b.col))}${Math.max(top, bottom)}`;
+    if (!out.includes(range)) out.push(range);
+  };
+
+  for (const f of formulas) {
+    const src = String(f || "").trim();
+    if (!src.startsWith("=")) continue;
+    let toks: Tok[];
+    try { toks = tokenize(src.slice(1)); } catch { continue; }
+    for (const t of toks) {
+      if (t.kind === "ref") note(t.text);
+      // INDIRECT("Pics!A1") hides its reference in a string.
+      else if (t.kind === "str" && /^'?[^'!]+'?![A-Za-z]{1,3}\d*(?::[A-Za-z]{1,3}\d*)?$/.test(t.text)) note(t.text);
+    }
+  }
+  return out;
+}
+
+function quoteSheet(sheet: string): string {
+  return /^[A-Za-z][A-Za-z0-9_]*$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`;
+}
+
+/** One range per tab, covering all of them — fewer ranges for the same read. */
+export function mergeRanges(ranges: string[]): string[] {
+  const box: Record<string, { top: number; bottom: number; left: number; right: number }> = {};
+  for (const range of ranges) {
+    const at = parseA1(range);
+    if (!at) continue;
+    const cur = box[at.sheet];
+    box[at.sheet] = cur
+      ? {
+        top: Math.min(cur.top, at.top), bottom: Math.max(cur.bottom, at.bottom),
+        left: Math.min(cur.left, at.left), right: Math.max(cur.right, at.right),
+      }
+      : { top: at.top, bottom: at.bottom, left: at.left, right: at.right };
+  }
+  return Object.entries(box).map(([sheet, r]) =>
+    `${quoteSheet(sheet)}!${columnLetters(r.left)}${r.top}:${columnLetters(r.right)}${r.bottom}`);
+}
+
+/** Split "Tab!B2:D10" into its parts, or null when it is not one. */
+export function parseA1(range: string): { sheet: string; top: number; left: number; bottom: number; right: number } | null {
+  const text = String(range || "").trim();
+  const bang = text.lastIndexOf("!");
+  if (bang < 0) return null;
+  const sheet = text.slice(0, bang).replace(/^'|'$/g, "").replace(/''/g, "'").trim();
+  const parts = text.slice(bang + 1).split(":").map((p) => p.replace(/\$/g, ""));
+  const one = (p: string) => {
+    const m = p.match(/^([A-Za-z]{1,3})(\d+)?$/);
+    return m ? { col: colToNumber(m[1]), row: m[2] ? parseInt(m[2], 10) : null } : null;
+  };
+  const a = one(parts[0]);
+  const b = parts.length > 1 ? one(parts[1]) : a;
+  if (!sheet || !a || !b) return null;
+  return {
+    sheet,
+    top: Math.min(a.row ?? 1, b.row ?? 1),
+    bottom: Math.max(a.row ?? REF_ROW_CAP, b.row ?? REF_ROW_CAP),
+    left: Math.min(a.col, b.col),
+    right: Math.max(a.col, b.col),
+  };
+}
+
+/** True when everything `inner` names is already inside `outer`. */
+export function rangeCovers(outer: string, inner: string): boolean {
+  const o = parseA1(outer);
+  const i = parseA1(inner);
+  if (!o || !i) return false;
+  return o.sheet.toLowerCase() === i.sheet.toLowerCase()
+    && o.top <= i.top && o.bottom >= i.bottom && o.left <= i.left && o.right >= i.right;
+}

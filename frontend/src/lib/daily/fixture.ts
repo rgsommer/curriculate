@@ -137,7 +137,20 @@ export const FIXTURE: RawInputs = {
   ],
   poemFormulas: [
     [], [],
-    ["", "", "", '=IMAGE("https://example.org/flag-of-canada.png")', ""],
+    // Monday's flag is not written into the cell: a rule picks it out of a list
+    // on a tab of its own, which is the shape the sheet actually uses and what
+    // the ranges-the-rules-named read exists for. Thursday's is the plain form.
+    ["=IMAGE(INDEX(Flags!B1:B6, 1))", "", "", '=IMAGE("https://example.org/flag-of-canada.png")', ""],
+  ],
+  // A tab no fixed read names: the board finds it because the rule above does.
+  extraGrids: [
+    {
+      range: "Flags!A1:B6",
+      values: [
+        ["Canada", "https://example.org/flag-picked-from-a-list.png"],
+        ["Fleur-de-lys", "https://example.org/quebec.png"],
+      ],
+    },
   ],
   vertical: [
     ["", "", "", "", "", "", ""],

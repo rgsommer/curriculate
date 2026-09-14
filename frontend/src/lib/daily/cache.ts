@@ -13,10 +13,16 @@ export const dailyCache: {
   dirty: boolean;
   version: number;
   blockedUntil: number;
+  // Ranges the sheet's own slot rules named that the fixed reads do not cover —
+  // the tab a rule indexes its pictures out of, say. Discovered from the
+  // formulas on one read and folded into the values batch from then on, so
+  // finding them costs one extra request once rather than one every refresh.
+  extraRanges: string[];
 } = {
   body: null,
   at: 0,
   dirty: false,
   version: 0,
   blockedUntil: 0,
+  extraRanges: [],
 };

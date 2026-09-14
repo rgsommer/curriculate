@@ -631,6 +631,47 @@ check("setup: the other labels still read", P.parseSetup([["", "Change time to r
   check("anthem: the weekend has no column", P.anthemOfDay(poems, f, 1).lines.length === 0);
   check("setup: the anthem window defaults to five minutes", P.parseSetup([]).anthemMin === 5);
   check("setup: a row can change the anthem window", P.parseSetup([["", "O Canada for", "4", "minutes"]]).anthemMin === 4);
+
+  // The flag need not be written into the cell: a rule that picks one is run.
+  const rule = [[], [], ["", "=IMAGE(INDEX(Flags!B1:B5, 2))", "", "", ""]];
+  const book = { flags: [{ top: 1, left: 2, width: 1, height: 5, values: [["a"], ["https://example.org/picked.png"], [""], [""], [""]] }] };
+  const picked = P.anthemOfDay(poems, rule, 3, {}, { book, now: new Date(2026, 8, 15, 9, 2) });
+  check("anthem: a rule that picks the flag out of a list is followed",
+    picked.image === "https://example.org/picked.png", picked);
+  check("anthem: without the book the rule cannot be followed",
+    P.anthemOfDay(poems, rule, 3).image === "", P.anthemOfDay(poems, rule, 3));
+}
+
+// ---- The ranges a rule names, so the board reads what the rule reaches for ----
+{
+  const named = F.referencedRanges([
+    '=IF(NOW()>Setup!C12, IMAGE(INDEX(Pictures!B:B, Master!B2)), "")',
+    "=JOIN(\" \", 'Kiss & Ride'!A2:C9)",
+    '=INDIRECT("Flags!B3")',
+    "plain text, not a rule",
+  ]);
+  check("rules: a whole column is capped rather than refused", named.includes("Pictures!B1:B400"), named);
+  check("rules: each reference stands on its own", named.includes("Setup!C12:C12") && named.includes("Master!B2:B2"), named);
+  check("rules: a tab whose name needs quoting keeps them", named.includes("'Kiss & Ride'!A2:C9"), named);
+  check("rules: INDIRECT's reference is a string, and is still seen", named.includes("Flags!B3:B3"), named);
+  check("rules: an unqualified reference belongs to the rule's own tab", !named.some((r) => !r.includes("!")), named);
+
+  check("rules: a range already read is covered", F.rangeCovers("Setup!A1:P40", "Setup!C12:C12"));
+  check("rules: and one past it is not", !F.rangeCovers("Setup!A1:P40", "Setup!V4:V4"));
+  check("rules: a different tab never covers", !F.rangeCovers("Poems!A1:Z99", "Pictures!B1:B400"));
+  check("rules: what is left over merges to one range per tab",
+    F.mergeRanges(["Pictures!B1:B400", "Pictures!D2:D9"]).join("|") === "Pictures!B1:D400",
+    F.mergeRanges(["Pictures!B1:B400", "Pictures!D2:D9"]));
+
+  // And the grids those ranges bring back are added to the book, so the rule
+  // that named them can be evaluated.
+  const src = P.buildSources({
+    display: [], displayD: [], displayC: [], setup: [], slots: [], master: [],
+    extraGrids: [{ range: "Pictures!B1:B400", values: [["one"], ["https://example.org/two.png"]] }],
+  });
+  check("rules: what came back is in the book",
+    F.evaluateFormula("=INDEX(Pictures!B1:B400, 2)", { book: src.book, now: new Date() }) === "https://example.org/two.png");
+  check("rules: and the debug line names it", (src.extraRanges || [])[0] === "Pictures!B1:B400", src.extraRanges);
 }
 
 // ---- the lesson picture and video, from Lessons I and J ----
