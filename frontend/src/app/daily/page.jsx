@@ -366,7 +366,7 @@ export default function DailyPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [loadNote, setLoadNote] = useState("Contacting the sheet…");
-  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, writing: [], writingNote: "" });
+  const [points, setPoints] = useState({ numbers: null, percents: null, entered: null, writing: [], writingNote: "", note: "" });
   const [tick, setTick] = useState(0);
   const [vidBig, setVidBig] = useState(false);
   const [opts, setOpts] = useState({ t: null, k: "", pic: "right", debug: false });
@@ -404,6 +404,7 @@ export default function DailyPage() {
           entered: j.points && j.points.entered != null ? j.points.entered : p.entered,
           writing: (j.points && j.points.writing) || [],
           writingNote: (j.points && j.points.writingNote) || "",
+          note: (j.points && j.points.note) || "",
         }));
         // A picture that failed once — a Drive link not yet shared, a blip —
         // was dropped for the life of the page, and a projector page runs all
@@ -934,6 +935,8 @@ export default function DailyPage() {
               {row("puzzle", meta.puzzle)}
               {row("riddle", meta.riddle)}
               {row("points", `${(points.numbers || []).join(", ") || "—"} | ${(points.percents || []).join(", ") || "—"} | entered: ${points.entered}`)}
+              {row("points source", points.note || "—")}
+              {row("Setup rows 35-40 (F, K, L)", (sources.plansCells || []).map((r) => `${r[0] || "·"} | ${r[1] || "·"} | ${r[2] || "·"}`).join("    ") || "—")}
             </tbody>
           </table>
           <h2>Setup!T1:AA8 — the cells that decide E1</h2>
